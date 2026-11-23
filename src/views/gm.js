@@ -622,8 +622,19 @@ export function register(app) {
     const list = waitingHere(), R = app.rules(), W = PENDING_WORDS, rs = remotes();
     const debtOf = w => { const hid = localHunter(S(), w); return hid ? (store.hunter(hid)?.debt ?? 0) : (rs.find(r => r.key === w.to)?.data.debt ?? 0); };
     const html = list.length ? list.map(w => {
-      const preview = paysDebt(w.from) && w.rewards.gold > 0 ? debtStep(debtOf(w), { type: 'clearGold', gold: w.rewards.gold }, R) : null;
-      const dline = preview ? debtPreviewLine(preview.paid, preview.debt) : null;
+      const owed = debtOf(w);
+      const pay = paysDebt(w.from) && w.rewards.gold > 0 && owed > 0
+        ? debtStep(owed, { type: 'clearGold', gold: w.rewards.gold }, R)
+        : null;
+      const paidInfo = pay && (pay.paid > 0 || pay.burn > 0)
+        ? { total: w.rewards.gold, paid: pay.paid, burn: pay.burn, kept: pay.kept, left: pay.debt }
+        : null;
+      const afterDebt = pay?.debt ?? owed;
+      const baseXp = Math.trunc(w.rewards.xp || 0);
+      const xpCut = afterDebt > 0 && baseXp > 0 && R.reviveDebtXpRate < 1
+        ? { base: baseXp, xp: debtStep(afterDebt, { type: 'xp', xp: baseXp }, R).xp, rate: R.reviveDebtXpRate, left: afterDebt }
+        : null;
+      const dline = debtPreviewLine(paidInfo, xpCut);
       return `<li class="gm-pw-row" data-pw="${esc(w.id)}"><div><b>${esc(w.name)}</b> <span class="gm-pw-what">${esc(W.earned(w.from, w.what))}</span></div>`
         + `<div class="gm-pw-lines">${esc(rewardLines(R, w.rewards).join(', '))}</div>`
         + (dline ? `<div class="gm-pw-lines" data-pw-debt>${esc(dline)}</div>` : '')

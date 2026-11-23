@@ -145,4 +145,24 @@ describe('an override of a list rule', () => {
       ['fight.difficulty.rankScale.C', 'range'],
     ]);
   });
+
+  test('reviveDebtShare and reviveDebtBurn together must be at most 1, and reviveDebtXpRate stays in 0 to 1', () => {
+    expect(parseOverrides({ reviveDebtShare: 0.75, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.5 })).toEqual({
+      overrides: { reviveDebtShare: 0.75, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.5 },
+      refused: [],
+    });
+    expect(parseOverrides({ reviveDebtShare: 1, reviveDebtBurn: 0 }).refused).toEqual([]);
+    const shareOnly = parseOverrides({ reviveDebtShare: 0.8 });
+    expect(shareOnly.overrides).toEqual({});
+    expect(shareOnly.refused).toEqual([{ path: 'reviveDebtShare', reason: 'split' }]);
+    const burnOnly = parseOverrides({ reviveDebtBurn: 0.6 });
+    expect(burnOnly.overrides).toEqual({});
+    expect(burnOnly.refused).toEqual([{ path: 'reviveDebtBurn', reason: 'split' }]);
+    const both = parseOverrides({ reviveDebtShare: 0.7, reviveDebtBurn: 0.5 });
+    expect(both.overrides).toEqual({});
+    expect(both.refused).toEqual([{ path: 'reviveDebtShare', reason: 'split' }, { path: 'reviveDebtBurn', reason: 'split' }]);
+    const badXp = parseOverrides({ reviveDebtXpRate: 1.5 });
+    expect(badXp.overrides).toEqual({});
+    expect(badXp.refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtXpRate', 'range']]);
+  });
 });

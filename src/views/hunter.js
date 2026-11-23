@@ -12,7 +12,7 @@ import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plu
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
-import { RAISE_REFUSED, RAISE_TITLE, canRaise, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
+import { RAISE_REFUSED, RAISE_TITLE, canRaise, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
 import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
@@ -289,7 +289,10 @@ export function register(app) {
       const g = n ? give(hid, { xp: n }) : null;
       if (!g) return null;
       const { levelup } = api.granted(hid, g, { popup: false });
-      if (!levelup) ui.toast('System', `${n > 0 ? '+' : ''}${n} XP`, { key: 'xp', amount: n, fmt: t => `${t > 0 ? '+' : ''}${t} XP acquired.` });
+      if (!levelup) {
+        if (g.debtXp) ui.toast('System', debtXpLine(g.debtXp));
+        else ui.toast('System', `${n > 0 ? '+' : ''}${n} XP`, { key: 'xp', amount: n, fmt: t => `${t > 0 ? '+' : ''}${t} XP acquired.` });
+      }
       return levelup;
     },
     applyRewards(hid, rw, opts = {}) {

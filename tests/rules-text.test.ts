@@ -134,12 +134,16 @@ describe('the death line', () => {
     expect(deathLine({ ...RULES, reviveLevelShare: 0.1 })).toContain('Reviving costs 10% of the hunter\'s level, rounded up (at least 1 level, never below level 1). For example, a hunter who died at level 31 comes back at level 27.');
   });
 
-  test('the death line states the System revive debt clears and payoff share, and follows GM overrides', () => {
-    expect(line).toContain('A System revive on debt costs 10 same-rank gate clears. 50% of your gate clear gold goes toward that debt until it is paid off.');
-    expect(deathLine({ ...RULES, reviveDebtClears: 6, reviveDebtShare: 0.25 })).toContain('A System revive on debt costs 6 same-rank gate clears. 25% of your gate clear gold goes toward that debt until it is paid off.');
-    const zero = deathLine({ ...RULES, reviveDebtShare: 0 });
+  test('the death line states the System revive debt clears, three-way split, and XP rate, and follows GM overrides', () => {
+    expect(line).toContain('A System revive on debt costs 10 same-rank gate clears. While you owe debt, 50% of your gate clear gold goes to your debt, you get 25%, and 25% is lost to debt costs. You also earn 25% XP from every source until your debt is paid off.');
+    expect(deathLine({ ...RULES, reviveDebtClears: 6, reviveDebtShare: 0.4, reviveDebtBurn: 0.1, reviveDebtXpRate: 0.5 })).toContain('A System revive on debt costs 6 same-rank gate clears. While you owe debt, 40% of your gate clear gold goes to your debt, you get 50%, and 10% is lost to debt costs. You also earn 50% XP from every source until your debt is paid off.');
+    const noBurn = deathLine({ ...RULES, reviveDebtShare: 0.5, reviveDebtBurn: 0, reviveDebtXpRate: 1 });
+    expect(noBurn).toContain('While you owe debt, 50% of your gate clear gold goes to your debt, and you get 50%.');
+    expect(noBurn).not.toContain('lost to debt costs');
+    expect(noBurn).not.toContain('XP from every source');
+    const zero = deathLine({ ...RULES, reviveDebtShare: 0, reviveDebtBurn: 0, reviveDebtXpRate: 1 });
     expect(zero).toContain('A System revive on debt costs 10 same-rank gate clears.');
-    expect(zero).not.toContain('goes toward that debt');
+    expect(zero).not.toContain('goes to your debt');
   });
 
   test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a living one\'s are not', () => {

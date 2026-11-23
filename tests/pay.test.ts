@@ -344,27 +344,29 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
     expect([lifetimeXp(second.save.hunters[0]!), second.save.hunters[0]!.gold]).toEqual([before.xp, before.gold]);
   });
 
-  test('gate clears collect reviveDebtShare for local hunters, while preset clears in a room wait until GM approval', () => {
+  test('gate clears split gold three ways and cut XP for local hunters in debt, while preset clears in a room wait until GM approval', () => {
     const s0 = { ...inDen(), fight: null };
-    const owing: Save = { ...s0, hunters: s0.hunters.map(x => ({ ...x, gold: 0, debt: 200, reviveLeft: 'none' as const })) };
+    const owing: Save = { ...s0, hunters: s0.hunters.map(x => ({ ...x, gold: 0, xp: 0, debt: 200, reviveLeft: 'none' as const })) };
     const h = owing.hunters[0]!;
 
-    // Direct settleClear collects debt right away
-    const direct = ok(settleClear(owing, 'g-den', { due: 150, xp: 75, gold: 100, items: [], payees: [h.name] },
-      [{ hid: h.id, rewards: { ...newRewards(), xp: 75, gold: 100 } }], null, DAY));
-    expect([direct.save.hunters[0]!.gold, direct.save.hunters[0]!.debt]).toEqual([50, 150]);
-    expect(direct.granted[0]!.g.debtPaid).toEqual({ paid: 50, left: 150 });
+    // Direct settleClear splits 100 gold (50 debt, 25 kept, 25 lost) and cuts 80 XP to 20 right away
+    const direct = ok(settleClear(owing, 'g-den', { due: 150, xp: 80, gold: 100, items: [], payees: [h.name] },
+      [{ hid: h.id, rewards: { ...newRewards(), xp: 80, gold: 100 } }], null, DAY));
+    expect([direct.save.hunters[0]!.gold, direct.save.hunters[0]!.xp, direct.save.hunters[0]!.debt]).toEqual([25, 20, 150]);
+    expect(direct.granted[0]!.g.debtPaid).toEqual({ total: 100, paid: 50, burn: 25, kept: 25, left: 150 });
+    expect(direct.granted[0]!.g.debtXp).toEqual({ base: 80, xp: 20, rate: 0.25, left: 150 });
 
-    // Preset clear playing alone collects debt right away
+    // Preset clear playing alone splits 80 gold (40 debt, 20 kept, 20 lost) and cuts 100 XP to 25 right away
     const presetSave = ok(gatePreset(owing, gid('g-den'), { type: 'recommend', xp: 100, gold: 80, items: [] }));
     const alone = ok(settleClearPreset(presetSave, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY));
-    expect([alone.save.hunters[0]!.gold, alone.save.hunters[0]!.debt]).toEqual([40, 160]);
-    expect(alone.granted[0]!.g.debtPaid).toEqual({ paid: 40, left: 160 });
+    expect([alone.save.hunters[0]!.gold, alone.save.hunters[0]!.xp, alone.save.hunters[0]!.debt]).toEqual([20, 25, 160]);
+    expect(alone.granted[0]!.g.debtPaid).toEqual({ total: 80, paid: 40, burn: 20, kept: 20, left: 160 });
+    expect(alone.granted[0]!.g.debtXp).toEqual({ base: 100, xp: 25, rate: 0.25, left: 160 });
 
-    // Preset clear in a room leaves debt untouched while waiting for GM approval
+    // Preset clear in a room leaves debt and XP untouched while waiting for GM approval
     const room = { code: ROOM, stamp: { device: 'd-gm', now: 1000, rand: 0.25 }, ranks: new Map() };
     const inRoom = ok(settleClearPreset(presetSave, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], room, DAY));
-    expect([inRoom.save.hunters[0]!.gold, inRoom.save.hunters[0]!.debt]).toEqual([0, 200]);
+    expect([inRoom.save.hunters[0]!.gold, inRoom.save.hunters[0]!.xp, inRoom.save.hunters[0]!.debt]).toEqual([0, 0, 200]);
     expect(waitingIn(inRoom.save, ROOM)[0]!.from).toBe('clear');
   });
 });

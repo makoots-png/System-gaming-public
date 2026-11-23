@@ -1224,12 +1224,15 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtClears', 'reviveDebtShare', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtBurn', 'reviveDebtClears', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
-      const SHARES = ['saleShare', 'usedUpShare', 'reviveDebtShare', 'reviveLevelShare'] as const;
+      const SHARES = ['saleShare', 'usedUpShare', 'reviveDebtXpRate', 'reviveLevelShare'] as const;
       for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
+      expect([read({ reviveDebtShare: -1, reviveDebtBurn: 0 })!.reviveDebtShare, read({ reviveDebtShare: 2, reviveDebtBurn: 0 })!.reviveDebtShare]).toEqual([domainOf('reviveDebtShare')!.least, domainOf('reviveDebtShare')!.most]);
+      expect([read({ reviveDebtBurn: -1, reviveDebtShare: 0 })!.reviveDebtBurn, read({ reviveDebtBurn: 2, reviveDebtShare: 0 })!.reviveDebtBurn]).toEqual([domainOf('reviveDebtBurn')!.least, domainOf('reviveDebtBurn')!.most]);
+      expect(read({ reviveDebtShare: 0.7, reviveDebtBurn: 0.4 }), 'share + burn over 1 is refused').toBeNull();
       expect([read({ gradeStep: 0.5 })!.gradeStep, read({ gradeStep: 9 })!.gradeStep]).toEqual([domainOf('gradeStep')!.least, domainOf('gradeStep')!.most]);
       expect([read({ reviveClears: 0 })!.reviveClears, read({ reviveClears: 1e9 })!.reviveClears]).toEqual([domainOf('reviveClears')!.least, domainOf('reviveClears')!.most]);
       expect([read({ reviveDebtClears: 0 })!.reviveDebtClears, read({ reviveDebtClears: 1e9 })!.reviveDebtClears]).toEqual([domainOf('reviveDebtClears')!.least, domainOf('reviveDebtClears')!.most]);
@@ -1247,6 +1250,9 @@ describe('the other room docs', () => {
         ['no revive Clears', () => read({ reviveClears: undefined })],
         ['no Clears a raise on debt owes', () => read({ reviveDebtClears: undefined })],
         ['no share of clear gold paid toward debt', () => read({ reviveDebtShare: undefined })],
+        ['no debt burn share', () => read({ reviveDebtBurn: undefined })],
+        ['no debt XP rate', () => read({ reviveDebtXpRate: undefined })],
+        ['debt share plus burn above 1', () => read({ reviveDebtShare: 0.8, reviveDebtBurn: 0.3 })],
         ['no level share of a raising', () => read({ reviveLevelShare: undefined })],
         ['no world gate party', () => read({ gateParty: undefined })],
         ['the solo rules without the loot share', () => read({ solo: { personal: true, hours: 8 } })],

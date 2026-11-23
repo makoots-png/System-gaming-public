@@ -164,20 +164,24 @@ describe('a reward waiting for the GM', () => {
     expect(refusedGrant).toEqual({ ok: false, why: 'no-hunter' });
   });
 
-  test('solo clear selfPay collects debt alone, waits untouched in a room, and gmAward collects debt on edited clear approval but not on quest or manual awards', () => {
-    const owing: Save = { ...save(), hunters: save().hunters.map(h => ({ ...h, gold: 100, debt: 200, reviveLeft: 'none' as const })) };
-    const solo: SelfReward = { from: 'solo', what: 'Goblin Warren', seed: 'personal h1 p1', rewards: { ...newRewards(), gold: 60 } };
+  test('solo clear selfPay splits clear gold three ways and cuts XP alone, waits untouched in a room, and gmAward applies debt on approved clears', () => {
+    const owing: Save = { ...save(), hunters: save().hunters.map(h => ({ ...h, gold: 100, xp: 0, debt: 200, reviveLeft: 'none' as const })) };
+    const solo: SelfReward = { from: 'solo', what: 'Goblin Warren', seed: 'personal h1 p1', rewards: { ...newRewards(), gold: 60, xp: 40 } };
 
-    // Alone: solo clear collects 50% (30 gold) toward debt
+    // Alone: solo clear splits 60 gold into 30 debt, 15 kept, 15 burned; XP cut to 25% (10 XP)
     const soloAlone = ok(selfPay(owing, H1, solo, ctx(ALONE)));
-    expect([soloAlone.save.hunters[0]!.gold, soloAlone.save.hunters[0]!.debt]).toEqual([130, 170]);
-    expect(soloAlone.granted?.debtPaid).toEqual({ paid: 30, left: 170 });
+    expect([soloAlone.save.hunters[0]!.gold, soloAlone.save.hunters[0]!.xp, soloAlone.save.hunters[0]!.debt]).toEqual([115, 10, 170]);
+    expect(soloAlone.granted?.debtPaid).toEqual({ total: 60, paid: 30, burn: 15, kept: 15, left: 170 });
+    expect(soloAlone.granted?.debtXp).toEqual({ base: 40, xp: 10, rate: 0.25, left: 170 });
 
-    // Alone: quest does not collect debt
-    const questAlone = ok(selfPay(owing, H1, QUEST, ctx(ALONE)));
-    expect([questAlone.save.hunters[0]!.gold, questAlone.save.hunters[0]!.debt]).toEqual([140, 200]);
+    // Alone: quest does not split gold, but still cuts XP while in debt (50 -> 13 XP)
+    const questWithXp: SelfReward = { ...QUEST, rewards: { ...GOLD, xp: 50 } };
+    const questAlone = ok(selfPay(owing, H1, questWithXp, ctx(ALONE)));
+    expect([questAlone.save.hunters[0]!.gold, questAlone.save.hunters[0]!.xp, questAlone.save.hunters[0]!.debt]).toEqual([140, 13, 200]);
+    expect(questAlone.granted?.debtPaid).toBeNull();
+    expect(questAlone.granted?.debtXp).toEqual({ base: 50, xp: 13, rate: 0.25, left: 200 });
 
-    // In a room as GM: pending waits without touching debt; refusing keeps debt; approving edited gold collects on the edited amount
+    // In a room as GM: pending waits without touching debt; refusing keeps debt; approving edited gold splits on the edited amount
     const waiting = ok(selfPay(owing, H1, solo, ctx({ seat: 'gm', room: ROOM }))).save;
     expect([waiting.hunters[0]!.gold, waiting.hunters[0]!.debt]).toEqual([100, 200]);
     const rec = waitingIn(waiting, ROOM)[0]!;
@@ -185,14 +189,15 @@ describe('a reward waiting for the GM', () => {
     const refused = ok(pendingRefused(waiting, rec.id, { stamp: { device: ME, now: Date.parse(AT), rand: 0.5 }, log: LOG }));
     expect(refused.hunters[0]!.debt).toBe(200);
 
-    const editedGold = { ...newRewards(), gold: 120 };
+    const editedGold = { ...newRewards(), gold: 120, xp: 40 };
     const awarded = gmAward(waiting, [{ hid: H1, vitals: 'sheet' }], editedGold, { room: ROOM, events: [], said: [] }, { at: AT, today: day('2026-11-22'), R: RULES }, null, rec.from);
     const approved = ok(pendingApproved(awarded.save, rec.id, editedGold));
-    expect([approved.hunters[0]!.gold, approved.hunters[0]!.debt]).toEqual([160, 140]);
-    expect(awarded.granted[0]!.g.debtPaid).toEqual({ paid: 60, left: 140 });
+    expect([approved.hunters[0]!.gold, approved.hunters[0]!.xp, approved.hunters[0]!.debt]).toEqual([130, 10, 140]);
+    expect(awarded.granted[0]!.g.debtPaid).toEqual({ total: 120, paid: 60, burn: 30, kept: 30, left: 140 });
+    expect(awarded.granted[0]!.g.debtXp).toEqual({ base: 40, xp: 10, rate: 0.25, left: 140 });
 
-    // Manual GM award (from = null) leaves debt untouched
+    // Manual GM award (from = null) leaves gold untouched, but still cuts XP while in debt
     const manual = gmAward(owing, [{ hid: H1, vitals: 'sheet' }], editedGold, { room: ROOM, events: [], said: [] }, { at: AT, today: day('2026-11-22'), R: RULES });
-    expect([manual.save.hunters[0]!.gold, manual.save.hunters[0]!.debt]).toEqual([220, 200]);
+    expect([manual.save.hunters[0]!.gold, manual.save.hunters[0]!.xp, manual.save.hunters[0]!.debt]).toEqual([220, 10, 200]);
   });
 });

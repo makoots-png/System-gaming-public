@@ -13,10 +13,10 @@ import { REWARD_ENTRY, parseBand } from './rewards.ts';
 /**
  * Why an override was refused. `statuses`: a status is made in the Status dialog and kept in the library, not here.
  * `entry`: one entry of a list (or of an open map) is not the rule's shape; `length`: a list of a fixed length (a rank's
- * three DCs, a range's two ends) has another; `order`: a range's ends go high to low; `range`: a number out of its
- * rule's domain.
+ * three DCs, a range's two ends) has another; `order`: a range's ends go high to low; `split`: reviveDebtShare and
+ * reviveDebtBurn together exceed 1; `range`: a number out of its rule's domain.
  */
-export type OverrideReason = 'object' | 'unknown' | 'list' | 'number' | 'boolean' | 'text' | 'statuses' | 'entry' | 'length' | 'order' | 'range';
+export type OverrideReason = 'object' | 'unknown' | 'list' | 'number' | 'boolean' | 'text' | 'statuses' | 'entry' | 'length' | 'order' | 'split' | 'range';
 /** Every reason but `range`, which carries the domain the number was out of. */
 type PlainReason = Exclude<OverrideReason, 'range'>;
 /**
@@ -212,6 +212,12 @@ export function parseOverrides(v: unknown): { overrides: Rec; refused: OverrideR
   const { conditions, gmTables: tables, ...rest } = v;
   if (conditions !== undefined) refused.push({ path: 'conditions', reason: 'statuses' });
   const kept = against(rest, RULES, '', refused), overrides: Rec = isObj(kept) ? kept : {};
+  const debtShare = typeof overrides.reviveDebtShare === 'number' ? overrides.reviveDebtShare : RULES.reviveDebtShare;
+  const debtBurn = typeof overrides.reviveDebtBurn === 'number' ? overrides.reviveDebtBurn : RULES.reviveDebtBurn;
+  if (debtShare + debtBurn > 1 + 1e-9) {
+    if ('reviveDebtShare' in overrides) { delete overrides.reviveDebtShare; refused.push({ path: 'reviveDebtShare', reason: 'split' }); }
+    if ('reviveDebtBurn' in overrides) { delete overrides.reviveDebtBurn; refused.push({ path: 'reviveDebtBurn', reason: 'split' }); }
+  }
   if (tables !== undefined) { const t = gmTables(tables); if (t) overrides.gmTables = t; else refused.push({ path: 'gmTables', reason: 'object' }); }
   return { overrides, refused };
 }
@@ -220,7 +226,7 @@ export function parseOverrides(v: unknown): { overrides: Rec; refused: OverrideR
 export const OVERRIDE_REFUSAL_WORDS: Readonly<Record<Exclude<PlainReason, 'unknown'>, string>> = {
   object: 'must be an object', list: 'must be a list', number: 'must be a number', boolean: 'must be true or false', text: 'must be text',
   statuses: 'statuses are made in the Workshop', entry: 'does not match the format for this rule', length: 'has the wrong number of entries',
-  order: 'must go from low to high',
+  order: 'must go from low to high', split: 'reviveDebtShare and reviveDebtBurn together must be at most 1',
 };
 /**
  * The Rules editor's sentence for a refused override. A number out of its domain names the bounds and why they are

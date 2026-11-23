@@ -86,16 +86,26 @@ export function restLines(R: Pick<Rules, 'rest' | 'fatigue'>): string[] {
  * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
  * by.
  */
-export function deathLine(R: Pick<Rules, 'reviveLevelShare' | 'reviveDebtClears' | 'reviveDebtShare'>): string {
+export function deathLine(R: Pick<Rules, 'reviveLevelShare' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {
   const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' A dead hunter cannot buy or sell in the shop. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
-  const pct = Math.round(R.reviveLevelShare * 10000) / 100, back = levelAfterRaising(RAISED_EXAMPLE, R);
+  const pctNum = (n: number): number => Math.round(n * 10000) / 100;
+  const pct = pctNum(R.reviveLevelShare), back = levelAfterRaising(RAISED_EXAMPLE, R);
   const cost = back < RAISED_EXAMPLE
     ? ` Reviving costs ${pct}% of the hunter's level, rounded up (at least 1 level, never below level 1). For example, a hunter who died at level ${RAISED_EXAMPLE} comes back at level ${back}.`
     : ' Reviving costs no levels.';
-  const debtPct = Math.round(R.reviveDebtShare * 10000) / 100;
-  const debt = R.reviveDebtShare > 0
-    ? ` A System revive on debt costs ${R.reviveDebtClears} same-rank gate clears. ${debtPct}% of your gate clear gold goes toward that debt until it is paid off.`
-    : ` A System revive on debt costs ${R.reviveDebtClears} same-rank gate clears.`;
+  const share = Math.min(1, Math.max(0, R.reviveDebtShare));
+  const burn = Math.min(1 - share, Math.min(1, Math.max(0, R.reviveDebtBurn)));
+  const keep = Math.max(0, 1 - share - burn);
+  const xpRate = Math.min(1, Math.max(0, R.reviveDebtXpRate));
+  const goldSplit = share > 0 && burn > 0
+    ? ` While you owe debt, ${pctNum(share)}% of your gate clear gold goes to your debt, you get ${pctNum(keep)}%, and ${pctNum(burn)}% is lost to debt costs.`
+    : share > 0
+      ? ` While you owe debt, ${pctNum(share)}% of your gate clear gold goes to your debt, and you get ${pctNum(keep)}%.`
+      : burn > 0
+        ? ` While you owe debt, you get ${pctNum(keep)}% of your gate clear gold, and ${pctNum(burn)}% is lost to debt costs.`
+        : '';
+  const xpCut = xpRate < 1 ? ` You also earn ${pctNum(xpRate)}% XP from every source until your debt is paid off.` : '';
+  const debt = ` A System revive on debt costs ${R.reviveDebtClears} same-rank gate clears.${goldSplit}${xpCut}`;
   return `At 0 HP, a hunter is dead. Healing and resting cannot revive a dead hunter. ${WAYS_BACK} revives them with ${REVIVE_HP} HP and removes every status, so poison does not kill them again. Use a Resurrection Crystal from your bag outside a fight.${cost}${debt}${shop}`;
 }
 

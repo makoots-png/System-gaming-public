@@ -3,8 +3,8 @@
 // death." The owner, Nov 22: the free revive and the revive on debt are a "System raise". Every expected standing is read
 // from those words: a raise from free leaves the one on debt, a raise on debt leaves none, and none is raised no more.
 import { describe, expect, test } from 'bun:test';
-import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPreviewLine, debtState, debtStep, paysDebt, raiseLine, raiseOffer, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
-import type { DebtEvent, DebtEventType, DebtState, ReviveStanding, StandingEventType } from '../src/core/hunter/revive-standing.ts';
+import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPreviewLine, debtState, debtStep, debtXpClearedLine, debtXpLine, paysDebt, raiseLine, raiseOffer, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
+import type { DebtEvent, DebtEventType, DebtPaid, DebtState, DebtXpCut, ReviveStanding, StandingEventType } from '../src/core/hunter/revive-standing.ts';
 import { grant, raisedLine, sheetEdit, systemRaise } from '../src/core/hunter/grant.ts';
 import { putItem, sell } from '../src/core/hunter/inventory.ts';
 import { received } from '../src/core/trade/goods.ts';
@@ -160,40 +160,69 @@ describe('what the System says of its raise', () => {
     expect(raiseLine(at('none'), RULES, false)).toBe('You have used all your System revives.');
   });
 
-  test('the GM\'s log and the bag say who was raised and what is owed', () => {
+  test('the GM\'s log, popup, preview, and bag say who was raised, how gold splits, how XP is cut, and what is owed', () => {
     expect(raisedSaid('Mira', 'debt', 1000)).toEqual({ title: 'System revive: Mira', text: 'The System revived Mira for 1,000 gold debt. No System revives left.' });
     expect([debtLine(0), debtLine(1000)]).toEqual([null, 'Debt owed to the System for reviving: 1,000 gold.']);
-    expect([debtPaidLine(0, 0), debtPaidLine(50, 950), debtPaidLine(30, 0)]).toEqual([
-      null,
-      '50 gold went to System revive debt (950 gold left).',
-      '30 gold paid off System revive debt.',
-    ]);
-    expect([debtPreviewLine(0, 0), debtPreviewLine(50, 950), debtPreviewLine(30, 0)]).toEqual([
-      null,
-      '50 gold goes to System revive debt (950 gold left).',
-      '30 gold pays off System revive debt.',
-    ]);
+
+    const split: DebtPaid = { total: 200, paid: 100, burn: 50, kept: 50, left: 850 };
+    const paidOff: DebtPaid = { total: 200, paid: 40, burn: 20, kept: 140, left: 0 };
+    const noBurn: DebtPaid = { total: 200, paid: 100, burn: 0, kept: 100, left: 850 };
+    const nonePaid: DebtPaid = { total: 200, paid: 0, burn: 0, kept: 200, left: 0 };
+    const xpCut: DebtXpCut = { base: 48, xp: 12, rate: 0.25, left: 850 };
+
+    expect(debtPaidLine(nonePaid)).toBeNull();
+    expect(debtPaidLine(split)).toBe('Gate clear: 200 gold. 100 went to your System debt, you got 50, and 50 was lost to debt costs. You owe 850 more.');
+    expect(debtPaidLine(paidOff)).toBe('Gate clear: 200 gold. 40 went to your System debt, you got 140, and 20 was lost to debt costs. You paid off your System debt.');
+    expect(debtPaidLine(noBurn)).toBe('Gate clear: 200 gold. 100 went to your System debt, and you got 100. You owe 850 more.');
+
+    expect(debtXpLine(xpCut)).toBe('XP is reduced to 25% while you owe 850 gold: +12 XP (from 48 XP).');
+    expect(debtXpClearedLine(100)).toBe('+100 XP (you paid off your System debt, so you got full XP).');
+
+    expect(debtPreviewLine(nonePaid, null)).toBeNull();
+    expect(debtPreviewLine(split, xpCut)).toBe('Gate clear: 200 gold. 100 goes to System debt, hunter gets 50, and 50 is lost to debt costs. 850 gold left. XP reduced to 25% while owing 850 gold: +12 XP (from 48 XP).');
+    expect(debtPreviewLine(paidOff, null)).toBe('Gate clear: 200 gold. 40 goes to System debt, hunter gets 140, and 20 is lost to debt costs. Debt paid off.');
+
     expect([debtChip(0), debtChip(950)]).toEqual([null, 'System debt: 950 gold']);
-    expect(debtPaidLog('Mira', 0, 0)).toBeNull();
-    expect(debtPaidLog('Mira', 50, 950)).toEqual({ kind: 'award', hunterId: null, title: 'Debt payment: Mira', text: 'Mira paid 50 gold toward System revive debt (950 gold left).' });
-    expect(debtPaidLog('Mira', 30, 0)).toEqual({ kind: 'award', hunterId: null, title: 'Debt payment: Mira', text: 'Mira paid 30 gold and cleared their System revive debt.' });
+
+    expect(debtPaidLog('Mira', nonePaid, null)).toBeNull();
+    expect(debtPaidLog('Mira', split, xpCut)).toEqual({
+      kind: 'award',
+      hunterId: null,
+      title: 'Debt payment: Mira',
+      text: 'Mira cleared a gate for 200 gold: 100 went to System debt, Mira got 50, and 50 was lost to debt costs. Mira owes 850 more. XP was reduced to 25%: +12 XP (from 48 XP).',
+    });
+    expect(debtPaidLog('Mira', paidOff, null, 100)).toEqual({
+      kind: 'award',
+      hunterId: null,
+      title: 'Debt payment: Mira',
+      text: 'Mira cleared a gate for 200 gold: 40 went to System debt, Mira got 140, and 20 was lost to debt costs. Mira paid off their System debt. Full XP applied: +100 XP.',
+    });
+    expect(debtPaidLog('Mira', null, xpCut)).toEqual({
+      kind: 'award',
+      hunterId: null,
+      title: 'Debt XP cut: Mira',
+      text: 'Mira got +12 XP (reduced to 25% from 48 XP while owing 850 gold to the System).',
+    });
   });
 });
 
-describe('the revive debt machine: every state against every event, rounding, bounds, and eligible sources', () => {
+describe('the revive debt machine: every state against every event, three-way split, XP cut, rounding, and bounds', () => {
   const START: { readonly [S in DebtState]: number } = { clear: 0, owing: 100 };
   const EVENTS: { readonly [E in DebtEventType]: Extract<DebtEvent, { type: E }> } = {
     incur: { type: 'incur', amount: 250 },
     clearGold: { type: 'clearGold', gold: 80 },
+    xp: { type: 'xp', xp: 40 },
   };
-  const EXPECTED: { readonly [S in DebtState]: { readonly [E in DebtEventType]: { debt: number; paid: number; kept: number; state: DebtState } } } = {
+  const EXPECTED: { readonly [S in DebtState]: { readonly [E in DebtEventType]: { debt: number; paid: number; burn: number; kept: number; xp: number; state: DebtState } } } = {
     clear: {
-      incur: { debt: 250, paid: 0, kept: 0, state: 'owing' },
-      clearGold: { debt: 0, paid: 0, kept: 80, state: 'clear' },
+      incur: { debt: 250, paid: 0, burn: 0, kept: 0, xp: 0, state: 'owing' },
+      clearGold: { debt: 0, paid: 0, burn: 0, kept: 80, xp: 0, state: 'clear' },
+      xp: { debt: 0, paid: 0, burn: 0, kept: 0, xp: 40, state: 'clear' },
     },
     owing: {
-      incur: { debt: 350, paid: 0, kept: 0, state: 'owing' },
-      clearGold: { debt: 60, paid: 40, kept: 40, state: 'owing' },
+      incur: { debt: 350, paid: 0, burn: 0, kept: 0, xp: 0, state: 'owing' },
+      clearGold: { debt: 60, paid: 40, burn: 20, kept: 20, xp: 0, state: 'owing' },
+      xp: { debt: 100, paid: 0, burn: 0, kept: 0, xp: 10, state: 'owing' },
     },
   };
   for (const s of DEBT_STATES) {
@@ -205,16 +234,22 @@ describe('the revive debt machine: every state against every event, rounding, bo
     }
   }
 
-  test('Math.round rounding, 0% and 100% shares, overpayment clamping, 0 debt, and negative gold', () => {
-    expect(debtStep(1000, { type: 'clearGold', gold: 101 }, RULES), 'half of 101 rounds up to 51').toEqual({ debt: 949, paid: 51, kept: 50 });
-    expect(debtStep(1000, { type: 'clearGold', gold: 1 }, RULES), 'half of 1 rounds up to 1').toEqual({ debt: 999, paid: 1, kept: 0 });
-    expect(debtStep(1000, { type: 'clearGold', gold: 1 }, { reviveDebtShare: 0.25 }), 'quarter of 1 rounds down to 0').toEqual({ debt: 1000, paid: 0, kept: 1 });
-    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 0 }), '0% share takes nothing').toEqual({ debt: 1000, paid: 0, kept: 100 });
-    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 1 }), '100% share takes all gold').toEqual({ debt: 900, paid: 100, kept: 0 });
-    expect(debtStep(30, { type: 'clearGold', gold: 100 }, RULES), 'never takes more than remaining debt; excess stays with hunter').toEqual({ debt: 0, paid: 30, kept: 70 });
-    expect(debtStep(50, { type: 'clearGold', gold: 100 }, RULES), 'exact payoff transitions to clear').toEqual({ debt: 0, paid: 50, kept: 50 });
-    expect(debtStep(1000, { type: 'clearGold', gold: -50 }, RULES), 'negative gold is untouched').toEqual({ debt: 1000, paid: 0, kept: -50 });
-    expect(debtStep(0, { type: 'incur', amount: 0 }, RULES), 'incurring 0 stays clear').toEqual({ debt: 0, paid: 0, kept: 0 });
+  test('three-way split, Math.round rounding, proportional burn on final payoff, edge shares, and XP scaling', () => {
+    expect(debtStep(950, { type: 'clearGold', gold: 200 }, RULES), 'the owner example: 100 debt, 50 kept, 50 lost').toEqual({ debt: 850, paid: 100, burn: 50, kept: 50, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 101 }, RULES), '101 gold: 51 debt, 25 burn, 25 kept').toEqual({ debt: 949, paid: 51, burn: 25, kept: 25, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 1 }, RULES), '1 gold: 1 debt, 0 burn, 0 kept').toEqual({ debt: 999, paid: 1, burn: 0, kept: 0, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 3 }, RULES), '3 gold: 2 debt, 1 burn, 0 kept').toEqual({ debt: 998, paid: 2, burn: 1, kept: 0, xp: 0 });
+    expect(debtStep(40, { type: 'clearGold', gold: 200 }, RULES), 'final payoff: burn applies in proportion to debt paid (20), rest (140) goes to hunter').toEqual({ debt: 0, paid: 40, burn: 20, kept: 140, xp: 0 });
+    expect(debtStep(100, { type: 'clearGold', gold: 200 }, RULES), 'exact payoff transitions to clear with full burn').toEqual({ debt: 0, paid: 100, burn: 50, kept: 50, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 0, reviveDebtBurn: 0, reviveDebtXpRate: 0.25 }), '0% share and 0% burn takes nothing').toEqual({ debt: 1000, paid: 0, burn: 0, kept: 100, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 0, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.25 }), '0% share with 25% burn burns 25 and leaves debt').toEqual({ debt: 1000, paid: 0, burn: 25, kept: 75, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 1, reviveDebtBurn: 0, reviveDebtXpRate: 0.25 }), '100% share with 0% burn takes all gold to debt').toEqual({ debt: 900, paid: 100, burn: 0, kept: 0, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 0.8, reviveDebtBurn: 0.5, reviveDebtXpRate: 0.25 }), 'defense in depth clamps burn to 1 - share').toEqual({ debt: 920, paid: 80, burn: 20, kept: 0, xp: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: -50 }, RULES), 'negative gold is untouched').toEqual({ debt: 1000, paid: 0, burn: 0, kept: -50, xp: 0 });
+    expect(debtStep(0, { type: 'incur', amount: 0 }, RULES), 'incurring 0 stays clear').toEqual({ debt: 0, paid: 0, burn: 0, kept: 0, xp: 0 });
+    expect(debtStep(500, { type: 'xp', xp: 50 }, RULES), '50 * 0.25 = 12.5 rounds to 13').toEqual({ debt: 500, paid: 0, burn: 0, kept: 0, xp: 13 });
+    expect(debtStep(500, { type: 'xp', xp: 1 }, RULES), '1 * 0.25 rounds to 0').toEqual({ debt: 500, paid: 0, burn: 0, kept: 0, xp: 0 });
+    expect(debtStep(500, { type: 'xp', xp: -20 }, RULES), 'negative XP is untouched').toEqual({ debt: 500, paid: 0, burn: 0, kept: 0, xp: -20 });
   });
 
   test('only gate clear and solo clear reward sources pay down debt', () => {
@@ -222,41 +257,65 @@ describe('the revive debt machine: every state against every event, rounding, bo
     expect([paysDebt(null), paysDebt(undefined)]).toEqual([false, false]);
   });
 
-  test('grant collects debt only on clear and solo rewards, leaves reviveLeft at none at 0 debt, and ignores quests, feats, GM gifts, trades, and shop sales', () => {
+  test('grant applies three-way clear gold split, cuts XP from every source while owing, gives full XP on the payoff clear, and handles level-ups near the threshold', () => {
     const AT = '2026-11-23T12:00:00.000Z';
     const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') };
     const H = hid('h1'), DAY = { at: AT, today: day('2026-11-23'), R: RULES, vitals: 'sheet' as const };
     const base0 = freshSave(ENV, { onboarded: true });
-    const withDebt = (debt: number, gold = 10): Save => ({
+    const withDebt = (debt: number, gold = 10, xp = 0): Save => ({
       ...base0,
-      hunters: [{ ...base0.hunters[0]!, id: H, name: 'Mira', gold, debt, reviveLeft: 'none' }],
+      hunters: [{ ...base0.hunters[0]!, id: H, name: 'Mira', gold, xp, level: 1, peakLevel: 1, debt, reviveLeft: 'none' }],
     });
     const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 
-    // clear reward: partial payoff
-    const partial = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60 }, null, { ...DAY, from: 'clear' }));
-    expect([partial.save.hunters[0]!.gold, partial.save.hunters[0]!.debt, partial.save.hunters[0]!.reviveLeft]).toEqual([40, 70, 'none']);
-    expect(partial.debtPaid).toEqual({ paid: 30, left: 70 });
-    expect(partial.lines).toEqual(['+30 gold', '30 gold went to System revive debt (70 gold left).']);
-    expect(partial.save.log[0]).toMatchObject({ title: 'Debt payment: Mira', text: 'Mira paid 30 gold toward System revive debt (70 gold left).' });
+    // clear reward: 3-way gold split (200 -> 100 debt, 50 kept, 50 lost) and 0.25x XP (48 -> 12)
+    const partial = ok(grant(withDebt(950), H, { ...newRewards(), gold: 200, xp: 48 }, null, { ...DAY, from: 'clear' }));
+    expect([partial.save.hunters[0]!.gold, partial.save.hunters[0]!.xp, partial.save.hunters[0]!.debt, partial.save.hunters[0]!.reviveLeft]).toEqual([60, 12, 850, 'none']);
+    expect(partial.debtPaid).toEqual({ total: 200, paid: 100, burn: 50, kept: 50, left: 850 });
+    expect(partial.debtXp).toEqual({ base: 48, xp: 12, rate: 0.25, left: 850 });
+    expect(partial.lines).toEqual([
+      'XP is reduced to 25% while you owe 850 gold: +12 XP (from 48 XP).',
+      'Gate clear: 200 gold. 100 went to your System debt, you got 50, and 50 was lost to debt costs. You owe 850 more.',
+    ]);
+    expect(partial.save.log[0]).toMatchObject({
+      title: 'Debt payment: Mira',
+      text: 'Mira cleared a gate for 200 gold: 100 went to System debt, Mira got 50, and 50 was lost to debt costs. Mira owes 850 more. XP was reduced to 25%: +12 XP (from 48 XP).',
+    });
 
-    // solo clear: final payoff leaves reviveLeft at none and keeps excess gold
-    const paidOff = ok(grant(withDebt(30), H, { ...newRewards(), gold: 100 }, null, { ...DAY, from: 'solo' }));
-    expect([paidOff.save.hunters[0]!.gold, paidOff.save.hunters[0]!.debt, paidOff.save.hunters[0]!.reviveLeft]).toEqual([80, 0, 'none']);
-    expect(paidOff.debtPaid).toEqual({ paid: 30, left: 0 });
-    expect(paidOff.lines).toEqual(['+70 gold', '30 gold paid off System revive debt.']);
+    // solo clear: final payoff (debt 40 on 200 gold -> 40 debt, 20 proportional burn, 140 kept) finishes debt first, so full XP applies
+    const paidOff = ok(grant(withDebt(40), H, { ...newRewards(), gold: 200, xp: 60 }, null, { ...DAY, from: 'solo' }));
+    expect([paidOff.save.hunters[0]!.gold, paidOff.save.hunters[0]!.xp, paidOff.save.hunters[0]!.debt, paidOff.save.hunters[0]!.reviveLeft]).toEqual([150, 60, 0, 'none']);
+    expect(paidOff.debtPaid).toEqual({ total: 200, paid: 40, burn: 20, kept: 140, left: 0 });
+    expect(paidOff.debtXp).toBeNull();
+    expect(paidOff.lines).toEqual([
+      '+60 XP (you paid off your System debt, so you got full XP).',
+      'Gate clear: 200 gold. 40 went to your System debt, you got 140, and 20 was lost to debt costs. You paid off your System debt.',
+    ]);
 
-    // 100% share omits "+0 gold" line
-    const allDebt = ok(grant(withDebt(500), H, { ...newRewards(), gold: 100 }, null, { ...DAY, R: { ...RULES, reviveDebtShare: 1 }, from: 'clear' }));
-    expect([allDebt.save.hunters[0]!.gold, allDebt.save.hunters[0]!.debt]).toEqual([10, 400]);
-    expect(allDebt.lines).toEqual(['100 gold went to System revive debt (400 gold left).']);
-
-    // non-clear rewards leave debt untouched
+    // non-clear rewards leave gold untouched, but still cut positive XP from every source (quest, feat, GM award, fight/story)
     for (const from of ['quest', 'feat', null, undefined] as const) {
-      const g = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60 }, null, { ...DAY, from }));
-      expect([g.save.hunters[0]!.gold, g.save.hunters[0]!.debt, g.debtPaid], `from=${String(from)}`).toEqual([70, 100, null]);
-      expect(g.lines).toEqual(['+60 gold']);
+      const g = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60, xp: 40 }, null, { ...DAY, from }));
+      expect([g.save.hunters[0]!.gold, g.save.hunters[0]!.xp, g.save.hunters[0]!.debt, g.debtPaid], `from=${String(from)}`).toEqual([70, 10, 100, null]);
+      expect(g.debtXp, `from=${String(from)}`).toEqual({ base: 40, xp: 10, rate: 0.25, left: 100 });
+      expect(g.lines).toEqual(['XP is reduced to 25% while you owe 100 gold: +10 XP (from 40 XP).', '+60 gold']);
+      expect(g.save.log[0]).toMatchObject({ title: 'Debt XP cut: Mira' });
     }
+
+    // XP rounding to 0 (rate 0 or tiny XP) still reports the reduction line without adding XP
+    const zeroXp = ok(grant(withDebt(100), H, { ...newRewards(), xp: 1 }, null, { ...DAY, from: 'quest' }));
+    expect([zeroXp.save.hunters[0]!.xp, zeroXp.debtXp]).toEqual([0, { base: 1, xp: 0, rate: 0.25, left: 100 }]);
+    expect(zeroXp.lines).toEqual(['XP is reduced to 25% while you owe 100 gold: +0 XP (from 1 XP).']);
+
+    // negative XP is never reduced while in debt
+    const negXp = ok(grant(withDebt(100, 10, 50), H, { ...newRewards(), xp: -20 }, null, { ...DAY, from: null }));
+    expect([negXp.save.hunters[0]!.xp, negXp.debtXp]).toEqual([30, null]);
+    expect(negXp.lines).toEqual(['Loses 20 XP']);
+
+    // level-up near threshold (level 1 needs 100 XP): 90 + 20 base would level at full XP, but 0.25x gives +5 (95, no level-up); 40 base gives +10 (level 2!)
+    const noLevel = ok(grant(withDebt(500, 10, 90), H, { ...newRewards(), xp: 20 }, null, { ...DAY, from: 'quest' }));
+    expect([noLevel.save.hunters[0]!.level, noLevel.save.hunters[0]!.xp, noLevel.levelup]).toEqual([1, 95, null]);
+    const leveled = ok(grant(withDebt(500, 10, 90), H, { ...newRewards(), xp: 40 }, null, { ...DAY, from: 'quest' }));
+    expect([leveled.save.hunters[0]!.level, leveled.save.hunters[0]!.xp, leveled.levelup?.to]).toEqual([2, 0, 2]);
 
     // trade and shop sell leave debt untouched
     const h0 = withDebt(100).hunters[0]!;

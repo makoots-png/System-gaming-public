@@ -6,9 +6,9 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
-- **System revive debt payoff rule (qd row 72).** How do you want hunters to pay off the gold debt from a System revive on debt? Built default: `reviveDebtShare` (default `0.5`, 0 to 1, synced in the room's rules) sends 50% of each gate clear's gold (table clears and solo clears, including personal gates, rounded with `Math.round`) toward `Hunter.debt` until it reaches 0, while trades, stash withdrawals, shop sales, quests, feats, and manual GM gifts are untouched, and clearing the debt leaves `reviveLeft` at `none`. Tell us if you want a different share, a manual Pay debt button, penalties while in debt, or a ladder reset when debt hits 0.
-
 ## Answered
+
+- Nov 23 (answering System revive debt payoff, qd row 72): While a hunter owes System revive debt, each gate clear's gold splits three ways: 1/2 goes to debt (`reviveDebtShare` 0.5), 1/4 is lost to debt costs (`reviveDebtBurn` 0.25), and 1/4 goes to the hunter (`1 - share - burn`), with `reviveDebtShare + reviveDebtBurn <= 1` enforced and proportional burn on the final clear. While in debt, the hunter earns 0.25x XP from every source (`reviveDebtXpRate` 0.25) until debt hits 0 (gold clears debt first, so a clear that finishes the debt earns full XP). All three rules are GM-editable and synced in `RoomRules`.
 
 - Nov 20: consumables priced by rank and how long they last (staple 0.1, one fight 0.5, one gate 1, escape stone 2): "Sure yes."
 - Nov 20: crafting, professions and new item types after trade unit 2: "2.  Ok"

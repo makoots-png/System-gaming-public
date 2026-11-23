@@ -410,29 +410,35 @@ describe('a reward the GM sends lands whole', () => {
     expect([parts(p.hunter), p.shown.length]).toEqual([once, 1]);
   });
 
-  test('a clear or solo award landing on a player phone collects reviveDebtShare once under the room rules, while plain and quest awards leave debt alone', () => {
-    const p = phone({ sheet: { debt: 100, reviveLeft: 'none' } });
-    p.useRules({ ...RULES, reviveDebtShare: 0.25 });
+  test('a clear or solo award landing on a player phone applies the three-way debt split and XP rate once under the room rules, while plain and quest awards leave gold alone and still cut XP', () => {
+    const p = phone({ sheet: { debt: 100, xp: 0, reviveLeft: 'none' } });
+    p.useRules({ ...RULES, reviveDebtShare: 0.25, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.5 });
 
-    // Plain GM award leaves debt untouched
-    p.receive(1, 'award', { to: ['d-player1:h1'], rewards: { gold: 80 } });
-    expect([p.hunter.gold, p.hunter.debt]).toEqual([80, 100]);
+    // Plain GM award leaves gold untouched, cuts 20 XP to 10
+    p.receive(1, 'award', { to: ['d-player1:h1'], rewards: { gold: 80, xp: 20 } });
+    expect([p.hunter.gold, p.hunter.xp, p.hunter.debt]).toEqual([80, 10, 100]);
 
-    // Quest award leaves debt untouched
-    p.receive(2, 'award', { to: ['d-player1:h1'], rewards: { gold: 40 }, earned: { from: 'quest', what: 'Hunt' } });
-    expect([p.hunter.gold, p.hunter.debt]).toEqual([120, 100]);
+    // Quest award leaves gold untouched, cuts 10 XP to 5
+    p.receive(2, 'award', { to: ['d-player1:h1'], rewards: { gold: 40, xp: 10 }, earned: { from: 'quest', what: 'Hunt' } });
+    expect([p.hunter.gold, p.hunter.xp, p.hunter.debt]).toEqual([120, 15, 100]);
 
-    // Gate clear award collects 25% (20 of 80), and a duplicate delivery changes nothing
-    p.receive(3, 'award', { to: ['d-player1:h1'], rewards: { gold: 80 }, earned: { from: 'clear', what: 'Goblin Den' } });
-    p.receive(3, 'award', { to: ['d-player1:h1'], rewards: { gold: 80 }, earned: { from: 'clear', what: 'Goblin Den' } });
-    expect([p.hunter.gold, p.hunter.debt]).toEqual([180, 80]);
-    expect(p.shown.at(-1)).toEqual(['+60 gold', '20 gold went to System revive debt (80 gold left).']);
+    // Gate clear award splits 80 gold (20 debt, 40 kept, 20 lost) and cuts 20 XP to 10; duplicate delivery changes nothing
+    p.receive(3, 'award', { to: ['d-player1:h1'], rewards: { gold: 80, xp: 20 }, earned: { from: 'clear', what: 'Goblin Den' } });
+    p.receive(3, 'award', { to: ['d-player1:h1'], rewards: { gold: 80, xp: 20 }, earned: { from: 'clear', what: 'Goblin Den' } });
+    expect([p.hunter.gold, p.hunter.xp, p.hunter.debt]).toEqual([160, 25, 80]);
+    expect(p.shown.at(-1)).toEqual([
+      'XP is reduced to 50% while you owe 80 gold: +10 XP (from 20 XP).',
+      'Gate clear: 80 gold. 20 went to your System debt, you got 40, and 20 was lost to debt costs. You owe 80 more.',
+    ]);
 
-    // Solo clear award at 100% pays off remaining 80 debt and leaves excess gold
-    p.useRules({ ...RULES, reviveDebtShare: 1 });
-    p.receive(4, 'award', { to: ['d-player1:h1'], rewards: { gold: 100 }, earned: { from: 'solo', what: 'Crypt' } });
-    expect([p.hunter.gold, p.hunter.debt, p.hunter.reviveLeft]).toEqual([200, 0, 'none']);
-    expect(p.shown.at(-1)).toEqual(['+20 gold', '80 gold paid off System revive debt.']);
+    // Solo clear award with 100% share and 0% burn pays off remaining 80 debt, leaves 20 gold, and grants full 40 XP
+    p.useRules({ ...RULES, reviveDebtShare: 1, reviveDebtBurn: 0, reviveDebtXpRate: 0.25 });
+    p.receive(4, 'award', { to: ['d-player1:h1'], rewards: { gold: 100, xp: 40 }, earned: { from: 'solo', what: 'Crypt' } });
+    expect([p.hunter.gold, p.hunter.xp, p.hunter.debt, p.hunter.reviveLeft]).toEqual([180, 65, 0, 'none']);
+    expect(p.shown.at(-1)).toEqual([
+      '+40 XP (you paid off your System debt, so you got full XP).',
+      'Gate clear: 100 gold. 80 went to your System debt, and you got 20. You paid off your System debt.',
+    ]);
   });
 
   test('an award that fails part way gives nothing and is not marked applied, so its next delivery gives it whole', () => {

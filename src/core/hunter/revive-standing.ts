@@ -55,46 +55,69 @@ export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'loot' |
 export const DEBT_STATES = ['clear', 'owing'] as const;
 /** `clear`: owes 0 gold; `owing`: owes gold to the System from a raise on debt. */
 export type DebtState = (typeof DEBT_STATES)[number];
-/** `incur`: debt added by a System raise on debt; `clearGold`: gold from a gate clear that pays down debt. */
+/** `incur`: debt added by a System raise on debt; `clearGold`: gate clear gold split three ways; `xp`: earned XP scaled while owing. */
 export type DebtEvent =
   | { readonly type: 'incur'; readonly amount: number }
-  | { readonly type: 'clearGold'; readonly gold: number };
+  | { readonly type: 'clearGold'; readonly gold: number }
+  | { readonly type: 'xp'; readonly xp: number };
 export type DebtEventType = DebtEvent['type'];
-export const DEBT_EVENT_TYPES = ['incur', 'clearGold'] as const satisfies readonly DebtEventType[];
-/** Result of one debt step: remaining debt after the step, gold applied to debt, and gold kept by the hunter. */
-export type DebtStep = { readonly debt: number; readonly paid: number; readonly kept: number };
+export const DEBT_EVENT_TYPES = ['incur', 'clearGold', 'xp'] as const satisfies readonly DebtEventType[];
+/** Result of one debt step: remaining debt after the step, gold applied to debt, gold lost to debt costs, gold kept, and earned XP after debt scaling. */
+export type DebtStep = { readonly debt: number; readonly paid: number; readonly burn: number; readonly kept: number; readonly xp: number };
+/** Rules read by the System revive debt machine. */
+export type DebtRules = Pick<Rules, 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>;
+/** Gate clear gold split applied under System revive debt in one grant, and the remaining balance after it. */
+export type DebtPaid = { readonly total: number; readonly paid: number; readonly burn: number; readonly kept: number; readonly left: number };
+/** Earned XP reduced under System revive debt in one grant, with the base XP, applied rate, and remaining debt. */
+export type DebtXpCut = { readonly base: number; readonly xp: number; readonly rate: number; readonly left: number };
 
 /** Whether a hunter currently owes System revive debt. */
 export const debtState = (debt: number): DebtState => (debt > 0 ? 'owing' : 'clear');
 /** Reward sources whose gold pays down System revive debt: table gate clears and solo gate clears only. */
 export const paysDebt = (from: RewardFrom | null | undefined): boolean => from === 'clear' || from === 'solo';
 
-type DebtFn<E extends DebtEventType> = (debt: number, e: Extract<DebtEvent, { type: E }>, R: Pick<Rules, 'reviveDebtShare'>) => DebtStep;
+const clamp01 = (n: number): number => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0);
+type DebtFn<E extends DebtEventType> = (debt: number, e: Extract<DebtEvent, { type: E }>, R: DebtRules) => DebtStep;
 const addDebt = (debt: number, amount: number): number => debt + Math.max(0, Math.trunc(amount) || 0);
-/** For each debt state, what each event does to the balance and clear gold. */
+/** For each debt state, what each event does to the balance, clear gold split, and earned XP. */
 const DEBT_TABLE: { readonly [S in DebtState]: { readonly [E in DebtEventType]: DebtFn<E> } } = {
   clear: {
-    incur: (_d, e) => ({ debt: addDebt(0, e.amount), paid: 0, kept: 0 }),
-    clearGold: (_d, e) => ({ debt: 0, paid: 0, kept: e.gold }),
+    incur: (_d, e) => ({ debt: addDebt(0, e.amount), paid: 0, burn: 0, kept: 0, xp: 0 }),
+    clearGold: (_d, e) => ({ debt: 0, paid: 0, burn: 0, kept: e.gold, xp: 0 }),
+    xp: (_d, e) => ({ debt: 0, paid: 0, burn: 0, kept: 0, xp: e.xp }),
   },
   owing: {
-    incur: (d, e) => ({ debt: addDebt(d, e.amount), paid: 0, kept: 0 }),
+    incur: (d, e) => ({ debt: addDebt(d, e.amount), paid: 0, burn: 0, kept: 0, xp: 0 }),
     clearGold: (d, e, R) => {
-      if (e.gold <= 0 || R.reviveDebtShare <= 0) return { debt: d, paid: 0, kept: e.gold };
-      const paid = Math.min(d, e.gold, Math.round(e.gold * R.reviveDebtShare));
-      return { debt: d - paid, paid, kept: e.gold - paid };
+      if (e.gold <= 0) return { debt: d, paid: 0, burn: 0, kept: e.gold, xp: 0 };
+      const share = clamp01(R.reviveDebtShare);
+      const burnRate = Math.min(1 - share, clamp01(R.reviveDebtBurn));
+      if (share <= 0 && burnRate <= 0) return { debt: d, paid: 0, burn: 0, kept: e.gold, xp: 0 };
+      if (share <= 0) {
+        const burn = Math.min(e.gold, Math.round(e.gold * burnRate));
+        return { debt: d, paid: 0, burn, kept: e.gold - burn, xp: 0 };
+      }
+      const wantPay = Math.round(e.gold * share);
+      const paid = Math.min(d, e.gold, wantPay);
+      const burn = d < wantPay
+        ? Math.min(e.gold - paid, Math.round(paid * (burnRate / share)))
+        : Math.min(e.gold - paid, Math.round(e.gold * burnRate));
+      return { debt: d - paid, paid, burn, kept: e.gold - paid - burn, xp: 0 };
     },
+    xp: (d, e, R) => ({ debt: d, paid: 0, burn: 0, kept: 0, xp: e.xp > 0 ? Math.round(e.xp * clamp01(R.reviveDebtXpRate)) : e.xp }),
   },
 };
-/** Steps `debt` on `e` under `R.reviveDebtShare`, rounding with Math.round and never taking more than the debt or the gold. */
-export function debtStep(debt: number, e: DebtEvent, R: Pick<Rules, 'reviveDebtShare'>): DebtStep {
+/** Steps `debt` on `e` under `R`, splitting clear gold three ways (proportional burn on final payoff) and scaling positive XP while owing. */
+export function debtStep(debt: number, e: DebtEvent, R: DebtRules): DebtStep {
   const clean = Math.max(0, Math.trunc(debt) || 0);
   const fn = DEBT_TABLE[debtState(clean)][e.type] as DebtFn<DebtEventType>;
   return fn(clean, e, R);
 }
 
 // ── the words ──
-const gold = (n: number): string => `${n.toLocaleString('en-US')} gold`;
+const numFmt = (n: number): string => n.toLocaleString('en-US');
+const gold = (n: number): string => `${numFmt(n)} gold`;
+const ratePct = (n: number): string => `${Math.round(clamp01(n) * 10000) / 100}%`;
 /** The title of the System's window that offers the raise. */
 export const RAISE_TITLE = 'THE SYSTEM CAN REVIVE YOU';
 /** What a hunter shows of itself to the words below. */
@@ -133,24 +156,71 @@ export function raisedSaid(name: string, raise: Raise, owes: number): { readonly
 }
 /** The bag's line of what a hunter owes the System, or null when it owes nothing. */
 export const debtLine = (debt: number): string | null => (debt > 0 ? `Debt owed to the System for reviving: ${gold(debt)}.` : null);
-/** What a reward window says when gate clear gold paid toward System revive debt, or null when nothing went to debt. */
-export const debtPaidLine = (paid: number, left: number): string | null =>
-  paid <= 0 ? null : left > 0 ? `${gold(paid)} went to System revive debt (${gold(left)} left).` : `${gold(paid)} paid off System revive debt.`;
-/** What a GM Pending rewards card previews when approving a clear reward will pay toward System revive debt. */
-export const debtPreviewLine = (paid: number, left: number): string | null =>
-  paid <= 0 ? null : left > 0 ? `${gold(paid)} goes to System revive debt (${gold(left)} left).` : `${gold(paid)} pays off System revive debt.`;
+/** What a reward window says when gate clear gold splits for System revive debt, or null when nothing was taken or lost. */
+export function debtPaidLine(p: DebtPaid): string | null {
+  if (p.paid <= 0 && p.burn <= 0) return null;
+  const split = p.paid > 0 && p.burn > 0
+    ? `${numFmt(p.paid)} went to your System debt, you got ${numFmt(p.kept)}, and ${numFmt(p.burn)} was lost to debt costs.`
+    : p.paid > 0
+      ? `${numFmt(p.paid)} went to your System debt, and you got ${numFmt(p.kept)}.`
+      : `You got ${numFmt(p.kept)}, and ${numFmt(p.burn)} was lost to debt costs.`;
+  const tail = p.left > 0 ? `You owe ${numFmt(p.left)} more.` : 'You paid off your System debt.';
+  return `Gate clear: ${gold(p.total)}. ${split} ${tail}`;
+}
+/** What a reward window says when earned XP is reduced while owing System revive debt. */
+export const debtXpLine = (x: DebtXpCut): string =>
+  `XP is reduced to ${ratePct(x.rate)} while you owe ${gold(x.left)}: +${numFmt(x.xp)} XP (from ${numFmt(x.base)} XP).`;
+/** What a reward window says for XP on the gate clear that finishes paying off System revive debt. */
+export const debtXpClearedLine = (xp: number): string =>
+  `+${numFmt(xp)} XP (you paid off your System debt, so you got full XP).`;
+/** What a GM Pending rewards card previews when approving a reward splits clear gold or reduces XP for System revive debt. */
+export function debtPreviewLine(p: DebtPaid | null, x: DebtXpCut | null = null): string | null {
+  const parts: string[] = [];
+  if (p && (p.paid > 0 || p.burn > 0)) {
+    const split = p.paid > 0 && p.burn > 0
+      ? `${numFmt(p.paid)} goes to System debt, hunter gets ${numFmt(p.kept)}, and ${numFmt(p.burn)} is lost to debt costs.`
+      : p.paid > 0
+        ? `${numFmt(p.paid)} goes to System debt, and hunter gets ${numFmt(p.kept)}.`
+        : `Hunter gets ${numFmt(p.kept)}, and ${numFmt(p.burn)} is lost to debt costs.`;
+    const tail = p.left > 0 ? `${gold(p.left)} left.` : 'Debt paid off.';
+    parts.push(`Gate clear: ${gold(p.total)}. ${split} ${tail}`);
+  }
+  if (x) parts.push(`XP reduced to ${ratePct(x.rate)} while owing ${gold(x.left)}: +${numFmt(x.xp)} XP (from ${numFmt(x.base)} XP).`);
+  return parts.length ? parts.join(' ') : null;
+}
 /** The GM board's chip of a hunter's System revive debt, or null at 0 debt. */
 export const debtChip = (debt: number): string | null => (debt > 0 ? `System debt: ${gold(debt)}` : null);
-/** The session log line when a hunter pays toward System revive debt, or null when nothing was paid. */
-export const debtPaidLog = (name: string, paid: number, left: number): Said | null =>
-  paid <= 0 ? null : {
-    kind: 'award',
-    hunterId: null,
-    title: `Debt payment: ${name}`,
-    text: left > 0
-      ? `${name} paid ${gold(paid)} toward System revive debt (${gold(left)} left).`
-      : `${name} paid ${gold(paid)} and cleared their System revive debt.`,
-  };
+/** The session log line when a hunter pays toward System revive debt or gets reduced XP while owing, or null when neither applies. */
+export function debtPaidLog(name: string, p: DebtPaid | null, x: DebtXpCut | null = null, clearedFullXp = 0): Said | null {
+  if (p && (p.paid > 0 || p.burn > 0)) {
+    const split = p.paid > 0 && p.burn > 0
+      ? `${numFmt(p.paid)} went to System debt, ${name} got ${numFmt(p.kept)}, and ${numFmt(p.burn)} was lost to debt costs.`
+      : p.paid > 0
+        ? `${numFmt(p.paid)} went to System debt, and ${name} got ${numFmt(p.kept)}.`
+        : `${name} got ${numFmt(p.kept)}, and ${numFmt(p.burn)} was lost to debt costs.`;
+    const tail = p.left > 0 ? `${name} owes ${numFmt(p.left)} more.` : `${name} paid off their System debt.`;
+    const xpPart = x
+      ? ` XP was reduced to ${ratePct(x.rate)}: +${numFmt(x.xp)} XP (from ${numFmt(x.base)} XP).`
+      : p.left === 0 && clearedFullXp > 0
+        ? ` Full XP applied: +${numFmt(clearedFullXp)} XP.`
+        : '';
+    return {
+      kind: 'award',
+      hunterId: null,
+      title: `Debt payment: ${name}`,
+      text: `${name} cleared a gate for ${gold(p.total)}: ${split} ${tail}${xpPart}`,
+    };
+  }
+  if (x) {
+    return {
+      kind: 'award',
+      hunterId: null,
+      title: `Debt XP cut: ${name}`,
+      text: `${name} got +${numFmt(x.xp)} XP (reduced to ${ratePct(x.rate)} from ${numFmt(x.base)} XP while owing ${gold(x.left)} to the System).`,
+    };
+  }
+  return null;
+}
 /** A refused System raise, in the words a player reads. */
 export const RAISE_REFUSED: { readonly [Why in 'spent' | 'cannot' | 'held']: string } = {
   spent: 'You have used all your System revives. Only a Resurrection Crystal or the GM can revive you now.',

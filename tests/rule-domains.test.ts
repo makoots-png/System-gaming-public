@@ -67,9 +67,12 @@ test('a number just past either end of its domain, or a fraction where it is who
       expect([n.path, x, refused.map(r => [r.path, r.reason])]).toEqual([n.path, x, [[where, 'range']]]);
       expect([n.path, read(rulesOf(overrides), n.path)]).toEqual([n.path, n.value]);
     }
+    // reviveDebtShare and reviveDebtBurn share a sum <= 1 bound, so testing either at 1 pairs it with 0 on the other
+    const pairZero: Record<string, Record<string, number>> = { reviveDebtShare: { reviveDebtBurn: 0 }, reviveDebtBurn: { reviveDebtShare: 0 } };
     for (const x of [d.least, d.most]) {
       const value = typeof n.value === 'number' ? x : n.value.map(() => x);
-      const { overrides, refused } = parseOverrides(at(n.path, value));
+      const patch = x === d.most && pairZero[n.path] ? { ...pairZero[n.path], ...at(n.path, value) } : at(n.path, value);
+      const { overrides, refused } = parseOverrides(patch);
       expect([n.path, x, refused]).toEqual([n.path, x, []]);
       expect([n.path, read(rulesOf(overrides), n.path)]).toEqual([n.path, value]);
     }

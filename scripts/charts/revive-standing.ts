@@ -40,13 +40,18 @@ const DEBT_EVENTS: readonly DebtEvent[] = [
   { type: 'incur', amount: 100 },
   { type: 'clearGold', gold: 100 },
   { type: 'clearGold', gold: 200 },
+  { type: 'xp', xp: 40 },
 ];
 const DEBT_LABEL: { readonly [S in DebtState]: string } = { clear: 'No debt', owing: 'Owing debt' };
-const debtPct = `${Math.round(RULES.reviveDebtShare * 100)}%`;
+const pct = (n: number) => `${Math.round(n * 10000) / 100}%`;
+const debtPct = pct(RULES.reviveDebtShare);
+const burnPct = pct(RULES.reviveDebtBurn);
+const keepPct = pct(1 - RULES.reviveDebtShare - RULES.reviveDebtBurn);
+const xpPct = pct(RULES.reviveDebtXpRate);
 
 export const reviveDebt = machine<number, DebtEvent>({
   name: 'A hunter\'s revive debt',
-  walked: 'Both debt states (`clear` at 0 and `owing` above 0) walked from 0 under `incur` and `clearGold` (partial and full payoff) with the shipped rules, breadth first.',
+  walked: 'Both debt states (`clear` at 0 and `owing` above 0) walked from 0 under `incur`, `clearGold` (partial and full payoff), and `xp` with the shipped rules, breadth first.',
   walk: () => bfs<number, DebtEvent>(
     [0],
     d => DEBT_EVENTS.map(event => ({ event, to: debtStep(d, event, RULES).debt })),
@@ -55,20 +60,21 @@ export const reviveDebt = machine<number, DebtEvent>({
   kinds: DEBT_STATES,
   kindsOf: d => [debtState(d)],
   views: [{
-    title: 'A System revive on debt creates debt, and gate clear gold pays it off',
-    note: `A System revive from the debt standing adds \`raiseOwes\` gold to \`Hunter.debt\`. While \`Hunter.debt\` is above 0, \`reviveDebtShare\` (${debtPct} by default, rounded with Math.round and capped at the remaining debt and gold) of each gate clear's gold goes toward the debt until it reaches 0. Non-clear rewards, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch the debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` at \`none\`.`,
+    title: 'A System revive on debt splits clear gold three ways and cuts XP until debt reaches 0',
+    note: `the owner (Nov 23), qd row 72: a System revive from the debt standing adds \`raiseOwes\` gold to \`Hunter.debt\`. While \`Hunter.debt\` is above 0, gate clear gold splits three ways: \`reviveDebtShare\` (${debtPct}) goes to debt, \`reviveDebtBurn\` (${burnPct}) is lost to debt costs, and the hunter gets the rest (${keepPct}). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by \`reviveDebtXpRate\` (${xpPct}, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` at \`none\`.`,
     hides: '',
     state: d => DEBT_LABEL[debtState(d)],
     step: (e, from, to) => {
       if (e.type === 'incur') return from === 0 ? 'System revive on debt adds gold owed' : 'more debt added';
+      if (e.type === 'xp') return from === 0 ? 'earned XP kept at 100% (no debt)' : `earned XP cut to ${xpPct} while owing debt`;
       if (from === 0) return 'gate clear gold kept in full (no debt)';
-      return to === 0 ? 'gate clear gold pays off the rest of the debt' : `${debtPct} of gate clear gold pays down the debt`;
+      return to === 0 ? 'gate clear gold pays off the rest of the debt (proportional debt costs)' : `gate clear gold splits ${debtPct} debt / ${keepPct} hunter / ${burnPct} lost`;
     },
   }],
   where: [
     ['The union', '`DebtState`, `DebtEvent`, `DebtStep`, and `DEBT_STATES` in `src/core/hunter/revive-standing.ts`; the balance is `Hunter.debt`, repaired to 0 or above'],
     ['What changes it', '`debtStep(debt, event, R)`, `DEBT_TABLE`, and `paysDebt(from)`'],
-    ['Who calls it', '`systemRaise` (`incur`) and `grant` (`clearGold` when `paysDebt(from)` holds) in `src/core/hunter/grant.ts`, the sole writer of `Hunter.debt`; `settleClear`, `settleClearPreset`, `selfPay`, `gmAward`, and `landAward` pass `from`'],
+    ['Who calls it', '`systemRaise` (`incur`) and `grant` (`clearGold` when `paysDebt(from)` holds, and `xp` for positive earned XP from every source) in `src/core/hunter/grant.ts`, the sole writer of `Hunter.debt`'],
     ['The test to copy', '`tests/revive-standing.test.ts`'],
     ['The recipe', 'docs/guide/save-store.md, "A field of a saved thing"'],
   ],

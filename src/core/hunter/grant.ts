@@ -47,7 +47,7 @@ import { record } from './chronicle.ts';
 import type { Fact, LifeHow } from './facts.ts';
 import { restStep } from './rests.ts';
 import { canRaise, debtPaidLog, debtStep, paysDebt, raiseOwes, standingStep } from './revive-standing.ts';
-import type { Raise } from './revive-standing.ts';
+import type { DebtPaid, DebtXpCut, Raise } from './revive-standing.ts';
 import { saveId, sheetKeyOf } from '../ids.ts';
 import type { HunterId, IdOf, RoomCode } from '../ids.ts';
 import type { DayKey } from '../day.ts';
@@ -128,9 +128,6 @@ export function levelEdit(save: Save, hid: string, level: number, xp: number, da
   return { save: told(next, { at: day.at, cap: day.R.logCap }, ...l.said), done: l.done };
 }
 
-/** Gold collected toward System revive debt in one grant, and the remaining balance after it. */
-export type DebtPaid = { readonly paid: number; readonly left: number };
-
 /** What one reward did to one hunter. */
 export type Granted = {
   save: Save;
@@ -144,8 +141,10 @@ export type Granted = {
   fight: { statuses: StatusIn[]; refill: boolean };
   /** The Job Change steps the level change completed in the same step (`levelled`), for their windows. */
   done: StepDone[];
-  /** Gold applied toward System revive debt in this grant, or null when nothing went to debt. */
+  /** Clear gold split applied under System revive debt in this grant, or null when no gold went to debt or debt costs. */
   debtPaid: DebtPaid | null;
+  /** Earned XP reduced under System revive debt in this grant, or null when XP was not reduced. */
+  debtXp: DebtXpCut | null;
 };
 
 const sheetOf = (h: Hunter, R: Rules) => hunterSheet(h, R).sheet;
@@ -193,22 +192,34 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     if (!isRefused(next)) { h = next; took.push(s); }
   }
 
-  const pay = r.gold > 0 && paysDebt(o.from)
+  const pay = r.gold > 0 && paysDebt(o.from) && h.debt > 0
     ? debtStep(h.debt, { type: 'clearGold', gold: r.gold }, R)
-    : { debt: h.debt, paid: 0, kept: r.gold };
+    : { debt: h.debt, paid: 0, burn: 0, kept: r.gold, xp: 0 };
   const goldBefore = h.gold;
   if (pay.kept) h = addGold(h, pay.kept);
   const gold = h.gold - goldBefore;
   if (pay.debt !== h.debt) h = { ...h, debt: pay.debt };
-  const debtPaid: DebtPaid | null = pay.paid > 0 ? { paid: pay.paid, left: pay.debt } : null;
-  const debtLog = debtPaid ? debtPaidLog(h.name, debtPaid.paid, debtPaid.left) : null;
+  const debtPaid: DebtPaid | null = pay.paid > 0 || pay.burn > 0
+    ? { total: r.gold, paid: pay.paid, burn: pay.burn, kept: pay.kept, left: pay.debt }
+    : null;
   for (const it of r.items) h = putItem(h, it, stackOf(h, it)?.id ?? ids.next('i'));
   h = fitted(h, R);
 
+  // Gold clears debt first; if debt remains above 0, positive XP from every source is scaled by reviveDebtXpRate.
+  const baseXp = Math.trunc(r.xp || 0);
+  const xpStepped = baseXp > 0 && h.debt > 0 && R.reviveDebtXpRate < 1
+    ? debtStep(h.debt, { type: 'xp', xp: baseXp }, R)
+    : null;
+  const grantXp = xpStepped ? xpStepped.xp : baseXp;
+  const debtXp: DebtXpCut | null = xpStepped
+    ? { base: baseXp, xp: grantXp, rate: R.reviveDebtXpRate, left: h.debt }
+    : null;
+  const debtXpCleared = !!debtPaid && debtPaid.left === 0 && baseXp > 0 && R.reviveDebtXpRate < 1;
+
   let levelup: LevelUp | null = null, refillLeft = false, done: StepDone[] = [], said: Said[] = [], xp = 0;
-  if (r.xp) {
-    const from = h.level, change = gainXp(h, r.xp, R);
-    h = fitted(addXp(h, r.xp, R), R); xp = change.xp;
+  if (grantXp) {
+    const from = h.level, change = gainXp(h, grantXp, R);
+    h = fitted(addXp(h, grantXp, R), R); xp = change.xp;
     let refilled = false;
     if (change.refill && o.vitals === 'sheet') {
       const v = vitalStep(h, { type: 'refill' }, sheetOf(h, R), R);
@@ -221,10 +232,21 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     h = l.hunter; done = l.done; said = l.said;
   }
 
-  const lines = grantLines(R, { ...r, xp, gold, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took }, { build: buildLine, level: { from: h0.level, to: h.level }, ...(debtPaid ? { debt: debtPaid } : {}) });
+  const debtLog = debtPaidLog(h.name, debtPaid, debtXp, debtXpCleared ? xp : 0);
+  const lines = grantLines(
+    R,
+    { ...r, xp, gold, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
+    {
+      build: buildLine,
+      level: { from: h0.level, to: h.level },
+      ...(debtPaid ? { debt: debtPaid } : {}),
+      ...(debtXp ? { debtXp } : {}),
+      ...(debtXpCleared ? { debtXpCleared: true } : {}),
+    },
+  );
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
-  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid };
+  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, debtXp };
 }
 
 // ── a Job Change chain event ──

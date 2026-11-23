@@ -4,7 +4,7 @@
 // The debt is RULES.reviveDebtClears Clears of the hunter's rank (economy.md section 13).
 import type { Page } from '@playwright/test';
 import { RULES, clearOf } from '../../src/core/rules.ts';
-import { RAISE_CHIPS, RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtPreviewLine, raiseLine, raiseOffer, raisedSaid } from '../../src/core/hunter/revive-standing.ts';
+import { RAISE_CHIPS, RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtPreviewLine, debtXpClearedLine, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../../src/core/hunter/revive-standing.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, gateByName } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
@@ -152,7 +152,7 @@ test('Not now leaves the hunter dead, and Rise on the sheet opens the window aga
   await expect(player.locator('#view-status [data-death]')).toBeHidden();
 });
 
-test('gate clear gold pays off System revive debt using the GM room rule, through Pending rewards and to 0 debt', async ({ device }) => {
+test('gate clear gold splits three ways for System revive debt, XP is cut while owing, room rules sync, and paying off debt restores full XP', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
   await onboardGM(gm);
   const code = await createRoom(gm);
@@ -178,13 +178,16 @@ test('gate clear gold pays off System revive debt using the GM room rule, throug
   await expect.poll(async () => (await hunter(player)).debt).toBe(owes);
   await expect(card.locator('[data-debt-chip]')).toHaveText(debtChip(owes)!, { timeout: 15_000 });
 
-  // GM overrides reviveDebtShare to 0.25 and verifies it syncs to the player's room rules.
+  // GM overrides reviveDebtShare (0.4), reviveDebtBurn (0.2), and reviveDebtXpRate (0.5) and verifies all three sync to the player.
   await gm.evaluate(() => {
-    hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, reviveDebtShare: 0.25 }; }, 'test-rules');
+    hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, reviveDebtShare: 0.4, reviveDebtBurn: 0.2, reviveDebtXpRate: 0.5 }; }, 'test-rules');
   });
-  await expect.poll(() => player.evaluate(() => hunterApp.rules().reviveDebtShare), { timeout: 15_000 }).toBe(0.25);
+  await expect.poll(() => player.evaluate(() => {
+    const r = hunterApp.rules();
+    return { share: r.reviveDebtShare, burn: r.reviveDebtBurn, xp: r.reviveDebtXpRate };
+  }), { timeout: 15_000 }).toEqual({ share: 0.4, burn: 0.2, xp: 0.5 });
 
-  // GM sets a 400 gold preset on Goblin Den, clears it for the player, sees the 25% preview (100 gold to debt), and approves.
+  // GM sets a 400 gold + 40 XP preset on Goblin Den, clears it, sees the 3-way split + XP cut preview, and approves.
   const gate = await gateByName(gm, 'Goblin Den');
   await go(gm, 'gates');
   const gcard = gm.locator(`#view-gates .gate[data-id="${gate.id}"]`);
@@ -192,6 +195,8 @@ test('gate clear gold pays off System revive debt using the GM room rule, throug
   const pform = gcard.locator('form[data-form=preset]');
   await pform.locator('input[name=gold]').fill('400');
   await pform.locator('input[name=gold]').dispatchEvent('change');
+  await pform.locator('input[name=xp]').fill('40');
+  await pform.locator('input[name=xp]').dispatchEvent('change');
   await pform.locator('[data-act=cancel-panel]').tap();
   await gcard.locator('[data-act=clear]').tap();
   const cform = gcard.locator('form[data-form=clear]');
@@ -203,34 +208,44 @@ test('gate clear gold pays off System revive debt using the GM room rule, throug
   await cform.locator('button[type=submit]').tap();
   await dismissAll(gm);
 
+  const firstPaid = { total: 400, paid: 160, burn: 80, kept: 160, left: owes - 160 };
+  const firstXp = { base: 40, xp: 20, rate: 0.5, left: owes - 160 };
+
   await go(gm, 'gm');
   const waitSec = gm.locator('.gm-sec[data-sec=waiting]');
   if (await waitSec.locator('.gm-body').isHidden()) await waitSec.locator('.gm-tog').tap();
   const prow = waitSec.locator('.gm-pw-row', { hasText: HUNTER });
-  await expect(prow.locator('[data-pw-debt]')).toHaveText(debtPreviewLine(100, owes - 100)!);
+  await expect(prow.locator('[data-pw-debt]')).toHaveText(debtPreviewLine(firstPaid, firstXp)!);
   await prow.locator('[data-pw-approve]').tap();
 
   const rewardWin = player.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
   await expect(rewardWin).toBeVisible({ timeout: 15_000 });
-  await expect(rewardWin).toContainText('+300 gold');
-  await expect(rewardWin).toContainText(debtPaidLine(100, owes - 100)!);
+  await expect(rewardWin).toContainText(debtPaidLine(firstPaid)!);
+  await expect(rewardWin).toContainText(debtXpLine(firstXp));
   await dismissAll(player);
 
-  await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, debt: h.debt }; })).toEqual({ gold: 300, debt: owes - 100 });
-  await expect(card.locator('[data-debt-chip]')).toHaveText(debtChip(owes - 100)!, { timeout: 15_000 });
+  await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt }; })).toEqual({ gold: 160, xp: 20, debt: owes - 160 });
+  await expect(card.locator('[data-debt-chip]')).toHaveText(debtChip(owes - 160)!, { timeout: 15_000 });
 
-  // GM sets share to 1.0 and sends a second preset clear of 1,000 gold to pay off the remaining 900 debt and leave 100 gold.
+  // GM restores defaults (0.5 share, 0.25 burn, 0.25 XP) and sends a 2,000 gold + 60 XP clear to pay off the remaining 840 debt.
+  // Proportional burn on 840 paid is 420, so hunter keeps 740 gold and gets full 60 XP because debt reaches 0.
   await gm.evaluate(() => {
-    hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, reviveDebtShare: 1 }; }, 'test-rules');
+    hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, reviveDebtShare: 0.5, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.25 }; }, 'test-rules');
   });
-  await expect.poll(() => player.evaluate(() => hunterApp.rules().reviveDebtShare), { timeout: 15_000 }).toBe(1);
+  await expect.poll(() => player.evaluate(() => {
+    const r = hunterApp.rules();
+    return { share: r.reviveDebtShare, burn: r.reviveDebtBurn, xp: r.reviveDebtXpRate };
+  }), { timeout: 15_000 }).toEqual({ share: 0.5, burn: 0.25, xp: 0.25 });
+
   const g2 = await gm.evaluate(() => hunterApp.api.gates.spawn({ rank: 'E', name: 'Debt Crypt' })!.id as string);
   await go(gm, 'gates');
   const gcard2 = gm.locator(`#view-gates .gate[data-id="${g2}"]`);
   await gcard2.locator('[data-act=preset]').tap();
   const pform2 = gcard2.locator('form[data-form=preset]');
-  await pform2.locator('input[name=gold]').fill('1000');
+  await pform2.locator('input[name=gold]').fill('2000');
   await pform2.locator('input[name=gold]').dispatchEvent('change');
+  await pform2.locator('input[name=xp]').fill('60');
+  await pform2.locator('input[name=xp]').dispatchEvent('change');
   await pform2.locator('[data-act=cancel-panel]').tap();
   await gcard2.locator('[data-act=clear]').tap();
   const cform2 = gcard2.locator('form[data-form=clear]');
@@ -242,17 +257,19 @@ test('gate clear gold pays off System revive debt using the GM room rule, throug
   await cform2.locator('button[type=submit]').tap();
   await dismissAll(gm);
 
+  const finalPaid = { total: 2000, paid: owes - 160, burn: 420, kept: 740, left: 0 };
+
   await go(gm, 'gm');
   const prow2 = waitSec.locator('.gm-pw-row', { hasText: HUNTER });
-  await expect(prow2.locator('[data-pw-debt]')).toHaveText(debtPreviewLine(owes - 100, 0)!);
+  await expect(prow2.locator('[data-pw-debt]')).toHaveText(debtPreviewLine(finalPaid, null)!);
   await prow2.locator('[data-pw-approve]').tap();
 
   await expect(rewardWin).toBeVisible({ timeout: 15_000 });
-  await expect(rewardWin).toContainText('+100 gold');
-  await expect(rewardWin).toContainText(debtPaidLine(owes - 100, 0)!);
+  await expect(rewardWin).toContainText(debtPaidLine(finalPaid)!);
+  await expect(rewardWin).toContainText(debtXpClearedLine(60));
   await dismissAll(player);
 
-  await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, debt: h.debt, reviveLeft: h.reviveLeft }; })).toEqual({ gold: 400, debt: 0, reviveLeft: 'none' });
+  await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt, reviveLeft: h.reviveLeft }; })).toEqual({ gold: 900, xp: 80, debt: 0, reviveLeft: 'none' });
   await go(player, 'inventory');
   await expect(player.locator('[data-debt]')).toBeHidden();
   await expect(card.locator('[data-debt-chip]')).toHaveCount(0, { timeout: 15_000 });
