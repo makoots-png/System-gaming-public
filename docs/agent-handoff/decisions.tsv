@@ -731,3 +731,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T04:00Z	ops	(neon) Shipped row-51 to main on its own: public run 45106719125 green in all 8 jobs, 40fe3697 pushed through the hook, PR 81 merged. plain-copy waits for plain-copy-e2e.
 2026-11-23T04:32Z	features	(neon) Landed row-32 on lead-backlog (Worldbreaker: 1.15x strike, 0.15 stagger, every 6 rounds). It ships with plain-copy once plain-copy-e2e makes the full browser suite green.
 2026-11-23T04:45Z	features	(neon) Landed plain-copy-e2e on lead-backlog: the full browser suite passes locally (577/0). The public run for plain-copy + row-32 + plain-copy-e2e is next.
+2026-11-23T04:58Z	ops	(neon) Merged PR 82 to main (8abb4f65): plain-copy, plain-copy-e2e, row 32, row 34 status. Public run 45113715680 green in all 8 jobs.
+2026-11-23T05:37Z	ops	(neon) Landed correct-copy-guard: tests/e2e-copy.test.ts catches stale e2e words in about 1 second, and AGENTS.md requires the full browser suite for copy changes.
