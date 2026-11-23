@@ -221,6 +221,9 @@ const SPEC = {
   reviveDebtShare: of(0.5, SHARE),
   reviveDebtBurn: of(0.25, SHARE),
   reviveDebtXpRate: of(0.25, SHARE),
+  // the owner (Nov 23), cap A (qd row 73): shop borrowing limit in same-rank gate clears (1.5 matches one plus-grade
+  // own-rank item). 0 turns shop borrowing off.
+  borrowCapClears: real(1.5, 0, 5, 'maximum shop borrowing debt in same-rank gate clears. 0 turns borrowing off, up to 5'),
   reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
   gateParty: whole(4, 1, 12, 'number of hunters a world gate payout is balanced for, from 1 to 12'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
   // design 2.3: the points an item may spend beyond its slot's free numbers

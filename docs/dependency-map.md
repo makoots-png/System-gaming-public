@@ -512,7 +512,7 @@ None.
 
 ### `src/core/hunter/inventory.ts`
 
-- Imports: `src/core/hunter/chronicle.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/items.ts`, `src/core/save-step.ts`
+- Imports: `src/core/hunter/chronicle.ts`, `src/core/hunter/revive-standing.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/items.ts`, `src/core/save-step.ts`
 - Imports types from: `src/core/ids.ts`, `src/core/rules.ts`
 - Imported by: `src/core/hunter/build.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/loadouts.ts`, `src/core/hunter/use.ts`, `src/core/rules-text.ts`, `src/core/starter.ts`, `src/core/trade/goods.ts`, `src/core/trade/stash.ts`, `src/views/hunter.js`, `src/views/inventory.js`
 
@@ -597,7 +597,7 @@ None.
 
 - Imports: `src/core/hunter/progress.ts`, `src/core/hunter/vitals.ts`, `src/core/rules.ts`, `src/core/save-step.ts`
 - Imports types from: `src/core/protocol.ts`, `src/core/session-log.ts`
-- Imported by: `src/core/hunter/grant.ts`, `src/core/hunter/hunter.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`
+- Imported by: `src/core/hunter/grant.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/inventory.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/rules-text.ts`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`
 
 ### `src/core/hunter/shadows.ts`
 
@@ -852,7 +852,7 @@ None.
 
 ### `src/core/rules-text.ts`
 
-- Imports: `src/core/coin.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/sight-levels.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/gates/pay.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/items.ts`, `src/core/stats.ts`
+- Imports: `src/core/coin.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/sight-levels.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/gates/pay.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/revive-standing.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/items.ts`, `src/core/stats.ts`
 - Imports types from: `src/core/combat/mythic-types.ts`, `src/core/rules.ts`
 - Imported by: `src/views/bestiary.js`, `src/views/combat.js`, `src/views/rulesref.js`
 

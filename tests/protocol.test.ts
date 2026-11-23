@@ -1224,12 +1224,13 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtBurn', 'reviveDebtClears', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapClears', 'build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtBurn', 'reviveDebtClears', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
       const SHARES = ['saleShare', 'usedUpShare', 'reviveDebtXpRate', 'reviveLevelShare'] as const;
       for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
+      expect([read({ borrowCapClears: -1 })!.borrowCapClears, read({ borrowCapClears: 9 })!.borrowCapClears]).toEqual([domainOf('borrowCapClears')!.least, domainOf('borrowCapClears')!.most]);
       expect([read({ reviveDebtShare: -1, reviveDebtBurn: 0 })!.reviveDebtShare, read({ reviveDebtShare: 2, reviveDebtBurn: 0 })!.reviveDebtShare]).toEqual([domainOf('reviveDebtShare')!.least, domainOf('reviveDebtShare')!.most]);
       expect([read({ reviveDebtBurn: -1, reviveDebtShare: 0 })!.reviveDebtBurn, read({ reviveDebtBurn: 2, reviveDebtShare: 0 })!.reviveDebtBurn]).toEqual([domainOf('reviveDebtBurn')!.least, domainOf('reviveDebtBurn')!.most]);
       expect(read({ reviveDebtShare: 0.7, reviveDebtBurn: 0.4 }), 'share + burn over 1 is refused').toBeNull();
@@ -1252,6 +1253,7 @@ describe('the other room docs', () => {
         ['no share of clear gold paid toward debt', () => read({ reviveDebtShare: undefined })],
         ['no debt burn share', () => read({ reviveDebtBurn: undefined })],
         ['no debt XP rate', () => read({ reviveDebtXpRate: undefined })],
+        ['no shop borrow limit', () => read({ borrowCapClears: undefined })],
         ['debt share plus burn above 1', () => read({ reviveDebtShare: 0.8, reviveDebtBurn: 0.3 })],
         ['no level share of a raising', () => read({ reviveLevelShare: undefined })],
         ['no world gate party', () => read({ gateParty: undefined })],

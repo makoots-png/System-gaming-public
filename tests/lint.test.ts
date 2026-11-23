@@ -302,17 +302,23 @@ test('only grant.ts sheetEdit changes a hunter\'s rests taken in a gate, through
   expect(report(hits), 'change a hunter\'s rests only through sheetEdit (grant.ts) with a rest, a Clear or a gate left (rests.ts restStep).').toEqual([]);
 });
 
-test('only grant.ts changes a hunter\'s revive standing and debt, through revive-standing.ts standingStep and debtStep', async () => {
+test('only grant.ts changes a hunter\'s revive standing, and only grant.ts and inventory.ts change debt, through standingStep and debtStep', async () => {
   // World rule 6 and the owner's System raise (Nov 22): the standing, the life and the debt move in one write in
-  // `systemRaise`, and gate clear gold pays down the debt in `grant` through `debtStep`. A second writer could spend a
-  // raise the hunter never took, raise without debt, or collect debt on non-clear gold.
-  const writes = /\.(reviveLeft|debt)\s*([-+*/]?=(?![=>])|\+\+|--)|\b(reviveLeft|debt)\s*:(?!\s*(?:number|ReviveStanding)\b)/;
-  expect(writes.test('h.reviveLeft = \'debt\';') && writes.test('({ ...h, debt: h.debt + 1000 })'), 'the rule sees a write').toBe(true);
-  expect(writes.test('  debt: number;'), 'and not the type').toBe(false);
+  // `systemRaise`, gate clear gold pays down debt in `grant`, and shop borrowing adds debt in `inventory.ts` `buy`,
+  // all through `standingStep` and `debtStep`. A second writer could spend a raise the hunter never took, bypass the
+  // borrow cap, or collect debt on non-clear gold.
+  const reviveWrites = /\.reviveLeft\s*([-+*/]?=(?![=>])|\+\+|--)|\breviveLeft\s*:(?!\s*ReviveStanding\b)/;
+  const debtWrites = /\.debt\s*([-+*/]?=(?![=>])|\+\+|--)|\bdebt\s*:(?!\s*number\b)/;
+  expect(reviveWrites.test('h.reviveLeft = \'debt\';') && debtWrites.test('({ ...h, debt: h.debt + 1000 })'), 'the rule sees a write').toBe(true);
+  expect(debtWrites.test('  debt: number;'), 'and not the type').toBe(false);
+  const reviveOwners = ['src/core/hunter/grant.ts', 'src/core/hunter/hunter.ts'];
   // revive-standing.ts keys its tables by the standing, whose name `debt` is the field's
-  const owners = ['src/core/hunter/grant.ts', 'src/core/hunter/hunter.ts', 'src/core/hunter/revive-standing.ts'];
-  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
-  expect(report(hits), 'change a hunter\'s revive standing and debt only through grant.ts (`systemRaise` and `grant`), which step revive-standing.ts `standingStep` and `debtStep`.').toEqual([]);
+  const debtOwners = ['src/core/hunter/grant.ts', 'src/core/hunter/inventory.ts', 'src/core/hunter/hunter.ts', 'src/core/hunter/revive-standing.ts'];
+  const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
+  const reviveHits = lines.filter(line => !reviveOwners.includes(line.file) && reviveWrites.test(line.text));
+  const debtHits = lines.filter(line => !debtOwners.includes(line.file) && debtWrites.test(line.text));
+  expect(report(reviveHits), 'change a hunter\'s revive standing only through grant.ts (`systemRaise`), which steps revive-standing.ts `standingStep`.').toEqual([]);
+  expect(report(debtHits), 'change a hunter\'s debt only through grant.ts (`systemRaise` and `grant`) or inventory.ts (`buy`), which step revive-standing.ts `debtStep`.').toEqual([]);
 });
 
 test('only src/core/hunter/penalty.ts changes a hunter\'s penalty, and nothing else names the Penalized chip', async () => {

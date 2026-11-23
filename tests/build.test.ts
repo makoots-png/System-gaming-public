@@ -172,6 +172,7 @@ describe('the room carries the economy', () => {
     ['the share of gate clear gold paid toward debt', { reviveDebtShare: 0.25 }, R => R.reviveDebtShare, 0.25],
     ['the share of gate clear gold lost to debt costs', { reviveDebtBurn: 0.1 }, R => R.reviveDebtBurn, 0.1],
     ['the XP multiplier while in debt', { reviveDebtXpRate: 0.5 }, R => R.reviveDebtXpRate, 0.5],
+    ['the shop borrow limit in clears', { borrowCapClears: 2.5 }, R => R.borrowCapClears, 2.5],
     ['the share of the level a raising takes', { reviveLevelShare: 0.1 }, R => R.reviveLevelShare, 0.1],
     ['a personal gate\'s share of the loot', { solo: { lootShare: 0.5 } }, R => R.solo.lootShare, 0.5],
     ['the party a world gate is made for', { gateParty: 6 }, R => R.gateParty, 6],

@@ -742,3 +742,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T12:02Z	features	(neon) Landed personify-lint on lead-backlog: a voice lint for personified objects, 27 lines rewritten.
 2026-11-23T12:15Z	ops	(neon) Merged PR 87 (personify-lint) to main (2387fa02).
 2026-11-23T14:05Z	features	(neon) Landed debt-quarter on lead-backlog: debt clear gold split 1/2 debt, 1/4 hunter, 1/4 lost; 0.25x XP while owing.
+2026-11-23T14:34Z	ops	(neon) Merged PR 88 (debt-quarter) and PR 89 (AGENTS.md verify-first rule) to main (8d3d4b31).
+2026-11-23T15:25Z	features	(neon) Landed borrow on lead-backlog: shop borrowing up to 1.5 same-rank clears on the shared System debt.

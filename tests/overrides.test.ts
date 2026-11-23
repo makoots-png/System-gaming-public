@@ -165,4 +165,12 @@ describe('an override of a list rule', () => {
     expect(badXp.overrides).toEqual({});
     expect(badXp.refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtXpRate', 'range']]);
   });
+
+  test('borrowCapClears accepts 0 to 5 (including fractions) and refuses values outside that range', () => {
+    expect(parseOverrides({ borrowCapClears: 0 })).toEqual({ overrides: { borrowCapClears: 0 }, refused: [] });
+    expect(parseOverrides({ borrowCapClears: 2.5 })).toEqual({ overrides: { borrowCapClears: 2.5 }, refused: [] });
+    expect(parseOverrides({ borrowCapClears: 5 })).toEqual({ overrides: { borrowCapClears: 5 }, refused: [] });
+    expect(parseOverrides({ borrowCapClears: -0.5 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapClears', 'range']]);
+    expect(parseOverrides({ borrowCapClears: 5.1 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapClears', 'range']]);
+  });
 });

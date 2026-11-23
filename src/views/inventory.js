@@ -7,7 +7,7 @@ import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } fro
 import { itemAbilityId } from '../core/registry/abilities.ts';
 import { itemIcon } from '../core/registry/icon-defaults.ts';
 import { icon, sprite } from './icons.ts';
-import { BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
+import { BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { debtLine } from '../core/hunter/revive-standing.ts';
 import { USE_WORDS, spendItem, tooLowOf, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
@@ -232,6 +232,7 @@ export function register(app) {
         <div data-pane="shop" hidden>
           <div class="inv-bar"><button type="button" class="gm-only" data-shop-add hidden>Add shop item</button><button type="button" class="gm-only" data-shop-reset hidden>Reset shop</button></div>
           <p class="empty" role="note" data-shop-closed hidden></p>
+          <p class="note" data-shop-credit hidden></p>
           <ul class="plain" data-shoplist></ul>
         </div>
         <div class="inv-bar"><button type="button" data-additem>New item…</button></div>`;
@@ -288,8 +289,20 @@ export function register(app) {
         } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it && !wearRefused(h, it.id, 'edit')) openForm('inv', it); }
         else if (d.buy !== undefined) {
           const tpl = shopList()[Number(d.buy)]; if (!tpl) return;
-          const words = Object.fromEntries(BUY_REFUSALS.map(w => [w, BUY_WORDS[w](tpl.name)]));
-          if (ui.wrote('System', api.buy(id, tpl), words)) ui.toast('System', `Purchased ${tpl.name}.`);
+          const R = rules(), plan = buyPlan(h, tpl, R);
+          if (!isRefused(plan) && plan.borrow > 0) {
+            const c = borrowConfirm(tpl.name, plan, R);
+            const yes = await ui.system({
+              tag: '! Confirm', title: c.title, kind: 'warning', body: c.body, lines: [...c.lines],
+              actions: [{ label: c.cancel, value: false, cancel: true }, { label: c.confirm, value: true, primary: true }],
+            });
+            if (yes !== true) return;
+          }
+          const latest = store.hunter(id); if (!latest) return;
+          const R2 = rules(), plan2 = buyPlan(latest, tpl, R2);
+          if (ui.wrote('System', api.buy(id, tpl), buyWords(latest, tpl, R2))) {
+            ui.toast('System', !isRefused(plan2) && plan2.borrow > 0 ? BORROW_WORDS.bought(tpl.name, plan2) : `Purchased ${tpl.name}.`);
+          }
         } else if (d.shopEdit !== undefined) { const tpl = shopList()[Number(d.shopEdit)]; if (tpl) openForm('shop', tpl); }
         else if (d.shopDel !== undefined) {
           const tpl = shopList()[Number(d.shopDel)];
@@ -333,14 +346,20 @@ export function register(app) {
       } else if (tab === 'offers') app.api.trade.offers(el.querySelector('[data-offers]'), h.id);
       else if (tab === 'stash') app.api.trade.stash(el.querySelector('[data-stash]'), h.id);
       else {
-        const closed = el.querySelector('[data-shop-closed]');
+        const R = rules(), closed = el.querySelector('[data-shop-closed]'), credit = el.querySelector('[data-shop-credit]');
         closed.hidden = open;
         closed.textContent = open ? '' : SHOP_CLOSED;
+        const creditText = shopCreditLine(h, R);
+        credit.hidden = !creditText;
+        credit.textContent = creditText ?? '';
         el.querySelector('[data-shoplist]').innerHTML = shopList().map((t, n) => {
-          const price = valueOf(t, rules()), poor = h.gold < price;
+          const price = valueOf(t, R), plan = buyPlan(h, t, R);
+          const blocked = isRefused(plan), borrows = !blocked && plan.borrow > 0;
+          const label = borrows ? BORROW_WORDS.btnBorrow : BORROW_WORDS.btnBuy;
+          const aria = borrows ? `Buy ${esc(t.name)} on debt, borrowing ${esc(plan.borrow)} gold` : `Buy ${esc(t.name)} for ${esc(price)} gold`;
           return `<li class="inv-card" data-shopitem="${esc(t.name)}"><div class="top">${pic(t)}${nameBtn('inv-shop', String(n), t)}${chip(t.rar)}<span class="inv-qty">${fmt(price)} g</span></div>
             ${itemDetail('inv-shop', String(n), t)}${metaLine(t) ? `<div class="meta">${metaLine(t)}</div>` : ''}
-            <div class="acts">${open ? `<button type="button" data-buy="${n}" aria-label="Buy ${esc(t.name)} for ${esc(price)} gold"${poor ? ' aria-disabled="true"' : ''}>Buy</button>` : ''}
+            <div class="acts">${open ? `<button type="button" data-buy="${n}" aria-label="${aria}"${blocked ? ' aria-disabled="true"' : ''}>${esc(label)}</button>` : ''}
               ${gm ? `<button type="button" data-shop-edit="${n}" aria-label="Edit shop item ${esc(t.name)}">Edit</button><button type="button" class="icon-btn danger" data-shop-del="${n}" aria-label="Remove ${esc(t.name)} from shop">&times;</button>` : ''}</div></li>`;
         }).join('') || '<li class="empty">The shop is empty.</li>';
       }

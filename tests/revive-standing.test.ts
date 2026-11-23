@@ -3,10 +3,10 @@
 // death." The owner, Nov 22: the free revive and the revive on debt are a "System raise". Every expected standing is read
 // from those words: a raise from free leaves the one on debt, a raise on debt leaves none, and none is raised no more.
 import { describe, expect, test } from 'bun:test';
-import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPreviewLine, debtState, debtStep, debtXpClearedLine, debtXpLine, paysDebt, raiseLine, raiseOffer, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
+import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, borrowCap, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPreviewLine, debtState, debtStep, debtTermsLine, debtXpClearedLine, debtXpLine, paysDebt, raiseLine, raiseOffer, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
 import type { DebtEvent, DebtEventType, DebtPaid, DebtState, DebtXpCut, ReviveStanding, StandingEventType } from '../src/core/hunter/revive-standing.ts';
 import { grant, raisedLine, sheetEdit, systemRaise } from '../src/core/hunter/grant.ts';
-import { putItem, sell } from '../src/core/hunter/inventory.ts';
+import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
 import { received } from '../src/core/trade/goods.ts';
 import { REWARD_FROM } from '../src/core/protocol.ts';
 import { newRewards } from '../src/core/rewards.ts';
@@ -90,6 +90,13 @@ describe('the System raise: the life, the standing and the debt in one write', (
     expect(ok(raise(deadSave('debt'))).save.hunters[0]!.life, 'raised all the same').toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
+  test('systemRaise ignores borrowCapClears and stacks revive debt onto existing shop debt', () => {
+    const base = deadSave('debt', 'E');
+    const withShopDebt: Save = { ...base, hunters: [{ ...hunterOf(base), debt: 150 }] };
+    const r = ok(systemRaise(withShopDebt, H, { at: AT, room: null, R: { ...RULES, borrowCapClears: 0, reviveDebtShare: 0 }, held: false }));
+    expect([hunterOf(r.save).life, hunterOf(r.save).reviveLeft, hunterOf(r.save).debt, r.owes]).toEqual([{ at: 'up', hp: REVIVE_HP }, 'none', 1150, 1000]);
+  });
+
   test('past the ladder the System raises no more: refused, so the save stays as it was', () => {
     expect(raise(deadSave('none'))).toEqual({ ok: false, why: 'spent' });
   });
@@ -162,7 +169,9 @@ describe('what the System says of its raise', () => {
 
   test('the GM\'s log, popup, preview, and bag say who was raised, how gold splits, how XP is cut, and what is owed', () => {
     expect(raisedSaid('Mira', 'debt', 1000)).toEqual({ title: 'System revive: Mira', text: 'The System revived Mira for 1,000 gold debt. No System revives left.' });
-    expect([debtLine(0), debtLine(1000)]).toEqual([null, 'Debt owed to the System for reviving: 1,000 gold.']);
+    expect([debtLine(0), debtLine(1000)]).toEqual([null, 'Debt owed to the System: 1,000 gold.']);
+    expect(borrowCap('C', RULES)).toBe(1875);
+    expect(debtTermsLine(RULES)).toBe('While you owe debt, 50% of your gate clear gold goes to your debt, 25% is lost to debt costs, and you get 25%. You also earn 25% XP from every source until your debt is paid off.');
 
     const split: DebtPaid = { total: 200, paid: 100, burn: 50, kept: 50, left: 850 };
     const paidOff: DebtPaid = { total: 200, paid: 40, burn: 20, kept: 140, left: 0 };
@@ -324,5 +333,13 @@ describe('the revive debt machine: every state against every event, three-way sp
     const potion = parseItem({ name: 'Health Potion', rar: 'common', type: 'consumable', value: 40 })!;
     const sold = ok(sell(putItem(h0, potion, iid('i1')), iid('i1'), 1, RULES));
     expect([sold.gold, sold.debt]).toEqual([20, 100]);
+
+    // shop-borrowed debt pays off through the exact same gate clear split and 0.25x XP rule
+    const borrowed = ok(buy({ ...withDebt(0, 10, 0).hunters[0]!, reviveLeft: 'free' as const }, parseItem({ name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', value: 67 })!, iid('i2'), RULES));
+    expect([borrowed.gold, borrowed.debt, borrowed.reviveLeft]).toEqual([0, 57, 'free']);
+    const afterClear1 = ok(grant({ ...base0, hunters: [borrowed] }, H, { ...newRewards(), gold: 100, xp: 40 }, null, { ...DAY, from: 'clear' }));
+    expect([afterClear1.save.hunters[0]!.gold, afterClear1.save.hunters[0]!.debt, afterClear1.save.hunters[0]!.xp, afterClear1.save.hunters[0]!.reviveLeft]).toEqual([25, 7, 10, 'free']);
+    const afterClear2 = ok(grant(afterClear1.save, H, { ...newRewards(), gold: 100, xp: 40 }, null, { ...DAY, from: 'clear' }));
+    expect([afterClear2.save.hunters[0]!.gold, afterClear2.save.hunters[0]!.debt, afterClear2.save.hunters[0]!.xp, afterClear2.save.hunters[0]!.reviveLeft]).toEqual([114, 0, 50, 'free']);
   });
 });

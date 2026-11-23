@@ -134,7 +134,7 @@ export type Hunter = Progress & Vitals & {
   restsTaken: number;
   /** What is left of its revive ladder (src/core/hunter/revive-standing.ts): `free`, `debt` or `none`. Only a System raise moves it. */
   reviveLeft: ReviveStanding;
-  /** The gold it owes the System for its raise on debt (revive-standing.ts `raiseOwes`). Only grant.ts `systemRaise` adds to it. */
+  /** The gold it owes the System from a raise on debt or shop borrowing. Changed only through grant.ts and inventory.ts via debtStep. */
   debt: number;
   /** Its personal gates, the System's, and their clock: src/core/gates/personal.ts and solo.ts. Only their functions change them. */
   solo: Solo;

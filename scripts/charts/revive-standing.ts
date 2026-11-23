@@ -60,12 +60,12 @@ export const reviveDebt = machine<number, DebtEvent>({
   kinds: DEBT_STATES,
   kindsOf: d => [debtState(d)],
   views: [{
-    title: 'A System revive on debt splits clear gold three ways and cuts XP until debt reaches 0',
-    note: `the owner (Nov 23), qd row 72: a System revive from the debt standing adds \`raiseOwes\` gold to \`Hunter.debt\`. While \`Hunter.debt\` is above 0, gate clear gold splits three ways: \`reviveDebtShare\` (${debtPct}) goes to debt, \`reviveDebtBurn\` (${burnPct}) is lost to debt costs, and the hunter gets the rest (${keepPct}). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by \`reviveDebtXpRate\` (${xpPct}, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` at \`none\`.`,
+    title: 'System debt (revive on debt or shop borrowing) splits clear gold three ways and cuts XP until debt reaches 0',
+    note: `the owner (Nov 23), qd rows 72 and 73: a System revive from the debt standing adds \`raiseOwes\` gold to \`Hunter.debt\` (ignoring \`borrowCapClears\`), and shop borrowing adds an allowed shortfall up to \`borrowCap(rank, R)\` (\`borrowCapClears\`, default \`${RULES.borrowCapClears}\` same-rank clears, blocked when \`borrowCapClears <= 0\` or \`reviveDebtShare <= 0\`). While \`Hunter.debt\` is above 0, gate clear gold splits three ways: \`reviveDebtShare\` (${debtPct}) goes to debt, \`reviveDebtBurn\` (${burnPct}) is lost to debt costs, and the hunter gets the rest (${keepPct}). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by \`reviveDebtXpRate\` (${xpPct}, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` unchanged.`,
     hides: '',
     state: d => DEBT_LABEL[debtState(d)],
     step: (e, from, to) => {
-      if (e.type === 'incur') return from === 0 ? 'System revive on debt adds gold owed' : 'more debt added';
+      if (e.type === 'incur') return from === 0 ? 'System revive on debt or shop borrow adds gold owed' : 'more debt added (revive or shop borrow)';
       if (e.type === 'xp') return from === 0 ? 'earned XP kept at 100% (no debt)' : `earned XP cut to ${xpPct} while owing debt`;
       if (from === 0) return 'gate clear gold kept in full (no debt)';
       return to === 0 ? 'gate clear gold pays off the rest of the debt (proportional debt costs)' : `gate clear gold splits ${debtPct} debt / ${keepPct} hunter / ${burnPct} lost`;
@@ -73,8 +73,8 @@ export const reviveDebt = machine<number, DebtEvent>({
   }],
   where: [
     ['The union', '`DebtState`, `DebtEvent`, `DebtStep`, and `DEBT_STATES` in `src/core/hunter/revive-standing.ts`; the balance is `Hunter.debt`, repaired to 0 or above'],
-    ['What changes it', '`debtStep(debt, event, R)`, `DEBT_TABLE`, and `paysDebt(from)`'],
-    ['Who calls it', '`systemRaise` (`incur`) and `grant` (`clearGold` when `paysDebt(from)` holds, and `xp` for positive earned XP from every source) in `src/core/hunter/grant.ts`, the sole writer of `Hunter.debt`'],
+    ['What changes it', '`debtStep(debt, event, R)`, `DEBT_TABLE`, `borrowCap(rank, R)`, and `paysDebt(from)`'],
+    ['Who calls it', '`systemRaise` (`incur`) and `grant` (`clearGold` when `paysDebt(from)` holds, and `xp` for positive earned XP from every source) in `src/core/hunter/grant.ts`, and `buy` (`incur` within `borrowCap`) in `src/core/hunter/inventory.ts`'],
     ['The test to copy', '`tests/revive-standing.test.ts`'],
     ['The recipe', 'docs/guide/save-store.md, "A field of a saved thing"'],
   ],

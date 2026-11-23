@@ -50,6 +50,12 @@ const OWED: { readonly [S in ReviveStanding]: (rank: Rank, R: Pick<Rules, 'loot'
  * the System does not raise.
  */
 export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'loot' | 'reviveDebtClears'>): number => OWED[s](rank, R);
+/**
+ * Maximum total System debt a hunter of `rank` may reach through shop borrowing: `R.borrowCapClears` same-rank gate
+ * clears, rounded (0 turns shop borrowing off). A System revive ignores this limit.
+ */
+export const borrowCap = (rank: Rank, R: Pick<Rules, 'loot' | 'borrowCapClears'>): number =>
+  (R.borrowCapClears > 0 ? Math.max(0, Math.round(R.borrowCapClears * clearOf(R, rank))) : 0);
 
 // ── debt payoff machine ──
 export const DEBT_STATES = ['clear', 'owing'] as const;
@@ -154,8 +160,27 @@ export function raisedSaid(name: string, raise: Raise, owes: number): { readonly
     text: raise === 'free' ? `The System revived ${name} for free. One revive on debt is left.` : `The System revived ${name} for ${gold(owes)} debt. No System revives left.`,
   };
 }
-/** The bag's line of what a hunter owes the System, or null when it owes nothing. */
-export const debtLine = (debt: number): string | null => (debt > 0 ? `Debt owed to the System for reviving: ${gold(debt)}.` : null);
+/** The bag's line of what a hunter owes the System (revive debt and shop borrowing), or null when it owes nothing. */
+export const debtLine = (debt: number): string | null => (debt > 0 ? `Debt owed to the System: ${gold(debt)}.` : null);
+/** Plain-language summary of what applies while you owe System debt (clear-gold split and XP rate). */
+export function debtTermsLine(R: DebtRules): string {
+  const share = clamp01(R.reviveDebtShare);
+  const burn = Math.min(1 - share, clamp01(R.reviveDebtBurn));
+  const keep = Math.max(0, 1 - share - burn);
+  const xpRate = clamp01(R.reviveDebtXpRate);
+  const goldPart = share > 0 && burn > 0
+    ? `${ratePct(share)} of your gate clear gold goes to your debt, ${ratePct(burn)} is lost to debt costs, and you get ${ratePct(keep)}`
+    : share > 0
+      ? `${ratePct(share)} of your gate clear gold goes to your debt, and you get ${ratePct(keep)}`
+      : burn > 0
+        ? `you get ${ratePct(keep)} of your gate clear gold, and ${ratePct(burn)} is lost to debt costs`
+        : '';
+  const xpPart = xpRate < 1 ? `you earn ${ratePct(xpRate)} XP from every source` : '';
+  if (goldPart && xpPart) return `While you owe debt, ${goldPart}. You also earn ${ratePct(xpRate)} XP from every source until your debt is paid off.`;
+  if (goldPart) return `While you owe debt, ${goldPart}.`;
+  if (xpPart) return `While you owe debt, ${xpPart} until your debt is paid off.`;
+  return '';
+}
 /** What a reward window says when gate clear gold splits for System revive debt, or null when nothing was taken or lost. */
 export function debtPaidLine(p: DebtPaid): string | null {
   if (p.paid <= 0 && p.burn <= 0) return null;

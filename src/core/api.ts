@@ -373,7 +373,7 @@ export type InventoryApi = {
   equip(hid: string, itemId: string): boolean;
   unequip(hid: string, slot: Slot): void;
   use(hid: string, itemId: string): unknown;
-  /** The purchase written, or why not: the step's refusal (inventory.ts `buy`: `poor`, `dead`), `no-hunter`, `no-item` for a template that does not read, or the store's. */
+  /** The purchase written, or why not: the step's refusal (inventory.ts `buy`: `dead`, `borrow-off`, `no-payoff`, `over-cap`), `no-hunter`, `no-item` for a template that does not read, or the store's. */
   buy(hid: string, tpl: ItemTemplate): Applied;
   /** Answers the gold the sale paid, 0 when nothing was sold. */
   sell(hid: string, itemId: string, n?: number): number;

@@ -8,6 +8,7 @@ import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
 import { sellPrice, shopOpen } from './hunter/inventory.ts';
+import { borrowCap, debtTermsLine } from './hunter/revive-standing.ts';
 import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
 import { shareEach } from './gates/pay.ts';
@@ -170,6 +171,15 @@ const pct = (share: number): string => `${Math.round(share * 1000) / 10}%`;
 export function saleLine(R: Pick<Rules, 'rarities' | 'usedUpShare' | 'saleShare'>): string {
   const ranks = RARITIES.map(rar => `${rar} ${R.rarities[rar].rank}`).join(', ');
   return `An item with no custom price costs the middle gold value of a gate clear for its rarity's rank (${ranks}). A consumable costs ${pct(R.usedUpShare)} of that amount, rounded. You can sell items back to the Association for ${pct(R.saleShare)} of their price, rounded down, with a minimum of 1 gold.`;
+}
+/** How shop borrowing works (inventory.ts `buyPlan`, revive-standing.ts `borrowCap`), from the room's rules. */
+export function borrowLine(R: Pick<Rules, 'borrowCapClears' | 'loot' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {
+  if (R.borrowCapClears <= 0) return 'Shop borrowing is off.';
+  const clears = `${R.borrowCapClears} same-rank gate clear${R.borrowCapClears === 1 ? '' : 's'}`;
+  if (R.reviveDebtShare <= 0) return `Shop borrowing is set to ${clears}, but borrowing is paused while debt payments from gate clears are at 0%.`;
+  const capE = borrowCap('E', R).toLocaleString('en-US');
+  const terms = debtTermsLine(R);
+  return `You can borrow in the shop when short of gold, up to ${clears} of total System debt (for example, ${capE} gold at rank E). You spend your gold first, and the rest adds to your System debt.${terms ? ` ${terms}` : ''} A System revive ignores the borrow limit.`;
 }
 
 /** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */

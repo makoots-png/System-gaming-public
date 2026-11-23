@@ -847,6 +847,7 @@ export type RoomRules = {
   reviveDebtShare: number;
   reviveDebtBurn: number;
   reviveDebtXpRate: number;
+  borrowCapClears: number;
   reviveLevelShare: number;
   gateParty: number;
   loot: Rules['loot'];
@@ -1202,7 +1203,7 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
 /** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic switch (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   const reviveDebtShare = rule('reviveDebtShare'), reviveDebtBurn = rule('reviveDebtBurn');
   if (reviveDebtShare + reviveDebtBurn > 1 + 1e-9) return refuse();
   return {
@@ -1220,6 +1221,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     reviveDebtShare,
     reviveDebtBurn,
     reviveDebtXpRate: rule('reviveDebtXpRate'),
+    borrowCapClears: rule('borrowCapClears'),
     reviveLevelShare: rule('reviveLevelShare'),
     gateParty: rule('gateParty'),
     loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },

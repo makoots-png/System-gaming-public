@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, WEAR_EVENTS, WEAR_STATES, addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, shopOpen, takeItems, unequip, wearMove, wearOf, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
+import { BORROW_WORDS, BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, WEAR_EVENTS, WEAR_STATES, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, putItem, removeItem, removeShopItem, sell, sellPrice, sellable, setGold, shopCreditLine, shopOpen, takeItems, unequip, wearMove, wearOf, withShop, writeShopItem } from '../src/core/hunter/inventory.ts';
 import type { WearEvent, WearState, WearWhy } from '../src/core/hunter/inventory.ts';
+import { borrowCap } from '../src/core/hunter/revive-standing.ts';
 import { parseSheetHunter } from '../src/core/hunter/hunter.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { GEAR, IN_BAG, wearBy } from './models/gear-events.ts';
@@ -239,12 +240,105 @@ describe('gold, buying and selling', () => {
     ]);
   });
 
-  test('buying with too little gold is refused; selling more than is held sells what is held', () => {
-    expect(buy(hunter(3), { ...shield, value: 25 }, iid('i1'), RULES)).toEqual({ ok: false, why: 'poor' });
+  test('buying over the borrow cap or with borrowing off is refused; selling more than is held sells what is held', () => {
+    expect(buy(hunter(3), { ...shield, value: 25 }, iid('i1'), { ...RULES, borrowCapClears: 0 })).toEqual({ ok: false, why: 'borrow-off' });
+    expect(buy(hunter(3), { ...shield, value: 200 }, iid('i1'), RULES)).toEqual({ ok: false, why: 'over-cap' });
     const three = { ...hunter(0), items: [{ ...potion, id: iid('i1'), qty: 3, value: 10 }] };
     const sold = ok(sell(three, 'i1', 9, RULES));
     expect(sold.items).toEqual([]);
     expect(sold.gold).toBe(3 * sale(10));
+  });
+});
+
+describe('shop borrowing (cap A: 1.5 same-rank clears, shared Hunter.debt)', () => {
+  const ranked = (rank: Hunter['rank'], gold = 0, debt = 0): Hunter => ({ ...newHunter(RULES), rank, gold, debt });
+  const priced = (name: string, value: number, extra: Partial<ItemTemplate> = {}): ItemTemplate => ({ ...shield, name, value, ...extra });
+
+  test('borrowCap equals Math.round(borrowCapClears * clearOf(R, rank)) for every rank, matching plus-grade own-rank prices at 1.5', () => {
+    expect(RANKS.map(r => [r, borrowCap(r, RULES)])).toEqual([
+      ['E', 150], ['D', 488], ['C', 1875], ['B', 7500], ['A', 28500], ['S', 112500],
+    ]);
+    expect(borrowCap('E', { ...RULES, borrowCapClears: 0 })).toBe(0);
+    expect(borrowCap('D', { ...RULES, borrowCapClears: 3 })).toBe(975);
+  });
+
+  test('buying short of gold spends cash first and adds only the shortfall to Hunter.debt up to the cap', () => {
+    const item = priced('Iron Blade', 120);
+    const h0 = ranked('E', 40, 0);
+    const plan = buyPlan(h0, item, RULES);
+    expect(plan).toEqual({ ok: true, price: 120, cash: 40, borrow: 80, debtAfter: 80, cap: 150, available: 150 });
+
+    const h1 = ok(buy(h0, item, iid('i1'), RULES));
+    expect([h1.gold, h1.debt, h1.items.map(i => i.name)]).toEqual([0, 80, ['Iron Blade']]);
+    expect(h1.chronicle.inbox).toEqual([{ kind: 'shop', act: 'buy', item: 'Iron Blade', rar: item.rar, price: 120, goldAfter: 0 }]);
+
+    // second borrow right up to exact cap (80 + 70 = 150) succeeds; 1 gold past cap is refused
+    const exact = ok(buy(h1, priced('Health Potion', 70), iid('i2'), RULES));
+    expect([exact.gold, exact.debt]).toEqual([0, 150]);
+    expect(buy(exact, priced('Rock', 1), iid('i3'), RULES)).toEqual({ ok: false, why: 'over-cap' });
+    expect(buy(h1, priced('Over', 71), iid('i3'), RULES)).toEqual({ ok: false, why: 'over-cap' });
+  });
+
+  test('a hunter who owes revive debt above the borrow cap cannot borrow, but can still spend cash or take free items', () => {
+    const inReviveDebt = ranked('E', 50, 1000);
+    expect(buy(inReviveDebt, priced('Potion', 50), iid('i1'), RULES)).toMatchObject({ gold: 0, debt: 1000 });
+    expect(buy(inReviveDebt, priced('Free', 0), iid('i2'), RULES)).toMatchObject({ gold: 50, debt: 1000 });
+    expect(buy(inReviveDebt, priced('Potion', 51), iid('i3'), RULES)).toEqual({ ok: false, why: 'over-cap' });
+  });
+
+  test('borrowing is refused when borrowCapClears <= 0 or reviveDebtShare <= 0, while cash purchases still work', () => {
+    const off = { ...RULES, borrowCapClears: 0 };
+    const noPayoff = { ...RULES, reviveDebtShare: 0 };
+    expect(buy(ranked('E', 20, 0), priced('Potion', 50), iid('i1'), off)).toEqual({ ok: false, why: 'borrow-off' });
+    expect(buy(ranked('E', 50, 0), priced('Potion', 50), iid('i1'), off)).toMatchObject({ gold: 0, debt: 0 });
+    expect(buy(ranked('E', 20, 0), priced('Potion', 50), iid('i1'), noPayoff)).toEqual({ ok: false, why: 'no-payoff' });
+    expect(buy(ranked('E', 50, 0), priced('Potion', 50), iid('i1'), noPayoff)).toMatchObject({ gold: 0, debt: 0 });
+    // borrowCapClears === 0 takes precedence over reviveDebtShare === 0
+    expect(buy(ranked('E', 0, 0), priced('Potion', 50), iid('i1'), { ...RULES, borrowCapClears: 0, reviveDebtShare: 0 })).toEqual({ ok: false, why: 'borrow-off' });
+  });
+
+  test('Resurrection Crystals follow the same borrow cap with no extra exception', () => {
+    const crystalE = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (E)')!); // 1,000 gold
+    expect(buy(ranked('E', 0, 0), crystalE, iid('i1'), RULES)).toEqual({ ok: false, why: 'over-cap' });
+    expect(buy(ranked('E', 849, 0), crystalE, iid('i1'), RULES)).toEqual({ ok: false, why: 'over-cap' });
+    const bridged = ok(buy(ranked('E', 850, 0), crystalE, iid('i1'), RULES));
+    expect([bridged.gold, bridged.debt, bridged.items.map(i => i.name)]).toEqual([0, 150, ['Resurrection Crystal (E)']]);
+  });
+
+  test('borrowConfirm, shopCreditLine, and BUY_WORDS state exact amounts and follow GM rule overrides', () => {
+    const item = priced('Steel Longsword', 67);
+    const h = ranked('E', 10, 20);
+    const plan = ok(buyPlan(h, item, RULES));
+    expect(borrowConfirm(item.name, plan, RULES)).toEqual({
+      title: 'Buy on debt',
+      body: 'You are short 57 gold for Steel Longsword (67 gold).',
+      lines: [
+        'Pay now: 10 gold.',
+        'Added to debt: 57 gold.',
+        'New total debt: 77 gold.',
+        'While you owe debt, 50% of your gate clear gold goes to your debt, 25% is lost to debt costs, and you get 25%. You also earn 25% XP from every source until your debt is paid off.',
+      ],
+      confirm: 'Borrow 57 gold',
+      cancel: 'Cancel',
+    });
+    expect(BORROW_WORDS.bought(item.name, plan)).toBe('Purchased Steel Longsword (10 gold paid, 57 gold added to debt).');
+
+    expect(shopCreditLine(ranked('E', 0, 0), RULES)).toBe('Shop credit: you can borrow up to 150 gold (rank E limit).');
+    expect(shopCreditLine(ranked('E', 0, 60), RULES)).toBe('Shop credit: you can borrow up to 90 gold more (rank E limit: 150 gold, you owe 60 gold).');
+    expect(shopCreditLine(ranked('E', 0, 1000), RULES)).toBe('Shop credit: you can borrow 0 gold (rank E limit: 150 gold, you owe 1,000 gold).');
+    expect(shopCreditLine(ranked('E', 0, 0), { ...RULES, borrowCapClears: 0 })).toBeNull();
+    expect(shopCreditLine(ranked('E', 0, 0), { ...RULES, reviveDebtShare: 0 })).toBe(BORROW_WORDS.paused);
+    expect(shopCreditLine({ ...ranked('E', 0, 0), life: { at: 'dead' } }, RULES)).toBeNull();
+
+    const words = buyWords(ranked('E', 10, 60), priced('Knight Killer', 833), RULES);
+    expect(Object.keys(words).sort()).toEqual([...BUY_REFUSALS].sort());
+    expect(words['over-cap']).toBe('You cannot borrow 823 gold for Knight Killer. Your rank E borrow limit is 150 gold, and you can borrow up to 90 gold.');
+    expect(words['borrow-off']).toBe('Knight Killer costs 833 gold, and you have 10 gold. Shop borrowing is off.');
+    expect(words['no-payoff']).toBe('You cannot borrow for Knight Killer. Debt payments from gate clears are at 0%, so you could not pay the debt off.');
+    expect(words.dead).toBe(SHOP_CLOSED);
+
+    const overRevive = buyWords(ranked('E', 10, 1000), priced('Health Potion', 50), RULES);
+    expect(overRevive['over-cap']).toBe('You cannot borrow 40 gold for Health Potion. Your rank E borrow limit is 150 gold and you already owe 1,000 gold, so you can borrow 0 gold right now.');
   });
 });
 
@@ -306,9 +400,9 @@ describe('the shop is closed to the dead (the owner, Nov 19: "Whole shop should 
     expect(ok(sell(rich(life), 'i1', 1, RULES)).items).toEqual([]);
   });
 
-  test('a refused purchase says why: short of gold names the item; dead names the ways back and who can give a crystal', () => {
-    expect(BUY_WORDS.poor('Health Potion')).toBe('Not enough gold for Health Potion.');
-    expect(BUY_WORDS.dead('Health Potion')).toBe(SHOP_CLOSED);
+  test('a refused purchase says why: borrow-off names price and gold; dead names the ways back and who can give a crystal', () => {
+    expect(BUY_WORDS['borrow-off']({ name: 'Health Potion', rank: 'E', price: 50, have: 10, need: 40, debt: 0, cap: 0, available: 0 })).toBe('Health Potion costs 50 gold, and you have 10 gold. Shop borrowing is off.');
+    expect(BUY_WORDS.dead({ name: 'Health Potion', rank: 'E', price: 50, have: 10, need: 40, debt: 0, cap: 150, available: 150 })).toBe(SHOP_CLOSED);
     expect(SHOP_CLOSED).toBe(`The shop is closed while you are dead. You cannot buy or sell. ${WAYS_BACK} brings you back. The GM or another hunter can give you a Resurrection Crystal.`);
   });
 });

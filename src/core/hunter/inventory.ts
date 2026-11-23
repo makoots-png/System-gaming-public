@@ -19,12 +19,14 @@
 // Nov 22, a crystal handed over after the death counts as bought before it.
 import { SLOTS, valueOf } from '../registry/items.ts';
 import type { Item, ItemTemplate, PriceRules, Priced, Slot } from '../registry/items.ts';
-import type { Rules } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import type { ItemId } from '../ids.ts';
 import { record } from './chronicle.ts';
 import type { Chronicle } from './chronicle.ts';
+import { borrowCap, debtStep, debtTermsLine } from './revive-standing.ts';
+import type { DebtRules } from './revive-standing.ts';
 import { WAYS_BACK } from './vitals.ts';
 import type { Life } from './vitals.ts';
 
@@ -232,24 +234,132 @@ export function unequip<H extends Carrying>(h: H, slot: string, inFight: boolean
 export const shopOpen = (h: { readonly life: Pick<Life, 'at'> }): boolean => h.life.at !== 'dead';
 /** What the shop says to a dead hunter, in place of its Buy and Sell buttons and when a purchase or a sale is refused. */
 export const SHOP_CLOSED = `The shop is closed while you are dead. You cannot buy or sell. ${WAYS_BACK} brings you back. The GM or another hunter can give you a Resurrection Crystal.`;
-/** Why a purchase may be refused. */
-export const BUY_REFUSALS = ['poor', 'dead'] as const;
+/** The rules a purchase reads: item prices, the borrow limit, and the System debt rules. */
+export type BuyRules = PriceRules & Pick<Rules, 'borrowCapClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>;
+/** What `buyPlan` reads on a hunter before buying. */
+export type BuyCheck = { readonly life: Pick<Life, 'at'>; readonly gold: number; readonly debt: number; readonly rank: Rank };
+/** Why a purchase may be refused: dead hunter, borrowing turned off, 0% clear-gold debt payoff, or over the borrow limit. */
+export const BUY_REFUSALS = ['dead', 'borrow-off', 'no-payoff', 'over-cap'] as const;
 export type BuyRefusal = (typeof BUY_REFUSALS)[number];
-/** The words of a purchase refused, for the item named `name`. */
-export const BUY_WORDS: { readonly [W in BuyRefusal]: (name: string) => string } = {
-  poor: name => `Not enough gold for ${name}.`,
-  dead: () => SHOP_CLOSED,
+/** The exact numbers behind a purchase refusal, for `BUY_WORDS`. */
+export type BuyRefusalInfo = {
+  readonly name: string;
+  readonly rank: Rank;
+  readonly price: number;
+  readonly have: number;
+  readonly need: number;
+  readonly debt: number;
+  readonly cap: number;
+  readonly available: number;
 };
+/** An allowed purchase: total price, cash paid now, shortfall borrowed onto `Hunter.debt`, total debt after, and borrow limit. */
+export type BuyPlan = {
+  readonly ok: true;
+  readonly price: number;
+  readonly cash: number;
+  readonly borrow: number;
+  readonly debtAfter: number;
+  readonly cap: number;
+  readonly available: number;
+};
+const goldAmt = (n: number): string => `${n.toLocaleString('en-US')} gold`;
+function buyRefusalInfo(h: BuyCheck, it: Priced & { readonly name: string }, R: BuyRules): BuyRefusalInfo {
+  const price = valueOf(it, R), cash = Math.min(h.gold, price), need = price - cash;
+  const cap = borrowCap(h.rank, R), available = Math.max(0, cap - h.debt);
+  return { name: it.name, rank: h.rank, price, have: h.gold, need, debt: h.debt, cap, available };
+}
+/**
+ * Checks whether hunter `h` can buy `it` under `R`: spends cash first, and borrows any shortfall onto `Hunter.debt`
+ * when borrowing is enabled (`borrowCapClears > 0`), debt can be paid off (`reviveDebtShare > 0`), and
+ * `debt + shortfall <= borrowCap(rank, R)`. Resurrection Crystals follow the same borrow limit with no separate rule.
+ */
+export function buyPlan(h: BuyCheck, it: Priced & { readonly name: string }, R: BuyRules): BuyPlan | (Refused<BuyRefusal> & { readonly info: BuyRefusalInfo }) {
+  const info = buyRefusalInfo(h, it, R);
+  if (!shopOpen(h)) return { ...refuse('dead'), info };
+  const cash = Math.min(h.gold, info.price), borrow = info.need;
+  if (borrow === 0) return { ok: true, price: info.price, cash, borrow: 0, debtAfter: h.debt, cap: info.cap, available: info.available };
+  if (R.borrowCapClears <= 0) return { ...refuse('borrow-off'), info };
+  if (R.reviveDebtShare <= 0) return { ...refuse('no-payoff'), info };
+  if (h.debt + borrow > info.cap) return { ...refuse('over-cap'), info };
+  return { ok: true, price: info.price, cash, borrow, debtAfter: h.debt + borrow, cap: info.cap, available: info.available };
+}
+/** The words of a purchase refused, given the item and hunter numbers. */
+export const BUY_WORDS: { readonly [W in BuyRefusal]: (info: BuyRefusalInfo) => string } = {
+  dead: () => SHOP_CLOSED,
+  'borrow-off': i => `${i.name} costs ${goldAmt(i.price)}, and you have ${goldAmt(i.have)}. Shop borrowing is off.`,
+  'no-payoff': i => `You cannot borrow for ${i.name}. Debt payments from gate clears are at 0%, so you could not pay the debt off.`,
+  'over-cap': i => (i.debt > 0 && i.available === 0
+    ? `You cannot borrow ${goldAmt(i.need)} for ${i.name}. Your rank ${i.rank} borrow limit is ${goldAmt(i.cap)} and you already owe ${goldAmt(i.debt)}, so you can borrow 0 gold right now.`
+    : `You cannot borrow ${goldAmt(i.need)} for ${i.name}. Your rank ${i.rank} borrow limit is ${goldAmt(i.cap)}, and you can borrow up to ${goldAmt(i.available)}.`),
+};
+/** All refusal strings for hunter `h` trying to buy `it`, keyed by refusal code for `ui.wrote`. */
+export function buyWords(h: BuyCheck, it: Priced & { readonly name: string }, R: BuyRules): Record<BuyRefusal, string> {
+  const info = buyRefusalInfo(h, it, R);
+  return {
+    dead: BUY_WORDS.dead(info),
+    'borrow-off': BUY_WORDS['borrow-off'](info),
+    'no-payoff': BUY_WORDS['no-payoff'](info),
+    'over-cap': BUY_WORDS['over-cap'](info),
+  };
+}
+/** Plain-language copy for shop borrowing UI and confirmation dialogs, imported by views and e2e tests. */
+export const BORROW_WORDS = {
+  title: 'Buy on debt',
+  btnBuy: 'Buy',
+  btnBorrow: 'Buy on debt',
+  cancel: 'Cancel',
+  confirmBtn: (borrow: number): string => `Borrow ${goldAmt(borrow)}`,
+  bought: (name: string, plan: Pick<BuyPlan, 'cash' | 'borrow'>): string =>
+    `Purchased ${name} (${goldAmt(plan.cash)} paid, ${goldAmt(plan.borrow)} added to debt).`,
+  paused: 'Shop borrowing is paused while debt payments from gate clears are at 0%.',
+} as const;
+/** Shop tab credit summary for a living hunter, or null when borrowing is turned off or the hunter is dead. */
+export function shopCreditLine(h: BuyCheck, R: BuyRules): string | null {
+  if (!shopOpen(h) || R.borrowCapClears <= 0) return null;
+  if (R.reviveDebtShare <= 0) return BORROW_WORDS.paused;
+  const cap = borrowCap(h.rank, R), available = Math.max(0, cap - h.debt);
+  if (h.debt <= 0) return `Shop credit: you can borrow up to ${goldAmt(cap)} (rank ${h.rank} limit).`;
+  if (available > 0) return `Shop credit: you can borrow up to ${goldAmt(available)} more (rank ${h.rank} limit: ${goldAmt(cap)}, you owe ${goldAmt(h.debt)}).`;
+  return `Shop credit: you can borrow 0 gold (rank ${h.rank} limit: ${goldAmt(cap)}, you owe ${goldAmt(h.debt)}).`;
+}
+/** Confirmation window text shown before a hunter borrows in the shop. */
+export function borrowConfirm(name: string, plan: BuyPlan, R: DebtRules): {
+  readonly title: string;
+  readonly body: string;
+  readonly lines: readonly string[];
+  readonly confirm: string;
+  readonly cancel: string;
+} {
+  const terms = debtTermsLine(R);
+  return {
+    title: BORROW_WORDS.title,
+    body: `You are short ${goldAmt(plan.borrow)} for ${name} (${goldAmt(plan.price)}).`,
+    lines: [
+      `Pay now: ${goldAmt(plan.cash)}.`,
+      `Added to debt: ${goldAmt(plan.borrow)}.`,
+      `New total debt: ${goldAmt(plan.debtAfter)}.`,
+      ...(terms ? [terms] : []),
+    ],
+    confirm: BORROW_WORDS.confirmBtn(plan.borrow),
+    cancel: BORROW_WORDS.cancel,
+  };
+}
 
 /** A purchase or a sale is a fact of the chronicle (chronicle.ts), recorded with it. The shop reads the life (`shopOpen`). */
 type Trading = Carrying & { readonly chronicle: Chronicle; readonly life: Life };
-/** An item bought at its price (`valueOf`): refused for a dead hunter (`dead`), and when the gold is short (`poor`). */
-export function buy<H extends Trading>(h: H, it: ItemTemplate, id: ItemId, R: PriceRules): H | Refused<BuyRefusal> {
-  if (!shopOpen(h)) return refuse('dead');
-  const price = valueOf(it, R);
-  if (h.gold < price) return refuse('poor');
-  const gold = h.gold - price;
-  return record(putItem({ ...h, gold }, it, id), { kind: 'shop', act: 'buy', item: it.name, rar: it.rar, price, goldAfter: gold });
+/** What a purchase reads on a hunter: bag, gold, chronicle, life, rank, and System debt. */
+type Buying = Trading & { readonly rank: Rank; readonly debt: number };
+/**
+ * An item bought at its price (`valueOf`): spends cash first and adds any allowed shortfall to `Hunter.debt` via
+ * `debtStep`. Refused when dead (`dead`), borrowing is off (`borrow-off`), debt collection is 0% (`no-payoff`), or
+ * `debt + shortfall` exceeds the rank's borrow limit (`over-cap`).
+ */
+export function buy<H extends Buying>(h: H, it: ItemTemplate, id: ItemId, R: BuyRules): H | Refused<BuyRefusal> {
+  const plan = buyPlan(h, it, R);
+  if (isRefused(plan)) return refuse(plan.why);
+  const gold = h.gold - plan.cash;
+  const debt = plan.borrow > 0 ? debtStep(h.debt, { type: 'incur', amount: plan.borrow }, R).debt : h.debt;
+  return record(putItem({ ...h, gold, debt }, it, id), { kind: 'shop', act: 'buy', item: it.name, rar: it.rar, price: plan.price, goldAfter: gold });
 }
 /**
  * `n` of an item sold (at most what is held), each for `sellPrice`. Refused for a dead hunter (`dead`), by `TABLE`

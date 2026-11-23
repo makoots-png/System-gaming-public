@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, armorCutPct, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, armorCutPct, borrowLine, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -206,6 +206,7 @@ export function register(app) {
       { id: 'loot', title: 'Loot and rarity', body: [
         table(['Rarity', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, fmt(r.price), fmt(r.sell)])),
         p(`Prices are in gold. ${esc(saleLine(R))} Gear slots: ${R.slots.map(esc).join(', ')}.`),
+        p(esc(borrowLine(R))),
         p(`Clearing a gate awards gold plus one weighted item roll, and a boss adds one extra item roll. Gold is rolled once per clear and split using the Gates rules, so each hunter in a party of ${esc(R.gateParty)} gets the full rolled amount.`),
         table(['Rank', 'Gold', 'Item odds'], lootRows),
       ] },

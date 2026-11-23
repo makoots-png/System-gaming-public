@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mythicLines, mythicCodexLines, armorCutPct, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -214,6 +214,12 @@ describe('the Rules page states what the game pays', () => {
     const R = { ...RULES, dailyTemplate: { ...RULES.dailyTemplate, rewards: { ...RULES.dailyTemplate.rewards, points: 4 } } };
     expect(dailyPointsLine(R)).toContain('+4');
     expect(dailyPointsLine(RULES)).toContain(`+${RULES.dailyTemplate.rewards.points}`);
+  });
+  test('the borrow line states the borrow cap, cash-first debt terms, and follows GM overrides', () => {
+    expect(borrowLine(RULES)).toBe('You can borrow in the shop when short of gold, up to 1.5 same-rank gate clears of total System debt (for example, 150 gold at rank E). You spend your gold first, and the rest adds to your System debt. While you owe debt, 50% of your gate clear gold goes to your debt, 25% is lost to debt costs, and you get 25%. You also earn 25% XP from every source until your debt is paid off. A System revive ignores the borrow limit.');
+    expect(borrowLine({ ...RULES, borrowCapClears: 0 })).toBe('Shop borrowing is off.');
+    expect(borrowLine({ ...RULES, borrowCapClears: 2, reviveDebtShare: 0 })).toBe('Shop borrowing is set to 2 same-rank gate clears, but borrowing is paused while debt payments from gate clears are at 0%.');
+    expect(borrowLine({ ...RULES, borrowCapClears: 1, reviveDebtShare: 0.4, reviveDebtBurn: 0, reviveDebtXpRate: 1 })).toBe('You can borrow in the shop when short of gold, up to 1 same-rank gate clear of total System debt (for example, 100 gold at rank E). You spend your gold first, and the rest adds to your System debt. While you owe debt, 40% of your gate clear gold goes to your debt, and you get 60%. A System revive ignores the borrow limit.');
   });
   test('the rules hold no dailyRewardPoints, which nothing in the game paid', () => {
     expect('dailyRewardPoints' in RULES).toBe(false);
