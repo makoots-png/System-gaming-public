@@ -800,7 +800,7 @@ export function register(app) {
 
   // ── notifications (src/edge/notify.ts): a told use while this page is hidden ──
   const NOTIFY_WORDS = { granted: 'On. Notifications appear for player reward uses, messages, and coin calls while this page is hidden.', denied: 'Blocked in this browser\'s settings.',
-    default: 'Off.', unsupported: 'This browser cannot show notifications.' };
+    default: 'Off.', unsupported: "You can't get notifications in this browser." };
   const renderNotify = () => { const st = notifyState(), e = $('#gm-notify-state'); if (e) e.textContent = NOTIFY_WORDS[st]; const b = $('#gm-notify'); if (b) b.hidden = st === 'unsupported'; };
   async function askNotify() { await askToNotify(); renderNotify(); }
 

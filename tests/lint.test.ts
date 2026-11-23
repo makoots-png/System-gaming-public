@@ -2109,7 +2109,7 @@ test('a view adds no new question of whether a fight holds a hunter: the step in
 
 // The voice rules a machine can check (docs/guide/voice.md, the owner, Nov 22: "I shouldn't have to guess", "Don't be clever").
 // Each reads the words of every string and template literal in src/views, src/core, src/edge and src/app.js that reads as
-// prose, never comments or code. The rules that need judgment (personified UI, clever lines, unclear labels) are voice.md's.
+// prose, never comments or code. Subtle judgment calls (clever lines, idioms, unclear labels) stay in voice.md.
 type Words = { file: string; line: number; text: string; part?: number };
 
 /** The string and template-literal text of a source file, with the line each starts on. A regex literal is skipped. */
@@ -2166,6 +2166,71 @@ const looksLikeProse = (t: string): boolean => {
   return true;
 };
 
+/**
+ * String and template literals of a source file with each template's static parts joined across `${...}` holes.
+ * A hole after a word stem (`fight${s}`) attaches with no space, a hole before `-` (`${n}-day`) puts `2`, and any other
+ * hole puts ` 2 `, so multi-word rules see the full clause while nested quoted strings inside holes are still emitted.
+ * Templates starting with a console tag (`[sync]`, `[server]`) are skipped along with strings nested inside them.
+ */
+function joinedLiteralsOf(file: string, src: string): Words[] {
+  const out: Words[] = [];
+  let i = 0, line = 1, prev = '', word = '', depth = 0;
+  const holes: { depth: number; start: number; buf: string; tagged: boolean }[] = [];
+  const step = () => { if (src[i] === '\n') line++; i++; };
+  const templateChunk = (tpl: { depth: number; start: number; buf: string; tagged: boolean }, isFirst: boolean) => {
+    let buf = '', ended = false;
+    while (i < src.length) {
+      const c = src[i]!;
+      if (c === '\\') { buf += src[i + 1] ?? ''; step(); step(); continue; }
+      if (c === '`') { step(); ended = true; break; }
+      if (c === '$' && src[i + 1] === '{') { step(); step(); break; }
+      buf += c; step();
+    }
+    if (isFirst) tpl.tagged = /^\[\w+\]/.test(buf);
+    if (!isFirst && tpl.buf.length > 0) {
+      if (/[A-Za-z]$/.test(tpl.buf)) tpl.buf += '';
+      else if (/^-/.test(buf)) tpl.buf += '2';
+      else tpl.buf += ' 2 ';
+    }
+    tpl.buf += buf;
+    if (ended) {
+      if (!tpl.tagged) out.push({ file, line: tpl.start, text: tpl.buf, part: holes.length ? 1 : 0 });
+    } else {
+      holes.push(tpl);
+      depth++;
+    }
+  };
+  while (i < src.length) {
+    const c = src[i]!, n = src[i + 1];
+    if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') step(); continue; }
+    if (c === '/' && n === '*') { step(); step(); while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) step(); step(); step(); continue; }
+    if (c === '"' || c === "'") {
+      const start = line; let buf = ''; step();
+      while (i < src.length && src[i] !== c && src[i] !== '\n') { if (src[i] === '\\') { buf += src[i + 1] ?? ''; step(); step(); continue; } buf += src[i]; step(); }
+      step();
+      if (!holes.length || !holes[holes.length - 1]!.tagged) out.push({ file, line: start, text: buf, part: holes.length ? 1 : 0 });
+      prev = 'x'; word = ''; continue;
+    }
+    if (c === '`') { step(); templateChunk({ depth, start: line, buf: '', tagged: false }, true); prev = 'x'; word = ''; continue; }
+    if (c === '/' && (prev === '' || /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) || /^(return|typeof|case|in|of|void|yield|await)$/.test(word))) {
+      step(); let cls = false;
+      while (i < src.length && src[i] !== '\n') { const d = src[i]; if (d === '\\') { step(); step(); continue; } if (d === '[') cls = true; else if (d === ']') cls = false; else if (d === '/' && !cls) break; step(); }
+      step(); prev = 'x'; word = ''; continue;
+    }
+    if (c === '{') depth++;
+    if (c === '}') {
+      depth--;
+      if (holes.length && holes[holes.length - 1]!.depth === depth) {
+        const tpl = holes.pop()!; step(); templateChunk(tpl, false); prev = 'x'; word = ''; continue;
+      }
+    }
+    if (/[A-Za-z_$0-9]/.test(c)) word = /[A-Za-z_$0-9]/.test(prev) ? word + c : c;
+    if (!/\s/.test(c)) prev = c;
+    step();
+  }
+  return out;
+}
+
 async function proseLiterals(): Promise<Words[]> {
   const files = [
     ...(await readdir(`${ROOT}/src`, { recursive: true })).filter(n => /^(views|core|edge)\/.*\.(ts|js)$/.test(n) && !n.endsWith('.d.ts')),
@@ -2174,12 +2239,15 @@ async function proseLiterals(): Promise<Words[]> {
   const all: Words[] = [];
   for (const name of files) {
     const src = await Bun.file(`${ROOT}/src/${name}`).text();
-    let tagged = false; // a template whose first text is a console tag ([sync], [server]) is a log line in every part
-    for (const w of literalsOf(`src/${name}`, src)) {
-      if (w.part === 0) tagged = /^\[\w+\]/.test(w.text);
-      if (tagged) continue;
+    for (const w of joinedLiteralsOf(`src/${name}`, src)) {
       const text = w.text.replace(/&mdash;|&#8212;/g, '\u2014').replace(/&ndash;/g, '\u2013').replace(/&[a-z]+;|&#\d+;/g, ' ');
-      for (const piece of text.split(/<[^>]*>/)) if (looksLikeProse(piece)) all.push({ ...w, text: piece.replace(/\s+/g, ' ').trim() });
+      for (const m of text.matchAll(/[^<>]+/g)) {
+        const piece = m[0];
+        if (looksLikeProse(piece)) {
+          const pieceLine = w.line + text.slice(0, m.index).split('\n').length - 1;
+          all.push({ ...w, line: pieceLine, text: piece.replace(/\s+/g, ' ').trim() });
+        }
+      }
     }
   }
   return all;
@@ -2189,6 +2257,20 @@ const said = (hits: Words[]) => hits.map(h => `${h.file}:${h.line}: ${h.text.sli
 test('the literal reader of the voice rules finds strings and template text, and skips comments and regexes', () => {
   const found = literalsOf('x.ts', "// a comment — here\nconst a = 'One two';\nconst r = /a;b/;\nconst t = `Hi ${n ? 'Big one' : 'x'} there friend`;\n");
   expect(found.map(f => f.text)).toEqual(['One two', 'Hi ', 'Big one', 'x', ' there friend']);
+  const joined = joinedLiteralsOf(
+    'x.ts',
+    "const a = `You have ${n} offers waiting.`;\nconst b = `Loot from ${n} more fight${n === 1 ? '' : 's'} is waiting.`;\nconst c = `every ${n}-day streak gives`;\nconst d = `Hi ${n ? 'This tab shows it' : 'x'} friend`;\nconst e = `[sync] ${x} holds it`;\n",
+  );
+  expect(joined.map(f => f.text.replace(/\s+/g, ' ').trim())).toEqual([
+    'You have 2 offers waiting.',
+    '',
+    's',
+    'Loot from 2 more fight is waiting.',
+    'every 2-day streak gives',
+    'This tab shows it',
+    'x',
+    'Hi 2 friend',
+  ]);
 });
 
 test('no em dash in a player- or GM-facing string (voice.md: use a period, comma, colon or parentheses)', async () => {
@@ -2210,4 +2292,83 @@ const BRITISH = /\b(colou?r(?<=colour)\w*|centre\w*|defence\w*|armour\w*|harbour
 test('a player- or GM-facing string uses American spelling (voice.md: color, center, defense, armor, canceled)', async () => {
   const hits = (await proseLiterals()).filter(w => BRITISH.test(w.text));
   expect(said(hits), 'spell it the American way').toEqual([]);
+});
+
+// Modeled on tbhb/vale-ai-tells BareHolds: determiner, up to two non-function modifiers, non-person noun,
+// optional modal/auxiliary/adverb (up to two), then one of holds, waits, gives, keeps, shows, wants, knows, decides,
+// or remembers (uninflected, -s, or -ing). Duration "takes" is outside this nine-verb list.
+const PERSONIFY_DET = String.raw`(?:the|a|an|this|that|these|those|your|its|their|our|my|his|her|each|every|any|no|some|all|both|many|more|most|few|several|other|another|\d+)`;
+const PERSONIFY_STOP = String.raw`(?:the|a|an|this|that|these|those|your|its|their|our|my|his|her|each|every|any|no|some|all|both|and|or|but|if|to|of|for|from|in|on|at|by|with|without|as|into|onto|about|after|before|until|while|when|where|who|whom|whose|which|you|they|we|he|she|it|them|us|him|me|not|never|still|only|also|can|cannot|will|would|may|might|must|should|does|do|did|is|are|was|were|be|been|being|has|have|had)`;
+const PERSONIFY_MOD = String.raw`(?!${PERSONIFY_STOP}\b)[A-Za-z0-9][A-Za-z0-9'-]*`;
+const PERSONIFY_NOUN = String.raw`(?!${PERSONIFY_STOP}\b)[A-Za-z][A-Za-z0-9'-]*`;
+const PERSONIFY_AUX = String.raw`(?:(?:can|cannot|can't|will|won't|would|may|might|must|should|does|doesn't|do|don't|did|didn't|is|are|was|were|has|have|had|stopped|only|also|still|never|always|not)\s+){0,2}`;
+const PERSONIFY_VERB = String.raw`(?:holds?|holding|waits?|waiting|gives?|giving|keeps?|keeping|shows?|showing|wants?|wanting|knows?|knowing|decides?|deciding|remembers?|remembering)`;
+const PERSONIFY = new RegExp(String.raw`\b(${PERSONIFY_DET})\s+(?:(${PERSONIFY_MOD})\s+){0,2}(${PERSONIFY_NOUN})\s+${PERSONIFY_AUX}(${PERSONIFY_VERB})\b`, 'gi');
+/** People and living combatants who can act, want, decide, or keep things. */
+const PERSONIFY_PERSON = /^(?:you|gm|player|players|hunter|hunters|foe|foes|monster|monsters|ally|allies|enemy|enemies|target|targets|bearer|bearers|combatant|combatants|fighter|fighters|user|users|caster|casters|boss|bosses|shadow|shadows|anyone|everyone|someone|nobody|person|people|stranger|listener|party|team|survivors)$/i;
+type PersonifyAllow = { readonly re: RegExp; readonly why: string };
+/** Short commented allowlist for in-world SYSTEM flavor, reward "gives", and proper-noun title names. */
+const PERSONIFY_ALLOW: readonly PersonifyAllow[] = [
+  { re: /^THE SYSTEM\b/, why: 'In-world SYSTEM window titles in bundles.ts.' },
+  { re: /^THE STORY HOLDS$/, why: 'In-world SYSTEM window title idiom for a roleplay lie award.' },
+  { re: /^THE HOUSE KEEPS$/, why: 'In-world SYSTEM window title gambling idiom in stories.ts.' },
+  { re: /^The next gate will not wait$/, why: 'In-world System whisper roll table entry in gm.js.' },
+  { re: /^(?:each|every)\s+(?:[A-Za-z0-9'-]+\s+){0,2}(?:level|hit|move|streak)\s+gives$/i, why: 'Reward or mechanic "gives" for levels, hits, moves, and streaks.' },
+  { re: /\b(?:Clearing|Running|Completing|Doubling)\b[^.,!?]*\bgives$/, why: 'Gerund action subject stating a game payout.' },
+  { re: /\bA fight outside a gate gives$/, why: 'Game reward payout rule for fights outside a gate.' },
+  { re: /\bthe title Knows Its Name\b/, why: 'Proper-noun title name "Knows Its Name", not a verb for "title".' },
+];
+
+/** Clause from the preceding sentence or comma boundary through the matched phrase. */
+function personifyClause(text: string, index: number, match: string): string {
+  const before = text.slice(0, index);
+  const start = Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf(',')) + 1;
+  return text.slice(start, index + match.length).trim();
+}
+
+function personifyHits(text: string): { match: string; allowedBy: PersonifyAllow | null }[] {
+  const out: { match: string; allowedBy: PersonifyAllow | null }[] = [];
+  for (const m of text.matchAll(PERSONIFY)) {
+    if (PERSONIFY_PERSON.test(m[3]!)) continue;
+    const match = m[0];
+    const clause = personifyClause(text, m.index!, match);
+    const tail = text.slice(m.index!).split(/[.!?]/)[0]!;
+    const sentence = clause + tail.slice(match.length);
+    const allowedBy = PERSONIFY_ALLOW.find(a => a.re.test(match) || a.re.test(clause) || a.re.test(sentence)) ?? null;
+    out.push({ match, allowedBy });
+  }
+  return out;
+}
+
+test('no UI element or object is personified in a player- or GM-facing string (voice.md: name the person who acts)', async () => {
+  const bad = [
+    'Your library can hold at most 50 statuses.',
+    'You have 10 offers waiting. Take one back first.',
+    'Loot from 2 more fights is waiting after this.',
+    'Too many messages are waiting for the room server, so the oldest message was dropped.',
+    'This tab shows it but cannot change it.',
+    'Each level gives 5 points. Your library can hold at most 50 items.',
+  ];
+  for (const s of bad) expect(personifyHits(s).filter(h => !h.allowedBy).length, `the rule catches: ${s}`).toBeGreaterThan(0);
+  const fine = [
+    'Waiting for the GM to confirm your last solo run of this gate.',
+    'Cleared. Waiting for the room server.',
+    'The GM decides how it plays.',
+    'Each level gives 5 ability points.',
+    'A quick action takes 70% of a standard action.',
+  ];
+  for (const s of fine) expect(personifyHits(s).filter(h => !h.allowedBy), `the rule passes: ${s}`).toEqual([]);
+
+  const all = await proseLiterals();
+  const seen = new Set<PersonifyAllow>();
+  const hits: Words[] = [];
+  for (const w of all) {
+    for (const h of personifyHits(w.text)) {
+      if (h.allowedBy) seen.add(h.allowedBy);
+      else hits.push({ ...w, text: `${h.match} | ${w.text}` });
+    }
+  }
+  const stale = PERSONIFY_ALLOW.filter(a => !seen.has(a)).map(a => a.why);
+  expect(stale, 'remove allowlist entries that no longer match any string').toEqual([]);
+  expect(said(hits), 'rewrite so a person, the GM, the player, or "you" acts (docs/guide/voice.md)').toEqual([]);
 });

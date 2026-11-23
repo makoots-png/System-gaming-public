@@ -25,8 +25,8 @@ export const TRADE_WORDS = {
   exchange: (o: Offer): string => `You give ${pickWords(o.asks)} for ${goodsWords(o.gives)}.`,
   // a stranded record's window
   strandedTitle: 'Take back?',
-  strandedGiver: (o: Offer): string => `The room closed before this offer ended, so the app cannot tell whether ${o.names.to} accepted. If ${o.names.to} did, ${o.names.to} has ${goodsWords(o.gives)} too. The GM's session log shows every trade that ended.`,
-  strandedTaker: (o: Offer, aside: Goods): string => `The room closed before your answer was settled, so the app cannot tell whether ${o.names.by} got your ${goodsWords(aside)}. The GM's session log shows every trade that ended.`,
+  strandedGiver: (o: Offer): string => `The room closed before this offer ended, so the app cannot tell whether ${o.names.to} accepted. If ${o.names.to} did, ${o.names.to} has ${goodsWords(o.gives)} too. The GM can check every finished trade in the session log.`,
+  strandedTaker: (o: Offer, aside: Goods): string => `The room closed before your answer was settled, so the app cannot tell whether ${o.names.by} got your ${goodsWords(aside)}. The GM can check every finished trade in the session log.`,
   // the GM view's "Trades and stash" section
   trading: 'Trading', on: 'On', off: 'Off', open: 'Open offers', noOpen: 'No open offers.', stop: 'Stop',
   gmLine: (o: Offer): string => `${o.names.by} offers ${o.names.to} ${goodsWords(o.gives)}${forWords(o.asks)}.`,

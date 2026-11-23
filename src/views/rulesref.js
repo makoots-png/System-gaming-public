@@ -142,7 +142,7 @@ export function register(app) {
           R.levelUpRestore ? 'Reaching a level for the first time fully restores HP and mana. Regaining a lost level does not.' : 'Leveling up does not restore HP and mana.']),
       ] },
       { id: 'ranks', title: 'Ranks and re-evaluation', body: [
-        p('Rank does not increase automatically. When a hunter\'s level reaches the next rank threshold, the Status window shows <b>Re-evaluation available</b>. Tap <b>Re-evaluate</b> to promote them.'),
+        p('Rank does not increase automatically. When a hunter\'s level reaches the next rank threshold, you see <b>Re-evaluation available</b> in Status. Tap <b>Re-evaluate</b> to promote them.'),
         table(['Rank', 'Levels', 'Rank bonus'], RANKS.map((r, i) => [ui.rankBadge(r), `${esc(rl[r])}${i < RANKS.length - 1 ? '–' + rankEnd(i) : '+'}`, esc(sg(rb[r]))])),
       ] },
       { id: 'ranktable', title: 'Rank table', body: [

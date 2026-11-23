@@ -5,7 +5,7 @@ import { RULES } from '../../src/core/rules.ts';
 import { tiles } from '../../src/core/combat/space.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
-import { OUTBOX_MAX } from '../../src/core/sync/outbox.ts';
+import { OUTBOX_MAX, OUTBOX_WORDS } from '../../src/core/sync/outbox.ts';
 import { TABLE_REFUSAL_WORDS } from '../../src/core/combat/refusal-words.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc } from './helpers.ts';
 
@@ -374,7 +374,7 @@ test('a player\'s End turn that a full outbox let go gives the turn back: End tu
       if (end()?.at === 'queued') hunterApp.api.dice.roll('1d20', { label: 'filler', hid: hunterApp.store.active().id });
       return end()?.at ?? 'gone';
     }), { timeout: 15_000 }).toBe('gone');
-    await expect(player.locator('.toast', { hasText: 'Too many messages are waiting for the room server, so the oldest message was dropped.' })).toBeVisible();
+    await expect(player.locator('.toast', { hasText: OUTBOX_WORDS.dropped(1) })).toBeVisible();
     await expect(pass).toBeVisible();
     await expect(strike).toBeEnabled();
     await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');

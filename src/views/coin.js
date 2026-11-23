@@ -221,7 +221,7 @@ export function register(app) {
     const c = coinOf(store.get().calls, id);
     if (!c || c.at !== 'called') { prompted({ type: 'putOff' }); seen(); return; }
     ui.system({ tag: '! Coin call', title: `${c.who || 'A hunter'} called ${SIDE_WORDS[c.call]}`, kind: 'info',
-      body: 'Did the player call it right? Their phone only shows that the coin was flipped, so tell them the result.',
+      body: 'Did the player call it right? They only see that the coin was flipped, so tell them the result.',
       lines: [`Rolled for: ${c.what || 'a check'}`, `Natural ${c.face}`, `Called: ${SIDE_WORDS[c.call]}`],
       actions: [{ label: 'Call was right', value: 'right' }, { label: 'Call was wrong', value: 'wrong' }, { label: 'Flip randomly', value: 'coin' }, { label: 'Decide later', value: null, cancel: true }] })
       .then(v => {

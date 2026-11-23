@@ -163,6 +163,8 @@ export function dropDealt(save: Save, fight: FightId): Save | Refused<'no-drop'>
 }
 /** What a refused deal says: the drop was given or set aside already (another tab, a stale window). */
 export const LOOT_WORDS: { readonly 'no-drop': string } = { 'no-drop': 'That loot was already given or set aside.' };
+/** What the Loot dropped window adds when more fights' drops remain after this one. */
+export const lootMoreLine = (more: number): string => `After this, you can award loot from ${more} more fight${more === 1 ? '' : 's'}.`;
 /** The drop of fight `fight` while it waits; null once it was dealt with. */
 export const dropWaiting = (l: FightLoot, fight: FightId): Dropped | null => (l.at === 'waiting' ? l.drops.find(d => d.fight === fight) ?? null : null);
 /** The drop the Loot dropped window offers: the oldest waiting. Null when none waits. */
@@ -219,7 +221,7 @@ export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: r
   const facts = { ...cleared, hunters: cleared.hunters.map(h => (paid.has(h.id) ? noteFacts(h, [fact(h.rank)], day.R) : h)) };
   const events = !room ? [] : effectivePlayers.flatMap((p, i) => {
     const noted = newEvent('noted', { to: [p.key], facts: [fact(p.rank)] }, { ...room.stamp, seq: i });
-    if (!noted) throw new Error('the room would refuse the fact of a gate the save holds');
+    if (!noted) throw new Error('the room would refuse the fact of a gate the save has');
     return [p.pays, noted];
   });
   return payAll(facts, effectiveLocals, { room: room ? room.code : null, events }, day, 'clear');
@@ -280,7 +282,7 @@ export function settleClearPreset(
     const notedEvents = payees.flatMap((p, i) => {
       if (p.kind !== 'remote') return [];
       const ev = newEvent('noted', { to: [p.key], facts: [fact(room.ranks.get(p.key) ?? null)] }, { ...room.stamp, seq: i });
-      if (!ev) throw new Error('the room would refuse the fact of a gate the save holds');
+      if (!ev) throw new Error('the room would refuse the fact of a gate the save has');
       return [ev];
     });
     if (notedEvents.length) next = atOutbox(box => notedEvents.reduce((b, ev) => post(b, room.code, { kind: 'event', event: ev }).box, box))(next);

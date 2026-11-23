@@ -38,7 +38,7 @@ Write plain, direct American English. Aim for sentences under 20 words, with one
 
 ### Personified UI elements and objects
 
-A person, the GM, the player, or "you" acts. Buttons, panels, rooms, and dice do not give, keep, hold, say, decide, or answer. Check the code when a line describes network or game state so you state the literal fact.
+A person, the GM, the player, or "you" acts. Buttons, panels, rooms, and dice do not give, keep, hold, wait, show, say, decide, or answer. Check the code when a line describes network or game state so you state the literal fact.
 
 - Bad (`src/core/hunter/pending.ts`): "Approve gives it to Mira; fold Award to leave it waiting."
 - Good: "Tap Approve to give it to Mira. Close Award to leave it waiting."
@@ -148,6 +148,6 @@ Give exact numbers instead of vague complaints.
 
 ## 8. How these rules are enforced
 
-Lint tests in `tests/lint.test.ts` enforce the mechanical rules, with one test named for each rule: em dashes, semicolons between clauses, the word "just", and British spellings.
+Lint tests in `tests/lint.test.ts` enforce the mechanical rules, with one test named for each rule: em dashes, semicolons between clauses, the word "just", American spellings, and personified UI elements or objects.
 
-Human review checks the rules that require judgment: personified UI or objects, cleverness and idioms, possessive chains, coined labels, and matching button names. Read this file before you write any player- or GM-facing string, and review new copy with `.claude/skills/humanizer/SKILL.md` and `.claude/skills/unslop/SKILL.md` before you commit.
+Human review checks the rules that require judgment: subtle personification outside the lint pattern, cleverness and idioms, possessive chains, coined labels, and matching button names. Read this file before you write any player- or GM-facing string, and review new copy with `.claude/skills/humanizer/SKILL.md` and `.claude/skills/unslop/SKILL.md` before you commit.

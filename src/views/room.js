@@ -142,7 +142,7 @@ export function register(app) {
       <section class="win" data-conncard><span class="cb"></span><h2>Connection</h2>
         <p data-conntext></p><p class="rm-sub" data-ago></p>
         <p class="rm-sub" data-cl="off" hidden>This device is offline.</p><p class="rm-sub" data-cl="kept" hidden>Your changes are saved on this device and will send once you are back online.</p>
-        <p class="rm-sub" data-cl="unsent" hidden>Your sheet is waiting to send.</p><p class="rm-sub" data-cl="locked" hidden>This hunter is claimed by another device. Ask the GM to release it.</p>
+        <p class="rm-sub" data-cl="unsent" hidden>Your sheet has unsent changes.</p><p class="rm-sub" data-cl="locked" hidden>This hunter is claimed by another device. Ask the GM to release it.</p>
         <button type="button" data-retry hidden>Reconnect now</button>
       </section>
       <details class="win" data-tools><summary>GM tools</summary>
@@ -200,7 +200,7 @@ export function register(app) {
       else if (x.type === 'clearTimer') clearTimeout(pause);
       else if (x.type === 'ask') Y().check(x.code).then(answer => lobbyDo({ type: 'answered', of: x.of, code: x.code, answer }));
       else if (x.type === 'confirm') {
-        ui.confirm({ title: `Remove ${x.name}?`, body: [`${x.name} will be removed from the party board and any active fight. Their device keeps their hunter but stops syncing with this room.`, app.api.trade.removeLine(x.key, x.name)].filter(Boolean).join(' '), danger: true, confirmLabel: 'Remove from room' })
+        ui.confirm({ title: `Remove ${x.name}?`, body: [`${x.name} will be removed from the party board and any active fight. They keep their hunter on their device, and no longer sync with this room.`, app.api.trade.removeLine(x.key, x.name)].filter(Boolean).join(' '), danger: true, confirmLabel: 'Remove from room' })
           .then(yes => lobbyDo({ type: 'confirmed', key: x.key, room: x.room, yes: !!yes }));
       } else if (x.type === 'send') {
         // the room first: a removal the server did not take leaves the hunter in the fight as in the room

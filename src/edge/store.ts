@@ -103,12 +103,12 @@ const LOAD_TEXT: { readonly [N in LoadNotice]: string } = {
   fight: 'The running fight in your save could not be read, so it was dropped. Everything else opened, and the save as it was is kept in Backups.',
 };
 const LIFE_TEXT: { readonly [N in LifeNotice]: string } = {
-  newer: 'This save is from a newer version of the app. This tab shows it but cannot change it.',
+  newer: 'This save is from a newer version of the app. You can view it in this tab, but you cannot change it.',
   otherTab: 'Another tab saved this campaign, so this tab stopped saving. Reload to continue. Anything this tab had not saved is in Backups.',
   noStorage: 'Browser storage is unavailable. Progress will not be saved.',
   mineUnkept: 'Another tab saved this campaign. Storage is too full to back up this tab\'s unsaved changes. Export them from the Data tab now, then reload.',
   loadUnkept: 'Your save could not be opened. Storage is too full to back it up, so this tab will not overwrite it. Free some storage and reload, or reset the campaign in the Data tab.',
-  fightUnkept: 'The running fight in your save could not be read. Storage is too full to back up your save, so this tab shows everything else without overwriting it. Free some storage and reload.',
+  fightUnkept: 'The running fight in your save could not be read. Storage is too full to back up your save, so you can view everything else in this tab without overwriting it. Free some storage and reload.',
   saveFailed: 'Saving failed (storage full or blocked). Export your data from the Data tab to avoid losing progress.',
   deviceFailed: 'Could not save device settings, such as pinned abilities and the fight view. Storage is full or blocked.',
 };

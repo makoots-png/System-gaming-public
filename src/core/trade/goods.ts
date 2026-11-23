@@ -181,7 +181,7 @@ export const OFFER_REFUSAL_WORDS: { readonly [R in OfferRefusal]: (s: Shortfall)
   poor: s => `You have ${s.have} gold. This needs ${s.need}.`,
   empty: () => 'Pick something to give.',
   'too-large': () => 'These items are too large to send in one offer. Give fewer.',
-  'too-many': () => `You have ${OFFERS_OPEN} offers waiting. Take one back first.`,
+  'too-many': () => `You already have ${OFFERS_OPEN} open offers. Take one back first.`,
   'not-open': () => 'This offer has already been answered.',
   'no-room': () => 'Join a room first using the room button at the top.',
   'not-played': () => 'Only the hunter you play in this room can trade there.',

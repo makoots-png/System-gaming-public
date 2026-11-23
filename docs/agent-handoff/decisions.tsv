@@ -738,3 +738,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T06:38Z	ops	(neon) Merged PR 84 to main (38666e88): keystones K7. Public run 45124001520 green.
 2026-11-23T07:56Z	features	(neon) Landed debt-payoff on lead-backlog: half of each gate clear's gold pays down revive debt (default, qd row 72, asked the owner).
 2026-11-23T10:07Z	ops	(neon) Landed lag-steady on lead-backlog: the lag test reruns a scenario only on a proven host stall, every bound unchanged.
+2026-11-23T10:22Z	ops	(neon) Merged PR 85 (debt payoff) and PR 86 (lag-steady) to main (183aa33e).
+2026-11-23T12:02Z	features	(neon) Landed personify-lint on lead-backlog: a voice lint for personified objects, 27 lines rewritten.

@@ -194,7 +194,7 @@ describe('the taps, each one write', () => {
     for (let i = 0; i < 10; i++) many = offered(many, pick(1)).save;
     const r = offerPosted(many, { ...args, stamp: stamp(A) });
     expect(r).toEqual({ ok: false, why: 'too-many' });
-    expect(refusalWords(r as never)).toBe('You have 10 offers waiting. Take one back first.');
+    expect(refusalWords(r as never)).toBe('You already have 10 open offers. Take one back first.');
   });
 
   test('Take back before the letter left: the token back and the letter out of the box', () => {

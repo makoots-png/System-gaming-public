@@ -57,7 +57,7 @@ export function naturalLines(): readonly string[] {
   const w = VERDICT_WORDS;
   return [
     'A natural 20 on the d20 succeeds whatever the total, and a natural 1 fails whatever the total.',
-    `Outside a fight, a natural 1 or 20 on a check also triggers a coin flip, and you call heads or tails. When playing alone, the app flips the coin. In a room, the GM decides how it lands and tells you at the table, while your phone only shows that it was flipped. On a 1, a right call is ${w[verdict(1, 'heads', 'heads')]} and a wrong call is ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call is ${w[verdict(20, 'heads', 'heads')]} and a wrong call is ${w[verdict(20, 'heads', 'tails')]}. The coin does not change any numbers. The GM decides what it means.`,
+    `Outside a fight, a natural 1 or 20 on a check also triggers a coin flip, and you call heads or tails. When playing alone, the app flips the coin. In a room, the GM decides how it lands and tells you at the table. You only see on your phone that it was flipped. On a 1, a right call is ${w[verdict(1, 'heads', 'heads')]} and a wrong call is ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call is ${w[verdict(20, 'heads', 'heads')]} and a wrong call is ${w[verdict(20, 'heads', 'tails')]}. The coin does not change any numbers. The GM decides what it means.`,
   ];
 }
 
@@ -109,7 +109,7 @@ export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
   const S = R.solo, root = Math.round(Math.sqrt(S.autoHarder) * 100) / 100;
   const harder = S.autoHarder > 1 ? ` Foes in a solo run are ${pct(S.autoHarder - 1)} stronger than in table play. Each has ${root} times its normal HP and deals ${root} times its normal damage.` : '';
   return [
-    `A solo run simulates the fight automatically using the game rules.${harder} Before you start, the odds show the results of ${ODDS_RUNS} simulated fights. Your solo run is a separate fight and can turn out better or worse. Your remaining HP, mana, and fatigue carry over after the run, and your hunter can die. If neither side wins by round ${CAP_ROUNDS}, you retreat. Your spent HP, mana, and fatigue stay used, and the gate stays open.`,
+    `A solo run simulates the fight automatically using the game rules.${harder} Before you start, you can see the results of ${ODDS_RUNS} simulated fights. Your solo run is a separate fight and can turn out better or worse. Your remaining HP, mana, and fatigue carry over after the run, and your hunter can die. If neither side wins by round ${CAP_ROUNDS}, you retreat. Your spent HP, mana, and fatigue stay used, and the gate stays open.`,
     ...(S.personal
       ? [`The System opens a personal gate every ${S.hours} hours, up to ${S.held} at a time. Each gate closes ${S.stays} hours after opening, whether cleared or not.`,
         `Your first personal gate (as a new hunter, after reviving, or after personal gates turn back on) has one monster of your rank. Later personal gates have ${S.pack[0]} to ${S.pack[1]} monsters, ranging from one rank below yours to one rank above.`,

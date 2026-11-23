@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, go, dismissAll, answerWindow, chooseList, fightRow, PHONE } from './helpers.ts';
 import { iconCreditLine, saleRows } from '../../src/core/rules-text.ts';
+import { lootMoreLine } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
 
 for (const width of [PHONE.width, 320]) {
@@ -98,7 +99,7 @@ test('loot put off with Later survives the next fight: the Loot dropped window o
     await fightAndEnd(page, 'm901', 'Ember Rat');
     const win = page.locator('.sys-overlay.show', { hasText: 'Loot dropped' });
     await expect(win).toContainText('75 gold');
-    await expect(win).toContainText('Loot from 1 more fight is waiting after this.');
+    await expect(win).toContainText(lootMoreLine(1));
     expect(await goldWaiting(page)).toEqual([75, 40]);
   });
 

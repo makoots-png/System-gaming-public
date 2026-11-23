@@ -32,7 +32,7 @@ const KINDS = [
   ['bundle', 'Bundles', 'A bundle is a saved reward you can give again, including XP, gold, items, titles, skills, statuses, or custom favors (boons).', 'New bundle'],
   ['map', 'Maps', 'A map with walls, cover, rough ground, pits, lasting fields, starting spots, and fog. You can assign a map to a gate.', 'New map'],
   ['feat', 'Feats', 'A feat tracks something a hunter does, like defeating 100 beasts, and rewards them automatically. Create your own, or edit or turn off a built-in feat.', 'New feat'],
-  ['story', 'Stories', 'A story is a set of chapters that you open one at a time over several sessions. A chapter can show the players a window, give a reward and issue a quest. Nothing in a story happens until you open its chapter.', 'New story'],
+  ['story', 'Stories', 'A story is a set of chapters that you open one at a time over several sessions. When you open a chapter, you can display a window to players, send a reward, and issue a quest. Nothing in a story happens until you open its chapter.', 'New story'],
 ];
 /** The fold of examples to copy under a section: its heading, by kind. */
 const EXAMPLES_LABEL = { status: 'Example statuses to copy', skill: 'Example skills to copy', bundle: 'Awards for roleplay to copy', story: 'Stories to copy' };
@@ -124,7 +124,7 @@ export function register(app) {
       const def = exampleStatuses(R)[id]; if (!def) return;
       const key = Object.hasOwn(L.statuses, id) || isBuiltIn(id) ? A().effects.slug(def.label, { ...R.conditions, ...L.statuses }) : id;
       const done = store.apply('library-example-status', atLibrary(l => saveStatus(l, key, def)));
-      if (ui.wrote('Workshop', done, { full: `Your library can hold at most ${LIMITS.libraryStatuses} statuses.` })) ui.toast('Workshop', `${def.label} is in your statuses.`);
+      if (ui.wrote('Workshop', done, { full: `You can save up to ${LIMITS.libraryStatuses} statuses.` })) ui.toast('Workshop', `${def.label} is in your statuses.`);
       return;
     }
     if (kind === 'bundle') {
@@ -144,7 +144,7 @@ export function register(app) {
     const k = exampleSkills(R)[Number(id)]; if (!k) return;
     const name = namedLike(L.skills, k.name, null) ? copyName(k.name, L.skills.map(x => x.name), 60) : k.name;
     const done = store.apply('library-example-skill', atLibrary(l => saveEntry(l, 'skills', /** @type {any} */ ({ ...k, name, id: store.id('s') }))));
-    if (ui.wrote('Workshop', done, { full: `Your library can hold at most ${LIMITS.librarySkills} skills.` })) ui.toast('Workshop', `${name} is in your skills.`);
+    if (ui.wrote('Workshop', done, { full: `You can save up to ${LIMITS.librarySkills} skills.` })) ui.toast('Workshop', `${name} is in your skills.`);
   }
 
   /** The "⋯" window of a row: its other actions, Delete and Reset as danger (each still asks before it acts). */
@@ -178,9 +178,9 @@ export function register(app) {
       const def = L.statuses[id];
       if (a === 'edit') return void await A().forge.status({ mode: 'library', edit: id });
       if (a === 'dup' && def) {
-        if (Object.keys(L.statuses).length >= LIMITS.libraryStatuses) return void ui.toast('Workshop', `Your library can hold at most ${LIMITS.libraryStatuses} statuses.`, { kind: 'warning' });
+        if (Object.keys(L.statuses).length >= LIMITS.libraryStatuses) return void ui.toast('Workshop', `You can save up to ${LIMITS.libraryStatuses} statuses.`, { kind: 'warning' });
         const label = copyName(def.label || id, Object.values({ ...app.rules().conditions, ...L.statuses }).map(d => d.label), 40), key = A().effects.slug(label, { ...app.rules().conditions, ...L.statuses });
-        return void ui.wrote('Workshop', store.apply('library-status-dup', atLibrary(l => saveStatus(l, key, { ...def, label }))), { full: `Your library can hold at most ${LIMITS.libraryStatuses} statuses.` });
+        return void ui.wrote('Workshop', store.apply('library-status-dup', atLibrary(l => saveStatus(l, key, { ...def, label }))), { full: `You can save up to ${LIMITS.libraryStatuses} statuses.` });
       }
       if ((a === 'del' || a === 'reset') && def) {
         const ok = a === 'reset'
@@ -196,7 +196,7 @@ export function register(app) {
       if (!d) return;
       if (a === 'off' || a === 'on' || a === 'dup') {
         const step = a === 'off' ? featOff : a === 'on' ? featOn : duplicateFeat;
-        ui.wrote('Workshop', store.apply(`library-feat-${a}`, atLibrary(l => step(l, id))), { full: `Your library can hold at most ${LIMITS.libraryFeats} feats.` });
+        ui.wrote('Workshop', store.apply(`library-feat-${a}`, atLibrary(l => step(l, id))), { full: `You can save up to ${LIMITS.libraryFeats} feats.` });
         return;
       }
       if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'This restores the default built-in feat. Hunters keep their current progress toward it.', danger: true, confirmLabel: 'Reset' })) ui.wrote('Workshop', store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id))));
@@ -229,7 +229,7 @@ export function register(app) {
       if (a === 'award') return A().award.open(b.rewards, b.id);
       if (a === 'edit') return void await bundleMaker(app, b);
       if (a === 'dup') {
-        if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `Your library can hold at most ${LIMITS.libraryRewards} bundles.`, { kind: 'warning' });
+        if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `You can save up to ${LIMITS.libraryRewards} bundles.`, { kind: 'warning' });
         { const name = copyName(b.name, L.rewards.map(x => x.name), 60); return void ui.wrote('Workshop', A().bundles.save(name, b.rewards, null, b.window || null), savedWords('bundle', name)); }
       }
       if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Hunters keep any rewards already given from this bundle.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
@@ -266,7 +266,7 @@ export function register(app) {
   /** A copy of a library entry under a new id and "(copy)" after its name; nothing at the cap, with a toast that says so. */
   function dup(list, x, prefix, n, cap) {
     const newId = store.id(prefix);
-    ui.wrote('Workshop', store.apply(`library-${list}-dup`, atLibrary(l => duplicateEntry(l, list, x.id, { newId, name: copyName(x.name, l[list].map(e => e.name), n) }))), { full: `Your library can hold at most ${cap} ${list}.` });
+    ui.wrote('Workshop', store.apply(`library-${list}-dup`, atLibrary(l => duplicateEntry(l, list, x.id, { newId, name: copyName(x.name, l[list].map(e => e.name), n) }))), { full: `You can save up to ${cap} ${list}.` });
   }
 
   app.registerView({

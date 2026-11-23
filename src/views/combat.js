@@ -38,7 +38,7 @@ import { openingWeights, settleWeights, weightsFor } from '../core/combat/fudge.
 import { weighable } from '../core/combat/odds.ts';
 import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
-import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootOffered, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
+import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootMoreLine, lootOffered, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
@@ -506,7 +506,7 @@ export function register(app) {
     for (;;) {
       const loot = store.get().loot, d = lootOffered(loot); if (!d || !app.isGM()) return;
       const more = loot.at === 'waiting' ? loot.drops.length - 1 : 0;
-      const after = more ? ` Loot from ${more} more fight${more === 1 ? '' : 's'} is waiting after this.` : '';
+      const after = more ? ` ${lootMoreLine(more)}` : '';
       const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: `Tap Award loot to open the Award form with this loot. Tap Set aside to skip awarding it.${after}`, lines: [lootText(d)],
         actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
       // the Award form opens the drop this window offered, the oldest (gm.js `award.open`)

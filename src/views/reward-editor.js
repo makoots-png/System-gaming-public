@@ -58,7 +58,7 @@ export function rewardEditor(app, box, o = {}) {
   const raw = () => rewardOfForm({ nums, rows }, rules(), !!o.floor);
   function value() {
     const r = raw(), rw = parseRewards(r) || newRewards();
-    if (canon(rw) !== canon(r)) console.error('reward editor: the form holds a reward the parser reads differently', r, rw);
+    if (canon(rw) !== canon(r)) console.error('reward editor: the form has a reward the parser reads differently', r, rw);
     return rw;
   }
 

@@ -78,7 +78,7 @@ import { wordTaken } from '../core/sync/word.ts';
 import { closeNews, letterTaken, offersGone, offersSeen } from '../core/trade/offer.ts';
 import type { OfferNews } from '../core/trade/offer.ts';
 import { told } from '../core/session-log.ts';
-import { atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
+import { OUTBOX_WORDS, atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
 import type { Call, Entry, EntryEvent, Letter, Outbox } from '../core/sync/outbox.ts';
 import type { Hunter, LastRoom, Save, SyncSettings } from '../core/save.ts';
 
@@ -723,7 +723,7 @@ export function register(app: SyncHost): void {
     if (!flush('outbox-post', b => { const r = postIn(b, code, letter, key); dropped = r.dropped; return r.box; })) return { ok: false, why: 'noRoom' };
     // each message the full box let go is told to whoever waits on its id (a turn's hold: SMX-sync-4.3)
     for (const d of dropped) app.emit('sync:outbox', { id: d.id, at: 'dropped' });
-    if (dropped.length) ui.toast('Sync', `Too many messages are waiting for the room server, so ${dropped.length === 1 ? 'the oldest message was' : `the ${dropped.length} oldest messages were`} dropped.`, { kind: 'warn' });
+    if (dropped.length) ui.toast('Sync', OUTBOX_WORDS.dropped(dropped.length), { kind: 'warn' });
     return { ok: true, id: letter.kind === 'event' ? letter.event.payload.eid : `tomb ${letter.hid}`, dropped: dropped.length };
   }
   /**

@@ -58,6 +58,11 @@ export const OUTBOX_MAX = 100;
 /** Refusals kept to show. A newer one drops the oldest. */
 export const REFUSED_KEEP = 10;
 
+/** Words shown when a full outbox drops older unsent messages. */
+export const OUTBOX_WORDS = {
+  dropped: (n: number): string => `There are too many unsent messages for the room server, so the app dropped ${n === 1 ? 'the oldest message' : `the ${n} oldest messages`}.`,
+} as const;
+
 /** The state each event leads to, or null where it does not apply. */
 const TABLE: { readonly [S in KeptState]: { readonly [E in EntryEventType]: EntryState | null } } = {
   queued: { send: 'sending', sent: null, failed: null, refused: 'refused', reload: null, drop: 'dropped' },
@@ -88,7 +93,7 @@ export type Posted = { readonly box: Outbox; readonly dropped: readonly Entry[] 
  */
 export class IdTaken extends Error {
   constructor(readonly id: string, held: Letter, posted: Letter) {
-    super(`the outbox holds a ${what(held)} under id ${id}, so this ${what(posted)} was not posted: the id was made twice`);
+    super(`the outbox has a ${what(held)} under id ${id}, so this ${what(posted)} was not posted: the id was made twice`);
     this.name = 'IdTaken';
   }
 }

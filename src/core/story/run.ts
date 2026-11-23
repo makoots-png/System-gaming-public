@@ -219,7 +219,7 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
       const groups = [{ to: free, body }, { to: held, body: rest }].filter(g => g.to.length);
       groups.forEach((g, i) => {
         const made = newEvent('chapter', { to: g.to, ...g.body }, { ...room.stamp, now: room.stamp.now + i });
-        if (!made) throw new Error('the room would refuse a chapter the library holds');
+        if (!made) throw new Error('the room would refuse a chapter the library has');
         events.push(made);
       });
       onRow = playerHeld(room.sheets, held, body.rewards.statuses);
