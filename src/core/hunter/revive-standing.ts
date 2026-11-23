@@ -41,13 +41,13 @@ export const canRaise = (s: ReviveStanding): s is Raise => TABLE[s].raise !== nu
 /** For each standing, what a System raise from it owes, for a hunter of `rank`. */
 const OWED: { readonly [S in ReviveStanding]: (rank: Rank, R: Pick<Rules, 'priceBase' | 'reviveDebtPrices'>) => number } = {
   free: () => 0,
-  debt: (rank, R) => Math.round(R.reviveDebtPrices * priceBaseOf(R, rank)),
+  debt: (rank, R) => Math.round(R.reviveDebtPrices[rank] * priceBaseOf(R, rank)),
   none: () => 0,
 };
 /**
  * The gold a System raise from standing `s` adds to the debt of a hunter of `rank`: none for the free raise; on debt,
- * `R.reviveDebtPrices` multiples of `R.priceBase[rank]` (sized for about 5 gate clears under gold table B and the 1/2
- * debt split). None from `none`, where the System does not raise.
+ * `R.reviveDebtPrices[rank]` multiples of `R.priceBase[rank]` (calibrated to about 5 gate clears at every rank under
+ * gold table B and the 1/2 debt split). None from `none`, where the System does not raise.
  */
 export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'priceBase' | 'reviveDebtPrices'>): number => OWED[s](rank, R);
 /**

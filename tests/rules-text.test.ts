@@ -140,14 +140,14 @@ describe('the death line', () => {
   });
 
   test('the death line states the System revive debt in gold and rough clears, three-way split, and XP rate, and follows GM overrides', () => {
-    expect(line).toContain('Using a System revive on debt puts you in debt by rank (E 600, D 1,950, C 7,500, B 30,000, A 114,000, S 450,000 gold), about 4 to 6 same-rank gate clears to pay off. While you owe debt, 50% of your gate clear gold goes to your debt, you get 25%, and 25% is lost to debt costs. You also earn 25% XP from every source until your debt is paid off.');
-    expect(deathLine({ ...RULES, reviveDebtPrices: 5, reviveDebtShare: 0.4, reviveDebtBurn: 0.1, reviveDebtXpRate: 0.5 })).toContain('Using a System revive on debt puts you in debt by rank (E 500, D 1,625, C 6,250, B 25,000, A 95,000, S 375,000 gold), about 4 to 6 same-rank gate clears to pay off. While you owe debt, 40% of your gate clear gold goes to your debt, you get 50%, and 10% is lost to debt costs. You also earn 50% XP from every source until your debt is paid off.');
+    expect(line).toContain('Using a System revive on debt puts you in debt by rank (E 500, D 1,625, C 6,250, B 30,000, A 133,000, S 525,000 gold), about 5 same-rank gate clears to pay off. While you owe debt, 50% of your gate clear gold goes to your debt, you get 25%, and 25% is lost to debt costs. You also earn 25% XP from every source until your debt is paid off.');
+    expect(deathLine({ ...RULES, reviveDebtPrices: { E: 4, D: 5, C: 5, B: 6, A: 7, S: 10 }, reviveDebtShare: 0.4, reviveDebtBurn: 0.1, reviveDebtXpRate: 0.5 })).toContain('Using a System revive on debt puts you in debt by rank (E 400, D 1,625, C 6,250, B 30,000, A 133,000, S 750,000 gold), about 5 to 8 same-rank gate clears to pay off. While you owe debt, 40% of your gate clear gold goes to your debt, you get 50%, and 10% is lost to debt costs. You also earn 50% XP from every source until your debt is paid off.');
     const noBurn = deathLine({ ...RULES, reviveDebtShare: 0.5, reviveDebtBurn: 0, reviveDebtXpRate: 1 });
     expect(noBurn).toContain('While you owe debt, 50% of your gate clear gold goes to your debt, and you get 50%.');
     expect(noBurn).not.toContain('lost to debt costs');
     expect(noBurn).not.toContain('XP from every source');
     const zero = deathLine({ ...RULES, reviveDebtShare: 0, reviveDebtBurn: 0, reviveDebtXpRate: 1 });
-    expect(zero).toContain('Using a System revive on debt puts you in debt by rank (E 600, D 1,950, C 7,500, B 30,000, A 114,000, S 450,000 gold).');
+    expect(zero).toContain('Using a System revive on debt puts you in debt by rank (E 500, D 1,625, C 6,250, B 30,000, A 133,000, S 525,000 gold).');
     expect(zero).not.toContain('goes to your debt');
   });
 

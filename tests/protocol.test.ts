@@ -1272,7 +1272,7 @@ describe('the other room docs', () => {
       expect(read({ reviveDebtShare: 0.7, reviveDebtBurn: 0.4 }), 'share + burn over 1 is refused').toBeNull();
       expect([read({ gradeStep: 0.5 })!.gradeStep, read({ gradeStep: 9 })!.gradeStep]).toEqual([domainOf('gradeStep')!.least, domainOf('gradeStep')!.most]);
       expect([read({ revivePrices: 0 })!.revivePrices, read({ revivePrices: 1e9 })!.revivePrices]).toEqual([domainOf('revivePrices')!.least, domainOf('revivePrices')!.most]);
-      expect([read({ reviveDebtPrices: 0 })!.reviveDebtPrices, read({ reviveDebtPrices: 1e9 })!.reviveDebtPrices]).toEqual([domainOf('reviveDebtPrices')!.least, domainOf('reviveDebtPrices')!.most]);
+      expect(read({ reviveDebtPrices: { ...doc.reviveDebtPrices, E: 0, S: 1e9, C: 5.9 } })!.reviveDebtPrices).toEqual({ ...doc.reviveDebtPrices, E: domainOf('reviveDebtPrices.E')!.least, S: domainOf('reviveDebtPrices.S')!.most, C: 5 });
       expect([read({ priceBase: { ...doc.priceBase, E: -5, S: 2e9, C: 1234.9 } })!.priceBase]).toEqual([{ ...doc.priceBase, E: domainOf('priceBase.E')!.least, S: domainOf('priceBase.S')!.most, C: 1234 }]);
       expect([read({ gateParty: 0 })!.gateParty, read({ gateParty: 99 })!.gateParty, read({ gateParty: 4.7 })!.gateParty]).toEqual([domainOf('gateParty')!.least, domainOf('gateParty')!.most, 4]);
       expect(read({ solo: { ...doc.solo, lootShare: 3 } })!.solo.lootShare).toBe(domainOf('solo.lootShare')!.most);
@@ -1288,6 +1288,9 @@ describe('the other room docs', () => {
         ['no elixirPrices', () => read({ elixirPrices: undefined })],
         ['no revivePrices', () => read({ revivePrices: undefined })],
         ['no reviveDebtPrices', () => read({ reviveDebtPrices: undefined })],
+        ['a scalar reviveDebtPrices on the wire', () => read({ reviveDebtPrices: 6 })],
+        ['a rank missing from reviveDebtPrices', () => { const { S: _gone, ...five } = copy(doc.reviveDebtPrices); return read({ reviveDebtPrices: five }); }],
+        ['a reviveDebtPrices entry that is text', () => read({ reviveDebtPrices: { ...doc.reviveDebtPrices, E: '5' } })],
         ['no share of clear gold paid toward debt', () => read({ reviveDebtShare: undefined })],
         ['no debt burn share', () => read({ reviveDebtBurn: undefined })],
         ['no debt XP rate', () => read({ reviveDebtXpRate: undefined })],

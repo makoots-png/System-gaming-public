@@ -1,7 +1,7 @@
 // The charts of a hunter's revive ladder and System revive debt (src/core/hunter/revive-standing.ts `standingStep`, `debtStep`).
 import { DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, debtState, debtStep, standingStep } from '../../src/core/hunter/revive-standing.ts';
 import type { DebtEvent, DebtState, ReviveStanding, StandingEvent } from '../../src/core/hunter/revive-standing.ts';
-import { RULES } from '../../src/core/rules.ts';
+import { RANKS, RULES } from '../../src/core/rules.ts';
 import { isRefused } from '../../src/core/save-step.ts';
 import { bfs, machine } from '../statecharts.ts';
 
@@ -30,7 +30,7 @@ export const reviveStanding = machine<ReviveStanding, StandingEvent>({
   where: [
     ['The union', '`ReviveStanding`, `StandingEvent` and `REVIVE_STANDINGS` in `src/core/hunter/revive-standing.ts`; the standing is `Hunter.reviveLeft`, repaired to `free`'],
     ['What changes it', '`standingStep(standing, event)` and its `TABLE`; `canRaise(standing)` for a view'],
-    ['Who calls it', '`systemRaise` in `src/core/hunter/grant.ts`, its one writer, which steps the standing, the life (`sheetEdit`, a revive by the System) and the debt (`raiseOwes`, `RULES.reviveDebtPrices` times `RULES.priceBase[rank]`) in one write; `api.systemRaise` and `offerRaise` in `src/views/hunter.js`, the window THE SYSTEM CAN REVIVE YOU on the dead hunter\'s own phone once no fight holds it'],
+    ['Who calls it', '`systemRaise` in `src/core/hunter/grant.ts`, its one writer, which steps the standing, the life (`sheetEdit`, a revive by the System) and the debt (`raiseOwes`, `RULES.reviveDebtPrices[rank]` times `RULES.priceBase[rank]`) in one write; `api.systemRaise` and `offerRaise` in `src/views/hunter.js`, the window THE SYSTEM CAN REVIVE YOU on the dead hunter\'s own phone once no fight holds it'],
     ['The test to copy', '`tests/revive-standing.test.ts`'],
     ['The recipe', 'docs/guide/save-store.md, "A field of a saved thing"'],
   ],
@@ -48,6 +48,7 @@ const debtPct = pct(RULES.reviveDebtShare);
 const burnPct = pct(RULES.reviveDebtBurn);
 const keepPct = pct(1 - RULES.reviveDebtShare - RULES.reviveDebtBurn);
 const xpPct = pct(RULES.reviveDebtXpRate);
+const debtMults = RANKS.map(r => `${r} ${RULES.reviveDebtPrices[r]}`).join(', ');
 
 export const reviveDebt = machine<number, DebtEvent>({
   name: 'A hunter\'s revive debt',
@@ -61,7 +62,7 @@ export const reviveDebt = machine<number, DebtEvent>({
   kindsOf: d => [debtState(d)],
   views: [{
     title: 'System debt (revive on debt or shop borrowing) splits clear gold three ways and cuts XP until debt reaches 0',
-    note: `the owner (Nov 23), qd rows 72 and 73: a System revive from the debt standing adds \`raiseOwes\` gold (\`reviveDebtPrices\` times \`priceBase[rank]\`, default \`${RULES.reviveDebtPrices}\`) to \`Hunter.debt\` (ignoring \`borrowCapPrices\`), and shop borrowing adds an allowed shortfall up to \`borrowCap(rank, R)\` (\`borrowCapPrices\`, default \`${RULES.borrowCapPrices}\` times \`priceBase[rank]\`, blocked when \`borrowCapPrices <= 0\` or \`reviveDebtShare <= 0\`). While \`Hunter.debt\` is above 0, gate clear gold splits three ways: \`reviveDebtShare\` (${debtPct}) goes to debt, \`reviveDebtBurn\` (${burnPct}) is lost to debt costs, and the hunter gets the rest (${keepPct}). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by \`reviveDebtXpRate\` (${xpPct}, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` unchanged.`,
+    note: `the owner (Nov 23), qd rows 72 and 73: a System revive from the debt standing adds \`raiseOwes\` gold (\`reviveDebtPrices[rank]\` times \`priceBase[rank]\`, default \`${debtMults}\`) to \`Hunter.debt\` (ignoring \`borrowCapPrices\`), and shop borrowing adds an allowed shortfall up to \`borrowCap(rank, R)\` (\`borrowCapPrices\`, default \`${RULES.borrowCapPrices}\` times \`priceBase[rank]\`, blocked when \`borrowCapPrices <= 0\` or \`reviveDebtShare <= 0\`). While \`Hunter.debt\` is above 0, gate clear gold splits three ways: \`reviveDebtShare\` (${debtPct}) goes to debt, \`reviveDebtBurn\` (${burnPct}) is lost to debt costs, and the hunter gets the rest (${keepPct}). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by \`reviveDebtXpRate\` (${xpPct}, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` unchanged.`,
     hides: '',
     state: d => DEBT_LABEL[debtState(d)],
     step: (e, from, to) => {

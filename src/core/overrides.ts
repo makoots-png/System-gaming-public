@@ -118,6 +118,25 @@ const rarities: Reader = (v, path, no) => {
 
 /** A rank: one of `RANKS`, as written. */
 const oneRank: Reader = (v, path, no) => RANKS.find(r => r === v) ?? no(path, 'entry');
+/**
+ * Per-rank System revive debt multiples: a per-rank map validated rank by rank, or a flat scalar number validated
+ * against the rank domain and expanded to every rank so pre-map saves and flat-multiple edits stay intact.
+ */
+const reviveDebtPrices: Reader = (v, path, no) => {
+  if (typeof v === 'number') {
+    const n = numberAt(v, path, no, domainOf('reviveDebtPrices.E'));
+    return n === undefined ? undefined : Object.fromEntries(RANKS.map(r => [r, n]));
+  }
+  if (!isObj(v)) return no(path, 'object');
+  const out: Rec = {};
+  for (const [k, x] of Object.entries(v)) {
+    const p = `${path}.${k}`;
+    if (!Object.hasOwn(RULES.reviveDebtPrices, k)) { no(p, 'unknown'); continue; }
+    const kept = numberAt(x, p, no);
+    if (kept !== undefined) out[k] = kept;
+  }
+  return out;
+};
 
 /**
  * The reader of each rule `against` cannot read from its shipped value: every list, every null and every open map. A
@@ -142,6 +161,7 @@ export const READERS: Readonly<Record<string, Reader>> = {
   gateNames: entries(text),
   'paths.*.tiers': entries(tier),
   rarities,
+  reviveDebtPrices,
   'solo.pack': lowToHigh,
   // text, but only a kind of `fight.kinds`: item-budget.ts weighs a penetration against a same-rank monster of this kind
   'itemBudget.penFoe': (v, path, no) => (typeof v === 'string' && Object.hasOwn(RULES.fight.kinds, v) ? v : no(path, 'entry')),

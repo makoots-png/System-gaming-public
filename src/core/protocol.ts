@@ -847,7 +847,7 @@ export type RoomRules = {
   usedUpShare: number;
   elixirPrices: number;
   revivePrices: number;
-  reviveDebtPrices: number;
+  reviveDebtPrices: Rules['reviveDebtPrices'];
   reviveDebtShare: number;
   reviveDebtBurn: number;
   reviveDebtXpRate: number;
@@ -1205,7 +1205,7 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
   const weights = Object.fromEntries(Object.keys(shipped).map(k => [k, ruleNumber(`loot.${rank}.weights.${k}`)(own(w, k))]));
   return { gold: goldRange(own(o, 'gold'), `loot.${rank}.gold`), weights } as Rules['loot'][K]; // the shipped table's keys, each read
 }
-/** One `T` for each rank, made by `f`: how `priceBase` is read from the room's rules doc. */
+/** One `T` for each rank, made by `f`: how per-rank tables (`priceBase`, `reviveDebtPrices`) are read from the room's rules doc. */
 const eachRank = <T>(f: (r: Rank) => T): Record<Rank, T> =>
   Object.fromEntries(RANKS.map(r => [r, f(r)])) as Record<Rank, T>;
 /** The room's keystone switch and earning rules: absent reads as off with shipped shares and ranks. */
@@ -1239,8 +1239,8 @@ function roomCrystal(v: unknown): Rules['crystal'] {
 }
 /** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and crystal (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
-  const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   const reviveDebtShare = rule('reviveDebtShare'), reviveDebtBurn = rule('reviveDebtBurn');
   if (reviveDebtShare + reviveDebtBurn > 1 + 1e-9) return refuse();
   return {
@@ -1257,7 +1257,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     usedUpShare: rule('usedUpShare'),
     elixirPrices: rule('elixirPrices'),
     revivePrices: rule('revivePrices'),
-    reviveDebtPrices: rule('reviveDebtPrices'),
+    reviveDebtPrices: eachRank(r => ruleNumber(`reviveDebtPrices.${r}`)(own(rdp, r))),
     reviveDebtShare,
     reviveDebtBurn,
     reviveDebtXpRate: rule('reviveDebtXpRate'),

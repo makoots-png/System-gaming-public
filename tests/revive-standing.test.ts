@@ -14,7 +14,7 @@ import { parseItem } from '../src/core/registry/items.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import { gmSource } from '../src/core/effects.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
-import { RULES, priceBaseOf } from '../src/core/rules.ts';
+import { RANKS, RULES, priceBaseOf } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
@@ -55,9 +55,9 @@ describe('the revive ladder, as a machine: every standing against every event', 
   });
 });
 
-// The System raise (grant.ts `systemRaise`). The debt is economy.md section 13's "ten Clears of their rank", one Clear
-// the middle of the rank's loot gold (section 1: an E Clear is 100), so an E hunter owes 1,000 and a C hunter 12,500,
-// the price of a crystal of the rank in section 13's table.
+// The System raise (grant.ts `systemRaise`). The debt is per-rank `RULES.reviveDebtPrices[rank]` times
+// `RULES.priceBase[rank]` (E 500, D 1,625, C 6,250, B 30,000, A 133,000, S 525,000 gold; calibrated to about 5 clears
+// at every rank under gold table B and the 1/2 debt split).
 describe('the System raise: the life, the standing and the debt in one write', () => {
   const AT = '2026-11-22T12:00:00.000Z', ROOM = room('ABC234');
   const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') };
@@ -82,12 +82,13 @@ describe('the System raise: the life, the standing and the debt in one write', (
     expect(raisedLine(r.from, r.to)).toBe(`Revived at ${REVIVE_HP} HP and level 29 (2 levels lost)`);
   });
 
-  test('the second raise owes reviveDebtPrices times the hunter\'s rank base price and leaves no System raise (loot gold edits do not move it)', () => {
+  test('the second raise owes reviveDebtPrices[rank] times the hunter\'s rank base price and leaves no System raise (loot gold edits do not move it)', () => {
     const second = ok(raise(die(ok(raise(deadSave())).save)));
-    expect([hunterOf(second.save).reviveLeft, hunterOf(second.save).debt, second.raise, second.owes]).toEqual(['none', 600, 'debt', 600]);
-    expect(RULES.reviveDebtPrices * priceBaseOf(RULES, 'E'), 'the rule: 6 times E base price 100').toBe(600);
-    expect(ok(raise(deadSave('debt', 'C'))).owes, 'a C hunter: 6 times C base price 1,250').toBe(7500);
-    expect(raiseOwes('debt', 'E', { ...RULES, priceBase: RULES.priceBase }), 'decoupled from loot gold').toBe(600);
+    expect([hunterOf(second.save).reviveLeft, hunterOf(second.save).debt, second.raise, second.owes]).toEqual(['none', 500, 'debt', 500]);
+    expect(RULES.reviveDebtPrices.E * priceBaseOf(RULES, 'E'), 'the rule: 5 times E base price 100').toBe(500);
+    expect(RANKS.map(r => raiseOwes('debt', r, RULES)), 'per-rank debt gold E to S').toEqual([500, 1625, 6250, 30000, 133000, 525000]);
+    expect(ok(raise(deadSave('debt', 'C'))).owes, 'a C hunter: 5 times C base price 1,250').toBe(6250);
+    expect(raiseOwes('debt', 'E', { ...RULES, priceBase: RULES.priceBase }), 'decoupled from loot gold').toBe(500);
     expect(ok(raise(deadSave('debt'))).save.hunters[0]!.life, 'raised all the same').toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
@@ -95,7 +96,7 @@ describe('the System raise: the life, the standing and the debt in one write', (
     const base = deadSave('debt', 'E');
     const withShopDebt: Save = { ...base, hunters: [{ ...hunterOf(base), debt: 150 }] };
     const r = ok(systemRaise(withShopDebt, H, { at: AT, room: null, R: { ...RULES, borrowCapPrices: 0, reviveDebtShare: 0 }, held: false }));
-    expect([hunterOf(r.save).life, hunterOf(r.save).reviveLeft, hunterOf(r.save).debt, r.owes]).toEqual([{ at: 'up', hp: REVIVE_HP }, 'none', 750, 600]);
+    expect([hunterOf(r.save).life, hunterOf(r.save).reviveLeft, hunterOf(r.save).debt, r.owes]).toEqual([{ at: 'up', hp: REVIVE_HP }, 'none', 650, 500]);
   });
 
   test('past the ladder the System raises no more: refused, so the save stays as it was', () => {
@@ -141,7 +142,7 @@ describe('the System raise: the life, the standing and the debt in one write', (
     expect(box).toHaveLength(1);
     const letter = box[0]!.letter as { kind: 'event'; event: { type: string; payload: Record<string, unknown> } };
     expect(letter.event.type).toBe('systemRaise');
-    expect(letter.event.payload).toMatchObject({ by: 'd-player1:h1', name: hunterOf(deadSave()).name, raise: 'debt', owes: 600 });
+    expect(letter.event.payload).toMatchObject({ by: 'd-player1:h1', name: hunterOf(deadSave()).name, raise: 'debt', owes: 500 });
     expect(ok(raise(deadSave())).save.settings.sync.outbox ?? []).toEqual([]);
   });
 });
@@ -157,18 +158,17 @@ describe('what the System says of its raise', () => {
       rise: 'Revive for free',
     });
     const debt = raiseOffer(at('debt', 'C', 1), RULES)!;
-    expect(debt.lines).toEqual(['You will owe 7,500 gold, about 6 rank C gate clears to pay off.', `You revive at ${REVIVE_HP} HP, with all statuses cleared.`, 'After this, only a Resurrection Crystal or the GM can revive you.']);
-    expect(debt.rise).toBe('Revive on debt (7,500 gold)');
-    expect(raiseOffer(at('debt', 'E', 1), { ...RULES, reviveDebtShare: 0 })!.lines[0]).toBe('You will owe 600 gold.');
-    expect(debtPayoffClears(600, 'E', RULES)).toBe(6);
-    expect(debtPayoffClears(450000, 'S', RULES)).toBe(4);
-    expect(debtPayoffClears(600, 'E', { ...RULES, reviveDebtShare: 0 })).toBeNull();
+    expect(debt.lines).toEqual(['You will owe 6,250 gold, about 5 rank C gate clears to pay off.', `You revive at ${REVIVE_HP} HP, with all statuses cleared.`, 'After this, only a Resurrection Crystal or the GM can revive you.']);
+    expect(debt.rise).toBe('Revive on debt (6,250 gold)');
+    expect(raiseOffer(at('debt', 'E', 1), { ...RULES, reviveDebtShare: 0 })!.lines[0]).toBe('You will owe 500 gold.');
+    expect(RANKS.map(r => debtPayoffClears(raiseOwes('debt', r, RULES), r, RULES)), 'every rank promises about 5 clears').toEqual([5, 5, 5, 5, 5, 5]);
+    expect(debtPayoffClears(500, 'E', { ...RULES, reviveDebtShare: 0 })).toBeNull();
     expect(raiseOffer(at('none'), RULES)).toBeNull();
   });
 
   test('the sheet says what is left, and that a fight holding the hunter ends first', () => {
     expect(raiseLine(at('free'), RULES, false)).toBe('The System can revive you once for free.');
-    expect(raiseLine(at('debt'), RULES, true)).toBe('Once the fight ends, the System can revive you once more for 600 gold debt.');
+    expect(raiseLine(at('debt'), RULES, true)).toBe('Once the fight ends, the System can revive you once more for 500 gold debt.');
     expect(raiseLine(at('none'), RULES, false)).toBe('You have used all your System revives.');
   });
 

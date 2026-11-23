@@ -1,7 +1,7 @@
 // The System raise (src/core/hunter/grant.ts `systemRaise`, src/core/hunter/revive-standing.ts). World rule 6: the
 // first revive is free, then one on debt, then none unless the GM or a crystal; the owner, Nov 22: those two are a "System
 // raise", no GM button. A dead hunter's own phone offers it once no fight holds the hunter, and the GM's phone hears it.
-// The debt is RULES.reviveDebtPrices times RULES.priceBase[rank] (sized for about 5 gate clears under gold table B).
+// The debt is RULES.reviveDebtPrices[rank] times RULES.priceBase[rank] (calibrated to about 5 gate clears at every rank under gold table B).
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { RAISE_CHIPS, RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtPreviewLine, debtXpClearedLine, debtXpLine, raiseLine, raiseOffer, raiseOwes, raisedSaid } from '../../src/core/hunter/revive-standing.ts';

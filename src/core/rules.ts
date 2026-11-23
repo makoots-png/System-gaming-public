@@ -81,6 +81,7 @@ const DC = wholeIn(1, 100, 'DC for a d20 check. The hardest S-rank DC is 55, and
 const MONSTER_XP = wholeIn(0, 1_000_000, 'XP a monster gives. One million is roughly one level-up at the max level');
 const BREAK_DAYS = wholeIn(1, 365, 'days a gate stays open before dungeon break. Under 1 day it breaks immediately, and 365 is one full year');
 const GOLD = wholeIn(0, 1_000_000_000, 'gold amount. One billion is the maximum for rewards and monster loot');
+const REVIVE_DEBT_PRICE = wholeIn(1, 1000, 'debt for a System revive in multiples of priceBase, from 1 to 1000');
 const WEIGHT = wholeIn(0, 1000, 'relative chance weight in this table. 0 means never chosen, and 1000 is the maximum');
 const SUMMON_MANA = wholeIn(0, 1000, 'mana cost to summon. High values can make a summon unpayable');
 const PACK = wholeIn(1, 26, 'number of monsters in a spawned pack. Must be at least 1 and at most 26');
@@ -220,8 +221,13 @@ const SPEC = {
   elixirPrices: real(1, 0, 100, 'price of a full-heal consumable in multiples of priceBase, from 0 to 100'), // crystal-economy.md section 1 (the owner, Nov 23): rank-capped Elixir of Life costs 1.0x priceBase
   revivePrices: whole(10, 1, 1000, 'price of a Resurrection Crystal in multiples of priceBase, from 1 to 1000'), // design 5: a full set of its rank's middle gear
   // the owner (Nov 23, qd row 72): System revive debt pays off in about 5 gate clears for a party of 4 under gold table B
-  // and the 50/25/25 split. 6 multiples of priceBase averages 5.09 clears across E to S (4.16 to 5.86).
-  reviveDebtPrices: whole(6, 1, 1000, 'debt for a System revive in multiples of priceBase, from 1 to 1000'),
+  // and the 50/25/25 split. Per-rank multiples of priceBase, calibrated to gold table B's 2.25x (E) to 3.33x (S) clear-gold
+  // taper (E 500 to S 525,000 gold; mean 4.71 to 4.98 clears, median 5 at every rank). If you override RULES.loot away
+  // from gold table B, adjust reviveDebtPrices to match.
+  reviveDebtPrices: {
+    E: of(5, REVIVE_DEBT_PRICE), D: of(5, REVIVE_DEBT_PRICE), C: of(5, REVIVE_DEBT_PRICE),
+    B: of(6, REVIVE_DEBT_PRICE), A: of(7, REVIVE_DEBT_PRICE), S: of(7, REVIVE_DEBT_PRICE),
+  },
   // the owner (Nov 23), qd row 72: while in System revive debt, gate clear gold splits three ways (share to debt, burn lost
   // to debt costs, the rest to the hunter), and earned XP from every source is multiplied by reviveDebtXpRate until debt hits 0.
   reviveDebtShare: of(0.5, SHARE),

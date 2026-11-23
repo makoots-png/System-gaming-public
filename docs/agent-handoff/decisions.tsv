@@ -757,3 +757,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T21:16Z	features	(neon) Landed potion-prices on lead-backlog: rank-tiered potions 0.35x, Elixir 1.0x priceBase.
 2026-11-23T21:31Z	ops	(neon) Merged PR 95 (potion-prices) to main (0da99122).
 2026-11-23T22:24Z	economy	crystal-balance landed on lead-backlog: mana crystal balance, gate drops (12% unsigned salvage), Bureau/Stair/Helix exchange; full unit 6822 and browser 590 green
+2026-11-23T22:38Z	ops	PR 96 (crystal-balance) merged to main
+2026-11-23T22:40Z	economy	debt-shape landed on lead-backlog: per-rank revive debt E5 D5 C5 B6 A7 S7 x priceBase (Neon's pick); unit 6823 and browser 590 green
