@@ -1,6 +1,11 @@
 // What a fight's end and a gate's Clear pay (src/core/gates/pay.ts): each one step, all of it or nothing.
 import { describe, expect, test } from 'bun:test';
-import { LOOT_EVENTS, LOOT_STATES, clearGoldEach, clearShares, dropDealt, dropLine, encounterAwards, gateFact, lootOffered, lootStep, planEncounter, settleClear, settleEncounter, shareEach } from '../src/core/gates/pay.ts';
+import { LOOT_EVENTS, LOOT_STATES, clearGoldEach, clearShares, dropDealt, dropLine, encounterAwards, gateFact, lootOffered, lootStep, planEncounter, settleClear, settleClearPreset, settleEncounter, shareEach } from '../src/core/gates/pay.ts';
+import { gatePreset } from '../src/core/gates/preset.ts';
+import { waitingIn } from '../src/core/hunter/pending.ts';
+import { presetLineId } from '../src/core/ids.ts';
+import { parseItem } from '../src/core/registry/items.ts';
+import { STASH_LINES } from '../src/core/protocol.ts';
 import type { LootEvent } from '../src/core/gates/pay.ts';
 import { remoteFacts } from '../src/core/combat/fight-facts.ts';
 import { loadSave } from '../src/core/save.ts';
@@ -248,5 +253,94 @@ describe('a fight\'s loot waiting for the GM (SMX-gates-1)', () => {
     const shard = { ...({} as Dropped['items'][number]), name: 'Frost Shard', qty: 2 }, rope = { ...shard, name: 'Rope', qty: 1 };
     expect(dropLine({ gold: 1500, items: [shard, rope] }, n => n.toLocaleString('en-US'))).toBe('1,500 gold, Frost Shard ×2, Rope');
     expect(dropLine({ gold: 0, items: [] }, String)).toBe('');
+  });
+});
+
+describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
+  const POTION = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
+  const SWORD = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
+  const DAGGER = parseItem({ name: 'Rusty Dagger', type: 'weapon', slot: 'weapon', dice: '1d4', rar: 'common' })!;
+
+  const withPreset = (s: Save): Save => {
+    const rec = ok(gatePreset(s, gid('g-den'), {
+      type: 'recommend', xp: 220, gold: 90,
+      items: [
+        { id: presetLineId(1), item: SWORD, checked: true, to: { kind: 'remote', remote: KAI } },
+        { id: presetLineId(2), item: POTION, checked: true, to: null },
+        { id: presetLineId(3), item: DAGGER, checked: false, to: { kind: 'local', hunterId: s.hunters[0]!.id } },
+      ],
+    }));
+    return ok(gatePreset(rec, gid('g-den'), { type: 'setGold', gold: 120 }));
+  };
+
+  test('in a room: clears the gate, locks preset paid, stashes unpicked checked items, omits unchecked, and queues pending clear rewards without sending award yet', () => {
+    const s = withPreset({ ...inDen(), fight: null }), h = s.hunters[0]!;
+    const payees: Payee[] = [{ kind: 'local', hid: h.id, name: h.name }, { kind: 'remote', key: KAI, name: 'Kai' }];
+    const room = { code: ROOM, stamp: { device: 'd-gm', now: 1000, rand: 0.25 }, ranks: new Map([[KAI, 'E' as const]]) };
+    const out = ok(settleClearPreset(s, gid('g-den'), xpOf, payees, room, DAY));
+
+    expect([out.save.gates[0]!.status, out.save.gates[0]!.preset.at]).toEqual(['cleared', 'paid']);
+    expect(out.granted).toEqual([]);
+    expect([out.save.hunters[0]!.xp, out.save.hunters[0]!.gold], 'nothing granted directly in a room').toEqual([h.xp, h.gold]);
+    expect(out.save.stash.items.map(i => i.name), 'unpicked checked item went to party stash').toEqual(['Health Potion']);
+    expect(out.stashed.map(i => i.name)).toEqual(['Health Potion']);
+
+    const waiting = waitingIn(out.save, ROOM);
+    expect(waiting.map(w => [w.name, w.from, w.what, w.rewards.xp, w.rewards.gold, w.rewards.items.map(i => i.name)])).toEqual([
+      [h.name, 'clear', 'Goblin Den', 220, 120, []],
+      ['Kai', 'clear', 'Goblin Den', 220, 120, ['Iron Blade']],
+    ]);
+    const boxTypes = (out.save.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' ? e.letter.event.type : e.letter.kind));
+    expect(boxTypes, 'only noted is sent before GM approval, never award').toEqual(['noted']);
+    // a second clear is refused
+    expect(settleClearPreset(out.save, gid('g-den'), xpOf, payees, room, DAY)).toEqual({ ok: false, why: 'no-preset' });
+  });
+
+  test('playing alone: pays exact preset XP, gold, and assigned items immediately and deposits unpicked items in the stash', () => {
+    const s0 = { ...inDen(), fight: null }, h = s0.hunters[0]!;
+    const s = ok(gatePreset(s0, gid('g-den'), {
+      type: 'recommend', xp: 180, gold: 75,
+      items: [
+        { id: presetLineId(1), item: SWORD, checked: true, to: { kind: 'local', hunterId: h.id } },
+        { id: presetLineId(2), item: POTION, checked: true, to: null },
+      ],
+    }));
+    const out = ok(settleClearPreset(s, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY));
+    expect(out.granted).toHaveLength(1);
+    expect(out.pending).toEqual([]);
+    expect(lifetimeXp(out.save.hunters[0]!)).toBe(lifetimeXp(h) + 180);
+    expect(out.save.hunters[0]!.gold).toBe(h.gold + 75);
+    expect(out.save.hunters[0]!.items.map(i => i.name)).toContain('Iron Blade');
+    expect(out.save.stash.items.map(i => i.name)).toEqual(['Health Potion']);
+    expect(out.save.gates[0]!.preset.at).toBe('paid');
+  });
+
+  test('refuses no-preset on a gate without one, and refuses stash-full atomically without clearing the gate', () => {
+    const s0 = { ...inDen(), fight: null }, h = s0.hunters[0]!;
+    expect(settleClearPreset(s0, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY)).toEqual({ ok: false, why: 'no-preset' });
+
+    const fullItems = Array.from({ length: STASH_LINES }, (_, i) => ({ ...parseItem({ name: `Token ${i}`, type: 'misc' })!, id: `i${900 + i}` as never, qty: 1 }));
+    const fullSave: Save = { ...withPreset(s0), stash: { gold: 0, items: fullItems } };
+    expect(settleClearPreset(fullSave, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY)).toEqual({ ok: false, why: 'stash-full' });
+    expect(fullSave.gates[0]!.status).toBe('detected');
+  });
+
+  test('a reopened gate whose preset is already paid clears with no second reward in settleClear', () => {
+    const s0 = { ...inDen(), fight: null }, h = s0.hunters[0]!;
+    const s1 = ok(gatePreset(s0, gid('g-den'), { type: 'recommend', xp: 180, gold: 75, items: [] }));
+    const first = ok(settleClearPreset(s1, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY));
+    const reopened: Save = { ...first.save, gates: first.save.gates.map(g => ({ ...g, status: 'detected' as const })) };
+    const before = { xp: lifetimeXp(reopened.hunters[0]!), gold: reopened.hunters[0]!.gold };
+    const second = ok(settleClear(
+      reopened,
+      gid('g-den'),
+      { due: 150, xp: 150, gold: 500, items: ['Health Potion'], payees: [h.name] },
+      [{ hid: h.id, rewards: { ...newRewards(), xp: 150, gold: 500, items: [POTION] } }],
+      null,
+      DAY,
+    ));
+    expect(second.save.gates[0]!.status).toBe('cleared');
+    expect(second.granted).toEqual([]);
+    expect([lifetimeXp(second.save.hunters[0]!), second.save.hunters[0]!.gold]).toEqual([before.xp, before.gold]);
   });
 });

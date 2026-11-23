@@ -121,5 +121,14 @@ describe('a reward waiting for the GM', () => {
     const ev = askOf(save(), H1, QUEST, AT)!;
     expect(parseEvent('rewardAsk', JSON.parse(JSON.stringify(ev.payload)))).toEqual(ev);
     expect(parseEvent('rewardAsk', { ...ev.payload, from: 'shelf' }), 'only a solo clear, a quest and a feat ask').toBeNull();
+    expect(parseEvent('rewardAsk', { ...ev.payload, from: 'clear' }), 'a player phone never asks a table clear').toBeNull();
+  });
+
+  test('a clear preset pending record keeps from: clear through parsePending and formats its earned words', () => {
+    const clearAsk = { ...ask('d-gm-1abc-wxyz', GOLD), from: 'clear' as const, what: 'Goblin Den' };
+    const s = pendingHeard(save(), clearAsk, ROOM, LOG);
+    expect(waitingIn(s, ROOM)[0]!.from).toBe('clear');
+    expect(s.log[0]!.text).toBe('Mira: Gate clear: Goblin Den');
+    expect(parsePending(JSON.parse(JSON.stringify(pendingOf(s))))).toEqual([...pendingOf(s)]);
   });
 });

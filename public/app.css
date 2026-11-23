@@ -250,6 +250,8 @@ button.quiet:hover{border-color:transparent;box-shadow:none}
 /* a square button holding one glyph, such as the "×" that removes a row */
 .icon-btn{flex:0 0 var(--control-h);min-width:var(--control-h);min-height:var(--control-h);padding:0;font-size:calc(18px*var(--ts));line-height:1}
 button.linkish{background:none;border:0;border-bottom:1px dashed var(--cyan-dim);padding:0 2px;min-height:0;color:var(--ice);font-family:var(--font-mono);font-size:calc(13px*var(--ts))}
+/* GM party card actions: gm.js gives .gm-hp buttons flex:1 1 44px for the HP steppers, which shrinks labeled actions below their words on narrow screens; keep labeled actions at content width so they wrap cleanly */
+.gm-card .gm-hp button:not([data-hp]){flex:1 0 auto}
 
 /* stats grid */
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}

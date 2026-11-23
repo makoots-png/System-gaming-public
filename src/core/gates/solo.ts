@@ -29,7 +29,7 @@ import { spendItem } from '../hunter/use.ts';
 import { setShadowHp } from '../hunter/shadows.ts';
 import { WAYS_BACK, hpOf, manaOf } from '../hunter/vitals.ts';
 import type { LifeState, Maxima, Vitals } from '../hunter/vitals.ts';
-import { newRewards } from '../rewards.ts';
+import { isEmptyReward, newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import type { ItemTemplate } from '../registry/items.ts';
 import { monsterXp, parseMonster, seedMonsters, tweakOfMonster } from '../registry/monsters.ts';
@@ -52,8 +52,10 @@ import type { SpawnMonster } from './spawn.ts';
 import { enteredAlone, worldOrder } from './world.ts';
 import { gateFact, settleClear, shareEach } from './pay.ts';
 import type { Seat } from '../role.ts';
-import { EARNED_WHAT_MAX, WORLD_NAME_MAX } from '../protocol.ts';
+import { EARNED_WHAT_MAX, WORLD_NAME_MAX, newEvent } from '../protocol.ts';
 import { pendingHeard } from '../hunter/pending.ts';
+import { stashCanHold, stashDeposit } from '../trade/stash.ts';
+import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
 import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { askPosted } from '../sync/asked.ts';
@@ -156,7 +158,7 @@ const sameRoute = (a: SoloRoute, b: SoloRoute): boolean => (a === 'local' || b =
 
 /** Why a run may not start or be written. */
 export type SoloRefusal =
-  | 'no-hunter' | 'fight' | 'dead' | 'collapsed' | 'gone' | 'closed' | 'not-solo' | 'off' | 'not-played' | 'waiting' | 'empty' | 'changed' | 'moved';
+  | 'no-hunter' | 'fight' | 'dead' | 'collapsed' | 'gone' | 'closed' | 'not-solo' | 'off' | 'not-played' | 'waiting' | 'empty' | 'changed' | 'moved' | 'stash-full';
 /** What a refused run says, to the player who tapped (copy-tasks.md: why, and the way out). */
 export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   'no-hunter': 'This hunter is no longer on this phone.',
@@ -172,6 +174,7 @@ export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   empty: 'This gate has no monsters.',
   changed: 'Your hunter changed while the run played, so the run paid nothing. Enter again.',
   moved: 'This phone joined or left a room while the run played, so the run paid nothing. Enter again.',
+  'stash-full': 'The party stash is full. Take something out of the stash or change the clear preset, then enter again.',
 };
 
 /** What a run is played against: the gate's name and rank, its monsters as rows read them, each with its count, and the statuses they name. */
@@ -327,7 +330,7 @@ const vitalsOf = (h: Hunter): Vitals => ({ life: h.life, mana: h.mana, fatigue: 
  * the gate: its `soloRun` message goes in that room's outbox and a won run waits for the GM's answer (`runPosted`);
  * refused (`no-room`) without that message.
  */
-export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, loot: SoloLoot, c: RanCtx): Ran | Refused<SoloRefusal | 'unchanged' | 'missing' | 'no-hunter' | 'no-room'> {
+export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, loot: SoloLoot, c: RanCtx): Ran | Refused<SoloRefusal | 'unchanged' | 'missing' | 'no-hunter' | 'no-room' | 'stash-full'> {
   if (gate.kind === 'world' && !sameRoute(run.route, c.ready.route)) return refuse('moved');
   const R = c.day.R, ready = soloReady(save, hid, gate, c.ready);
   if (isRefused(ready)) return ready;
@@ -359,14 +362,34 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
     }
   } else if (run.route === 'local') {
     if (outcome === 'won') {
-      // the gate's Clear for a party of one: its whole pot of XP due and gold rolled (pay.ts `shareEach`, n = 1)
+      // the gate's Clear for a party of one: active preset if set (no roll), else its whole pot of XP due and gold rolled
       const g = save.gates.find(x => x.id === gate.id)!, all = [...seedMonsters(R), ...save.monsters];
-      const due = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; }), gold = shareEach(loot.gold, 1, R.gateParty);
-      xp = shareEach(due, 1, R.gateParty);
-      const pay = { due, xp, gold, items: loot.items.map(i => i.name), payees: [h.name] };
-      const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp, gold) }], null, c.day);
-      if (isRefused(settled)) return settled;
-      s = settled.save; granted = settled.granted[0]?.g ?? null;
+      const due = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
+      if (isActivePreset(g.preset)) {
+        const preset = g.preset, soloPayee = { kind: 'local' as const, hid: h.id }, part = partitionPresetItems(preset, [soloPayee]);
+        xp = preset.xp;
+        const rw: Rewards = { ...newRewards(), xp, gold: preset.gold, items: [...(part.byPayee.get(h.id) ?? [])] };
+        const pay = { due, xp, gold: preset.gold, items: preset.items.filter(i => i.checked).map(i => i.item.name), payees: [h.name] };
+        const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rw }], null, c.day);
+        if (isRefused(settled)) return settled;
+        const paid = payGatePreset(settled.save, g.id, c.day.at, [soloPayee]);
+        if (isRefused(paid)) return refuse('unchanged');
+        const stashed = stashDeposit(paid, part.stash, stamp, `${g.name} clear`);
+        if (isRefused(stashed)) return refuse('stash-full');
+        s = stashed; granted = settled.granted[0]?.g ?? null;
+      } else if (g.preset.at === 'paid') {
+        const pay = { due: 0, xp: 0, gold: 0, items: [], payees: [] };
+        const settled = settleClear(s, gate.id, pay, [], null, c.day);
+        if (isRefused(settled)) return settled;
+        s = settled.save; granted = null;
+      } else {
+        const gold = shareEach(loot.gold, 1, R.gateParty);
+        xp = shareEach(due, 1, R.gateParty);
+        const pay = { due, xp, gold, items: loot.items.map(i => i.name), payees: [h.name] };
+        const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp, gold) }], null, c.day);
+        if (isRefused(settled)) return settled;
+        s = settled.save; granted = settled.granted[0]?.g ?? null;
+      }
     } else {
       const entered = enteredAlone(s, gate.id, stamp);
       if (!isRefused(entered)) s = entered;
@@ -441,8 +464,8 @@ export function soloTargets(world: WorldDoc | null, doc: SoloDoc | null): SoloTa
  * hunter's share of it, and `party` the rule (`gateParty`) its gold roll is shared by when it is rolled (`shareEach`).
  */
 export type SoloPlan = { readonly kind: 'paid'; readonly due: number; readonly xp: number; readonly party: number } | { readonly kind: 'refused'; readonly why: SoloRefused } | { readonly kind: 'report' };
-/** The GM's gate as a player's run finds it: gone, cleared, closed (no Clear possible), still clearable but no longer open to solo runs, or open to them. */
-export const SOLO_GATE_FOUND = ['gone', 'cleared', 'closed', 'notSolo', 'open'] as const;
+/** The GM's gate as a player's run finds it: gone, cleared, closed (no Clear possible), preset items for a full stash, still clearable but no longer open to solo runs, or open to them. */
+export const SOLO_GATE_FOUND = ['gone', 'cleared', 'closed', 'stashFull', 'notSolo', 'open'] as const;
 export type SoloGateFound = (typeof SOLO_GATE_FOUND)[number];
 /** What the GM's phone does with a run: pay it as the gate's Clear, answer it refused with why, or only note it. */
 type PlanCell = 'pay' | 'report' | SoloRefused;
@@ -451,6 +474,7 @@ export const PLAN_TABLE: { readonly [G in SoloGateFound]: { readonly [O in RunOu
   gone: { won: 'gone', lost: 'report', stalled: 'report' },
   cleared: { won: 'taken', lost: 'report', stalled: 'report' },
   closed: { won: 'closed', lost: 'report', stalled: 'report' },
+  stashFull: { won: 'stash-full', lost: 'report', stalled: 'report' },
   // SMX-gates-2.2: a run a player started before the GM took the gate out of solo runs still counts (the owner, Nov 22:
   // "Yes that run still counts"): a won run is paid, and a lost or stalled run enters it (`soloTaken`).
   notSolo: { won: 'pay', lost: 'report', stalled: 'report' },
@@ -458,14 +482,17 @@ export const PLAN_TABLE: { readonly [G in SoloGateFound]: { readonly [O in RunOu
   // clears the gate at once and keeps its reward waiting on the GM's phone (`soloTaken`, hunter/pending.ts)
   open: { won: 'pay', lost: 'report', stalled: 'report' },
 };
-const gateFound = (g: Gate | undefined): SoloGateFound =>
-  (!g ? 'gone' : !can(g, 'clear') ? (g.status === 'cleared' ? 'cleared' : 'closed') : g.solo ? 'open' : 'notSolo');
+const gateFound = (g: Gate | undefined, stashFull: boolean): SoloGateFound =>
+  (!g ? 'gone' : !can(g, 'clear') ? (g.status === 'cleared' ? 'cleared' : 'closed') : stashFull ? 'stashFull' : g.solo ? 'open' : 'notSolo');
 /** The plan for run `p` on the GM's save as it stands (`PLAN_TABLE`): the one rule, asked again inside the write (`soloTaken`). */
-export function soloPlan(save: Pick<Save, 'gates' | 'monsters'>, p: SoloRunPayload, R: Rules): SoloPlan {
-  const g = save.gates.find(x => x.id === p.gate), cell = PLAN_TABLE[gateFound(g)][p.outcome];
+export function soloPlan(save: Pick<Save, 'gates' | 'monsters'> & Partial<Pick<Save, 'stash' | 'seq'>>, p: SoloRunPayload, R: Rules): SoloPlan {
+  const g = save.gates.find(x => x.id === p.gate);
+  const stashFull = !!(g && isActivePreset(g.preset) && save.stash && !stashCanHold(save.stash, (save.seq ?? 0) + 2, partitionPresetItems(g.preset, [{ kind: 'remote', key: p.by }]).stash));
+  const cell = PLAN_TABLE[gateFound(g, stashFull)][p.outcome];
   if (cell === 'report') return { kind: 'report' };
   if (cell !== 'pay') return { kind: 'refused', why: cell };
   // the table pays only a gate it found (open or notSolo)
+  if (g!.preset.at === 'paid') return { kind: 'paid', due: 0, xp: 0, party: R.gateParty };
   const all = [...seedMonsters(R), ...save.monsters], due = xpDue(g!, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
   return { kind: 'paid', due, xp: shareEach(due, 1, R.gateParty), party: R.gateParty };
 }
@@ -500,11 +527,37 @@ export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer:
   if (!c.room || !answer) return refuse('no-room');
   const room = c.room;
   if (plan.kind === 'refused') return atOutbox(b => post(b, room.code, { kind: 'event', event: answer }).box)(s);
+  const g = save.gates.find(x => x.id === p.gate)!;
+  const what = g.name.slice(0, EARNED_WHAT_MAX);
+  if (isActivePreset(g.preset)) {
+    const preset = g.preset, soloPayee = { kind: 'remote' as const, key: p.by }, part = partitionPresetItems(preset, [soloPayee]);
+    const owed: Rewards = { ...newRewards(), xp: preset.xp, gold: preset.gold, items: [...(part.byPayee.get(p.by) ?? [])] };
+    const pay = { due: plan.due, xp: preset.xp, gold: preset.gold, items: preset.items.filter(i => i.checked).map(i => i.item.name), payees: [p.name || 'A hunter'] };
+    const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
+    if (isRefused(settled)) return settled;
+    const paid = payGatePreset(settled.save, g.id, c.day.at, [soloPayee]);
+    if (isRefused(paid)) return refuse('unchanged');
+    const stashed = stashDeposit(paid, part.stash, stamp, `${g.name} clear`);
+    if (isRefused(stashed)) {
+      const refPlan: SoloPlan = { kind: 'refused', why: 'stash-full' };
+      const refBody = soloAnswerBody(save, p.eid, p, refPlan);
+      const refEv = refBody ? newEvent('soloAnswer', refBody, { ...room.stamp, seq: 1 }) : null;
+      if (!refEv) return refuse('unchanged');
+      return atOutbox(b => post(b, room.code, { kind: 'event', event: refEv }).box)(told(save, stamp, takenLine(save, p, refPlan)));
+    }
+    return isEmptyReward(owed) ? stashed : pendingHeard(stashed, { eid: answer.payload.eid, by: p.by, name: p.name, from: 'solo', what, rewards: owed }, room.code, stamp);
+  }
+  if (g.preset.at === 'paid') {
+    const pay = { due: 0, xp: 0, gold: 0, items: [], payees: [] };
+    const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
+    if (isRefused(settled)) return settled;
+    return settled.save;
+  }
   const pay = { due: plan.due, xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), items: loot.items.map(i => i.name), payees: [p.name || 'A hunter'] };
   const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
   if (isRefused(settled)) return settled;
-  const what = save.gates.find(x => x.id === p.gate)?.name.slice(0, EARNED_WHAT_MAX) ?? '';
-  return pendingHeard(settled.save, { eid: answer.payload.eid, by: p.by, name: p.name, from: 'solo', what, rewards: soloOwed(plan, loot) }, room.code, stamp);
+  const owed = soloOwed(plan, loot);
+  return isEmptyReward(owed) ? settled.save : pendingHeard(settled.save, { eid: answer.payload.eid, by: p.by, name: p.name, from: 'solo', what, rewards: owed }, room.code, stamp);
 }
 /** The GM's log line (and toast) of a player's run: the run's line, and why a won run was not paid. */
 export function takenLine(save: Pick<Save, 'gates'>, p: SoloRunPayload, plan: SoloPlan): Said {
@@ -514,13 +567,17 @@ export function takenLine(save: Pick<Save, 'gates'>, p: SoloRunPayload, plan: So
 }
 /** The GM's log's words for a won run its phone did not pay. */
 const REFUSED_LINE: { readonly [W in SoloRefused]: string } = {
-  taken: 'Someone cleared it first, so the run paid nothing.', closed: 'The gate closed first, so the run paid nothing.', gone: 'The gate was gone, so the run paid nothing.',
+  taken: 'Someone cleared it first, so the run paid nothing.',
+  closed: 'The gate closed first, so the run paid nothing.',
+  gone: 'The gate was gone, so the run paid nothing.',
+  'stash-full': 'The party stash was full, so the run paid nothing.',
 };
 /** What the player's window says of a refused run (the answer's `why`). */
 export const REFUSED_WORDS: { readonly [W in SoloRefused]: string } = {
   taken: 'Another hunter cleared this gate first. Your run\'s cost stays.',
   closed: 'The GM closed this gate first. Your run\'s cost stays.',
   gone: 'This gate is gone. Your run\'s cost stays.',
+  'stash-full': 'The party stash was full, so the GM\'s phone could not clear this gate. Ask the GM to clear space in the stash. Your run\'s cost stays.',
 };
 
 // ── the words a player reads (copy-tasks.md: the System's voice in a window's tag and title only) ──

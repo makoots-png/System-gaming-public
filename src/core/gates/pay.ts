@@ -13,16 +13,24 @@ import type { Ctx, Ended, Fight, FightId } from '../combat/fight-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { grant, noteFacts } from '../hunter/grant.ts';
 import type { Day, Granted } from '../hunter/grant.ts';
-import { newRewards } from '../rewards.ts';
+import { pendingHeard, pendingOf } from '../hunter/pending.ts';
+import type { PendingReward } from '../hunter/pending.ts';
+import { isEmptyReward, newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
-import { newEvent, parseSheetKey } from '../protocol.ts';
+import { EARNED_WHAT_MAX, newEvent, newEventId, parseSheetKey } from '../protocol.ts';
 import type { EventBody, EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
+import { sheetKeyOf } from '../ids.ts';
+import type { GateId, HunterId } from '../ids.ts';
+import type { ItemTemplate } from '../registry/items.ts';
 import type { Dropped, FightLoot, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
+import { stashDeposit } from '../trade/stash.ts';
 import { fightAward, xpDue } from './gate.ts';
 import type { XpOf } from './gate.ts';
+import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
+import { shareEach } from './spawn.ts';
 import { clearGate, encounterEnded } from './world.ts';
 import { rankIdx } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
@@ -30,13 +38,7 @@ import type { Fact } from '../hunter/facts.ts';
 import type { Gate } from './gate.ts';
 import type { ClearPay } from './world.ts';
 
-/**
- * Each payee's share of what a world gate pays (its gold roll, its XP) among `n` payees, the gate made for `party`
- * hunters (`RULES.gateParty`, design 4.1): a pot of `party` times `amount`, shrunk by party / n past the party, split
- * evenly and rounded down. So the party takes `amount` each, fewer take more, and a crowd takes less in total. None for nobody.
- */
-export const shareEach = (amount: number, n: number, party: number): number =>
-  n <= 0 ? 0 : Math.floor(n <= party ? amount * party / n : amount * party * party / (n * n));
+export { shareEach };
 /** What each of `n` payees takes of a Clear's gold roll at rank `rank`: the share of the rank's lowest and highest roll. */
 export function clearGoldEach(R: Pick<Rules, 'loot' | 'gateParty'>, rank: Rank, n: number): { readonly low: number; readonly high: number } {
   const [lo = 0, hi = lo] = (R.loot[rank] ?? R.loot.E).gold;
@@ -206,15 +208,102 @@ export type ClearRoom = { readonly code: RoomCode; readonly stamp: EventStamp; r
 export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], room: ClearRoom | null, day: Day): Settled | Refused<'missing' | 'unchanged'> {
   const g = save.gates.find(x => x.id === gateId);
   if (!g) return refuse('missing');
-  const cleared = clearGate(save, gateId, pay, { at: day.at, cap: day.R.logCap });
+  const alreadyPaid = g.preset.at === 'paid';
+  const effectivePay: ClearPay = alreadyPaid ? { due: 0, xp: 0, gold: 0, items: [], payees: [] } : pay;
+  const effectiveLocals = alreadyPaid ? [] : locals;
+  const effectivePlayers = !room ? [] : alreadyPaid ? room.players.filter(p => p.pays.type !== 'award') : room.players;
+  const cleared = clearGate(save, gateId, effectivePay, { at: day.at, cap: day.R.logCap });
   if (isRefused(cleared)) return cleared;
-  const fact = (rank: Rank | null) => gateFact(g, rank, Math.max(0, g.breakDay - save.world.day)), paid = new Set(locals.map(l => l.hid));
+  const fact = (rank: Rank | null) => gateFact(g, rank, Math.max(0, g.breakDay - save.world.day)), paid = new Set(effectiveLocals.map(l => l.hid));
   // a payee's Clear gives it everything back with its fact (grant.ts `noteFacts`); a player's, where its `noted` lands
   const facts = { ...cleared, hunters: cleared.hunters.map(h => (paid.has(h.id) ? noteFacts(h, [fact(h.rank)], day.R) : h)) };
-  const events = !room ? [] : room.players.flatMap((p, i) => {
-    const noted = newEvent('noted', { to: [p.key], facts: [fact(p.rank)] }, { ...room.stamp, now: room.stamp.now + i });
+  const events = !room ? [] : effectivePlayers.flatMap((p, i) => {
+    const noted = newEvent('noted', { to: [p.key], facts: [fact(p.rank)] }, { ...room.stamp, seq: i });
     if (!noted) throw new Error('the room would refuse the fact of a gate the save holds');
     return [p.pays, noted];
   });
-  return payAll(facts, locals, { room: room ? room.code : null, events }, day);
+  return payAll(facts, effectiveLocals, { room: room ? room.code : null, events }, day);
+}
+
+/** Room details for a clear preset settlement: the room code, the event stamp, and each remote payee's rank (for its gate fact). */
+export type ClearPresetRoom = {
+  readonly code: RoomCode;
+  readonly stamp: EventStamp;
+  readonly ranks: ReadonlyMap<SheetKey, Rank | null>;
+};
+/** What a preset Clear did: the next save, any local grants paid immediately (alone), any waiting records created (in a room), and items stashed. */
+export type SettledPreset = {
+  readonly save: Save;
+  readonly granted: readonly { readonly hid: string; readonly g: Granted }[];
+  readonly pending: readonly PendingReward[];
+  readonly stashed: readonly ItemTemplate[];
+};
+/**
+ * Gate `gateId` cleared using its active clear preset (`recommended` or `edited`), in one atomic step.
+ * Clears the gate, marks the preset `paid`, records every payee's `gate` fact, deposits unpicked checked items into
+ * `save.stash` (refusing `stash-full` before writing anything), and routes each payee's exact preset reward by seat:
+ * in a room (`room !== null`) every non-empty payee share becomes a `from: 'clear'` record in `settings.sync.pending`
+ * for the GM's approval in Waiting for you and the Award form; playing alone (`room === null`) grants local payees right away.
+ */
+export function settleClearPreset(
+  save: Save,
+  gateId: GateId,
+  xpOf: XpOf,
+  payees: readonly Payee[],
+  room: ClearPresetRoom | null,
+  day: Day,
+): SettledPreset | Refused<'missing' | 'unchanged' | 'no-preset' | 'stash-full'> {
+  const g = save.gates.find(x => x.id === gateId);
+  if (!g) return refuse('missing');
+  if (!isActivePreset(g.preset)) return refuse('no-preset');
+  const preset = g.preset, stamp = { at: day.at, cap: day.R.logCap };
+  const { byPayee, stash } = partitionPresetItems(preset, payees);
+  const due = xpDue(g, xpOf);
+  const pay: ClearPay = {
+    due, xp: payees.length ? preset.xp : 0, gold: payees.length ? preset.gold : 0,
+    items: preset.items.filter(i => i.checked).map(i => i.item.name),
+    payees: payees.map(p => p.name),
+  };
+  const cleared = clearGate(save, gateId, pay, stamp);
+  if (isRefused(cleared)) return cleared;
+  const paid = payGatePreset(cleared, gateId, day.at, payees);
+  if (isRefused(paid)) return refuse('no-preset');
+  const stashedSave = stashDeposit(paid, stash, stamp, `${g.name} clear`);
+  if (isRefused(stashedSave)) return refuse('stash-full');
+
+  const toBreak = Math.max(0, g.breakDay - save.world.day);
+  const fact = (rank: Rank | null) => gateFact(g, rank, toBreak);
+  const localIds = new Set(payees.flatMap(p => (p.kind === 'local' ? [p.hid] : [])));
+  let next: Save = { ...stashedSave, hunters: stashedSave.hunters.map(h => (localIds.has(h.id) ? noteFacts(h, [fact(h.rank)], day.R) : h)) };
+
+  if (room) {
+    const notedEvents = payees.flatMap((p, i) => {
+      if (p.kind !== 'remote') return [];
+      const ev = newEvent('noted', { to: [p.key], facts: [fact(room.ranks.get(p.key) ?? null)] }, { ...room.stamp, seq: i });
+      if (!ev) throw new Error('the room would refuse the fact of a gate the save holds');
+      return [ev];
+    });
+    if (notedEvents.length) next = atOutbox(box => notedEvents.reduce((b, ev) => post(b, room.code, { kind: 'event', event: ev }).box, box))(next);
+    const created: PendingReward[] = [];
+    const what = g.name.slice(0, EARNED_WHAT_MAX);
+    for (let i = 0; i < payees.length; i++) {
+      const p = payees[i]!;
+      const key = p.kind === 'local' ? p.hid : p.key;
+      const rw: Rewards = { ...newRewards(), xp: preset.xp, gold: preset.gold, items: [...(byPayee.get(key) ?? [])] };
+      if (isEmptyReward(rw)) continue;
+      const to: SheetKey = p.kind === 'local' ? sheetKeyOf(save.settings.deviceId, p.hid as HunterId) : p.key;
+      const eid = newEventId({ ...room.stamp, seq: payees.length + i });
+      if (!eid) throw new Error('the room would refuse the clear preset reward id');
+      next = pendingHeard(next, { eid, by: to, name: p.name, from: 'clear', what, rewards: rw }, room.code, stamp);
+      const rec = pendingOf(next).find(r => r.id === eid);
+      if (rec) created.push(rec);
+    }
+    return { save: next, granted: [], pending: created, stashed: stash };
+  }
+
+  const locals = payees.flatMap(p => (p.kind === 'local'
+    ? [{ hid: p.hid, rewards: { ...newRewards(), xp: preset.xp, gold: preset.gold, items: [...(byPayee.get(p.hid) ?? [])] } }]
+    : []));
+  const out = payAll(next, locals, { room: null, events: [] }, day);
+  return { save: out.save, granted: out.granted, pending: [], stashed: stash };
 }

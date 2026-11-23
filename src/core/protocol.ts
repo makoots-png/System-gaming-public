@@ -238,10 +238,14 @@ export type GivenBundle = { key: string; name: string; window: SystemWords | nul
 /** The longest bundle key an award names: a library id or a built-in's `seed-` key. */
 const BUNDLE_KEY_MAX = 80;
 /**
- * Where a reward the app would pay by itself came from (hunter/pending.ts): a won solo run of a room's gate, a quest the
- * System completed, a feat earned. In a room each waits for the GM's edit and approval (World rule 8).
+ * Where a reward asked of the GM by a player's phone came from (`rewardAsk`): a won solo run, a quest, or a feat.
  */
-export const REWARD_FROM = ['solo', 'quest', 'feat'] as const;
+export const ASK_FROM = ['solo', 'quest', 'feat'] as const;
+export type AskFrom = (typeof ASK_FROM)[number];
+/**
+ * Where a waiting reward came from (hunter/pending.ts): a solo run, a counted quest, a feat, or a gate clear preset.
+ */
+export const REWARD_FROM = ['solo', 'quest', 'feat', 'clear'] as const;
 export type RewardFrom = (typeof REWARD_FROM)[number];
 /** The longest words of what earned a waiting reward: a quest's title, a feat's or a gate's name. */
 export const EARNED_WHAT_MAX = 120;
@@ -257,7 +261,7 @@ export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards & { build?:
  * but asked of the GM, whose phone keeps it waiting until the GM approves or refuses it (hunter/pending.ts). Sealed to
  * the GM and that hunter's phone.
  */
-export type RewardAskPayload = Base & { by: SheetKey; name: string } & EarnedBy & { rewards: Rewards };
+export type RewardAskPayload = Base & { by: SheetKey; name: string; from: AskFrom; what: string; rewards: Rewards };
 /** A quest the GM issues to the hunters of `to`. Sealed when the quest is secret: then `to` names one hunter. */
 export type QuestPayload = Base & { to: SheetKey[]; quest: QuestOffer };
 /** HP, mana and fatigue changes the GM taps on the board: negative is damage (or rest, for fatigue). */
@@ -362,8 +366,8 @@ export type CoinLandPayload = Base & LandingBody;
  * detected gate to raiding. Its cost is already on the player's sheet.
  */
 export type SoloRunPayload = Base & { by: SheetKey; gate: GateId; name: string; outcome: RunOutcome; rounds: number; life: LifeState };
-/** Why the GM's phone did not pay a won run: the gate was cleared first (another hunter's run or the GM), closed, or is gone. */
-export const SOLO_REFUSED = ['taken', 'closed', 'gone'] as const;
+/** Why the GM's phone did not pay a won run: the gate was cleared first (another hunter's run or the GM), closed, is gone, or the party stash was full. */
+export const SOLO_REFUSED = ['taken', 'closed', 'gone', 'stash-full'] as const;
 export type SoloRefused = (typeof SOLO_REFUSED)[number];
 /** The most facts one `noted` carries: a fight's fact, a kill a row, and its consumables (notes-1-feats.md 2.3). */
 export const NOTED_MAX = 1 + 60 + 20;
@@ -462,6 +466,8 @@ const reason = (o: Rec): string => opt(own(o, 'reason'), text(120), '');
 const hpDelta = (o: Rec, k: string): number => opt(own(o, k), int(-MAX_HP, MAX_HP), 0);
 /** Where a waiting reward came from and its words. */
 const earned = (o: Rec): EarnedBy => ({ from: choiceOf(REWARD_FROM)(own(o, 'from')), what: opt(own(o, 'what'), text(EARNED_WHAT_MAX), '') });
+/** Where a player's rewardAsk came from and its words. */
+const asked = (o: Rec): { from: AskFrom; what: string } => ({ from: choiceOf(ASK_FROM)(own(o, 'from')), what: opt(own(o, 'what'), text(EARNED_WHAT_MAX), '') });
 /**
  * One event type: who may send it, and its payload's reader. `gmOnly`: only the room's GM key may send it. `ownSheet`: it
  * speaks for the hunter in its `by`, so the server takes it only from the phone that hunter belongs to.
@@ -525,7 +531,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     };
   } },
   rewardAsk: { gmOnly: false, ownSheet: true, sealed: always, read: o => ({
-    ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), ...earned(o), rewards: rewards(own(o, 'rewards')),
+    ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), ...asked(o), rewards: rewards(own(o, 'rewards')),
   }) },
   quest: { gmOnly: true, ownSheet: false, sealed: p => p.quest.secret, read: o => ({ ...base(o), ...questTo(o) }) },
   hp: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), hp: hpDelta(o, 'hp'), mana: hpDelta(o, 'mana'), fatigue: hpDelta(o, 'fatigue'), reason: reason(o) }) },
@@ -678,8 +684,19 @@ export function parseEvent(type: unknown, payload: unknown): RoomEvent | null {
  * a union (`soloAnswer`'s verdicts) keeps each member's fields.
  */
 export type EventBody<K extends EventType> = Payloads[K] extends infer P ? (P extends unknown ? Omit<P, 'eid'> : never) : never;
-/** What makes an event id unique: the sending phone, the time in ms and a random number from 0 to 1. */
-export type EventStamp = { device: string; now: number; rand: number };
+/** What makes an event id unique: the sending phone, the time in ms, a random number from 0 to 1, and an optional index when one tap makes several ids. */
+export type EventStamp = { device: string; now: number; rand: number; seq?: number };
+/**
+ * The one maker of a new event id from `stamp`: the phone, the time, an optional index, and four random base-36
+ * characters, within `OFFER_ID_MAX` so it is never an offer's end id. Used by `newEvent` and by GM-local pending records (`clear`).
+ */
+export function newEventId(stamp: EventStamp): EventId | null {
+  if (!/^[\w-]+$/.test(stamp.device)) return null;
+  const rand = Math.floor(Math.max(0, Math.min(0.999999, stamp.rand)) * 36 ** 4).toString(36).padStart(4, '0');
+  const seq = stamp.seq === undefined ? '' : `-${Math.max(0, Math.trunc(stamp.seq)).toString(36)}-`;
+  const tail = `-${Math.trunc(stamp.now).toString(36)}${seq}${rand}`;
+  return parseEventId(stamp.device.slice(0, Math.max(0, OFFER_ID_MAX - tail.length)) + tail);
+}
 /**
  * The one constructor of a room event: `body` with a new event id, read by the parser the server uses. Null when the
  * server would refuse it. The id is the phone, the time and a random part, so it does not repeat across phones or rooms;
@@ -687,8 +704,7 @@ export type EventStamp = { device: string; now: number; rand: number };
  * An offer's end is made by `endEvent`.
  */
 export function newEvent<K extends EventType>(type: K, body: EventBody<K>, stamp: EventStamp): RoomEvent | null {
-  const tail = `-${Math.trunc(stamp.now).toString(36)}${Math.floor(stamp.rand * 36 ** 4).toString(36).padStart(4, '0')}`;
-  const eid = parseEventId(stamp.device.slice(0, OFFER_ID_MAX - tail.length) + tail);
+  const eid = newEventId(stamp);
   return eid && parseEvent(type, { ...body, eid });
 }
 /**

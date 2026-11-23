@@ -1040,6 +1040,7 @@ export function register(app) {
       showTie();
       const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
       renderBoard(); renderTargets(); renderWaiting();
+      if (!('waiting' in open) && waitingHere().length) { open.waiting = true; applyOpen(); }
       $('#gm-hsum-words').textContent = A().words.paint($('#gm-words'));
       $('#gm-hsum-trade').textContent = A().trade.paint($('#gm-trade'));
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));

@@ -1,13 +1,17 @@
 // gates.js: U08. Gates and dungeons: world day, spawn, break, encounter hand-off, clear + loot.
 // The world day and the gates change only through the steps of src/core/gates/world.ts (a gate's status through `transition`).
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
+import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, partitionPresetItems, refKey } from '../core/gates/preset.ts';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearGoldEach, clearShares, settleClear, shareEach } from '../core/gates/pay.ts';
-import { newRewards, parseRewards } from '../core/rewards.ts';
+import { clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
+import { REWARD_BOUNDS, newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
-import { lootShareOf, placeholderName, rollGate } from '../core/gates/spawn.ts';
+import { lootShareOf, placeholderName, recommendPreset, rollGate } from '../core/gates/spawn.ts';
+import { gradeLabel } from '../core/effects.ts';
+import { parsePresetLineId, parseSheetKey } from '../core/ids.ts';
+import { lootPool } from '../core/registry/items.ts';
 import { MONSTER_BOUNDS, copiesOf, monsterSheetOf, monsterXp } from '../core/registry/monsters.ts';
 import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate, mergeWorld as mergeDoc, sessionStarted, spawnGate, worldDoc as worldDocOf, worldDocUnmerged, worldEmptyWords } from '../core/gates/world.ts';
 import { gateNews, gateTold, hunterNews } from '../core/told.ts';
@@ -124,11 +128,40 @@ export function register(app) {
     const hunters = hids.map(store.hunter).filter(Boolean), rem = remotes().filter(r => hids.includes(r.key));
     /** @type {import('../core/gates/pay.ts').Payee[]} */
     const payees = [...hunters.map(h => ({ kind: 'local', hid: h.id, name: h.name })), ...rem.map(r => ({ kind: 'remote', key: r.key, name: r.data.name }))];
+    const S = api.sync, code = S.room();
+    if (isActivePreset(g.preset)) {
+      const inRoom = code ? { code, stamp: stampNow(), ranks: new Map(rem.map(r => [r.key, r.data.rank ?? null])) } : null;
+      const done = { settled: null };
+      if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClearPreset(s, g.id, xpOf, payees, inRoom, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }), PRESET_WORDS.refusals)) return false;
+      const settled = done.settled;
+      S.flush();
+      const body = PRESET_WORDS.clearedBody(g.rank, g.name);
+      const stashLine = settled.stashed.length ? [PRESET_WORDS.stashedLine(settled.stashed.map(i => i.name))] : [];
+      if (settled.pending.length) {
+        const lines = [PRESET_WORDS.waitingLine(settled.pending.length), ...stashLine];
+        const go = await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body, lines,
+          actions: [{ label: PRESET_WORDS.approveLater, value: null, cancel: true }, { label: PRESET_WORDS.openWaiting, value: 'gm', primary: true }] });
+        if (go === 'gm') app.go('gm');
+        return true;
+      }
+      if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: stashLine }); return true; }
+      const noGrantLines = payees.length
+        ? [PRESET_WORDS.rewardedLine(payees.map(p => p.name)), ...stashLine]
+        : settled.stashed.length ? [PRESET_WORDS.nobodyGotXpGold, ...stashLine] : [PRESET_WORDS.nobodyGotRewards];
+      await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body, lines: noGrantLines });
+      return true;
+    }
+    if (g.preset.at === 'paid') {
+      const pay = { due: 0, xp: 0, gold: 0, items: [], payees: [] };
+      if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, [], null, dayNow()); return isRefused(r) ? r : r.save; }))) return false;
+      S.flush();
+      await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body: PRESET_WORDS.clearedBody(g.rank, g.name), lines: [PRESET_WORDS.paidClearedLine] });
+      return true;
+    }
     const dropped = api.inventory.rollLoot(g.rank, { boss: true }) || [];
     const gold = dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items = dropped.flatMap(e => (e.kind === 'item' ? [e.item] : []));
     const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty); if (!plan) return false;
     const share = plan.shares[0] || { xp: plan.due, gold, items: [] }, taker = plan.shares.find(x => x.items.length);
-    const S = api.sync;
     // the player's device assigns its own item ids
     const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
     // each player paid: its award, and its rank as its pushed sheet says, which its gate fact is measured against (pay.ts `settleClear`)
@@ -137,7 +170,7 @@ export function register(app) {
       const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } });
       return pays ? [{ key, rank: rem.find(r => r.key === key)?.data.rank ?? null, pays }] : [];
     });
-    const code = S.room(), inRoom = code ? { code, stamp: stampNow(), players } : null;
+    const inRoom = code ? { code, stamp: stampNow(), players } : null;
     const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, items: x.items }) ?? newRewards() }] : []));
     const pay = { due: plan.due, xp: share.xp, gold: share.gold, items: items.map(i => i.name), payees: payees.map(p => p.name) };
     const done = { settled: null };
@@ -147,11 +180,11 @@ export function register(app) {
     const all = plan.shares.length > 1, rewards = [`${ui.fmt(share.xp)} XP${all ? ' each' : ''}`];
     if (share.gold) rewards.push(`${ui.fmt(share.gold)} gold${all ? ' each' : ''}`);
     for (const it of items) rewards.push(`${it.name} → ${taker ? taker.payee.name : 'nobody'}`);
-    const body = `${g.rank}-rank gate cleared: ${g.name}`;
+    const body = PRESET_WORDS.clearedBody(g.rank, g.name);
     const rlines = plan.shares.filter(x => x.payee.kind === 'remote').map(x => `${x.payee.name}: ${[x.xp && `+${ui.fmt(x.xp)} XP`, x.gold && `${ui.fmt(x.gold)} gold`, ...x.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
-    if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: 'Gate Cleared', body, lines: rlines }); return true; }
-    await ui.system({ tag: '! Notification', kind: 'quest', title: 'Gate Cleared', body,
-      lines: payees.length ? [`Rewarded: ${payees.map(p => p.name).join(', ')}`] : ['No hunters were selected, so no rewards were paid.'], rewards });
+    if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: rlines }); return true; }
+    await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body,
+      lines: payees.length ? [PRESET_WORDS.rewardedLine(payees.map(p => p.name))] : [PRESET_WORDS.nobodyGotRewards], rewards });
     return true;
   }
 
@@ -317,8 +350,9 @@ export function register(app) {
     if (!end) return;
     const runOf = { end, hunter: made.hunter, shadows: made.shadows, from, route }, R = app.rules();
     const toRoom = gate.kind === 'world' && route !== 'local';
-    // a cleared gate's loot, rolled before the write as a Clear's is; the GM's phone rolls a room's gate's
-    const loot = end.outcome === 'won' && !toRoom ? lootOf(ready.target.rank, ready.target.boss, gate.kind) : { gold: 0, items: [] };
+    // a cleared gate's loot, rolled before the write as a Clear's is (skipped when the gate has a preset, active or paid); the GM's phone rolls a room's gate's
+    const worldGate = gate.kind === 'world' ? store.get().gates.find(x => x.id === gate.id) : null;
+    const loot = end.outcome === 'won' && !toRoom && !(worldGate && worldGate.preset.at !== 'none') ? lootOf(ready.target.rank, ready.target.boss, gate.kind) : { gold: 0, items: [] };
     const body = toRoom ? soloRunBody(ready.h, runOf, ready.target, sync().myKey(hid), R) : null, event = body ? sync().event('soloRun', body) : null;
     const done = { ran: null };
     const w = store.apply('solo-run', s => { const r = soloRan(s, hid, gate, runOf, loot, { day: dayNow(), ready: readyCtx(hid), event }); if (isRefused(r)) return r; done.ran = r; return r.save; });
@@ -339,7 +373,7 @@ export function register(app) {
   app.on('sync:event', ({ event: ev }) => {
     if (app.seat() !== 'gm' || ev.type !== 'soloRun') return;
     const p = ev.payload, s = store.get(), plan = soloPlan(s, p, app.rules()), g = gate(p.gate);
-    const loot = plan.kind === 'paid' && g ? lootOf(g.rank, true, 'world') : { gold: 0, items: [] };
+    const loot = plan.kind === 'paid' && g && g.preset.at === 'none' ? lootOf(g.rank, true, 'world') : { gold: 0, items: [] };
     const body = soloAnswerBody(s, p.eid, p, plan), answer = body ? sync().event('soloAnswer', body) : null;
     const code = room(), rank = sync().remoteSheets().find(r => r.key === p.by)?.data.rank ?? null;
     if (!sync().once(p.eid, x => soloTaken(x, p, plan, answer, loot, { day: dayNow(), room: code ? { code, stamp: stampNow() } : null, rank }))) return;
@@ -381,6 +415,18 @@ export function register(app) {
 .gt-chk input{width:20px;height:20px;flex:0 0 auto}
 .gt-mrow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
 .gt-mrow .field:first-child{flex:1 1 160px}.gt-mrow .field.n{flex:0 0 80px}
+.gt-pitems{display:flex;flex-direction:column;gap:8px}
+.gt-prow{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);background:rgba(6,14,26,.55)}
+.gt-pchk{border:0;background:none;padding:0;min-height:44px}
+.gt-prar{color:var(--cyan-dim);font-size:12px;margin-left:4px}
+.gt-pdest{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.gt-pdest .field{flex:1 1 150px;min-width:0}
+.gt-pdest select{width:100%;min-width:0;min-height:44px}
+.gt-prm{min-height:44px;flex:0 0 auto;white-space:nowrap}
+.gt-padd{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.gt-padd .field{flex:1 1 180px;min-width:0}
+.gt-padd select{width:100%;min-width:0;min-height:44px}
+.gt-padd button{min-height:44px;flex:0 0 auto}
 .gt-switch{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
 .gt-solo{margin-top:14px;display:flex;flex-direction:column;gap:14px}
 .gt-solo h3{margin:0;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan)}
@@ -426,11 +472,15 @@ export function register(app) {
         const acts = !gm ? '' : [
           can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Enter</button>' : '',
           can(g, 'fightStarted') ? '<button type="button" data-act="encounter">Start fight</button>' : '',
+          can(g, 'clear') && g.preset.at !== 'paid' ? `<button type="button" data-act="preset">${esc(PRESET_WORDS.button)}</button>` : '',
           can(g, 'clear') ? '<button type="button" data-act="clear" class="primary">Clear</button>' : '',
           '<button type="button" data-act="edit">Edit</button>',
           can(g, 'close') ? '<button type="button" data-act="close">Close</button>' : '',
           '<button type="button" data-act="delete" class="danger">Delete</button>',
         ].join('');
+        const pLine = gm && g.preset.at !== 'none' ? `<div class="gt-notes" data-preset-summary>${esc(PRESET_WORDS.summary(g.preset, g.preset.at === 'paid', ui.fmt))}</div>` : '';
+        const paidList = gm && g.preset.at === 'paid' && g.preset.items.some(i => i.checked)
+          ? `<ul class="gt-mons" data-preset-paid aria-label="${esc(PRESET_WORDS.paidItemsLabel)}">${g.preset.items.filter(i => i.checked).map(i => `<li><span>${esc(i.item.name)}</span><span class="mx">${esc(PRESET_WORDS.itemWentTo(destName(i.to)))}</span></li>`).join('')}</ul>` : '';
         const cfg = app.rules().gateSpawn;
         return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(g.type)} gate ${esc(g.name)}">
           <div class="gt-head">${ui.rankBadge(g.rank)}<span class="gt-name">${esc(g.name)}</span>
@@ -441,6 +491,7 @@ export function register(app) {
           <ul class="gt-mons" aria-label="Monsters">${mons || '<li class="empty">No regular monsters.</li>'}
             ${g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, app.rules()))} XP · HP ${ui.fmt(monsterSheetOf(boss, app.rules()).hpMax)}</span>` : ''}</li>` : ''}</ul>
           <div class="gt-notes">Total XP per hunter: ${ui.fmt(gateXp(g))}</div>
+          ${pLine}${paidList}
           ${gm && g.mapId && api.maps.get(g.mapId) ? `<div class="gt-notes">Battle map: ${esc(api.maps.get(g.mapId).name)}</div>` : ''}
           ${g.notes ? `<div class="gt-notes">${esc(g.notes)}</div>` : ''}
           ${gm && g.solo ? `<div class="gt-notes">${esc(SOLO_WORDS.open)}${soloLeft().includes(g.id) ? `. ${esc(SOLO_WORDS.tooBig)}` : ''}</div>` : ''}
@@ -457,11 +508,62 @@ export function register(app) {
         const mode = openPanel.get(id), slot = node.querySelector('.gt-panel-slot');
         if (!mode || !slot) return;
         const g = gate(id);
-        slot.replaceChildren(ui.h(mode === 'clear' ? clearPanel(g) : editPanel(g)));
+        slot.replaceChildren(ui.h(mode === 'clear' ? clearPanel(g) : mode === 'preset' ? presetPanel(g) : editPanel(g)));
       }
       // local hunters, then room players; value = hunter id or remote key
       const payees = () => [...store.get().hunters.map(h => ({ id: h.id, name: h.name })), ...remotes().map(r => ({ id: r.key, name: r.data.name }))];
       const hunterOpts = sel => payees().map(h => `<option value="${esc(h.id)}"${h.id === sel ? ' selected' : ''}>${esc(h.name)}</option>`).join('');
+      const destName = ref => { if (!ref) return PRESET_WORDS.stash; const k = refKey(ref), found = payees().find(p => p.id === k); return found ? found.name : PRESET_WORDS.stash; };
+      const refOf = v => { if (!v) return null; const sk = parseSheetKey(v); return sk ? { kind: /** @type {const} */ ('remote'), remote: sk } : { kind: /** @type {const} */ ('local'), hunterId: /** @type {import('../core/ids.ts').HunterId} */ (v) }; };
+      const partySizeOf = g => { const s = store.get(); if (s.fight && s.fightRefs && s.fightRefs.gate === g.id) return fighterIds(s.fight).size; return g.fought.length || payees().length || app.rules().gateParty; };
+      const presetPickOpts = () => {
+        const grp = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.join('')}</optgroup>` : '');
+        const o = (v, t) => `<option value="${esc(v)}">${esc(t.name)} (${esc(gradeLabel(t.rar, t.grade ?? 0))})</option>`;
+        return `<option value="">${esc(PRESET_WORDS.pickItem)}</option>`
+          + grp('Library', store.get().library.items.map((t, n) => o(`L:${n}`, t)))
+          + grp('Shop', api.inventory.shop().map((t, n) => o(`S:${n}`, t)))
+          + grp('Built-in', api.inventory.itemTemplates().map((t, n) => o(`T:${n}`, t)))
+          + `<option value="__new">${esc(PRESET_WORDS.newItem)}</option>`;
+      };
+      const presetItemTpl = v => {
+        const [k, idx] = String(v).split(':'), n = Number(idx);
+        if (k === 'L') return store.get().library.items[n] || null;
+        if (k === 'S') return api.inventory.shop()[n] || null;
+        if (k === 'T') return api.inventory.itemTemplates()[n] || null;
+        return null;
+      };
+      function presetPanel(g) {
+        if (!g || !isActivePreset(g.preset)) return '';
+        const p = g.preset;
+        const rows = p.items.length ? p.items.map(line => `<div class="gt-prow" data-prow="${esc(line.id)}" data-pname="${esc(line.item.name)}">
+          <label class="gt-chk gt-pchk"><input type="checkbox" data-pchk="${esc(line.id)}"${line.checked ? ' checked' : ''}><span>${esc(PRESET_WORDS.payItem(line.item.name))}<small class="gt-prar">${esc(gradeLabel(line.item.rar, line.item.grade ?? 0))}</small></span></label>
+          <div class="gt-pdest">${ui.field(PRESET_WORDS.goesTo, `<select data-pto="${esc(line.id)}"><option value="">${esc(PRESET_WORDS.stash)}</option>${hunterOpts(line.to ? refKey(line.to) : '')}</select>`)}
+            <button type="button" class="danger gt-prm" data-act="preset-rm" data-pid="${esc(line.id)}" aria-label="${esc(PRESET_WORDS.removeItem)}: ${esc(line.item.name)}">${esc(PRESET_WORDS.removeItem)}</button></div></div>`).join('')
+          : `<p class="empty">${esc(PRESET_WORDS.noItems)}</p>`;
+        const add = p.items.length < PRESET_ITEMS_MAX
+          ? `<div class="gt-padd">${ui.field(PRESET_WORDS.addItemLabel, `<select data-padd-pick>${presetPickOpts()}</select>`)}<button type="button" data-act="preset-add">${esc(PRESET_WORDS.addItem)}</button></div>` : '';
+        return `<form class="gt-panel" data-form="preset" aria-label="${esc(PRESET_WORDS.title)}">
+          <div class="lbl">${esc(PRESET_WORDS.title)}</div>
+          <div class="grid2">
+            ${ui.field(PRESET_WORDS.xpLabel, `<input type="number" name="xp" min="0" max="${REWARD_BOUNDS.xp}" step="1" inputmode="numeric" value="${esc(p.xp)}">`)}
+            ${ui.field(PRESET_WORDS.goldLabel, `<input type="number" name="gold" min="0" max="${REWARD_BOUNDS.gold}" step="1" inputmode="numeric" value="${esc(p.gold)}">`)}</div>
+          <div class="lbl">${esc(PRESET_WORDS.itemsLabel)}</div>
+          <div class="gt-pitems">${rows}</div>
+          ${add}
+          <div class="gt-acts"><button type="button" data-act="preset-reset">${esc(PRESET_WORDS.reset)}</button>
+            <button type="button" class="danger" data-act="preset-clear">${esc(PRESET_WORDS.clear)}</button>
+            <button type="button" class="primary" data-act="cancel-panel">${esc(PRESET_WORDS.closePanel)}</button></div></form>`;
+      }
+      function presetClearItems(g, selectedIds) {
+        if (!isActivePreset(g.preset)) return '';
+        const list = payees().filter(h => selectedIds.has(h.id));
+        const pPayees = list.map(h => (parseSheetKey(h.id) ? { kind: /** @type {const} */ ('remote'), key: parseSheetKey(h.id) } : { kind: /** @type {const} */ ('local'), hid: h.id }));
+        const part = partitionPresetItems(g.preset, pPayees);
+        const rows = [];
+        for (const h of list) for (const it of part.byPayee.get(h.id) ?? []) rows.push(`<li><span>${esc(it.name)}</span><span class="mx">${esc(PRESET_WORDS.itemGoesTo(h.name))}</span></li>`);
+        for (const it of part.stash) rows.push(`<li><span>${esc(it.name)}</span><span class="mx">${esc(PRESET_WORDS.itemGoesTo(PRESET_WORDS.stash))}</span></li>`);
+        return rows.join('');
+      }
       // who fought this gate: the live fight started from it, else its last settled one (the gate's `fought`); none -> the active hunter only
       const fighters = g => {
         const s = store.get();
@@ -473,6 +575,20 @@ export function register(app) {
       const goldEach = (g, n) => { const e = clearGoldEach(app.rules(), g.rank, n); return e.low === e.high ? ui.fmt(e.low) : `${ui.fmt(e.low)} to ${ui.fmt(e.high)}`; };
       function clearPanel(g) {
         const on = fighters(g), list = payees(), n = list.filter(h => on.has(h.id)).length;
+        if (isActivePreset(g.preset)) {
+          const p = g.preset, itemsHtml = presetClearItems(g, on);
+          return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
+            <div class="lbl">Award to</div>
+            <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
+            <div class="gt-notes">${esc(PRESET_WORDS.clearNoteHead)}<span data-clearxp>${ui.fmt(n ? p.xp : 0)}</span>${esc(PRESET_WORDS.clearNoteMid)}<span data-cleargold>${ui.fmt(n ? p.gold : 0)}</span>${esc(PRESET_WORDS.clearNoteTail(app.seat() === 'gm'))}</div>
+            ${itemsHtml ? `<ul class="gt-mons" data-clearitems aria-label="${esc(PRESET_WORDS.clearItemsLabel)}">${itemsHtml}</ul>` : '<ul class="gt-mons" data-clearitems hidden></ul>'}
+            <div class="gt-acts"><button type="button" data-act="cancel-panel">${esc(PRESET_WORDS.cancelClear)}</button><button type="button" data-act="preset">${esc(PRESET_WORDS.edit)}</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
+        }
+        if (g.preset.at === 'paid') {
+          return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
+            <div class="gt-notes">${esc(PRESET_WORDS.paidClearNote)}</div>
+            <div class="gt-acts"><button type="button" data-act="cancel-panel">${esc(PRESET_WORDS.cancelClear)}</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
+        }
         return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
           <div class="lbl">Award to</div>
           <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
@@ -575,9 +691,11 @@ export function register(app) {
         // a panel asked for from another view (the fight's end): open, its card drawn again with it
         const ask = mounted.asked; mounted.asked = null;
         if (ask && gates.some(g => g.id === ask.id)) { openPanel.set(ask.id, ask.mode); cards.delete(ask.id); }
-        // a Clear panel stays open only while its gate can still be cleared (gate.ts `can`): a gate a player's run, another
-        // GM phone or this phone's own Clear has cleared or closed draws its card again, without the panel
-        for (const g of gates) if (openPanel.get(g.id) === 'clear' && !can(g, 'clear')) openPanel.delete(g.id);
+        // a Clear or Preset panel stays open only while its gate can still be cleared (and preset not paid)
+        for (const g of gates) {
+          const m = openPanel.get(g.id);
+          if ((m === 'clear' && !can(g, 'clear')) || (m === 'preset' && (!can(g, 'clear') || !isActivePreset(g.preset)))) openPanel.delete(g.id);
+        }
         const act = gates.filter(active), fin = gates.filter(g => !active(g));
         const fill = (box, list, emptyMsg) => {
           const els = list.map(g => {
@@ -623,6 +741,34 @@ export function register(app) {
         else if (act === 'enter') enter(id);
         else if (act === 'encounter') startEncounter(id);
         else if (act === 'clear' || act === 'edit') { openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }
+        else if (act === 'preset') {
+          const g = gate(id); if (!g || !can(g, 'clear') || g.preset.at === 'paid') return;
+          if (g.preset.at === 'none') {
+            const rec = recommendPreset(g, partySizeOf(g), xpOf, app.rules(), lootPool(app.rules()), cryptoRandom);
+            if (!ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, rec)), PRESET_WORDS.refusals)) return;
+          }
+          openPanel.set(id, 'preset'); refresh(id); cards.get(id)?.querySelector('.gt-panel input')?.focus();
+        }
+        else if (act === 'preset-reset') {
+          const g = gate(id); if (!g) return;
+          const rec = recommendPreset(g, partySizeOf(g), xpOf, app.rules(), lootPool(app.rules()), cryptoRandom);
+          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, rec)), PRESET_WORDS.refusals)) refresh(id);
+        }
+        else if (act === 'preset-clear') {
+          const g = gate(id); if (!g) return;
+          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'clear' })), PRESET_WORDS.refusals)) { openPanel.delete(id); refresh(id); }
+        }
+        else if (act === 'preset-rm') {
+          const g = gate(id), pid = parsePresetLineId(b.dataset.pid); if (!g || !pid) return;
+          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'removeItem', id: pid })), PRESET_WORDS.refusals)) refresh(id);
+        }
+        else if (act === 'preset-add') {
+          const g = gate(id), pick = b.closest('form')?.querySelector('[data-padd-pick]'); if (!g || !pick) return;
+          const v = pick.value; if (!v) return;
+          const tpl = v === '__new' ? await api.loot.item({ library: false }) : presetItemTpl(v);
+          if (!tpl) return;
+          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'addItem', item: tpl, to: null })), PRESET_WORDS.refusals)) refresh(id);
+        }
         else if (act === 'cancel-panel') { openPanel.delete(id); refresh(id); }
         else if (act === 'close') { if (await ui.confirm({ title: 'Close this gate?', body: 'A closed gate can no longer break.', confirmLabel: 'Close gate' })) ui.wrote('! Gate', store.apply('gate-close', s => closeGate(s, id, stamp()))); }
         else if (act === 'delete') { if (await ui.confirm({ title: 'Delete this gate?', body: 'This cannot be undone.', danger: true, confirmLabel: 'Delete' })) ui.wrote('! Gate', store.apply('gate-delete', s => deleteGate(s, id))); }
@@ -633,8 +779,37 @@ export function register(app) {
       el.addEventListener('change', e => {
         // a refused change draws the select back from the rules (render)
         if (e.target.matches('[data-solohours]') && app.isGM()) { if (!ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { hours: Number(e.target.value) })))) render(); return; }
+        const pf = e.target.closest('form[data-form=preset]');
+        if (pf && app.isGM()) {
+          const id = pf.closest('.gate').dataset.id, g = gate(id), t = e.target; if (!g) return;
+          const syncSummary = () => { const g2 = gate(id), sEl = cards.get(id)?.querySelector('[data-preset-summary]'); if (g2 && sEl && g2.preset.at !== 'none') sEl.textContent = PRESET_WORDS.summary(g2.preset, g2.preset.at === 'paid', ui.fmt); };
+          if (t.name === 'xp' || t.name === 'gold') {
+            const n = Number(t.value);
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, t.name === 'xp' ? { type: 'setXp', xp: n } : { type: 'setGold', gold: n })), PRESET_WORDS.refusals)) syncSummary();
+            return;
+          }
+          if (t.dataset.pchk) {
+            const pid = parsePresetLineId(t.dataset.pchk); if (!pid) return;
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'toggleItem', id: pid, checked: t.checked })), PRESET_WORDS.refusals)) syncSummary();
+            return;
+          }
+          if (t.dataset.pto) {
+            const pid = parsePresetLineId(t.dataset.pto); if (!pid) return;
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'assignItem', id: pid, to: refOf(t.value) })), PRESET_WORDS.refusals)) syncSummary();
+            return;
+          }
+          return;
+        }
         const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), gd = f && f.querySelector('[data-cleargold]'), g = f && gate(f.closest('.gate').dataset.id);
-        if (x && gd && g) { const n = f.querySelectorAll('input[name=hid]:checked').length; x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); }
+        if (x && gd && g) {
+          const pickedIds = new Set([...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value)), n = pickedIds.size;
+          if (isActivePreset(g.preset)) {
+            x.textContent = ui.fmt(n ? g.preset.xp : 0);
+            gd.textContent = ui.fmt(n ? g.preset.gold : 0);
+            const ul = f.querySelector('[data-clearitems]');
+            if (ul) { const html = presetClearItems(g, pickedIds); ul.innerHTML = html; ul.hidden = !html; }
+          } else { x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); }
+        }
       });
       el.addEventListener('submit', async e => {
         e.preventDefault();
@@ -648,11 +823,12 @@ export function register(app) {
         }
         const id = f.closest('.gate').dataset.id, kind = f.dataset.form;
         if (kind === 'clear') {
-          const hids = [...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value);
-          if (!hids.length && !(await ui.confirm({ title: 'Clear with no rewards?', body: 'No hunters are selected, so nobody is paid.', confirmLabel: 'Clear anyway' }))) return;
+          const g = gate(id), hids = [...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value);
+          const hasStashItems = g && isActivePreset(g.preset) && g.preset.items.some(i => i.checked);
+          if (!(g && g.preset.at === 'paid') && !hids.length && !(await ui.confirm(hasStashItems ? PRESET_WORDS.confirmNoHuntersWithStash : PRESET_WORDS.confirmNoHunters))) return;
           // the panel closes before the write, so the redraw the write makes draws no Clear on a cleared gate; a refused Clear opens it again
           openPanel.delete(id);
-          if (!(await clearGate(id, hids, f.to.value))) { openPanel.set(id, 'clear'); return; }
+          if (!(await clearGate(id, hids, f.to ? f.to.value : ''))) { openPanel.set(id, 'clear'); return; }
         } else if (kind === 'edit') {
           const rows = [...f.querySelectorAll('[data-mrow]')].map(r => ({ monsterId: monsterId(r.querySelector('[name=mid]').value), count: copiesOf(r.querySelector('[name=cnt]').value) })).filter(r => r.monsterId);
           openPanel.delete(id);

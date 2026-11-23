@@ -83,6 +83,12 @@ export type ChainId = Id<'ChainId'>;
 export type MonsterId = Id<'MonsterId'>;
 /** A gate of the world. */
 export type GateId = Id<'GateId'>;
+/** One item line inside a gate's clear preset (`pl1`, `pl2`, ...): unique within its preset. */
+export type PresetLineId = Id<'PresetLineId'>;
+const PRESET_LINE_RE = /^pl\d{1,6}$/;
+export const parsePresetLineId = (v: unknown): PresetLineId | null =>
+  (typeof v === 'string' && PRESET_LINE_RE.test(v) ? (v as PresetLineId) : null);
+export const presetLineId = (n: number): PresetLineId => `pl${n}` as PresetLineId;
 /** A gate the System opened for one hunter (`Hunter.solo`, gates/solo.ts): never a gate of the world. */
 export type PersonalGateId = Id<'PersonalGateId'>;
 /** A battle map in the GM's library. */

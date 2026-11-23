@@ -11,7 +11,7 @@
 import { DOC_MAX, STASH_LINES, newEvent } from '../protocol.ts';
 import type { EventBody, EventStamp, SheetKey, StashAnswerPayload, StashAskPayload, StashDoc, StashRefusal } from '../protocol.ts';
 import { parseItem } from '../registry/items.ts';
-import type { Item } from '../registry/items.ts';
+import type { Item, ItemTemplate } from '../registry/items.ts';
 import { newEquipped } from '../hunter/hunter.ts';
 import { takeItems } from '../hunter/inventory.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -165,6 +165,24 @@ export function stashRemove(save: Save, item: ItemId, at: Stamp): Save | Refused
   const it = save.stash.items.find(i => i.id === item);
   if (!it) return refuse('gone');
   return logged({ ...save, stash: { ...save.stash, items: save.stash.items.filter(i => i !== it) } }, at, STASH_WORDS.removed(it));
+}
+/** Whether `items` fit into `st` without exceeding `STASH_LINES` or `DOC_MAX` under ids minted from `seq`. */
+export function stashCanHold(st: Stash, seq: number, items: readonly ItemTemplate[]): boolean {
+  if (!items.length) return true;
+  const goods: Goods = { gold: 0, items: items.map((item, i) => ({ from: saveId('i', i + 1), item })) };
+  let n = seq;
+  return !isRefused(keptIn(st, goods, () => saveId('i', ++n)));
+}
+/**
+ * Deposits `items` directly into the party stash (such as unpicked items from a gate's clear preset), stacking as a
+ * bag does under fresh ids from `save.seq`, logged with `reason`. Refused `full` when the stash would no longer fit.
+ */
+export function stashDeposit(save: Save, items: readonly ItemTemplate[], at: Stamp, reason: string): Save | Refused<'full'> {
+  if (!items.length) return save;
+  const goods: Goods = { gold: 0, items: items.map((item, i) => ({ from: saveId('i', i + 1), item })) };
+  const ids = idsOn(save), stash = keptIn(save.stash, goods, ids.next);
+  if (isRefused(stash)) return stash;
+  return logged({ ...save, seq: ids.seq(), stash }, at, `${reason}: ${goodsWords(goods)}.`);
 }
 
 // ── room: a player's ask, the GM's phone's answer, its landing ──

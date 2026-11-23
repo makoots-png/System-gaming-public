@@ -13,7 +13,7 @@
 // the same write that grants it here or posts the `award` to the player (gm.js, award.ts `gmAward`), so the table
 // refusing a second approve refuses the second payment. A record is kept by its id: a replayed ask makes no second one.
 import { EARNED_WHAT_MAX, REWARD_FROM, newEvent } from '../protocol.ts';
-import type { EventStamp, RewardAskPayload, RewardFrom, RoomEvent } from '../protocol.ts';
+import type { AskFrom, EventStamp, RewardFrom, RoomEvent } from '../protocol.ts';
 import { deviceOf, hunterIdOf, parseEventId, parseRoomCode, parseSheetKey, sheetKeyOf } from '../ids.ts';
 import type { EventId, HunterId, RoomCode, SheetKey } from '../ids.ts';
 import { isEmptyReward, parseRewards } from '../rewards.ts';
@@ -95,11 +95,15 @@ export const waitingIn = (s: Pick<Save, 'settings'>, room: RoomCode): PendingRew
 
 /** What the GM's log says of a record heard, approved or refused. */
 const said = (title: string, text: string): Said => ({ kind: 'award', hunterId: null, title, text });
+/** What `pendingHeard` takes: a player's `RewardAskPayload` or a GM-local pending reward such as a gate clear preset. */
+export type PendingHeardInput = {
+  readonly eid: EventId; readonly by: SheetKey; readonly name: string; readonly from: RewardFrom; readonly what: string; readonly rewards: Rewards;
+};
 /**
  * Ask `p` heard in room `room` at `heard` (a player's, from sync.ts's `sync:event` once by its id; or this phone's own,
- * `selfPaid`): a waiting record and its log line, one write. A record of that id already here changes nothing.
+ * `selfPaid` or a gate clear preset): a waiting record and its log line, one write. A record of that id already here changes nothing.
  */
-export function pendingHeard(s: Save, p: RewardAskPayload, room: RoomCode, log: Stamp): Save {
+export function pendingHeard(s: Save, p: PendingHeardInput, room: RoomCode, log: Stamp): Save {
   if (pendingOf(s).some(x => x.id === p.eid)) return s;
   const name = p.name || 'A hunter', rec: PendingReward = { id: p.eid, room, to: p.by, name, from: p.from, what: p.what, rewards: p.rewards, heard: log.at, at: 'waiting' };
   return told(withPending(s, kept([...pendingOf(s), rec])), log, said(PENDING_WORDS.logTitle, PENDING_WORDS.heardLog(name, p.from, p.what)));
@@ -143,7 +147,7 @@ export const localHunter = (s: Pick<Save, 'settings'>, p: Pick<PendingReward, 't
 export type RewardSeat = { readonly seat: 'alone' } | { readonly seat: 'player' | 'gm'; readonly room: RoomCode };
 export const ALONE: RewardSeat = { seat: 'alone' };
 /** What earned a reward by itself, and the reward. */
-export type SelfReward = { readonly from: RewardFrom; readonly what: string; readonly seed: string; readonly rewards: Rewards };
+export type SelfReward = { readonly from: AskFrom; readonly what: string; readonly seed: string; readonly rewards: Rewards };
 /** The ask of hunter `hid` for `r` at `at`: its id made from `r.seed`, so the same reward asked twice is one message. */
 export function askOf(s: Save, hid: HunterId, r: SelfReward, at: string): (RoomEvent & { type: 'rewardAsk' }) | null {
   const h = s.hunters.find(x => x.id === hid), device = s.settings.deviceId;
@@ -166,7 +170,7 @@ export function selfPaid(s: Save, hid: HunterId, r: SelfReward, c: { readonly at
 }
 
 // ── words ──
-const FROM_WORDS: { readonly [F in RewardFrom]: string } = { solo: 'Solo clear', quest: 'Quest complete', feat: 'Feat' };
+const FROM_WORDS: { readonly [F in RewardFrom]: string } = { solo: 'Solo clear', quest: 'Quest complete', feat: 'Feat', clear: 'Gate clear' };
 /** Every line the GM and the player read of a waiting reward. */
 export const PENDING_WORDS = {
   title: 'Waiting for you',

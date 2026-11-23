@@ -163,7 +163,8 @@ export function register(app) {
       ${quickChecks ? `<div class="lbl sec">Quick check <span data-who></span></div>
         <div class="dx-row">${ui.field('Difficulty (DC)', '<select data-dc></select>')}</div>
         <div class="dx-checks" data-checks></div>` : ''}
-      <div class="roll-out"><div class="roll-total" data-total>&mdash;</div><div class="dx-flag" data-flag></div><div class="roll-detail" data-detail>Choose a die to roll</div></div>`;
+      <div class="roll-out"><div class="roll-total" data-total>&mdash;</div><div class="dx-flag" data-flag></div><div class="roll-detail" data-detail>Choose a die to roll</div></div>
+      <div class="dx-coin" data-coin-slot></div>`;
     const q = s => root.querySelector(s);
     const setErr = t => { q('[data-err]').textContent = t || ''; };
     const doRoll = (expr, o = {}) => {
@@ -212,18 +213,18 @@ export function register(app) {
     inst.update = () => {
       const rs = store.get().rolls, last = rs[0], t = q('[data-total]'), f = q('[data-flag]');
       t.className = `roll-total${last && last.crit ? ' crit' : last && last.fumble ? ' fail' : ''}`;
-      // a new roll tumbles its numerals and lands on the total already rolled above; anything else is drawn at once
+      // a new roll tumbles its numerals and lands on the total already rolled above; anything else (or one that already opened the coin call) is drawn at once
       // the faces it rolled (the detail line) show when the total lands, not while it tumbles
+      const v = last ? last.check : null, coin = last ? app.api.coin.of(last.id) : null;
       const detail = q('[data-detail]'), tail = last ? `${last.adv ? ' · advantage' : last.dis ? ' · disadvantage' : ''}${last.label ? ' · ' + esc(last.label) : ''}` : '';
       const sum = last ? sumLine(last) : '';
       const words = last ? `${sum ? `<div class="dx-sum" data-sum>${esc(sum)}</div>` : ''}${esc(last.expr)} <span class="dx-faces">${shown.get(last.id) ?? `[${esc(last.rolls.join(', '))}]`}</span>${tail}` : 'Choose a die to roll';
-      if (last && t.dataset.rid !== last.id && t.dataset.rid !== undefined && last.total >= 1) {
+      if (last && t.dataset.rid !== last.id && t.dataset.rid !== undefined && last.total >= 1 && !coin) {
         detail.textContent = '';
         void motion.tumble(t, last.total, highest(last.expr, last.total)).then(() => { if (t.dataset.rid === last.id) { detail.innerHTML = words; void motion.enter(detail, 'fade'); } });
-      } else if (t.dataset.rid !== (last ? last.id : '')) { t.textContent = last ? last.total : '—'; detail.innerHTML = words; }
+      } else if (t.dataset.rid !== (last ? last.id : '')) { motion.forget(t); t.textContent = last ? last.total : '—'; detail.innerHTML = words; }
       t.dataset.rid = last ? last.id : '';
       drawRecent();
-      const v = last ? last.check : null, coin = last ? app.api.coin.of(last.id) : null;
       f.className = `dx-flag${last && last.crit ? ' crit' : last && last.fumble ? ' fail' : v ? (v.success ? ' ok' : ' fail') : ''}`;
       // a roll that called the coin reads what the coin says, not "Critical hit"
       f.textContent = coin ? coinWords(coin) : last && last.crit ? 'Critical hit' : last && last.fumble ? 'Critical failure' : v ? `${v.success ? 'Success' : 'Failure'} vs DC ${v.dc}` : '';

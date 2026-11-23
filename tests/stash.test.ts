@@ -13,7 +13,7 @@ import type { Item } from '../src/core/registry/items.ts';
 import { roomGone, step } from '../src/core/sync/outbox.ts';
 import type { Outbox } from '../src/core/sync/outbox.ts';
 import { askedGone, askedOf, shownOf } from '../src/core/sync/asked.ts';
-import { STASH_WAITING, asksKept, stashAsked, stashDismissed, stashLanded, stashPut, stashRemove, stashTake, stashTaken, stranded } from '../src/core/trade/stash.ts';
+import { STASH_WAITING, asksKept, stashAsked, stashDeposit, stashDismissed, stashLanded, stashPut, stashRemove, stashTake, stashTaken, stranded } from '../src/core/trade/stash.ts';
 import type { StashPick } from '../src/core/trade/stash.ts';
 import { dev, hid, iid, room } from './fixtures/ids.ts';
 
@@ -73,6 +73,16 @@ describe('a phone alone puts and takes in one write', () => {
     const out = ok(stashRemove(g, iid('i900'), LOG));
     expect([out.stash.items, out.log[0]!.text]).toEqual([[], 'You removed Healing Potion × 3 from the stash.']);
     expect(stashRemove(out, iid('i900'), LOG)).toEqual({ ok: false, why: 'gone' });
+  });
+
+  test('stashDeposit stacks items into the party stash, logs the reason, and refuses full when over STASH_LINES', () => {
+    const g = gm([{ ...POTION, id: iid('i900'), qty: 1 }]);
+    const out = ok(stashDeposit(g, [POTION], LOG, 'Goblin Den clear'));
+    expect(out.stash.items.map(i => [i.name, i.qty])).toEqual([['Healing Potion', 2]]);
+    expect(out.log[0]!.text).toBe('Goblin Den clear: 1 Healing Potion.');
+    expect(stashDeposit(g, [], LOG, 'Nothing')).toBe(g);
+    const full = Array.from({ length: STASH_LINES }, (_, i) => ({ ...parseItem({ name: `Relic ${i}`, type: 'accessory' })!, id: iid(`i${800 + i}`), qty: 1 }));
+    expect(stashDeposit(gm(full), [POTION], LOG, 'Overflow')).toEqual({ ok: false, why: 'full' });
   });
 });
 

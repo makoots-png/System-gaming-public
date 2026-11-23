@@ -45,7 +45,9 @@ const CSS = `
 .coin-later p{flex:1 1 auto;min-width:0;margin:0;font-size:13px;color:var(--cyan-dim)}
 .coin-later b{display:block;font-size:15px;color:var(--ice)}
 .coin-later button{flex:0 0 auto;min-height:44px;min-width:72px}
-@media (max-width:720px){.coin-card{bottom:calc(var(--nav-h) + var(--sab) + 8px)}}`;
+@media (max-width:720px){.coin-card{bottom:calc(var(--nav-h) + var(--sab) + 8px)}}
+[data-coin-slot]:empty{display:none}
+[data-coin-slot] .coin-card{position:static;width:min(380px,100%);max-height:none;margin:10px auto 0;box-shadow:none}`;
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -111,6 +113,27 @@ export function register(app) {
   const card = ui.h(`<section class="coin-card" data-coin-card aria-label="Coin call" hidden><ul class="coin-list" role="status" aria-live="polite"></ul>
     <ul class="coin-later" aria-label="Coin calls put off"></ul></section>`);
   document.body.appendChild(card);
+  /** The open dice tray's slot when the quick roll sheet or Dice view is on screen, else null (the card floats fixed on body). */
+  function slot() {
+    const diceSheet = document.getElementById('dice-sheet');
+    if (diceSheet && !diceSheet.hidden && !diceSheet.inert) return diceSheet.querySelector('[data-coin-slot]');
+    const view = document.getElementById('view-dice');
+    if (view && !view.hidden) return view.querySelector('[data-coin-slot]');
+    return null;
+  }
+  /** Moves the card into the active dice tray's flow, or back to body when no tray is open; keeps a spinning coin turning. */
+  function place() {
+    const host = slot() || document.body;
+    if (card.parentNode === host) return false;
+    host.appendChild(card);
+    for (const face of list.querySelectorAll('[data-at="called"] [data-coin-face]')) void motion.spin(face);
+    return true;
+  }
+  /** When docked in a dice tray, brings the card into view on the next frame (after the tray's own redraw). */
+  function reveal() {
+    if (card.hidden || card.parentNode === document.body) return;
+    requestAnimationFrame(() => { if (!card.hidden && card.parentNode !== document.body) card.scrollIntoView({ block: 'nearest' }); });
+  }
   const list = card.querySelector('.coin-list'), laterList = card.querySelector('.coin-later');
   const shownCoins = () => store.get().coins.filter(c => !isSettled(c) || fresh.has(c.id));
   const coinFace = side => `<div class="coin-air"><div class="coin" data-coin-face${side ? ` data-side="${side}"` : ''}><span class="coin-h">${esc(SIDE_WORDS.heads)}</span><span class="coin-t">${esc(SIDE_WORDS.tails)}</span></div></div>`;
@@ -134,15 +157,19 @@ export function register(app) {
     if (laterList.innerHTML !== html) laterList.innerHTML = html;
   }
   function draw() {
-    const coins = shownCoins(), later = putOffCalls();
+    const coins = shownCoins(), later = putOffCalls(), wasHidden = card.hidden;
+    const moved = place();
     card.hidden = !coins.length && !later.length;
+    const laterBefore = laterList.innerHTML;
     drawLater(later);
+    const laterChanged = laterList.innerHTML !== laterBefore;
     /** @type {Set<string>} */
     const keep = new Set(coins.map(c => c.id));
-    for (const li of [...list.children]) if (!keep.has(li.dataset.coin)) li.remove();
-    coins.forEach((c, i) => {
+    const gone = [...list.children].filter(li => !keep.has(li.dataset.coin));
+    for (const li of gone) li.remove();
+    const rewritten = coins.filter((c, i) => {
       let li = [...list.children].find(x => x.dataset.coin === c.id);
-      if (li && li.dataset.at === c.at) return;
+      if (li && li.dataset.at === c.at) return false;
       const was = li ? li.dataset.at : null;
       if (!li) { li = ui.h('<li></li>'); li.dataset.coin = c.id; }
       if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null);
@@ -151,7 +178,9 @@ export function register(app) {
       if (c.at === 'called') void motion.spin(face);
       else if (c.at === 'landed' && was !== 'landed') void motion.landOn(face, c.side);
       if (!was) void motion.enter(li);
-    });
+      return true;
+    }).length;
+    if (!card.hidden && (wasHidden || moved || laterChanged || gone.length || rewritten)) reveal();
   }
   list.addEventListener('click', e => {
     const b = e.target.closest('button'), li = b && b.closest('[data-coin]'); if (!li) return;
@@ -164,6 +193,9 @@ export function register(app) {
     const id = rollId(li.dataset.putOff); if (id) prompted({ type: 'reopen', id });
   });
   app.on('change', draw);
+  app.on('view', () => { if (place()) reveal(); });
+  const diceSheet = document.getElementById('dice-sheet');
+  if (diceSheet) new MutationObserver(() => { if (place()) reveal(); }).observe(diceSheet, { attributes: true, attributeFilter: ['hidden', 'inert'] });
 
   // ── the GM's phone: the calls, one System window at a time, oldest first ──
   /** The GM's window for the calls: the call it asks and the calls put off (src/core/coin.ts `CoinPrompt`), moved only by `prompted`. */

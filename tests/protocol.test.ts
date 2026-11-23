@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
-import { DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, newEvent, newEventId, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, WORD_MAX, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
@@ -1565,5 +1565,13 @@ describe('the party stash on the wire (notes-5-trade.md 3.2)', () => {
     expect(DOCS.stash(doc(atCap, fit + 1)), 'and refuses a longer one').toBeNull();
     expect(forty, 'forty lines of the largest item the game ships fit').toBeLessThanOrEqual(DOC_MAX);
     expect(stashFits({ gold: 0, items: doc(ordinary, STASH_LINES + 1).items }), 'past STASH_LINES lines the stash is full').toBe(false);
+  });
+
+  test('award.earned accepts from: clear and newEventId mints a valid event id', () => {
+    const eid = newEventId({ device: 'd-gm', now: 1700000000000, rand: 0.25 });
+    expect(eid).not.toBeNull();
+    const ev = newEvent('award', { to: ['d-p1:h1' as never], rewards: { xp: 100, points: 0, gold: 50, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, earned: { from: 'clear', what: 'Goblin Den' } }, { device: 'd-gm', now: 1700000000001, rand: 0.5 });
+    expect(ev?.type).toBe('award');
+    expect(ev?.type === 'award' && ev.payload.earned).toEqual({ from: 'clear', what: 'Goblin Den' });
   });
 });

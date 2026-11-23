@@ -4,8 +4,12 @@
 import { RANKS } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { Rank, Rules } from '../rules.ts';
-import { GATE_TYPES } from './gate.ts';
-import type { GateType } from './gate.ts';
+import { presetLineId } from '../ids.ts';
+import type { ItemTemplate } from '../registry/items.ts';
+import { GATE_TYPES, xpDue } from './gate.ts';
+import type { Gate, GateType, XpOf } from './gate.ts';
+import { PRESET_ITEMS_MAX } from './preset.ts';
+import type { PresetEvent, PresetItem } from './preset.ts';
 
 /** A number in [0, 1), as `Math.random` answers. */
 export type Random = () => number;
@@ -107,7 +111,14 @@ export type LootAsk = { readonly boss: boolean; readonly share: number };
  */
 export const lootShareOf = (R: Pick<Rules, 'solo'>, kind: 'personal' | 'world'): number => (kind === 'personal' ? R.solo.lootShare : 1);
 /**
- * A loot roll of `rank`'s table (the rules' `loot`, E's for a rank it lacks): its gold anywhere in the table's span when
+ * Each payee's share of what a world gate pays (its gold roll, its XP) among `n` payees, the gate made for `party`
+ * hunters (`RULES.gateParty`, design 4.1): a pot of `party` times `amount`, shrunk by party / n past the party, split
+ * evenly and rounded down. So the party takes `amount` each, fewer take more, and a crowd takes less in total. None for nobody.
+ */
+export const shareEach = (amount: number, n: number, party: number): number =>
+  n <= 0 ? 0 : Math.floor(n <= party ? amount * party / n : amount * party * party / (n * n));
+
+/** A loot roll of `rank`'s table (the rules' `loot`, E's for a rank it lacks): its gold anywhere in the table's span when
  * it has one, times the ask's share, then one pick by rarity weight (two for a boss), each made when a draw falls under
  * the share and then an item of the picked rarity from `pool`, none when the pool holds none of it. A share of 1 draws no
  * chance, so a world gate's roll reads the same numbers as before shares. The Clear of a gate rolls a boss's; the GM's
@@ -122,4 +133,31 @@ export function rollLoot<I extends { readonly rar: string }>(R: Pick<Rules, 'loo
     if (of.length) out.push({ kind: 'item', item: of[below(of.length, rand)]! });
   }
   return out;
+}
+
+/**
+ * Recommends a clear preset for `gate` and `partySize` hunters: per-hunter XP (`xpDue` shared by `shareEach`),
+ * per-hunter gold and boss items drawn once from `rollLoot` over `pool` (the caller passes `lootPool(R)` and a `Random`).
+ * Each recommended item starts checked and assigned to the party stash (`to: null`).
+ */
+export function recommendPreset(
+  gate: Gate,
+  partySize: number,
+  xpOf: XpOf,
+  R: Pick<Rules, 'loot' | 'gateParty'>,
+  pool: readonly ItemTemplate[],
+  rand: Random,
+): Extract<PresetEvent, { type: 'recommend' }> {
+  const n = Math.max(1, Math.trunc(partySize) || 1);
+  const due = xpDue(gate, xpOf);
+  const xp = shareEach(due, n, R.gateParty);
+  const drops = rollLoot(R, gate.rank, { boss: true, share: 1 }, pool, rand);
+  const rolledGold = drops.reduce((sum, d) => sum + (d.kind === 'gold' ? d.gold : 0), 0);
+  const gold = shareEach(rolledGold, n, R.gateParty);
+  const items: PresetItem[] = [];
+  for (const d of drops) {
+    if (d.kind !== 'item' || items.length >= PRESET_ITEMS_MAX) continue;
+    items.push({ id: presetLineId(items.length + 1), item: { ...d.item }, checked: true, to: null });
+  }
+  return { type: 'recommend', xp, gold, items };
 }

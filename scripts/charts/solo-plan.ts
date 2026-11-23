@@ -17,11 +17,13 @@ const CELL_WORDS: { readonly [C in Cell]: string } = {
   gone: 'Refused: the gate is gone',
   taken: 'Refused: already cleared',
   closed: 'Refused: the gate is closed',
+  'stash-full': 'Refused: the party stash is full',
 };
 const FOUND_WORDS: { readonly [G in SoloGateFound]: string } = {
   gone: 'its gate is gone',
   cleared: 'its gate is already cleared',
   closed: 'its gate cannot be cleared',
+  stashFull: 'its clear preset has items for a full party stash',
   notSolo: 'open to solo runs, or taken out of them meanwhile',
   open: 'open to solo runs, or taken out of them meanwhile',
 };

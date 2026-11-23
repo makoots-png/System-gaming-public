@@ -6,6 +6,8 @@ import { oneOf } from '../one-of.ts';
 import type { Rank } from '../rules.ts';
 import type { GateId, MapId, MonsterId } from '../ids.ts';
 import { mapId } from '../registry/maps.ts';
+import { NO_PRESET, parseClearPreset } from './preset.ts';
+import type { ClearPreset } from './preset.ts';
 
 // ── ids ──
 export type { GateId, MonsterId };
@@ -33,6 +35,8 @@ export type GateFields = {
   fought: string[];
   /** Open to solo runs: a hunter may enter it alone (gates/solo.ts), the GM's mark in the edit form. */
   solo: boolean;
+  /** The clear reward pre-set by the GM (gates/preset.ts), never exposed to players in `shownOf`. */
+  preset: ClearPreset;
 };
 /** Only a cleared gate has the day it was cleared. */
 export type Gate =
@@ -42,7 +46,7 @@ export type Gate =
 /** A detected gate on day 1 with nothing in it. The save repair fills a stored gate from it. */
 export const newGate = (): Gate => ({
   id: 'g0' as GateId, name: '', rank: 'E', type: 'normal', status: 'detected', breakDay: 1, monsters: [], bossId: null, notes: '',
-  createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false,
+  createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false, preset: NO_PRESET,
 });
 
 // ── events ──
@@ -68,7 +72,7 @@ type Row = { readonly [T in GateEventType]: Step<T> | null };
 /** Every field but the status and the cleared day. */
 const fieldsOf = (gate: Gate): GateFields => ({
   id: gate.id, name: gate.name, rank: gate.rank, type: gate.type, breakDay: gate.breakDay, monsters: gate.monsters, bossId: gate.bossId,
-  notes: gate.notes, createdDay: gate.createdDay, xpPaid: gate.xpPaid, mapId: gate.mapId, fought: gate.fought, solo: gate.solo,
+  notes: gate.notes, createdDay: gate.createdDay, xpPaid: gate.xpPaid, mapId: gate.mapId, fought: gate.fought, solo: gate.solo, preset: gate.preset,
 });
 /** Leaving cleared drops the cleared day. Entering it stamps the day. */
 const uncleared = (gate: Gate, status: Exclude<GateStatus, 'cleared'>): Gate => ({ ...fieldsOf(gate), status });
@@ -163,6 +167,7 @@ export function parseGate(value: unknown): Gate | null {
     mapId: typeof value.mapId === 'string' && value.mapId.length > 0 && value.mapId.length <= 40 ? mapId(value.mapId) : null,
     fought: Array.isArray(value.fought) ? value.fought.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 80).slice(0, MAX_FOUGHT) : [],
     solo: value.solo === true,
+    preset: parseClearPreset(value.preset),
   };
   const status = oneOf(value.status, GATE_STATUSES, 'detected');
   return status === 'cleared' ? { ...fields, status, clearedDay: int(value.clearedDay, 1, createdDay) } : { ...fields, status };

@@ -37,7 +37,9 @@ import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { nextWake } from '../src/core/hunter/quests.ts';
 import { dayKey } from '../src/core/day.ts';
-import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
+import { SHOP_ITEMS, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { gatePreset } from '../src/core/gates/preset.ts';
+import { presetLineId } from '../src/core/ids.ts';
 import { putItem } from '../src/core/hunter/inventory.ts';
 import { seedId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
@@ -564,6 +566,46 @@ describe('a world gate open to solo runs, in a room', () => {
   test('a lost run of a gate the GM took out of solo runs while it played still enters it: the run counts (SMX-gates-2.2, the owner, Nov 22)', () => {
     const s = gmSave([{ ...worldGate, solo: false }]), lost = { ...paidRun, outcome: 'lost' as const, life: 'dead' as const };
     expect(ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN)).gates[0]!.status).toBe('raiding');
+  });
+
+  test('a won solo run of a gate with an active preset pays the preset (no roll), marks preset paid, and stashes unpicked items', () => {
+    const pot = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
+    const blade = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
+    const s0 = gmSave([worldGate]);
+    const s1 = ok(gatePreset(s0, worldGate.id, {
+      type: 'recommend', xp: 333, gold: 88,
+      items: [
+        { id: presetLineId(1), item: blade, checked: true, to: { kind: 'remote', remote: paidRun.by } },
+        { id: presetLineId(2), item: pot, checked: true, to: null },
+      ],
+    }));
+    const plan = soloPlan(s1, paidRun, RULES);
+    const body = soloAnswerBody(s1, paidRun.eid, paidRun, plan)!;
+    const answer = newEvent('soloAnswer', body, { device: 'd-gm', now: NOW + 1, rand: 0.2 })!;
+    const out = ok(soloTaken(s1, paidRun, plan, answer, { gold: 9999, items: [] }, TAKEN));
+    expect(out.gates[0]!.preset.at).toBe('paid');
+    expect(out.stash.items.map(i => i.name)).toEqual(['Health Potion']);
+    const rec = pendingOf(out).find(r => r.id === answer.payload.eid)!;
+    expect([rec.rewards.xp, rec.rewards.gold, rec.rewards.items.map(i => i.name)]).toEqual([333, 88, ['Iron Blade']]);
+  });
+
+  test('a won solo run on a preset gate when the party stash is full answers the player refused (stash-full) and keeps the gate open', () => {
+    const pot = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
+    const fullItems = Array.from({ length: 40 }, (_, i) => ({ ...parseItem({ name: `Token ${i}`, type: 'misc' })!, id: `i${900 + i}` as never, qty: 1 }));
+    const s0: Save = { ...gmSave([worldGate]), stash: { gold: 0, items: fullItems } };
+    const s1 = ok(gatePreset(s0, worldGate.id, {
+      type: 'recommend', xp: 200, gold: 100,
+      items: [{ id: presetLineId(1), item: pot, checked: true, to: null }],
+    }));
+    const plan = soloPlan(s1, paidRun, RULES);
+    expect(plan).toEqual({ kind: 'refused', why: 'stash-full' });
+    const body = soloAnswerBody(s1, paidRun.eid, paidRun, plan)!;
+    const answer = newEvent('soloAnswer', body, { device: 'd-gm', now: NOW + 2, rand: 0.2 })!;
+    const out = ok(soloTaken(s1, paidRun, plan, answer, NO_LOOT, TAKEN));
+    expect(out.gates[0]!.status).toBe('detected');
+    expect(out.gates[0]!.preset.at).toBe('recommended');
+    const posted = out.settings.sync.outbox!.at(-1)!.letter;
+    expect(posted.kind === 'event' && posted.event.payload).toMatchObject({ verdict: 'refused', why: 'stash-full', to: [KEY] });
   });
 });
 

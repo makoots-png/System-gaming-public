@@ -227,7 +227,7 @@ function landSoloAnswer(p: PayloadOf<'soloAnswer'>, _hids: string[], app: ApplyD
   return save => {
     const closed = askAnswered(save, p.run);
     if (isRefused(closed)) return closed;
-    if (p.verdict === 'refused') return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE TAKEN', kind: 'warning', body: p.name, lines: [REFUSED_WORDS[p.why]] }); } };
+    if (p.verdict === 'refused') return { save: closed, tell: () => { app.system({ tag: '! Gate', title: p.why === 'stash-full' ? 'GATE NOT CLEARED' : 'GATE TAKEN', kind: 'warning', body: p.name, lines: [REFUSED_WORDS[p.why]] }); } };
     return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE CLEARED', kind: 'quest', body: `${p.name}: your solo run cleared it.`, lines: [PENDING_WORDS.waits] }); } };
   };
 }

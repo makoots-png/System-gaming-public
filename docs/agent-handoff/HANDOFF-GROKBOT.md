@@ -28,18 +28,16 @@ Read the block headed "Now" at the top of section 2 of `docs/agent-handoff/hando
 `docs/agent-handoff/decisions.tsv` (`grep -P '\tops\t' docs/agent-handoff/decisions.tsv | tail -3`): they are kept true
 at every step and win over this section if they differ.
 
-- **Nothing is in flight to the public repository.** The mythic screens (unit `mythic-7`) landed: PR 75 is merged
-  into `main`.
-- **Running: one helper on the branch `mythic-balance`** (worktree `/home/user/wt/mythic-balance` on the Claude lead's
-  box; every commit is pushed to the remote branch of that name). Its unit: the two rows left in `OPEN` of
-  `tests/fight-sim.test.ts`. (1) Zaratan's stun-answered omen comes in its last phase and is met 0.09 times a fight
-  (row B5 interrupt, 1.08 against at most 0.8). (2) Row B4: three cannons beat a brute mythic 19 to 66% of the time.
-  It holds `src/core/registry/mythics.ts`, `src/core/combat/mythic.ts`, `policy.ts`, `fight-turn.ts`, `play.ts`,
-  `src/core/rules.ts` (`fight.mythic`), `tests/fight-sim.test.ts`, `tests/models/fight-sim.ts`. The Claude lead lands
-  it if it reports before the lead stops. If the trail does not say `mythic-balance` landed, the branch is yours: read
-  `git log lead-backlog..origin/mythic-balance` and the end of `docs/agent-handoff/rw/sim-log.md` on that branch, and
-  finish or redo the unit from there. Nothing else may change those files until it has landed.
-- **After that the Claude lead disables its hourly wake and stops.** No other Claude lead is started.
+- **Nothing is in flight and no helper is running** (Nov 22, 22:45 UTC). Every unit of the Claude lead's session is
+  live on `main` through PR 76. The lead's hourly wake (`trig_01PAy26svhqoTKXm4koLmYDQ`) is disabled, and no other
+  Claude lead is started. The Claude lead has stopped; a Claude session comes back only to review.
+- **`mythic-balance` landed** (PR 76): row B4 and Zaratan's B5 interrupt hold and are out of `OPEN`, which keeps only
+  B9. The files it held are free.
+- **`raise-held` landed** (PR 76): the first public run for `mythic-balance` was red in `raise.e2e.ts`, a race in
+  rulings-21 (a player's phone could offer and take the System's raise while the GM's fight held the hunter). Fixed at
+  the cause; `gmHolds` in `src/core/sync/fight-heard.ts` is the one place that says whether the GM's fight holds a
+  hunter. A new lint, `FIGHT_ASKS` in `tests/lint.test.ts`, fails when a view adds a `fightOf` call: put the refusal
+  in the core step first (its row is in `AGENTS.md`).
 
 ## 3. What is live on `main` (this lead's session, Nov 22, 17:00 UTC on)
 
@@ -55,11 +53,14 @@ command that undoes it). That file is where to look first when something is wron
 | 73 | mythic-5e | Nothing (switched off): a mythic's warning is answered by a step, a shield or a stun, never a hit |
 | 74 | rulings-20 | In a room, a reward the app used to pay by itself waits in the GM's "Waiting for you" list |
 | 75 | mythic-7 | Nothing until the GM turns on "Mythics fight in phases": the mythic strip, the omen banner, Land and Drop |
+| 76 | mythic-balance | Nothing until that switch is on: three cannons beat a mythic 1 to 9% of the time, was 19 to 66% |
+| 76 | raise-held | The System's raise is never offered or taken while the GM's fight holds the hunter |
 
 Two features are built and switched off:
 
 - **Mythic phases**: `RULES.fight.mythic.scripts` is false. The GM has a switch in the Fight tools. The default goes to
-  true only when row B4 holds (the `mythic-balance` unit) and the owner is told.
+  true in a commit of its own, with its own public run: row B4 holds now, and with phases off a plain brute mythic
+  still loses to three cannons 45% of the time, so on is the better default. Tell the owner when it is on.
 - **Keystones**: `RULES.fight.keystone.on` is false until K5's simulation rows hold and K6's screens exist.
 
 ## 4. What is left, in the order I would do it
@@ -83,7 +84,7 @@ Start a unit only when no running unit changes the same files.
    The default I would take: a share of each clear's gold until it is gone, the share a rule in `RULES`.
 5. **Small screen fixes**: on the GM's card for a player's hunter the "Status" button is clipped by "Build" at 390 px;
    the coin call covers the dice tray's sum line on a natural 20 until answered.
-6. **After `mythic-balance` has landed: keystones K5** (the simulation rows; first make the simulation's bodies wear
+6. **Keystones K5** (`mythic-balance` has landed, so its files are free) (the simulation rows; first make the simulation's bodies wear
    keystones, which `tests/models/fight-sim.ts` does not do through `rows.ts`). Then the balance pass:
    `docs/agent-handoff/features/enemies/README.md` item 13 (ten points of any stat are worth about the same, and a
    build that specialises beats an even spread by a clear and bounded margin), and units 4's rest, 6 and 7 of

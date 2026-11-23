@@ -125,6 +125,20 @@ test('only src/core/gates/gate.ts changes a gate\'s status, cleared day or XP pa
   expect(report(hits), 'a gate changes only through transition() in src/core/gates/gate.ts. Add an event to its table (see docs/guide/gates-solo.md) and send it.').toEqual([]);
 });
 
+test('only src/core/gates/preset.ts writes a gate\'s preset', async () => {
+  // A gate's clear preset is an explicit machine (`presetStep`, `gatePreset`, `payGatePreset`). No view, edge or other
+  // core module writes `preset` on a gate directly; `gate.ts` only supplies `NO_PRESET` in `newGate` and reads it with
+  // `parseClearPreset` in `parseGate`.
+  const assign = String.raw`\s*([-+*/]?=(?![=>])|\+\+|--)`;
+  const write = new RegExp(String.raw`\.preset${assign}|[{,]\s*preset\s*:`);
+  const owners = ['src/core/gates/preset.ts', 'src/core/gates/gate.ts'];
+  expect(write.test('g.preset = { at: "none" };'), 'the rule sees a dot write').toBe(true);
+  expect(write.test('{ ...g, preset: next }'), 'the rule sees a spread write').toBe(true);
+  expect(write.test('if (g.preset.at === "edited") return;'), 'and not a read').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
+  expect(report(hits), 'change a gate\'s preset only through gatePreset or payGatePreset in src/core/gates/preset.ts.').toEqual([]);
+});
+
 test('a view sends a room event made by the constructor, never a type name and a payload of its own', async () => {
   // Each view used to build its payload and its event id by hand, so the server, the senders and the appliers drifted.
   const raw = /\.send\(\s*['"`]/;

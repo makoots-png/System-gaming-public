@@ -854,6 +854,45 @@ Where it lives:
 | The test to copy | `tests/gate.test.ts`; the walk's events are in `tests/models/gate-events.ts` |
 | The recipe | docs/guide/gates-solo.md, "To add a gate status or event" |
 
+## A gate's clear preset
+
+Every state reachable from a gate with no preset (`none`) under the 9 events of `PRESET_EVENTS`, breadth first. The walk found 4 states and 19 steps.
+
+### A gate's clear preset, from none to paid
+
+```mermaid
+---
+title: A gate's clear preset, from none to paid
+---
+stateDiagram-v2
+  state "No preset (rolls at clear)" as s1
+  state "Recommended set filled" as s2
+  state "Edited by the GM" as s3
+  state "Paid at the clear" as s4
+  [*] --> s1
+  s1 --> s2 : the GM opens or resets What this clear pays
+  s2 --> s3 : the GM edits gold, XP, or items
+  s2 --> s1 : the GM removes the clear preset
+  s2 --> s4 : the gate is cleared, clear preset paid once
+  s3 --> s2 : the GM opens or resets What this clear pays
+  s3 --> s1 : the GM removes the clear preset
+  s3 --> s4 : the gate is cleared, clear preset paid once
+```
+
+Stored on `Gate.preset` on the GM's save and left out of the room's world doc so players never see it before the clear. Opening What this clear pays fills a recommended set from the loot rules (`recommended`). Any edit of gold, XP, checkboxes, item recipients, or lines moves it to `edited`. Clearing the gate pays the exact checked set once (`paid`, terminal, never rolled or paid again).
+
+4 chart states, 7 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `ClearPreset`, `PresetEvent`, and `PRESET_STATES` in `src/core/gates/preset.ts`; stored on `Gate.preset` |
+| What changes it | `presetStep(preset, event)` and `PRESET_TABLE`; `gatePreset` (GM edits) and `payGatePreset` (clear settlement) |
+| Who calls it | `src/views/gates.js` ("What this clear pays" panel), `settleClearPreset` (`src/core/gates/pay.ts`), and `soloTaken` / `soloRan` (`src/core/gates/solo.ts`) |
+| The test to copy | `tests/preset.test.ts` |
+| The recipe | docs/guide/gates-solo.md, "Where things live" |
+
 ## The room link and the sheet push
 
 Every state of the link and the push together that the model check of tests/sync-model.test.ts reaches from the four ways a page boots (tests/models/sync-world.ts), breadth first: taps, timers, and every kind of reply to each request that is out. The walk found 70350 states and 2010067 steps.
@@ -2587,7 +2626,7 @@ Where it lives:
 
 ## A player's solo run on the GM's phone
 
-A run of each of the 3 outcomes arriving, against each of the 5 ways `PLAN_TABLE` finds the GM's gate. The walk found 8 states and 15 steps.
+A run of each of the 3 outcomes arriving, against each of the 6 ways `PLAN_TABLE` finds the GM's gate. The walk found 9 states and 18 steps.
 
 ### What the GM's phone does with a run
 
@@ -2602,22 +2641,24 @@ stateDiagram-v2
   state "Refused: the gate is gone" as s4
   state "Refused: already cleared" as s5
   state "Refused: the gate is closed" as s6
-  state "Paid as the gate's Clear for one" as s7
-  state "Noted (it enters a detected gate)" as s8
+  state "Refused: the party stash is full" as s7
+  state "Paid as the gate's Clear for one" as s8
+  state "Noted (it enters a detected gate)" as s9
   [*] --> s1
   [*] --> s2
   [*] --> s3
   s1 --> s4 : its gate is gone
   s1 --> s5 : its gate is already cleared
   s1 --> s6 : its gate cannot be cleared
-  s1 --> s7 : open to solo runs, or taken out of them meanwhile
-  s2 --> s8 : whatever its gate
-  s3 --> s8 : whatever its gate
+  s1 --> s7 : its clear preset has items for a full party stash
+  s1 --> s8 : open to solo runs, or taken out of them meanwhile
+  s2 --> s9 : whatever its gate
+  s3 --> s9 : whatever its gate
 ```
 
 The table is asked when the run arrives and again inside its one write (`soloTaken`), which is refused (`changed`) when the plan no longer holds. A paid run is the gate's Clear for a party of one, paid at once (ruling SMX-gates-2.3 waits). A gate the GM took out of solo runs while the run played still pays a won run: the run counts (the owner's ruling of Nov 22, SMX-gates-2.2). A lost or stalled run is noted whatever the gate. The player's phone hears the answer as `soloAnswer`; a run nobody answers waits (`soloWait`).
 
-8 chart states, 6 arrows. No step is hidden.
+9 chart states, 7 arrows. No step is hidden.
 
 Where it lives:
 
