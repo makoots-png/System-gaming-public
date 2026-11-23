@@ -494,8 +494,10 @@ export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKi
 }
 
 // ── a mythic that plays its script (notes-11-keystones.md, design B.8) ──
-/** The rules a scripted mythic's row is made under: today's, `fight.mythic.scripts` on (the switch ships off until MY7). */
+/** The rules a scripted mythic's row is made under, with `fight.mythic.scripts` on (the shipped default). */
 export const scriptsOn = (R: Rules = RULES): Rules => ({ ...R, fight: { ...R.fight, mythic: { ...R.fight.mythic, scripts: true } } });
+/** The rules with `fight.mythic.scripts` turned off explicitly, for tests of the off path. */
+export const scriptsOff = (R: Rules = RULES): Rules => ({ ...R, fight: { ...R.fight, mythic: { ...R.fight.mythic, scripts: false } } });
 /** `plain`'s body: today's mythic of row M1, a brute at S with its archetype's attack alone. */
 const PLAIN_BODY: RowMonster = { name: 'A Mythic', rank: 'S', archetype: 'brute', kind: 'mythic', tweak: {}, abilities: [], statuses: [], script: 'plain' };
 /**

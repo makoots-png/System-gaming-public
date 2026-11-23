@@ -2,7 +2,7 @@
 // of a script that need no fight: a phase's band of HP (`bandOf`) and which of its acts a monster lacks (`scriptFits`).
 // It imports types only, so any module of a fight may read it (row-life.ts reads a gate, fight-parse.ts a stored
 // standing); an omen's move as an ability is registry/mythic-moves.ts. A mythic monster names its script
-// (`Monster.script`, monsters.ts); one that names none plays `plain`. `RULES.fight.mythic.scripts` is off until MY7.
+// (`Monster.script`, monsters.ts); one that names none plays `plain`. `RULES.fight.mythic.scripts` is on by default.
 // To add a mythic: a row of `MYTHICS` (its key is its id), its seed's `script` naming the key, and one test in
 // tests/mythics.test.ts that states its shape from its own words. Every other check loops over `MYTHICS`.
 import type { StatusKey } from '../combat/effect-ops.ts';

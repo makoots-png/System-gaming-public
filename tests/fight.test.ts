@@ -2736,4 +2736,24 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(r.effects.some(e => e.type === 'used' && e.by === 'X'), 'the omen never landed').toBe(false);
     expect(rowHp(body(r.fight, 'A'))).toBe(hp);
   });
+
+  test('starting a setup fight with mythic scripts off strips standing, phase statuses and script HP factor', () => {
+    const OFF: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: false } } };
+    const zSeed = seedMonsters(ON).find(m => m.script === 'zaratan-the-island-that-wakes')!;
+    const plainZ = monsterRows(zSeed, [id('Z')], OFF)[0]!;
+    const setup = go(null, {
+      type: 'add', fightId: fightId('f-off'),
+      rows: [{ ...monsterRows(zSeed, [id('Z')], ON)[0]!, place: place(5, 5) }, hunter('A', place(8, 5))], openings: [],
+    }).fight!;
+    expect(body(setup, 'Z').mythic).not.toBeNull();
+    const started = reduce(setup, {
+      type: 'start', openings: [{ id: id('Z'), d20: 10, tie: 0 }, { id: id('A'), d20: 15, tie: 1 }],
+    }, { rules: OFF }).fight!;
+    const z = body(started, 'Z');
+    expect(z.mythic).toBeNull();
+    expect(z.statuses).toEqual([]);
+    expect(rowHp(z)).toBe(rowHp(plainZ));
+    expect(z.sheet.hpMax).toBe(rowHp(plainZ));
+    expect(z.stagger?.max).toBe(plainZ.stagger?.max);
+  });
 });

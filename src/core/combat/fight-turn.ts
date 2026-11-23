@@ -16,7 +16,7 @@ import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter, sameLife } from './row-life.ts';
-import { applyStatus, dueAmount, onSheet, owedOf, perRound, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, dueAmount, modified, onSheet, owedOf, perRound, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
 import type { SheetKey } from '../ids.ts';
@@ -24,7 +24,7 @@ import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
 import { needs, resists } from './resolve.ts';
 import type { Aim, Needs } from './resolve.ts';
 import { channelCan } from './fight-channel.ts';
-import { aimedBody, answerBack, answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
+import { aimedBody, answerBack, answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicOff, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
 import type { MetAnswer, MythicRefusal, Scripted } from './mythic.ts';
 import type { MythicMove, Omen } from './mythic-types.ts';
 import { bandOf } from '../registry/mythics.ts';
@@ -271,6 +271,29 @@ export function phasedRow(row: Scripted<Body>, by: 'turn' | 'gm', now: Tick, R: 
   if (by === 'turn') return acted(x, now, paceCost(R.fight.mythic.turnPace, R.fight), R.fight);
   const top = Math.ceil(bandOf(script, s.phase + 1).from * x.sheet.hpMax);
   return rowHp(x) > top ? rowLifeAfter(x, { type: 'setHp', hp: top }) : x;
+}
+
+/**
+ * Mythic row `row` with its script taken off when a fight in setup starts under rules with `fight.mythic.scripts` off:
+ * clears its standing (`mythicOff`), takes off its phase's worn statuses, undoes the script's `hp` factor on its origin
+ * and restores its kind's stagger bar, recomputing its sheet and updating life through `rowLifeAfter`.
+ */
+export function unscriptedRow(row: Scripted<Body>, R: Rules): Body {
+  const s = row.mythic, script = scriptOf(s), phase = script.phases[s.phase]!;
+  const off = new Set<string>(phase.worn.map(w => w.key));
+  const statuses = row.statuses.filter(x => !off.has(x.key));
+  const o = row.origin;
+  const tweak = o.kind === 'monster' ? { ...o.tweak, hp: script.hp > 0 ? o.tweak.hp / script.hp : o.tweak.hp } : null;
+  const origin = o.kind === 'monster' && tweak ? { ...o, tweak } : o;
+  const bar = o.kind === 'monster' && tweak ? staggerOf({ rank: o.rank, archetype: o.archetype, kind: o.monsterKind, tweak }, R) : null;
+  const { stats, sheet } = modified(origin, statuses, R);
+  const cleared = mythicOff(row);
+  const fullHp = rowHp(row) === row.sheet.hpMax, fullMana = row.mana === row.sheet.manaMax;
+  const mana = fullMana ? sheet.manaMax : Math.min(row.mana, sheet.manaMax);
+  const rebuilt: Body = cleared.kind === 'monster'
+    ? { ...cleared, origin, statuses, stats, sheet, speed: sheet.speed, mana, stagger: bar ? { fill: Math.min(cleared.stagger?.fill ?? 0, bar.max), max: bar.max, hit: bar.hit } : null }
+    : { ...cleared, origin, statuses, stats, sheet, speed: sheet.speed, mana };
+  return rowLifeAfter(rebuilt, fullHp ? { type: 'setHp', hp: sheet.hpMax } : { type: 'maxChanged' });
 }
 
 /**

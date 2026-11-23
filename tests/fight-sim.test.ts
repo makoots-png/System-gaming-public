@@ -62,7 +62,7 @@ import { reduce, fightId } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
-import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOn, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
+import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
 import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
@@ -572,13 +572,13 @@ describe('every build and monster plays a fight to its end', () => {
 
 describe('a mythic\'s script stays out of the fights it is not in (design B.8)', () => {
   /**
-   * The rules as shipped hold scripts off (the lead's ruling: MY7 turns them on with its screens), so every row above M1
-   * included plays as before: no seed mythic made under them holds a standing, and row M1's fight, every hunter answering
-   * omens, is the same fight seed by seed, since with no standing there is no omen to answer.
+   * When a table turns `fight.mythic.scripts` off, no seed mythic made under those rules holds a standing, and row M1's
+   * fight, every hunter answering omens, is the same fight seed by seed, since with no standing there is no omen to answer.
    */
   test('with mythic phases off the old rows are unchanged', () => {
-    for (const m of seedMonsters(RULES).filter(x => x.kind === 'mythic')) expect([m.name, monsterRows(m, [combatantId('m')], RULES)[0]!.mythic]).toEqual([m.name, null]);
-    const m1 = (answer: boolean) => (seed: number): FightRecord => playFight({ rows: [...party(MIXED, 'S').map(s => (answer ? answering(s) : s)), monster('S', 'brute', 'mythic', 'mythic')] }, seed);
+    const OFF = scriptsOff();
+    for (const m of seedMonsters(OFF).filter(x => x.kind === 'mythic')) expect([m.name, monsterRows(m, [combatantId('m')], OFF)[0]!.mythic]).toEqual([m.name, null]);
+    const m1 = (answer: boolean) => (seed: number): FightRecord => playFight({ rows: [...party(MIXED, 'S').map(s => (answer ? answering(s) : s)), monster('S', 'brute', 'mythic', 'mythic')], rules: OFF }, seed);
     for (let seed = 1; seed <= 40; seed++) expect(m1(true)(seed), `seed ${seed}`).toEqual(m1(false)(seed));
   });
 });

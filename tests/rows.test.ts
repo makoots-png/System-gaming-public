@@ -359,8 +359,10 @@ describe('a monster', () => {
 
 describe('a mythic (notes-11-keystones.md, design B.3)', () => {
   // Zaratan's words (registry/mythics.ts): on the Shore, its first phase, it wears the Shell of a Thousand Years.
-  const ON_RULES: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+  const ON_RULES: Rules = RULES;
+  const OFF_RULES: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: false } } };
   const ON = { ...ON_RULES, conditions: R.conditions };
+  const OFF = { ...OFF_RULES, conditions: R.conditions };
   const zaratan = (o: Partial<RowMonster> = {}) => monster({ name: 'Zaratan', rank: 'S', archetype: 'brute', kind: 'mythic', script: 'zaratan-the-island-that-wakes', ...o });
   const angelWeighed = (f: Fight): Fight => {
     const s = mythicStep(f.rows[1]!.mythic!, { type: 'announce', omen: 'weighed' as OmenKey, aim: f.rows[0]!.id, hpAt: rowHp(f.rows[1]!), barAt: null });
@@ -377,7 +379,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
       [statusKey('mythic-shell'), 'Shell of a Thousand Years', { id: id('m1'), tier: 5 }, null],
     ]);
     const add = (rows: NewRow[]) => reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, { rules: ON_RULES }).fight!.rows[0]!;
-    const off = add(monsterRows(zaratan(), [id('m1')], R)), on = add([r!]), even = (off.sheet.armor + off.sheet.resist) / 2;
+    const off = add(monsterRows(zaratan(), [id('m1')], OFF)), on = add([r!]), even = (off.sheet.armor + off.sheet.resist) / 2;
     expect([on.sheet.armor, on.sheet.resist], 'the guard evened to the mean of the two, and the shell 30 more armor on top').toEqual([even + 30, even]);
     expect(monsterRows(monster({ kind: 'boss' }), [id('m1')], ON)[0]!.mythic, 'a monster of another kind plays no script').toBeNull();
     const { script: _named, ...unnamed } = zaratan();
@@ -390,7 +392,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
     const factor = MYTHICS['the-fourth-rider'].hp;
     expect(factor).not.toBe(1);
     const hpOf = (tweakHp: number) => monsterSheet('S', 'caster', 'mythic', RULES, [], { ...NO_TWEAK, hp: tweakHp }).hpMax;
-    const [on] = monsterRows(rider, [id('m1')], ON), [off] = monsterRows(rider, [id('m1')], R);
+    const [on] = monsterRows(rider, [id('m1')], ON), [off] = monsterRows(rider, [id('m1')], OFF);
     expect([on!.life, off!.life]).toEqual([{ at: 'up', hp: hpOf(1.5 * factor) }, { at: 'up', hp: hpOf(1.5) }]);
   });
 
@@ -406,7 +408,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
   });
 
   test('with mythic phases off a mythic row holds no standing', () => {
-    const [r] = monsterRows(zaratan(), [id('m1')], R);
+    const [r] = monsterRows(zaratan(), [id('m1')], OFF);
     expect([r!.mythic, r!.statuses]).toEqual([null, []]);
     expect([hunterRow(hunter(), id('c1'), RULES).mythic, shadowRow(shadow(), 'h1', id('x1'), RULES).mythic]).toEqual([null, null]);
   });
@@ -417,7 +419,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
     const f = angelWeighed(reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, ctx).fight!);
     expect(f.rows[1]!.mythic).toMatchObject({ at: 'omen', omen: 'weighed', aim: id('c1') });
     const stored = JSON.parse(JSON.stringify(f));
-    expect(parseFight(stored, RULES), 'it reads back with the switch off too: the switch makes rows, it does not read them').toEqual(f);
+    expect(parseFight(stored, OFF_RULES), 'it reads back with the switch off too: the switch makes rows, it does not read them').toEqual(f);
     const broken = (change: (m: Record<string, unknown>) => void) => { const v = JSON.parse(JSON.stringify(f)); change(v.rows[1].mythic); return parseFight(v, RULES); };
     expect(broken(m => { m.script = 'no-such-script'; }), 'a script the registry lacks').toBeNull();
     expect(broken(m => { m.phase = 3; }), 'a phase past its script\'s last').toBeNull();

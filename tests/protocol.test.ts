@@ -1139,19 +1139,19 @@ describe('the other room docs', () => {
 
   test('the room carries the mythic switch: a doc without it reads as off, and a player\'s rules follow the GM\'s', () => {
     const rules = roomRulesOf(RULES);
-    expect(rules.mythic, 'the shipped switch is off').toEqual({ scripts: false });
-    const on = { ...rules, mythic: { scripts: true } };
-    expect(DOCS.rules(copy(on))!.mythic).toEqual({ scripts: true });
-    expect(DOCS.rules(copy(rules))!.mythic).toEqual({ scripts: false });
-    const { mythic: _none, ...older } = on;
+    expect(rules.mythic, 'the shipped switch is on').toEqual({ scripts: true });
+    const off = { ...rules, mythic: { scripts: false } };
+    expect(DOCS.rules(copy(rules))!.mythic).toEqual({ scripts: true });
+    expect(DOCS.rules(copy(off))!.mythic).toEqual({ scripts: false });
+    const { mythic: _none, ...older } = rules;
     expect(DOCS.rules(copy(older))!.mythic, 'a doc without the switch reads as off').toEqual({ scripts: false });
-    for (const bad of [{ scripts: 'yes' }, { scripts: 1 }, {}]) expect(DOCS.rules(copy({ ...on, mythic: bad }))!.mythic, JSON.stringify(bad)).toEqual({ scripts: false });
-    for (const bad of [null, 'on']) expect(DOCS.rules(copy({ ...on, mythic: bad })), `a switch that is ${JSON.stringify(bad)} is no room's rules, as the trading switch's`).toBeNull();
-    const ownOn: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
-    expect(roomRulesOf(ownOn).mythic, 'the GM\'s phone publishes its own switch').toEqual({ scripts: true });
-    expect(withRoomRules(RULES, on).fight.mythic.scripts, 'a player\'s phone plays by the room\'s switch').toBe(true);
-    expect(withRoomRules(ownOn, rules).fight.mythic.scripts, 'and a room with it off turns the player\'s own off').toBe(false);
-    expect(withRoomRules(RULES, on).fight.mythic.staggerTaken, 'the rest of the mythic rules stay the phone\'s').toBe(RULES.fight.mythic.staggerTaken);
+    for (const bad of [{ scripts: 'yes' }, { scripts: 1 }, {}]) expect(DOCS.rules(copy({ ...rules, mythic: bad }))!.mythic, JSON.stringify(bad)).toEqual({ scripts: false });
+    for (const bad of [null, 'on']) expect(DOCS.rules(copy({ ...rules, mythic: bad })), `a switch that is ${JSON.stringify(bad)} is no room's rules, as the trading switch's`).toBeNull();
+    const ownOff: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: false } } };
+    expect(roomRulesOf(ownOff).mythic, 'the GM\'s phone publishes its own switch').toEqual({ scripts: false });
+    expect(withRoomRules(ownOff, rules).fight.mythic.scripts, 'a player\'s phone plays by the room\'s switch').toBe(true);
+    expect(withRoomRules(RULES, off).fight.mythic.scripts, 'and a room with it off turns the player\'s own off').toBe(false);
+    expect(withRoomRules(ownOff, rules).fight.mythic.staggerTaken, 'the rest of the mythic rules stay the phone\'s').toBe(RULES.fight.mythic.staggerTaken);
   });
 
   describe('the room\'s rules carry the economy, each number read in its rule\'s domain', () => {

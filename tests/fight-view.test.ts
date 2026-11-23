@@ -482,6 +482,9 @@ describe('a mythic on the table (notes-11-keystones.md B.5, unit MY7)', () => {
     const stars = seen('angel-of-the-last-trumpet', { omen: { key: 'stars' as OmenKey, faltering: false, aim: { x: 5, y: 5 } } });
     expect(omenOnYou(stars, id('Mira'), { x: 6, y: 5 }, R)).toBe('You are in the marked tiles.');
     expect(omenOnYou(stars, id('Mira'), { x: 20, y: 5 }, R)).toBeNull();
+    const breath = seen('angel-of-the-last-trumpet', { place: { x: 4, y: 2 }, omen: { key: 'breath' as OmenKey, faltering: false, aim: id('Boss') } });
+    expect(omenOnYou(breath, id('Mira'), { x: 3, y: 2 }, R)).toBe('You are in the marked tiles.');
+    expect(omenOnYou(breath, id('Mira'), { x: 20, y: 2 }, R)).toBeNull();
     const weighed = seen('angel-of-the-last-trumpet', { omen: { key: 'weighed' as OmenKey, faltering: false, aim: id('Mira') } });
     expect(omenOnYou(weighed, id('Mira'), { x: 1, y: 1 }, R)).toBe('Weighed and Found Wanting is aimed at you.');
     expect(omenOnYou(weighed, id('Ren'), { x: 1, y: 1 }, R)).toBeNull();

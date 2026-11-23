@@ -109,6 +109,10 @@ export const mythicStart = (id: MythicScriptId | null, since: Tick): MythicStand
 export function mythicJoined<R extends { readonly mythic: MythicStanding | null }>(r: R, now: Tick): R {
   return r.mythic === null ? r : { ...r, mythic: { ...r.mythic, since: tick(r.mythic.since + now) } };
 }
+/** Row `r` with its script taken off: used when a fight in setup starts after the GM turned mythic scripts off. */
+export function mythicOff<R extends { readonly mythic: MythicStanding | null }>(r: R): R {
+  return r.mythic === null ? r : { ...r, mythic: null };
+}
 /** Every state of a standing, from the table's rows. */
 export const MYTHIC_STATES = Object.keys(MYTHIC_TABLE) as readonly MythicState[];
 /** Every type of event, from the table's columns. */

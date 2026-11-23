@@ -56,11 +56,11 @@ command that undoes it). That file is where to look first when something is wron
 | 76 | mythic-balance | Nothing until that switch is on: three cannons beat a mythic 1 to 9% of the time, was 19 to 66% |
 | 76 | raise-held | The System's raise is never offered or taken while the GM's fight holds the hunter |
 
-Two features are built and switched off:
+One feature is built and switched off, and mythic phases are now on by default:
 
-- **Mythic phases**: `RULES.fight.mythic.scripts` is false. The GM has a switch in the Fight tools. The default goes to
-  true in a commit of its own, with its own public run: row B4 holds now, and with phases off a plain brute mythic
-  still loses to three cannons 45% of the time, so on is the better default. Tell the owner when it is on.
+- **Mythic phases**: `RULES.fight.mythic.scripts` is true since unit `mythic-phases-on` (the owner's "sure" on
+  questionable-decisions row 26, and row B4 holds since `mythic-balance`, PR 76). The GM's switch in Fight tools still
+  turns phases off for a table.
 - **Keystones**: `RULES.fight.keystone.on` is false until K5's simulation rows hold and K6's screens exist.
 
 ## 4. What is left, in the order I would do it

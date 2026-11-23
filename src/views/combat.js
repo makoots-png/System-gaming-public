@@ -10,7 +10,7 @@ import { pickables, pickedRef } from '../core/party.ts';
 import { RANKS, rules } from '../edge/rules.ts';
 import { stepTime } from '../core/day.ts';
 import { isUp, rowHp } from '../core/combat/row-hp.ts';
-import { fightId, owed, reduce, reduceAll } from '../core/combat/fight.ts';
+import { can, fightId, owed, reduce, reduceAll } from '../core/combat/fight.ts';
 import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
@@ -1266,13 +1266,15 @@ export function register(app) {
     };
   }
 
-  /** The strip and omen banner of each mythic still up in the fight, as markup (mythic-html.js); the GM's phone adds its hand. */
+  /** The strip and omen banner of each mythic still up in the fight, as markup (mythic-html.js); the GM's phone adds its hand once the fight can take it (`can(f, 'mythic')`). */
   function mythicMarkup(f, gm) {
     if (!f || f.phase === 'ended') return '';
     const R = rules(), now = timeOf(f), state = f.phase === 'running' ? runningState(f) : null;
+    if (f.phase === 'setup' && !R.fight.mythic.scripts) return '';
+    const canHand = gm && can(f, 'mythic');
     return f.rows.filter(r => r.mythic && isUp(r)).map(r => {
       const m = mythicSeenOf(r);
-      return mythicBox({ id: r.id, strip: mythicStrip(m, now, R), banner: omenBanner(m, f.rows, now, R), you: null, hand: gm ? mythicHand(m) : null, turn: !!state && state.at === 'landing' && state.id === r.id });
+      return mythicBox({ id: r.id, strip: mythicStrip(m, now, R), banner: omenBanner(m, f.rows, now, R), you: null, hand: canHand ? mythicHand(m) : null, turn: !!state && state.at === 'landing' && state.id === r.id });
     }).join('');
   }
   /** What each of `list` does to the omen standing in `f`, by ability id (fight-view.ts `answersBy`). */

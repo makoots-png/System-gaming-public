@@ -11,7 +11,7 @@ const combat = (page: Page) => page.locator('#view-combat');
 const SHOTS = process.env.MY7_SHOTS ?? '';
 const shot = async (page: Page, name: string) => { if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true }); } };
 
-/** A GM and a player in one room; the GM's switch for mythic scripts is tapped on, and the Angel and the player's hunter fight, the turn the Angel's. */
+/** A GM and a player in one room; mythic scripts are on by default, and the Angel and the player's hunter fight, the turn the Angel's. */
 async function angelFight(device: (label: string, o?: DeviceOptions) => Promise<{ page: Page }>, standing: Record<string, unknown> | null, at = { x: 6, y: 2 }): Promise<{ gm: Page; player: Page }> {
   const gm = (await device('gm')).page, player = (await device('player')).page;
   await onboardGM(gm);
@@ -25,7 +25,6 @@ async function angelFight(device: (label: string, o?: DeviceOptions) => Promise<
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
   await go(gm, 'combat');
   const sw = combat(gm).locator('[data-mythsw-btn]');
-  await sw.tap();
   await expect(sw).toHaveAttribute('aria-pressed', 'true');
   await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
   await combat(gm).locator('[data-addh]').tap();
@@ -112,11 +111,33 @@ test('the GM\'s Next phase moves the strip to phase 2 after a question', async (
 test('a GM picks the Angel\'s entry in the bestiary and reads its phases', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
-  await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides = { fight: { mythic: { scripts: true } } }; }, 'test-setup'));
   await go(page, 'bestiary');
   const card = page.locator('#view-bestiary .bst-card', { hasText: script.name });
   await card.scrollIntoViewIfNeeded();
   await expect(card).toContainText(`The fight: ${script.shape}`);
   await expect(card).toContainText(`Phase 1: ${script.phases[0]!.name}.`);
   await shot(page, 'bestiary');
+});
+
+test('the GM\'s switch turns mythic phases off for a table', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  await go(gm, 'combat');
+  const sw = combat(gm).locator('[data-mythsw-btn]');
+  await expect(sw).toHaveAttribute('aria-pressed', 'true');
+  await sw.tap();
+  await expect(sw).toHaveAttribute('aria-pressed', 'false');
+  await combat(gm).locator('[data-addh]').tap();
+  const label = await combat(gm).locator('[data-msel] option', { hasText: script.name }).first().textContent();
+  await combat(gm).locator('[data-msel]').selectOption({ label: label ?? '' });
+  await combat(gm).locator('[data-addm]').tap();
+  await combat(gm).locator('[data-start]').tap();
+  await expect(combat(gm).locator('.cmb-row.cur')).toHaveCount(1);
+  expect((await fightRow(gm, script.name)).mythic).toBeNull();
+  await expect(combat(gm).locator('.myth-phase')).toHaveCount(0);
+  await go(gm, 'bestiary');
+  const card = gm.locator('#view-bestiary .bst-card', { hasText: script.name });
+  await card.scrollIntoViewIfNeeded();
+  await expect(card).not.toContainText(`The fight: ${script.shape}`);
 });

@@ -199,12 +199,11 @@ export const ROSTER: readonly NewRow[] = [
 /**
  * A mythic playing the Fourth Rider's script (design B.6), at rank D so it fits the roster's fights: its second turn
  * names a hunter, its third lands the name; Brakk's stun and Mira's snare cancel it, a hit of 5% of its HP weakens it.
- * Made with the switch on, as a table that turned it on makes it; the reducer plays any row that holds a standing. It is
- * not in `ROSTER` (the odds' random fights play `sensible`, which lands no omen until unit MY5), and joins a third of the
- * random fights, chosen by the fight's id so the seeds of the others draw as they did.
+ * Made under the shipped rules (scripts are on by default); the reducer plays any row that holds a standing. It is
+ * not in `ROSTER`, and joins a third of the random fights, chosen by the fight's id so the seeds of the others draw as
+ * they did.
  */
-export const MYTHIC: NewRow = monsterRows({ ...seedMonsters(RULES).find(m => m.script === 'the-fourth-rider')!, rank: 'D' }, [combatantId('c-rider')],
-  { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } })[0]!;
+export const MYTHIC: NewRow = monsterRows({ ...seedMonsters(RULES).find(m => m.script === 'the-fourth-rider')!, rank: 'D' }, [combatantId('c-rider')], RULES)[0]!;
 /** Whether the random fight of id `id` holds the mythic: a third of them, by the id's characters. */
 const holdsMythic = (id: string): boolean => [...id].reduce((n, c) => n + c.charCodeAt(0), 0) % 3 === 0;
 

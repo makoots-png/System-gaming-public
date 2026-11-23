@@ -28,8 +28,8 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 
-/** The rules with mythic scripts on: the switch MY5 turns on for every table. */
-const ON: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+/** The rules as shipped, with mythic scripts on by default. */
+const ON: Rules = RULES;
 const ANGEL = seedMonsters(RULES).find(m => m.script === 'angel-of-the-last-trumpet')!;
 const HUNTER: RowHunter = {
   id: 'h1', name: 'Brakk', stats: { str: 30, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10 }, level: 1, rank: 'E', life: { at: 'up', hp: 30 },

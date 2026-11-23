@@ -29,7 +29,7 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, omenMove, overIf, partyView, phasedRow, giverOf, payDue, retaunted, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, untaunted, unwarded, withRow, zoneEnds } from './fight-turn.ts';
+import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, omenMove, overIf, partyView, phasedRow, giverOf, payDue, retaunted, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unscriptedRow, untaunted, unwarded, withRow, zoneEnds } from './fight-turn.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { mythicJoined, mythicStepped, playsScript, scriptOf } from './mythic.ts';
 import { isRefused } from '../save-step.ts';
@@ -147,9 +147,10 @@ const start: Step<'setup', 'start'> = (f, cmd, ctx) => {
   for (const r of f.rows) {
     const o = cmd.openings.find(x => x.id === r.id);
     if (!o) return refused(f, 'needsRoll');
+    const row = !R.fight.mythic.scripts && playsScript(r) ? unscriptedRow(r, R) : r;
     // a surprised side's openings come `kit.surprise` rounds later, but an alert row's (kits design 8.7.5)
-    const late = cmd.surprised === r.side && !holds(r, 'alert') ? R.fight.kit.surprise * R.fight.round : 0;
-    rows.push({ ...r, at: tick(openingOf(r, o, tick(0), R) + late), tie: o.tie });
+    const late = cmd.surprised === row.side && !holds(row, 'alert') ? R.fight.kit.surprise * R.fight.round : 0;
+    rows.push({ ...row, at: tick(openingOf(row, o, tick(0), R) + late), tie: o.tie });
   }
   const running: Running = { ...f, phase: 'running', rows, now: tick(0), currentId: rows[0]!.id, pending: [] };
   const fx: Fx = [];

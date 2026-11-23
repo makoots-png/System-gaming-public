@@ -688,9 +688,10 @@ const SPEC = {
     // Mythic scripts (docs/agent-handoff/features/notes-11-keystones.md, design B): a mythic's fight in phases, with
     // omens announced a turn ahead and the party's answers, one row of `MYTHICS` each (src/core/registry/mythics.ts).
     mythic: {
-      // A room's switch, as `keystone.on`: off, no row holds a standing, every mythic is today's body and row M1 is
-      // today's. It ships off until unit MY5's rows (design B.8) hold, then on.
-      scripts: false,
+      // A room's switch, as `keystone.on`: on by default since unit mythic-phases-on (the owner's "sure" on
+      // questionable-decisions row 26, and row B4 holds since mythic-balance, PR 76). The GM's switch in Fight tools
+      // still turns phases off for a table; off, no row holds a standing and every mythic fights on its base body.
+      scripts: true,
       // Keystones A's promise: the share of a `stagger` op (A.7) a mythic's bar takes. Half: Worldbreaker's half bar is
       // then a quarter of a mythic's, so a stagger answer needs the party's hits too, never one ability.
       staggerTaken: real(0.5, 0, 1, 'the share of a stagger op a mythic\'s bar takes: at 1 one op answers an omen alone'),

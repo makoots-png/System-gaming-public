@@ -257,7 +257,7 @@ export function register(app) {
       });
     },
     update(el) {
-      const sig = JSON.stringify([store.get().rulesOverrides, store.get().library.statuses]) + '|' + store.get().settings.dailyResetHour + '|' + app.isGM();
+      const sig = JSON.stringify(rules()) + '|' + store.get().settings.dailyResetHour + '|' + app.isGM();
       const body = el.querySelector('[data-rr-body]');
       if (body.dataset.sig === sig) return; body.dataset.sig = sig;
       body.innerHTML = render();

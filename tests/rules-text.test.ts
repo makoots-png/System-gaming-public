@@ -287,8 +287,11 @@ describe('how a mythic fights (unit MY7)', () => {
   test('the GM\'s switch writes fight.mythic.scripts and keeps the other overrides', async () => {
     const { mythicSwitched } = await import('../src/core/mythic-switch.ts');
     const { parseOverrides } = await import('../src/core/overrides.ts');
-    const saved = mythicSwitched({ rulesOverrides: { trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 } } } } }, true).rulesOverrides;
-    expect(parseOverrides(saved).refused).toEqual([]);
-    expect(saved).toEqual({ trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 }, scripts: true } } });
+    const off = mythicSwitched({ rulesOverrides: { trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 } } } } }, false).rulesOverrides;
+    expect(parseOverrides(off).refused).toEqual([]);
+    expect(off).toEqual({ trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 }, scripts: false } } });
+    const on = mythicSwitched({ rulesOverrides: off }, true).rulesOverrides;
+    expect(parseOverrides(on).refused).toEqual([]);
+    expect(on).toEqual({ trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 }, scripts: true } } });
   });
 });

@@ -312,6 +312,7 @@ type Spot2 = { readonly x: number; readonly y: number };
  */
 export type MythicSeen = {
   readonly id: CombatantId; readonly name: string;
+  readonly place?: Spot2;
   readonly script: MythicScriptId; readonly phase: number; readonly beat: number; readonly since: Tick;
   readonly omen: { readonly key: OmenKey; readonly faltering: boolean; readonly aim: Spot2 | CombatantId | null } | null;
   readonly hp: { readonly hp: number; readonly hpMax: number } | null;
@@ -326,14 +327,14 @@ export function mythicSeenOf(b: Body): MythicSeen | null {
   const s = b.mythic;
   if (!s) return null;
   const omen = s.at === 'calm' ? null : { key: s.omen, faltering: s.at === 'faltering', aim: typeof s.aim === 'string' ? s.aim : { x: s.aim.x, y: s.aim.y } };
-  return { id: b.id, name: b.name, script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen, hp: { hp: rowHp(b), hpMax: b.sheet.hpMax }, bandWord: null, held: heldAtGate(b) };
+  return { id: b.id, name: b.name, place: { x: b.place.x, y: b.place.y }, script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen, hp: { hp: rowHp(b), hpMax: b.sheet.hpMax }, bandWord: null, held: heldAtGate(b) };
 }
 /** A mythic's standing in the room doc as a screen reads it; null when the row carries none. `words` says each band. */
-export function mythicSeenOfDoc(r: { readonly id: CombatantId; readonly name: string; readonly band: string; readonly standing?: DocStanding }, words: Readonly<Record<string, string>>): MythicSeen | null {
+export function mythicSeenOfDoc(r: { readonly id: CombatantId; readonly name: string; readonly place?: Spot2; readonly band: string; readonly standing?: DocStanding }, words: Readonly<Record<string, string>>): MythicSeen | null {
   const s = r.standing;
   if (!s) return null;
   const omen = s.state === 'calm' ? null : { key: s.omen, faltering: s.state === 'faltering', aim: s.aim };
-  return { id: r.id, name: r.name, script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen, hp: null, bandWord: words[r.band] ?? r.band, held: null };
+  return { id: r.id, name: r.name, ...(r.place ? { place: r.place } : {}), script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen, hp: null, bandWord: words[r.band] ?? r.band, held: null };
 }
 
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -482,9 +483,11 @@ export function omenOnYou(m: MythicSeen, me: CombatantId, at: Spot2, R: Pick<Rul
   if (!omen) return null;
   const move = script.moves[m.omen.faltering && omen.weak !== null ? omen.weak : omen.full]!, aim = m.omen.aim;
   if (aim === me) return `${omen.name} is aimed at you.`;
-  if (aim === m.id) return omen.aim === 'all' ? `${omen.name} lands on everyone.` : null;
-  if (aim === null || typeof aim === 'string' || move.kind !== 'blast') return null;
-  return move.reach === 'field' || dist(place(aim.x, aim.y), place(at.x, at.y)) <= move.reach ? 'You are in the marked tiles.' : null;
+  if (aim === m.id && omen.aim === 'all') return `${omen.name} lands on everyone.`;
+  if (aim === null || move.kind !== 'blast') return null;
+  const center = aim === m.id ? (omen.aim === 'self' ? m.place ?? null : null) : typeof aim === 'string' ? null : aim;
+  if (!center) return null;
+  return move.reach === 'field' || dist(place(center.x, center.y), place(at.x, at.y)) <= move.reach ? 'You are in the marked tiles.' : null;
 }
 
 /**
