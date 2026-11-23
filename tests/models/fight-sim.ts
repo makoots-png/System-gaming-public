@@ -643,6 +643,8 @@ export type Setup = {
   readonly rules?: Rules;
   /** The GM's weight on the fight's dice (fudge.ts), set on the fight before it begins; its draws read it as the reducer's do. Absent: none. */
   readonly fudge?: Fudge;
+  /** When false, skip the extra resolve() pass that fills per-act damage tallies (only perUse rows read them). Defaults to true. */
+  readonly tallyDamage?: boolean;
 };
 
 /** `f` with the weight `w` set by the GM's own `fudge` command, one set for each side, row and forced roll (the reducer is its one writer). */
@@ -667,6 +669,7 @@ function weighted(f: Fight & { readonly phase: 'setup' }, w: Fudge, ctx: Ctx): F
  */
 export function playFight(setup: Setup, seed: number): FightRecord {
   const R = setup.rules ?? RULES, ctx: Ctx = { rules: R };
+  const tallyDamage = setup.tallyDamage ?? true;
   const plan: Plan = setup.plan ?? { channel: 'none' };
   const limits: Limits = { capRounds: setup.capRounds ?? CAP_ROUNDS, endAtRounds: setup.endAtRounds ?? null };
   const policies = new Map(setup.rows.map(s => [s.row.id as string, s.policy]));
@@ -739,7 +742,8 @@ export function playFight(setup: Setup, seed: number): FightRecord {
     if (me && choice) {
       const t = tally[me.id] ??= emptyTally(me);
       if (choice.type === 'act') {
-        count(f, me, choice.ability, choice.aim, s.rolls!);
+        if (tallyDamage) count(f, me, choice.ability, choice.aim, s.rolls!);
+        else t.acts[choice.ability.id] = (t.acts[choice.ability.id] ?? 0) + 1;
         if (holds(choice.ability)) for (const r of f.rows) {
           const after = p.fight.rows.find(x => x.id === r.id);
           if (r.id !== me.id && after && after.at > r.at && !s.effects.some(e => e.type === 'staggered' && e.id === r.id)) held[r.id] = (held[r.id] ?? 0) + after.at - r.at;
@@ -754,8 +758,10 @@ export function playFight(setup: Setup, seed: number): FightRecord {
       if (choice.type === 'pass') t.passes++;
       if (choice.type === 'release') {
         const c = me.channel!, a = me.abilities.find(x => x.id === c.ability)!;
-        const full = { ...a, cost: { ...a.cost, mana: 0, fatigue: 0 }, range: tiles(f.grid.w + f.grid.h) };
-        count(f, me, full, c.aim, s.rolls!);
+        if (tallyDamage) {
+          const full = { ...a, cost: { ...a.cost, mana: 0, fatigue: 0 }, range: tiles(f.grid.w + f.grid.h) };
+          count(f, me, full, c.aim, s.rolls!);
+        } else t.acts[a.id] = (t.acts[a.id] ?? 0) + 1;
         channels.completed++;
         if (underFire.has(me.id)) channels.aimed.completed++;
       }

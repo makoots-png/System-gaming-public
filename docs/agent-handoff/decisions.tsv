@@ -748,3 +748,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T16:29Z	features	(neon) Landed keystones-6 on lead-backlog: keystone screens, GM switch, Rules words (off by default).
 2026-11-23T16:44Z	ops	(neon) Merged PR 91 (keystones-6) to main (eef9b090).
 2026-11-23T17:23Z	features	(neon) Landed npc-keystones on lead-backlog: monsters no longer earn keystones (row 21).
+2026-11-23T18:02Z	ops	(neon) Merged PR 92 (npc-keystones) to main (4692fe59).
+2026-11-23T18:02Z	features	(neon) Landed fightsim-timeout on lead-backlog: fight-sim budgets judged on CPU time.

@@ -2378,3 +2378,20 @@ test('no UI element or object is personified in a player- or GM-facing string (v
   expect(stale, 'remove allowlist entries that no longer match any string').toEqual([]);
   expect(said(hits), 'rewrite so a person, the GM, the player, or "you" acts (docs/guide/voice.md)').toEqual([]);
 });
+
+test('every test in tests/fight-sim.test.ts uses simTest with a CPU budget and wide wall hang guard', async () => {
+  const text = await Bun.file(`${ROOT}/tests/fight-sim.test.ts`).text();
+  const cpuMatch = /const CPU_BUDGET_MS\s*=\s*([0-9_]+)\s*;/.exec(text);
+  expect(cpuMatch, 'define const CPU_BUDGET_MS in tests/fight-sim.test.ts').not.toBeNull();
+  const cpuMs = Number(cpuMatch![1]!.replace(/_/g, ''));
+  expect(cpuMs, 'keep CPU_BUDGET_MS at least 60_000 ms (over 4x the slowest row CPU)').toBeGreaterThanOrEqual(60_000);
+  const wallMatch = /const WALL_TIMEOUT_MS\s*=\s*([0-9_]+)\s*;/.exec(text);
+  expect(wallMatch, 'define const WALL_TIMEOUT_MS in tests/fight-sim.test.ts').not.toBeNull();
+  const wallMs = Number(wallMatch![1]!.replace(/_/g, ''));
+  expect(wallMs, 'keep WALL_TIMEOUT_MS at least 600_000 ms so host pauses do not abort healthy rows').toBeGreaterThanOrEqual(600_000);
+  expect(text, 'measure row work with process.cpuUsage() inside simTest so host pauses do not trigger false timeouts').toContain('process.cpuUsage(');
+  const rawTests = text.split('\n')
+    .map((line, idx) => ({ line: idx + 1, text: line }))
+    .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/WALL_TIMEOUT_MS/.test(line) && !/^\s*test\(name,\s*\(\)\s*=>\s*\{/.test(line) && !/^\s*\/\//.test(line));
+  expect(rawTests, 'call simTest(...) instead of test(...) in tests/fight-sim.test.ts so every test uses the CPU budget and wall guard').toEqual([]);
+});

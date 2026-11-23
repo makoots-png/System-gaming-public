@@ -77,6 +77,8 @@ declare const process: {
   exit(code?: number): never;
   /** A negative pid signals the whole process group. Throws when there is no such process. */
   kill(pid: number, signal?: 'SIGTERM' | 'SIGKILL'): true;
+  /** User and system CPU time of this process in microseconds, or the delta since `previousValue`. */
+  cpuUsage(previousValue?: { readonly user: number; readonly system: number }): { readonly user: number; readonly system: number };
 };
 
 declare module 'bun:test' {

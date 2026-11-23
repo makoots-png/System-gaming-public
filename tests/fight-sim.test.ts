@@ -77,27 +77,39 @@ import type { Archetype as MonsterArchetype } from '../src/core/hunter/derive.ts
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
 // ── the setups ──
+const once = <T>(make: () => T): (() => T) => { let v: T | undefined; return () => (v ??= make()); };
 const foe = (s: SimRow): SimRow => ({ ...s, row: { ...s.row, side: 'foe' } });
 const at = (s: SimRow, p: Place | null): SimRow => ({ ...s, row: { ...s.row, place: p } });
 /** Where a duel starts: the default lines, 8 tiles apart, or side by side. */
 type Opening = 'lines' | 'adjacent';
 const OPENINGS: readonly Opening[] = ['lines', 'adjacent'];
 const START: { readonly [O in Opening]: readonly [Place | null, Place | null] } = { lines: [null, null], adjacent: [place(0, 2), place(0, 3)] };
-const duel = (a: Archetype, b: Archetype, rank: Rank, opening: Opening = 'lines') => (seed: number): FightRecord[] =>
-  [playFight({ rows: [at(hunter(a, rank), START[opening][0]), at(foe(hunter(b, rank, a === b ? `${b}-foe` : b)), START[opening][1])] }, seed)];
+const duel = (a: Archetype, b: Archetype, rank: Rank, opening: Opening = 'lines') => {
+  const rows = once(() => [at(hunter(a, rank), START[opening][0]), at(foe(hunter(b, rank, a === b ? `${b}-foe` : b)), START[opening][1])]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
 const pack = (rank: Rank) => [1, 2, 3].map(i => monster(rank, 'brute', 'normal', `brute-${i}`));
 /** A pack that can hurt (decision 5): two skirmishers that shoot from range and an elite brute. */
 const hurtingPack = (rank: Rank) => [monster(rank, 'brute', 'elite', 'elite'), monster(rank, 'skirmisher', 'normal', 'skirmisher-1'), monster(rank, 'skirmisher', 'normal', 'skirmisher-2')];
 const MIXED: readonly Archetype[] = ['tank', 'bruiser', 'cannon'];
 const party = (ids: readonly Archetype[], rank: Rank): SimRow[] => ids.map((a, i) => hunter(a, rank, ids.indexOf(a) === i ? a : `${a}-${i}`));
-const vsPack = (ids: readonly Archetype[], rank: Rank) => (seed: number): FightRecord[] => [playFight({ rows: [...party(ids, rank), ...pack(rank)] }, seed)];
-const vsHurtingPack = (ids: readonly Archetype[], rank: Rank) => (seed: number): FightRecord[] => [playFight({ rows: [...party(ids, rank), ...hurtingPack(rank)] }, seed)];
-const vsBoss = (ids: readonly Archetype[], rank: Rank, channel: Plan['channel'] = 'none') => (seed: number): FightRecord[] =>
-  [playFight({ rows: [...party(ids, rank), monster(rank, 'brute', 'boss', 'boss')], plan: { channel } }, seed)];
+const vsPack = (ids: readonly Archetype[], rank: Rank, tallyDamage = false) => {
+  const rows = once(() => [...party(ids, rank), ...pack(rank)]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage }, seed)];
+};
+const vsHurtingPack = (ids: readonly Archetype[], rank: Rank) => {
+  const rows = once(() => [...party(ids, rank), ...hurtingPack(rank)]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
+const vsBoss = (ids: readonly Archetype[], rank: Rank, channel: Plan['channel'] = 'none', tallyDamage = false) => {
+  const rows = once(() => [...party(ids, rank), monster(rank, 'brute', 'boss', 'boss')]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), plan: { channel }, tallyDamage }, seed)];
+};
 const FIVE: readonly Archetype[] = ['speed', 'tank', 'cannon', 'bruiser', 'support'];
-const dungeon = (rank: Rank) => (seed: number): FightRecord[] => playDungeon(() => ({
-  rows: [...party(FIVE, rank), monster(rank, 'brute', 'boss', 'boss-1'), monster(rank, 'brute', 'boss', 'boss-2')], endAtRounds: 6,
-}), seed, 3, RULES.fight.fightRest);
+const dungeon = (rank: Rank) => {
+  const rows = once(() => [...party(FIVE, rank), monster(rank, 'brute', 'boss', 'boss-1'), monster(rank, 'brute', 'boss', 'boss-2')]);
+  return (seed: number): FightRecord[] => playDungeon(() => ({ rows: rows(), endAtRounds: 6, tallyDamage: false }), seed, 3, RULES.fight.fightRest);
+};
 
 type Play = (seed: number) => FightRecord[];
 const cache = new Map<string, FightRecord[][]>();
@@ -208,8 +220,8 @@ const atE: Row[] = SIDES.map(([a, b]) => ({
   measure: () => bothOpenings(a, b, 'E', RUNS.even), low: 0.25, high: 0.75, lever: 'creationPoints',
 }));
 const partyRows = (rank: Rank): Row[] => [
-  { name: `the mixed party clears a same-rank pack in 2 to 5 rounds at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => rounds(`mixed v pack ${rank}`, vsPack(MIXED, rank), RUNS.tenth), low: 2, high: 5, lever: 'kinds.normal' },
-  { name: `a hunter dies in at most 1 pack fight in 10 at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => anyDead(`mixed v pack ${rank}`, vsPack(MIXED, rank), RUNS.tenth), low: 0, high: 0.1, lever: 'kinds.normal' },
+  { name: `the mixed party clears a same-rank pack in 2 to 5 rounds at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => rounds(`mixed v pack ${rank}`, vsPack(MIXED, rank, rank === 'C'), RUNS.tenth), low: 2, high: 5, lever: 'kinds.normal' },
+  { name: `a hunter dies in at most 1 pack fight in 10 at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => anyDead(`mixed v pack ${rank}`, vsPack(MIXED, rank, rank === 'C'), RUNS.tenth), low: 0, high: 0.1, lever: 'kinds.normal' },
   { name: `the mixed party beats a same-rank boss in 4 to 8 rounds at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => rounds(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter), low: 4, high: 8, lever: 'kinds.boss' },
   { name: `a hunter dies in under 1 boss fight in 20 at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => anyDead(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter), low: 0, high: 0.05, lever: 'kinds.boss' },
   { name: `a boss fight has 1 or 2 staggers at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => avg(runsOf(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter).map(r => r[0]!.staggers)), low: 1, high: 2, lever: 'kinds.boss.stagger and staggerRegrow' },
@@ -251,7 +263,7 @@ const KIT_ROWS: readonly Row[] = [
   ...kitRows('C'), ...kitRows('S'),
   { name: 'the mark caster in a pack deals per use at most a blast\'s damage per standard action of time at C', setup: 'mark v pack C', runs: RUNS.tenth,
     measure: () => {
-      const mark = runsOf('mark party v pack C', vsPack(['tank', 'bruiser', 'mark'], 'C'), RUNS.tenth), cannon = runsOf('mixed v pack C', vsPack(MIXED, 'C'), RUNS.tenth);
+      const mark = runsOf('mark party v pack C', vsPack(['tank', 'bruiser', 'mark'], 'C', true), RUNS.tenth), cannon = runsOf('mixed v pack C', vsPack(MIXED, 'C', true), RUNS.tenth);
       const stroke = perUse(mark, 'mark', 'disaster-stroke'), blast = perUse(cannon, 'cannon', 'blast') / (RULES.fight.cost.heavy / RULES.fight.cost.standard);
       return { value: stroke / blast, se: 0, note: `a stroke ${fmt(stroke)} (its marks' bursts with it), a blast ${fmt(blast)} a standard action` };
     }, low: 0, high: 1, lever: 'kit.examples.mark.burst' },
@@ -262,7 +274,7 @@ const KIT_ROWS: readonly Row[] = [
     }, low: 4, high: 8, lever: 'summonRounds' },
   { name: 'the pain kit\'s Violence in a boss fight at C (measured, no bound)', setup: 'pain v boss C', runs: RUNS.quarter,
     measure: () => {
-      const rs = runsOf('pain v boss C', vsBoss(['tank', 'pain', 'cannon'], 'C'), RUNS.quarter);
+      const rs = runsOf('pain v boss C', vsBoss(['tank', 'pain', 'cannon'], 'C', 'none', true), RUNS.quarter);
       return { ...avg(rs.map(r => r[0]!.tally.pain!.acts.violence ?? 0)), note: `${fmt(perUse(rs, 'pain', 'violence'))} a Violence, ${fmt(perUse(rs, 'pain', 'attack'))} a strike` };
     }, low: 0, high: Infinity, lever: 'kit.examples.pain' },
 ];
@@ -276,7 +288,10 @@ const withW2 = (s: SimRow, o: { add?: typeof W2.parry; worn?: ReturnType<typeof 
   policy: o.policy ?? s.policy,
 });
 const duelOf = (key: string, first: (rank: Rank) => SimRow, b: Archetype, rank: Rank, runs: number): Measure => {
-  const ms = OPENINGS.map(o => wins(`${key} v ${b} ${rank} ${o}`, (seed: number) => [playFight({ rows: [at(first(rank), START[o][0]), at(foe(hunter(b, rank)), START[o][1])] }, seed)], runs));
+  const ms = OPENINGS.map(o => {
+    const rows = once(() => [at(first(rank), START[o][0]), at(foe(hunter(b, rank)), START[o][1])]);
+    return wins(`${key} v ${b} ${rank} ${o}`, (seed: number) => [playFight({ rows: rows(), tallyDamage: false }, seed)], runs);
+  });
   return { value: mean(ms.map(m => m.value)), se: Math.sqrt(ms.reduce((n, m) => n + m.se ** 2, 0)) / ms.length, note: '' };
 };
 /** A build with a wave 2 block, less its plain build, the mean of the two openings, against `b` at `rank`. */
@@ -287,14 +302,20 @@ const overPlain = (key: string, a: Archetype, first: (rank: Rank) => SimRow, b: 
 const parrying = (rank: Rank) => withW2(hunter('speed', rank), { add: W2.parry });
 const bowExpert = (rank: Rank) => withW2(hunter('speed', rank), { worn: W2.bowExpert() });
 /** The mixed party against a boss that holds a damage-taken curse of +100% all fight: the cap of 1.5, which a boss takes in full as any body (the owner, Nov 21). */
-const vsCursedBoss = (rank: Rank) => (seed: number): FightRecord[] => {
-  const boss = monster(rank, 'brute', 'boss', 'boss');
-  return [playFight({ rows: [...party(MIXED, rank), { ...boss, row: { ...boss.row, statuses: [W2.exposed(100)] } }] }, seed)];
+const vsCursedBoss = (rank: Rank) => {
+  const rows = once(() => {
+    const boss = monster(rank, 'brute', 'boss', 'boss');
+    return [...party(MIXED, rank), { ...boss, row: { ...boss.row, statuses: [W2.exposed(100)] } }];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 /** The mixed party whose bruiser holds Surge and Transfer (its turn given to the cannon), against a boss. */
-const vsBossTurns = (rank: Rank) => (seed: number): FightRecord[] => {
-  const [tank, bruiser, cannon] = party(MIXED, rank), b = withW2(bruiser!, { add: W2.surge, policy: turnsPolicy });
-  return [playFight({ rows: [tank!, { ...b, row: { ...b.row, abilities: [...b.row.abilities, W2.transfer] } }, cannon!, monster(rank, 'brute', 'boss', 'boss')] }, seed)];
+const vsBossTurns = (rank: Rank) => {
+  const rows = once(() => {
+    const [tank, bruiser, cannon] = party(MIXED, rank), b = withW2(bruiser!, { add: W2.surge, policy: turnsPolicy });
+    return [tank!, { ...b, row: { ...b.row, abilities: [...b.row.abilities, W2.transfer] } }, cannon!, monster(rank, 'brute', 'boss', 'boss')];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 const W2_ROWS: readonly Row[] = [
   ...(['C', 'S'] as const).flatMap(rank => (['tank', 'bruiser'] as const).map((opp): Row => ({
@@ -334,9 +355,10 @@ const PEN_RUNS: { readonly [F in PenFight]: number } = { pack: RUNS.tenth, boss:
 const PAIRS: readonly (readonly [PenBuild, string, PenFight, string])[] = [['bruiser', 'armor', 'boss', 'boss'], ['cannon', 'magic', 'warded', 'warded caster boss']];
 /** The mixed party with `who` spending one item of its tier's middle budget `spend`'s way and the other build on its main stat. */
 const spendKey = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): string => `spend ${spend === 'main' ? 'main' : `${who} ${spend}`} v ${fight} ${rank}`;
-const spendRuns = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): FightRecord[][] => runsOf(spendKey(who, spend, fight, rank), (seed: number) => [playFight({
-  rows: [hunter('tank', rank), spending('bruiser', rank, who === 'bruiser' ? spend : 'main'), spending('cannon', rank, who === 'cannon' ? spend : 'main'), ...PEN_FOES[fight](rank)],
-}, seed)], PEN_RUNS[fight]);
+const spendRuns = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): FightRecord[][] => {
+  const rows = once(() => [hunter('tank', rank), spending('bruiser', rank, who === 'bruiser' ? spend : 'main'), spending('cannon', rank, who === 'cannon' ? spend : 'main'), ...PEN_FOES[fight](rank)]);
+  return runsOf(spendKey(who, spend, fight, rank), (seed: number) => [playFight({ rows: rows(), tallyDamage: false }, seed)], PEN_RUNS[fight]);
+};
 /** The rounds `slow` takes over those `fast` takes, fight by fight on the same seeds (the paired difference and its error). */
 const roundsOver = (slow: FightRecord[][], fast: FightRecord[][]): Measure => {
   const d = slow.map((r, i) => r[0]!.rounds - fast[i]![0]!.rounds);
@@ -349,9 +371,12 @@ const fasterThanMain = (who: PenBuild, fight: PenFight, rank: Rank): Measure => 
   return { ...(pct.value >= flat.value ? pct : flat), note: `main over percent ${fmt(pct.value)}, over flat ${fmt(flat.value)}` };
 };
 /** The mixed party whose tank holds a control (a stun of a round, `abilities().stun`) and uses it (`controlPolicy`), against a boss. */
-const vsBossControlled = (rank: Rank) => (seed: number): FightRecord[] => {
-  const [tank, bruiser, cannon] = party(MIXED, rank);
-  return [playFight({ rows: [{ row: { ...tank!.row, abilities: [...tank!.row.abilities, abilities().stun] }, policy: controlPolicy }, bruiser!, cannon!, monster(rank, 'brute', 'boss', 'boss')] }, seed)];
+const vsBossControlled = (rank: Rank) => {
+  const rows = once(() => {
+    const [tank, bruiser, cannon] = party(MIXED, rank);
+    return [{ row: { ...tank!.row, abilities: [...tank!.row.abilities, abilities().stun] }, policy: controlPolicy }, bruiser!, cannon!, monster(rank, 'brute', 'boss', 'boss')];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 const PEN_LEVER = 'itemBudget.penFoe, fight.penMax, the kinds\' armor and resist';
 const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
@@ -374,7 +399,10 @@ const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
 ]);
 
 /** The mixed party at S against one same-rank mythic of `archetype` (balance plan section 4, row M1). */
-const vsMythic = (archetype: MonsterArchetype) => (seed: number): FightRecord[] => [playFight({ rows: [...party(MIXED, 'S'), monster('S', archetype, 'mythic', 'mythic')] }, seed)];
+const vsMythic = (archetype: MonsterArchetype) => {
+  const rows = once(() => [...party(MIXED, 'S'), monster('S', archetype, 'mythic', 'mythic')]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
 const MONSTER_ARCHETYPES = Object.keys(RULES.fight.archetypes) as MonsterArchetype[];
 
 
@@ -387,8 +415,10 @@ const MONSTER_ARCHETYPES = Object.keys(RULES.fight.archetypes) as MonsterArchety
 const SCRIPTED = scriptsOn();
 const answeringParty = (ids: readonly Archetype[], kinds: readonly Answer[]): SimRow[] => party(ids, 'S').map(s =>
   answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s, kinds));
-const vsScript = (id: MythicScriptId, kinds: readonly Answer[] = ANSWERS, ids: readonly Archetype[] = MIXED) => (seed: number): FightRecord[] =>
-  [playFight({ rows: [...answeringParty(ids, kinds), scripted(id, SCRIPTED)], rules: SCRIPTED }, seed)];
+const vsScript = (id: MythicScriptId, kinds: readonly Answer[] = ANSWERS, ids: readonly Archetype[] = MIXED) => {
+  const rows = once(() => [...answeringParty(ids, kinds), scripted(id, SCRIPTED)]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), rules: SCRIPTED, tallyDamage: false }, seed)];
+};
 const nameOf = (id: MythicScriptId): string => MYTHICS[id].name;
 const B1_KEY = (id: MythicScriptId) => `mixed v ${id} S`;
 const b1 = (id: MythicScriptId): FightRecord[] => runsOf(B1_KEY(id), vsScript(id), RUNS.mythic).map(r => r[0]!);
@@ -476,13 +506,19 @@ const SCRIPT_ROWS: readonly Row[] = [
 ];
 
 // ── gate and boss difficulty slider (the owner, Nov 22, QD row 8): rows D1 to D5 ──
-const vsScaledBoss = (rank: Rank, level: DifficultyLevel) => (seed: number): FightRecord[] => {
-  const scale = difficultyFactor('boss', rank, level, RULES);
-  return [playFight({ rows: [...party(MIXED, rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)] }, seed)];
+const vsScaledBoss = (rank: Rank, level: DifficultyLevel) => {
+  const rows = once(() => {
+    const scale = difficultyFactor('boss', rank, level, RULES);
+    return [...party(MIXED, rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
-const vsScaledPack = (rank: Rank, level: DifficultyLevel) => (seed: number): FightRecord[] => {
-  const scale = difficultyFactor('normal', rank, level, RULES);
-  return [playFight({ rows: [...party(MIXED, rank), ...[1, 2, 3].map(i => monster(rank, 'brute', 'normal', `brute-${i}`, RULES, [], scale))] }, seed)];
+const vsScaledPack = (rank: Rank, level: DifficultyLevel) => {
+  const rows = once(() => {
+    const scale = difficultyFactor('normal', rank, level, RULES);
+    return [...party(MIXED, rank), ...[1, 2, 3].map(i => monster(rank, 'brute', 'normal', `brute-${i}`, RULES, [], scale))];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 const DIFFICULTY_ROWS: readonly Row[] = [
   ...RANKS.map((rank): Row => ({
@@ -509,14 +545,23 @@ const DIFFICULTY_ROWS: readonly Row[] = [
 
 // ── Worldbreaker, the Strength apex (QD row 32, unit row-32): rows W1 to W3 ──
 const worldbreakerParty = (rank: Rank): SimRow[] => party(MIXED, rank).map(s => (s.row.id === 'bruiser' ? withApex(s, 'str', rank) : s));
-const vsWorldbreakerPack = (rank: Rank) => (seed: number): FightRecord[] => [playFight({ rows: [...worldbreakerParty(rank), ...pack(rank)] }, seed)];
-const vsWorldbreakerBossD5 = (rank: Rank) => (seed: number): FightRecord[] => {
-  const scale = difficultyFactor('boss', rank, 5, RULES);
-  return [playFight({ rows: [...worldbreakerParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)] }, seed)];
+const vsWorldbreakerPack = (rank: Rank) => {
+  const rows = once(() => [...worldbreakerParty(rank), ...pack(rank)]);
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
-const vsWorldbreakerScript = (id: MythicScriptId) => (seed: number): FightRecord[] => {
-  const rows = worldbreakerParty('S').map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s));
-  return [playFight({ rows: [...rows, scripted(id, SCRIPTED)], rules: SCRIPTED }, seed)];
+const vsWorldbreakerBossD5 = (rank: Rank) => {
+  const rows = once(() => {
+    const scale = difficultyFactor('boss', rank, 5, RULES);
+    return [...worldbreakerParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
+const vsWorldbreakerScript = (id: MythicScriptId) => {
+  const rows = once(() => {
+    const partyRows = worldbreakerParty('S').map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s));
+    return [...partyRows, scripted(id, SCRIPTED)];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), rules: SCRIPTED, tallyDamage: false }, seed)];
 };
 const WORLDBREAKER_MYTHIC_RUNS = 200;
 const WORLDBREAKER_ROWS: readonly Row[] = [
@@ -592,44 +637,70 @@ const OPEN: Readonly<Record<string, string>> = {
 const inside = (r: Row, m: Measure): boolean => m.value >= r.low && m.value <= r.high;
 const edge = (r: Row, m: Measure): string => inside(r, m) && Math.min(m.value - r.low, r.high - m.value) < m.se ? ' near' : '';
 /**
- * A compute budget for one row, not a wait: no test asserts a time. Rows that share a `setup` share its fights (`cache`),
- * so the first row of a setup pays for them and the rest read them back. Measured Nov 19 on the 4-core box, run alone:
- * the 74 rows take 100.6 s together (the file was 95 s of module load before the measuring moved here), the slowest row
- * 4.0 s, the median about 1.3 s. Inside the whole unit run the slowest row took 5.4 s in one process and 4.2 s with four
- * workers (scripts/ci.ts), three runs each. The budget is 30 s, over five times the slowest, so only a row that stops
- * ending reaches it, and it names that row.
+ * Compute budget for one row, judged on process CPU time rather than wall time.
+ * On this 8-CPU box, a host pause stalled one 3.2 s row for 176.5 s of wall time while CPU time stays steady.
+ * Measured Nov 23 after hoisting setup rows: the slowest row in `ROWS` (`B1 Zaratan`) uses 12.6 s CPU (10.8 s wall alone,
+ * 12.7 s wall under `--parallel=4`), and `W3 Worldbreaker` uses 10.5 s CPU.
+ * `CPU_BUDGET_MS` is 60 s (over 4.7x the slowest row's CPU), so real hot-loop regressions fail while host pauses pass.
+ * `WALL_TIMEOUT_MS` is Bun's 10-minute wall-clock hang guard so multi-minute host pauses do not abort a healthy row
+ * before `simTest` checks its CPU time. Every test in this file runs through `simTest` (`tests/lint.test.ts` enforces this).
  */
-const BUDGET_MS = 30_000;
+const CPU_BUDGET_MS = 60_000;
+/** CPU budget for the 6-step GM fudge table (3,600 mythic fights, measured 31.6 s CPU and 34.3 s wall alone). */
+const FUDGE_CPU_BUDGET_MS = 3 * CPU_BUDGET_MS;
+/** Bun wall-clock hang guard, wide enough to ride out multi-minute cloud-box pauses without masking CPU regressions. */
+const WALL_TIMEOUT_MS = 600_000;
+/** Wall minus CPU gap above which `simTest` logs a host-pause or deschedule notice. */
+const PAUSE_NOTE_MS = 10_000;
+/** CPU threshold above which `simTest` logs CPU and wall time beside the row output. */
+const CPU_LOG_MS = 5_000;
+const simTest = (name: string, fn: () => void, cpuBudgetMs: number = CPU_BUDGET_MS): void => {
+  test(name, () => {
+    const cpu0 = process.cpuUsage();
+    const wall0 = performance.now();
+    fn();
+    const wallMs = performance.now() - wall0;
+    const cpu = process.cpuUsage(cpu0);
+    const cpuMs = (cpu.user + cpu.system) / 1000;
+    const stalledMs = wallMs - cpuMs;
+    if (stalledMs >= PAUSE_NOTE_MS) {
+      console.log(`  [host pause] ${name}: wall ${(wallMs / 1000).toFixed(1)} s, cpu ${(cpuMs / 1000).toFixed(1)} s, stalled ${(stalledMs / 1000).toFixed(1)} s (cpu budget ${(cpuBudgetMs / 1000).toFixed(0)} s)`);
+    } else if (cpuMs >= CPU_LOG_MS) {
+      console.log(`  [cpu] ${name}: cpu ${Math.round(cpuMs)} ms, wall ${Math.round(wallMs)} ms (cpu budget ${cpuBudgetMs} ms)`);
+    }
+    expect(cpuMs, `${name} used ${Math.round(cpuMs)} ms CPU (wall ${Math.round(wallMs)} ms), past its ${cpuBudgetMs} ms CPU budget`).toBeLessThanOrEqual(cpuBudgetMs);
+  }, WALL_TIMEOUT_MS);
+};
 
 describe('the reworked fight holds the bounds of design section 6', () => {
-  test('every open row names a row of the table', () => {
+  simTest('every open row names a row of the table', () => {
     expect(Object.keys(OPEN).filter(name => !ROWS.some(r => r.name === name))).toEqual([]);
   });
   for (const row of ROWS) {
     const open = OPEN[row.name];
     if (open) { test.todo(`${row.name} (${open})`); continue; }
-    test(row.name, () => {
+    simTest(row.name, () => {
       const m = row.measure();
       const bound = `${fmt(row.low)} to ${fmt(row.high)}`;
       console.log(`  ${inside(row, m) ? 'in ' : 'OUT'}${edge(row, m)}  ${row.name}: ${fmt(m.value)} (se ${fmt(m.se)}, ${row.runs} runs), bound ${bound}, lever ${row.lever}${m.note ? `; ${m.note}` : ''}`);
       expect(m.value).toBeGreaterThanOrEqual(row.low);
       expect(m.value).toBeLessThanOrEqual(row.high);
-    }, BUDGET_MS);
+    });
   }
 });
 
 describe('every build and monster plays a fight to its end', () => {
   for (const rank of SIM_RANKS) {
     for (const a of Object.keys(BUILDS) as Archetype[]) {
-      test(`a ${a} hunter at ${rank} fights a same-rank elite brute until one side is down`, () => {
-        const r = playFight({ rows: [hunter(a, rank), monster(rank, 'brute', 'elite', 'elite')] }, 1);
+      simTest(`a ${a} hunter at ${rank} fights a same-rank elite brute until one side is down`, () => {
+        const r = playFight({ rows: [hunter(a, rank), monster(rank, 'brute', 'elite', 'elite')], tallyDamage: false }, 1);
         expect(r.capped).toBe(false);
         expect(r.winner).not.toBeNull();
       });
     }
     for (const m of Object.keys(MONSTER_ABILITY) as (keyof typeof MONSTER_ABILITY)[]) {
-      test(`a normal ${m} at ${rank} fights a same-rank bruiser until one side is down`, () => {
-        const r = playFight({ rows: [hunter('bruiser', rank), monster(rank, m, 'normal', m)] }, 2);
+      simTest(`a normal ${m} at ${rank} fights a same-rank bruiser until one side is down`, () => {
+        const r = playFight({ rows: [hunter('bruiser', rank), monster(rank, m, 'normal', m)], tallyDamage: false }, 2);
         expect(r.capped).toBe(false);
         expect(r.winner).not.toBeNull();
       });
@@ -642,11 +713,15 @@ describe('a mythic\'s script stays out of the fights it is not in (design B.8)',
    * When a table turns `fight.mythic.scripts` off, no seed mythic made under those rules holds a standing, and row M1's
    * fight, every hunter answering omens, is the same fight seed by seed, since with no standing there is no omen to answer.
    */
-  test('with mythic phases off the old rows are unchanged', () => {
+  simTest('with mythic phases off the old rows are unchanged', () => {
     const OFF = scriptsOff();
     for (const m of seedMonsters(OFF).filter(x => x.kind === 'mythic')) expect([m.name, monsterRows(m, [combatantId('m')], OFF)[0]!.mythic]).toEqual([m.name, null]);
-    const m1 = (answer: boolean) => (seed: number): FightRecord => playFight({ rows: [...party(MIXED, 'S').map(s => (answer ? answering(s) : s)), monster('S', 'brute', 'mythic', 'mythic')], rules: OFF }, seed);
-    for (let seed = 1; seed <= 40; seed++) expect(m1(true)(seed), `seed ${seed}`).toEqual(m1(false)(seed));
+    const m1 = (answer: boolean) => {
+      const rows = [...party(MIXED, 'S').map(s => (answer ? answering(s) : s)), monster('S', 'brute', 'mythic', 'mythic')];
+      return (seed: number): FightRecord => playFight({ rows, rules: OFF, tallyDamage: false }, seed);
+    };
+    const yes = m1(true), no = m1(false);
+    for (let seed = 1; seed <= 40; seed++) expect(yes(seed), `seed ${seed}`).toEqual(no(seed));
   });
 });
 
@@ -659,17 +734,18 @@ describe('a mythic\'s script stays out of the fights it is not in (design B.8)',
  * crit roll, far over the noise of 600 fights (se 0.011 at p = 0.075).
  */
 const FUDGE_STEPS = [0, 1, 2, 3, 4, 5] as const;
-const weightedMythic = (n: number) => (seed: number): FightRecord[] => [playFight({
-  rows: [...party(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')],
-  fudge: { sides: { party: n, foe: 0 }, rows: {}, forced: {} },
-}, seed)];
+const weightedMythic = (n: number) => {
+  const rows = once(() => [...party(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')]);
+  const fudge = { sides: { party: n, foe: 0 }, rows: {}, forced: {} };
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), fudge, tallyDamage: false }, seed)];
+};
 
 describe('the GM\'s fudge on a party of 3 against a mythic', () => {
-  test('the win rate does not fall as the hunters\' weight rises, and at 0 it is 5 to 10%', () => {
+  simTest('the win rate does not fall as the hunters\' weight rises, and at 0 it is 5 to 10%', () => {
     const rates = FUDGE_STEPS.map(n => ({ n, m: wins(`mixed v brute mythic S fudge +${n}`, weightedMythic(n), RUNS.mythic) }));
     console.log(['  hunters  win rate (se)', ...rates.map(({ n, m }) => `  +${n}       ${(100 * m.value).toFixed(1)}% (${(100 * m.se).toFixed(1)})  ${m.note}`)].join('\n'));
     expect(rates[0]!.m.value).toBeGreaterThanOrEqual(0.05);
     expect(rates[0]!.m.value).toBeLessThanOrEqual(0.1);
     for (let i = 1; i < rates.length; i++) expect(rates[i]!.m.value, `+${rates[i]!.n} against +${rates[i - 1]!.n}`).toBeGreaterThanOrEqual(rates[i - 1]!.m.value);
-  }, 6 * BUDGET_MS);
+  }, FUDGE_CPU_BUDGET_MS);
 });
