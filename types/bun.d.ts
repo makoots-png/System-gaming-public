@@ -165,6 +165,15 @@ declare module 'node:path' {
   export function dirname(path: string): string;
 }
 
+declare module 'node:worker_threads' {
+  export class Worker {
+    constructor(filename: string, options?: { eval?: boolean });
+    postMessage(value: unknown): void;
+    once(event: 'message', listener: (value: unknown) => void): this;
+    terminate(): Promise<number>;
+  }
+}
+
 interface Buffer extends Uint8Array<ArrayBuffer> {
   toString(encoding?: 'base64' | 'utf8'): string;
 }

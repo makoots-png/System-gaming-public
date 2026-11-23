@@ -737,3 +737,4 @@ ts	phase	decision	why	evidence	result
 2026-11-23T06:25Z	features	(neon) Landed K7 on lead-backlog: keystone status defs ride by key on the fight doc wire, with the switch still off.
 2026-11-23T06:38Z	ops	(neon) Merged PR 84 to main (38666e88): keystones K7. Public run 45124001520 green.
 2026-11-23T07:56Z	features	(neon) Landed debt-payoff on lead-backlog: half of each gate clear's gold pays down revive debt (default, qd row 72, asked the owner).
+2026-11-23T10:07Z	ops	(neon) Landed lag-steady on lead-backlog: the lag test reruns a scenario only on a proven host stall, every bound unchanged.
