@@ -582,20 +582,24 @@ describe('keystones on a fight\'s rows (notes-11-keystones.md, design A.5)', () 
     expect(labels(after).indexOf(confluence.worn!.label)).toBeLessThan(labels(after).indexOf(confluence.awakened!.worn!.label));
   });
 
-  test('a normal monster holds none; an elite, a boss and a mythic hold what their stats earn', () => {
-    const rank = 'B' as const, archetype = 'brute' as const;
-    const stand = (kind: RowMonster['kind']) => monsterRows(monster({ rank, archetype, kind }), [id('m1')], on)[0]!;
-    expect(labels(stand('normal'))).toEqual([]);
-    expect(stand('normal').abilities.map(a => a.id)).toEqual([ATTACK_ID]);
-    for (const kind of ['elite', 'boss', 'mythic'] as const) {
-      expect(labels(stand(kind)), kind).toContain(markOf.worn!.label);
-      expect(stand(kind).abilities.map(a => a.id), kind).toContain(wornAbilityId(apexOf.active!.id));
+  test('a boss holds no keystones, and neither do normal, elite, or mythic monsters', () => {
+    for (const rank of ['B', 'S'] as const) {
+      for (const kind of ['normal', 'elite', 'boss', 'mythic'] as const) {
+        const row = monsterRows(monster({ rank, archetype: 'brute', kind }), [id('m1')], on)[0]!;
+        expect(labels(row), `${rank} ${kind} wears no keystone statuses`).toEqual([]);
+        expect(row.abilities.map(a => a.id), `${rank} ${kind} gains no keystone active`).toEqual([ATTACK_ID]);
+      }
     }
-    expect(labels(monsterRows(monster({ rank, archetype, kind: 'boss' }), [id('m1')], off)[0]!), 'switch off').toEqual([]);
+    const scripted = monsterRows(monster({ rank: 'S', archetype: 'brute', kind: 'mythic', script: 'zaratan-the-island-that-wakes' }), [id('z1')], on)[0]!;
+    expect(labels(scripted), 'a scripted mythic wears no keystone statuses').toEqual([]);
+    expect(scripted.statuses.map(s => s.key), 'a scripted mythic keeps only its phase statuses').toEqual([statusKey('mythic-even-guard'), statusKey('mythic-shell')]);
+    expect(scripted.abilities.map(a => a.id), 'a scripted mythic gains no keystone active').toEqual([ATTACK_ID]);
   });
 
-  test('a monster below rank D holds none, and a shadow holds none at any kind', () => {
-    expect(labels(monsterRows(monster({ rank: 'E', archetype: 'brute', kind: 'boss' }), [id('m1')], on)[0]!)).toEqual([]);
+  test('a shadow and a timed summon hold no keystones at any rank or side', () => {
     expect(labels(shadowRow(shadow({ rank: 'S', grade: 'Marshal' }), 'h1', id('s1'), on))).toEqual([]);
+    const summoned = summonRow({ id: id('m1'), side: 'foe', tier: 5 }, { name: 'Imp', archetype: 'brute', rounds: 2, statuses: [] }, id('su1'), tick(0), on);
+    expect(labels(summoned)).toEqual([]);
+    expect(summoned.abilities.map(a => a.id)).toEqual([ATTACK_ID]);
   });
 });

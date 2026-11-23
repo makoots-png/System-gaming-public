@@ -683,9 +683,6 @@ const SPEC = {
       // One tier for each rank step after E: the first sessions teach the sheet before keystones arrive, and the words
       // are plain ("at rank D", not "at 240 points"). Each is one of RANKS (overrides.ts reads it).
       markRank: 'D' as Rank, pairRank: 'C' as Rank, apexRank: 'B' as Rank,
-      // A normal monster stays quick to run at the table; elites and up carry keystones (design A.5). Each one of
-      // `fight.kinds` (overrides.ts refuses any other).
-      monsterKinds: ['elite', 'boss', 'mythic'] as readonly ('normal' | 'elite' | 'boss' | 'mythic')[],
       // What one keystone may spend, in points on the sample wearer of its rank (item-budget.ts `powersSpend`; a point is
       // a stat point's worth, a rank gives 30). A keystone is what a build earns for specialising, so it is set from what
       // design A.6's keystones of the tier weigh as written, not from a title's 2 to 4 points (at 4 Worldbreaker kept 3%

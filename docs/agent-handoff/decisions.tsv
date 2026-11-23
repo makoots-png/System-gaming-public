@@ -746,3 +746,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T15:25Z	features	(neon) Landed borrow on lead-backlog: shop borrowing up to 1.5 same-rank clears on the shared System debt.
 2026-11-23T15:39Z	ops	(neon) Merged PR 90 (borrow) to main (e01f6b7b).
 2026-11-23T16:29Z	features	(neon) Landed keystones-6 on lead-backlog: keystone screens, GM switch, Rules words (off by default).
+2026-11-23T16:44Z	ops	(neon) Merged PR 91 (keystones-6) to main (eef9b090).
+2026-11-23T17:23Z	features	(neon) Landed npc-keystones on lead-backlog: monsters no longer earn keystones (row 21).

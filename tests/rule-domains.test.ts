@@ -130,9 +130,10 @@ test('a save whose GM set a keystone tier to open at a rank that is not one load
   expect([R.fight.keystone.markRank, R.fight.keystone.apexRank]).toEqual([RULES.fight.keystone.markRank, 'A']);
 });
 
-test('a save whose GM named a monster kind that is not one among those holding keystones keeps the kinds that are', () => {
-  expect(parseOverrides({ fight: { keystone: { monsterKinds: ['normal', 'dragon'] } } })).toEqual({
-    overrides: { fight: { keystone: { monsterKinds: ['normal'] } } }, refused: [{ path: 'fight.keystone.monsterKinds.1', reason: 'entry' }],
+test('fight.keystone.monsterKinds is no rule now: an override of it is refused as unknown and loads cleanly', () => {
+  expect(parseOverrides({ fight: { keystone: { monsterKinds: ['boss'] } } })).toEqual({
+    overrides: { fight: { keystone: {} } }, refused: [{ path: 'fight.keystone.monsterKinds', reason: 'unknown' }],
   });
-  expect(loaded({ fight: { keystone: { monsterKinds: ['boss', 7] } } }).fight.keystone.monsterKinds).toEqual(['boss']);
+  const R = loaded({ fight: { keystone: { monsterKinds: ['elite', 'boss'] } } });
+  expect('monsterKinds' in R.fight.keystone).toBe(false);
 });

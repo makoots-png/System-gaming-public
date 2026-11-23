@@ -796,7 +796,7 @@ export type { Band, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './co
  * spare under the eight ninths. One standing a row for all 18 monsters would be 1,890: over.
  * Keystones (unit K7): the 71 shipped keystone status defs (41 base worn, 7 awakened worn, and 23 child statuses) are
  * omitted from `wire.defs` when they match `RULES` and reconstructed on read (`keystoneStatusDef`), costing 0 bytes in
- * `defs` and only their status refs on rows (119 characters for 4 longest-key monster keystones, 166 for 5 awakened
+ * `defs` and only their status refs on rows (119 characters for 4 longest-key enemy NPC keystones, 166 for 5 awakened
  * hunter keystones). With 4 awakened hunters holding 5 keystones each, 4 hunter-like enemy rows holding 4 keystones
  * each, and 22 monsters (4 mythics), the worst case is 47,103 (built-in defs) and 53,976 (full defs table), leaving
  * 1,135 to spare under 55,111. Even 30 keystone-holding enemy rows fit under `DOC_MAX` at 51,308 (built-in) and 58,181

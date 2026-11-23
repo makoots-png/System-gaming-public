@@ -11,7 +11,7 @@ import type { Rank } from '../rules.ts';
 import type { ShadowGrade } from '../save.ts';
 import type { StatKey } from '../stats.ts';
 import { diceOf, mean as meanOf } from '../formula.ts';
-import { ARCHETYPES, kitGear, monsterStats, NO_TWEAK, pointsAt, split } from '../hunter/derive.ts';
+import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, split } from '../hunter/derive.ts';
 import type { Archetype, Bonus, SheetBasis, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
 import { buildOf, heldKeystones } from '../hunter/sheet.ts';
 import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
@@ -20,9 +20,6 @@ import type { Life } from '../hunter/vitals.ts';
 import { TIER_BUDGET } from '../registry/paths.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
 import type { Powers } from '../registry/powers.ts';
-import type { Keystone } from '../registry/keystones.ts';
-import { keystoneOf } from '../registry/keystones.ts';
-import { keystonesOf } from '../hunter/keystones.ts';
 import { monsterScript, monsterXp, tweakOfMonster } from '../registry/monsters.ts';
 import { mythicScriptOf } from '../registry/mythics.ts';
 import type { MythicScriptId } from '../registry/mythics.ts';
@@ -259,28 +256,16 @@ export function staggerOf(on: BarBody, R: RowRules): Stagger | null {
 }
 
 /**
- * The keystones a monster of `m`'s kind holds (design A.5): from its own stats, which its rank's points split 2:1 by its
- * archetype and its seed's tweak, at its rank, with no job and no awakening. Only a kind in `keystone.monsterKinds`
- * holds any, and none while the switch is off.
- */
-function monsterKeystones(m: RowMonster, R: RowRules): Keystone[] {
-  if (!R.fight.keystone.monsterKinds.includes(m.kind)) return [];
-  const stats = monsterStats(m.rank, m.archetype, R, tweakOfMonster(m.tweak));
-  return keystonesOf({ stats, rank: m.rank, pair: null, awakened: false }, R.fight).map(k => keystoneOf(k, R));
-}
-
-/**
  * One row of monster `m` for each id: named `m.name` alone, or with a letter each in a pack ("Goblin A"). Each has the
  * archetype's attack first and then its own abilities, full HP and mana for its sheet, its XP, a threat table, its
  * kind's stagger bar, and its start statuses from its joining (as a hunter's), the row itself the source at its rank's tier. A start status
- * whose key `R.conditions` does not hold is left out.
+ * whose key `R.conditions` does not hold is left out. Monsters of every kind (normal, elite, boss, mythic) hold no
+ * keystones (the owner, Nov 22, questionable-decisions row 21): only hunters and future hunter-like enemy NPCs earn them.
  *
  * A mythic, while `fight.mythic.scripts` is on, plays its script (design B.3): it starts calm in its first phase
  * (`mythicStart`), its max HP its seed's times the script's `hp` (the one place that factor is applied), its bar that
  * phase's share of its kind's, wearing that phase's statuses after its start statuses (one whose key a start status holds
  * is left out). With the switch off, and on every other monster, its standing is null and its HP its seed's.
- * A monster of a kind in `keystone.monsterKinds` also wears its keystones (`monsterKeystones`) after those, and takes
- * their actives after its own abilities, as a hunter's row does.
  */
 export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
   const now = JOINS;
@@ -288,9 +273,8 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
   const seeded = tweakOfMonster(m.tweak), tweak = script === null ? seeded : { ...seeded, hp: seeded.hp * mythicScriptOf(script).hp };
   const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak, ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
   const bar = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak }, R);
-  const keystones = monsterKeystones(m, R);
   const tier = rankIdx(m.rank), stagger = bar && first ? { ...bar, max: bar.max * first.bar } : bar;
-  const abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities, ...keystones.flatMap(({ active }) => active ? [{ ...active, id: wornAbilityId(active.id) }] : [])]);
+  const abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
     const own = m.statuses.flatMap(s => {
@@ -298,9 +282,7 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
       return def ? [starting(s.key, def, { id, tier }, s.rounds, now, R, s.stacks)] : [];
     });
     const worn = (first?.worn ?? []).filter(w => !own.some(s => s.key === w.key)).map(w => starting(w.key, w.def, { id, tier }, null, now, R));
-    const keys = new Set([...own, ...worn].map(x => x.key));
-    const kept = keystones.flatMap(({ worn: def }) => def ? [wornOn(def, { id, tier }, keys, now)] : []);
-    const statuses = [...own, ...worn, ...kept].slice(0, MAX_STATUSES);
+    const statuses = [...own, ...worn].slice(0, MAX_STATUSES);
     const { sheet } = modified(origin, statuses, R);
     return {
       id, name: m.name.slice(0, NAME_MAX - suffix.length) + suffix, side: 'foe', kind: 'monster', origin, tier, place: null,

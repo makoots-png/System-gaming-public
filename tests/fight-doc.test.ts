@@ -634,7 +634,7 @@ describe('keystones on the table (notes-11-keystones.md, design A.9 and A.10, un
     expect(JSON.stringify(clearStats(wFocused))).toBe(JSON.stringify(clearStats(wSpread)));
   });
 
-  test('a player\'s phone receives every keystone chip with its full def for a 4-hunter S-rank awakened party and an S-rank boss without filling wire defs', () => {
+  test('a player\'s phone receives every keystone chip with its full def for a 4-hunter S-rank awakened party while an S-rank boss holds none', () => {
     const party = [
       hunterRow(mkHunter(1, 'Fighter', { stats: statsOf({ str: 70, vit: 50 }), job: 'Fighter', jobDone: 'Fighter' }), id('c1'), ON),
       hunterRow(mkHunter(2, 'Assassin', { stats: statsOf({ agi: 70, ins: 50 }), job: 'Assassin', jobDone: 'Assassin' }), id('c2'), ON),
@@ -648,8 +648,9 @@ describe('keystones on the table (notes-11-keystones.md, design A.9 and A.10, un
     const read = live(DOCS.fight(wire) as FightDoc);
     expect(wire, 'shipped keystone defs take 0 bytes in wire.defs').not.toHaveProperty('defs');
     expect(read).toEqual(doc);
+    expect(rowIn(read, 'm1').statuses, 'an S-rank boss holds no keystones').toEqual([]);
     const totalChips = read.rows.reduce((n, r) => n + r.statuses.length, 0);
-    expect(totalChips).toBe(21);
+    expect(totalChips).toBe(18);
     expect(read.rows.every(r => r.statuses.every(s => s.def !== undefined))).toBe(true);
     // Server stores DOCS.fight(wire) and re-wires it on GET: verify idempotence
     expect(JSON.stringify(fightWire(read))).toBe(JSON.stringify(wire));

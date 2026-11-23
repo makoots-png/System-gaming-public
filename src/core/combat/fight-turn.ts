@@ -248,7 +248,7 @@ function answerWords(f: Running, b: Body, a: Body, omen: Omen, m: MetAnswer, R: 
 /**
  * Mythic row `row` entering its next phase at `now` (design B.3, "What `next` does besides the standing"), the one place
  * a phase begins, for its turn and for the GM's hand: the old phase's worn statuses come off by key and the new phase's
- * go on, from the row at its tier until removed (a status that is not the script's, its keystones among them, is never
+ * go on, from the row at its tier until removed (a status that is not the script's is never
  * touched; one worn by both phases stays as it was); its stagger bar empties at its kind's bar times the new phase's
  * `bar`; its channel drops. By the GM, its HP comes down to the new phase's start if it is higher (the life's `setHp`,
  * whose floor is now the new gate); at its turn, the turn is spent (`mythic.turnPace`). Refused in its last phase.

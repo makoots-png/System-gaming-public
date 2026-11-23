@@ -149,8 +149,6 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'fight.keystone.markRank': oneRank,
   'fight.keystone.pairRank': oneRank,
   'fight.keystone.apexRank': oneRank,
-  // the monster kinds that hold keystones: each a kind of `fight.kinds`, so a kind no monster has is refused
-  'fight.keystone.monsterKinds': entries(v => (typeof v === 'string' && Object.hasOwn(RULES.fight.kinds, v) ? v : null)),
   // text, but only a pace of `fight.cost`: the time an omen's announce and a mythic's phase change take (timeline.ts `paceCost`)
   'fight.mythic.turnPace': (v, path, no) => (typeof v === 'string' && Object.hasOwn(RULES.fight.cost, v) ? v : no(path, 'entry')),
   // each bound a script is checked against: a least and a most in its rule's domain
