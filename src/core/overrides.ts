@@ -155,6 +155,10 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'fight.mythic.turnPace': (v, path, no) => (typeof v === 'string' && Object.hasOwn(RULES.fight.cost, v) ? v : no(path, 'entry')),
   // each bound a script is checked against: a least and a most in its rule's domain
   'fight.mythic.bounds.*': lowToHigh,
+  // gate and boss difficulty curves: 10 steps (levels 1 to 10), each entry in its rule's domain
+  'fight.difficulty.targets': numbers(10),
+  'fight.difficulty.boss': numbers(10),
+  'fight.difficulty.pack': numbers(10),
 };
 const PATTERNS = Object.keys(READERS).map(k => ({ re: new RegExp(`^${k.replace(/\./g, '\\.').replace(/\*/g, '[^.]+')}$`), read: READERS[k]! }));
 /** The reader of the rule at `path`, or null when its shipped value reads it. */

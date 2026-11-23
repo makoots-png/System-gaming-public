@@ -2,6 +2,8 @@
 // The world day and the gates change only through the steps of src/core/gates/world.ts (a gate's status through `transition`).
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
 import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, partitionPresetItems, refKey } from '../core/gates/preset.ts';
+import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLevel, parseDifficultyLevel, scaleMonsterForGate, withDifficulty } from '../core/gates/difficulty.ts';
+import { bossDifficultyHtml, difficultySliderHtml, readEditDifficultyEvents, wireDifficultyLive } from './difficulty-control.js';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
 import { clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
@@ -52,7 +54,7 @@ export function register(app) {
     return ui.wrote('! Gate', store.apply('gate-spawn', s => spawnGate(s, gate, monsters, stamp()))) ? gate : null;
   }
   /** @type {import('../core/api.ts').GatesApi['roll']} */
-  function roll({ rank, type, name } = {}) {
+  function roll({ rank, type, name, difficulty } = {}) {
     const R = app.rules();
     const roll = rollGate(R, { rank: RANKS.includes(rank) ? rank : undefined, type: oneOf(type, SPAWN_TYPES, undefined), name }, api.bestiary.list(), cryptoRandom);
     // a rank with no monsters in the bestiary gets generated ones, so a gate always has monsters and a boss
@@ -63,8 +65,11 @@ export function register(app) {
     };
     const today = day();
     /** @type {import('../core/gates/gate.ts').Gate} */
-    const g = parseGate({ ...newGate(), id: store.id('g'), name: roll.name, rank: roll.rank, type: roll.type, breakDay: today + roll.breakDays,
+    const base = parseGate({ ...newGate(), id: store.id('g'), name: roll.name, rank: roll.rank, type: roll.type, breakDay: today + roll.breakDays,
       monsters: roll.pack.map(p => ({ monsterId: p.monsterId ?? make(false), count: p.count })), bossId: roll.bossId ?? make(true), notes: '', createdDay: today });
+    const g = difficulty !== undefined && difficulty !== R.fight.difficulty.default
+      ? withDifficulty(base, [{ type: 'setGate', level: difficulty }])
+      : base;
     return { gate: g, monsters: made };
   }
 
@@ -97,9 +102,18 @@ export function register(app) {
   // ── encounter hand-off ──
   async function startEncounter(id) {
     const g = gate(id); if (!g) return false;
+    const R = app.rules(), gateLevel = effectiveGateLevel(g.difficulty, R), bossLevel = effectiveBossLevel(g.difficulty, R);
     const cs = [];
-    for (const m of g.monsters) cs.push(...api.bestiary.toCombatant(m.monsterId, m.count));
-    if (g.bossId) cs.push(...api.bestiary.toCombatant(g.bossId, 1));
+    for (const m of g.monsters) {
+      const mo = monsterOf(m.monsterId);
+      const scale = mo ? difficultyFactor(mo.kind, mo.rank, gateLevel, R) : undefined;
+      cs.push(...api.bestiary.toCombatant(m.monsterId, m.count, scale));
+    }
+    if (g.bossId) {
+      const boss = monsterOf(g.bossId);
+      const scale = boss ? difficultyFactor(boss.kind, boss.rank, bossLevel, R) : undefined;
+      cs.push(...api.bestiary.toCombatant(g.bossId, 1, scale));
+    }
     if (!cs.length) { ui.toast('Gates', 'This gate has no monsters.', { kind: 'warning' }); return false; }
     // the combat view links the fight to the gate and marks the gate as fought in the same write (fight-save.ts `fought`)
     return api.combat.startFlow(cs, { gateId: g.id, title: `Start fight: ${g.name}`, body: `${cs.length} monster${cs.length === 1 ? '' : 's'} from this ${g.rank}-rank gate. Choose who fights.` });
@@ -433,6 +447,14 @@ export function register(app) {
 .gt-solo [data-solorun]{margin-top:10px}
 .gt-done{margin-top:18px}.gt-done summary{cursor:pointer;color:var(--cyan-dim);min-height:40px;display:flex;align-items:center}
 @media (pointer:coarse),(max-width:720px){.gt-done summary{min-height:44px}}
+.diff-ctl{display:flex;flex-direction:column;gap:4px;min-width:0;width:100%}
+.gt-spawn .diff-ctl{flex:1 1 100%}
+.diff-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.diff-reset{min-height:44px;font-size:12px}
+.diff-ctl input[type=range]{width:100%;min-height:44px;margin:0;accent-color:var(--cyan);cursor:pointer}
+.diff-read{font-size:13px;color:var(--cyan-dim);line-height:1.35;overflow-wrap:anywhere}
+.diff-boss{gap:8px}
+.diff-boss-body{display:flex;flex-direction:column;gap:4px}
 `);
 
   app.registerView({
@@ -449,6 +471,7 @@ export function register(app) {
           ${ui.field(SOLO_WORDS.every, `<select name="solohours" data-solohours>${opts([2, 4, 6, 8, 12, 24].map(n => [String(n), `${n} hours`]))}</select>`)}</div>
         <form class="gt-spawn" data-gm>${ui.field('Gate rank', `<select name="rank">${opts([['', 'Random'], ...RANKS.map(r => [r, r + '-rank'])])}</select>`)}
           ${ui.field('Gate type', `<select name="type">${opts([['', 'Random'], ...SPAWN_TYPES.map(t => [t, t[0].toUpperCase() + t.slice(1)])])}</select>`)}
+          ${difficultySliderHtml({ idPrefix: 'gt-sp', name: 'difficulty', label: DIFFICULTY_WORDS.gateLabel, level: app.rules().fight.difficulty.default, R: app.rules() })}
           <button type="submit" class="primary">Spawn gate</button></form>
         <section class="gt-solo" id="gt-solo" aria-label="${esc(SOLO_WORDS.room)}" hidden></section>
         <div class="gt-list" id="gt-list"></div>
@@ -457,17 +480,18 @@ export function register(app) {
       const cards = new Map(), openPanel = new Map();
       const q = s => el.querySelector(s);
       app.api.detail.wire(el, () => render());
+      wireDifficultyLive(el, () => app.rules());
 
       /** The gates open to solo runs that the room's solo doc cannot hold (gates/solo.ts `soloDoc`), on the room's GM phone. */
       const soloLeft = () => (app.seat() === 'gm' ? soloShared().left : []);
-      const sigOf = g => JSON.stringify([g, day(), app.isGM(), (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, soloLeft().includes(g.id)]);
+      const sigOf = g => JSON.stringify([g, day(), app.isGM(), app.rules().fight.difficulty, (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, soloLeft().includes(g.id)]);
       // the one countdown (gate.ts `countdown`), as a player's card reads it; a red gate open still adds its inside time
       const timer = g => { const c = countdown(g, day()); return g.type === 'red' && active(g) && g.status !== 'broken' ? `${c.words} · inside time ×10` : c.words; };
       const timerCls = g => countdown(g, day()).tone ?? '';
 
       function cardHtml(g) {
-        const gm = app.isGM();
-        const mons = g.monsters.map(m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, app.rules()))} XP · HP ${ui.fmt(monsterSheetOf(mo, app.rules()).hpMax)}</span>` : ''}</li>`; }).join('');
+        const gm = app.isGM(), R = app.rules();
+        const mons = g.monsters.map(m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(mo, g, 'pack', R), R).hpMax)}</span>` : ''}</li>`; }).join('');
         const boss = g.bossId ? monsterOf(g.bossId) : null;
         const acts = !gm ? '' : [
           can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Enter</button>' : '',
@@ -489,8 +513,9 @@ export function register(app) {
           ${g.type === 'double' && gm ? '<div class="gt-notes">Double gate: it holds a hidden second dungeon, which the GM reveals.</div>' : ''}
           <div class="gt-timer ${timerCls(g)}">${esc(timer(g))}</div>
           <ul class="gt-mons" aria-label="Monsters">${mons || '<li class="empty">No regular monsters.</li>'}
-            ${g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, app.rules()))} XP · HP ${ui.fmt(monsterSheetOf(boss, app.rules()).hpMax)}</span>` : ''}</li>` : ''}</ul>
+            ${g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(boss, g, 'boss', R), R).hpMax)}</span>` : ''}</li>` : ''}</ul>
           <div class="gt-notes">Total XP per hunter: ${ui.fmt(gateXp(g))}</div>
+          ${gm ? `<div class="gt-notes" data-diff-summary>${esc(DIFFICULTY_WORDS.cardSummary(g.difficulty, !!g.bossId, R))}</div>` : ''}
           ${pLine}${paidList}
           ${gm && g.mapId && api.maps.get(g.mapId) ? `<div class="gt-notes">Battle map: ${esc(api.maps.get(g.mapId).name)}</div>` : ''}
           ${g.notes ? `<div class="gt-notes">${esc(g.notes)}</div>` : ''}
@@ -610,6 +635,8 @@ export function register(app) {
           <div class="lbl">Monsters</div><div data-rows>${g.monsters.map(row).join('')}</div>
           <div><button type="button" data-act="add-row">+ Add monster</button></div>
           ${ui.field('Boss', `<select name="boss"><option value="">No boss</option>${mopt(g.bossId)}</select>`)}
+          ${difficultySliderHtml({ idPrefix: `gt-ed-${g.id}`, name: 'difficulty', label: DIFFICULTY_WORDS.gateLabel, level: effectiveGateLevel(g.difficulty, app.rules()), isSet: g.difficulty.gate.at === 'set', R: app.rules() })}
+          ${bossDifficultyHtml({ idPrefix: `gt-ed-${g.id}`, gateLevel: effectiveGateLevel(g.difficulty, app.rules()), bossTrack: g.difficulty.boss, hasBoss: !!g.bossId, R: app.rules() })}
           ${ui.field('Battle map', `<select name="map"><option value="">Open arena</option>${api.maps.list().map(m => `<option value="${esc(m.id)}"${m.id === g.mapId ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select>`)}
           ${ui.field('Notes', `<textarea name="notes" rows="2" maxlength="500">${esc(g.notes)}</textarea>`)}
           <label class="gt-chk"><input type="checkbox" name="solo"${g.solo ? ' checked' : ''}><span>${esc(SOLO_WORDS.open)}</span></label>
@@ -816,7 +843,8 @@ export function register(app) {
         const f = e.target;
         if (!app.isGM()) return;
         if (f.classList.contains('gt-spawn')) {
-          const g = spawn({ rank: oneOf(f.rank.value, RANKS, undefined), type: oneOf(f.type.value, SPAWN_TYPES, undefined) });
+          const difficulty = parseDifficultyLevel(Number(f.difficulty?.value)) ?? undefined;
+          const g = spawn({ rank: oneOf(f.rank.value, RANKS, undefined), type: oneOf(f.type.value, SPAWN_TYPES, undefined), difficulty });
           if (!g) return;
           ui.toast('Gates', `${g.rank}-rank ${g.type} gate detected: ${g.name}`);
           return;
@@ -835,7 +863,8 @@ export function register(app) {
           const g = gate(id);
           // a refused edit keeps the panel open with what was typed: nothing redraws it
           if (g && !ui.wrote('! Gate', store.apply('gate-edit', s => editGate(s, id, { name: f.name.value, rank: oneOf(f.rank.value, RANKS, g.rank), type: oneOf(f.type.value, GATE_TYPES, g.type),
-            breakDay: Number(f.breakDay.value), monsters: rows, bossId: monsterId(f.boss.value), notes: f.notes.value, mapId: f.map.value || null, status: oneOf(f.status.value, GATE_STATUSES, g.status), solo: f.solo ? f.solo.checked : g.solo }, stamp())))) { openPanel.set(id, 'edit'); return; }
+            breakDay: Number(f.breakDay.value), monsters: rows, bossId: monsterId(f.boss.value), notes: f.notes.value, mapId: f.map.value || null, status: oneOf(f.status.value, GATE_STATUSES, g.status), solo: f.solo ? f.solo.checked : g.solo,
+            difficultyEvents: readEditDifficultyEvents(f, g.difficulty, app.rules()) }, stamp())))) { openPanel.set(id, 'edit'); return; }
         }
         refresh(id);
       });

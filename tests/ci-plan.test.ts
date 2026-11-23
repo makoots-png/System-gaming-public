@@ -147,3 +147,21 @@ describe('which tree a push is judged by', () => {
     expect(testedTree('many', treeOf, false)).toBe('');
   });
 });
+
+describe('the push hook and ci-public.sh', () => {
+  test('the pre-push hook refuses a tree id pushed to a branch before running CI', () => {
+    const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD']).stdout.toString().trim();
+    const tree = Bun.spawnSync(['git', 'rev-parse', 'HEAD^{tree}']).stdout.toString().trim();
+    const res = Bun.spawnSync(['sh', '.githooks/pre-push', 'origin', 'https://example.invalid/repo.git'], {
+      stdin: new TextEncoder().encode(`${tree} ${tree} refs/heads/test-branch ${head}\n`),
+    });
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain(`pre-push: ${tree} is a tree, not a commit`);
+  });
+  test('sh scripts/ci-public.sh tree prints only the bare tree id of HEAD', () => {
+    const tree = Bun.spawnSync(['git', 'rev-parse', 'HEAD^{tree}']).stdout.toString().trim();
+    const res = Bun.spawnSync(['sh', 'scripts/ci-public.sh', 'tree']);
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.toString()).toBe(`${tree}\n`);
+  });
+});

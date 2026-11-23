@@ -56,7 +56,8 @@ import { EARNED_WHAT_MAX, WORLD_NAME_MAX, newEvent } from '../protocol.ts';
 import { pendingHeard } from '../hunter/pending.ts';
 import { stashCanHold, stashDeposit } from '../trade/stash.ts';
 import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
-import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
+import { difficultyFactor, effectiveBossLevel, effectiveGateLevel, scaleMonsterForGate, scaleRowMonster } from './difficulty.ts';
+import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloDocLine, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { askPosted } from '../sync/asked.ts';
 import { soloTracked } from './personal.ts';
@@ -234,7 +235,14 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
   if (!can(g, 'clear')) return refuse('closed');
   if (!g.solo) return refuse('not-solo');
   const all = [...seeds, ...save.monsters];
-  const monsters = roster(g.monsters, g.bossId, id => all.find(m => m.id === id) ?? null);
+  const find = (id: MonsterId) => all.find(m => m.id === id) ?? null;
+  const monsters: { id: MonsterId; monster: RowMonster; count: number }[] = [];
+  for (const m of g.monsters) {
+    const x = find(m.monsterId);
+    if (x) monsters.push({ id: m.monsterId, monster: scaleMonsterForGate(x, g, 'pack', c.R), count: m.count });
+  }
+  const boss = g.bossId ? find(g.bossId) : null;
+  if (boss && g.bossId) monsters.push({ id: g.bossId, monster: scaleMonsterForGate(boss, g, 'boss', c.R), count: 1 });
   return monsters.length ? { h, target: { gate, name: g.name, rank: g.rank, boss: g.bossId !== null, monsters, statuses: {} } } : refuse('empty');
 }
 
@@ -421,19 +429,33 @@ const docMonster = (m: Monster): MonsterTemplate => {
 const namedStatuses = (m: Monster, R: Rules): Record<string, StatusDef> =>
   Object.fromEntries(m.statuses.flatMap(x => { const defs: Readonly<Record<string, StatusDef>> = R.conditions; return Object.hasOwn(defs, x.key) ? [[x.key, defs[x.key]!]] : []; }));
 
+const round3 = (n: number): number => Math.round(n * 1000) / 1000;
+const scaledLine = (m: Monster | undefined, id: string, n: number, role: 'pack' | 'boss', g: Gate, R: Rules): SoloDocLine => {
+  if (!m) return { m: id, n };
+  const level = role === 'boss' ? effectiveBossLevel(g.difficulty, R) : effectiveGateLevel(g.difficulty, R);
+  const s = difficultyFactor(m.kind, m.rank, level, R);
+  const hp = round3(s.hp), dealt = round3(s.dealt);
+  return { m: id, n, ...(hp !== 1 ? { hp } : {}), ...(dealt !== 1 ? { dealt } : {}) };
+};
+
 /**
  * The room's solo doc as the GM's phone publishes it: the gates of the world doc open to solo runs that can still be
- * cleared, in its order, each with its roster as monster keys and counts (its boss last); each monster once, by value;
- * and the statuses those monsters name. A gate is added whole while the doc's JSON stays within `max` (`DOC_MAX`);
- * the gates left out are answered, so the world doc marks solo only what this doc holds and the GM's card says why.
+ * cleared, in its order, each with its roster as monster keys and counts (its boss last, with optional difficulty `hp`
+ * and `dealt` factors); each monster once, by value; and the statuses those monsters name. A gate is added whole while
+ * the doc's JSON stays within `max` (`DOC_MAX`); the gates left out are answered, so the world doc marks solo only what
+ * this doc holds and the GM's card says why.
  */
 export function soloDoc(save: Pick<Save, 'gates' | 'monsters'>, R: Rules, max: number): { readonly doc: SoloDoc; readonly left: readonly GateId[] } {
   const all = [...seedMonsters(R), ...save.monsters], left: GateId[] = [];
   let doc: SoloDoc = { gates: [], monsters: {}, statuses: {} };
   for (const g of worldOrder(save.gates)) {
     if (!g.solo || !can(g, 'clear')) continue;
-    const lines = [...g.monsters.map(m => ({ m: m.monsterId as string, n: m.count })), ...(g.bossId ? [{ m: g.bossId as string, n: 1 }] : [])];
-    const found = lines.flatMap(l => { const m = all.find(x => x.id === l.m); return m ? [m] : []; });
+    const find = (id: string) => all.find(x => x.id === id);
+    const lines: SoloDocLine[] = [
+      ...g.monsters.map(m => scaledLine(find(m.monsterId), m.monsterId as string, m.count, 'pack', g, R)),
+      ...(g.bossId ? [scaledLine(find(g.bossId), g.bossId as string, 1, 'boss', g, R)] : []),
+    ];
+    const found = lines.flatMap(l => { const m = find(l.m); return m ? [m] : []; });
     const next: SoloDoc = {
       gates: [...doc.gates, { id: g.id, name: g.name.slice(0, WORLD_NAME_MAX), rank: g.rank, boss: g.bossId !== null, lines }],
       monsters: { ...doc.monsters, ...Object.fromEntries(found.map(m => [m.id, docMonster(m)])) },
@@ -446,14 +468,20 @@ export function soloDoc(save: Pick<Save, 'gates' | 'monsters'>, R: Rules, max: n
 
 /**
  * The room's solo gates as a player's phone plays them: each gate the world doc marks solo and that can still be
- * cleared, with its roster from the solo doc (a line whose monster the doc lacks is left out) and the doc's statuses.
+ * cleared, with its roster from the solo doc (a line whose monster the doc lacks is left out, each scaled by the line's
+ * optional difficulty `hp`/`dealt`) and the doc's statuses.
  */
 export function soloTargets(world: WorldDoc | null, doc: SoloDoc | null): SoloTarget[] {
   if (!world || !doc) return [];
   return world.gates.flatMap(w => {
     const g = doc.gates.find(x => x.id === w.id);
     if (!w.solo || !g || !can(w, 'clear')) return [];
-    const monsters = g.lines.flatMap(l => { const m = doc.monsters[l.m]; return m ? [{ id: l.m as MonsterId, monster: m, count: l.n }] : []; });
+    const monsters = g.lines.flatMap(l => {
+      const m = doc.monsters[l.m];
+      if (!m) return [];
+      const scaled = l.hp !== undefined || l.dealt !== undefined ? scaleRowMonster(m, { hp: l.hp ?? 1, dealt: l.dealt ?? 1 }) : m;
+      return [{ id: l.m as MonsterId, monster: scaled, count: l.n }];
+    });
     return [{ gate: { kind: 'world' as const, id: g.id }, name: g.name, rank: g.rank, boss: g.boss, monsters, statuses: doc.statuses }];
   });
 }

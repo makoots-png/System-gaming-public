@@ -28,6 +28,7 @@ import type { SkillTemplate } from './registry/skills.ts';
 import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
 import type { Gate, GateType } from './gates/gate.ts';
+import type { DifficultyLevel, DifficultyScale } from './gates/difficulty.ts';
 import type { WorldWhy } from './gates/world.ts';
 import type { FightId, NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
@@ -71,8 +72,8 @@ export type BestiaryApi = {
   get(id: string): BestiaryMonster | null;
   /** A new monster of a rank: a normal brute unless `o` says otherwise (`boss` or `elite` sets its kind), its XP by the rule. */
   statBlock(rank: Rank, o?: { id?: string; name?: string; type?: string; archetype?: Archetype; kind?: MonsterKind; boss?: boolean; elite?: boolean }): StatBlock;
-  /** `n` fighters made from a bestiary entry, for `combat.add`. */
-  toCombatant(monster: Monster | string, n?: number): JoinRow[];
+  /** `n` fighters made from a bestiary entry, for `combat.add`, with optional gate/boss difficulty scaling. */
+  toCombatant(monster: Monster | string, n?: number, scale?: DifficultyScale): JoinRow[];
   /** Saves a monster to the GM's bestiary; answers its id, or the store's refusal whole for the caller's `ui.wrote`. */
   save(m: Partial<Monster>, asNew?: boolean): { ok: true; id: string } | Refused;
   /** Opens the monster maker on `m` (null: a new monster; a seed is saved as a copy); answers the id it saved, or null. */
@@ -235,9 +236,9 @@ export type ForgeApi = {
 
 export type GatesApi = {
   /** A new gate in the save; a rank or type left out is drawn from the rules' spawn weights. Null when the write was refused (told in a toast). */
-  spawn(o?: { rank?: Rank; type?: GateType; name?: string }): Gate | null;
+  spawn(o?: { rank?: Rank; type?: GateType; name?: string; difficulty?: DifficultyLevel }): Gate | null;
   /** A gate rolled as `spawn` rolls it, with the monsters made for it, not yet in the save (a step writes it: `spawnGate`). */
-  roll(o?: { rank?: Rank; type?: GateType; name?: string }): { gate: Gate; monsters: Monster[] };
+  roll(o?: { rank?: Rank; type?: GateType; name?: string; difficulty?: DifficultyLevel }): { gate: Gate; monsters: Monster[] };
   /**
    * Moves the world day by `n` and logs it (world.ts `advanceDay`), then shows a window for each gate it broke. Answers
    * what it did, or why the day did not move.

@@ -55,8 +55,10 @@
 //   uses it whenever it is ready and the boss acts before the tank's next turn (`controlPolicy`), before a taunt.
 import { describe, expect, test } from 'bun:test';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
+import { difficultyFactor } from '../src/core/gates/difficulty.ts';
+import type { DifficultyLevel } from '../src/core/gates/difficulty.ts';
 import { place } from '../src/core/combat/space.ts';
 import { reduce, fightId } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
@@ -473,6 +475,38 @@ const SCRIPT_ROWS: readonly Row[] = [
   })),
 ];
 
+// ── gate and boss difficulty slider (the owner, Nov 22, QD row 8): rows D1 to D5 ──
+const vsScaledBoss = (rank: Rank, level: DifficultyLevel) => (seed: number): FightRecord[] => {
+  const scale = difficultyFactor('boss', rank, level, RULES);
+  return [playFight({ rows: [...party(MIXED, rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)] }, seed)];
+};
+const vsScaledPack = (rank: Rank, level: DifficultyLevel) => (seed: number): FightRecord[] => {
+  const scale = difficultyFactor('normal', rank, level, RULES);
+  return [playFight({ rows: [...party(MIXED, rank), ...[1, 2, 3].map(i => monster(rank, 'brute', 'normal', `brute-${i}`, RULES, [], scale))] }, seed)];
+};
+const DIFFICULTY_ROWS: readonly Row[] = [
+  ...RANKS.map((rank): Row => ({
+    name: `D1 three hunters win 68 to 82% against a difficulty 5 boss at ${rank}`, setup: `mixed v boss d5 ${rank}`, runs: RUNS.quarter,
+    measure: () => wins(`mixed v boss d5 ${rank}`, vsScaledBoss(rank, 5), RUNS.quarter), low: 0.68, high: 0.82, lever: 'difficulty.boss[4] and difficulty.rankScale',
+  })),
+  ...(['E', 'C', 'S'] as const).map((rank): Row => ({
+    name: `D2 three hunters win 90 to 99% against a difficulty 1 boss at ${rank}`, setup: `mixed v boss d1 ${rank}`, runs: RUNS.quarter,
+    measure: () => wins(`mixed v boss d1 ${rank}`, vsScaledBoss(rank, 1), RUNS.quarter), low: 0.90, high: 0.99, lever: 'difficulty.boss[0] and difficulty.rankScale',
+  })),
+  ...(['E', 'C', 'S'] as const).map((rank): Row => ({
+    name: `D3 three hunters win 1 to 10% against a difficulty 10 boss at ${rank}`, setup: `mixed v boss d10 ${rank}`, runs: RUNS.even,
+    measure: () => wins(`mixed v boss d10 ${rank}`, vsScaledBoss(rank, 10), RUNS.even), low: 0.01, high: 0.10, lever: 'difficulty.boss[9] and difficulty.rankScale',
+  })),
+  { name: 'D4 three hunters win 78 to 92% against a difficulty 3 boss at C', setup: 'mixed v boss d3 C', runs: RUNS.quarter,
+    measure: () => wins('mixed v boss d3 C', vsScaledBoss('C', 3), RUNS.quarter), low: 0.78, high: 0.92, lever: 'difficulty.boss[2]' },
+  { name: 'D4 three hunters win 39 to 55% against a difficulty 7 boss at C', setup: 'mixed v boss d7 C', runs: RUNS.even,
+    measure: () => wins('mixed v boss d7 C', vsScaledBoss('C', 7), RUNS.even), low: 0.39, high: 0.55, lever: 'difficulty.boss[6]' },
+  { name: 'D4 three hunters win 25 to 41% against a difficulty 8 boss at C', setup: 'mixed v boss d8 C', runs: RUNS.even,
+    measure: () => wins('mixed v boss d8 C', vsScaledBoss('C', 8), RUNS.even), low: 0.25, high: 0.41, lever: 'difficulty.boss[7]' },
+  { name: 'D5 a difficulty 10 pack kills a hunter in at least 20% of fights at C', setup: 'mixed v pack d10 C', runs: RUNS.tenth,
+    measure: () => anyDead('mixed v pack d10 C', vsScaledPack('C', 10), RUNS.tenth), low: 0.20, high: 1, lever: 'difficulty.pack[9]' },
+];
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -507,6 +541,7 @@ const ROWS: readonly Row[] = [
   ...W2_ROWS,
   ...PEN_ROWS,
   ...SCRIPT_ROWS,
+  ...DIFFICULTY_ROWS,
 ];
 
 /**

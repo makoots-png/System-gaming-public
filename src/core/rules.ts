@@ -108,6 +108,10 @@ const TIER_SHARE = realIn(0, 2, 'a share of the ability a kit replaces: 2 is twi
 const BURST = realIn(0, 10, 'bolts or curses a burst is worth: 10 is a fight in one go');
 const KEYSTONE_SPEND = realIn(0, 30, 'points one keystone may spend on its rank\'s sample wearer: 0 is a keystone that does nothing, 30 is every point a rank of ten levels gives');
 const TITLE_SPEND = realIn(0, 30, 'points a title may spend on its band\'s sample wearer: 0 says every title with a bonus is over, 30 is every point a rank of ten levels gives');
+const DIFFICULTY_LEVEL = wholeIn(1, 10, 'gate or boss difficulty level, 1 to 10');
+const DIFFICULTY_WIN_PCT = wholeIn(1, 99, 'expected three-hunter win chance in percent for one difficulty step');
+const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty multiplier for one step or rank');
+const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty factor placed on max HP: the rest goes to outgoing damage');
 /** The points a build path's main and second stat take of each level's points (registry/paths.ts `alloc`). */
 export const PATH_ALLOC = wholeIn(0, 10, 'points a path puts in a stat for each the level gives: 0 is none, 10 is past every build');
 /** A perk's points on a bonus key (a title's bonus, a path tier's perk): the bound of every flat bonus a parser reads. */
@@ -732,6 +736,30 @@ const SPEC = {
         // A move's hit in sample S hunters' max HP: 0 is a move of statuses only; past 4 a move kills every hunter
         // many times over, so a larger number says nothing more.
         hits: each([0, 4], realIn(0, 10, 'a move\'s hit in sample S hunters\' max HP: 10 is a party of three thrice over')),
+      },
+    },
+    // Gate and boss difficulty slider (1 to 10, default 5; the owner, Nov 22, QD row 8).
+    // Three same-rank hunters win about 95% at 1, 75% at 5, and 5% at 10 against one same-rank boss.
+    difficulty: {
+      default: of(5, DIFFICULTY_LEVEL),
+      // Share of combined factor `k` placed on max HP (`hp = k^hpExponent`, `dealt = k^(1 - hpExponent)`).
+      // Equal split (0.5) stretched boss fights to 11 to 13.5 rounds. At 0.35, fights stay around 8 to 11 rounds.
+      hpExponent: of(0.35, DIFFICULTY_SPLIT),
+      // Displayed three-hunter expected win chance (%) for levels 1..10. Straight lines between anchors (1=95, 5=75, 10=5).
+      targets: each([95, 90, 85, 80, 75, 61, 47, 33, 19, 5], DIFFICULTY_WIN_PCT),
+      // Combined difficulty factor `k` for `kind === 'boss'` at levels 1..10 (calibrated at Rank C, scaled per rank by `rankScale`).
+      boss: each([2.55, 2.71, 2.88, 2.93, 2.97, 3.09, 3.22, 3.38, 3.88, 4.91], DIFFICULTY_FACTOR),
+      // Combined difficulty factor `k` for non-boss monsters (`normal`, `elite`) and `mythic` bosses in a gate.
+      // Centered at 1.0 at default level 5 so balanced packs and mythic odds (5 to 10%) stay untouched by default.
+      pack: each([0.72, 0.79, 0.86, 0.93, 1.00, 1.15, 1.32, 1.52, 1.75, 2.05], DIFFICULTY_FACTOR),
+      // Per-rank multiplier on `boss[level - 1]` so all six ranks align on the 95/75/5% anchors.
+      rankScale: {
+        E: of(1.04, DIFFICULTY_FACTOR),
+        D: of(0.96, DIFFICULTY_FACTOR),
+        C: of(1.00, DIFFICULTY_FACTOR),
+        B: of(0.96, DIFFICULTY_FACTOR),
+        A: of(0.84, DIFFICULTY_FACTOR),
+        S: of(0.85, DIFFICULTY_FACTOR),
       },
     },
   },

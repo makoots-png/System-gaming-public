@@ -45,7 +45,7 @@ interface BunPipedProcess {
 
 declare const Bun: {
   /** Runs a command to its end and answers what it printed (scripts/ci.ts asks git for a tree id). */
-  spawnSync(cmd: string[]): { readonly stdout: { toString(): string }; readonly exitCode: number };
+  spawnSync(cmd: string[], options?: { stdin?: Uint8Array }): { readonly stdout: { toString(): string }; readonly stderr: { toString(): string }; readonly exitCode: number };
   readonly env: Record<string, string | undefined>;
   file(path: string): BunFile;
   serve(options: { port?: number; hostname?: string; fetch(req: Request): Response | Promise<Response> }): BunServer;

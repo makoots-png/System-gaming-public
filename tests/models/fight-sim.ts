@@ -480,14 +480,17 @@ export function sameRankHit(rank: Rank, R: Rules = RULES, archetype: MonsterArch
   if (!r.ok) throw new Error(r.reason);
   return r.outcomes[0]!.dealt;
 }
-/** A monster's row before its stagger bar, with `traits` (`RULES.fight.traits`) on its body. */
-function unbarred(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules, traits: readonly MonsterTrait[] = []): NewRow {
-  const origin: Origin = { kind: 'monster', name: 'Monster', rank, archetype, monsterKind: kind, tweak: { ...NO_TWEAK, traits } };
+/** A monster's row before its stagger bar, with `traits` (`RULES.fight.traits`) and optional difficulty `scale` on its body. */
+function unbarred(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules, traits: readonly MonsterTrait[] = [], scale?: { readonly hp: number; readonly dealt: number }): NewRow {
+  const origin: Origin = {
+    kind: 'monster', name: 'Monster', rank, archetype, monsterKind: kind,
+    tweak: { ...NO_TWEAK, ...(scale ? { hp: scale.hp, dealt: scale.dealt } : {}), traits },
+  };
   return newRow(id, id, 'foe', 'monster', origin, tierOf(rank), [MONSTER_ABILITY[archetype](R)], R);
 }
 /** A monster of the simulation; an elite's or a boss's stagger bar is its kind's number of same-rank hits on its own body. */
-export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules = RULES, traits: readonly MonsterTrait[] = []): SimRow {
-  const base = unbarred(rank, archetype, kind, id, R, traits);
+export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules = RULES, traits: readonly MonsterTrait[] = [], scale?: { readonly hp: number; readonly dealt: number }): SimRow {
+  const base = unbarred(rank, archetype, kind, id, R, traits, scale);
   const bar = R.fight.kinds[kind].stagger;
   const hit = bar > 0 ? sameRankHit(rank, R, archetype, kind, traits) : 0;
   return { row: bar > 0 ? { ...base, stagger: { fill: 0, max: bar * hit, hit } } : base, policy: monsterPolicy } as SimRow;

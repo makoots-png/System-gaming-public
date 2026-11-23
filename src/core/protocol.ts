@@ -848,8 +848,8 @@ export const eachRarity = <T>(f: (r: Rarity) => T): Record<Rarity, T> =>
   Object.fromEntries(RARITIES.map(r => [r, f(r)])) as Record<Rarity, T>; // the compiler cannot follow a map over a list to its keys
 /** A gate as the room's world doc carries it: a cleared one with the day it was cleared (gate.ts `countdown` reads both); `solo` when the solo doc holds it. */
 export type WorldGate = ShownGate & { solo?: true };
-/** One roster line of a solo gate in the solo doc: `n` of the doc's monster `m` (its key in `monsters`). */
-export type SoloDocLine = { m: string; n: number };
+/** One roster line of a solo gate in the solo doc: `n` of the doc's monster `m` (its key in `monsters`), with optional difficulty `hp`/`dealt` scales. */
+export type SoloDocLine = { m: string; n: number; hp?: number; dealt?: number };
 /** A gate open to solo runs as the solo doc carries it: its roster, its last line the boss when `boss`. */
 export type SoloDocGate = { id: GateId; name: string; rank: Rank; boss: boolean; lines: SoloDocLine[] };
 /**
@@ -1136,12 +1136,21 @@ function worldGate(v: unknown): WorldGate {
   const g = shownGate(base, status, status === 'cleared' ? int(0, 1e6)(own(o, 'clearedDay')) : null);
   return opt(own(o, 'solo'), bool, false) ? { ...g, solo: true } : g;
 }
+const optScale = (v: unknown): number | undefined => {
+  if (v === undefined) return undefined;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 100) return refuse();
+  return v;
+};
 /** A solo gate of the solo doc: its id, name, rank, whether its last line is the boss, its lines. */
 function soloGate(v: unknown): SoloDocGate {
   const o = obj(v);
   return {
     id: need(parseGateId(own(o, 'id'))), name: text(WORLD_NAME_MAX)(own(o, 'name')), rank: choiceOf(RANKS)(own(o, 'rank')), boss: bool(own(o, 'boss')),
-    lines: listOf(own(o, 'lines'), SOLO_DOC.lines, l => { const x = obj(l); return { m: id(own(x, 'm')), n: int(1, MONSTER_BOUNDS.copies)(own(x, 'n')) }; }),
+    lines: listOf(own(o, 'lines'), SOLO_DOC.lines, l => {
+      const x = obj(l);
+      const hp = optScale(own(x, 'hp')), dealt = optScale(own(x, 'dealt'));
+      return { m: id(own(x, 'm')), n: int(1, MONSTER_BOUNDS.copies)(own(x, 'n')), ...(hp !== undefined ? { hp } : {}), ...(dealt !== undefined ? { dealt } : {}) };
+    }),
   };
 }
 /** The solo doc, within `DOC_MAX`: each monster read by `parseMonster`, each status by `parseStatusDef`, a bad entry dropped. */

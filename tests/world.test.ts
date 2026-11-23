@@ -4,6 +4,7 @@ import { DOCS, WORLD_GATES, WORLD_NAME_MAX } from '../src/core/protocol.ts';
 import type { WorldChange, WorldDayEvent, WorldParts } from '../src/core/gates/world.ts';
 import { newSave, newMonster } from '../src/core/save.ts';
 import { parseGate } from '../src/core/gates/gate.ts';
+import { DEFAULT_DIFFICULTY, withDifficulty } from '../src/core/gates/difficulty.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { told } from '../src/core/session-log.ts';
@@ -205,6 +206,13 @@ describe('the GM\'s edit', () => {
     const d = den('detected'), same = { name: d.name, rank: d.rank, type: d.type, breakDay: d.breakDay, monsters: d.monsters, bossId: d.bossId, notes: d.notes, mapId: null, status: d.status, solo: d.solo };
     expect(ok(editGate(world(), 'g-den', same, stamp)).gates).toEqual(world().gates);
   });
+  test('an edit applies difficultyEvents and clears a boss override when bossId is removed', () => {
+    const d = den('detected'), baseEdit = { name: d.name, rank: d.rank, type: d.type, breakDay: d.breakDay, monsters: d.monsters, bossId: d.bossId, notes: d.notes, mapId: null, status: d.status, solo: d.solo };
+    const set = ok(editGate(world(), 'g-den', { ...baseEdit, difficultyEvents: [{ type: 'setGate', level: 8 }, { type: 'setBoss', level: 10 }] }, stamp));
+    expect(set.gates[0]!.difficulty).toEqual({ gate: { at: 'set', level: 8 }, boss: { at: 'own', level: 10 } });
+    const clearedBoss = ok(editGate(set, 'g-den', { ...baseEdit, bossId: null }, stamp));
+    expect(clearedBoss.gates[0]!.difficulty).toEqual({ gate: { at: 'set', level: 8 }, boss: { at: 'follows' } });
+  });
 });
 
 describe('another GM phone\'s world', () => {
@@ -217,6 +225,17 @@ describe('another GM phone\'s world', () => {
     // Mine breaks on day 5 and nobody is in it, so the merge that takes the day to 7 breaks it (SMX-gates-7.2)
     expect(s.gates.map(g => [g.id, g.name, g.status])).toEqual([['g-den', 'Den', 'closed'], ['g-mine', 'Mine', 'broken'], ['g-new', 'New', 'detected']]);
     expect(mergeWorld(start, { day: 1, gates: [] }, () => null, stamp).world.day).toBe(3);
+  });
+  test('mergeWorld keeps a local gate\'s difficulty and gives newly merged gates DEFAULT_DIFFICULTY', () => {
+    const localHard = withDifficulty(den('detected'), [{ type: 'setGate', level: 9 }]);
+    const start = { ...world(), gates: [localHard] };
+    const doc = { day: 4, gates: [
+      { id: 'g-den', name: 'Den Renamed', rank: 'E' as const, type: 'normal' as const, status: 'raiding' as const, breakDay: 5 },
+      { id: 'g-new', name: 'New', rank: 'C' as const, type: 'normal' as const, status: 'detected' as const, breakDay: 9 },
+    ] };
+    const merged = mergeWorld(start, doc, (g, day) => parseGate({ ...g, createdDay: day }), stamp);
+    expect(merged.gates.find(g => g.id === 'g-den')!.difficulty).toEqual({ gate: { at: 'set', level: 9 }, boss: { at: 'follows' } });
+    expect(merged.gates.find(g => g.id === 'g-new')!.difficulty).toEqual(DEFAULT_DIFFICULTY);
   });
 });
 

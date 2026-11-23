@@ -39,6 +39,7 @@ import { nextWake } from '../src/core/hunter/quests.ts';
 import { dayKey } from '../src/core/day.ts';
 import { SHOP_ITEMS, itemOf, parseItem } from '../src/core/registry/items.ts';
 import { gatePreset } from '../src/core/gates/preset.ts';
+import { difficultyFactor, withDifficulty } from '../src/core/gates/difficulty.ts';
 import { presetLineId } from '../src/core/ids.ts';
 import { putItem } from '../src/core/hunter/inventory.ts';
 import { seedId } from '../src/core/ids.ts';
@@ -548,6 +549,37 @@ describe('a world gate open to solo runs, in a room', () => {
     expect(soloTaken(s, paidRun, stale, answerOf(s, stale), NO_LOOT, TAKEN)).toEqual({ ok: false, why: 'changed' });
     expect(soloPlan({ ...s, gates: [{ ...worldGate, status: 'closed' }] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'closed' });
     expect(soloPlan({ ...s, gates: [] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'gone' });
+  });
+
+  test('local soloReady and remote soloDoc/soloTargets scale monsters by gate and boss difficulty without colliding across gates', () => {
+    const kasakaId = seedId<'m'>('kasaka') as MonsterId;
+    const gEasy = withDifficulty({ ...worldGate, id: 'g-easy' as GateId, rank: 'D' as const, monsters: [{ monsterId: goblin, count: 2 }], bossId: kasakaId }, [{ type: 'setGate', level: 1 }]);
+    const gHard = withDifficulty({ ...worldGate, id: 'g-hard' as GateId, rank: 'D' as const, monsters: [{ monsterId: goblin, count: 2 }], bossId: kasakaId }, [{ type: 'setGate', level: 8 }, { type: 'setBoss', level: 10 }]);
+    const s = { ...alone(), gates: [gEasy, gHard] };
+
+    // Local soloReady applies pack scale to goblins and boss scale to Kasaka
+    const readyHard = ok(soloReady(s, H1, { kind: 'world', id: gHard.id }, ctx()));
+    const packScale8 = difficultyFactor('normal', 'E', 8, RULES);
+    const bossScale10 = difficultyFactor('boss', 'D', 10, RULES);
+    expect(readyHard.target.monsters[0]!.monster.tweak.hp).toBeCloseTo(packScale8.hp, 5);
+    expect(readyHard.target.monsters[0]!.monster.tweak.dealt).toBeCloseTo(packScale8.dealt, 5);
+    // Kasaka seed has base tweak.hp = 0.9
+    expect(readyHard.target.monsters[1]!.monster.tweak.hp).toBeCloseTo(0.9 * bossScale10.hp, 5);
+    expect(readyHard.target.monsters[1]!.monster.tweak.dealt).toBeCloseTo(bossScale10.dealt, 5);
+
+    // Remote soloDoc sends Kasaka once unscaled in doc.monsters, with per-line hp/dealt on each gate
+    const built = soloDoc(s, RULES, DOC_MAX).doc;
+    expect(built.monsters[kasakaId]!.tweak.hp).toBe(0.9);
+    const wire = JSON.parse(JSON.stringify(built));
+    const parsedSolo = DOCS.solo(wire)!;
+    const world = worldDoc(s, 1, new Set(built.gates.map(g => g.id)), 0);
+    const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), parsedSolo);
+    const tEasy = targets.find(t => t.gate.id === gEasy.id)!;
+    const tHard = targets.find(t => t.gate.id === gHard.id)!;
+    const bossScale1 = difficultyFactor('boss', 'D', 1, RULES);
+    expect(tEasy.monsters[1]!.monster.tweak.hp).toBeCloseTo(0.9 * bossScale1.hp, 2);
+    expect(tHard.monsters[1]!.monster.tweak.hp).toBeCloseTo(0.9 * bossScale10.hp, 2);
+    expect(tHard.monsters[1]!.monster.tweak.dealt).toBeCloseTo(bossScale10.dealt, 2);
   });
 
   // The GM's phone's answer to a run, by the gate as the run finds it and the run's outcome, every cell. A won run of a

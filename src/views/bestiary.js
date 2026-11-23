@@ -9,6 +9,7 @@ import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../core/registry/abilities.ts';
 import { oneOf } from '../core/one-of.ts';
 import { isUp } from '../core/combat/row-hp.ts';
 import { monsterRows } from '../core/combat/rows.ts';
+import { scaleRowMonster } from '../core/gates/difficulty.ts';
 import { combatantId } from '../core/combat/ability-types.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
 import { parseItem } from '../core/registry/items.ts';
@@ -43,12 +44,13 @@ export function register(app) {
   // (monsterRows in src/core/combat/rows.ts), with the entry's id for the fight's loot and extraction. Run outside a
   // store step: the ids come from `store.id`, which counts up the save's seq.
   /** @type {import('../core/api.ts').BestiaryApi['toCombatant']} */
-  function toCombatant(monster, n = 1) {
+  function toCombatant(monster, n = 1, scale) {
     const m = typeof monster === 'string' ? get(monster) : monster; if (!m) return [];
     n = copiesOf(n);
     const one = parseMonster(m), ids = []; if (!one) return [];
+    const scaled = scale ? scaleRowMonster(one, scale) : one;
     for (let i = 0; i < n; i++) ids.push(combatantId(store.id('c'))); // ids only: the fight's add stores the save
-    return monsterRows(one, ids, app.rules()).map(row => ({ row, monsterId: m.id || null }));
+    return monsterRows(scaled, ids, app.rules()).map(row => ({ row, monsterId: m.id || null }));
   }
 
   

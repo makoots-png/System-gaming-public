@@ -893,6 +893,51 @@ Where it lives:
 | The test to copy | `tests/preset.test.ts` |
 | The recipe | docs/guide/gates-solo.md, "Where things live" |
 
+## A gate's difficulty
+
+Every state reachable from a gate at default difficulty (`default` / `follows`) under the 5 events of `DIFFICULTY_EVENTS`, breadth first. The walk found 4 states and 10 steps.
+
+### A gate's difficulty and optional boss override
+
+```mermaid
+---
+title: A gate's difficulty and optional boss override
+---
+stateDiagram-v2
+  state "A gate's difficulty and optional boss override" as all {
+    state "Gate difficulty" as r1 {
+      state "Uses rule default (5 of 10)" as s1
+      state "Pinned by the GM (1 to 10)" as s2
+      [*] --> s1
+      s1 --> s2 : the GM moves the gate slider
+      s2 --> s1 : the GM resets the gate to default
+    }
+    --
+    state "Boss difficulty" as r2 {
+      state "Follows gate difficulty" as s3
+      state "Boss has its own difficulty (1 to 10)" as s4
+      [*] --> s3
+      s3 --> s4 : the GM sets a boss difficulty
+      s4 --> s3 : the GM turns off the boss override
+      s4 --> s3 : the GM removes the gate boss
+    }
+  }
+```
+
+Stored on `Gate.difficulty` on the GM's save and omitted from the room's world doc so players never see the level. Two independent tracks: the gate tracks either the rule default (`RULES.fight.difficulty.default`) or a pinned level, while the boss either follows the gate or holds its own override. Removing the gate's boss resets any boss override back to `follows`.
+
+4 chart states, 5 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `GateDifficulty`, `GateTrack`, `BossTrack`, and `DifficultyEvent` in `src/core/gates/difficulty.ts`; stored on `Gate.difficulty` |
+| What changes it | `difficultyStep(state, event)` (`GATE_TABLE` and `BOSS_TABLE`); `withDifficulty` and `gateDifficulty` |
+| Who calls it | `src/views/gates.js` (spawn and edit), `src/views/gm.js` (spawn shortcut), and `editGate` (`src/core/gates/world.ts`) |
+| The test to copy | `tests/difficulty.test.ts` |
+| The recipe | docs/guide/gates-solo.md, "Where things live" |
+
 ## The room link and the sheet push
 
 Every state of the link and the push together that the model check of tests/sync-model.test.ts reaches from the four ways a page boots (tests/models/sync-world.ts), breadth first: taps, timers, and every kind of reply to each request that is out. The walk found 70350 states and 2010067 steps.

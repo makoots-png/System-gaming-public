@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, fightAward, gateXp, parseGate, transition, xpDue } from '../src/core/gates/gate.ts';
+import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, fightAward, gateXp, parseGate, shownOf, transition, xpDue } from '../src/core/gates/gate.ts';
+import { DEFAULT_DIFFICULTY, withDifficulty } from '../src/core/gates/difficulty.ts';
 import type { Gate, GateEvent, GateEventType, GateStatus, MonsterId } from '../src/core/gates/gate.ts';
 import { WALK_EVENTS, den, fields, mid } from './models/gate-events.ts';
 
@@ -209,6 +210,16 @@ describe('reading a stored gate', () => {
     const g = parseGate(JSON.parse('{"id":"g1","__proto__":{"status":"cleared","polluted":true},"monsters":[{"monsterId":"m1","__proto__":{"count":9}}]}'));
     expect(g).toMatchObject({ status: 'detected', monsters: [{ monsterId: 'm1', count: 1 }] });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test('old saves without difficulty migrate to DEFAULT_DIFFICULTY, corrupted difficulty falls back cleanly, and shownOf hides difficulty', () => {
+    const { difficulty: _gone, ...old } = copy(den('detected'));
+    expect(parseGate(old)!.difficulty).toEqual(DEFAULT_DIFFICULTY);
+    expect(parseGate({ ...old, difficulty: { gate: { at: 'set', level: 8 }, boss: { at: 'own', level: 99 } } })!.difficulty)
+      .toEqual({ gate: { at: 'set', level: 8 }, boss: { at: 'follows' } });
+    const hard = withDifficulty(den('detected'), [{ type: 'setGate', level: 9 }, { type: 'setBoss', level: 10 }]);
+    const shown = shownOf(hard, 60);
+    expect('difficulty' in shown).toBe(false);
   });
 });
 

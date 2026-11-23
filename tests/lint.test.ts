@@ -139,6 +139,22 @@ test('only src/core/gates/preset.ts writes a gate\'s preset', async () => {
   expect(report(hits), 'change a gate\'s preset only through gatePreset or payGatePreset in src/core/gates/preset.ts.').toEqual([]);
 });
 
+test('only src/core/gates/difficulty.ts writes a gate\'s difficulty', async () => {
+  // A gate's difficulty is an explicit two-region machine (`difficultyStep`, `withDifficulty`, `gateDifficulty`). No view,
+  // edge or other core module writes `difficulty` on a gate directly; `gate.ts` only supplies `DEFAULT_DIFFICULTY` in
+  // `newGate`, copies it in `fieldsOf`, and reads it with `parseGateDifficulty` in `parseGate`.
+  const assign = String.raw`\s*([-+*/]?=(?![=>])|\+\+|--)`;
+  const dotWrite = new RegExp(String.raw`\.difficulty${assign}`);
+  const spreadWrite = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])difficulty\s*[:,}]/;
+  const writes = (text: string) => dotWrite.test(text) || spreadWrite.test(text);
+  const owners = ['src/core/gates/difficulty.ts', 'src/core/gates/gate.ts'];
+  expect(writes('g.difficulty = { gate: { at: "default" }, boss: { at: "follows" } };'), 'the rule sees a dot write').toBe(true);
+  expect(writes('{ ...g, difficulty: next }'), 'the rule sees a spread write').toBe(true);
+  expect(writes('if (g.difficulty.boss.at === "own") return;'), 'and not a read').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes(line.text));
+  expect(report(hits), 'change a gate\'s difficulty only through withDifficulty or gateDifficulty in src/core/gates/difficulty.ts.').toEqual([]);
+});
+
 test('a view sends a room event made by the constructor, never a type name and a payload of its own', async () => {
   // Each view used to build its payload and its event id by hand, so the server, the senders and the appliers drifted.
   const raw = /\.send\(\s*['"`]/;

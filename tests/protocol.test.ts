@@ -1226,6 +1226,12 @@ describe('the other room docs', () => {
     expect(read.statuses.burning!.label).toBe('Burning');
     expect(DOCS.solo({ ...copy(doc), monsters: { 'seed:goblin': 'a goblin', ok: goblin } })!.monsters).toEqual({ ok: goblin });
     expect(DOCS.solo({ ...copy(doc), gates: [{ ...doc.gates[0], lines: [{ m: 'x', n: 0 }] }] })!.gates[0]!.lines).toEqual([{ m: 'x', n: 1 }]);
+    expect(DOCS.solo({ ...copy(doc), gates: [{ ...doc.gates[0], lines: [
+      { m: 'seed:goblin', n: 2, hp: 1.469, dealt: 2.042 },
+      { m: 'seed:goblin', n: 1, hp: 0, dealt: 1 },
+      { m: 'seed:goblin', n: 1, hp: 101, dealt: 1 },
+      { m: 'seed:goblin', n: 1, hp: 'bad' },
+    ] }] })!.gates[0]!.lines).toEqual([{ m: 'seed:goblin', n: 2, hp: 1.469, dealt: 2.042 }]);
     expect(DOCS.solo({ ...copy(doc), pad: 'x'.repeat(DOC_MAX) }), 'past the room\'s bound').toBeNull();
   });
 

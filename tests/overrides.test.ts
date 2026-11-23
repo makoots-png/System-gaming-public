@@ -103,4 +103,46 @@ describe('an override of a list rule', () => {
     expect(bad.refused.map(r => [r.path, r.reason])).toEqual([['trade.on', 'boolean'], ['trade.limit', 'unknown']]);
     expect(rulesOf(bad.overrides).trade.on).toBe(true);
   });
+
+  test('the difficulty curve lists require 10 entries in their domains and scalars respect their bounds', () => {
+    const ok = parseOverrides({
+      fight: {
+        difficulty: {
+          default: 6,
+          hpExponent: 0.4,
+          targets: [95, 90, 85, 80, 75, 60, 45, 30, 15, 5],
+          boss: [2.5, 2.6, 2.7, 2.8, 3.0, 3.2, 3.4, 3.6, 4.0, 4.6],
+          pack: [0.7, 0.8, 0.85, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.7],
+          rankScale: { E: 1.05, S: 0.85 },
+        },
+      },
+    });
+    expect(ok.refused).toEqual([]);
+    const R = rulesOf(ok.overrides);
+    expect(R.fight.difficulty.default).toBe(6);
+    expect(R.fight.difficulty.hpExponent).toBe(0.4);
+    expect(R.fight.difficulty.targets[5]).toBe(60);
+    expect(R.fight.difficulty.rankScale.E).toBe(1.05);
+
+    const bad = parseOverrides({
+      fight: {
+        difficulty: {
+          default: 11,
+          hpExponent: 1.5,
+          targets: [95, 75, 5],
+          boss: [0.05, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+          pack: [1, 1, 1, 1, 1, 1, 1, 1, 1, 25],
+          rankScale: { C: 0 },
+        },
+      },
+    });
+    expect(bad.refused.map(r => [r.path, r.reason])).toEqual([
+      ['fight.difficulty.default', 'range'],
+      ['fight.difficulty.hpExponent', 'range'],
+      ['fight.difficulty.targets', 'length'],
+      ['fight.difficulty.boss.0', 'range'],
+      ['fight.difficulty.pack.9', 'range'],
+      ['fight.difficulty.rankScale.C', 'range'],
+    ]);
+  });
 });

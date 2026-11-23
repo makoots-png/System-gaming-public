@@ -6,6 +6,8 @@
 // for it, the XP and loot already worked out. A step that changes nothing is refused (`missing`, `unchanged`).
 import { can, shownOf, transition } from './gate.ts';
 import type { Gate, GateEvent, GateMonster, GateStatus, GateType, MonsterId } from './gate.ts';
+import { withDifficulty } from './difficulty.ts';
+import type { DifficultyEvent } from './difficulty.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
@@ -148,10 +150,12 @@ export function deleteGate<S extends WorldParts>(save: S, id: string): Next<S> {
 export type GateEdit = {
   name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null; notes: string;
   mapId: string | null; status: GateStatus; solo: boolean;
+  difficultyEvents?: readonly DifficultyEvent[];
 };
 /**
  * The GM's edit of gate `id`: an empty name or a break day of 0 keeps the old one, a break day under 1 is day 1, a map
- * the library lacks none. Then the break check of an edit (`BREAK_CHECK.edited`).
+ * the library lacks none. Then difficulty events (with `bossRemoved` when `bossId` is cleared), status, and the break
+ * check of an edit (`BREAK_CHECK.edited`).
  */
 export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEdit, stamp: Stamp): Next<S> {
   const at = save.gates.findIndex(g => g.id === id);
@@ -162,7 +166,12 @@ export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEd
     monsters: edit.monsters, bossId: edit.bossId, notes: edit.notes.trim().slice(0, 500),
     mapId: save.library.maps.find(m => m.id === edit.mapId)?.id ?? null, solo: edit.solo,
   };
-  const set = transition(fields, { type: 'gmSet', status: edit.status, day: save.world.day });
+  const diffEvents: DifficultyEvent[] = [
+    ...(edit.difficultyEvents ?? []),
+    ...(edit.bossId === null ? [{ type: 'bossRemoved' as const }] : []),
+  ];
+  const withDiff = diffEvents.length ? withDifficulty(fields, diffEvents) : fields;
+  const set = transition(withDiff, { type: 'gmSet', status: edit.status, day: save.world.day });
   return checkBreaks({ ...save, gates: save.gates.map((g, i) => (i === at ? set : g)) }, 'edited', stamp).save;
 }
 

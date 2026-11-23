@@ -681,10 +681,10 @@ export const abilityTooLarge = (v: unknown, R: Rules): boolean => { const a = ab
 const ARCHETYPE_LIST: readonly Archetype[] = ['brute', 'skirmisher', 'caster'];
 const MONSTER_KINDS = (R: Rules) => Object.keys(R.fight.kinds) as MonsterKind[];
 const MONSTER_TRAITS = (R: Rules) => Object.keys(R.fight.traits) as MonsterTrait[];
-/** A seed's tweak: an HP factor above 0 and at most 10, points added to named stats, and the traits of `R.fight.traits` it names, each once. */
+/** A seed's tweak: an HP factor above 0 and at most 100 (edited HP times difficulty), a dealt factor up to 100, points added to named stats, and the traits of `R.fight.traits` it names, each once. */
 function tweakOf(v: unknown, R: Rules): Tweak | null {
   if (!isObj(v) || !isObj(v.stats) || !Array.isArray(v.traits)) return null;
-  const hp = num(v.hp, 0, 10), dealt = num(v.dealt, 0, 10), stats: Partial<Record<(typeof STAT_KEYS)[number], number>> = {}, traits: MonsterTrait[] = [];
+  const hp = num(v.hp, 0, 100), dealt = num(v.dealt, 0, 100), stats: Partial<Record<(typeof STAT_KEYS)[number], number>> = {}, traits: MonsterTrait[] = [];
   for (const [k, x] of Object.entries(v.stats)) { const key = oneOf(k, STAT_KEYS, null), n = num(x, -10000, 10000); if (!key || n === null) return null; stats[key] = n; }
   for (const t of v.traits) { const trait = oneOf(t, MONSTER_TRAITS(R), null); if (!trait || traits.includes(trait)) return null; traits.push(trait); }
   return hp === null || hp === 0 || dealt === null ? null : { hp, dealt, stats, traits };

@@ -26,6 +26,8 @@ import { BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, se
 import { PENDING_WORDS, localHunter, pendingApproved, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
 import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
+import { DIFFICULTY_WORDS, parseDifficultyLevel } from '../core/gates/difficulty.ts';
+import { difficultySliderHtml, wireDifficultyLive } from './difficulty-control.js';
 import { stepTime } from '../core/day.ts';
 import { isRefused } from '../core/save-step.ts';
 import { askToNotify, notifyState } from '../edge/notify.ts';
@@ -695,7 +697,8 @@ export function register(app) {
   // ── spawn gate / world day ──
   function doSpawn() {
     const rank = $('#gm-g-rank').value, type = $('#gm-g-type').value, name = $('#gm-g-name').value.trim();
-    const g = A().gates.spawn({ rank: rank || undefined, type: type || undefined, name: name || undefined });
+    const difficulty = parseDifficultyLevel(Number($('#gm-g-diff')?.value)) ?? undefined;
+    const g = A().gates.spawn({ rank: rank || undefined, type: type || undefined, name: name || undefined, difficulty });
     if (!g) return;
     say('#gm-g-msg', `Gate spawned: ${g.rank}-rank ${g.type} "${g.name}", breaks on day ${g.breakDay}.`);
   }
@@ -885,7 +888,8 @@ export function register(app) {
           <div class="gm-msg" id="gm-q-msg" role="status"></div>`, false, true),
         section('gate', 'Gates and world day', `
           <div class="gm-grid">${sel_('gm-g-rank', 'Rank', `<option value="">Random</option>${rankOpts}`)}${sel_('gm-g-type', 'Type', '<option value="">Random</option>' + SPAWN_TYPES.map(k => opt(k)).join(''))}
-            <div class="wide">${txt_('gm-g-name', 'Name (optional)', 'maxlength="60"')}</div></div>
+            <div class="wide">${txt_('gm-g-name', 'Name (optional)', 'maxlength="60"')}</div>
+            <div class="wide">${difficultySliderHtml({ idPrefix: 'gm-g', inputId: 'gm-g-diff', name: 'difficulty', label: DIFFICULTY_WORDS.gateLabel, level: app.rules().fight.difficulty.default, R: app.rules() })}</div></div>
           <div class="gm-row"><button type="button" class="primary" id="gm-g-go">Spawn gate</button></div>
           <div class="gm-msg" id="gm-g-msg" role="status"></div>
           <div class="lbl">World day</div>
@@ -909,6 +913,7 @@ export function register(app) {
           <div class="gm-grid">${sel_('gm-l-kind', 'Kind', '<option value="">All</option>' + LOG_KINDS.map(k => opt(k)).join(''))}${txt_('gm-l-q', 'Search', 'maxlength="60"')}</div>
           <div class="lbl" id="gm-l-count"></div><ul class="gm-log" id="gm-l-list" tabindex="0" aria-label="Session log entries"></ul>`),
       ].join('');
+      wireDifficultyLive(el, () => app.rules());
 
       // D04: desktop columns. Sections move into column wrappers at >=1100 (2 cols) / >=1500 (3 cols); phone/tablet keep the original single stack
       const ORDER = ['cheat', 'party', 'waiting', 'words', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];

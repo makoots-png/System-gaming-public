@@ -2187,3 +2187,32 @@ error of its floor.
 The Rider's rows are pass 5's: no change here touches its script or body. Every B row but B9 holds; `OPEN` keeps only
 B9. Today's brute mythic with no script (row M1's body) still loses 0.45 of its fights to three cannons: no row bounds
 it, and once `fight.mythic.scripts` is on every mythic plays a script, plain at the least, which wears the even guard.
+
+## Difficulty slider (unit difficulty-slider, Nov 23)
+
+Three same-rank hunters (`tank`, `bruiser`, `cannon`) against one same-rank brute boss, calibrated to the owner's anchors
+(level 1 = 95%, level 5 = 75%, level 10 = 5%, straight-line targets `[95, 90, 85, 80, 75, 61, 47, 33, 19, 5]`) using
+`hp = k^0.35`, `dealt = k^0.65`, with `k = boss[level - 1] * rankScale[rank]`. Non-boss monsters and mythics use `pack`
+centered at `1.00` on default level 5.
+
+### Baseline before scaling (`k = 1.0`, `n = 300`) vs default level 5
+
+| Rank | Before (`k = 1.0`) WR / any dead / rounds | Level 5 (`hp` / `dealt`) | After (level 5) WR / any dead / rounds |
+|---|---|---|---|
+| E | 100.0% / 0.0% / 5.8 r | 1.48x / 2.08x | 72.7% / 91.3% / 9.2 r |
+| D | 100.0% / 0.0% / 5.9 r | 1.44x / 1.98x | 75.3% / 90.7% / 9.0 r |
+| C | 100.0% / 0.0% / 5.9 r | 1.46x / 2.03x | 75.3% / 92.3% / 9.2 r |
+| B | 100.0% / 0.0% / 6.2 r | 1.44x / 1.98x | 74.0% / 94.0% / 10.0 r |
+| A | 100.0% / 0.7% / 6.7 r | 1.38x / 1.81x | 73.3% / 94.7% / 10.3 r |
+| S | 100.0% / 1.3% / 7.3 r | 1.38x / 1.83x | 74.7% / 79.3% / 11.2 r |
+
+### Pass 1 (design draft) -> Pass 2 (fitted)
+
+| Lever | Draft | Fitted | Why |
+|---|---|---|---|
+| `boss` | `[2.55, 2.70, 2.82, 2.92, 3.02, 3.16, 3.30, 3.52, 3.88, 4.60]` | `[2.55, 2.71, 2.88, 2.93, 2.97, 3.09, 3.22, 3.38, 3.88, 4.91]` | Draft missed D3 E (0.150), D3 S (0.140), D4 C7 (0.375), D4 C8 (0.233); fitted brings all 16 D1 to D5 rows inside bounds (D1 0.727 to 0.753, D2 0.917 to 0.970, D3 E 0.095 / C 0.025 / S 0.033, D4 C3 0.883 / C7 0.472 / C8 0.313) |
+| `pack` | `[0.72, 0.79, 0.86, 0.93, 1.00, 1.12, 1.24, 1.38, 1.54, 1.72]` | `[0.72, 0.79, 0.86, 0.93, 1.00, 1.15, 1.32, 1.52, 1.75, 2.05]` | Draft missed D5 C pack at 10 (anyDead 0.173 < 0.20); fitted reaches 0.260 (se 0.036) |
+| `rankScale` | `{ E: 1.04, D: 0.95, C: 1.00, B: 0.95, A: 0.85, S: 0.85 }` | `{ E: 1.04, D: 0.96, C: 1.00, B: 0.96, A: 0.84, S: 0.85 }` | Centers D1 across all 6 ranks between 72.7% and 75.3% |
+
+Added wall time for the 16 D1 to D5 rows: ~35.2 s (1.2 s to 3.1 s per row, well under `BUDGET_MS = 30,000`).
+
