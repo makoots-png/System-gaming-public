@@ -1,7 +1,7 @@
 // measure.ts: the numbers of design.md, from the shipped rules and the built-in items: today's income, the price ladder
 // with grades, each built-in item's spend and grade, the world gate's shared gold and XP, income after the change, the
 // tiered crystal, sessions to afford, and the pace of ranks by party size. Run: bun docs/agent-handoff/features/economy/measure.ts
-import { RANKS, RULES, clearOf } from '../../../../src/core/rules.ts';
+import { RANKS, RULES, clearOf, priceBaseOf } from '../../../../src/core/rules.ts';
 import type { Rank } from '../../../../src/core/rules.ts';
 import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf } from '../../../../src/core/registry/items.ts';
 import type { ItemDef, Rarity } from '../../../../src/core/registry/items.ts';
@@ -13,7 +13,7 @@ const r0 = (n: number): number => Math.round(n);
 const f1 = (n: number): string => n.toFixed(1);
 const goldMean = (r: Rank): number => clearOf(RULES, r);
 const rankOf = (rar: Rarity): Rank => RULES.rarities[rar].rank;
-const clear = (rar: Rarity): number => goldMean(rankOf(rar));
+const clear = (rar: Rarity): number => priceBaseOf(RULES, rankOf(rar));
 const gearOf = (d: ItemDef): boolean => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory';
 const ALL: readonly ItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS];
 const pool: readonly ItemDef[] = ALL.filter(d => !(d.type === 'consumable' && d.revive));
@@ -131,11 +131,11 @@ console.log('\n[4.1] world gate gold: rank | each, 1 to 6 hunters | total, 1 to 
 for (const r of RANKS) console.log(`${r} | ${[1, 2, 3, 4, 5, 6].map(n => goldEach(r, n)).join(' / ')} | ${[1, 2, 3, 4, 5, 6].map(n => goldEach(r, n) * n).join(' / ')}`);
 
 console.log('\n[5] crystal by its rank: rank | price | table sessions at its rank | daily sessions | today 100000 in table sessions');
-for (const r of RANKS) { const p = RULES.reviveClears * goldMean(r), s = session(r, DESIGN_ECON), t = session(r, TODAY); console.log(`${r} | ${p} | ${f1(p / s.table)} | ${f1(p / s.daily)} | ${f1(100000 / t.table)}`); }
+for (const r of RANKS) { const p = RULES.revivePrices * priceBaseOf(RULES, r), s = session(r, DESIGN_ECON), t = session(r, TODAY); console.log(`${r} | ${p} | ${f1(p / s.table)} | ${f1(p / s.daily)} | ${f1(100000 / t.table)}`); }
 
 console.log('\n[6] sessions to afford (table player): rank | own-rank middle item | next rank middle item | two own-rank potions | own-rank crystal | respec at the rank\'s first level | daily/table');
 for (const [i, r] of RANKS.entries()) {
-  const s = session(r, DESIGN_ECON), own = goldMean(r), next = goldMean(RANKS[Math.min(5, i + 1)]!), crystal = RULES.reviveClears * own, respec = RULES.build.respecGold * RULES.rankLevels[r] ** 2;
+  const s = session(r, DESIGN_ECON), own = priceBaseOf(RULES, r), next = priceBaseOf(RULES, RANKS[Math.min(5, i + 1)]!), crystal = RULES.revivePrices * own, respec = RULES.build.respecGold * RULES.rankLevels[r] ** 2;
   console.log(`${r} | ${f1(own / s.table)} | ${i < 5 ? f1(next / s.table) : '-'} | ${f1(own / s.table)} | ${f1(crystal / s.table)} | ${respec} = ${f1(respec / s.table)} | ${f1(s.daily / s.table)}`);
 }
 

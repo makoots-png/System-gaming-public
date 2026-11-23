@@ -6,8 +6,17 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
+- **Borrow cap anchor under gold table B (shipped on `1.5 * priceBase`, optional check):** With gate clear gold raised 2.25x to 3.33x and item prices frozen on `RULES.priceBase`, keeping the borrow cap on `1.5 * priceBase` preserves your Cap A intent (one plus-grade item of your rank, 1.41 to 1.88 clears to pay off, 25% of revive debt). Moving it onto `1.5 * clearOf` (table B clears) grows the cap 2.25x to 3.33x (3.55 clears to pay off), which lets a hunter borrow next-rank middle gear from 0 gold at E, B, and A (including Mythic gear at A) and reaches 83% of an S revive debt. Say if you want it switched to `1.5 * clearOf`:
+  - E: `150` g (`1.5 * priceBase`, 1.88 cl) vs `338` g (`1.5 * clearOf`, 3.56 cl; D mid is 325 g)
+  - D: `488` g (`1.5 * priceBase`, 1.83 cl) vs `1,125` g (`1.5 * clearOf`, 3.54 cl; C mid is 1,250 g)
+  - C: `1,875` g (`1.5 * priceBase`, 1.78 cl) vs `4,500` g (`1.5 * clearOf`, 3.55 cl; B mid is 5,000 g)
+  - B: `7,500` g (`1.5 * priceBase`, 1.58 cl) vs `21,000` g (`1.5 * clearOf`, 3.59 cl; A mid is 19,000 g)
+  - A: `28,500` g (`1.5 * priceBase`, 1.46 cl) vs `90,000` g (`1.5 * clearOf`, 3.57 cl; S mid is 75,000 g)
+  - S: `112,500` g (`1.5 * priceBase`, 1.41 cl) vs `375,000` g (`1.5 * clearOf`, 3.55 cl; S revive debt is 450,000 g)
+
 ## Answered
 
+- Nov 23 (12:47, answering System revive debt payoff target under gold table B, qd rows 72 and 74): Approved gold table B (`E 100 to 350`, `D 350 to 1,150`, `C 1,200 to 4,800`, `B 5,500 to 22,500`, `A 25,000 to 95,000`, `S 100,000 to 400,000`, personal gates keep `solo.lootShare` 0.25) with frozen `RULES.priceBase` (`E 100, D 325, C 1,250, B 5,000, A 19,000, S 75,000`) and ruled that a System revive debt should pay off in about 5 gate clears for a party of 4 under table B and the unchanged 50/25/25 split. Shipped as `reviveDebtPrices = 6` on `priceBase` (old debt `10x`: E `1,000`, D `3,250`, C `12,500`, B `50,000`, A `190,000`, S `750,000` gold, ~20.5 clears; new debt `6x`: E `600`, D `1,950`, C `7,500`, B `30,000`, A `114,000`, S `450,000` gold; measured mean `4.16` to `5.86` clears, average `5.09`, medians `6, 6, 6, 5, 4, 4`). Per-rank fallback `{ E: 5, D: 5, C: 5, B: 6, A: 7, S: 7 }` (`500` to `525,000` gold, mean `4.71` to `4.98`, median `5` at every rank) is recorded in qd row 72's Undo line if you want tighter rank parity.
 - Nov 23 (answering System revive debt payoff, qd row 72): While a hunter owes System revive debt, each gate clear's gold splits three ways: 1/2 goes to debt (`reviveDebtShare` 0.5), 1/4 is lost to debt costs (`reviveDebtBurn` 0.25), and 1/4 goes to the hunter (`1 - share - burn`), with `reviveDebtShare + reviveDebtBurn <= 1` enforced and proportional burn on the final clear. While in debt, the hunter earns 0.25x XP from every source (`reviveDebtXpRate` 0.25) until debt hits 0 (gold clears debt first, so a clear that finishes the debt earns full XP). All three rules are GM-editable and synced in `RoomRules`.
 
 - Nov 20: consumables priced by rank and how long they last (staple 0.1, one fight 0.5, one gate 1, escape stone 2): "Sure yes."

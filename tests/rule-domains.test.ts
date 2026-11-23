@@ -79,9 +79,11 @@ test('a number just past either end of its domain, or a fraction where it is who
   }
 });
 
-test('a GM\'s base value or a rarity\'s price factor is no rule: a price is its rank\'s Clear, so such an override is refused as unknown and changes no price', () => {
-  const { overrides, refused } = parseOverrides({ baseValue: 50, rarities: { rare: { mult: 30 } } });
-  expect(refused.map(r => [r.path, r.reason])).toEqual([['baseValue', 'unknown'], ['rarities.rare.mult', 'unknown']]);
+test('retired economy rule names (baseValue, rarities.*.mult, reviveClears, reviveDebtClears, borrowCapClears) are refused as unknown', () => {
+  const { overrides, refused } = parseOverrides({ baseValue: 50, rarities: { rare: { mult: 30 } }, reviveClears: 12, reviveDebtClears: 10, borrowCapClears: 2 });
+  expect(refused.map(r => [r.path, r.reason])).toEqual([
+    ['baseValue', 'unknown'], ['rarities.rare.mult', 'unknown'], ['reviveClears', 'unknown'], ['reviveDebtClears', 'unknown'], ['borrowCapClears', 'unknown'],
+  ]);
   expect(RARITIES.map(r => priceOf(rulesOf(overrides), r))).toEqual(RARITIES.map(r => priceOf(RULES, r)));
 });
 

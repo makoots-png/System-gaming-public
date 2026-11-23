@@ -1,6 +1,6 @@
 // Every built-in item in src/core/registry/items.ts must pass these. A new item is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { BONUS_KEYS, RANKS, RULES, rulesOf } from '../src/core/rules.ts';
+import { BONUS_KEYS, RANKS, RULES, priceBaseOf, rulesOf } from '../src/core/rules.ts';
 import type { Rank, Rules } from '../src/core/rules.ts';
 import { FULL_HEAL, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Op } from '../src/core/combat/effect-ops.ts';
@@ -21,12 +21,12 @@ const LISTS: [string, readonly ItemDef[]][] = [['shop', SHOP_ITEMS], ['loot', LO
 const ALL: ItemDef[] = LISTS.flatMap(([, defs]) => defs);
 const of = (name: string): ItemTemplate => itemOf(RULES, ALL.find(d => d.name === name)!);
 const number = (value: number) => ({ kind: 'number', value }) as const;
-/** The rank whose Clear prices each rarity (economy design 0 and 2.2): common is E, uncommon D, rare C, epic B, legendary A, mythic S. */
+/** The rank whose base price prices each rarity: common is E, uncommon D, rare C, epic B, legendary A, mythic S. */
 const RANK_OF: Readonly<Record<Rarity, Rank>> = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
-/** One Clear of `rank` under rules `R`: the middle of that rank's loot gold. */
-const clear = (R: Rules, rank: Rank): number => (R.loot[rank].gold[0]! + R.loot[rank].gold[1]!) / 2;
-/** The rules with every rank's loot gold times `k`, as a GM's edit of the loot table would leave them. */
-const lootTimes = (k: number): Rules => ({ ...RULES, loot: Object.fromEntries(RANKS.map(r => [r, { ...RULES.loot[r], gold: RULES.loot[r].gold.map(g => g * k) }])) as Rules['loot'] });
+/** The base price of `rank` under rules `R`. */
+const basePrice = (R: Rules, rank: Rank): number => priceBaseOf(R, rank);
+/** The rules with every rank's `priceBase` times `k`, as a GM's edit of `priceBase` would leave them. */
+const pricesTimes = (k: number): Rules => ({ ...RULES, priceBase: Object.fromEntries(RANKS.map(r => [r, RULES.priceBase[r] * k])) as Rules['priceBase'] });
 /** Half up, in whole numbers, so a share of 35 hundredths of 30 is 10.5 and rounds to 11 with no floating point doubt. */
 
 for (const [list, defs] of LISTS) {
@@ -90,14 +90,14 @@ for (const [list, defs] of LISTS) {
         expect(parseItem(copy(item))).toEqual(item);
       });
 
-      test('its price is the one it sets by hand, or the rule\'s: one Clear of its rarity\'s rank times gradeStep to its grade, an item that revives reviveClears of it, another consumable usedUpShare of it, rounded', () => {
+      test('its price is the one it sets by hand, or the rule\'s: its rarity\'s rank base price times gradeStep to its grade, an item that revives revivePrices of it, another consumable usedUpShare of it, rounded', () => {
         if (def.value !== undefined) {
           expect(Number.isInteger(def.value) && def.value > 0).toBe(true);
           expect(item.value).toBe(def.value);
         } else {
           expect(item.value, 'priced by the rule as it is read, not stored').toBeUndefined();
-          const factor = def.type === 'consumable' ? (def.revive ? RULES.reviveClears : RULES.usedUpShare) : 1;
-          expect(valueOf(item, RULES)).toBe(Math.round(clear(RULES, RANK_OF[def.rar]) * RULES.gradeStep ** (def.grade ?? 0) * factor));
+          const factor = def.type === 'consumable' ? (def.revive ? RULES.revivePrices : RULES.usedUpShare) : 1;
+          expect(valueOf(item, RULES)).toBe(Math.round(basePrice(RULES, RANK_OF[def.rar]) * RULES.gradeStep ** (def.grade ?? 0) * factor));
         }
       });
 
@@ -109,27 +109,29 @@ for (const [list, defs] of LISTS) {
   }
 }
 
-group('the price ladder (economy design 2.2, review E-1)', () => {
-  test('each rarity names the rank whose Clear prices it: common E up to mythic S', () => {
+group('the price ladder (priceBase decoupled from gate clear gold)', () => {
+  test('each rarity names the rank whose base price prices it: common E up to mythic S', () => {
     expect(RARITIES.map(r => RULES.rarities[r].rank)).toEqual(RARITIES.map(r => RANK_OF[r]));
   });
 
-  test('an unpriced item costs one Clear of its rarity\'s rank, the middle of that rank\'s loot gold: a common 100, a mythic 75,000', () => {
-    expect(RARITIES.map(r => priceOf(RULES, r))).toEqual(RARITIES.map(r => clear(RULES, RANK_OF[r])));
-    expect([priceOf(RULES, 'common'), priceOf(RULES, 'mythic')], 'the shipped E gold is 50 to 150, S 30,000 to 120,000').toEqual([100, 75000]);
+  test('an unpriced item costs its rarity\'s rank base price: a common 100, a mythic 75,000', () => {
+    expect(RARITIES.map(r => priceOf(RULES, r))).toEqual(RARITIES.map(r => basePrice(RULES, RANK_OF[r])));
+    expect([priceOf(RULES, 'common'), priceOf(RULES, 'mythic')]).toEqual([100, 75000]);
   });
 
-  test('a GM\'s edit of the C-rank loot gold moves the rare price with it and no other', () => {
-    const R = rulesOf({ loot: { C: { gold: [1000, 3000] } } });
+  test('a GM\'s edit of priceBase.C moves the rare price with it and no other; editing loot.C.gold leaves prices unchanged', () => {
+    const R = rulesOf({ priceBase: { C: 2000 } });
     expect(priceOf(R, 'rare')).toBe(2000);
     expect(RARITIES.filter(r => r !== 'rare').map(r => priceOf(R, r))).toEqual(RARITIES.filter(r => r !== 'rare').map(r => priceOf(RULES, r)));
+    const richLoot = rulesOf({ loot: { C: { gold: [5000, 10000] } } });
+    expect(priceOf(richLoot, 'rare')).toBe(priceOf(RULES, 'rare'));
   });
 
-  test('an unpriced consumable costs usedUpShare of its rank\'s Clear, rounded: a common potion 50, an uncommon one 163, an epic one 2,500', () => {
+  test('an unpriced consumable costs usedUpShare of its rank\'s base price, rounded: a common potion 50, an uncommon one 163, an epic one 2,500', () => {
     const potion = (rar: Rarity) => parseItem({ name: 'Draught', rar, type: 'consumable' })!;
-    for (const rar of RARITIES) expect([rar, valueOf(potion(rar), RULES)]).toEqual([rar, Math.round(clear(RULES, RANK_OF[rar]) * RULES.usedUpShare)]);
-    expect(valueOf(potion('common'), { ...RULES, usedUpShare: 0.2 }), 'it follows a GM\'s share').toBe(Math.round(clear(RULES, 'E') * 0.2));
-    expect(valueOf(parseItem({ name: 'Draught', rar: 'common', type: 'material' })!, RULES), 'a thing that is not used up costs the whole Clear').toBe(clear(RULES, 'E'));
+    for (const rar of RARITIES) expect([rar, valueOf(potion(rar), RULES)]).toEqual([rar, Math.round(basePrice(RULES, RANK_OF[rar]) * RULES.usedUpShare)]);
+    expect(valueOf(potion('common'), { ...RULES, usedUpShare: 0.2 }), 'it follows a GM\'s share').toBe(Math.round(basePrice(RULES, 'E') * 0.2));
+    expect(valueOf(parseItem({ name: 'Draught', rar: 'common', type: 'material' })!, RULES), 'a thing that is not used up costs the whole base price').toBe(basePrice(RULES, 'E'));
   });
 
   test('every built-in item is priced by the rule, the Resurrection Crystals too: none keeps a price set by hand', () => {
@@ -145,15 +147,16 @@ group('the price ladder (economy design 2.2, review E-1)', () => {
 group('the Resurrection Crystal, tiered (economy design 5, the owner\'s ruling 4)', () => {
   const crystal = (rar: Rarity) => parseItem({ name: 'Crystal', rar, type: 'consumable', revive: true })!;
 
-  test('an unpriced reviving item costs reviveClears of its rank\'s Clear: E 1,000, D 3,250, C 12,500, B 50,000, A 190,000, S 750,000 (block [5])', () => {
-    expect(RULES.reviveClears).toBe(10);
-    for (const rar of RARITIES) expect([rar, valueOf(crystal(rar), RULES)]).toEqual([rar, RULES.reviveClears * clear(RULES, RANK_OF[rar])]);
+  test('an unpriced reviving item costs revivePrices times its rank\'s base price: E 1,000, D 3,250, C 12,500, B 50,000, A 190,000, S 750,000 (block [5])', () => {
+    expect(RULES.revivePrices).toBe(10);
+    for (const rar of RARITIES) expect([rar, valueOf(crystal(rar), RULES)]).toEqual([rar, RULES.revivePrices * basePrice(RULES, RANK_OF[rar])]);
     expect(RARITIES.map(rar => valueOf(crystal(rar), RULES))).toEqual([1000, 3250, 12500, 50000, 190000, 750000]);
   });
 
-  test('it follows a GM\'s reviveClears and the loot gold of its rank; a price typed by hand still wins', () => {
-    expect(valueOf(crystal('rare'), { ...RULES, reviveClears: 20 })).toBe(25000);
-    expect(valueOf(crystal('rare'), rulesOf({ loot: { C: { gold: [1000, 3000] } } }))).toBe(20000);
+  test('it follows a GM\'s revivePrices and priceBase of its rank; a price typed by hand still wins', () => {
+    expect(valueOf(crystal('rare'), { ...RULES, revivePrices: 20 })).toBe(25000);
+    expect(valueOf(crystal('rare'), rulesOf({ priceBase: { C: 2000 } }))).toBe(20000);
+    expect(valueOf(crystal('rare'), rulesOf({ loot: { C: { gold: [5000, 9000] } } }))).toBe(12500);
     expect(valueOf({ ...crystal('rare'), value: 9000 }, RULES)).toBe(9000);
   });
 
@@ -177,7 +180,7 @@ group('the grade: a minus, a middle and a plus inside a tier (economy design 2.1
 
   test('a grade multiplies the price by gradeStep to the grade: an Epic− 3,333, an Epic 5,000, an Epic+ 7,500 (block [2.1])', () => {
     for (const rar of RARITIES) for (const g of GRADES) {
-      const want = Math.round(clear(RULES, RANK_OF[rar]) * RULES.gradeStep ** g);
+      const want = Math.round(basePrice(RULES, RANK_OF[rar]) * RULES.gradeStep ** g);
       expect([rar, g, priceOf(RULES, rar, g), valueOf(thing(rar, g), RULES)]).toEqual([rar, g, want, want]);
     }
     expect(GRADES.map(g => valueOf(thing('epic', g), RULES))).toEqual([3333, 5000, 7500]);
@@ -188,9 +191,9 @@ group('the grade: a minus, a middle and a plus inside a tier (economy design 2.1
     expect(pairs).toEqual([[150, 217], [488, 833], [1875, 3333], [7500, 12667], [28500, 50000]]);
   });
 
-  test('a graded consumable costs usedUpShare of its graded Clear, rounded once: an Uncommon− potion 108, not 109', () => {
+  test('a graded consumable costs usedUpShare of its graded base price, rounded once: an Uncommon− potion 108, not 109', () => {
     // 325 / 1.5 × 0.5 is 108.33; rounding the graded price first (217) and then halving it would give 108.5, so 109
-    expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(Math.round(clear(RULES, 'D') / RULES.gradeStep * RULES.usedUpShare));
+    expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(Math.round(basePrice(RULES, 'D') / RULES.gradeStep * RULES.usedUpShare));
     expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(108);
     expect(valueOf(thing('common', 1, 'consumable'), RULES)).toBe(75);
   });
@@ -219,7 +222,7 @@ group('the grade: a minus, a middle and a plus inside a tier (economy design 2.1
     const sword = SHOP_ITEMS.find(d => d.name === 'Steel Longsword')!;
     const plus = itemOf(RULES, { ...sword, grade: 1 });
     expect(plus.grade).toBe(1);
-    expect(valueOf(plus, RULES)).toBe(Math.round(clear(RULES, 'E') * RULES.gradeStep));
+    expect(valueOf(plus, RULES)).toBe(Math.round(basePrice(RULES, 'E') * RULES.gradeStep));
     expect(parseItem(copy(plus))).toEqual(plus);
     expect(itemOf(RULES, { ...sword, grade: 0 as Grade })).not.toHaveProperty('grade');
   });
@@ -445,7 +448,7 @@ group('a price and a weight by the rule (L1)', () => {
   });
 
   test('an item without a price of its own is priced by the rule as it is now; a typed price, even 0, is kept', () => {
-    const orb = parseItem({ name: 'Orb', rar: 'rare' })!, dear = lootTimes(3);
+    const orb = parseItem({ name: 'Orb', rar: 'rare' })!, dear = pricesTimes(3);
     expect(valueOf(orb, dear)).toBe(3 * priceOf(RULES, 'rare'));
     expect(valueOf(parseItem({ name: 'Orb', value: 0 })!, RULES)).toBe(0);
     expect(valueOf(parseItem({ name: 'Orb', value: '12' })!, RULES), 'not a number: the rule\'s').toBe(priceOf(RULES, 'common'));
@@ -454,7 +457,7 @@ group('a price and a weight by the rule (L1)', () => {
 
 group('the built-in items, priced at each read (I1)', () => {
   test('a GM\'s price rule reaches the default shop and the loot at once: an item priced by the rule follows it', () => {
-    const dear = lootTimes(3);
+    const dear = pricesTimes(3);
     const byRule = [...SHOP_ITEMS, ...LOOT_ITEMS].findIndex(d => !d.value);
     expect(byRule, 'a built-in item without a value of its own').toBeGreaterThanOrEqual(0);
     expect(valueOf(builtInItems(dear)[byRule]!, dear)).toBe(valueOf(builtInItems(RULES)[byRule]!, RULES) * 3);
@@ -465,10 +468,10 @@ group('the built-in items, priced at each read (I1)', () => {
 group('the Resurrection Crystal (notes-2b-crystal.md)', () => {
   const crystal = (R = RULES) => defaultShop(R).find(i => i.revive)!;
 
-  test('the default shop sells the E crystal first, at reviveClears Clears of rank E, and a GM\'s loot gold moves its price (economy unit 4)', () => {
+  test('the default shop sells the E crystal first, at revivePrices times rank E base price, and a GM\'s priceBase moves its price', () => {
     expect(crystal()).toMatchObject({ name: 'Resurrection Crystal (E)', type: 'consumable', revive: true, tell: true });
     expect(valueOf(crystal(), RULES)).toBe(1000);
-    expect(valueOf(crystal(lootTimes(3)), lootTimes(3)), 'the rule\'s price, read each time').toBe(3000);
+    expect(valueOf(crystal(pricesTimes(3)), pricesTimes(3)), 'the rule\'s price, read each time').toBe(3000);
   });
 
   test('a reward, a room message or a form keeps its revive; on anything but a consumable, or not exactly true, it is dropped', () => {

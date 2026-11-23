@@ -13,7 +13,7 @@ import { parseFormula } from '../formula.ts';
 import type { Formula } from '../formula.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { DeriveRules, GearPiece, Kit } from '../hunter/derive.ts';
-import { BONUS_KEYS, RULES, clearOf } from '../rules.ts';
+import { BONUS_KEYS, RULES, priceBaseOf } from '../rules.ts';
 import type { BonusKey, Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
@@ -76,7 +76,7 @@ export type Item = {
   /**
    * Used, it brings its dead user back through the life machine's `revive` (src/core/hunter/use.ts `useItem`): refused
    * while the user is not dead, and outside a fight only. It raises a hunter of its rarity's rank or lower (`revives`),
-   * and its price is `reviveClears` Clears of that rank (`valueOf`). Only a consumable holds it. The Association does not
+   * and its price is `revivePrices` times that rank's `priceBase` (`valueOf`). Only a consumable holds it. The Association does not
    * buy it back (inventory.ts `sellable`) and no loot roll drops it (`lootPool`): the GM decides how many exist.
    */
   revive?: true;
@@ -127,7 +127,7 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   { name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2, armorPenFlat: 5 }, desc: 'A dagger whose hits ignore 5 points of armor.' },
   { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
-  // raises up to, and its price `reviveClears` Clears of that rank. The GM tells the table how common they are; its use
+  // raises up to, and its price `revivePrices` times that rank's `priceBase`. The GM tells the table how common they are; its use
   // is told to the GM. A crystal has no grade.
   ...RARITIES.map((rar): ItemDef => ({
     name: `Resurrection Crystal (${RULES.rarities[rar].rank})`, rar, type: 'consumable', effects: [], revive: true, tell: true,
@@ -272,24 +272,23 @@ export const STARTER_GEAR = {
 export type ItemTemplate = Omit<Item, 'id'>;
 
 /**
- * The rules a price reads: the loot table (the Clear, `clearOf`), each rarity's rank, a grade's factor, the share a
- * consumable costs, and the Clears an item that revives costs.
+ * The rules a price reads: the base prices by rank (`priceBaseOf`), each rarity's rank, a grade's factor, the share a
+ * consumable costs, and the base-price multiple an item that revives costs (`revivePrices`).
  */
-export type PriceRules = Pick<Rules, 'loot' | 'rarities' | 'gradeStep' | 'usedUpShare' | 'reviveClears'>;
+export type PriceRules = Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep' | 'usedUpShare' | 'revivePrices'>;
 /** What a price reads of an item: its rarity, its type (a consumable is used up), its grade, whether it revives, and a price typed by hand. */
 export type Priced = Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'grade' | 'revive'>>;
-/** One Clear of the rarity's rank (`clearOf`) times `gradeStep` to the grade, before rounding. */
-const graded = (R: Pick<Rules, 'loot' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade): number => clearOf(R, R.rarities[rar].rank) * R.gradeStep ** grade;
+/** The base price of the rarity's rank (`priceBaseOf`) times `gradeStep` to the grade, before rounding. */
+const graded = (R: Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade): number => priceBaseOf(R, R.rarities[rar].rank) * R.gradeStep ** grade;
 /**
- * What an item's use does to its price, times its graded Clear: an item that revives costs `reviveClears` of it (economy
- * design 5: a full set of its rank's middle gear), another consumable `usedUpShare` (2.2: one use is worth half), and
- * anything kept the whole.
+ * What an item's use does to its price, times its graded base price: an item that revives costs `revivePrices` of it
+ * (a full set of its rank's middle gear), another consumable `usedUpShare`, and anything kept the whole.
  */
-const useFactor = (i: Pick<Priced, 'type' | 'revive'>, R: Pick<Rules, 'usedUpShare' | 'reviveClears'>): number =>
-  (i.type !== 'consumable' ? 1 : i.revive ? R.reviveClears : R.usedUpShare);
+const useFactor = (i: Pick<Priced, 'type' | 'revive'>, R: Pick<Rules, 'usedUpShare' | 'revivePrices'>): number =>
+  (i.type !== 'consumable' ? 1 : i.revive ? R.revivePrices : R.usedUpShare);
 /**
- * An item's price: the one it was given, else the rule's: one Clear of its rarity's rank times `gradeStep` to its grade
- * (`priceOf`), times what its use makes it worth (`useFactor`), rounded once.
+ * An item's price: the one it was given, else the rule's: the base price of its rarity's rank times `gradeStep` to its
+ * grade (`priceOf`), times what its use makes it worth (`useFactor`), rounded once.
  * Implicit audit 3, L1: the rule's price was stored as a number when an item was made, so a change of the price rule
  * reached no item already made or held.
  */
@@ -299,11 +298,10 @@ export const valueOf = (i: Priced, R: PriceRules): number =>
 export const weightOf = (i: { readonly weight?: number; readonly type?: string; readonly dice?: string }): number => i.weight ?? (i.type === 'weapon' ? weaponWeight(i.dice ?? '') : 0);
 /**
  * The price of an item of rarity `rar` and grade `grade` (the middle when left out) that sets none and is not used up:
- * one Clear of the rarity's rank (`clearOf`, the middle of that rank's loot gold) times `gradeStep` to the grade, rounded
- * to whole gold. Economy design 2.1, 2.2 and review E-1: computed from the loot table each read, so a GM's edit of a
- * rank's gold moves the price of its rarity, and an edit of `gradeStep` the price of every minus and plus.
+ * the base price of the rarity's rank (`priceBaseOf`) times `gradeStep` to the grade, rounded to whole gold. Computed
+ * from `priceBase` on each read, so a GM's edit of `priceBase` moves prices and an edit of `loot.*.gold` does not.
  */
-export const priceOf = (R: Pick<Rules, 'loot' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade = 0): number => Math.round(graded(R, rar, grade));
+export const priceOf = (R: Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade = 0): number => Math.round(graded(R, rar, grade));
 
 /**
  * The built-in shop as items at the rules' prices now, and every built-in item the same way: built at each read, so a

@@ -1,11 +1,11 @@
 // Shop borrowing (src/core/hunter/inventory.ts `buyPlan`, `buy`, `borrowConfirm`, `shopCreditLine`, `BUY_WORDS`, `BORROW_WORDS`).
-// the owner (Nov 23), cap A (qd row 73): `RULES.borrowCapClears` = 1.5 same-rank clears, synced in RoomRules.
+// the owner (Nov 23), cap A (qd row 73): `RULES.borrowCapPrices` = 1.5 times `RULES.priceBase[rank]`, synced in RoomRules.
 // Cash is spent first, shortfall adds to shared `Hunter.debt`, refused when over cap / borrowing off / reviveDebtShare <= 0,
 // paid off through the existing 3-way gate clear gold split and 0.25x XP rule, and ignored by `systemRaise`.
 import type { Page } from '@playwright/test';
-import { RULES, clearOf } from '../../src/core/rules.ts';
+import { RULES } from '../../src/core/rules.ts';
 import { BORROW_WORDS, BUY_WORDS, borrowConfirm, shopCreditLine } from '../../src/core/hunter/inventory.ts';
-import { RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtXpClearedLine, debtXpLine, raiseOffer } from '../../src/core/hunter/revive-standing.ts';
+import { RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtXpClearedLine, debtXpLine, raiseOffer, raiseOwes } from '../../src/core/hunter/revive-standing.ts';
 import { borrowLine } from '../../src/core/rules-text.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
 
@@ -78,11 +78,11 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
       BUY_WORDS['over-cap']({ name: 'Greater Health Potion', rank: 'E', price: 163, have: 0, need: 163, debt: 57, cap: 150, available: 93 }),
     );
 
-    // GM sets borrowCapClears to 0 -> syncs to player, hides credit line, refuses with borrow-off.
+    // GM sets borrowCapPrices to 0 -> syncs to player, hides credit line, refuses with borrow-off.
     await gm.evaluate(() => {
-      hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, borrowCapClears: 0 }; }, 'test-rules');
+      hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, borrowCapPrices: 0 }; }, 'test-rules');
     });
-    await expect.poll(() => player.evaluate(() => hunterApp.rules().borrowCapClears), { timeout: 15_000 }).toBe(0);
+    await expect.poll(() => player.evaluate(() => hunterApp.rules().borrowCapPrices), { timeout: 15_000 }).toBe(0);
     await expect(player.locator('#view-status [data-shop-credit]')).toBeHidden();
     const potion = player.locator('#view-status [data-shopitem="Health Potion"]');
     await expect(potion.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
@@ -91,11 +91,11 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
       BUY_WORDS['borrow-off']({ name: 'Health Potion', rank: 'E', price: 50, have: 0, need: 50, debt: 57, cap: 0, available: 0 }),
     );
 
-    // GM re-enables borrowCapClears (1.5) but sets reviveDebtShare to 0 -> paused notice and no-payoff refusal.
+    // GM re-enables borrowCapPrices (1.5) but sets reviveDebtShare to 0 -> paused notice and no-payoff refusal.
     await gm.evaluate(() => {
-      hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, borrowCapClears: 1.5, reviveDebtShare: 0 }; }, 'test-rules');
+      hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, borrowCapPrices: 1.5, reviveDebtShare: 0 }; }, 'test-rules');
     });
-    await expect.poll(() => player.evaluate(() => ({ cap: hunterApp.rules().borrowCapClears, share: hunterApp.rules().reviveDebtShare })), { timeout: 15_000 }).toEqual({ cap: 1.5, share: 0 });
+    await expect.poll(() => player.evaluate(() => ({ cap: hunterApp.rules().borrowCapPrices, share: hunterApp.rules().reviveDebtShare })), { timeout: 15_000 }).toEqual({ cap: 1.5, share: 0 });
     await expect(player.locator('#view-status [data-shop-credit]')).toHaveText(BORROW_WORDS.paused);
     await expect(potion.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
     await potion.locator('[data-buy]').tap({ force: true });
@@ -105,7 +105,7 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
 
     // Restore defaults.
     await gm.evaluate(() => {
-      hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, borrowCapClears: 1.5, reviveDebtShare: 0.5 }; }, 'test-rules');
+      hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, borrowCapPrices: 1.5, reviveDebtShare: 0.5 }; }, 'test-rules');
     });
     await expect.poll(() => player.evaluate(() => hunterApp.rules().reviveDebtShare), { timeout: 15_000 }).toBe(0.5);
   });
@@ -185,7 +185,7 @@ test('a System revive ignores the borrow cap, stacks on shop debt, blocks furthe
   await raiseWin(player).locator('.sys-actions button', { hasText: debtOffer.rise }).tap();
   await expect(raiseWin(player)).toHaveCount(0);
 
-  const owes = 50 + RULES.reviveDebtClears * clearOf(RULES, 'E');
+  const owes = 50 + raiseOwes('debt', 'E', RULES);
   expect(await activeHunter(player)).toMatchObject({ life: { at: 'up', hp: 1 }, reviveLeft: 'none', debt: owes });
 
   // Now owing 1,050 (over the 150 E-rank cap), borrowing another Health Potion is refused.

@@ -20,7 +20,7 @@ test('the rules and the save name the same ranks, rarities and slots, in the sam
 });
 
 test('every table by rank has a row for every rank', () => {
-  const byRank = { rankLevels: RULES.rankLevels, rankBonus: RULES.rankBonus, rankColors: RULES.rankColors, rankTable: RULES.rankTable, loot: RULES.loot, summonMp: RULES.shadow.summonMp, spawnWeight: RULES.gateSpawn.rank };
+  const byRank = { rankLevels: RULES.rankLevels, rankBonus: RULES.rankBonus, rankColors: RULES.rankColors, rankTable: RULES.rankTable, priceBase: RULES.priceBase, loot: RULES.loot, summonMp: RULES.shadow.summonMp, spawnWeight: RULES.gateSpawn.rank };
   for (const [name, table] of Object.entries(byRank)) expect([name, keys(table)]).toEqual([name, [...RANKS].sort()]);
 });
 
@@ -67,12 +67,13 @@ test('a rarer item is worth more: each rarity is priced by a higher rank than th
   expect(rising(RARITIES.map(r => RANKS.indexOf(RULES.rarities[r].rank)))).toBe(true);
 });
 
-test('loot names only rarities that exist, and a higher rank drops more gold', () => {
+test('loot names only rarities that exist, and a higher rank drops more gold and has a higher base price', () => {
   for (const r of RANKS) {
     for (const rar of Object.keys(RULES.loot[r].weights)) expect([r, TIERS.includes(rar)]).toEqual([r, true]);
     const [lo, hi] = RULES.loot[r].gold;
     expect(lo!).toBeLessThan(hi!);
   }
+  expect(rising(RANKS.map(r => RULES.priceBase[r]))).toBe(true);
   expect(rising(RANKS.map(r => RULES.loot[r].gold[0]!))).toBe(true);
   expect(rising(RANKS.map(r => RULES.loot[r].gold[1]!))).toBe(true);
 });

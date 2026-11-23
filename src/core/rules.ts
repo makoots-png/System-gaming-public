@@ -45,7 +45,7 @@ const real = (value: number, least: number, most: number, why: string): RuleNumb
 const of = (value: number, domain: Domain): RuleNumber => new RuleNumber(value, domain);
 /** A rule list of numbers, each in `domain`. */
 const each = (value: readonly number[], domain: Domain): RuleNumbers => new RuleNumbers(value, domain);
-/** A rarity of RULES.rarities: its color and the rank whose Clear prices it (`clearOf`). */
+/** A rarity of RULES.rarities: its color and the rank whose base price prices it (`priceBaseOf`). */
 const rarity = (color: string, rank: Rank): { readonly color: string; readonly rank: Rank } => ({ color, rank });
 
 /** RULES as declared, with each number's domain: the values with each rule number its plain value. */
@@ -191,39 +191,43 @@ const SPEC = {
     { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, band: 'S' as Rank, gmOnly: true },
   ],
   conditions: BUILT_IN_STATUSES, // the built-in statuses: src/core/registry/statuses.ts
-  // Each rarity's color and the rank whose Clear prices it (`clearOf`; economy design 2.2): a price is computed from the
-  // loot table, never stored, so a GM's edit of a rank's loot gold moves the price of its rarity.
+  // Each rarity's color and the rank whose base price prices it (`priceBaseOf`): a price is computed from
+  // `priceBase`, never stored, so a GM's edit of `priceBase` moves prices without tying them to gate clear gold.
   rarities: {
     common: rarity('#9fb6c9', 'E'), uncommon: rarity('#59e6a8', 'D'), rare: rarity('#4dd8ff', 'C'),
     epic: rarity('#c79bff', 'B'), legendary: rarity('#ffc94d', 'A'), mythic: rarity('#ff6b3d', 'S'),
   },
   slots: ['weapon', 'offhand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2'],
-  // gold: a range low to high (overrides.ts reads its order)
-  loot: {
-    E: { gold: each([50, 150], GOLD), weights: { common: of(70, WEIGHT), uncommon: of(25, WEIGHT), rare: of(5, WEIGHT) } },
-    D: { gold: each([150, 500], GOLD), weights: { common: of(50, WEIGHT), uncommon: of(35, WEIGHT), rare: of(13, WEIGHT), epic: of(2, WEIGHT) } },
-    C: { gold: each([500, 2000], GOLD), weights: { common: of(30, WEIGHT), uncommon: of(40, WEIGHT), rare: of(25, WEIGHT), epic: of(5, WEIGHT) } },
-    B: { gold: each([2000, 8000], GOLD), weights: { uncommon: of(30, WEIGHT), rare: of(45, WEIGHT), epic: of(22, WEIGHT), legendary: of(3, WEIGHT) } },
-    A: { gold: each([8000, 30000], GOLD), weights: { rare: of(40, WEIGHT), epic: of(45, WEIGHT), legendary: of(14, WEIGHT), mythic: of(1, WEIGHT) } },
-    S: { gold: each([30000, 120000], GOLD), weights: { epic: of(50, WEIGHT), legendary: of(42, WEIGHT), mythic: of(8, WEIGHT) } },
+  // Frozen base item price by rank (today's pre-table-B clear midpoints). Item prices, Resurrection Crystals,
+  // System revive debt, and shop borrow limits read this table so raising gate clear gold does not raise prices.
+  priceBase: {
+    E: of(100, GOLD), D: of(325, GOLD), C: of(1250, GOLD), B: of(5000, GOLD), A: of(19000, GOLD), S: of(75000, GOLD),
   },
-  // The economy (docs/agent-handoff/features/economy/design.md, each number's reason in its section). A price is a count
-  // of Clears (`clearOf`); a world gate's gold and XP are a pot shared by the hunters paid.
+  // gold: a world-gate clear gold range low to high (overrides.ts reads its order). Gold table B (2.25x at E to 3.33x at S).
+  loot: {
+    E: { gold: each([100, 350], GOLD), weights: { common: of(70, WEIGHT), uncommon: of(25, WEIGHT), rare: of(5, WEIGHT) } },
+    D: { gold: each([350, 1150], GOLD), weights: { common: of(50, WEIGHT), uncommon: of(35, WEIGHT), rare: of(13, WEIGHT), epic: of(2, WEIGHT) } },
+    C: { gold: each([1200, 4800], GOLD), weights: { common: of(30, WEIGHT), uncommon: of(40, WEIGHT), rare: of(25, WEIGHT), epic: of(5, WEIGHT) } },
+    B: { gold: each([5500, 22500], GOLD), weights: { uncommon: of(30, WEIGHT), rare: of(45, WEIGHT), epic: of(22, WEIGHT), legendary: of(3, WEIGHT) } },
+    A: { gold: each([25000, 95000], GOLD), weights: { rare: of(40, WEIGHT), epic: of(45, WEIGHT), legendary: of(14, WEIGHT), mythic: of(1, WEIGHT) } },
+    S: { gold: each([100000, 400000], GOLD), weights: { epic: of(50, WEIGHT), legendary: of(42, WEIGHT), mythic: of(8, WEIGHT) } },
+  },
+  // The economy: item prices, crystals, revive debt, and borrow limits multiply `priceBase`; a world gate's gold and XP are a pot shared by the hunters paid.
   gradeStep: real(1.5, 1, 1.8, 'price multiplier between item grades in the same tier. At 1 all grades cost the same, and above 1.8 a top grade would cost more than the next tier'), // design 2.1: three grades make a tier, a factor of 3.25 to 4, so one grade is about its cube root
   saleShare: of(0.25, SHARE), // design 3: the Association buys an item back at a quarter of its price (the owner: "A quarter.")
-  usedUpShare: of(0.5, SHARE), // design 2.2: a consumable is one use, so a Clear buys two of its rank
-  reviveClears: whole(10, 1, 1000, 'price of a Resurrection Crystal in same-rank gate clears, from 1 to 1000'), // design 5: a full set of its rank's middle gear
-  // economy.md section 13 and world rule 6: the one System raise on debt owes ten Clears of the hunter's rank, what a
-  // Resurrection Crystal of that rank costs, so a hunter past the free raise pays for a return as a crystal's buyer does
-  reviveDebtClears: whole(10, 1, 1000, 'debt for a System revive in same-rank gate clears, from 1 to 1000'),
+  usedUpShare: of(0.5, SHARE), // design 2.2: a consumable is one use (unit 2 updates potion pricing)
+  revivePrices: whole(10, 1, 1000, 'price of a Resurrection Crystal in multiples of priceBase, from 1 to 1000'), // design 5: a full set of its rank's middle gear
+  // the owner (Nov 23, qd row 72): System revive debt pays off in about 5 gate clears for a party of 4 under gold table B
+  // and the 50/25/25 split. 6 multiples of priceBase averages 5.09 clears across E to S (4.16 to 5.86).
+  reviveDebtPrices: whole(6, 1, 1000, 'debt for a System revive in multiples of priceBase, from 1 to 1000'),
   // the owner (Nov 23), qd row 72: while in System revive debt, gate clear gold splits three ways (share to debt, burn lost
   // to debt costs, the rest to the hunter), and earned XP from every source is multiplied by reviveDebtXpRate until debt hits 0.
   reviveDebtShare: of(0.5, SHARE),
   reviveDebtBurn: of(0.25, SHARE),
   reviveDebtXpRate: of(0.25, SHARE),
-  // the owner (Nov 23), cap A (qd row 73): shop borrowing limit in same-rank gate clears (1.5 matches one plus-grade
+  // the owner (Nov 23), cap A (qd row 73): shop borrowing limit in multiples of priceBase (1.5 matches one plus-grade
   // own-rank item). 0 turns shop borrowing off.
-  borrowCapClears: real(1.5, 0, 5, 'maximum shop borrowing debt in same-rank gate clears. 0 turns borrowing off, up to 5'),
+  borrowCapPrices: real(1.5, 0, 5, 'maximum shop borrowing debt in multiples of priceBase. 0 turns borrowing off, up to 5'),
   reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
   gateParty: whole(4, 1, 12, 'number of hunters a world gate payout is balanced for, from 1 to 12'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
   // design 2.3: the points an item may spend beyond its slot's free numbers
@@ -817,9 +821,11 @@ export const withStatuses = (R: Rules, statuses: Readonly<Record<string, StatusD
 // ── helpers. Each takes the rules as its first argument; src/edge/rules.ts binds them to the current rules for views. ──
 /** XP from `level` to the next: `xpPerLevel` times the level. `level` is a level (hunter/level.ts), so no bound is kept here. */
 export const xpToNext = (R: Rules, level: number): number => R.xpPerLevel * level;
+/** Base price anchor for `rank` in gold: read by item prices, Resurrection Crystals, revive debt, and shop borrowing. */
+export const priceBaseOf = (R: Pick<Rules, 'priceBase'>, rank: Rank): number => R.priceBase[rank];
 /**
- * One Clear of `rank`: the middle of its loot gold, what one hunter takes from clearing a world gate of that rank in the
- * party it is made for. The anchor of every price (economy design 0): an item costs a count of Clears.
+ * Midpoint of `rank`'s world-gate clear gold roll (`RULES.loot[rank].gold`), what one hunter takes on average from
+ * clearing a world gate of that rank in a standard party (`gateParty`). Used for gate payout math, not item prices.
  */
 export const clearOf = (R: Pick<Rules, 'loot'>, rank: Rank): number => (R.loot[rank].gold[0]! + R.loot[rank].gold[1]!) / 2;
 /**

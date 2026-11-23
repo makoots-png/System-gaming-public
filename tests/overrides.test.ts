@@ -3,7 +3,7 @@
 // an optional field still loads. The other cases (unknown rules, a value of the wrong type) are in tests/rules.test.ts.
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides, readerOf } from '../src/core/overrides.ts';
-import { RULES, clearOf, rulesOf } from '../src/core/rules.ts';
+import { RULES, priceBaseOf, rulesOf } from '../src/core/rules.ts';
 import { priceOf } from '../src/core/registry/items.ts';
 
 /** Each path of RULES whose shipped value cannot read an override: a list, a null, or a map the GM may add to. */
@@ -84,7 +84,7 @@ describe('an override of a list rule', () => {
     expect(refused.map(r => [r.path, r.reason])).toEqual([['rarities.epic.mult', 'unknown'], ['rarities.cursed', 'entry'], ['rarities.broken.rank', 'entry']]);
     const R = rulesOf(overrides);
     expect(R.rarities.rare).toEqual({ color: RULES.rarities.rare.color, rank: 'B' });
-    expect(priceOf(R, 'rare')).toBe(clearOf(R, 'B'));
+    expect(priceOf(R, 'rare')).toBe(priceBaseOf(R, 'B'));
   });
 
   // A number of the System's clock that would break it (0 hours spawns without end) is refused at the boundary, by its path.
@@ -166,11 +166,13 @@ describe('an override of a list rule', () => {
     expect(badXp.refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtXpRate', 'range']]);
   });
 
-  test('borrowCapClears accepts 0 to 5 (including fractions) and refuses values outside that range', () => {
-    expect(parseOverrides({ borrowCapClears: 0 })).toEqual({ overrides: { borrowCapClears: 0 }, refused: [] });
-    expect(parseOverrides({ borrowCapClears: 2.5 })).toEqual({ overrides: { borrowCapClears: 2.5 }, refused: [] });
-    expect(parseOverrides({ borrowCapClears: 5 })).toEqual({ overrides: { borrowCapClears: 5 }, refused: [] });
-    expect(parseOverrides({ borrowCapClears: -0.5 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapClears', 'range']]);
-    expect(parseOverrides({ borrowCapClears: 5.1 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapClears', 'range']]);
+  test('borrowCapPrices accepts 0 to 5 (including fractions) and refuses values outside that range; priceBase validates per rank', () => {
+    expect(parseOverrides({ borrowCapPrices: 0 })).toEqual({ overrides: { borrowCapPrices: 0 }, refused: [] });
+    expect(parseOverrides({ borrowCapPrices: 2.5 })).toEqual({ overrides: { borrowCapPrices: 2.5 }, refused: [] });
+    expect(parseOverrides({ borrowCapPrices: 5 })).toEqual({ overrides: { borrowCapPrices: 5 }, refused: [] });
+    expect(parseOverrides({ borrowCapPrices: -0.5 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapPrices', 'range']]);
+    expect(parseOverrides({ borrowCapPrices: 5.1 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapPrices', 'range']]);
+    expect(parseOverrides({ priceBase: { C: 2000 } })).toEqual({ overrides: { priceBase: { C: 2000 } }, refused: [] });
+    expect(parseOverrides({ priceBase: { C: -1, Z: 100 } }).refused.map(r => [r.path, r.reason])).toEqual([['priceBase.C', 'range'], ['priceBase.Z', 'unknown']]);
   });
 });

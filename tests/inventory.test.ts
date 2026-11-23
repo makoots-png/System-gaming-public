@@ -221,7 +221,7 @@ describe('gold, buying and selling', () => {
   });
 
   test('an item without a price of its own is bought and sold at the price rule as it is now', () => {
-    const dear: Rules = { ...RULES, loot: Object.fromEntries(RANKS.map(r => [r, { ...RULES.loot[r], gold: RULES.loot[r].gold.map(g => g * 3) }])) as Rules['loot'] };
+    const dear: Rules = { ...RULES, priceBase: Object.fromEntries(RANKS.map(r => [r, RULES.priceBase[r] * 3])) as Rules['priceBase'] };
     const h = hunter(1e6), { value: _typed, ...byRule } = shield;
     const bought = ok(buy(h, byRule, iid('i1'), dear));
     expect(h.gold - bought.gold).toBe(priceOf(dear, shield.rar, shield.grade));
@@ -241,7 +241,7 @@ describe('gold, buying and selling', () => {
   });
 
   test('buying over the borrow cap or with borrowing off is refused; selling more than is held sells what is held', () => {
-    expect(buy(hunter(3), { ...shield, value: 25 }, iid('i1'), { ...RULES, borrowCapClears: 0 })).toEqual({ ok: false, why: 'borrow-off' });
+    expect(buy(hunter(3), { ...shield, value: 25 }, iid('i1'), { ...RULES, borrowCapPrices: 0 })).toEqual({ ok: false, why: 'borrow-off' });
     expect(buy(hunter(3), { ...shield, value: 200 }, iid('i1'), RULES)).toEqual({ ok: false, why: 'over-cap' });
     const three = { ...hunter(0), items: [{ ...potion, id: iid('i1'), qty: 3, value: 10 }] };
     const sold = ok(sell(three, 'i1', 9, RULES));
@@ -250,16 +250,16 @@ describe('gold, buying and selling', () => {
   });
 });
 
-describe('shop borrowing (cap A: 1.5 same-rank clears, shared Hunter.debt)', () => {
+describe('shop borrowing (cap A: 1.5 times rank base price, shared Hunter.debt)', () => {
   const ranked = (rank: Hunter['rank'], gold = 0, debt = 0): Hunter => ({ ...newHunter(RULES), rank, gold, debt });
   const priced = (name: string, value: number, extra: Partial<ItemTemplate> = {}): ItemTemplate => ({ ...shield, name, value, ...extra });
 
-  test('borrowCap equals Math.round(borrowCapClears * clearOf(R, rank)) for every rank, matching plus-grade own-rank prices at 1.5', () => {
+  test('borrowCap equals Math.round(borrowCapPrices * priceBaseOf(R, rank)) for every rank, matching plus-grade own-rank prices at 1.5', () => {
     expect(RANKS.map(r => [r, borrowCap(r, RULES)])).toEqual([
       ['E', 150], ['D', 488], ['C', 1875], ['B', 7500], ['A', 28500], ['S', 112500],
     ]);
-    expect(borrowCap('E', { ...RULES, borrowCapClears: 0 })).toBe(0);
-    expect(borrowCap('D', { ...RULES, borrowCapClears: 3 })).toBe(975);
+    expect(borrowCap('E', { ...RULES, borrowCapPrices: 0 })).toBe(0);
+    expect(borrowCap('D', { ...RULES, borrowCapPrices: 3 })).toBe(975);
   });
 
   test('buying short of gold spends cash first and adds only the shortfall to Hunter.debt up to the cap', () => {
@@ -286,15 +286,15 @@ describe('shop borrowing (cap A: 1.5 same-rank clears, shared Hunter.debt)', () 
     expect(buy(inReviveDebt, priced('Potion', 51), iid('i3'), RULES)).toEqual({ ok: false, why: 'over-cap' });
   });
 
-  test('borrowing is refused when borrowCapClears <= 0 or reviveDebtShare <= 0, while cash purchases still work', () => {
-    const off = { ...RULES, borrowCapClears: 0 };
+  test('borrowing is refused when borrowCapPrices <= 0 or reviveDebtShare <= 0, while cash purchases still work', () => {
+    const off = { ...RULES, borrowCapPrices: 0 };
     const noPayoff = { ...RULES, reviveDebtShare: 0 };
     expect(buy(ranked('E', 20, 0), priced('Potion', 50), iid('i1'), off)).toEqual({ ok: false, why: 'borrow-off' });
     expect(buy(ranked('E', 50, 0), priced('Potion', 50), iid('i1'), off)).toMatchObject({ gold: 0, debt: 0 });
     expect(buy(ranked('E', 20, 0), priced('Potion', 50), iid('i1'), noPayoff)).toEqual({ ok: false, why: 'no-payoff' });
     expect(buy(ranked('E', 50, 0), priced('Potion', 50), iid('i1'), noPayoff)).toMatchObject({ gold: 0, debt: 0 });
-    // borrowCapClears === 0 takes precedence over reviveDebtShare === 0
-    expect(buy(ranked('E', 0, 0), priced('Potion', 50), iid('i1'), { ...RULES, borrowCapClears: 0, reviveDebtShare: 0 })).toEqual({ ok: false, why: 'borrow-off' });
+    // borrowCapPrices === 0 takes precedence over reviveDebtShare === 0
+    expect(buy(ranked('E', 0, 0), priced('Potion', 50), iid('i1'), { ...RULES, borrowCapPrices: 0, reviveDebtShare: 0 })).toEqual({ ok: false, why: 'borrow-off' });
   });
 
   test('Resurrection Crystals follow the same borrow cap with no extra exception', () => {
@@ -326,7 +326,7 @@ describe('shop borrowing (cap A: 1.5 same-rank clears, shared Hunter.debt)', () 
     expect(shopCreditLine(ranked('E', 0, 0), RULES)).toBe('Shop credit: you can borrow up to 150 gold (rank E limit).');
     expect(shopCreditLine(ranked('E', 0, 60), RULES)).toBe('Shop credit: you can borrow up to 90 gold more (rank E limit: 150 gold, you owe 60 gold).');
     expect(shopCreditLine(ranked('E', 0, 1000), RULES)).toBe('Shop credit: you can borrow 0 gold (rank E limit: 150 gold, you owe 1,000 gold).');
-    expect(shopCreditLine(ranked('E', 0, 0), { ...RULES, borrowCapClears: 0 })).toBeNull();
+    expect(shopCreditLine(ranked('E', 0, 0), { ...RULES, borrowCapPrices: 0 })).toBeNull();
     expect(shopCreditLine(ranked('E', 0, 0), { ...RULES, reviveDebtShare: 0 })).toBe(BORROW_WORDS.paused);
     expect(shopCreditLine({ ...ranked('E', 0, 0), life: { at: 'dead' } }, RULES)).toBeNull();
 

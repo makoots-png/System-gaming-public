@@ -118,7 +118,7 @@ describe('a personal gate\'s loot roll pays the share solo.lootShare names (econ
   const personal = (boss: boolean) => ({ boss, share });
 
   test('its gold is the share of the gold rolled, rounded down', () => {
-    // E's gold [50, 150] at a quarter: 50 pays 12, 150 pays 37
+    // E's gold [100, 350] at a quarter: 100 pays 25, 350 pays 87
     expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0))[0]).toEqual({ kind: 'gold', gold: Math.floor(lo * share) });
     expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0.9999))[0]).toEqual({ kind: 'gold', gold: Math.floor(hi * share) });
     expect(rollLoot({ ...RULES, loot: { ...RULES.loot, E: { ...RULES.loot.E, gold: [100, 100] } } }, 'E', { boss: false, share: 0.5 }, pool, fixed(0))[0]).toEqual({ kind: 'gold', gold: 50 });

@@ -1389,7 +1389,7 @@ Where it lives:
 |---|---|
 | The union | `ReviveStanding`, `StandingEvent` and `REVIVE_STANDINGS` in `src/core/hunter/revive-standing.ts`; the standing is `Hunter.reviveLeft`, repaired to `free` |
 | What changes it | `standingStep(standing, event)` and its `TABLE`; `canRaise(standing)` for a view |
-| Who calls it | `systemRaise` in `src/core/hunter/grant.ts`, its one writer, which steps the standing, the life (`sheetEdit`, a revive by the System) and the debt (`raiseOwes`, `RULES.reviveDebtClears` Clears of the rank) in one write; `api.systemRaise` and `offerRaise` in `src/views/hunter.js`, the window THE SYSTEM CAN RAISE YOU on the dead hunter's own phone once no fight holds it |
+| Who calls it | `systemRaise` in `src/core/hunter/grant.ts`, its one writer, which steps the standing, the life (`sheetEdit`, a revive by the System) and the debt (`raiseOwes`, `RULES.reviveDebtPrices` times `RULES.priceBase[rank]`) in one write; `api.systemRaise` and `offerRaise` in `src/views/hunter.js`, the window THE SYSTEM CAN REVIVE YOU on the dead hunter's own phone once no fight holds it |
 | The test to copy | `tests/revive-standing.test.ts` |
 | The recipe | docs/guide/save-store.md, "A field of a saved thing" |
 
@@ -1411,7 +1411,7 @@ stateDiagram-v2
   s2 --> s1 : gate clear gold pays off the rest of the debt (proportional debt costs)
 ```
 
-the owner (Nov 23), qd rows 72 and 73: a System revive from the debt standing adds `raiseOwes` gold to `Hunter.debt` (ignoring `borrowCapClears`), and shop borrowing adds an allowed shortfall up to `borrowCap(rank, R)` (`borrowCapClears`, default `1.5` same-rank clears, blocked when `borrowCapClears <= 0` or `reviveDebtShare <= 0`). While `Hunter.debt` is above 0, gate clear gold splits three ways: `reviveDebtShare` (50%) goes to debt, `reviveDebtBurn` (25%) is lost to debt costs, and the hunter gets the rest (25%). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by `reviveDebtXpRate` (25%, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves `Hunter.reviveLeft` unchanged.
+the owner (Nov 23), qd rows 72 and 73: a System revive from the debt standing adds `raiseOwes` gold (`reviveDebtPrices` times `priceBase[rank]`, default `6`) to `Hunter.debt` (ignoring `borrowCapPrices`), and shop borrowing adds an allowed shortfall up to `borrowCap(rank, R)` (`borrowCapPrices`, default `1.5` times `priceBase[rank]`, blocked when `borrowCapPrices <= 0` or `reviveDebtShare <= 0`). While `Hunter.debt` is above 0, gate clear gold splits three ways: `reviveDebtShare` (50%) goes to debt, `reviveDebtBurn` (25%) is lost to debt costs, and the hunter gets the rest (25%). On the final clear when remaining debt is smaller than the debt share, debt costs apply in proportion to the debt paid and the hunter gets the extra. Positive XP from every source is multiplied by `reviveDebtXpRate` (25%, rounded with Math.round) until debt reaches 0; gold pays debt first, so a clear that finishes the debt earns full XP. Non-clear gold, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch debt. Paying the debt to 0 leaves `Hunter.reviveLeft` unchanged.
 
 2 chart states, 2 arrows. No step is hidden.
 

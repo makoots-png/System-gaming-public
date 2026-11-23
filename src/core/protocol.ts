@@ -839,17 +839,18 @@ export type RoomRules = {
   mythic: { scripts: boolean };
   /** The GM's keystone switch and thresholds (`RULES.fight.keystone`): a doc without it reads as off with shipped shares and ranks. */
   keystone: { on: boolean; markShare: number; pairShare: number; apexShare: number; markRank: Rank; pairRank: Rank; apexRank: Rank };
-  /** The rank whose Clear prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
+  /** The rank whose base price prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
   rarities: RoomRarities;
+  priceBase: Rules['priceBase'];
   gradeStep: number;
   saleShare: number;
   usedUpShare: number;
-  reviveClears: number;
-  reviveDebtClears: number;
+  revivePrices: number;
+  reviveDebtPrices: number;
   reviveDebtShare: number;
   reviveDebtBurn: number;
   reviveDebtXpRate: number;
-  borrowCapClears: number;
+  borrowCapPrices: number;
   reviveLevelShare: number;
   gateParty: number;
   loot: Rules['loot'];
@@ -1202,6 +1203,9 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
   const weights = Object.fromEntries(Object.keys(shipped).map(k => [k, ruleNumber(`loot.${rank}.weights.${k}`)(own(w, k))]));
   return { gold: goldRange(own(o, 'gold'), `loot.${rank}.gold`), weights } as Rules['loot'][K]; // the shipped table's keys, each read
 }
+/** One `T` for each rank, made by `f`: how `priceBase` is read from the room's rules doc. */
+const eachRank = <T>(f: (r: Rank) => T): Record<Rank, T> =>
+  Object.fromEntries(RANKS.map(r => [r, f(r)])) as Record<Rank, T>;
 /** The room's keystone switch and earning rules: absent reads as off with shipped shares and ranks. */
 function roomKeystone(v: unknown): RoomRules['keystone'] {
   const ks = obj(opt(v, x => x, {})), d = RULES.fight.keystone;
@@ -1217,8 +1221,8 @@ function roomKeystone(v: unknown): RoomRules['keystone'] {
 }
 /** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic and keystone switches (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
-  const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), lo = obj(own(o, 'loot'));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'revivePrices' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   const reviveDebtShare = rule('reviveDebtShare'), reviveDebtBurn = rule('reviveDebtBurn');
   if (reviveDebtShare + reviveDebtBurn > 1 + 1e-9) return refuse();
   return {
@@ -1229,15 +1233,16 @@ function roomRulesDoc(o: Rec): RoomRules {
     mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
     keystone: roomKeystone(own(o, 'keystone')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
+    priceBase: eachRank(r => ruleNumber(`priceBase.${r}`)(own(pb, r))),
     gradeStep: rule('gradeStep'),
     saleShare: rule('saleShare'),
     usedUpShare: rule('usedUpShare'),
-    reviveClears: rule('reviveClears'),
-    reviveDebtClears: rule('reviveDebtClears'),
+    revivePrices: rule('revivePrices'),
+    reviveDebtPrices: rule('reviveDebtPrices'),
     reviveDebtShare,
     reviveDebtBurn,
     reviveDebtXpRate: rule('reviveDebtXpRate'),
-    borrowCapClears: rule('borrowCapClears'),
+    borrowCapPrices: rule('borrowCapPrices'),
     reviveLevelShare: rule('reviveLevelShare'),
     gateParty: rule('gateParty'),
     loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },

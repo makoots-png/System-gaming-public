@@ -354,25 +354,25 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
   const page = (await device('gm')).page;
   await onboardGM(page);
   const d = itemMaker(page), grades = d.locator('[data-chips="grade"]'), value = d.locator('#lf-value');
-  /** One Clear of the B rank, which prices an epic item: the middle of its loot gold. */
-  const clearB = (RULES.loot.B.gold[0]! + RULES.loot.B.gold[1]!) / 2;
+  /** The base price of the B rank, which prices an epic item. */
+  const baseB = RULES.priceBase.B;
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();
 
-  await test.step('an epic item starts at the middle, priced one Clear', async () => {
+  await test.step('an epic item starts at the middle, priced at the rank base price', async () => {
     await d.locator('#lf-name').fill('Storm Idol');
     await d.locator('#lf-rar').selectOption('epic');
     await expect(grades.locator('[data-chip]')).toHaveText(['Epic−', 'Epic', 'Epic+']);
     await expect(grades.locator('[data-chip="0"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(baseB)}`);
   });
 
-  await test.step('Epic+ costs gradeStep times the Clear, and as a consumable usedUpShare of that', async () => {
+  await test.step('Epic+ costs gradeStep times the rank base price, and as a consumable usedUpShare of that', async () => {
     await grades.locator('[data-chip="1"]').tap();
-    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB * RULES.gradeStep)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(baseB * RULES.gradeStep)}`);
     await expect(d.locator('.mk-preview')).toContainText('Epic+');
     await d.locator('[data-chips="type"] [data-chip="consumable"]').tap();
-    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB * RULES.gradeStep * RULES.usedUpShare)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(baseB * RULES.gradeStep * RULES.usedUpShare)}`);
     await d.locator('[data-chips="type"] [data-chip="material"]').tap();
     await d.locator('[data-apply]').tap();
     await expect(d).toHaveCount(0);
@@ -385,7 +385,7 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
     await go(page, 'workshop');
     await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
     await expect(grades.locator('[data-chip="1"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB * RULES.gradeStep)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(baseB * RULES.gradeStep)}`);
   });
 });
 

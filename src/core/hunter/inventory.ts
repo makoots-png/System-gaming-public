@@ -235,7 +235,7 @@ export const shopOpen = (h: { readonly life: Pick<Life, 'at'> }): boolean => h.l
 /** What the shop says to a dead hunter, in place of its Buy and Sell buttons and when a purchase or a sale is refused. */
 export const SHOP_CLOSED = `The shop is closed while you are dead. You cannot buy or sell. ${WAYS_BACK} brings you back. The GM or another hunter can give you a Resurrection Crystal.`;
 /** The rules a purchase reads: item prices, the borrow limit, and the System debt rules. */
-export type BuyRules = PriceRules & Pick<Rules, 'borrowCapClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>;
+export type BuyRules = PriceRules & Pick<Rules, 'borrowCapPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>;
 /** What `buyPlan` reads on a hunter before buying. */
 export type BuyCheck = { readonly life: Pick<Life, 'at'>; readonly gold: number; readonly debt: number; readonly rank: Rank };
 /** Why a purchase may be refused: dead hunter, borrowing turned off, 0% clear-gold debt payoff, or over the borrow limit. */
@@ -270,7 +270,7 @@ function buyRefusalInfo(h: BuyCheck, it: Priced & { readonly name: string }, R: 
 }
 /**
  * Checks whether hunter `h` can buy `it` under `R`: spends cash first, and borrows any shortfall onto `Hunter.debt`
- * when borrowing is enabled (`borrowCapClears > 0`), debt can be paid off (`reviveDebtShare > 0`), and
+ * when borrowing is enabled (`borrowCapPrices > 0`), debt can be paid off (`reviveDebtShare > 0`), and
  * `debt + shortfall <= borrowCap(rank, R)`. Resurrection Crystals follow the same borrow limit with no separate rule.
  */
 export function buyPlan(h: BuyCheck, it: Priced & { readonly name: string }, R: BuyRules): BuyPlan | (Refused<BuyRefusal> & { readonly info: BuyRefusalInfo }) {
@@ -278,7 +278,7 @@ export function buyPlan(h: BuyCheck, it: Priced & { readonly name: string }, R: 
   if (!shopOpen(h)) return { ...refuse('dead'), info };
   const cash = Math.min(h.gold, info.price), borrow = info.need;
   if (borrow === 0) return { ok: true, price: info.price, cash, borrow: 0, debtAfter: h.debt, cap: info.cap, available: info.available };
-  if (R.borrowCapClears <= 0) return { ...refuse('borrow-off'), info };
+  if (R.borrowCapPrices <= 0) return { ...refuse('borrow-off'), info };
   if (R.reviveDebtShare <= 0) return { ...refuse('no-payoff'), info };
   if (h.debt + borrow > info.cap) return { ...refuse('over-cap'), info };
   return { ok: true, price: info.price, cash, borrow, debtAfter: h.debt + borrow, cap: info.cap, available: info.available };
@@ -315,7 +315,7 @@ export const BORROW_WORDS = {
 } as const;
 /** Shop tab credit summary for a living hunter, or null when borrowing is turned off or the hunter is dead. */
 export function shopCreditLine(h: BuyCheck, R: BuyRules): string | null {
-  if (!shopOpen(h) || R.borrowCapClears <= 0) return null;
+  if (!shopOpen(h) || R.borrowCapPrices <= 0) return null;
   if (R.reviveDebtShare <= 0) return BORROW_WORDS.paused;
   const cap = borrowCap(h.rank, R), available = Math.max(0, cap - h.debt);
   if (h.debt <= 0) return `Shop credit: you can borrow up to ${goldAmt(cap)} (rank ${h.rank} limit).`;

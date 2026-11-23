@@ -139,15 +139,15 @@ describe('the death line', () => {
     expect(deathLine({ ...RULES, reviveLevelShare: 0.1 })).toContain('Reviving costs 10% of the hunter\'s level, rounded up (at least 1 level, never below level 1). For example, a hunter who died at level 31 comes back at level 27.');
   });
 
-  test('the death line states the System revive debt clears, three-way split, and XP rate, and follows GM overrides', () => {
-    expect(line).toContain('A System revive on debt costs 10 same-rank gate clears. While you owe debt, 50% of your gate clear gold goes to your debt, you get 25%, and 25% is lost to debt costs. You also earn 25% XP from every source until your debt is paid off.');
-    expect(deathLine({ ...RULES, reviveDebtClears: 6, reviveDebtShare: 0.4, reviveDebtBurn: 0.1, reviveDebtXpRate: 0.5 })).toContain('A System revive on debt costs 6 same-rank gate clears. While you owe debt, 40% of your gate clear gold goes to your debt, you get 50%, and 10% is lost to debt costs. You also earn 50% XP from every source until your debt is paid off.');
+  test('the death line states the System revive debt in gold and rough clears, three-way split, and XP rate, and follows GM overrides', () => {
+    expect(line).toContain('Using a System revive on debt puts you in debt by rank (E 600, D 1,950, C 7,500, B 30,000, A 114,000, S 450,000 gold), about 4 to 6 same-rank gate clears to pay off. While you owe debt, 50% of your gate clear gold goes to your debt, you get 25%, and 25% is lost to debt costs. You also earn 25% XP from every source until your debt is paid off.');
+    expect(deathLine({ ...RULES, reviveDebtPrices: 5, reviveDebtShare: 0.4, reviveDebtBurn: 0.1, reviveDebtXpRate: 0.5 })).toContain('Using a System revive on debt puts you in debt by rank (E 500, D 1,625, C 6,250, B 25,000, A 95,000, S 375,000 gold), about 4 to 6 same-rank gate clears to pay off. While you owe debt, 40% of your gate clear gold goes to your debt, you get 50%, and 10% is lost to debt costs. You also earn 50% XP from every source until your debt is paid off.');
     const noBurn = deathLine({ ...RULES, reviveDebtShare: 0.5, reviveDebtBurn: 0, reviveDebtXpRate: 1 });
     expect(noBurn).toContain('While you owe debt, 50% of your gate clear gold goes to your debt, and you get 50%.');
     expect(noBurn).not.toContain('lost to debt costs');
     expect(noBurn).not.toContain('XP from every source');
     const zero = deathLine({ ...RULES, reviveDebtShare: 0, reviveDebtBurn: 0, reviveDebtXpRate: 1 });
-    expect(zero).toContain('A System revive on debt costs 10 same-rank gate clears.');
+    expect(zero).toContain('Using a System revive on debt puts you in debt by rank (E 600, D 1,950, C 7,500, B 30,000, A 114,000, S 450,000 gold).');
     expect(zero).not.toContain('goes to your debt');
   });
 
@@ -220,11 +220,11 @@ describe('the Rules page states what the game pays', () => {
     expect(dailyPointsLine(R)).toContain('+4');
     expect(dailyPointsLine(RULES)).toContain(`+${RULES.dailyTemplate.rewards.points}`);
   });
-  test('the borrow line states the borrow cap, cash-first debt terms, and follows GM overrides', () => {
-    expect(borrowLine(RULES)).toBe('You can borrow in the shop when short of gold, up to 1.5 same-rank gate clears of total System debt (for example, 150 gold at rank E). You spend your gold first, and the rest adds to your System debt. While you owe debt, 50% of your gate clear gold goes to your debt, 25% is lost to debt costs, and you get 25%. You also earn 25% XP from every source until your debt is paid off. A System revive ignores the borrow limit.');
-    expect(borrowLine({ ...RULES, borrowCapClears: 0 })).toBe('Shop borrowing is off.');
-    expect(borrowLine({ ...RULES, borrowCapClears: 2, reviveDebtShare: 0 })).toBe('Shop borrowing is set to 2 same-rank gate clears, but borrowing is paused while debt payments from gate clears are at 0%.');
-    expect(borrowLine({ ...RULES, borrowCapClears: 1, reviveDebtShare: 0.4, reviveDebtBurn: 0, reviveDebtXpRate: 1 })).toBe('You can borrow in the shop when short of gold, up to 1 same-rank gate clear of total System debt (for example, 100 gold at rank E). You spend your gold first, and the rest adds to your System debt. While you owe debt, 40% of your gate clear gold goes to your debt, and you get 60%. A System revive ignores the borrow limit.');
+  test('the borrow line states the borrow cap in gold and rough clears, cash-first debt terms, and follows GM overrides', () => {
+    expect(borrowLine(RULES)).toBe('You can borrow in the shop when short of gold, up to your rank\'s borrow limit (E 150, D 488, C 1,875, B 7,500, A 28,500, S 112,500 gold, about 1 to 2 same-rank gate clears to pay off). You spend your gold first, and the rest adds to your System debt. While you owe debt, 50% of your gate clear gold goes to your debt, 25% is lost to debt costs, and you get 25%. You also earn 25% XP from every source until your debt is paid off. A System revive ignores the borrow limit.');
+    expect(borrowLine({ ...RULES, borrowCapPrices: 0 })).toBe('Shop borrowing is off.');
+    expect(borrowLine({ ...RULES, borrowCapPrices: 2, reviveDebtShare: 0 })).toBe('Shop borrowing limits are set (E 200, D 650, C 2,500, B 10,000, A 38,000, S 150,000 gold), but borrowing is paused while debt payments from gate clears are at 0%.');
+    expect(borrowLine({ ...RULES, borrowCapPrices: 1, reviveDebtShare: 0.4, reviveDebtBurn: 0, reviveDebtXpRate: 1 })).toBe('You can borrow in the shop when short of gold, up to your rank\'s borrow limit (E 100, D 325, C 1,250, B 5,000, A 19,000, S 75,000 gold, about 1 to 2 same-rank gate clears to pay off). You spend your gold first, and the rest adds to your System debt. While you owe debt, 40% of your gate clear gold goes to your debt, and you get 60%. A System revive ignores the borrow limit.');
   });
   test('the rules hold no dailyRewardPoints, which nothing in the game paid', () => {
     expect('dailyRewardPoints' in RULES).toBe(false);

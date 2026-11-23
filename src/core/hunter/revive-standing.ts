@@ -4,7 +4,7 @@
 // the owner, Nov 22: the free revive and the revive on debt are a "System raise" (no GM button). Only a System raise moves
 // the standing; a crystal or the GM's Revive raises the hunter and leaves it as it is. `Hunter.reviveLeft` holds it, and
 // `Hunter.debt` the gold a raise on debt owes. grant.ts (`systemRaise` and `grant`) is the one writer of both.
-import { clearOf } from '../rules.ts';
+import { clearOf, priceBaseOf } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import type { RewardFrom } from '../protocol.ts';
 import type { Said } from '../session-log.ts';
@@ -39,23 +39,33 @@ export type Raise = (typeof RAISES)[number];
 export const canRaise = (s: ReviveStanding): s is Raise => TABLE[s].raise !== null;
 
 /** For each standing, what a System raise from it owes, for a hunter of `rank`. */
-const OWED: { readonly [S in ReviveStanding]: (rank: Rank, R: Pick<Rules, 'loot' | 'reviveDebtClears'>) => number } = {
+const OWED: { readonly [S in ReviveStanding]: (rank: Rank, R: Pick<Rules, 'priceBase' | 'reviveDebtPrices'>) => number } = {
   free: () => 0,
-  debt: (rank, R) => Math.round(R.reviveDebtClears * clearOf(R, rank)),
+  debt: (rank, R) => Math.round(R.reviveDebtPrices * priceBaseOf(R, rank)),
   none: () => 0,
 };
 /**
  * The gold a System raise from standing `s` adds to the debt of a hunter of `rank`: none for the free raise; on debt,
- * `R.reviveDebtClears` Clears of the rank (economy.md section 13: "ten Clears of their rank"). None from `none`, where
- * the System does not raise.
+ * `R.reviveDebtPrices` multiples of `R.priceBase[rank]` (sized for about 5 gate clears under gold table B and the 1/2
+ * debt split). None from `none`, where the System does not raise.
  */
-export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'loot' | 'reviveDebtClears'>): number => OWED[s](rank, R);
+export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'priceBase' | 'reviveDebtPrices'>): number => OWED[s](rank, R);
 /**
- * Maximum total System debt a hunter of `rank` may reach through shop borrowing: `R.borrowCapClears` same-rank gate
- * clears, rounded (0 turns shop borrowing off). A System revive ignores this limit.
+ * Maximum total System debt a hunter of `rank` may reach through shop borrowing: `R.borrowCapPrices` multiples of
+ * `R.priceBase[rank]`, rounded (0 turns shop borrowing off; default 1.5 equals one plus-grade own-rank item).
+ * A System revive ignores this limit.
  */
-export const borrowCap = (rank: Rank, R: Pick<Rules, 'loot' | 'borrowCapClears'>): number =>
-  (R.borrowCapClears > 0 ? Math.max(0, Math.round(R.borrowCapClears * clearOf(R, rank))) : 0);
+export const borrowCap = (rank: Rank, R: Pick<Rules, 'priceBase' | 'borrowCapPrices'>): number =>
+  (R.borrowCapPrices > 0 ? Math.max(0, Math.round(R.borrowCapPrices * priceBaseOf(R, rank))) : 0);
+/**
+ * Rough number of same-rank world-gate clears (standard party of `gateParty`) to pay off `debt` under `R`, including
+ * discrete roll overshoot (`+0.5` clears). Null when `debt <= 0`, debt collection is 0%, or gate clear gold is 0.
+ */
+export function debtPayoffClears(debt: number, rank: Rank, R: Pick<Rules, 'loot' | 'reviveDebtShare'>): number | null {
+  const share = clamp01(R.reviveDebtShare), mid = clearOf(R, rank);
+  if (debt <= 0 || share <= 0 || mid <= 0) return null;
+  return Math.max(1, Math.round(debt / (share * mid) + 0.5));
+}
 
 // ── debt payoff machine ──
 export const DEBT_STATES = ['clear', 'owing'] as const;
@@ -128,7 +138,7 @@ const ratePct = (n: number): string => `${Math.round(clamp01(n) * 10000) / 100}%
 export const RAISE_TITLE = 'THE SYSTEM CAN REVIVE YOU';
 /** What a hunter shows of itself to the words below. */
 type Raisable = { readonly reviveLeft: ReviveStanding; readonly rank: Rank; readonly level: number };
-type WordRules = Pick<Rules, 'loot' | 'reviveDebtClears' | 'reviveLevelShare'>;
+type WordRules = Pick<Rules, 'priceBase' | 'loot' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveLevelShare'>;
 /**
  * What the System's window says to dead hunter `h`: its body, its lines (the cost, where the hunter rises, and on debt
  * that no raise is left after), and its Rise button's words, which name the cost on debt. Null past the ladder.
@@ -139,9 +149,13 @@ export function raiseOffer(h: Raisable, R: WordRules): { readonly body: string; 
   const rises = `You revive at ${REVIVE_HP} HP${lost > 0 ? ` and level ${to} (${lost} level${lost === 1 ? '' : 's'} lost)` : ''}, with all statuses cleared.`;
   if (h.reviveLeft === 'free') return { body: 'You have died. The System can revive you once for free.', lines: ['Cost: Free (one-time free revive).', rises], rise: 'Revive for free' };
   const owes = raiseOwes(h.reviveLeft, h.rank, R);
+  const clears = debtPayoffClears(owes, h.rank, R);
+  const cost = clears !== null
+    ? `You will owe ${gold(owes)}, about ${clears} rank ${h.rank} gate clear${clears === 1 ? '' : 's'} to pay off.`
+    : `You will owe ${gold(owes)}.`;
   return {
     body: 'You have died. Your free revive is used. The System can revive you once more in exchange for debt.',
-    lines: [`Cost: ${gold(owes)} debt (${R.reviveDebtClears} rank ${h.rank} gate clears).`, rises, 'After this, only a Resurrection Crystal or the GM can revive you.'],
+    lines: [cost, rises, 'After this, only a Resurrection Crystal or the GM can revive you.'],
     rise: `Revive on debt (${gold(owes)})`,
   };
 }

@@ -146,10 +146,10 @@ describe('the room carries the economy', () => {
   };
   const own = rulesOf({});
 
-  test('a player\'s shop prices a rare item by the GM\'s C loot gold, and every other rarity as before', () => {
-    const inRoom = withRoomRules(own, fromGM(rulesOf({ loot: { C: { gold: [1000, 3000] } } })));
-    expect(priceOf(inRoom, 'rare'), 'a rare is ranked C: the middle of the GM\'s 1000 to 3000').toBe(2000);
-    expect(priceOf(own, 'rare'), 'out of the room: the middle of the shipped 500 to 2000').toBe(1250);
+  test('a player\'s shop prices a rare item by the GM\'s C priceBase, and every other rarity as before', () => {
+    const inRoom = withRoomRules(own, fromGM(rulesOf({ priceBase: { C: 2000 } })));
+    expect(priceOf(inRoom, 'rare'), 'a rare is ranked C: the GM\'s priceBase.C of 2000').toBe(2000);
+    expect(priceOf(own, 'rare'), 'out of the room: the shipped priceBase.C of 1250').toBe(1250);
     for (const rar of RARITIES.filter(r => r !== 'rare')) expect(priceOf(inRoom, rar), rar).toBe(priceOf(own, rar));
     expect(valueOf({ rar: 'rare', type: 'weapon' }, inRoom), 'the shop\'s price of a rare weapon').toBe(2000);
     expect(valueOf({ rar: 'rare', type: 'consumable' }, inRoom), 'a rare consumable: the shipped used-up share, a half, of 2000').toBe(1000);
@@ -164,15 +164,16 @@ describe('the room carries the economy', () => {
   // Each economy rule the GM may edit, the GM's edit, and where the player's rules hold it.
   const EDITS: ReadonlyArray<readonly [string, Record<string, unknown>, (R: Rules) => unknown, unknown]> = [
     ['a rarity\'s rank', { rarities: { rare: { rank: 'B' } } }, R => R.rarities.rare.rank, 'B'],
+    ['a rank\'s base price', { priceBase: { C: 2000 } }, R => R.priceBase.C, 2000],
     ['the grade step', { gradeStep: 1.2 }, R => R.gradeStep, 1.2],
     ['the sale share', { saleShare: 0.5 }, R => R.saleShare, 0.5],
     ['a used-up item\'s share', { usedUpShare: 0.3 }, R => R.usedUpShare, 0.3],
-    ['the Clears a reviving item costs', { reviveClears: 20 }, R => R.reviveClears, 20],
-    ['the Clears a System raise on debt owes', { reviveDebtClears: 5 }, R => R.reviveDebtClears, 5],
+    ['the base-price multiple a reviving item costs', { revivePrices: 20 }, R => R.revivePrices, 20],
+    ['the base-price multiple a System raise on debt owes', { reviveDebtPrices: 5 }, R => R.reviveDebtPrices, 5],
     ['the share of gate clear gold paid toward debt', { reviveDebtShare: 0.25 }, R => R.reviveDebtShare, 0.25],
     ['the share of gate clear gold lost to debt costs', { reviveDebtBurn: 0.1 }, R => R.reviveDebtBurn, 0.1],
     ['the XP multiplier while in debt', { reviveDebtXpRate: 0.5 }, R => R.reviveDebtXpRate, 0.5],
-    ['the shop borrow limit in clears', { borrowCapClears: 2.5 }, R => R.borrowCapClears, 2.5],
+    ['the shop borrow limit multiple', { borrowCapPrices: 2.5 }, R => R.borrowCapPrices, 2.5],
     ['the share of the level a raising takes', { reviveLevelShare: 0.1 }, R => R.reviveLevelShare, 0.1],
     ['a personal gate\'s share of the loot', { solo: { lootShare: 0.5 } }, R => R.solo.lootShare, 0.5],
     ['the party a world gate is made for', { gateParty: 6 }, R => R.gateParty, 6],

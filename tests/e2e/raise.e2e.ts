@@ -1,10 +1,10 @@
 // The System raise (src/core/hunter/grant.ts `systemRaise`, src/core/hunter/revive-standing.ts). World rule 6: the
 // first revive is free, then one on debt, then none unless the GM or a crystal; the owner, Nov 22: those two are a "System
 // raise", no GM button. A dead hunter's own phone offers it once no fight holds the hunter, and the GM's phone hears it.
-// The debt is RULES.reviveDebtClears Clears of the hunter's rank (economy.md section 13).
+// The debt is RULES.reviveDebtPrices times RULES.priceBase[rank] (sized for about 5 gate clears under gold table B).
 import type { Page } from '@playwright/test';
-import { RULES, clearOf } from '../../src/core/rules.ts';
-import { RAISE_CHIPS, RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtPreviewLine, debtXpClearedLine, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../../src/core/hunter/revive-standing.ts';
+import { RULES } from '../../src/core/rules.ts';
+import { RAISE_CHIPS, RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtPreviewLine, debtXpClearedLine, debtXpLine, raiseLine, raiseOffer, raiseOwes, raisedSaid } from '../../src/core/hunter/revive-standing.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, gateByName } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
@@ -59,7 +59,7 @@ test('a player\'s hunter killed in the GM\'s fight is offered the System raise o
     await expect.poll(() => gmLog(gm), { timeout: 15_000 }).toEqual([raisedSaid(HUNTER, 'free', 0).text]);
   });
 
-  const owes = RULES.reviveDebtClears * clearOf(RULES, 'E');
+  const owes = raiseOwes('debt', 'E', RULES);
   await test.step('the second death: the window names the debt, Rise on debt raises and owes it', async () => {
     await dies(player);
     const win = raiseWindow(player);
@@ -174,7 +174,7 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await raiseWindow(player).locator('.sys-actions button', { hasText: debtOffer.rise }).tap();
   await expect(raiseWindow(player)).toHaveCount(0);
 
-  const owes = RULES.reviveDebtClears * clearOf(RULES, 'E');
+  const owes = raiseOwes('debt', 'E', RULES);
   await expect.poll(async () => (await hunter(player)).debt).toBe(owes);
   await expect(card.locator('[data-debt-chip]')).toHaveText(debtChip(owes)!, { timeout: 15_000 });
 
@@ -227,8 +227,8 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt }; })).toEqual({ gold: 160, xp: 20, debt: owes - 160 });
   await expect(card.locator('[data-debt-chip]')).toHaveText(debtChip(owes - 160)!, { timeout: 15_000 });
 
-  // GM restores defaults (0.5 share, 0.25 burn, 0.25 XP) and sends a 2,000 gold + 60 XP clear to pay off the remaining 840 debt.
-  // Proportional burn on 840 paid is 420, so hunter keeps 740 gold and gets full 60 XP because debt reaches 0.
+  // GM restores defaults (0.5 share, 0.25 burn, 0.25 XP) and sends a 2,000 gold + 60 XP clear to pay off the remaining debt.
+  // Proportional burn on remaining debt applies, and the hunter gets full 60 XP because debt reaches 0.
   await gm.evaluate(() => {
     hunterApp.store.update((d: any) => { d.rulesOverrides = { ...d.rulesOverrides, reviveDebtShare: 0.5, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.25 }; }, 'test-rules');
   });
@@ -257,7 +257,10 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await cform2.locator('button[type=submit]').tap();
   await dismissAll(gm);
 
-  const finalPaid = { total: 2000, paid: owes - 160, burn: 420, kept: 740, left: 0 };
+  const rem = owes - 160;
+  const finalBurn = Math.round(rem * (RULES.reviveDebtBurn / RULES.reviveDebtShare));
+  const finalKept = 2000 - rem - finalBurn;
+  const finalPaid = { total: 2000, paid: rem, burn: finalBurn, kept: finalKept, left: 0 };
 
   await go(gm, 'gm');
   const prow2 = waitSec.locator('.gm-pw-row', { hasText: HUNTER });
@@ -269,7 +272,7 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await expect(rewardWin).toContainText(debtXpClearedLine(60));
   await dismissAll(player);
 
-  await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt, reviveLeft: h.reviveLeft }; })).toEqual({ gold: 900, xp: 80, debt: 0, reviveLeft: 'none' });
+  await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt, reviveLeft: h.reviveLeft }; })).toEqual({ gold: 160 + finalKept, xp: 80, debt: 0, reviveLeft: 'none' });
   await go(player, 'inventory');
   await expect(player.locator('[data-debt]')).toBeHidden();
   await expect(card.locator('[data-debt-chip]')).toHaveCount(0, { timeout: 15_000 });

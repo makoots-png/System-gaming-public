@@ -1259,19 +1259,20 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapClears', 'build', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtBurn', 'reviveDebtClears', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'build', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
       const SHARES = ['saleShare', 'usedUpShare', 'reviveDebtXpRate', 'reviveLevelShare'] as const;
       for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
-      expect([read({ borrowCapClears: -1 })!.borrowCapClears, read({ borrowCapClears: 9 })!.borrowCapClears]).toEqual([domainOf('borrowCapClears')!.least, domainOf('borrowCapClears')!.most]);
+      expect([read({ borrowCapPrices: -1 })!.borrowCapPrices, read({ borrowCapPrices: 9 })!.borrowCapPrices]).toEqual([domainOf('borrowCapPrices')!.least, domainOf('borrowCapPrices')!.most]);
       expect([read({ reviveDebtShare: -1, reviveDebtBurn: 0 })!.reviveDebtShare, read({ reviveDebtShare: 2, reviveDebtBurn: 0 })!.reviveDebtShare]).toEqual([domainOf('reviveDebtShare')!.least, domainOf('reviveDebtShare')!.most]);
       expect([read({ reviveDebtBurn: -1, reviveDebtShare: 0 })!.reviveDebtBurn, read({ reviveDebtBurn: 2, reviveDebtShare: 0 })!.reviveDebtBurn]).toEqual([domainOf('reviveDebtBurn')!.least, domainOf('reviveDebtBurn')!.most]);
       expect(read({ reviveDebtShare: 0.7, reviveDebtBurn: 0.4 }), 'share + burn over 1 is refused').toBeNull();
       expect([read({ gradeStep: 0.5 })!.gradeStep, read({ gradeStep: 9 })!.gradeStep]).toEqual([domainOf('gradeStep')!.least, domainOf('gradeStep')!.most]);
-      expect([read({ reviveClears: 0 })!.reviveClears, read({ reviveClears: 1e9 })!.reviveClears]).toEqual([domainOf('reviveClears')!.least, domainOf('reviveClears')!.most]);
-      expect([read({ reviveDebtClears: 0 })!.reviveDebtClears, read({ reviveDebtClears: 1e9 })!.reviveDebtClears]).toEqual([domainOf('reviveDebtClears')!.least, domainOf('reviveDebtClears')!.most]);
+      expect([read({ revivePrices: 0 })!.revivePrices, read({ revivePrices: 1e9 })!.revivePrices]).toEqual([domainOf('revivePrices')!.least, domainOf('revivePrices')!.most]);
+      expect([read({ reviveDebtPrices: 0 })!.reviveDebtPrices, read({ reviveDebtPrices: 1e9 })!.reviveDebtPrices]).toEqual([domainOf('reviveDebtPrices')!.least, domainOf('reviveDebtPrices')!.most]);
+      expect([read({ priceBase: { ...doc.priceBase, E: -5, S: 2e9, C: 1234.9 } })!.priceBase]).toEqual([{ ...doc.priceBase, E: domainOf('priceBase.E')!.least, S: domainOf('priceBase.S')!.most, C: 1234 }]);
       expect([read({ gateParty: 0 })!.gateParty, read({ gateParty: 99 })!.gateParty, read({ gateParty: 4.7 })!.gateParty]).toEqual([domainOf('gateParty')!.least, domainOf('gateParty')!.most, 4]);
       expect(read({ solo: { ...doc.solo, lootShare: 3 } })!.solo.lootShare).toBe(domainOf('solo.lootShare')!.most);
       expect(loot('C', { gold: [-5, 2e9] })!.loot.C.gold).toEqual([domainOf('loot.C.gold')!.least, domainOf('loot.C.gold')!.most]);
@@ -1283,12 +1284,15 @@ describe('the other room docs', () => {
         ['a share that is text', () => read({ saleShare: '0.25' })],
         ['no grade step', () => read({ gradeStep: undefined })],
         ['no used-up share', () => read({ usedUpShare: undefined })],
-        ['no revive Clears', () => read({ reviveClears: undefined })],
-        ['no Clears a raise on debt owes', () => read({ reviveDebtClears: undefined })],
+        ['no revivePrices', () => read({ revivePrices: undefined })],
+        ['no reviveDebtPrices', () => read({ reviveDebtPrices: undefined })],
         ['no share of clear gold paid toward debt', () => read({ reviveDebtShare: undefined })],
         ['no debt burn share', () => read({ reviveDebtBurn: undefined })],
         ['no debt XP rate', () => read({ reviveDebtXpRate: undefined })],
-        ['no shop borrow limit', () => read({ borrowCapClears: undefined })],
+        ['no shop borrow limit', () => read({ borrowCapPrices: undefined })],
+        ['no priceBase', () => read({ priceBase: undefined })],
+        ['a rank missing from priceBase', () => { const { S: _gone, ...five } = copy(doc.priceBase); return read({ priceBase: five }); }],
+        ['a priceBase entry that is text', () => read({ priceBase: { ...doc.priceBase, E: '100' } })],
         ['debt share plus burn above 1', () => read({ reviveDebtShare: 0.8, reviveDebtBurn: 0.3 })],
         ['no level share of a raising', () => read({ reviveLevelShare: undefined })],
         ['no world gate party', () => read({ gateParty: undefined })],

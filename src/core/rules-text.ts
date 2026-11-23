@@ -1,6 +1,7 @@
 // rules-text.ts: the lines of the Rules page that state a rule the game plays elsewhere, worked out from the functions
 // that play it, so the page cannot drift from the game (tests/rules-text.test.ts pins each one). Pure. The page itself
 // is src/views/rulesref.js, which keeps its layout and calls these.
+import { RANKS } from './rules.ts';
 import type { Rank, Rules } from './rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT, above } from './stats.ts';
 import type { StatKey } from './stats.ts';
@@ -15,7 +16,7 @@ import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
 import { sellPrice, shopOpen } from './hunter/inventory.ts';
-import { borrowCap, debtTermsLine } from './hunter/revive-standing.ts';
+import { borrowCap, debtPayoffClears, debtTermsLine, raiseOwes } from './hunter/revive-standing.ts';
 import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
 import { shareEach } from './gates/pay.ts';
@@ -88,13 +89,23 @@ export function restLines(R: Pick<Rules, 'rest' | 'fatigue'>): string[] {
     `A dead hunter cannot rest and gains nothing from clearing a gate. ${WAYS_BACK} brings you back. You cannot rest during a fight.`,
   ];
 }
+const goldByRank = (amountOf: (rank: Rank) => number): string =>
+  `${RANKS.map(r => `${r} ${amountOf(r).toLocaleString('en-US')}`).join(', ')} gold`;
+const payoffClearsPhrase = (amountOf: (rank: Rank) => number, R: Pick<Rules, 'loot' | 'reviveDebtShare'>): string => {
+  const counts = RANKS.map(r => debtPayoffClears(amountOf(r), r, R)).filter((n): n is number => n !== null);
+  if (!counts.length) return '';
+  const lo = Math.min(...counts), hi = Math.max(...counts);
+  return lo === hi
+    ? `, about ${lo} same-rank gate clear${lo === 1 ? '' : 's'} to pay off`
+    : `, about ${lo} to ${hi} same-rank gate clears to pay off`;
+};
 /**
  * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), what a
  * raising costs (`reviveLevelShare`, worked by progress.ts `levelAfterRaising` at level 31), and the shop's door for the
  * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
  * by.
  */
-export function deathLine(R: Pick<Rules, 'reviveLevelShare' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {
+export function deathLine(R: Pick<Rules, 'priceBase' | 'loot' | 'reviveLevelShare' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {
   const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' A dead hunter cannot buy or sell in the shop. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
   const pctNum = (n: number): number => Math.round(n * 10000) / 100;
   const pct = pctNum(R.reviveLevelShare), back = levelAfterRaising(RAISED_EXAMPLE, R);
@@ -113,7 +124,8 @@ export function deathLine(R: Pick<Rules, 'reviveLevelShare' | 'reviveDebtClears'
         ? ` While you owe debt, you get ${pctNum(keep)}% of your gate clear gold, and ${pctNum(burn)}% is lost to debt costs.`
         : '';
   const xpCut = xpRate < 1 ? ` You also earn ${pctNum(xpRate)}% XP from every source until your debt is paid off.` : '';
-  const debt = ` A System revive on debt costs ${R.reviveDebtClears} same-rank gate clears.${goldSplit}${xpCut}`;
+  const debtOf = (r: Rank) => raiseOwes('debt', r, R);
+  const debt = ` Using a System revive on debt puts you in debt by rank (${goldByRank(debtOf)})${payoffClearsPhrase(debtOf, R)}.${goldSplit}${xpCut}`;
   return `At 0 HP, a hunter is dead. Healing and resting cannot revive a dead hunter. ${WAYS_BACK} revives them with ${REVIVE_HP} HP and removes every status, so poison does not kill them again. Use a Resurrection Crystal from your bag outside a fight.${cost}${debt}${shop}`;
 }
 
@@ -177,16 +189,15 @@ const pct = (share: number): string => `${Math.round(share * 1000) / 10}%`;
 /** How an item that sets no price is priced and sold: the rank that prices each rarity, and the shares of `usedUpShare` and `saleShare`. */
 export function saleLine(R: Pick<Rules, 'rarities' | 'usedUpShare' | 'saleShare'>): string {
   const ranks = RARITIES.map(rar => `${rar} ${R.rarities[rar].rank}`).join(', ');
-  return `An item with no custom price costs the middle gold value of a gate clear for its rarity's rank (${ranks}). A consumable costs ${pct(R.usedUpShare)} of that amount, rounded. You can sell items back to the Association for ${pct(R.saleShare)} of their price, rounded down, with a minimum of 1 gold.`;
+  return `An item with no custom price costs the standard price for its rarity's rank (${ranks}), shown in the table above. A consumable costs ${pct(R.usedUpShare)} of that amount, rounded. You can sell items back to the Association for ${pct(R.saleShare)} of their price, rounded down, with a minimum of 1 gold.`;
 }
 /** How shop borrowing works (inventory.ts `buyPlan`, revive-standing.ts `borrowCap`), from the room's rules. */
-export function borrowLine(R: Pick<Rules, 'borrowCapClears' | 'loot' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {
-  if (R.borrowCapClears <= 0) return 'Shop borrowing is off.';
-  const clears = `${R.borrowCapClears} same-rank gate clear${R.borrowCapClears === 1 ? '' : 's'}`;
-  if (R.reviveDebtShare <= 0) return `Shop borrowing is set to ${clears}, but borrowing is paused while debt payments from gate clears are at 0%.`;
-  const capE = borrowCap('E', R).toLocaleString('en-US');
+export function borrowLine(R: Pick<Rules, 'borrowCapPrices' | 'priceBase' | 'loot' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {
+  if (R.borrowCapPrices <= 0) return 'Shop borrowing is off.';
+  const capOf = (r: Rank) => borrowCap(r, R);
+  if (R.reviveDebtShare <= 0) return `Shop borrowing limits are set (${goldByRank(capOf)}), but borrowing is paused while debt payments from gate clears are at 0%.`;
   const terms = debtTermsLine(R);
-  return `You can borrow in the shop when short of gold, up to ${clears} of total System debt (for example, ${capE} gold at rank E). You spend your gold first, and the rest adds to your System debt.${terms ? ` ${terms}` : ''} A System revive ignores the borrow limit.`;
+  return `You can borrow in the shop when short of gold, up to your rank's borrow limit (${goldByRank(capOf)}${payoffClearsPhrase(capOf, R)}). You spend your gold first, and the rest adds to your System debt.${terms ? ` ${terms}` : ''} A System revive ignores the borrow limit.`;
 }
 
 /** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */
