@@ -19,7 +19,7 @@ import { deviceOf, endIdOf, hunterIdOf, parseOfferId, parseRoomCode, parseSaveId
 import type { HunterId, ItemId, OfferId, RoomCode, SheetKey } from '../ids.ts';
 import { atOutbox, post, step as boxStep } from '../sync/outbox.ts';
 import type { Outbox } from '../sync/outbox.ts';
-import { refuse } from '../save-step.ts';
+import { atSync, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import type { Save } from '../save.ts';
 import { timeOf } from '../day.ts';
@@ -214,7 +214,8 @@ export const OFFERS_TO_KEPT = 20;
 export const OFFERS_WATCHED = 60;
 type WithSync = Pick<Save, 'settings'>;
 export const offersOf = (s: WithSync): readonly OfferRecord[] => s.settings.sync.offers ?? [];
-const withOffers = <S extends WithSync>(s: S, offers: readonly OfferRecord[]): S => ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, offers: [...offers] } } });
+const withOffers = <S extends WithSync>(s: S, offers: readonly OfferRecord[]): S =>
+  atSync(sy => ({ ...sy, offers: [...offers] }))(s);
 const boxOf = (s: WithSync): Outbox => s.settings.sync.outbox ?? [];
 const sameRecord = (a: OfferRecord, b: OfferRecord): boolean => a.offer.id === b.offer.id && a.side === b.side;
 /** The record of offer `id` on side `side`, if the save holds one. */

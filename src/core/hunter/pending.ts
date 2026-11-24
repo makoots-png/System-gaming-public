@@ -22,7 +22,7 @@ import type { Rewards } from '../rewards.ts';
 import { seatOf } from '../role.ts';
 import type { Seat } from '../role.ts';
 import type { Rules, Save } from '../save.ts';
-import { isRefused, refuse } from '../save-step.ts';
+import { atSync, isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import type { Said, Stamp } from '../session-log.ts';
@@ -87,7 +87,7 @@ export const ENDED_KEPT = 40;
 /** The records the save holds, oldest first. */
 export const pendingOf = (s: Pick<Save, 'settings'>): readonly PendingReward[] => s.settings.sync.pending ?? [];
 const withPending = <S extends Pick<Save, 'settings'>>(s: S, list: readonly PendingReward[]): S =>
-  ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, pending: [...list] } } });
+  atSync(sy => ({ ...sy, pending: [...list] }))(s);
 /** `list` with each waiting record and the newest `ENDED_KEPT` ended ones. */
 function kept(list: readonly PendingReward[]): readonly PendingReward[] {
   const ended = list.filter(p => p.at !== 'waiting'), over = new Set(ended.slice(0, Math.max(0, ended.length - ENDED_KEPT)));

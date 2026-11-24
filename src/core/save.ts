@@ -78,6 +78,7 @@ import type { DayKey } from './day.ts';
 import type { Rules } from './rules.ts';
 import { LIMITS, NO_DEVICE, SEQ_MAX, VITAL_MAX, claimId, fill, idNumber, int, isNum, isObj, isStr, items, list, num, numOrNull, optional, refill, skills, str } from './repair.ts';
 import type { ParseEnv, Rec, RepairRun } from './repair.ts';
+import { atSync } from './save-step.ts';
 import {
   QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, fixHunter, fixRefs, hunterExample, jobOf, newBoon, newEquipped, newHunter, newLoadout,
   newQuest, newShadow, newStats, newTitle, parseSheetHunter, questState,
@@ -543,9 +544,9 @@ const keysOf = (sync: SyncSettings): Record<string, GmKey> => ({ ...sync.gmKeys,
 export function keepPhone(save: Save, mine: Pick<Save, 'settings'>): Save {
   const theirs = save.settings.sync, own = mine.settings.sync, ownKeys = keysOf(own), theirKeys = keysOf(theirs);
   const gmKey = theirs.room ? ownKeys[theirs.room] ?? theirKeys[theirs.room] ?? null : null;
+  const next: Save = { ...save, settings: { ...save.settings, deviceId: mine.settings.deviceId } };
   // every field of SyncSettings is in one of the two parts (SYNC_OWNER), and the keys are written after them
-  const sync = { ...ownedBy(theirs, 'campaign'), ...ownedBy(own, 'phone'), gmKey, gmKeys: ringMerged(ownKeys, theirKeys) } as SyncSettings;
-  return { ...save, settings: { ...save.settings, deviceId: mine.settings.deviceId, sync } };
+  return atSync(() => ({ ...ownedBy(theirs, 'campaign'), ...ownedBy(own, 'phone'), gmKey, gmKeys: ringMerged(ownKeys, theirKeys) }) as SyncSettings)(next);
 }
 
 /** The text under each storage key, newest first. `null` means the key holds nothing. */

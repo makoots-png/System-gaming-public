@@ -483,22 +483,24 @@ type BodyCommon = Clock & {
 type HunterOwn = {
   readonly kind: 'hunter'; readonly life: Life; readonly holder: HunterRef | null;
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
+  /** Movement tiles spent since this hunter's last turn started (walk, dash, dodge). Absent when 0. */
+  readonly moved?: number;
   readonly owner?: never; readonly until?: never; readonly extraction?: never;
 };
 type MonsterOwn = {
   readonly kind: 'monster'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable; readonly stagger: Stagger | null; readonly intent: Intent | null; readonly xp: number;
-  readonly mythic: MythicStanding | null; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
+  readonly mythic: MythicStanding | null; readonly moved?: never; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
 };
 type ShadowOwn = {
   readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly owner?: never; readonly until?: never; readonly extraction?: never;
+  readonly moved?: never; readonly owner?: never; readonly until?: never; readonly extraction?: never;
 };
 type SummonOwn = {
   readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly owner: CombatantId; readonly until: Tick; readonly extraction?: never;
+  readonly moved?: never; readonly owner: CombatantId; readonly until: Tick; readonly extraction?: never;
 };
 /** A hunter's row: its life is the life machine's (vitals.ts). */
 export type HunterRow = BodyCommon & HunterOwn;
@@ -522,6 +524,36 @@ export function withThreat(b: Body, change: (t: ThreatTable) => ThreatTable): Bo
     case 'monster': return { ...b, threat: change(b.threat) };
     case 'summon': return b.threat === null ? b : { ...b, threat: change(b.threat) };
     case 'hunter': case 'shadow': return b;
+    default: return b satisfies never;
+  }
+}
+/** Whole movement tiles left in `b`'s bank before its next turn starts (0 for non-hunters or when rooted). */
+export const moveLeft = (b: Body): Tiles =>
+  tiles(b.kind === 'hunter' ? Math.max(0, Math.floor(b.sheet.move) - (b.moved ?? 0)) : 0);
+/**
+ * `b` with `steps` added to its movement bank: a hunter's row records spent walk, dash, and dodge steps; any other kind
+ * stays as it was. One of the two writers of `HunterRow.moved`, so non-hunters never carry a movement bank.
+ */
+export function withMoved(b: Body, steps: number): Body {
+  if (steps <= 0) return b;
+  switch (b.kind) {
+    case 'hunter': return { ...b, moved: (b.moved ?? 0) + steps };
+    case 'monster': case 'shadow': case 'summon': return b;
+    default: return b satisfies never;
+  }
+}
+/**
+ * `b` with its movement bank cleared (`moved` omitted): called at a hunter's turn start (and when a held turn passes).
+ * Any other kind stays as it was.
+ */
+export function resetMoved(b: Body): Body {
+  switch (b.kind) {
+    case 'hunter': {
+      if (b.moved === undefined) return b;
+      const { moved: _gone, ...rest } = b;
+      return rest;
+    }
+    case 'monster': case 'shadow': case 'summon': return b;
     default: return b satisfies never;
   }
 }

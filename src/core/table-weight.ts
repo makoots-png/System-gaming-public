@@ -17,7 +17,7 @@ import type { HunterId, RoomCode, SheetKey } from './ids.ts';
 import { oneOf } from './one-of.ts';
 import { RULES } from './rules.ts';
 import type { Save } from './save.ts';
-import { isRefused } from './save-step.ts';
+import { atSync, isRefused } from './save-step.ts';
 import type { Step } from './save-step.ts';
 
 /**
@@ -151,7 +151,7 @@ export function weightsJoined(told: unknown, room: RoomCode, keys: readonly Shee
 export type HeldWeights = { readonly room: RoomCode; readonly hunters: Readonly<Record<HunterId, HunterWeight>> };
 /** No weight and no force: what a roll reads with none held. */
 export const NO_WEIGHT: HunterWeight = { total: 0, force: null };
-const withHeld = (save: Save, weights: HeldWeights): Save => ({ ...save, settings: { ...save.settings, sync: { ...save.settings.sync, weights } } });
+const withHeld = (save: Save, weights: HeldWeights): Save => atSync(sy => ({ ...sy, weights }))(save);
 
 /** The save after this phone heard hunter `hid`'s weight `w` in room `room`: set, not added; what it held of another room goes. */
 export function weightHeard(save: Save, room: RoomCode, hid: HunterId, w: HunterWeight): Save {

@@ -5,6 +5,7 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { GATE_STATUSES } from '../src/core/gates/gate.ts';
+import { lex } from '../scripts/deps.ts';
 import { PACK_KINDS } from '../src/core/pack.ts';
 import { domainOf, inDomain } from '../src/core/rules.ts';
 import { E2E_MAKER_IDS, MAKER_OPEN_EXEMPTIONS, ROUNDTRIP_REGISTRY, UNIT_MAKER_IDS } from './fixtures/maker-registry.ts';
@@ -691,6 +692,20 @@ test('only withThreat in src/core/combat/effect-ops.ts writes a fight row\'s thr
   expect(report(hits), 'change a row\'s threat table with withThreat(row, change) (src/core/combat/effect-ops.ts), which writes it only on a row whose kind holds one').toEqual([]);
 });
 
+test('only withMoved and resetMoved in src/core/combat/effect-ops.ts write a fight row\'s movement bank', async () => {
+  // Only a hunter row keeps a per-turn movement bank (`HunterOwn.moved`, SMX-rules-8): `withMoved` and `resetMoved` are
+  // the only writers and leave monsters, shadows, and summons untouched. fight-parse.ts builds whole rows from stored data.
+  const owners = ['src/core/combat/effect-ops.ts', 'src/core/combat/fight-parse.ts'];
+  const assign = /[\w$)\]!]\.moved\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=|\+\+|--)/;
+  const copy = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])moved\s*[:,}]/;
+  const writes = (text: string) => assign.test(text) || copy.test(text);
+  for (const text of ['b.moved = (b.moved ?? 0) + steps;', 'return { ...t, moved: steps };', 'return { ...b, moved };']) expect(writes(text), `the rule sees ${text}`).toBe(true);
+  expect(writes('const left = Math.max(0, Math.floor(b.sheet.move) - (b.moved ?? 0));'), 'and not a read').toBe(false);
+  expect(writes("return { at: 'landed', moved: true };"), 'and not a shove state').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes(line.text));
+  expect(report(hits), 'change a row\'s movement bank only with withMoved(row, steps) or resetMoved(row) (src/core/combat/effect-ops.ts)').toEqual([]);
+});
+
 test('a mythic\'s standing has one writer', async () => {
   // A mythic row's place in its script (`Body.mythic`, notes-11-keystones.md design B.3) moves only by its machine, so no
   // rule can skip a phase, stand a second omen or move a clock its table does not name. src/core/combat/mythic.ts is the
@@ -1298,9 +1313,10 @@ test('a room event id is recorded only by appliedOnce, in the same write as the 
   // again. `appliedOnce` (src/core/applied.ts) records the id inside the step that makes the change; sync.ts `once`
   // writes that step with `store.apply`. Nothing else writes the ring.
   const owners = ['src/core/applied.ts', 'src/core/save.ts'];
-  const writes = /\bsync\.applied\s*=(?![=>])|\bsync\s*:\s*\{[^}]*\bapplied\s*:/;
+  const writes = /\bsync\.applied\s*=(?![=>])|\bsync\s*:\s*\{[^}]*\bapplied\s*:|\batSync\([^)]*\bapplied\s*:/;
   const old: Line = { file: 'src/edge/sync.ts', line: 0, text: '    d.settings.sync.applied = ring;' };
   expect(writes.test(old.text), 'the rule sees the old ring write').toBe(true);
+  expect(writes.test('return atSync(sy => ({ ...sy, applied: ring }))(base);'), 'the rule sees an atSync applied write').toBe(true);
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
   expect(report(hits), 'record a room event with app.api.sync.once(eid, step): the step is the change, and appliedOnce adds the id to it.').toEqual([]);
 });
@@ -2906,4 +2922,57 @@ test('no toast or fight-news call uses the broken "warn" kind', async () => {
   const lines = [...await sourceLines('src/views'), ...await sourceLines('src/edge'), ...await sourceLines('src/core')];
   const hits = lines.filter(l => !isComment(l.text) && badWarnKind(l.text));
   expect(report(hits), 'use kind: "warning" (ToastKind), never "warn"').toEqual([]);
+});
+
+test('only save-step.ts atSync (and save.ts exportedSave) spreads settings.sync', async () => {
+  // Unit D4: save.settings.sync has one writer (`atSync` in src/core/save-step.ts), generic over Pick<Save, 'settings'>.
+  // `exportedSave` in src/core/save.ts is the one `sync: { ...` spread left because it strips phone-only fields into a
+  // plain export object rather than returning a Save.
+  const syncSpread = /\bsync\s*:\s*\{\s*\.\.\./g;
+  const settingsSync = /\bsettings\s*:\s*\{\s*\.\.\.[^{}]*(?<![.\w$])sync\s*[:,}]/g;
+  const find = (re: RegExp, file: string, text: string): string[] => {
+    const { skel } = lex(text), out: string[] = [];
+    for (const m of skel.matchAll(re)) {
+      const line = text.slice(0, m.index!).split('\n').length;
+      out.push(`${file}:${line}: ${text.split('\n')[line - 1]!.trim().slice(0, 120)}`);
+    }
+    return out;
+  };
+  for (const bad of [
+    'const f = (s: Save): Save => ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, weights } } });',
+    'return {\n  ...s,\n  settings: {\n    ...s.settings,\n    sync: {\n      ...s.settings.sync,\n      held,\n    },\n  },\n};',
+  ]) {
+    expect(find(syncSpread, 'a.ts', bad).length, `syncSpread catches ${bad}`).toBe(1);
+    expect(find(settingsSync, 'a.ts', bad).length, `settingsSync catches ${bad}`).toBe(1);
+  }
+  for (const bad of [
+    'return { ...save, settings: { ...save.settings, sync: s } };',
+    'return { ...save, settings: { ...save.settings, activeHunterId: active, sync } };',
+  ]) {
+    expect(find(settingsSync, 'a.ts', bad).length, `settingsSync catches ${bad}`).toBe(1);
+  }
+  for (const fine of [
+    'const withHeld = (save: Save, weights: HeldWeights): Save => atSync(sy => ({ ...sy, weights }))(save);',
+    'export const newSettings = (deviceId: DeviceId): Settings => ({ mode: "player", deviceId, sync: newSyncSettings() });',
+    'export type RoleSettings = { mode: Role; sync: { gmKey?: string | null } };',
+  ]) {
+    expect(find(syncSpread, 'a.ts', fine), `syncSpread passes ${fine}`).toEqual([]);
+    expect(find(settingsSync, 'a.ts', fine), `settingsSync passes ${fine}`).toEqual([]);
+  }
+
+  const names = (await readdir(`${ROOT}/src`, { recursive: true })).filter(n => /\.(ts|js)$/.test(n)).sort();
+  const spreadHits: { file: string; hit: string }[] = [];
+  const settingsHits: { file: string; hit: string }[] = [];
+  for (const name of names) {
+    const file = `src/${name}`, text = await Bun.file(`${ROOT}/${file}`).text();
+    for (const hit of find(syncSpread, file, text)) spreadHits.push({ file, hit });
+    for (const hit of find(settingsSync, file, text)) settingsHits.push({ file, hit });
+  }
+  const spreadOwners = ['src/core/save.ts'];
+  expect(spreadOwners.filter(f => !spreadHits.some(h => h.file === f)), 'a sync: { ... permit that matches nothing leaves the list').toEqual([]);
+  expect(spreadHits.filter(h => !spreadOwners.includes(h.file)).map(h => h.hit), 'write save.settings.sync through atSync in src/core/save-step.ts instead of a sync: { ... spread').toEqual([]);
+
+  const settingsOwners = ['src/core/save-step.ts', 'src/core/save.ts'];
+  expect(settingsOwners.filter(f => !settingsHits.some(h => h.file === f)), 'a settings.sync permit that matches nothing leaves the list').toEqual([]);
+  expect(settingsHits.filter(h => !settingsOwners.includes(h.file)).map(h => h.hit), 'write save.settings.sync through atSync in src/core/save-step.ts instead of spreading settings with sync').toEqual([]);
 });

@@ -613,10 +613,7 @@ export function register(app) {
       const dots = /** @type {any} */ (el.querySelector('[data-ddots]'));
       if (dots.getAttribute('width') !== String(w)) { dots.setAttribute('width', String(w)); dots.setAttribute('height', String(h)); }
       const dhtml = f.kind === 'dodge'
-        ? f.tiles.map(p => {
-          const on = p.x === f.picked.x && p.y === f.picked.y;
-          return `<circle class="mp-ddot${on ? ' on' : ''}" data-dtile="${p.x},${p.y}" cx="${(p.x + 0.5) * TILE}" cy="${(p.y + 0.5) * TILE}" r="${on ? 6 : 4}"/>`;
-        }).join('')
+        ? `<circle class="mp-ddot on" data-dtile="${f.picked.x},${f.picked.y}" cx="${(f.picked.x + 0.5) * TILE}" cy="${(f.picked.y + 0.5) * TILE}" r="6"/>`
         : '';
       if (dots.dataset.sig !== dhtml) { dots.dataset.sig = dhtml; dots.innerHTML = dhtml; }
     }
@@ -749,9 +746,9 @@ export function register(app) {
       if (f.kind === 'dodge') {
         show = true; on = true;
         label = f.staying ? 'Stay here' : 'Dodge here';
-        say = f.mode === 'ring'
-          ? (f.staying ? 'No way clear. Stay here or pick another outer-ring tile.' : 'No way clear. Move to this outer-ring tile (reduced damage).')
-          : (f.ability ? `Dodge ${f.ability}. Tap a marked tile.` : 'Dodge an attack. Tap a marked tile.');
+        const cost = f.staying ? 'Stay here (0 movement).' : `Uses ${f.steps} of ${f.left} movement.`;
+        const tier = f.avoid === 'out' ? ' Clear of attack.' : f.avoid === 'ring' ? ' Outer ring (reduced damage).' : f.avoid === 'caught' ? ' Full hit.' : '';
+        say = `${cost}${tier}`;
       }
       box.hidden = !show;
       cancelBtn.hidden = f.kind === 'dodge';
@@ -836,9 +833,10 @@ export function register(app) {
       drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting); drawSeenAs();
       const dt = D().openIn(dtList);
       if (dt && !thingOf(dt)) D().move(dtList, { kind: 'drop', key: dt }, drawDetail); else drawDetail();
-      // a turn or dodge that comes to a body or offered dodge tile out of sight frames the map again
+      // a turn or dodge that comes to a body or picked dodge tile out of sight frames the map again
+      const dodger = f.kind === 'dodge' ? scene.tokens.find(t => t.id === f.who) : null;
       const lost = seen.fw > 0 && ((turned && !!scene.actor && !!scene.anchor && !inSight(scene.anchor))
-        || (enteredDodge && f.kind === 'dodge' && ((!!scene.anchor && !inSight(scene.anchor)) || f.tiles.some(p => !inSight(p)))));
+        || (enteredDodge && f.kind === 'dodge' && ((!!scene.anchor && !inSight(scene.anchor)) || (!!dodger && !inSight(dodger.place)) || !inSight(f.picked))));
       live({ kind: 'drawn', tokens: scene.tokens.length > 0, over: src.over ? src.over() : '', lost });
     }
     /**

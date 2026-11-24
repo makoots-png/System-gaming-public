@@ -7,7 +7,7 @@ import type { EventId } from './ids.ts';
 import { parseEvent, standsFor } from './protocol.ts';
 import type { RoomEvent } from './protocol.ts';
 import type { Save } from './save.ts';
-import { isRefused, refuse } from './save-step.ts';
+import { atSync, isRefused, refuse } from './save-step.ts';
 import type { Step } from './save-step.ts';
 
 /** Ids a phone remembers: one poll page. A replay comes from the last page or a resend seconds later. */
@@ -28,7 +28,7 @@ export const appliedOnce = (eid: EventId, write: Step<Save>): Step<Save> => save
   const ring = recordApplied(save.settings.sync.applied, eid);
   if (!ring) return refuse('applied');
   const next = write(save), base = isRefused(next) ? save : next;
-  return { ...base, settings: { ...base.settings, sync: { ...base.settings.sync, applied: ring } } };
+  return atSync(sy => ({ ...sy, applied: ring }))(base);
 };
 
 /** Whether this phone applied event `eid` already: its id is in the save's ring. */

@@ -71,9 +71,9 @@ import { parseInvite } from '../core/sync/invite.ts';
 import type { TapKind } from '../core/sync/taps.ts';
 import { NOBODY, NO_ATTEMPT, attemptStep, joinBinds } from '../core/sync/attempt.ts';
 import type { Attempt, AttemptEvent, JoinBinds, JoinFor, RoomTap } from '../core/sync/attempt.ts';
-import { NO_REMOVAL, atSync, boundTo, joinedAt, linkSaved, playAs, playAsAnswered, removedStep, ringGone, serverSeen } from '../core/sync/bind.ts';
+import { NO_REMOVAL, boundTo, joinedAt, linkSaved, playAs, playAsAnswered, removedStep, ringGone, serverSeen } from '../core/sync/bind.ts';
 import type { BindAnswer, BindAsked, RemovedEvent, RemovedNotice } from '../core/sync/bind.ts';
-import { refuse } from '../core/save-step.ts';
+import { atSync, refuse } from '../core/save-step.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { askTaken, askedGone } from '../core/sync/asked.ts';
 import { wordTaken } from '../core/sync/word.ts';
@@ -538,7 +538,7 @@ export function register(app: SyncHost): void {
       const landed = events ? did.page = landAll(at, at.settings.sync.held ?? [], events, deps, ev => (away.has(ev) ? awayApp : deps)) : null;
       // the GM's fight's last message to this phone's hunter, kept in the write that lands it (fight-heard.ts): it holds the hunter before the fight's doc does
       const heard = landed && me ? fightHeard(landed.save.settings.sync.heard ?? null, me.room, page, deviceId()) : null;
-      const next = landed ? { ...landed.save, settings: { ...landed.save.settings, sync: { ...landed.save.settings.sync, held: landed.held, ...(heard ? { heard } : {}) } } } : at;
+      const next = landed ? atSync(sy => ({ ...sy, held: landed.held, ...(heard ? { heard } : {}) }))(landed.save) : at;
       if (!me) return next;
       const seen = offersSeen(next, page, me);
       did.news = seen.news;

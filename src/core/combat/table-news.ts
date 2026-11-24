@@ -9,6 +9,7 @@ import { combatantId } from './ability-types.ts';
 import type { CombatantId } from './ability-types.ts';
 import { tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
+import type { Dodge } from './space.ts';
 import type { FightDoc, TableRefusal } from './fight-doc.ts';
 import { fightId } from '../ids.ts';
 import type { FightId } from '../ids.ts';
@@ -27,7 +28,7 @@ export const NOTHING_TOLD: TableTold = { running: null, ended: null, turn: null,
 /** One piece of news: this player's turn (its hunter on this phone), a dodge prompt for it, a refusal of its move, the bearers of a burst, the fight's end. */
 export type TableNews =
   | { readonly kind: 'turn'; readonly hid: string }
-  | { readonly kind: 'dodge'; readonly hid: string; readonly mode: 'out' | 'ring'; readonly ability: string | null }
+  | { readonly kind: 'dodge'; readonly hid: string; readonly mode: Dodge; readonly ability: string | null }
   | { readonly kind: 'refused'; readonly reason: TableRefusal }
   | { readonly kind: 'burst'; readonly ids: readonly CombatantId[] }
   | { readonly kind: 'ended' };

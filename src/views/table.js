@@ -234,9 +234,12 @@ export function register(app) {
     const dg = myDodge(e);
     if (dg) {
       const head = dg.ability ? `DODGE · ${dg.ability}` : 'DODGE';
-      const prompt = dg.mode === 'ring'
-        ? (onMap ? 'No way clear. Tap an outer-ring tile, or tap Stay here.' : 'No way clear of the blast. Open the map to pick an outer-ring tile.')
-        : (onMap ? 'Tap a highlighted tile, or tap Dodge here.' : 'Open the map to pick where you dodge.');
+      const move = `Up to ${dg.reach} tile${dg.reach === 1 ? '' : 's'} (${dg.left} movement left).`;
+      const prompt = dg.mode === 'caught'
+        ? (onMap ? `No way clear of the blast. ${move} Tap any reachable tile, or tap Stay here.` : `No way clear of the blast. ${move} Open the map to pick a tile.`)
+        : dg.mode === 'ring'
+          ? (onMap ? `No way clear. ${move} Tap any reachable tile, or stay here.` : `No way clear. ${move} Open the map to pick a tile.`)
+          : (onMap ? `${move} Tap any reachable tile, or tap Dodge here.` : `${move} Open the map to pick where you dodge.`);
       const btn = onMap ? '' : '<button type="button" class="primary" data-dodge-map>Open map to dodge</button>';
       return `<div class="tb-dodge" role="status"><strong>${esc(head)}</strong><span>${esc(prompt)}</span>${btn}</div>`;
     }

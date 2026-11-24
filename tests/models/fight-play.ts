@@ -342,8 +342,8 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     if (ask && g.chance(0.75)) {
       const r = g.int(0, 2);
       if (r === 0) return { type: 'dodge', id: null, to: null };
-      if (r === 1) return { type: 'dodge', id: ask.who, to: g.pick(ask.tiles) };
-      return { type: 'dodge', id: null, to: g.pick(ask.tiles) };
+      if (r === 1) return { type: 'dodge', id: ask.who, to: g.pick(ask.tiles).place };
+      return { type: 'dodge', id: null, to: g.pick(ask.tiles).place };
     }
     if (g.chance(0.4)) return { type: 'dodge', id: g.chance(0.5) ? anyId() : null, to: g.chance(0.5) ? anyPlace(g) : g.pick(fight.rows).place };
     if (g.chance(0.2)) return g.chance(0.5) ? { type: 'end' } : { type: 'clear' };

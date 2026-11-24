@@ -1313,13 +1313,19 @@ export function register(app) {
     if (!running(f) || !f.dodge) return '';
     const dg = fightDodge(f, rules()), who = dg ? rowOf(f, dg.who) : null;
     if (!dg || !who) return '';
-    const remote = isRemote(who), ab = dg.ability || 'the blast';
-    const msg = dg.mode === 'ring'
-      ? remote ? `Waiting for ${who.name} to pick an outer-ring tile for ${ab} (no way clear).`
-        : `${who.name} has no way clear of ${ab}. Pick an outer-ring tile on the map.`
-      : remote ? `Waiting for ${who.name} to dodge ${ab}.`
-        : `${who.name} dodges ${ab}. Pick a tile on the map.`;
-    const auto = dg.mode === 'ring' ? 'Use nearest ring tile' : 'Use nearest safe tile';
+    const remote = isRemote(who), ab = dg.ability || 'the blast', bank = `${dg.left} of ${dg.max} movement left`;
+    const msg = dg.mode === 'caught'
+      ? remote ? `Waiting for ${who.name} to pick a tile for ${ab} (no way clear, ${bank}).`
+        : `${who.name} cannot clear ${ab} (${bank}). Pick any reachable tile or stay put.`
+      : dg.mode === 'ring'
+        ? remote ? `Waiting for ${who.name} to pick a tile for ${ab} (outer ring at best, ${bank}).`
+          : `${who.name} can reach the outer ring of ${ab} (${bank}). Pick any reachable tile on the map.`
+        : remote ? `Waiting for ${who.name} to dodge ${ab} (${bank}).`
+          : `${who.name} dodges ${ab} (${bank}). Pick any reachable tile on the map.`;
+    const stayAuto = dg.auto.x === who.place.x && dg.auto.y === who.place.y;
+    const auto = dg.mode === 'caught' ? 'Stay put (full hit)'
+      : dg.mode === 'ring' ? (stayAuto ? 'Stay in outer ring' : 'Use nearest ring tile')
+        : 'Use nearest safe tile';
     const open = !onMap ? '<button type="button" class="primary" data-fk="dodge-map" data-dodge-map>Open map to dodge</button>' : '';
     return `<p>${esc(msg)}</p>${open}<button type="button" data-fk="dodge-auto" data-dodge-auto>${auto}</button>`;
   }

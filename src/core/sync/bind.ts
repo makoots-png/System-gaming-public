@@ -17,7 +17,7 @@
 import type { GmKey, HunterId, RoomCode } from '../ids.ts';
 import { seenKept, seenWithout } from './seen.ts';
 import type { Save, SyncSettings } from '../save.ts';
-import { refuse } from '../save-step.ts';
+import { atSync, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { rebound } from './outbox.ts';
 import type { SaveFields } from './link.ts';
@@ -62,9 +62,6 @@ export function ringGone<S extends Keys>(s: S, code: string): S {
   return { ...s, gmKeys: without(g, code), ...(key !== undefined && s.gmKey === key ? { gmKey: null } : {}) };
 }
 
-/** A step on the save's sync settings. */
-export const atSync = (f: (s: SyncSettings) => SyncSettings) => (save: Save): Save => ({ ...save, settings: { ...save.settings, sync: f(save.settings.sync) } });
-
 /** The sync settings once the server has answered this phone: `serverOk` stays true from then on. */
 export const serverSeen = (s: SyncSettings): SyncSettings => (s.serverOk ? s : { ...s, serverOk: true });
 
@@ -75,21 +72,23 @@ export const serverSeen = (s: SyncSettings): SyncSettings => (s.serverOk ? s : {
  * time `at`; the place goes when the phone is in that room again, and when the room is gone.
  */
 export function linkSaved(save: Save, f: SaveFields, refused: GmKey | null, at: string): Save {
-  let s: SyncSettings = { ...save.settings.sync };
-  const was = s.room, gone = f.last?.why === 'gone' ? f.last.code : f.ring && 'gone' in f.ring ? f.ring.gone : null;
-  if (f.room !== undefined && was && f.room !== was) s.seen = seenKept(s.seen, was, s.cursor, at);
-  if (f.room) s.seen = seenWithout(s.seen, f.room);
-  if (gone) s.seen = seenWithout(s.seen, gone);
-  if (f.room !== undefined) s.room = f.room;
-  if (f.cursor !== undefined) s.cursor = f.cursor;
-  if (f.last !== undefined) s.lastRoom = f.last ? { code: f.last.code, why: f.last.why } : null;
-  if (f.gmKey !== undefined) s.gmKey = f.gmKey;
-  if (f.room) s = serverSeen(s);
-  const ring = f.ring;
-  if (ring && 'keep' in ring) s = { ...s, gmKeys: ringKeep(ringOf(s), ring.keep, ring.key) };
-  else if (ring && 'drop' in ring) s = ringDrop(s, ring.drop, refused);
-  else if (ring && 'gone' in ring) s = ringGone(s, ring.gone);
-  return { ...save, settings: { ...save.settings, sync: s } };
+  return atSync(cur => {
+    let s: SyncSettings = { ...cur };
+    const was = s.room, gone = f.last?.why === 'gone' ? f.last.code : f.ring && 'gone' in f.ring ? f.ring.gone : null;
+    if (f.room !== undefined && was && f.room !== was) s.seen = seenKept(s.seen, was, s.cursor, at);
+    if (f.room) s.seen = seenWithout(s.seen, f.room);
+    if (gone) s.seen = seenWithout(s.seen, gone);
+    if (f.room !== undefined) s.room = f.room;
+    if (f.cursor !== undefined) s.cursor = f.cursor;
+    if (f.last !== undefined) s.lastRoom = f.last ? { code: f.last.code, why: f.last.why } : null;
+    if (f.gmKey !== undefined) s.gmKey = f.gmKey;
+    if (f.room) s = serverSeen(s);
+    const ring = f.ring;
+    if (ring && 'keep' in ring) s = { ...s, gmKeys: ringKeep(ringOf(s), ring.keep, ring.key) };
+    else if (ring && 'drop' in ring) s = ringDrop(s, ring.drop, refused);
+    else if (ring && 'gone' in ring) s = ringGone(s, ring.gone);
+    return s;
+  })(save);
 }
 
 // ── a player's bind ──
@@ -118,12 +117,12 @@ const held = (save: Save, hid: HunterId): HunterId | null => save.hunters.find(h
  */
 export function boundTo(save: Save, hid: HunterId, join: BindJoin): Save {
   const bound = held(save, hid) ?? save.settings.activeHunterId;
-  return { ...save, settings: { ...save.settings, activeHunterId: bound, sync: { ...rebindTo(save.settings.sync, bound), joined: join } } };
+  return atSync(sy => ({ ...rebindTo(sy, bound), joined: join }))({ ...save, settings: { ...save.settings, activeHunterId: bound } });
 }
 /** "Play as": hunter `hid` is shown and sent in the room this phone is in. The join stays (SMX-sync-2.2). One not in the party is refused. */
 export function playAs(save: Save, hid: HunterId): Save | Refused<'no-hunter'> {
   const to = held(save, hid);
-  return to ? { ...save, settings: { ...save.settings, activeHunterId: to, sync: rebindTo(save.settings.sync, to) } } : refuse('no-hunter');
+  return to ? atSync(sy => rebindTo(sy, to))({ ...save, settings: { ...save.settings, activeHunterId: to } }) : refuse('no-hunter');
 }
 
 // ── the "Play as" window (SMX-sync-2.3) ──

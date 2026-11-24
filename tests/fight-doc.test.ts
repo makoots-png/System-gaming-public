@@ -8,8 +8,8 @@ import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import { kitGear } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
-import { place, tiles } from '../src/core/combat/space.ts';
-import type { Side } from '../src/core/combat/space.ts';
+import { openGrid, percent, place, tiles, tilesOf } from '../src/core/combat/space.ts';
+import type { Grid, Side, Terrain } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
 import { fightId, parseSheetKey } from '../src/core/ids.ts';
@@ -23,7 +23,10 @@ import { withKeystones } from './fixtures/keystone-rules.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { line, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
-import { DOC_MYTHICS, DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire, tilesOfRuns } from '../src/core/combat/fight-doc.ts';
+import { DOC_DODGE_RUNS, DOC_MYTHICS, DOC_ROWS, TABLE_REFUSALS, band, docDodgeOptions, fightDoc, fightWire, tilesOfRuns } from '../src/core/combat/fight-doc.ts';
+import { docDodge } from '../src/core/combat/map-view.ts';
+import { MYTHIC_IDS, movesOf, mythicScriptOf } from '../src/core/registry/mythics.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
 import type { DocContext, FightDoc, FightDocRow } from '../src/core/combat/fight-doc.ts';
 import type { DeviceId, SheetKey } from '../src/core/ids.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
@@ -741,7 +744,10 @@ describe('dodge prompt in the fight doc', () => {
     expect(d1.dodge!.by).toBe(id('M'));
     expect(d1.dodge!.ability).toBe('Fireball');
     expect(d1.dodge!.mode).toBe('out');
-    expect(tilesOfRuns(d1.dodge!.tiles, d1.grid.w * d1.grid.h).length).toBeGreaterThanOrEqual(2);
+    expect(d1.dodge!.reach).toBeGreaterThan(0);
+    expect(d1.dodge!.left).toBeGreaterThan(0);
+    const md1 = docDodge(d1)!;
+    expect(md1.tiles.length).toBeGreaterThanOrEqual(2);
     const w1 = JSON.parse(JSON.stringify(fightWire(d1)));
     expect(DOCS.fight(w1)).toEqual(d1);
 
@@ -752,8 +758,94 @@ describe('dodge prompt in the fight doc', () => {
     expect(d2.dodge!.n).toBe(2);
     expect(d2.dodge!.who).toBe(id('B'));
     expect(rowIn(d2, 'A').place).toEqual({ x: pickA.x, y: pickA.y });
-    const bTiles = tilesOfRuns(d2.dodge!.tiles, d2.grid.w * d2.grid.h);
-    expect(bTiles).not.toContain(pickA.y * d2.grid.w + pickA.x);
+    const md2 = docDodge(d2)!;
+    expect(md2.tiles.some(t => t.place.x === pickA.x && t.place.y === pickA.y)).toBe(false);
     expect(DOCS.fight(JSON.parse(JSON.stringify(fightWire(d2))))).toEqual(d2);
+  });
+
+  test('partyDodge and docDodge agree on offered tiles, mode, and auto on a fogged map with unlit terrain and hidden foes', () => {
+    const w = 14, h = 10;
+    const gridTiles: Terrain[] = Array.from({ length: w * h }, (_, i) => {
+      const x = i % w, y = Math.floor(i / w);
+      if (x === 7 && y >= 2 && y <= 7) return 'wall';
+      if (x === 8 && y === 5) return 'pit';
+      if (x === 6 && y === 4) return 'rough';
+      return 'floor';
+    });
+    const grid: Grid = { w, h, tiles: gridTiles };
+    const cloak = statusOn(
+      { label: 'Hidden', desc: '', ops: [{ op: 'hidden', level: 3, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] },
+      { key: statusKey('cloak'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) },
+    );
+    const fog = { sight: tiles(4), seen: '0'.repeat(w * h) };
+    const foeBlast = { ...blast, foesOnly: true };
+    const f0 = play(
+      {
+        type: 'add', fightId: fightId('f-fog-dodge'), grid, fog, openings: [],
+        rows: [
+          row('A', 'party', { place: place(5, 5) }),
+          row('M', 'foe', { place: place(2, 5), abilities: [foeBlast] }),
+          row('H', 'foe', { place: place(4, 5), statuses: [cloak] }),
+        ],
+      },
+      start(['A', 1], ['M', 20], ['H', 1]),
+    );
+    const f1 = reduce(f0, { type: 'act', by: id('M'), ability: foeBlast.id, aim: place(5, 5), rolls: { dice: { A: [4] } as never, react: { A: 20 } as never } }, ctx).fight!;
+    const raw = live(fightDoc(f1, RULES, docCtx()));
+    const d = DOCS.fight(JSON.parse(JSON.stringify(fightWire(raw)))) as Extract<FightDoc, { ended: false }>;
+    expect(d.dodge).toBeDefined();
+    const md = docDodge(d)!;
+    const cover = {
+      hit: tilesOfRuns(d.dodge!.hit, d.grid.w * d.grid.h).map(i => place(i % d.grid.w, Math.floor(i / d.grid.w))),
+      ring: tilesOfRuns(d.dodge!.ring, d.grid.w * d.grid.h).map(i => place(i % d.grid.w, Math.floor(i / d.grid.w))),
+    };
+    const shared = docDodgeOptions(d.grid, d.rows, d.dodge!.who, tiles(d.dodge!.reach), cover)!;
+    expect(d.dodge!.mode).toBe(shared.auto.avoid);
+    expect(d.dodge!.auto).toEqual(shared.auto.place);
+    expect(md.mode).toBe(d.dodge!.mode);
+    expect(md.auto).toEqual(d.dodge!.auto);
+    expect(md.tiles).toEqual(shared.tiles);
+    // Unseen tiles behind the wall at x=7 are masked as UNSEEN ('?') in the doc grid (read as floor by gridOfDoc), so neither partyDodge nor docDodge leaks the unlit pit at (8,5)
+    expect(d.grid.lit![5 * w + 8]).toBe('0');
+    expect(d.grid.tiles![5 * w + 8]).toBe('?');
+  });
+
+  test('the largest shipped dodgeable blast fits hit and ring runs within DOC_DODGE_RUNS on a 40x40 grid without truncation', () => {
+    // Check every dodgeable shipped mythic blast and every shipped monster blast at center of a 40x40 grid
+    const bigGrid = openGrid(40, 40), center = place(20, 20);
+    const blasts: { name: string; radius: number; outer: number | null }[] = [];
+    for (const sid of MYTHIC_IDS) {
+      for (const [, mv] of movesOf(mythicScriptOf(sid))) {
+        if (mv.kind === 'blast' && !mv.sure && typeof mv.reach === 'number') blasts.push({ name: mv.name, radius: mv.reach, outer: mv.reach + 1 });
+      }
+    }
+    for (const m of seedMonsters(RULES)) {
+      for (const a of m.abilities) {
+        if (a.delivery.kind === 'travel' && a.shape.kind === 'radius') blasts.push({ name: `${m.name}:${a.name}`, radius: a.shape.radius, outer: a.shape.ring?.outer ?? null });
+      }
+    }
+    expect(blasts.length).toBeGreaterThan(0);
+    const maxRadius = Math.max(...blasts.map(b => b.radius));
+    expect(maxRadius).toBeGreaterThanOrEqual(4); // The First Breath (radius 4, ring 5)
+
+    for (const b of blasts) {
+      const shape = { kind: 'radius' as const, radius: tiles(b.radius), ring: b.outer === null ? null : { outer: tiles(b.outer), share: percent(50) } };
+      const bigBlast = { ...blast, range: tiles(30), shape };
+      const f0 = play(
+        {
+          type: 'add', fightId: fightId('f-big-blast'), grid: bigGrid, openings: [],
+          rows: [row('A', 'party', { place: center }), row('M', 'foe', { place: place(5, 20), abilities: [bigBlast] })],
+        },
+        start(['A', 1], ['M', 20]),
+      );
+      const f1 = reduce(f0, { type: 'act', by: id('M'), ability: bigBlast.id, aim: center, rolls: { dice: { A: [4] } as never, react: { A: 20 } as never } }, ctx).fight!;
+      const doc = live(fightDoc(f1, RULES, docCtx()));
+      expect(doc.dodge, b.name).toBeDefined();
+      const expected = tilesOf(shape, place(5, 20), center, bigGrid);
+      expect(doc.dodge!.hit.length, `${b.name} hit runs fit DOC_DODGE_RUNS`).toBeLessThanOrEqual(DOC_DODGE_RUNS);
+      expect(doc.dodge!.ring.length, `${b.name} ring runs fit DOC_DODGE_RUNS`).toBeLessThanOrEqual(DOC_DODGE_RUNS);
+      expect(tilesOfRuns(doc.dodge!.hit, 1600).length, `${b.name} hit untruncated`).toBe(expected.hit.length);
+      expect(tilesOfRuns(doc.dodge!.ring, 1600).length, `${b.name} ring untruncated`).toBe(expected.ring.length);
+    }
   });
 });

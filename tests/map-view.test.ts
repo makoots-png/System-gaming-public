@@ -813,29 +813,61 @@ describe('dodge picker on the map', () => {
     '..........',
   ], { stride: 3, dash: 6 });
   const DODGE: MapDodge = {
-    n: 1, who: id('@'), mode: 'out', ability: 'Blast',
-    tiles: [place(1, 1), place(2, 0), place(2, 2)], auto: place(1, 1),
+    n: 1, who: id('@'), mode: 'out', ability: 'Blast', reach: tiles(2), left: tiles(6), max: tiles(6),
+    tiles: [
+      { place: place(3, 1), steps: tiles(0), avoid: 'caught' },
+      { place: place(2, 1), steps: tiles(1), avoid: 'ring' },
+      { place: place(1, 1), steps: tiles(2), avoid: 'out' },
+      { place: place(2, 0), steps: tiles(1), avoid: 'out' },
+      { place: place(2, 2), steps: tiles(1), avoid: 'out' },
+    ],
+    auto: place(1, 1),
     hit: [place(3, 1)], ring: [place(2, 1), place(4, 1)],
   };
   const RING_DODGE: MapDodge = {
-    n: 2, who: id('@'), mode: 'ring', ability: 'Blast',
-    tiles: [place(3, 1), place(2, 1)], auto: place(3, 1),
+    n: 2, who: id('@'), mode: 'ring', ability: 'Blast', reach: tiles(1), left: tiles(4), max: tiles(6),
+    tiles: [
+      { place: place(3, 1), steps: tiles(0), avoid: 'ring' },
+      { place: place(2, 1), steps: tiles(1), avoid: 'ring' },
+    ],
+    auto: place(3, 1),
     hit: [place(4, 1)], ring: [place(3, 1), place(2, 1)],
   };
-  const dodgeScene = (d: MapDodge, sel: Selection): MapScene => mapScene({ bodies: MAP.bodies, grid: MAP.grid, currentId: id('g'), actor: null, dodge: d }, sel, RULES);
+  const dodgeScene = (d: MapDodge, sel: Selection, extra: Partial<Parameters<typeof mapScene>[0]> = {}): MapScene =>
+    mapScene({ bodies: MAP.bodies, grid: MAP.grid, currentId: id('g'), actor: null, dodge: d, ...extra }, sel, RULES);
 
-  test('mapScene anchors between the dodger and picked tile, shades blast/ring/offered/picked tiles, and reports staying in ring mode', () => {
+  test('mapScene anchors between the dodger and picked tile, draws the walk path, reports steps/avoid/staying, and hides avoid for unlit or hidden attackers', () => {
     const s = dodgeScene(DODGE, { kind: 'dodge', to: place(1, 1) });
     expect(s.anchor).toEqual(place(2, 1));
     expect(s.focus).toEqual({
       kind: 'dodge', n: 1, who: id('@'), mode: 'out', ability: 'Blast',
-      tiles: DODGE.tiles, picked: place(1, 1), hit: DODGE.hit, ring: DODGE.ring, staying: false,
+      reach: tiles(2), left: tiles(6), max: tiles(6),
+      tiles: DODGE.tiles.map(t => t.place), picked: place(1, 1),
+      steps: tiles(2), avoid: 'out', path: [place(2, 1), place(1, 1)],
+      hit: DODGE.hit, ring: DODGE.ring, staying: false,
     });
     expect(s.shades.map(x => x.kind)).toEqual(['ring', 'splash', 'stride', 'way']);
+    // Tapping own token selects staying put with 0 steps and empty path
+    const stay = dodgeScene(DODGE, { kind: 'dodge', to: place(3, 1) });
+    expect(stay.focus.kind === 'dodge' && [stay.focus.staying, stay.focus.steps, stay.focus.avoid, stay.focus.path]).toEqual([true, tiles(0), 'caught', []]);
+    // Ring mode staying vs stepping
     const rs = dodgeScene(RING_DODGE, { kind: 'dodge', to: place(3, 1) });
-    expect(rs.focus.kind === 'dodge' && rs.focus.staying).toBe(true);
+    expect(rs.focus.kind === 'dodge' && [rs.focus.staying, rs.focus.avoid]).toEqual([true, 'ring']);
     const rsMoved = dodgeScene(RING_DODGE, { kind: 'dodge', to: place(2, 1) });
-    expect(rsMoved.focus.kind === 'dodge' && rsMoved.focus.staying).toBe(false);
+    expect(rsMoved.focus.kind === 'dodge' && [rsMoved.focus.staying, rsMoved.focus.steps, rsMoved.focus.avoid]).toEqual([false, tiles(1), 'ring']);
+
+    // Unlit fogged tile on a player map gets avoid: null (never claims "Clear of attack" over an unlit blast tile), while a lit tile keeps avoid
+    const lit = new Set<number>([1 * 10 + 3, 1 * 10 + 2]); // (3,1) and (2,1) are lit; (1,1) is unlit
+    const fogUnlit = dodgeScene(DODGE, { kind: 'dodge', to: place(1, 1) }, { sight: { lit, known: lit, gm: false } });
+    expect(fogUnlit.focus.kind === 'dodge' && fogUnlit.focus.avoid).toBeNull();
+    const fogLit = dodgeScene(DODGE, { kind: 'dodge', to: place(2, 1) }, { sight: { lit, known: lit, gm: false } });
+    expect(fogLit.focus.kind === 'dodge' && fogLit.focus.avoid).toBe('ring');
+    // On GM view, avoid stays known even over fog
+    const fogGm = dodgeScene(DODGE, { kind: 'dodge', to: place(1, 1) }, { sight: { lit, known: lit, gm: true } });
+    expect(fogGm.focus.kind === 'dodge' && fogGm.focus.avoid).toBe('out');
+    // Hidden attacker (empty hit and ring) always sets avoid: null even on lit tiles
+    const hiddenAttacker = dodgeScene({ ...DODGE, ability: null, hit: [], ring: [] }, { kind: 'dodge', to: place(1, 1) });
+    expect(hiddenAttacker.focus.kind === 'dodge' && hiddenAttacker.focus.avoid).toBeNull();
   });
 
   test('one-tap default confirm and two-tap alternate pick send dodge; off-tile, cancel, double, pick, pass are ignored', () => {
@@ -848,9 +880,11 @@ describe('dodge picker on the map', () => {
     expect(oneTap.choice.now).toEqual({ kind: 'none' });
     expect(oneTap.choice.dodgeSent).toBe(1);
 
-    // tapping an alternate tile updates picked; tapping off offered tiles keeps dodge open; cancel/double/pick/pass do nothing
+    // tapping an alternate tile updates picked; tapping own token picks stay; tapping off offered tiles keeps dodge open; cancel/double/pick/pass do nothing
     const alt = choose(opened, { kind: 'tap', scene: s1, at: place(2, 2) });
     expect(alt.choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    const stayTap = choose(alt.choice, { kind: 'tap', scene: dodgeScene(DODGE, alt.choice.now), at: place(3, 1) });
+    expect(stayTap.choice.now).toEqual({ kind: 'dodge', n: 1, to: place(3, 1) });
     const s2 = dodgeScene(DODGE, alt.choice.now);
     expect(choose(alt.choice, { kind: 'tap', scene: s2, at: place(9, 2) }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
     expect(choose(alt.choice, { kind: 'cancel' }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
@@ -878,16 +912,30 @@ describe('dodge picker on the map', () => {
     expect(reopened.dodgeSent).toBeNull();
   });
 
-  test('docDodge decodes a FightDoc dodge prompt and fightDodge returns null when no dodge is open', () => {
+  test('docDodge derives offered tiles from doc grid and rows, and fightDodge returns null when no dodge is open', () => {
+    const baseRow = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null, icon: null, band: 'healthy', life: { at: 'up' } } as const;
     const doc = {
-      ended: false, grid: { w: 6, h: 4, tiles: '.'.repeat(24) },
-      dodge: { n: 3, who: id('@'), by: id('g'), ability: 'Blast', mode: 'out', tiles: '0+2', auto: place(0, 0), hit: '7+1', ring: '6+1' },
+      ended: false, grid: { w: 6, h: 4, tiles: '.'.repeat(24), lit: null },
+      rows: [
+        { ...baseRow, id: id('@'), name: 'Hero', side: 'party', place: { x: 1, y: 1 }, kind: 'hunter', hp: 20, hpMax: 20, stride: 3, move: 6 },
+        { ...baseRow, id: id('g'), name: 'Goblin', side: 'foe', place: { x: 2, y: 1 }, kind: 'monster', intent: null, stagger: null, suggest: null },
+      ],
+      dodge: { n: 3, who: id('@'), by: id('g'), ability: 'Blast', mode: 'out', reach: 1, left: 4, auto: place(0, 0), hit: '7+1', ring: '6+1' },
     } as unknown as Extract<FightDoc, { ended: false }>;
-    expect(docDodge(doc)).toEqual({
-      n: 3, who: id('@'), ability: 'Blast', mode: 'out',
-      tiles: [place(0, 0), place(1, 0)], auto: place(0, 0), hit: [place(1, 1)], ring: [place(0, 1)],
-    });
-    expect(docDodge({ ended: false, grid: { w: 6, h: 4, tiles: '.'.repeat(24) } } as unknown as Extract<FightDoc, { ended: false }>)).toBeNull();
+    const decoded = docDodge(doc)!;
+    expect(decoded.n).toBe(3);
+    expect(decoded.who).toBe(id('@'));
+    expect(decoded.reach).toBe(tiles(1));
+    expect(decoded.left).toBe(tiles(4));
+    expect(decoded.max).toBe(tiles(6));
+    expect(decoded.auto).toEqual(place(0, 0));
+    expect(decoded.hit).toEqual([place(1, 1)]);
+    expect(decoded.ring).toEqual([place(0, 1)]);
+    // Goblin at (2,1) is excluded; staying at (1,1) is included at 0 steps; (0,0) is out at 1 step
+    expect(decoded.tiles.some(t => same(t.place, place(2, 1)))).toBe(false);
+    expect(decoded.tiles).toContainEqual({ place: place(1, 1), steps: tiles(0), avoid: 'caught' });
+    expect(decoded.tiles).toContainEqual({ place: place(0, 0), steps: tiles(1), avoid: 'out' });
+    expect(docDodge({ ended: false, rows: [], grid: { w: 6, h: 4, tiles: '.'.repeat(24), lit: null } } as unknown as Extract<FightDoc, { ended: false }>)).toBeNull();
     const origin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
     const hpMax = modified(origin, [], RULES).sheet.hpMax;
     const row = (rId: string, name: string, side: Side, at: Place): NewRow => ({

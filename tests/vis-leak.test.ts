@@ -369,11 +369,11 @@ describe('sealed events and room projections hide GM-only data', () => {
     const plainFight = makeOpen([]);
     const askPlain = dodgeAsk(plainFight as Extract<typeof plainFight, { phase: 'running' }>, RULES)!;
     // Place hidden foe directly on the hunter's nearest auto dodge tile!
-    const sneak = { ...monsterRows(seedMonsters(RULES)[0]!, [combatantId('m-hid')], RULES)[0]!, place: askPlain.tiles[0]!, statuses: [cloak] };
+    const sneak = { ...monsterRows(seedMonsters(RULES)[0]!, [combatantId('m-hid')], RULES)[0]!, place: askPlain.auto.place, statuses: [cloak] };
     const hiddenFight = makeOpen([sneak]);
     const askHidden = dodgeAsk(hiddenFight as Extract<typeof hiddenFight, { phase: 'running' }>, RULES)!;
     // Sanity check: the GM's real legal tiles DO exclude sneak's tile, whereas the player doc MUST NOT
-    expect(askHidden.tiles).not.toContainEqual(sneak.place);
+    expect(askHidden.tiles.map(t => t.place)).not.toContainEqual(sneak.place);
     const plainDoc = fightDoc(plainFight, RULES, docOpts)!;
     const hiddenDoc = fightDoc(hiddenFight, RULES, docOpts)!;
     expect(JSON.stringify(fightWire(hiddenDoc).dodge)).toBe(JSON.stringify(fightWire(plainDoc).dodge));
@@ -392,7 +392,8 @@ describe('sealed events and room projections hide GM-only data', () => {
       expect(ambushDoc.dodge!.ability).toBeNull();
       expect(ambushDoc.dodge!.hit).toBe('');
       expect(ambushDoc.dodge!.ring).toBe('');
-      expect(ambushDoc.dodge!.tiles.length).toBeGreaterThan(0);
+      expect(ambushDoc.dodge!.reach).toBeGreaterThan(0);
+      expect(ambushDoc.dodge!.left).toBeGreaterThan(0);
     }
   });
 });

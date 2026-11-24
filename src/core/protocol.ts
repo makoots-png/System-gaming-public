@@ -1184,18 +1184,19 @@ function fightDocOf(o: Rec): FightDoc {
     ...docBurst(own(o, 'burst')), ...docDodge(own(o, 'dodge'), grid),
   };
 }
-/** An open dodge prompt on the wire (fight-doc.ts `dodgeWire`), bounded to `DOC_DODGE_RUNS` per run string; malformed reads as absent. */
+/** An open dodge prompt on the wire (fight-doc.ts `dodgeWire`), bounded to `DOC_DODGE_RUNS` per blast run string; malformed reads as absent. */
 function docDodge(v: unknown, grid: DocGrid): { dodge?: DocDodge } {
   if (!isObj(v)) return {};
   const d = attempt((): DocDodge => {
     const n = int(1, MAX_TOTAL)(own(v, 'n')), who = rowId(own(v, 'w'));
     const by = opt(own(v, 'b'), rowId, null), ability = opt(own(v, 'a'), text(NAME_MAX), null);
-    const mv = own(v, 'v'), mode = mv === 0 ? 'out' : mv === 1 ? 'ring' : refuse();
+    const mv = own(v, 'v'), mode = mv === 0 ? 'out' : mv === 1 ? 'ring' : mv === 2 ? 'caught' : refuse();
+    const reach = int(0, MAX_TILE + 1)(own(v, 'k')), left = int(0, MAX_TILE + 1)(own(v, 'l'));
     const runs = (raw: unknown): string => { const s = text(DOC_DODGE_RUNS)(raw); return /^[0-9+,]*$/.test(s) ? s : refuse(); };
-    const tiles = runs(own(v, 't')), auto = wirePlace(own(v, 'p'));
+    const auto = wirePlace(own(v, 'p'));
     if (auto.x >= grid.w || auto.y >= grid.h) return refuse();
     const hit = opt(own(v, 'h'), runs, ''), ring = opt(own(v, 'r'), runs, '');
-    return { n, who, by, ability, mode, tiles, auto, hit, ring };
+    return { n, who, by, ability, mode, reach, left, auto, hit, ring };
   });
   return d ? { dodge: d } : {};
 }

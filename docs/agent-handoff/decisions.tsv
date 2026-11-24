@@ -789,3 +789,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T15:59Z	arch	warn-v1 (Variant 1 warning sweep) landed on lead-backlog; 5 browser regressions fixed by warn-fix (50b1829c), dodge toast kind fixed at merge
 2026-11-24T16:14Z	ops	PR 110 (warn-v1) merged to main
 2026-11-24T16:52Z	arch	write-leaks (pick D1) landed on lead-backlog; unit 6937 pass, browser 598 + 3 load reruns alone green; lint conflict with warn-v1 resolved (both kept)
+2026-11-24T17:22Z	ops	PR 111 (write-leaks D1) merged to main
+2026-11-24T17:59Z	arch	atsync (pick D4) and dodge-v2 landed on lead-backlog; D4 unit 6949 + 1 sim timeout alone green, browser 599 + 9 alone green; dv2 unit 6936 + 1 sim timeout alone green, browser 595 + 7 alone green; merged clean, typecheck, lint, deps green

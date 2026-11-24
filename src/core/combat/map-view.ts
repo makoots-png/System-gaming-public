@@ -8,15 +8,15 @@
 // tests/map-view.test.ts.
 import type { Rules } from '../rules.ts';
 import { ATTACK_ID, itemOfAbility } from '../registry/abilities.ts';
-import { dist, percent, place, reachable, seenBy, straightPath, terrainOfChar, tiles, tilesOf, walkPath } from './space.ts';
-import type { Grid, Place, MoveReach, Shape, Side, Terrain, Tiles } from './space.ts';
+import { dist, percent, place, reachable, seenBy, straightPath, tiles, tilesOf, walkPath } from './space.ts';
+import type { Dodge, DodgeTile, Grid, Place, MoveReach, Shape, Side, Terrain, Tiles } from './space.ts';
 import { cost, roundsOf, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { costOf } from './charge.ts';
 import { inRange, whoIsIn } from './resolve.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 import type { Body, Op, OpRules } from './effect-ops.ts';
-import { band, tilesOfRuns, UNSEEN } from './fight-doc.ts';
+import { band, docDodgeOptions, gridOfDoc, tilesOfRuns, UNSEEN } from './fight-doc.ts';
 import type { Band, FightDoc, FightDocRow } from './fight-doc.ts';
 import { partyView } from './fight-turn.ts';
 import { eyesOf, figureOf, perceivedBy, perceives, rangeOf } from './sight.ts';
@@ -177,25 +177,35 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
 
 /** An open dodge prompt for the map (GM's `fightDodge` or player's `docDodge`). */
 export type MapDodge = {
-  readonly n: number; readonly who: CombatantId; readonly ability: string | null; readonly mode: 'out' | 'ring';
-  readonly tiles: readonly Place[]; readonly auto: Place; readonly hit: readonly Place[]; readonly ring: readonly Place[];
+  readonly n: number; readonly who: CombatantId; readonly ability: string | null; readonly mode: Dodge;
+  readonly reach: Tiles; readonly left: Tiles; readonly max: Tiles;
+  readonly tiles: readonly DodgeTile[]; readonly auto: Place; readonly hit: readonly Place[]; readonly ring: readonly Place[];
 };
 /** The GM's open dodge prompt for fight `f`, or null when no dodge waits. */
 export function fightDodge(f: Fight, R: Rules): MapDodge | null {
   if (f.phase !== 'running' || !f.dodge) return null;
   const ask = dodgeAsk(f, R);
   if (!ask) return null;
-  return { n: f.dodge.n, who: ask.who, ability: ask.ability.name, mode: ask.mode, tiles: ask.tiles, auto: ask.tiles[0]!, hit: ask.hit, ring: ask.ring };
+  const dodger = f.rows.find(r => r.id === ask.who);
+  const max = tiles(dodger ? Math.floor(dodger.sheet.move) : ask.left);
+  return { n: f.dodge.n, who: ask.who, ability: ask.ability.name, mode: ask.mode, reach: ask.reach, left: ask.left, max, tiles: ask.tiles, auto: ask.auto.place, hit: ask.hit, ring: ask.ring };
 }
-/** A player's open dodge prompt decoded from the room's fight doc, or null when none is open. */
+/** A player's open dodge prompt derived from the room's fight doc via `docDodgeOptions`, or null when none is open. */
 export function docDodge(e: Extract<FightDoc, { ended: false }>): MapDodge | null {
   const d = e.dodge;
   if (!d) return null;
   const { w, h } = e.grid, size = w * h, at = (i: number): Place => place(i % w, Math.floor(i / w));
+  const hit = tilesOfRuns(d.hit, size).map(at), ring = tilesOfRuns(d.ring, size).map(at);
+  const opts = docDodgeOptions(e.grid, e.rows, d.who, tiles(d.reach), { hit, ring });
+  if (!opts) return null;
+  const row = e.rows.find(r => r.id === d.who);
+  const max = tiles(row && 'move' in row ? row.move : d.left);
+  const visibleBlast = d.hit.length > 0 || d.ring.length > 0;
   return {
-    n: d.n, who: d.who, ability: d.ability, mode: d.mode,
-    tiles: tilesOfRuns(d.tiles, size).map(at), auto: place(d.auto.x, d.auto.y),
-    hit: tilesOfRuns(d.hit, size).map(at), ring: tilesOfRuns(d.ring, size).map(at),
+    n: d.n, who: d.who, ability: d.ability, mode: visibleBlast ? opts.auto.avoid : d.mode,
+    reach: tiles(d.reach), left: tiles(d.left), max,
+    tiles: opts.tiles, auto: visibleBlast ? opts.auto.place : place(d.auto.x, d.auto.y),
+    hit, ring,
   };
 }
 
@@ -288,8 +298,11 @@ export type MapFocus =
   | { readonly kind: 'move'; readonly stride: readonly Place[]; readonly dash: readonly Place[]; readonly path: MapPath | null }
   | { readonly kind: 'aim'; readonly ability: Aiming; readonly reach: readonly Place[]; readonly targets: readonly CombatantId[]; readonly aim: MapAim | null }
   | {
-    readonly kind: 'dodge'; readonly n: number; readonly who: CombatantId; readonly ability: string | null; readonly mode: 'out' | 'ring';
-    readonly tiles: readonly Place[]; readonly hit: readonly Place[]; readonly ring: readonly Place[]; readonly picked: Place; readonly staying: boolean;
+    readonly kind: 'dodge'; readonly n: number; readonly who: CombatantId; readonly ability: string | null; readonly mode: Dodge;
+    readonly reach: Tiles; readonly left: Tiles; readonly max: Tiles;
+    readonly tiles: readonly Place[]; readonly hit: readonly Place[]; readonly ring: readonly Place[];
+    readonly picked: Place; readonly staying: boolean;
+    readonly steps: Tiles; readonly avoid: Dodge | null; readonly path: readonly Place[];
   };
 /** A tile that is not floor, for the drawing (a fight with no map has none). */
 export type MapTerrain = { readonly place: Place; readonly terrain: Terrain };
@@ -371,7 +384,7 @@ function shadesOf(f: MapFocus): Shade[] {
       return [...shade('reach', tone, f.reach), ...shade('ring', tone, f.aim ? f.aim.ring : []), ...shade('splash', tone, f.aim ? f.aim.splash : [])];
     }
     case 'dodge':
-      return [...shade('ring', 'hostile', f.ring), ...shade('splash', 'hostile', f.hit), ...shade('stride', 'move', f.tiles), ...shade('way', 'move', [f.picked])];
+      return [...shade('ring', 'hostile', f.ring), ...shade('splash', 'hostile', f.hit), ...shade('stride', 'move', f.tiles), ...shade('way', 'move', f.path.length ? f.path : [f.picked])];
     default: return f satisfies never;
   }
 }
@@ -415,7 +428,7 @@ export function fightGround(f: Fight, R: Pick<Rules, 'fight'>, as: ViewAs): { zo
 /** The ground of a player's table from the room's doc: its map (an unseen tile is floor), its zones and what the party sees. */
 export function docGround(e: Extract<FightDoc, { ended: false }>): { grid: Grid; zones: MapZoneIn[]; sight: MapSight | null } {
   const { w, h, tiles: text, lit } = e.grid;
-  const grid: Grid = { w, h, tiles: text ? [...text].map(c => terrainOfChar(c) ?? 'floor') : null };
+  const grid: Grid = gridOfDoc(e.grid);
   const at = (i: number): Place => place(i % w, Math.floor(i / w));
   const zones = (e.zones ?? []).map(z => ({ id: z.id, name: z.name, tone: z.tone, left: z.left, tiles: tilesOfRuns(z.tiles, w * h).map(at), anchor: z.anchor ?? null }));
   if (!lit) return { grid, zones, sight: null };
@@ -605,10 +618,23 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   const user = shown.find(b => b.id === input.actor && !b.down) ?? null;
   const dg = input.dodge ?? null, dodger = dg ? shown.find(b => b.id === dg.who) ?? null : null;
   const focus: MapFocus = dg && sel.kind === 'dodge'
-    ? (picked => ({
-      kind: 'dodge', n: dg.n, who: dg.who, ability: dg.ability, mode: dg.mode, tiles: dg.tiles, hit: dg.hit, ring: dg.ring,
-      picked, staying: !!dodger && same(picked, dodger.place),
-    }))(has(dg.tiles, sel.to) ? sel.to : dg.auto)
+    ? (() => {
+      const places = dg.tiles.map(t => t.place);
+      const picked = has(places, sel.to) ? sel.to : dg.auto;
+      const pickedTile = dg.tiles.find(t => same(t.place, picked)) ?? { place: picked, steps: tiles(0), avoid: dg.mode };
+      const staying = !!dodger && same(picked, dodger.place);
+      const hiddenBlast = dg.hit.length === 0 && dg.ring.length === 0;
+      const unlit = !!sight && !sight.gm && !sight.lit.has(picked.y * grid.w + picked.x);
+      const avoid: Dodge | null = hiddenBlast || unlit ? null : pickedTile.avoid;
+      const others = shown.filter(b => b.id !== dg.who).map(b => b.place);
+      const path = !staying && dodger ? (walkPath(dodger.place, picked, grid, others) ?? [picked]) : [];
+      return {
+        kind: 'dodge', n: dg.n, who: dg.who, ability: dg.ability, mode: dg.mode,
+        reach: dg.reach, left: dg.left, max: dg.max,
+        tiles: places, hit: dg.hit, ring: dg.ring, picked, staying,
+        steps: pickedTile.steps, avoid, path,
+      };
+    })()
     : user && sel.kind !== 'dodge' ? focusOf(user, shown, grid, sel, R) : { kind: 'none' };
   const aimedAt = focus.kind === 'aim' && focus.aim ? focus.aim.target : null;
   const plates = platesOf(shown, grid, aimedAt ? [aimedAt] : []);

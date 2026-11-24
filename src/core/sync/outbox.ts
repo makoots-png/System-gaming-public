@@ -13,7 +13,7 @@
 // `refused` (the room answered 4xx: kept, with the reason, until the box is full of them) or `dropped`.
 import { API_ERRORS, parseEvent, parseRoomCode, sentAgain } from '../protocol.ts';
 import type { RoomCode, RoomEvent } from '../protocol.ts';
-import type { Save } from '../save.ts';
+import { atSync } from '../save-step.ts';
 import { parseSaveId } from '../ids.ts';
 import type { HunterId } from '../ids.ts';
 
@@ -162,8 +162,8 @@ export const stalled = (box: Outbox, room: RoomCode | null): boolean =>
 export const waiting = (box: Outbox, room: RoomCode | null): number => (room ? box.filter(e => e.room === room && e.at !== 'refused').length : 0);
 
 /** A step on the save's box (src/core/save-step.ts). */
-export const atOutbox = (f: (box: Outbox) => Outbox) => (save: Save): Save =>
-  ({ ...save, settings: { ...save.settings, sync: { ...save.settings.sync, outbox: f(save.settings.sync.outbox ?? []) } } });
+export const atOutbox = (f: (box: Outbox) => Outbox) =>
+  atSync(sy => ({ ...sy, outbox: f(sy.outbox ?? []) }));
 
 // ── how the room answered a request ──
 /**

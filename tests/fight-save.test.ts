@@ -54,7 +54,8 @@ function gmSave(): Save {
 function goblin(): NewRow {
   const g = hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, id('c3'), RULES);
   if (g.kind !== 'hunter') throw new Error('a hunter\'s row');
-  return { ...g, kind: 'monster', life: { at: 'up', hp: rowHp(g) }, side: 'foe', holder: null, name: 'Goblin', threat: {}, xp: 60 };
+  const { moved: _m, ...base } = g;
+  return { ...base, kind: 'monster', life: { at: 'up', hp: rowHp(g) }, side: 'foe', holder: null, name: 'Goblin', threat: {}, xp: 60 };
 }
 function rowsOf(s: Save): NewRow[] {
   const h = s.hunters[0]!;

@@ -1203,8 +1203,8 @@ describe('the fight doc', () => {
       reacts: Object.fromEntries([...many(RULES.fight.kit.doArmed, id), ...many(RULES.fight.kit.doArmed, i => id(i + 12))].map(r => [r, 'a'.repeat(40)])),
       burst: { n: 999999999, ids: many(RULES.fight.kit.doArmed, id) },
       dodge: {
-        n: 999999, who: 'm-08', by: 'm-00', ability: 'a'.repeat(NAME_MAX), mode: 'out' as const,
-        tiles: '1599+1,'.repeat(40).slice(0, DOC_DODGE_RUNS - 1) + '1', auto: { x: 39, y: 39 },
+        n: 999999, who: 'm-08', by: 'm-00', ability: 'a'.repeat(NAME_MAX), mode: 'caught' as const,
+        reach: 15, left: 15, auto: { x: 39, y: 39 },
         hit: '1599+1,'.repeat(40).slice(0, DOC_DODGE_RUNS - 1) + '1', ring: '1599+1,'.repeat(40).slice(0, DOC_DODGE_RUNS - 1) + '1',
       },
     };
@@ -1254,6 +1254,25 @@ describe('the fight doc', () => {
       const ksDefs = (read.rows as Raw[]).flatMap(r => r.statuses.slice(6).map((s: Raw) => s.def));
       expect(ksDefs).toHaveLength(DOC_ROWS * 4);
       expect(ksDefs.every(Boolean)).toBe(true);
+    }
+  });
+
+  test('a dodge prompt reads all three modes (out, ring, caught) with reach and left, and drops malformed dodge cleanly', () => {
+    for (const mode of ['out', 'ring', 'caught'] as const) {
+      const dodge = { n: 2, who: 'c1', by: 'c2', ability: 'Blast', mode, reach: 3, left: 4, auto: { x: 1, y: 0 }, hit: '0+1', ring: '1+1' };
+      expect(parse({ dodge })!.dodge).toEqual(dodge);
+    }
+    // Malformed wire dodge (unknown v, missing k or l, or old v1 shape with t instead of k/l) drops dodge cleanly while keeping the doc
+    const baseWire = copy(fightWire(LIVE as never)) as Raw;
+    for (const bad of [
+      { n: 1, w: 'c1', b: 'c2', a: 'Blast', v: 3, k: 2, l: 2, d: [0, 0], h: '', r: '' },
+      { n: 1, w: 'c1', b: 'c2', a: 'Blast', v: 0, t: '0+2', d: [0, 0], h: '', r: '' },
+      { n: 1, w: 'c1', b: 'c2', a: 'Blast', v: 0, k: 0, l: 2, d: [0, 0], h: '', r: '' },
+      { n: 1, w: 'c1', b: 'c2', a: 'Blast', v: 0, k: 2, l: 0, d: [0, 0], h: '', r: '' },
+    ]) {
+      const read = DOCS.fight({ ...baseWire, dodge: bad }) as Raw;
+      expect(read, JSON.stringify(bad)).not.toBeNull();
+      expect(read.dodge, JSON.stringify(bad)).toBeUndefined();
     }
   });
 

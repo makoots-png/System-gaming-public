@@ -2809,37 +2809,44 @@ describe('dodge-tile picker in the fight reducer', () => {
     expect(f1.dodges).toBe(1);
     expect(f1.dodge?.n).toBe(1);
     expect(held.effects[0]).toMatchObject({ type: 'dodgeAsked', n: 1, who: id('A'), mode: 'out' });
+    const askedFx = held.effects[0];
+    expect(askedFx?.type === 'dodgeAsked' && [askedFx.reach > 0, askedFx.left > 0, 'tiles' in askedFx]).toEqual([true, true, false]);
     const ask = dodgeAsk(f1, RULES)!;
     expect(ask.tiles.length).toBeGreaterThanOrEqual(2);
     // other commands refused with 'dodging'
     expect(reduce(f1, pass('M'), ctx).effects).toEqual([{ type: 'refused', reason: 'dodging' }]);
     expect(reduce(f1, { type: 'move', by: id('M'), to: place(2, 5) }, ctx).effects).toEqual([{ type: 'refused', reason: 'dodging' }]);
     // wrong hunter refused with 'noDodge'
-    expect(reduce(f1, { type: 'dodge', id: id('M'), to: ask.tiles[0]! }, ctx).effects).toEqual([{ type: 'refused', reason: 'noDodge' }]);
+    expect(reduce(f1, { type: 'dodge', id: id('M'), to: ask.auto.place }, ctx).effects).toEqual([{ type: 'refused', reason: 'noDodge' }]);
     // round-trip through parseFight mid-dodge
     expect(parseFight(JSON.parse(JSON.stringify(f1)), RULES)).toEqual(f1);
-    // pick a non-default tile
-    const picked = ask.tiles.at(-1)!;
-    const done = reduce(f1, { type: 'dodge', id: id('A'), to: picked }, ctx);
+    // pick a non-default out tile
+    const picked = ask.tiles.filter(t => t.avoid === 'out').at(-1)!;
+    const done = reduce(f1, { type: 'dodge', id: id('A'), to: picked.place }, ctx);
     const f2 = running(done);
     expect(f2.dodge).toBeUndefined();
     expect(f2.dodges).toBe(1);
-    expect(body(f2, 'A').place).toEqual(picked);
+    expect(body(f2, 'A').place).toEqual(picked.place);
+    // M's blast ends M's turn and starts A's turn, which resets A's movement bank
+    expect(f2.currentId).toBe(id('A'));
+    expect('moved' in body(f2, 'A')).toBe(false);
     expect(done.effects.some(e => e.type === 'used' && e.by === id('M'))).toBe(true);
     // dodge after it finished is refused with 'noDodge'
     expect(reduce(f2, { type: 'dodge', id: null, to: null }, ctx).effects).toEqual([{ type: 'refused', reason: 'noDodge' }]);
   });
 
-  test('GM override ({ id: null, to: null }) lands on tiles[0]', () => {
+  test('GM override ({ id: null, to: null }) lands on auto', () => {
     const f0 = running(play(
       add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] })),
       start(['A', 1], ['M', 20]),
     ));
     const f1 = running(reduce(f0, blastAt('M', place(5, 5), { A: 20 }), ctx));
-    const auto = dodgeAsk(f1, RULES)!.tiles[0]!;
+    const auto = dodgeAsk(f1, RULES)!.auto;
     const f2 = running(reduce(f1, { type: 'dodge', id: null, to: null }, ctx));
     expect(f2.dodge).toBeUndefined();
-    expect(body(f2, 'A').place).toEqual(auto);
+    expect(body(f2, 'A').place).toEqual(auto.place);
+    expect(f2.currentId).toBe(id('A'));
+    expect('moved' in body(f2, 'A')).toBe(false);
   });
 
   test('two hunters caught in one blast pick one at a time with monotonic n and occupied-tile exclusion', () => {
@@ -2850,16 +2857,48 @@ describe('dodge-tile picker in the fight reducer', () => {
     const f1 = running(reduce(f0, blastAt('M', place(5, 5), { A: 20, B: 20 }), ctx));
     const ask1 = dodgeAsk(f1, RULES)!;
     expect([f1.dodge?.n, ask1.who]).toEqual([1, id('A')]);
-    const pickA = ask1.tiles[0]!;
+    const pickA = ask1.auto.place;
     const r2 = reduce(f1, { type: 'dodge', id: id('A'), to: pickA }, ctx);
     const f2 = running(r2);
     const ask2 = dodgeAsk(f2, RULES)!;
     expect([f2.dodge?.n, f2.dodges, ask2.who]).toEqual([2, 2, id('B')]);
-    expect(ask2.tiles.some(p => p.x === pickA.x && p.y === pickA.y)).toBe(false);
-    const pickB = ask2.tiles[0]!;
+    expect(ask2.tiles.some(t => t.place.x === pickA.x && t.place.y === pickA.y)).toBe(false);
+    const pickB = ask2.auto.place;
     const f3 = running(reduce(f2, { type: 'dodge', id: id('B'), to: pickB }, ctx));
     expect(f3.dodge).toBeUndefined();
     expect([body(f3, 'A').place, body(f3, 'B').place]).toEqual([pickA, pickB]);
+  });
+
+  test('free stay-put spends 0 movement, bank caps dodge reach across walk and multiple blasts, and out-of-reach picks refuse tooFar', () => {
+    const f0 = running(play(
+      add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] }), row('N', 'foe', { place: place(1, 6), abilities: [BLAST] })),
+      start(['A', 20], ['M', 19], ['N', 18]),
+    ));
+    // A dashes 4 tiles to (9, 5), leaving 2 movement of 6
+    const fMoved = running(reduce(f0, { type: 'move', by: id('A'), to: place(9, 5), dash: true }, ctx));
+    expect(body(fMoved, 'A').kind === 'hunter' && body(fMoved, 'A').moved).toBe(4);
+    expect(fMoved.currentId).toBe(id('M'));
+    // M blasts (9, 5): A only has 2 movement left, so reach is capped at 2
+    const r1 = reduce(fMoved, blastAt('M', place(9, 5), { A: 20 }), ctx);
+    const f1 = running(r1);
+    const ask1 = dodgeAsk(f1, RULES)!;
+    expect([ask1.left, ask1.reach]).toEqual([tiles(2), tiles(2)]);
+    // Picking a tile 3 steps away refuses with 'tooFar'
+    expect(reduce(f1, { type: 'dodge', id: id('A'), to: place(12, 5) }, ctx).effects).toEqual([{ type: 'refused', reason: 'tooFar' }]);
+    // Free stay-put at (9, 5) spends 0 movement (moved stays 4)
+    const fStayed = running(reduce(f1, { type: 'dodge', id: id('A'), to: place(9, 5) }, ctx));
+    expect(body(fStayed, 'A').place).toEqual(place(9, 5));
+    expect(body(fStayed, 'A').kind === 'hunter' && body(fStayed, 'A').moved).toBe(4);
+    // Instead, step 2 tiles to (11, 5): spends remaining 2 movement -> moved = 6 (0 left)
+    const fSpent = running(reduce(f1, { type: 'dodge', id: id('A'), to: place(11, 5) }, ctx));
+    expect(body(fSpent, 'A').place).toEqual(place(11, 5));
+    expect(body(fSpent, 'A').kind === 'hunter' && body(fSpent, 'A').moved).toBe(6);
+    // N now blasts (11, 5): A has 0 movement left, so N's blast resolves automatically without entering dodging
+    expect(fSpent.currentId).toBe(id('N'));
+    const r2 = reduce(fSpent, blastAt('N', place(11, 5), { A: 20 }), ctx);
+    const f2 = running(r2);
+    expect(f2.dodge).toBeUndefined();
+    expect(body(f2, 'A').place).toEqual(place(11, 5));
   });
 
   test('picking a hidden foe\'s tile refuses taken, and picking behind a blocked corridor refuses blocked', () => {
@@ -2892,5 +2931,38 @@ describe('dodge-tile picker in the fight reducer', () => {
     expect(f1.fudge.forced).toEqual({});
     const f2 = running(reduce(f1, { type: 'dodge', id: null, to: null }, ctx));
     expect(f2.fudge.forced).toEqual({});
+  });
+
+  test('hunter movement bank records walk and dash, leaves monsters untouched, resets on turn start and held turns, and round-trips after Slow', () => {
+    const fSeq = running(play(
+      add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5) })),
+      start(['A', 20], ['M', 19]),
+    ));
+    const fWalked = running(reduce(fSeq, { type: 'move', by: id('A'), to: place(7, 5) }, ctx));
+    expect(fWalked.currentId).toBe(id('M'));
+    expect(body(fWalked, 'A').kind === 'hunter' && body(fWalked, 'A').moved).toBe(2);
+    expect(parseFight(JSON.parse(JSON.stringify(fWalked)), RULES)).toEqual(fWalked);
+
+    // Apply Slow (-50% speed -> move drops to 3) after dashing 5 tiles: moved (5) > floor(sheet.move) (3) still round-trips
+    const fDash = running(reduce(fSeq, { type: 'move', by: id('A'), to: place(10, 5), dash: true }, ctx));
+    expect(body(fDash, 'A').kind === 'hunter' && body(fDash, 'A').moved).toBe(5);
+    const slowDef = { label: 'Slow', desc: '', ops: [{ op: 'speed' as const, pct: -50 }] };
+    const fSlow = running(reduce(fDash, { type: 'status', id: id('A'), add: { key: statusKey('slow'), def: slowDef, duration: tick(2000), tier: 0 } }, ctx));
+    expect(Math.floor(body(fSlow, 'A').sheet.move)).toBeLessThan(5);
+    expect(parseFight(JSON.parse(JSON.stringify(fSlow)), RULES)).toEqual(fSlow);
+
+    // Monster walks 3 tiles -> never carries moved; when A's turn returns, A's moved resets to undefined
+    const fMobWalk = running(reduce(fWalked, { type: 'move', by: id('M'), to: place(4, 5) }, ctx));
+    expect('moved' in body(fMobWalk, 'M')).toBe(false);
+    expect(fMobWalk.currentId).toBe(id('A'));
+    expect('moved' in body(fMobWalk, 'A')).toBe(false);
+
+    // Held (stunned) hunter: losing a skipped turn also resets moved so stale dash/dodge debt does not carry over
+    const stunDef = { label: 'Stun', desc: '', ops: [{ op: 'hold' as const }] };
+    const fStun = running(reduce(fDash, { type: 'status', id: id('A'), add: { key: statusKey('stun'), def: stunDef, duration: null, tier: 0 } }, ctx));
+    expect(body(fStun, 'A').kind === 'hunter' && body(fStun, 'A').moved).toBe(5);
+    const fHeldSkip = running(reduce(fStun, pass('M'), ctx));
+    expect(fHeldSkip.currentId).toBe(id('M'));
+    expect('moved' in body(fHeldSkip, 'A')).toBe(false);
   });
 });

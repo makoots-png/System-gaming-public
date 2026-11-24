@@ -9,7 +9,7 @@
 // one after the write, so a view that kept `h` reads the new values, as it did when it changed `h` in place. A record
 // without an id (a hunter's `life`) is replaced, as an assignment replaced it.
 // A step copies what it changes and shares the rest; one that moves an object to another key or list copies it there.
-import type { Hunter, Library, Save, Settings } from './save.ts';
+import type { Hunter, Library, Save, Settings, SyncSettings } from './save.ts';
 
 /** A change that did not happen, and why. A step answers it instead of throwing; the save is not touched. */
 export type Refused<W extends string = string> = { readonly ok: false; readonly why: W };
@@ -48,6 +48,11 @@ export const atLibrary = (f: Step<Library>): Step<Save> => save => {
 export const atSettings = (f: Step<Settings>): Step<Save> => save => {
   const next = f(save.settings);
   return isRefused(next) ? next : { ...save, settings: next };
+};
+/** A step on the save's sync settings. */
+export const atSync = (f: (s: SyncSettings) => SyncSettings) => <S extends Pick<Save, 'settings'>>(save: S): S => {
+  const next = f(save.settings.sync);
+  return next === save.settings.sync ? save : { ...save, settings: { ...save.settings, sync: next } };
 };
 /** Steps run one after another; the first refusal stops them and nothing of the earlier ones is kept. */
 export const both = <T>(...steps: Step<T>[]): Step<T> => value => {

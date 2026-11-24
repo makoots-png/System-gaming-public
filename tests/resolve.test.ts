@@ -10,7 +10,7 @@ import type { Grid, Place, Side } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import type { Ability, AbilityKind, Outcome } from '../src/core/combat/ability-types.ts';
-import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
+import { modified, statusKey, statusOn, withMoved } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { afterDefence, needs, resolve, usable } from '../src/core/combat/resolve.ts';
@@ -934,12 +934,16 @@ describe('dodge-tile ask mode in resolve', () => {
     if ('ask' in asked) {
       expect(asked.who).toBe(h.id);
       expect(asked.mode).toBe('out');
+      expect(asked.reach).toBeGreaterThan(0);
+      expect(asked.left).toBe(tiles(Math.floor(h.sheet.move)));
       expect(asked.tiles.length).toBeGreaterThanOrEqual(2);
-      const picked = asked.tiles.at(-1)!;
-      const done = resolve(blast, caster, [caster, h], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: picked });
+      const picked = asked.tiles.filter(t => t.avoid === 'out').at(-1)!;
+      const done = resolve(blast, caster, [caster, h], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: picked.place });
       expect('ok' in done && done.ok).toBe(true);
       if ('ok' in done && done.ok) {
-        expect(find(done.bodies, 'h').place).toEqual(picked);
+        const after = find(done.bodies, 'h');
+        expect(after.place).toEqual(picked.place);
+        expect(after.kind === 'hunter' && after.moved).toBe(picked.steps);
         expect(done.outcomes[0]!.avoid).toBe('out');
       }
     }
@@ -955,18 +959,89 @@ describe('dodge-tile ask mode in resolve', () => {
     expect('ask' in ask1).toBe(true);
     if (!('ask' in ask1)) return;
     expect(ask1.who).toBe(h1.id);
-    const chosen1 = ask1.tiles[0]!;
+    const chosen1 = ask1.auto.place;
     const ask2 = resolve(blast, caster, [caster, h1, h2], place(5, 5), GRID, r, NOW, RULES, null, { [h1.id]: chosen1 });
     expect('ask' in ask2).toBe(true);
     if (!('ask' in ask2)) return;
     expect(ask2.who).toBe(h2.id);
-    expect(ask2.tiles.some(p => p.x === chosen1.x && p.y === chosen1.y)).toBe(false);
-    const chosen2 = ask2.tiles[0]!;
+    expect(ask2.tiles.some(t => t.place.x === chosen1.x && t.place.y === chosen1.y)).toBe(false);
+    const chosen2 = ask2.auto.place;
     const done = resolve(blast, caster, [caster, h1, h2], place(5, 5), GRID, r, NOW, RULES, null, { [h1.id]: chosen1, [h2.id]: chosen2 });
     expect('ok' in done && done.ok).toBe(true);
     if ('ok' in done && done.ok) {
       expect(find(done.bodies, 'h1').place).toEqual(chosen1);
       expect(find(done.bodies, 'h2').place).toEqual(chosen2);
+    }
+  });
+
+  test('free choice lets a hunter stay put (0 bank), step to cover inside the blast, or step to the outer ring', () => {
+    const coverGrid: Grid = {
+      w: 12, h: 12,
+      tiles: Array.from({ length: 12 * 12 }, (_, i) => (i % 12 === 6 && Math.floor(i / 12) === 5 ? 'cover' as const : 'floor' as const)),
+    };
+    const h = body('h', hunterOrigin('speed'), place(5, 5), 'party', {}, { armor: 0, resist: 0 });
+    const r = rolls({ h: [] }, { h: 20 });
+    const ask = resolve(blast, caster, [caster, h], place(5, 5), coverGrid, r, NOW, RULES, null, {});
+    expect('ask' in ask && ask.mode).toBe('out');
+
+    // Stay put inside full hit: spends 0 movement, takes full hit
+    const stayed = resolve(blast, caster, [caster, h], place(5, 5), coverGrid, r, NOW, RULES, null, { [h.id]: place(5, 5) });
+    // Step 1 tile onto cover inside full hit: spends 1 movement, gets coverShare reduction
+    const covered = resolve(blast, caster, [caster, h], place(5, 5), coverGrid, r, NOW, RULES, null, { [h.id]: place(6, 5) });
+    // Step 2 tiles to outer ring: spends 2 movement, gets ring share
+    const ringed = resolve(blast, caster, [caster, h], place(5, 5), coverGrid, r, NOW, RULES, null, { [h.id]: place(7, 5) });
+    if ('ok' in stayed && stayed.ok && 'ok' in covered && covered.ok && 'ok' in ringed && ringed.ok) {
+      expect(stayed.outcomes[0]!.avoid).toBe('caught');
+      expect('moved' in find(stayed.bodies, 'h')).toBe(false);
+      expect(covered.outcomes[0]!.avoid).toBe('caught');
+      expect(covered.outcomes[0]!.dealt).toBeLessThan(stayed.outcomes[0]!.dealt);
+      expect(find(covered.bodies, 'h').kind === 'hunter' && find(covered.bodies, 'h').moved).toBe(1);
+      expect(ringed.outcomes[0]!.avoid).toBe('ring');
+      expect(find(ringed.bodies, 'h').kind === 'hunter' && find(ringed.bodies, 'h').moved).toBe(2);
+    } else throw new Error('expected all three free picks to resolve');
+  });
+
+  test('movement bank caps dodge reach, and 0 movement left auto-stays without asking', () => {
+    const h = body('h', hunterOrigin('tank'), place(5, 5), 'party', {}, { move: tiles(6) });
+    const spent4 = withMoved(h, tiles(4));
+    const ask = resolve(blast, caster, [caster, spent4], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, {});
+    expect('ask' in ask).toBe(true);
+    if ('ask' in ask) {
+      expect([ask.left, ask.reach, ask.mode]).toEqual([tiles(2), tiles(2), 'ring']);
+      const done = resolve(blast, caster, [caster, spent4], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: place(7, 5) });
+      if ('ok' in done && done.ok) expect(find(done.bodies, 'h').kind === 'hunter' && find(done.bodies, 'h').moved).toBe(6);
+      else throw new Error('expected bank-capped pick to resolve');
+    }
+    const spent6 = withMoved(h, tiles(6));
+    const autoStay = resolve(blast, caster, [caster, spent6], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, {});
+    expect('ok' in autoStay && autoStay.ok).toBe(true);
+    if ('ok' in autoStay && autoStay.ok) {
+      expect(find(autoStay.bodies, 'h').place).toEqual(place(5, 5));
+      expect(autoStay.outcomes[0]!.avoid).toBe('caught');
+    }
+  });
+
+  test('a negated hunter skips dodging and spends no bank, while a negated shadow still steps aside', () => {
+    const negate = ability('support', {
+      aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
+      react: { when: 'before', reach: tiles(0) },
+      ops: [{ op: 'negate' }],
+    });
+    const h = body('h', hunterOrigin('speed'), place(5, 5), 'party', { abilities: [negate], armed: { ability: negate.id, on: null, spent: false } });
+    const sh = body('sh', monsterOrigin('skirmisher'), place(5, 5), 'party', { kind: 'shadow', abilities: [negate], armed: { ability: negate.id, on: null, spent: false } });
+
+    const rHunter = resolve(blast, caster, [caster, h], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, {});
+    expect('ok' in rHunter && rHunter.ok).toBe(true);
+    if ('ok' in rHunter && rHunter.ok) {
+      expect(find(rHunter.bodies, 'h').place).toEqual(place(5, 5));
+      expect('moved' in find(rHunter.bodies, 'h')).toBe(false);
+      expect(rHunter.outcomes[0]!.avoid).toBe('out');
+    }
+    const rShadow = resolve(blast, caster, [caster, sh], place(5, 5), GRID, rolls({ sh: [] }, { sh: 20 }), NOW, RULES, null, {});
+    expect('ok' in rShadow && rShadow.ok).toBe(true);
+    if ('ok' in rShadow && rShadow.ok) {
+      expect(find(rShadow.bodies, 'sh').place).not.toEqual(place(5, 5));
+      expect(rShadow.outcomes[0]!.avoid).toBe('out');
     }
   });
 
@@ -993,8 +1068,8 @@ describe('dodge-tile ask mode in resolve', () => {
     expect('ask' in ask).toBe(true);
     if (!('ask' in ask)) return;
     expect(ask.mode).toBe('ring');
-    expect(ask.tiles[0]).toEqual(h.place);
-    expect(ask.tiles).toContainEqual(place(2, 5));
+    expect(ask.auto.place).toEqual(h.place);
+    expect(ask.tiles.map(t => t.place)).toContainEqual(place(2, 5));
     const stayed = resolve(slowBlast, m, [m, h], place(3, 3), walled, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: h.place });
     const covered = resolve(slowBlast, m, [m, h], place(3, 3), walled, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: place(2, 5) });
     if ('ok' in stayed && stayed.ok && 'ok' in covered && covered.ok) {

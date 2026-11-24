@@ -127,6 +127,8 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
     if (alive(r)) { if (tiles.has(`${x},${y}`)) return `two bodies stand on ${x},${y}`; tiles.add(`${x},${y}`); }
     const max = r.abilities.find(a => a.id === r.channel?.ability)?.channel?.max ?? RULES.fight.channelMax;
     if (r.channel && (r.channel.charge < 0 || r.channel.charge > max)) return `${r.id}'s channel has charge ${r.channel.charge} of ${max}`;
+    if (r.kind !== 'hunter' && (r as { moved?: unknown }).moved !== undefined) return `non-hunter ${r.id} carries moved`;
+    if (r.kind === 'hunter' && r.moved !== undefined && (!Number.isInteger(r.moved) || r.moved < 1)) return `hunter ${r.id} has invalid moved ${r.moved}`;
   }
   const fresh = freshLogs(before, after);
   const expired = expiredStatusWrong(before, cmd, after, effects, mem, fresh, refused);

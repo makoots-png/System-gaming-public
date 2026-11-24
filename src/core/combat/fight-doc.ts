@@ -13,15 +13,15 @@ import { parseSheetKey } from '../ids.ts';
 import type { DeviceId, FightId, SheetKey } from '../ids.ts';
 import { ahead, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import { dodgeOptions, reachable, TERRAIN } from './space.ts';
-import type { Grid, Place, Side } from './space.ts';
+import { dodgeOptions, place, TERRAIN, terrainOfChar } from './space.ts';
+import type { Cover, Dodge, DodgeOptions, Grid, Place, Side, Tiles } from './space.ts';
 import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
 import { stacked } from './op-amount.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { freeStatusKey } from './effect-ops.ts';
-import type { Body, LandOp, StatusDef, StatusKey } from './effect-ops.ts';
+import type { Body, CombatantKind, LandOp, StatusDef, StatusKey } from './effect-ops.ts';
 import type { FoeLifeState } from './row-life.ts';
 import type { IconKey } from '../registry/icons.ts';
 import { rowIcon } from './row-icon.ts';
@@ -59,8 +59,8 @@ export const DOC_READY = 12;
 export const DOC_INTENT_LINES = 4, INTENT_LINE_MAX = 80;
 /** The longest run text of a zone's tiles (`runsOf`): a blast's is about 60 characters, a painted room's a few runs a row. */
 export const DOC_ZONE_RUNS = 200;
-/** The longest run text for each dodge tile set (`tiles`, `hit`, `ring`) in `DocDodge`, keeping the worst-case doc under 8/9 of `DOC_MAX`. */
-export const DOC_DODGE_RUNS = 180;
+/** The longest run text for each blast area (`hit`, `ring`) in `DocDodge`, fitting Kamish's radius-9 Dragon Breath on a 40×40 grid while keeping the worst-case doc under 8/9 of `DOC_MAX`. */
+export const DOC_DODGE_RUNS = 300;
 /** The most tiles a doc's tile text and lit line describe: a 40 by 40 map, the largest a saved map is (registry/maps.ts). */
 export const DOC_TILES_MAX = 1600;
 /**
@@ -261,10 +261,11 @@ export type FightDoc =
   };
 /** The thresholds that went off in one command: its count on the GM's phone, and their bearers. */
 export type DocBurst = { readonly n: number; readonly ids: readonly CombatantId[] };
-/** An open dodge prompt as the players' table sees it: prompt id, hunter, perceived attacker/ability, mode, runs of offered/blast tiles, and default tile. */
+/** An open dodge prompt as the players' table sees it: prompt id, hunter, perceived attacker/ability, mode, capped reach, movement bank left, default tile, and runs of lit blast tiles. */
 export type DocDodge = {
   readonly n: number; readonly who: CombatantId; readonly by: CombatantId | null; readonly ability: string | null;
-  readonly mode: 'out' | 'ring'; readonly tiles: string; readonly auto: DocPlace; readonly hit: string; readonly ring: string;
+  readonly mode: Dodge; readonly reach: number; readonly left: number;
+  readonly auto: DocPlace; readonly hit: string; readonly ring: string;
 };
 
 /** What the edge knows that the fight does not: this phone, the time stamp, the room's last doc, a local hunter's sheet key. */
@@ -302,14 +303,15 @@ export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | n
   const currentId = f.phase === 'running' && ids.has(f.currentId) ? f.currentId : null;
   const carried = shown(seen, currentId), scripted = new Set(carried.filter(b => b.mythic).slice(0, DOC_MYTHICS).map(b => b.id));
   const ask = f.phase === 'running' && f.dodge ? dodgeAsk(f, R) : null;
-  const dodge = f.phase === 'running' && ask ? partyDodge(f, ask, ids, lit) : undefined;
   // Earlier hunters who already picked in this same use render at their chosen tile for party clarity (all party rows are perceived).
   const moved = f.phase === 'running' && f.dodge ? f.dodge.to : null;
+  const grid = docGrid(f, lit);
+  const rows = carried.map(b => docRow(f, moved && Object.hasOwn(moved, b.id) ? { ...b, place: moved[b.id]! } : b, now, R, o, ids, scripted));
+  const dodge = f.phase === 'running' && ask ? partyDodge(f, ask, grid, rows, ids, lit) : undefined;
   return {
     ended: false, active: f.phase === 'running', by: o.by, id: f.id, at: o.at, now, currentId,
     ahead: f.phase === 'running' ? ahead(f.rows.filter(isUp), DOC_AHEAD + hiddenRows.size, R.fight).map(r => r.id).filter(id => ids.has(id)).slice(0, DOC_AHEAD) : [],
-    grid: docGrid(f, lit), zones,
-    rows: carried.map(b => docRow(f, moved && Object.hasOwn(moved, b.id) ? { ...b, place: moved[b.id]! } : b, now, R, o, ids, scripted)),
+    grid, zones, rows,
     log: f.log.filter(l => !l.rows.some(x => hiddenRows.has(x)) && !l.zones.some(x => hiddenZones.has(x))).map(l => l.text).slice(0, DOC_LOG),
     refused: f.phase === 'running' && o.refused && o.refused.at === now ? o.refused : null,
     ready: readyOf(f.rows.find(b => b.id === currentId), now), ...leftOf(f.rows.find(b => b.id === currentId)), ...armedOf(seen, R),
@@ -318,33 +320,56 @@ export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | n
   };
 }
 /**
- * Builds `DocDodge` strictly from party-perceived bodies (`ids`) and terrain the party knows (unseen fog tiles treated
- * as floor), so hidden foes and unrevealed walls never leak through holes in the offered tiles. When the attacker is
- * not perceived by the party, `by`, `ability`, `hit` and `ring` are redacted.
+ * Turns a room doc's `DocGrid` into a `Grid` (unseen `?` tiles become floor): shared by `partyDodge` and `docGround` so
+ * both phones evaluate walkability and dodge reach on the exact same map.
  */
-function partyDodge(f: Running, ask: DodgeAsked, ids: ReadonlySet<string>, lit: Set<number> | null): DocDodge | undefined {
-  const dodger = ask.bodies.find(b => b.id === ask.who);
-  if (!dodger || !f.dodge) return undefined;
-  const partyGrid: Grid = f.fog && f.grid.tiles
-    ? { w: f.grid.w, h: f.grid.h, tiles: f.grid.tiles.map((t, i) => (f.fog!.seen[i] === '1' || lit?.has(i) ? t : 'floor')) }
-    : f.grid;
-  const seenOthers = ask.bodies.filter(b => b.id !== ask.who && alive(b) && ids.has(b.id)).map(b => b.place);
-  const opts = dodgeOptions(dodger.place, ask.reach, { hit: ask.hit, ring: ask.ring }, partyGrid, seenOthers) ?? { avoid: ask.mode, tiles: ask.tiles };
-  const toIdx = (p: Place): number => p.y * f.grid.w + p.x;
-  let offered = opts.tiles;
-  // If hidden foes or fog walls secretly blocked every 'out' tile so the GM fight is in 'ring' mode, include reachable ring tiles too so the player is never left without a legal tile.
-  if (opts.avoid === 'out' && ask.mode === 'ring') {
-    const ringSet = new Set(ask.ring.map(toIdx));
-    const ringReach = reachable(dodger.place, ask.reach, partyGrid, seenOthers).map(r => r.place).filter(p => ringSet.has(toIdx(p)));
-    offered = [...opts.tiles, ...ringReach];
-  }
-  const auto = opts.tiles[0] ?? ask.tiles[0]!;
+export function gridOfDoc(g: DocGrid): Grid {
+  return { w: g.w, h: g.h, tiles: g.tiles ? [...g.tiles].map(c => terrainOfChar(c) ?? 'floor') : null };
+}
+/**
+ * Offered dodge tiles, `mode`, and `auto` from the room doc's grid and carried row places (`rows`), called by both
+ * `partyDodge` (GM building `DocDodge`) and `docDodge` (player phone building `MapDodge`) so both sides agree on every
+ * tile, step cost, mode, and auto pick, including on a fogged map.
+ */
+export function docDodgeOptions(
+  grid: DocGrid,
+  rows: readonly { readonly id: CombatantId; readonly kind: CombatantKind; readonly place: DocPlace; readonly life: { readonly at: LifeState } }[],
+  who: CombatantId,
+  reach: Tiles,
+  cover: Cover,
+): DodgeOptions | null {
+  const dodger = rows.find(r => r.id === who);
+  if (!dodger) return null;
+  const g = gridOfDoc(grid);
+  const others = rows
+    .filter(r => r.id !== who && (isUp(r) || r.kind === 'hunter'))
+    .map(r => place(r.place.x, r.place.y));
+  return dodgeOptions(place(dodger.place.x, dodger.place.y), reach, cover, g, others);
+}
+/**
+ * Builds `DocDodge` strictly from the doc's party-perceived rows and known terrain (`docDodgeOptions`), so hidden foes
+ * and unseen fog walls never leak through `mode` or `auto`. When the attacker is not perceived by the party, `by`,
+ * `ability`, `hit` and `ring` are redacted.
+ */
+function partyDodge(f: Running, ask: DodgeAsked, grid: DocGrid, rows: readonly FightDocRow[], ids: ReadonlySet<string>, lit: Set<number> | null): DocDodge | undefined {
+  if (!f.dodge) return undefined;
+  const size = grid.w * grid.h;
+  const toIdx = (p: Place): number => p.y * grid.w + p.x;
+  const at = (i: number): Place => place(i % grid.w, Math.floor(i / grid.w));
   const seesBy = ids.has(ask.by);
   const inLit = (list: readonly Place[]): number[] => list.map(toIdx).filter(i => lit === null || lit.has(i));
+  const hitRuns = seesBy ? runsOf(inLit(ask.hit), DOC_DODGE_RUNS) : '';
+  const ringRuns = seesBy ? runsOf(inLit(ask.ring), DOC_DODGE_RUNS) : '';
+  const cover: Cover = seesBy
+    ? { hit: tilesOfRuns(hitRuns, size).map(at), ring: tilesOfRuns(ringRuns, size).map(at) }
+    : { hit: ask.hit, ring: ask.ring };
+  const opts = docDodgeOptions(grid, rows, ask.who, ask.reach, cover);
+  const auto = opts ? opts.auto.place : ask.auto.place;
+  const mode: Dodge = opts ? opts.auto.avoid : ask.mode;
   return {
     n: f.dodge.n, who: ask.who, by: seesBy ? ask.by : null, ability: seesBy ? ask.ability.name.slice(0, NAME_MAX) : null,
-    mode: opts.avoid, tiles: runsOf(offered.map(toIdx), DOC_DODGE_RUNS), auto: { x: auto.x, y: auto.y },
-    hit: seesBy ? runsOf(inLit(ask.hit), DOC_DODGE_RUNS) : '', ring: seesBy ? runsOf(inLit(ask.ring), DOC_DODGE_RUNS) : '',
+    mode, reach: ask.reach, left: ask.left, auto: { x: auto.x, y: auto.y },
+    hit: hitRuns, ring: ringRuns,
   };
 }
 /**
@@ -551,10 +576,11 @@ export function fightWire(d: FightDoc): Record<string, unknown> {
     ...(Object.keys(defs).length ? { defs } : {}),
   };
 }
-/** An open dodge prompt on the wire: n id, w hunter, b attacker, a ability, v mode (0 out, 1 ring), t tiles, p default [x,y], h hit, r ring. */
+const DODGE_MODES: readonly Dodge[] = ['out', 'ring', 'caught'];
+/** An open dodge prompt on the wire: n id, w hunter, b attacker, a ability, v mode (0 out, 1 ring, 2 caught), k reach, l bank left, p default [x,y], h hit, r ring. */
 const dodgeWire = (d: DocDodge): Record<string, unknown> => ({
   n: d.n, w: d.who, ...unlessNull('b', d.by), ...unlessNull('a', d.ability),
-  v: d.mode === 'out' ? 0 : 1, t: d.tiles, p: [d.auto.x, d.auto.y],
+  v: DODGE_MODES.indexOf(d.mode), k: d.reach, l: d.left, p: [d.auto.x, d.auto.y],
   ...(d.hit ? { h: d.hit } : {}), ...(d.ring ? { r: d.ring } : {}),
 });
 /** Each non-shipped status's def once by key, the current row's first, at most `DOC_DEFS_MAX` characters of JSON. */

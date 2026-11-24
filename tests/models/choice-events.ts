@@ -19,7 +19,11 @@ export const HUNTER: CombatantId = combatantId('@');
 /** A row of eight: `@` at 1, a foe `g` beside it at 2, a foe `h` at 5. */
 const BODIES = [body('@', 'party', place(1, 0), true), body('g', 'foe', place(2, 0)), body('h', 'foe', place(5, 0))];
 /** A dodge prompt for `@` with two safe tiles: (0,0) as the nearest default and (0,1) as an alternate. */
-export const DODGE: MapDodge = { n: 1, who: HUNTER, mode: 'out', ability: 'Blast', tiles: [place(0, 0), place(0, 1)], auto: place(0, 0), hit: [place(1, 0)], ring: [place(1, 1)] };
+export const DODGE: MapDodge = {
+  n: 1, who: HUNTER, mode: 'out', ability: 'Blast', reach: tiles(1), left: tiles(6), max: tiles(6),
+  tiles: [{ place: place(1, 0), steps: tiles(0), avoid: 'caught' }, { place: place(0, 0), steps: tiles(1), avoid: 'out' }, { place: place(0, 1), steps: tiles(1), avoid: 'out' }],
+  auto: place(0, 0), hit: [place(1, 0)], ring: [place(1, 1)],
+};
 const input = (actor: CombatantId | null, dodge: MapDodge | null = null): MapInput => ({ bodies: BODIES, grid: openGrid(8, 2), currentId: HUNTER, actor, dodge });
 export const STRIKE: Ability = abilityOf('strike', { id: abilityId('strike'), name: 'Strike' }, RULES);
 export const WARD: Ability = { ...abilityOf('support', { id: abilityId('ward'), name: 'Ward' }, RULES), aim: 'self' };

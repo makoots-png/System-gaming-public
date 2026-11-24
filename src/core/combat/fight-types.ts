@@ -4,7 +4,7 @@
 import type { Rules } from '../rules.ts';
 import type { Dice } from '../formula.ts';
 import type { Life } from '../hunter/vitals.ts';
-import type { Grid, Place, Side, Terrain, Tiles } from './space.ts';
+import type { Dodge, Grid, Place, Side, Terrain, Tiles } from './space.ts';
 import type { Tick } from './timeline.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
 import type { FightId, SheetKey } from '../ids.ts';
@@ -317,8 +317,8 @@ export type Effect =
   | { readonly type: 'omen'; readonly id: CombatantId; readonly omen: OmenKey }
   /** A change met an answer (`how`) to mythic `id`'s omen (`omen`), which it canceled or weakened. */
   | { readonly type: 'omenAnswered'; readonly id: CombatantId; readonly omen: OmenKey; readonly how: Answer; readonly outcome: Exclude<AnswerOutcome, 'none'>; readonly line: string }
-  /** Prompt `n` opened for hunter `who` to pick among `tiles` (`out` clears the attack; `ring` stays in the outer ring). */
-  | { readonly type: 'dodgeAsked'; readonly n: number; readonly who: CombatantId; readonly mode: 'out' | 'ring'; readonly tiles: readonly Place[] }
+  /** Prompt `n` opened for hunter `who` (`mode`: best outcome reachable, `reach`: capped dodge tiles, `left`: movement bank left). */
+  | { readonly type: 'dodgeAsked'; readonly n: number; readonly who: CombatantId; readonly mode: Dodge; readonly reach: Tiles; readonly left: Tiles }
   | { readonly type: 'ended'; readonly summary: Summary }
   | { readonly type: 'refused'; readonly reason: Refusal };
 export type EffectType = Effect['type'];

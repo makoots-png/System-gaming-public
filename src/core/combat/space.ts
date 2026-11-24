@@ -331,22 +331,21 @@ export function walkPath(from: Place, to: Place, grid: Grid, bodies: readonly Pl
   return path.reverse();
 }
 
+/** One tile a target can end on during a dodge: the tile, its walk cost in steps (0 for staying put), and where it lies in `cover`. */
+export type DodgeTile = { readonly place: Place; readonly steps: Tiles; readonly avoid: Dodge };
 /**
- * Every tile a target at `at` that can move `can` steps may dodge to against a use's cover: every reachable tile outside
- * `cover` (`avoid: 'out'`), or when none is reachable, every reachable tile in `cover.ring` (`avoid: 'ring'`, starting
- * with `at` itself when `at` is already in the ring), or null when neither is reachable. Ordered as `reachable` orders
- * them: fewest steps first, then lowest `y`, then `x`, so `tiles[0]` is what automatic `dodge` takes.
+ * Every tile a target at `at` that can move `can` steps may dodge to against a use's cover: every tile `reachable`
+ * reaches (starting with `at` at 0 steps), each tagged with its `avoid` tier (`'out'`, `'ring'`, or `'caught'`), plus
+ * `auto`, the automatic pick (best `avoid` tier, then fewest steps, then lowest `y`, then `x`; staying put when trapped
+ * in `'caught'` or already in `'ring'` with no way clear).
  */
-export type DodgeOptions = { readonly avoid: 'out' | 'ring'; readonly tiles: readonly Place[] };
-export function dodgeOptions(at: Place, can: Tiles, cover: Cover, grid: Grid, bodies: readonly Place[]): DodgeOptions | null {
+export type DodgeOptions = { readonly tiles: readonly DodgeTile[]; readonly auto: DodgeTile };
+export function dodgeOptions(at: Place, can: Tiles, cover: Cover, grid: Grid, bodies: readonly Place[]): DodgeOptions {
   const hit = new Set(cover.hit.map(p => indexOf(grid, p))), ring = new Set(cover.ring.map(p => indexOf(grid, p)));
   const where = (p: Place): Dodge => hit.has(indexOf(grid, p)) ? 'caught' : ring.has(indexOf(grid, p)) ? 'ring' : 'out';
-  const options = reachable(at, can, grid, bodies);
-  for (const goal of ['out', 'ring'] as const) {
-    const list = options.filter(o => where(o.place) === goal).map(o => o.place);
-    if (list.length) return { avoid: goal, tiles: list };
-  }
-  return null;
+  const list: DodgeTile[] = reachable(at, can, grid, bodies).map(r => ({ place: r.place, steps: r.steps, avoid: where(r.place) }));
+  const auto = list.find(t => t.avoid === 'out') ?? list.find(t => t.avoid === 'ring') ?? list[0]!;
+  return { tiles: list, auto };
 }
 
 /**
@@ -355,6 +354,6 @@ export function dodgeOptions(at: Place, can: Tiles, cover: Cover, grid: Grid, bo
  * `y`, then `x`. A target that can reach neither is caught and stays where it is.
  */
 export function dodge(at: Place, can: Tiles, cover: Cover, grid: Grid, bodies: readonly Place[]): { avoid: Dodge; to: Place } {
-  const o = dodgeOptions(at, can, cover, grid, bodies);
-  return o ? { avoid: o.avoid, to: o.tiles[0]! } : { avoid: 'caught', to: at };
+  const { auto } = dodgeOptions(at, can, cover, grid, bodies);
+  return { avoid: auto.avoid, to: auto.place };
 }

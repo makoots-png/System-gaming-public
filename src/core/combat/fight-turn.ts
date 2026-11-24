@@ -16,7 +16,7 @@ import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter, sameLife } from './row-life.ts';
-import { applyStatus, dueAmount, modified, onSheet, owedOf, perRound, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, dueAmount, modified, onSheet, owedOf, perRound, resetMoved, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
 import type { SheetKey } from '../ids.ts';
@@ -638,7 +638,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (!found || !isUp(found)) continue;
     let row = found;
     if (held(row, g.now)) {
-      g = logged(withRow(g, acted(row, g.now, paceCost('standard', R.fight), R.fight)), line(`${row.name} cannot act and loses the turn.`, [row.id]), R);
+      g = logged(withRow(g, resetMoved(acted(row, g.now, paceCost('standard', R.fight), R.fight))), line(`${row.name} cannot act and loses the turn.`, [row.id]), R);
       continue;
     }
     // a mythic's script at its turn start (design B.3): its phase change or an announce spends the turn; an act beat goes on
@@ -662,7 +662,8 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
         g = { ...g, rows: g.rows.map(b => b.side !== side && isUp(b) ? withThreat(b, t => ({ ...t, [id]: (t[id] ?? 0) * growth })) : b) };
       }
     }
-    // its turn began: it may be hastened again (kits table 8.9.6), and the reactions its turn restores are armed again (8.9.1)
+    // its turn began: its movement bank refills, it may be hastened again (kits table 8.9.6), and the reactions its turn restores are armed again (8.9.1)
+    if (row.kind === 'hunter' && row.moved !== undefined) { row = resetMoved(row); g = withRow(g, row); }
     if (row.hastened) { const { hastened: _was, ...rest } = row; row = rest; g = withRow(g, row); }
     if (g.rows.some(b => b.armed?.spent)) { g = { ...g, rows: restored(g.rows, row.id) }; row = rowOf(g, row.id)!; }
     // the turn counts on its row (row-tally.ts): a turn held or lost to a stagger was not begun

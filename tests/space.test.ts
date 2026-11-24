@@ -294,21 +294,44 @@ describe('stepping away from a use (rule 8a)', () => {
     expect(dodge(place(8, 8), tiles(3), cover, grid, [])).toEqual({ avoid: 'out', to: place(8, 8) });
   });
 
-  test('dodgeOptions lists every reachable out tile nearest first, and tiles[0] matches automatic dodge', () => {
-    const out = dodgeOptions(target, tiles(3), cover, grid, [])!;
-    expect(out.avoid).toBe('out');
-    expect(out.tiles.length).toBeGreaterThan(1);
-    expect(out.tiles[0]).toEqual(dodge(target, tiles(3), cover, grid, []).to);
-    expect(dodgeOptions(target, tiles(1), cover, grid, [])).toBeNull();
+  test('dodgeOptions lists every reachable tile with steps and avoid, and auto matches automatic dodge', () => {
+    const out = dodgeOptions(target, tiles(3), cover, grid, []);
+    expect(out.auto.avoid).toBe('out');
+    expect(out.auto.place).toEqual(dodge(target, tiles(3), cover, grid, []).to);
+    expect(out.tiles.some(t => same(t.place, target) && t.steps === 0 && t.avoid === 'caught')).toBe(true);
+    expect(out.tiles.some(t => t.avoid === 'ring')).toBe(true);
+    expect(out.tiles.some(t => t.avoid === 'out')).toBe(true);
+    expect(out.tiles.length).toBe(reachable(target, 3, grid, []).length);
+
+    // Reach 1 cannot leave the blast, yet still lists staying put + every reachable neighbor
+    const caught = dodgeOptions(target, tiles(1), cover, grid, []);
+    expect(caught.auto).toEqual({ place: target, steps: tiles(0), avoid: 'caught' });
+    expect(caught.tiles.length).toBeGreaterThan(1);
+    expect(caught.tiles.every(t => t.avoid === 'caught')).toBe(true);
+
+    // Reach 0 offers only staying put
+    const rooted = dodgeOptions(target, tiles(0), cover, grid, []);
+    expect(rooted.tiles).toEqual([{ place: target, steps: tiles(0), avoid: 'caught' }]);
+    expect(rooted.auto).toEqual({ place: target, steps: tiles(0), avoid: 'caught' });
   });
 
-  test('dodgeOptions in ring-only mode includes staying put first when already in the outer ring, plus other reachable ring tiles', () => {
+  test('dodgeOptions in ring-only mode selects staying put as auto, includes other ring and blast tiles, and respects rough ground steps', () => {
     const inRing = place(2, 6);
-    const opts = dodgeOptions(inRing, tiles(1), cover, grid, [place(1, 5), place(1, 6), place(1, 7), place(2, 7)])!;
-    expect(opts.avoid).toBe('ring');
-    expect(opts.tiles[0]).toEqual(inRing);
-    expect(opts.tiles.length).toBeGreaterThanOrEqual(2);
-    expect(dodge(inRing, tiles(1), cover, grid, [place(1, 5), place(1, 6), place(1, 7), place(2, 7)])).toEqual({ avoid: 'ring', to: inRing });
+    const blocked = [place(1, 5), place(1, 6), place(1, 7), place(2, 7)];
+    const opts = dodgeOptions(inRing, tiles(1), cover, grid, blocked);
+    expect(opts.auto).toEqual({ place: inRing, steps: tiles(0), avoid: 'ring' });
+    expect(opts.tiles.filter(t => t.avoid === 'ring').length).toBeGreaterThanOrEqual(2);
+    expect(opts.tiles.some(t => t.avoid === 'caught')).toBe(true);
+    expect(dodge(inRing, tiles(1), cover, grid, blocked)).toEqual({ avoid: 'ring', to: inRing });
+
+    // Rough ground costs 2 steps
+    const rough = draw(['T~..']);
+    const roughOpts = dodgeOptions(one(rough.marks('T')), tiles(2), { hit: [place(0, 0)], ring: [] }, rough.grid, []);
+    expect(roughOpts.tiles).toEqual([
+      { place: place(0, 0), steps: tiles(0), avoid: 'caught' },
+      { place: place(1, 0), steps: tiles(2), avoid: 'out' },
+    ]);
+    expect(roughOpts.auto).toEqual({ place: place(1, 0), steps: tiles(2), avoid: 'out' });
   });
 });
 

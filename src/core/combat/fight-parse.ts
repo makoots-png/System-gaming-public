@@ -793,9 +793,9 @@ type OwnIn = { readonly v: Rec; readonly grid: Grid; readonly hpMax: number };
 /** The fields of another kind a kind holds as null (`HunterRow` and the rest, effect-ops.ts): each must be stored as null. */
 const NULLS = (v: Rec, keys: readonly ('holder' | 'threat' | 'stagger' | 'intent' | 'mythic')[]): boolean => keys.every(k => v[k] === null);
 /** The fields of another kind a kind holds absent: each must be absent from the stored row. */
-const ABSENT = (v: Rec, keys: readonly ('owner' | 'until' | 'extraction')[]): boolean => keys.every(k => v[k] === undefined);
+const ABSENT = (v: Rec, keys: readonly ('moved' | 'owner' | 'until' | 'extraction')[]): boolean => keys.every(k => v[k] === undefined);
 /** The fields a row's kind decides (effect-ops.ts `HunterRow` and the rest), one kind's at a time. */
-type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'owner' | 'until' | 'extraction';
+type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'moved' | 'owner' | 'until' | 'extraction';
 type OwnOf = Pick<HunterRow, OwnKey> | Pick<MonsterRow, OwnKey> | Pick<ShadowRow, OwnKey> | Pick<SummonRow, OwnKey>;
 /**
  * A row's own fields, read by its kind (SMX-rules-8): each kind reads its own and requires another kind's to be null or
@@ -806,28 +806,29 @@ type OwnOf = Pick<HunterRow, OwnKey> | Pick<MonsterRow, OwnKey> | Pick<ShadowRow
 const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
   hunter: ({ v, hpMax }) => {
     const holder = holderOf(v.holder), life = parseLife(v.life, Math.max(1, hpMax));
-    if (holder === undefined || holder?.kind === 'shadow' || !life || v.xp !== 0) return null;
+    const moved = v.moved === undefined ? undefined : whole(v.moved, 1, BIG);
+    if (holder === undefined || holder?.kind === 'shadow' || !life || v.xp !== 0 || moved === null) return null;
     if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
-    return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null };
+    return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null, ...(moved === undefined ? {} : { moved }) };
   },
   monster: ({ v, grid, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), stagger = staggerOf(v.stagger);
     const intent = intentOf(v.intent, grid), xp = whole(v.xp, 0, BIG), extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
     const mythic = mythicOf(v.mythic, grid);
     if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null || mythic === undefined) return null;
-    if (!NULLS(v, ['holder']) || !ABSENT(v, ['owner', 'until'])) return null;
+    if (!NULLS(v, ['holder']) || !ABSENT(v, ['moved', 'owner', 'until'])) return null;
     return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }) };
   },
   shadow: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), holder = read === null ? null : read?.kind === 'shadow' ? read : undefined;
     if (!life || holder === undefined || v.xp !== 0) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'owner', 'until', 'extraction'])) return null;
     return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null };
   },
   summon: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), owner = idText(v.owner), until = tickOf(v.until);
     if (!life || threat === undefined || !owner || until === null || v.xp !== 0) return null;
-    if (!NULLS(v, ['holder', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['extraction'])) return null;
+    if (!NULLS(v, ['holder', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'extraction'])) return null;
     return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner), until };
   },
 };

@@ -16,7 +16,7 @@ import { WORD_MAX, newEvent } from '../protocol.ts';
 import type { EventStamp, WordBackPayload, WordPayload } from '../protocol.ts';
 import { parseEventId, parseRoomCode, parseSaveId, parseSheetKey, sheetKeyOf } from '../ids.ts';
 import type { EventId, HunterId, RoomCode, SheetKey } from '../ids.ts';
-import { refuse } from '../save-step.ts';
+import { atSync, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { atOutbox, post } from './outbox.ts';
 import type { Outbox } from './outbox.ts';
@@ -95,7 +95,7 @@ export const WORDS_KEPT = 100;
 /** The words the save holds, oldest first. */
 export const wordsOf = (s: Pick<Save, 'settings'>): readonly Word[] => s.settings.sync.words ?? [];
 const withWords = <S extends Pick<Save, 'settings'>>(s: S, words: readonly Word[]): S =>
-  ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, words: [...words] } } });
+  atSync(sy => ({ ...sy, words: [...words] }))(s);
 /** Whose thread a word is in: its room and its hunter. */
 const threadOf = (w: Word): string => `${w.room} ${w.side === 'mine' ? `h ${w.hid}` : `k ${w.by}`}`;
 /** `words` with `w` last: one per id; past `WORD_THREAD` its thread's oldest goes, past `WORDS_KEPT` the oldest. */

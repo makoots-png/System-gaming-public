@@ -6,7 +6,7 @@ import { newHunter } from './hunter/hunter.ts';
 import type { HunterRef, SheetKey } from './ids.ts';
 import type { Hunter, Save } from './save.ts';
 import type { Rules } from './rules.ts';
-import { refuse } from './save-step.ts';
+import { atSync, refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 import { rebindTo } from './sync/bind.ts';
 
@@ -46,8 +46,8 @@ export function removeHunter(save: Save, hid: string, fresh: Hunter | null): Sav
   if (!left.length && !fresh) return refuse('last');
   const hunters = left.length ? left : [fresh!];
   const active = hunters.some(h => h.id === save.settings.activeHunterId) ? save.settings.activeHunterId : hunters[0]!.id;
-  const sync = save.settings.sync.boundHunterId === hid ? rebindTo(save.settings.sync, active) : save.settings.sync;
-  return { ...save, hunters, settings: { ...save.settings, activeHunterId: active, sync } };
+  const next: Save = { ...save, hunters, settings: { ...save.settings, activeHunterId: active } };
+  return save.settings.sync.boundHunterId === hid ? atSync(sy => rebindTo(sy, active))(next) : next;
 }
 
 /** Two plain values (what a save holds: numbers, strings, lists and objects) are the same, whatever the key order. */

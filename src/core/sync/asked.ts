@@ -16,7 +16,7 @@
 
 import type { Save } from '../save.ts';
 import type { Outbox } from './outbox.ts';
-import { refuse } from '../save-step.ts';
+import { atSync, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { parseEventId, parseGateId, parseRoomCode, parseSaveId } from '../ids.ts';
 import type { EventId, GateId, HunterId, RoomCode } from '../ids.ts';
@@ -92,7 +92,7 @@ export const ASKED_MAX = 20;
 /** The asks the save holds. */
 export const askedOf = (s: Pick<Save, 'settings'>): readonly Asked[] => s.settings.sync.asked ?? [];
 const withAsked = <S extends Pick<Save, 'settings'>>(s: S, asked: readonly Asked[]): S =>
-  ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, asked: [...asked] } } });
+  atSync(sy => ({ ...sy, asked: [...asked] }))(s);
 
 /** Whether ask `w` holds goods aside: a stash put, whose goods are in no bag until the answer lands or they come back. */
 export const holdsGoods = (w: Asked): boolean => w.kind === 'stash' && w.ask.kind === 'put';

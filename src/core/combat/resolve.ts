@@ -12,13 +12,13 @@ import { formulaOf, tagsOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
 import type { Rules } from '../rules.ts';
 import { dist, dodge, dodgeOptions, inShape, sees, shovePath, terrain, TERRAIN, tiles, tilesOf } from './space.ts';
-import type { Grid, Place, Side, Tiles } from './space.ts';
+import type { Dodge, DodgeTile, Grid, Place, Side, Tiles } from './space.ts';
 import { acted, delayed, extraNow, extraStep, interval, notBefore, refunded, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import type { LifeState } from '../hunter/vitals.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import { removeStatus, shielded, shieldOn, withStatuses } from './effect-ops.ts';
+import { moveLeft, removeStatus, shielded, shieldOn, withMoved, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { ambushShare, boostsOn, critFacesAgainst, damageShare, dealtBy, edgeOn, edgeStep, given, healShare, hides, shieldShare, rangeWith, warded, wardedDamage } from './standing.ts';
 import { eyesOf, figureOf, perceivedBy, perceives, watched } from './sight.ts';
@@ -84,12 +84,14 @@ export type Resolved =
 /** Caller-supplied dodge choices (by row id) for a use being resolved in ask mode. */
 export type DodgePick = Readonly<Record<CombatantId, Place>>;
 /**
- * The first hunter caught in a use who has two or more tiles to dodge to, before damage or statuses land. `bodies` holds
- * the rows with any earlier target's dodge already applied and no damage taken yet.
+ * The first hunter caught in a use who has two or more tiles to choose from (staying put plus at least one reachable
+ * move), before damage or statuses land. `bodies` holds the rows with any earlier target's dodge already applied and no
+ * damage taken yet. `reach` is `min(rollCan, left)` where `left` is the hunter's remaining movement bank.
  */
 export type DodgeAsked = {
   readonly ask: true; readonly who: CombatantId; readonly by: CombatantId; readonly ability: Ability;
-  readonly mode: 'out' | 'ring'; readonly reach: Tiles; readonly tiles: readonly Place[];
+  readonly mode: Dodge; readonly reach: Tiles; readonly left: Tiles;
+  readonly auto: DodgeTile; readonly tiles: readonly DodgeTile[];
   readonly hit: readonly Place[]; readonly ring: readonly Place[]; readonly bodies: readonly Body[];
 };
 export type ResolvedOrAsk = Resolved | DodgeAsked;
@@ -153,33 +155,35 @@ const edge = (mine: number, theirs: number, R: ResolveRules): number =>
  */
 export const resists = (d20: number, will: number, aim: number, R: ResolveRules): boolean => d20 === 20 || d20 + edge(will, aim, R) >= R.fight.resistDc;
 
-// Rule 8a and 8b: where the target ends. A self, ally or sure use is caught. With `picks` given, a hunter with two or
-// more tiles to dodge to (and no pick yet) answers a `DodgeAsked` so the fight can ask its player where to go.
+// Rule 8a and 8b: where the target ends. A self, ally or sure use is caught. Hunters cap dodge reach by their per-turn
+// movement bank (`moveLeft`) and may stay put or pick any reachable tile; monsters, shadows, and summons stay automatic.
 function whereItEnds(
   a: Ability, user: Body, fromPlace: Place, target: Body, bodies: readonly Body[], at: Place, grid: Grid, d20: number | undefined, R: ResolveRules, picks?: DodgePick,
-): { avoid: Avoid; to: Place | null } | DodgeAsked {
-  if (!rollsReaction(a) || d20 === undefined) return { avoid: 'caught', to: null };
-  if (a.delivery.kind === 'direct') return { avoid: resists(d20, target.sheet.will, user.sheet.aim, R) ? 'resisted' : 'caught', to: null };
+): { avoid: Avoid; to: Place | null; steps: Tiles } | DodgeAsked {
+  if (!rollsReaction(a) || d20 === undefined) return { avoid: 'caught', to: null, steps: tiles(0) };
+  if (a.delivery.kind === 'direct') return { avoid: resists(d20, target.sheet.will, user.sheet.aim, R) ? 'resisted' : 'caught', to: null, steps: tiles(0) };
   const land = landTime(a, user, target, R) ?? 0;
   const share = clamp((d20 + edge(target.sheet.react, user.sheet.aim, R)) / 20, 0, 1);
-  const can = tiles(Math.floor(target.sheet.move * land * share));
+  const rollCan = Math.floor(target.sheet.move * land * share);
   const others = bodies.filter(b => b.id !== target.id && alive(b)).map(b => b.place);
   const cover = tilesOf(a.shape, fromPlace, at, grid);
-  if (picks && target.kind === 'hunter') {
+  if (target.kind === 'hunter') {
+    const left = moveLeft(target), can = tiles(Math.min(rollCan, left));
     const opts = dodgeOptions(target.place, can, cover, grid, others);
-    if (!opts) return { avoid: 'caught', to: null };
-    if (Object.hasOwn(picks, target.id)) {
-      const want = picks[target.id]!, chosen = opts.tiles.some(p => samePlace(p, want)) ? want : opts.tiles[0]!;
-      return { avoid: opts.avoid, to: !samePlace(chosen, target.place) ? chosen : null };
+    if (picks) {
+      if (Object.hasOwn(picks, target.id)) {
+        const want = picks[target.id]!, chosen = opts.tiles.find(o => samePlace(o.place, want)) ?? opts.auto;
+        return { avoid: chosen.avoid, to: chosen.steps > 0 ? chosen.place : null, steps: chosen.steps };
+      }
+      if (opts.tiles.length >= 2) {
+        return { ask: true, who: target.id, by: user.id, ability: a, mode: opts.auto.avoid, reach: can, left, auto: opts.auto, tiles: opts.tiles, hit: cover.hit, ring: cover.ring, bodies };
+      }
     }
-    if (opts.tiles.length >= 2) {
-      return { ask: true, who: target.id, by: user.id, ability: a, mode: opts.avoid, reach: can, tiles: opts.tiles, hit: cover.hit, ring: cover.ring, bodies };
-    }
-    const only = opts.tiles[0]!;
-    return { avoid: opts.avoid, to: !samePlace(only, target.place) ? only : null };
+    const chosen = opts.auto;
+    return { avoid: chosen.avoid, to: chosen.steps > 0 ? chosen.place : null, steps: chosen.steps };
   }
-  const end = dodge(target.place, can, cover, grid, others);
-  return { avoid: end.avoid, to: end.avoid !== 'caught' && !samePlace(end.to, target.place) ? end.to : null };
+  const end = dodge(target.place, tiles(rollCan), cover, grid, others);
+  return { avoid: end.avoid, to: end.avoid !== 'caught' && !samePlace(end.to, target.place) ? end.to : null, steps: tiles(0) };
 }
 
 // Rule 9: the low faces of the target's die are the moments it froze; a target's exposed faces add to the user's (kits 8.1).
@@ -578,16 +582,20 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
 
   const rows = new Map(f.bodies.map(b => [b.id, b] as const));
   const targets = [...hit, ...ring];
-  const d20s = new Map<CombatantId, number | undefined>(), ends = new Map<CombatantId, { avoid: Avoid; to: Place | null }>();
-  // Pass 1: every target dodges in order before any damage or status lands, so a hunter's pick never leaks an earlier target's fate.
+  const d20s = new Map<CombatantId, number | undefined>(), ends = new Map<CombatantId, { avoid: Avoid; to: Place | null; steps: Tiles }>();
+  // Pass 1: every target dodges in order before any damage or status lands, so a hunter's pick never leaks an earlier
+  // target's fate. A negated hunter skips dodging completely so it spends no movement bank; shadows and summons keep stepping aside.
   for (const first of targets) {
     const u = rows.get(user.id)!, t = rows.get(first.id)!;
     const d20 = rollsReaction(a) ? keptFace(a, u, t, rolls) : rolls.react[t.id];
     d20s.set(t.id, d20);
-    const end = whereItEnds(a, u, from.place, t, [...rows.values()], at, grid, d20, R, answers.negate?.has(t.id) ? undefined : picks);
+    const negated = answers.negate?.has(t.id) === true;
+    const end = negated && t.kind === 'hunter'
+      ? { avoid: 'out' as const, to: null, steps: tiles(0) }
+      : whereItEnds(a, u, from.place, t, [...rows.values()], at, grid, d20, R, negated ? undefined : picks);
     if ('ask' in end) return end;
     ends.set(t.id, end);
-    if (end.to) rows.set(t.id, { ...t, place: end.to });
+    if (end.to) rows.set(t.id, withMoved({ ...t, place: end.to }, end.steps));
   }
   const snap = snapshot(rows.get(user.id)!, [...rows.values()], targets.length, ok.spent, now, R);
   const outcomes: Outcome[] = [], bursts: Burst[] = [];

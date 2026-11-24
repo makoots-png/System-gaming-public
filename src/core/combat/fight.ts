@@ -14,7 +14,7 @@ import type { Place, Shape } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, modified, removeStatus, statusOn, statusShield, withMoved, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
@@ -198,10 +198,10 @@ const dropChannel = (u: Body): Body => u.channel && channelCan(u.channel, 'drop'
 
 /** Strips the open dodge wait from `f`, keeping `dodges` so the next prompt's counter stays monotonic. */
 const clearDodge = (f: Running): Running => { const { dodge: _, ...rest } = f; return rest; };
-/** Holds `use` on `f` while hunter `ask.who` picks one of `ask.tiles`, raising `dodges` so every prompt has a fresh `n`. */
+/** Holds `use` on `f` while hunter `ask.who` picks a dodge tile, raising `dodges` so every prompt has a fresh `n`. */
 function askDodge(f: Running, use: HeldUse, to: DodgePick, ask: DodgeAsked): Result {
   const n = (f.dodges ?? 0) + 1;
-  return done({ ...f, dodges: n, dodge: { n, use, to } }, [{ type: 'dodgeAsked', n, who: ask.who, mode: ask.mode, tiles: ask.tiles }]);
+  return done({ ...f, dodges: n, dodge: { n, use, to } }, [{ type: 'dodgeAsked', n, who: ask.who, mode: ask.mode, reach: ask.reach, left: ask.left }]);
 }
 
 function actWith(f: Running, cmd: Extract<Command, { type: 'act' }>, picks: DodgePick, ctx: Ctx): Result {
@@ -443,9 +443,12 @@ const move: Step<'running', 'move'> = (f, cmd, ctx) => {
   if (steps === null) return refused(f, 'blocked');
   if (steps > (dash ? Math.floor(who.sheet.move) : who.sheet.stride)) return refused(f, 'tooFar');
   const moved = { ...dropChannel(who), place: cmd.to };
-  const u = dash
-    ? acted({ ...moved, fatigue: Math.min(who.sheet.fatigueMax, who.fatigue + R.fight.dashFatigue) }, f.now, cost(R.fight.dashTime), R.fight)
-    : acted(moved, f.now, walkCost(steps, R.fight), R.fight);
+  const u = withMoved(
+    dash
+      ? acted({ ...moved, fatigue: Math.min(who.sheet.fatigueMax, who.fatigue + R.fight.dashFatigue) }, f.now, cost(R.fight.dashTime), R.fight)
+      : acted(moved, f.now, walkCost(steps, R.fight), R.fight),
+    steps,
+  );
   const walked = logged(withRow(f, u), line(`${u.name} ${dash ? 'dashes' : 'moves'} ${steps} tile${steps === 1 ? '' : 's'}.`, [u.id]), R);
   return after(f, triggered(walked, [raised(u.id, 'moved')], ctx), u.id, null, ctx, []);
 };
@@ -702,16 +705,16 @@ const pickDodge: Step<'running', 'dodge'> = (f, cmd, ctx) => {
   if (cmd.id !== null && cmd.id !== ask.who) return refused(f, 'noDodge');
   let chosen: Place;
   if (cmd.to === null) {
-    chosen = ask.tiles[0]!;
-  } else if (ask.tiles.some(p => p.x === cmd.to!.x && p.y === cmd.to!.y)) {
+    chosen = ask.auto.place;
+  } else if (ask.tiles.some(o => o.place.x === cmd.to!.x && o.place.y === cmd.to!.y)) {
     chosen = cmd.to;
   } else {
     if (offGrid(f, cmd.to)) return refused(f, 'offGrid');
     if (ask.bodies.some(b => b.id !== ask.who && alive(b) && b.place.x === cmd.to!.x && b.place.y === cmd.to!.y)) return refused(f, 'taken');
     const dodger = ask.bodies.find(b => b.id === ask.who);
     const open = dodger ? dodgeOptions(dodger.place, ask.reach, { hit: ask.hit, ring: ask.ring }, openGrid(f.grid.w, f.grid.h), []) : null;
-    if (open && open.tiles.some(p => p.x === cmd.to!.x && p.y === cmd.to!.y)) return refused(f, 'blocked');
-    return refused(f, 'noDodge');
+    if (open && open.tiles.some(o => o.place.x === cmd.to!.x && o.place.y === cmd.to!.y)) return refused(f, 'blocked');
+    return refused(f, 'tooFar');
   }
   return runHeld(clearDodge(f), wait.use, { ...wait.to, [ask.who]: chosen }, ctx);
 };

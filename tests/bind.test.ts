@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { KEYS_MAX, NOT_BACK_YET, NO_REMOVAL, REMOVED_EVENTS, REMOVED_STATES, boundTo, joinedAt, linkSaved, playAs, playAsAnswered, removedStep, ringDrop, ringGone, ringKeep, serverSeen } from '../src/core/sync/bind.ts';
 import type { BindAnswer, BindAsked, BindSwitch, RemovedEvent, RemovedNotice } from '../src/core/sync/bind.ts';
 import { keepPhone } from '../src/core/save.ts';
+import { atSync } from '../src/core/save-step.ts';
 import { TAP_KINDS, tapWords } from '../src/core/sync/taps.ts';
 import type { TapKind } from '../src/core/sync/taps.ts';
 import { SEEN_MAX, parseSeen, seenFrom, seenKept } from '../src/core/sync/seen.ts';
@@ -235,5 +236,21 @@ describe('where a phone stopped reading a room it went out of (notes-5-trade.md 
     const old = new Date(NOW - ROOM_TTL_MS - 1).toISOString();
     expect(parseSeen({ [A]: { seq: 41, at: AT }, [B]: { seq: 5, at: old }, nope: { seq: 1, at: AT }, GHJKLM: { seq: -1, at: AT }, HJKLMN: { seq: 2, at: 'soon' }, JKLMNP: 7 }, NOW)).toEqual({ [A]: { seq: 41, at: AT } });
     expect(parseSeen('x', NOW)).toEqual({});
+  });
+});
+
+describe('atSync (one writer for settings.sync)', () => {
+  test('updates a whole Save, updates a Pick<Save, "settings"> slice with extra fields intact, and keeps identity on a no-op', () => {
+    const save = freshSave(ENV, { onboarded: true });
+    const updated = atSync(sy => ({ ...sy, serverOk: true }))(save);
+    expect(updated.settings.sync.serverOk).toBe(true);
+    expect(save.settings.sync.serverOk).toBe(false);
+    expect(atSync(serverSeen)(updated)).toBe(updated);
+
+    const slice = { settings: save.settings, tag: 'keep' };
+    const nextSlice = atSync(sy => ({ ...sy, cursor: 12 }))(slice);
+    expect(nextSlice.tag).toBe('keep');
+    expect(nextSlice.settings.sync.cursor).toBe(12);
+    expect(slice.settings.sync.cursor).toBe(0);
   });
 });
