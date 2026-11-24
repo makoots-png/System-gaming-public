@@ -1,13 +1,13 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, ROOM_CODE } from './helpers.ts';
 import { ABOUT, ROOM_IS, ROOM_PATH, TIPS } from '../../src/core/first-run.ts';
+import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
 
 const SAVE_KEY = 'hunter-system-v4';
 const OB = '.ob-overlay';
 const NO_ROOM = /no room/i;
-const NOT_SAVED = 'Not saved. This tab cannot save right now. Check the banner at the top for details.';
 
 /** A new install's save as a newer app wrote it: this app opens it read-only, and setup has not run. */
 function newerFreshSave(): string {
@@ -360,40 +360,21 @@ test('the button at the top says Join room on a player\'s phone and Create room 
   });
 });
 
-test('in a tab that cannot save, Skip after an invite says it is not saved and the Welcome window stays, with no Room page under it', async ({ device }) => {
-  // SMX-views-12.1: the refused Skip went on to the Room page behind the window that stayed open
-  const phone = (await device('phone', { seed: { [SAVE_KEY]: newerFreshSave() } })).page;
-  await openInvite(phone, 'ZZZZ99');
-  await expect(phone.locator('#banners .banner')).toContainText('newer version');
-  const url = phone.url();
-  await phone.locator(`${OB} [data-obmore]`).tap();
-  await windowTitled(phone, 'Welcome');
-  await phone.locator(`${OB} [data-skip]`).tap();
-  await expect(phone.locator('.toast', { hasText: NOT_SAVED })).toHaveCount(1);
-  await expect(phone.locator(OB, { has: phone.locator('h2', { hasText: 'Welcome' }) })).toBeVisible();
-  expect(phone.url()).toBe(url);
-  await expect(phone.locator('#view-room')).toBeHidden();
-});
-
-test('in a tab that cannot save, Join on an invite says it is not saved and the window offers Join again as before, fitting a 390 px phone', async ({ device }) => {
-  // SMX-views-12: the refused Join turned the button into Try again over an empty error line
+test('in a tab that cannot save, opening an invite link shows the blocking takeover screen instead of onboarding and keeps storage untouched', async ({ device }) => {
   const { code } = await gmWithRoom(device);
-  const phone = (await device('phone', { seed: { [SAVE_KEY]: newerFreshSave() }, viewport: { width: 390, height: 844 } })).page;
-  await openInvite(phone, code);
-  await expect(phone.locator(`${OB} [data-check]`)).toContainText(/found/i);
-  await phone.locator(`${OB} [data-name]`).fill('Mira Vale');
-  await phone.locator(`${OB} [data-go]`).tap();
-  await expect(phone.locator('.toast', { hasText: NOT_SAVED })).toHaveCount(1);
-  await expect(phone.locator(`${OB} [data-go]`)).toHaveText('Join');
-  await expect(phone.locator(`${OB} [data-go]`)).toBeEnabled();
-  await expect(phone.locator(`${OB} [data-err]`)).toHaveText('');
-  await expect(phone.locator(`${OB} [data-obmore]`)).toHaveText('Other options');
-  await expect(phone.locator(`${OB} [data-name]`)).toHaveValue('Mira Vale');
+  const seeded = newerFreshSave();
+  const phone = (await device('phone', { seed: { [SAVE_KEY]: seeded }, viewport: { width: 390, height: 844 } })).page;
+  await openApp(phone, `/?room=${code}`);
+  const win = phone.locator('.tk-overlay.show .tk-win');
+  await expect(win).toBeVisible();
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.newer.heading);
+  await expect(win.getByRole('button', { name: TAKEOVER_WORDS.takeOver })).toHaveCount(0);
+  await expect(phone.locator(OB)).toHaveCount(0);
   expect(await phone.evaluate(() => hunterApp.store.get().settings.onboarded)).toBe(false);
-  const box = await phone.locator(`${OB} [role=dialog]`).boundingBox();
+  expect(await rawSave(phone)).toBe(seeded);
+  const box = await win.boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
   expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  if (process.env.E2E_SHOT) await phone.screenshot({ path: process.env.E2E_SHOT });
 });
 
 /**

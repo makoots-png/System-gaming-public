@@ -360,6 +360,22 @@ select{cursor:pointer}
 .sys-window.k-levelup .n-big{color:var(--gold);text-shadow:0 0 24px rgba(255,201,77,.8)}
 .sys-window.k-arise{border-color:var(--purple);box-shadow:0 0 50px rgba(160,100,255,.55), inset 0 0 40px rgba(60,20,110,.4)}
 .sys-window.k-arise .n-big{color:var(--purple);text-shadow:0 0 26px rgba(160,100,255,.9)}
+/* Blocking takeover window for a read-only tab (src/views/takeover.js, Variant 1) */
+.overlay.tk-overlay{z-index:90}
+.sys-window.tk-win{text-align:left;overflow-x:hidden}
+.sys-window.tk-win::before{top:0;left:0}
+.sys-window.tk-win::after{top:0;right:0}
+.sys-window.tk-win .cb::before{bottom:0;left:0}
+.sys-window.tk-win .cb::after{bottom:0;right:0}
+.sys-window.tk-win .n-tag{text-align:center;margin-bottom:10px}
+.sys-window.tk-win .n-big{text-align:center;font-size:calc(22px*var(--ts));line-height:1.25;letter-spacing:.02em;text-transform:none;margin:0 0 14px}
+.sys-window.tk-win .n-body{margin:0 0 18px;line-height:1.5}
+.sys-window.tk-win .n-body p{margin:0 0 10px}
+.sys-window.tk-win .n-body p:last-child{margin-bottom:0}
+.sys-window.tk-win .tk-export-note{color:var(--muted);font-size:calc(13px*var(--ts))}
+.sys-window.tk-win .tk-actions{flex-direction:column;align-items:stretch;gap:10px;margin-top:0}
+.sys-window.tk-win .tk-actions button{width:100%;min-height:var(--control-h);font-size:calc(14px*var(--ts));padding:8px 14px}
+.sys-window.tk-win .tk-status{margin:10px 0 0;text-align:center;font-size:calc(13px*var(--ts));color:var(--cyan-dim)}
 
 /* ── Toasts ── */
 /* Bottom right above the dice button on a desktop, above the bottom bar on a phone; at most two (ui.toast). While a window

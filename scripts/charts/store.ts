@@ -38,6 +38,8 @@ function step(e: StoreEvent, from: StoreLife): string | null {
     case 'replaced': return 'a backup is restored, a file imported or the campaign reset';
     case 'kept': return 'the backups take this tab\'s save';
     case 'keepFailed': return 'storage is too full to back it up';
+    case 'takeOver': return 'the player taps Take over here';
+    case 'takenOver': return 'another tab takes over saving';
   }
 }
 

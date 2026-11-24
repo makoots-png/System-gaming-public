@@ -14,7 +14,7 @@ import type { Brand } from './ids.ts';
 /** A window's id, given by src/views/ui.js as it makes one. */
 export type WindowId = Brand<number, 'WindowId'>;
 export const windowId = (n: number): WindowId => n as WindowId;
-export type WindowKind = 'system' | 'maker' | 'onboard' | 'shelf' | 'story' | 'sheet';
+export type WindowKind = 'system' | 'maker' | 'onboard' | 'shelf' | 'story' | 'sheet' | 'takeover';
 /**
  * Every sheet over the page, by its owner: the dice roller (`quickRoll`, dice.js), the GM's Fight tools over a map
  * (`fightTools`) and the card of the row picked on a phone's map (`rowCard`, both combat.js), and a player's card of a
@@ -83,11 +83,12 @@ export function windowAt(s: Windows, id: WindowId): WindowAt | 'off' {
  * The windows a waiting System window waits behind while they are open: another System window (one at a time), and the
  * first-run window, which takes the whole screen above every other window, so one opened over it would be drawn under it.
  */
-const HOLDS: { readonly [K in WindowKind]: boolean } = { system: true, onboard: true, maker: false, shelf: false, story: false, sheet: false };
+const HOLDS: { readonly [K in WindowKind]: boolean } = { system: true, onboard: true, takeover: true, maker: false, shelf: false, story: false, sheet: false };
 /** Whether a waiting System window waits: a window that holds it is open. */
 const held = (s: Windows): boolean => s.shown.some(w => HOLDS[w.kind] && w.at === 'open');
-/** The window that takes the keys: the top open window, or null. A sheet takes only Escape (ui.js gives it no other key). */
+/** The window that takes the keys: an open takeover screen always wins, else the top open window, or null. A sheet takes only Escape (ui.js gives it no other key). */
 export function keyWindow(s: Windows): WindowId | null {
+  for (let i = s.shown.length - 1; i >= 0; i--) { const w = s.shown[i]!; if (w.kind === 'takeover' && w.at === 'open') return w.id; }
   for (let i = s.shown.length - 1; i >= 0; i--) { const w = s.shown[i]!; if (w.at === 'open') return w.id; }
   return null;
 }

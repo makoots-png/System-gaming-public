@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
+import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { test, expect, openApp, onboardPlayer, dismissAll, editIdentity, go, save, answerWindow, type Page } from './helpers.ts';
 
 const V1 = 'hunter-system-v1', V2 = 'hunter-system-v2', V3 = 'hunter-system-v3', V4 = 'hunter-system-v4', BACKUPS = 'hunter-system-backups';
@@ -218,21 +219,22 @@ test('a player who opens the app days after their last daily meets the PENALTY w
   await expect(page.locator('#view-status .chip', { hasText: 'Penalized' })).toHaveCount(1);
 });
 
-test('a save from a newer app opens read-only: the screen refuses a change rather than show one the reload drops, and nothing is overwritten', async ({ device }) => {
+test('a save from a newer app opens read-only: the blocking takeover screen stops edits without Take over here, and nothing is overwritten', async ({ device }) => {
   const text = JSON.stringify({ ...JSON.parse(await fixtureText('main-player.json')), schema: 99 });
   const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
   await openApp(page);
-  await expect(page.locator('#banners .banner')).toContainText('newer version');
-  await go(page, 'status');
-  await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Fixture');
-  await editIdentity(page, 'name', 'Renamed On Old App');
+  const win = page.locator('.tk-overlay.show .tk-win');
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.newer.heading);
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.newer.body[0]!);
+  await expect(win.getByRole('button', { name: TAKEOVER_WORDS.takeOver })).toHaveCount(0);
+  await expect(page.locator('#banners .banner')).toHaveCount(0);
+  expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Fixture');
   expect((await save(page)).hunters[0].name).toBe('Mira Fixture');
   expect(await stored(page, V4)).toBe(text);
 
   await openApp(page);
-  await expect(page.locator('#banners .banner')).toContainText('newer version');
-  await go(page, 'status');
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.newer.heading);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Fixture');
   expect(await stored(page, V4)).toBe(text);
 });
@@ -268,7 +270,6 @@ const fill = (page: Page, ...keys: string[]): Promise<void> => page.evaluate(ks 
 const free = (page: Page): Promise<void> => page.evaluate(() => { (window as any).e2eFull.clear(); });
 const storedName = async (page: Page): Promise<string> => JSON.parse((await stored(page, V4)) ?? 'null').hunters[0].name;
 const SAVE_FAILED = 'Saving failed';
-const OTHER_TAB = 'Another tab saved this campaign';
 const OWN_SETTINGS = 'device settings';
 const banner = (page: Page, text: string) => page.locator('#banners .banner', { hasText: text });
 
@@ -369,19 +370,21 @@ test('another tab saving while this tab holds a change storage refused: this tab
     await expect(banner(page, SAVE_FAILED)).toHaveCount(1);
   });
 
-  await test.step('the other tab saves: this tab shows its save, says it stopped saving, and refuses a change', async () => {
+  await test.step('the other tab saves: this tab shows the blocking takeover screen, keeps its change in Backups, and stops saving over the other', async () => {
     await go(other, 'status');
     await editIdentity(other, 'name', 'Named In The Other Tab');
-    await expect(banner(page, OTHER_TAB)).toHaveCount(1);
+    const win = page.locator('.tk-overlay.show .tk-win');
+    await expect(win).toContainText(TAKEOVER_WORDS.causes.otherTab.heading);
+    await expect(page.locator('#banners .banner')).toHaveCount(0);
     await expect(page.locator('#view-status [data-idname]')).toHaveText('Named In The Other Tab');
+    expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
     await free(page);
-    await editIdentity(page, 'name', 'Refused In This Tab');
-    await expect(page.locator('#view-status [data-idname]')).toHaveText('Named In The Other Tab');
     expect(await storedName(page)).toBe('Named In The Other Tab');
   });
 
   await test.step('after a reload this tab saves again, and its change comes back from Backups', async () => {
     await openApp(page);
+    await expect(page.locator('.tk-overlay.show')).toHaveCount(0);
     await expect(page.locator('#banners .banner')).toHaveCount(0);
     await go(page, 'data');
     const kept = page.locator('#view-data [data-backups] li', { hasText: 'before another tab saved' });
@@ -394,7 +397,7 @@ test('another tab saving while this tab holds a change storage refused: this tab
   });
 });
 
-test('another tab saving while storage is too full to keep this tab\'s unsaved change in Backups: this tab keeps showing it, says to export it, and refuses a change', async ({ device }) => {
+test('another tab saving while storage is too full to keep this tab\'s unsaved change in Backups: this tab keeps showing it behind the takeover screen and offers Export backup', async ({ device }) => {
   const text = asCurrent(await fixtureText('main-player.json'));
   const { page, ctx } = await device('first tab', { seed: { [V4]: text }, pinTo: pinAfter(text) });
   await openApp(page);
@@ -406,15 +409,16 @@ test('another tab saving while storage is too full to keep this tab\'s unsaved c
   await expect(banner(page, SAVE_FAILED)).toHaveCount(1);
   await go(other, 'status');
   await editIdentity(other, 'name', 'Named In The Other Tab');
-  await expect(banner(page, 'export them from the Data tab')).toHaveCount(1);
-  await expect(banner(page, 'is in Backups'), 'no banner says the change is in Backups').toHaveCount(0);
+  const win = page.locator('.tk-overlay.show .tk-win');
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.mineUnkept.heading);
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.mineUnkept.body[0]!);
+  await expect(page.locator('#banners .banner')).toHaveCount(0);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Named In This Tab');
-  await editIdentity(page, 'name', 'Refused In This Tab');
-  await expect(page.locator('#view-status [data-idname]')).toHaveText('Named In This Tab');
+  expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
   expect(await storedName(page)).toBe('Named In The Other Tab');
 });
 
-test('a save the app cannot open, when storage is too full to back it up, is never written over: the app says so and refuses a change', async ({ device }) => {
+test('a save the app cannot open, when storage is too full to back it up, is never written over: the blocking takeover screen says so and omits Take over here', async ({ device }) => {
   const junk = 'not json {name: Lost Hunter';
   const { page, ctx } = await device('phone', { seed: { [V4]: junk } });
   await ctx.addInitScript(key => {
@@ -425,11 +429,12 @@ test('a save the app cannot open, when storage is too full to back it up, is nev
     };
   }, BACKUPS);
   await openApp(page);
-  await expect(banner(page, 'Storage is too full to back it up')).toHaveCount(1);
-  await expect(banner(page, 'unreadable')).toHaveCount(0);
-  await go(page, 'status');
-  await editIdentity(page, 'name', 'Written Over');
-  await expect(page.locator('#view-status [data-idname]')).not.toHaveText('Written Over');
+  const win = page.locator('.tk-overlay.show .tk-win');
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.loadUnkept.heading);
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.loadUnkept.body[0]!);
+  await expect(win.getByRole('button', { name: TAKEOVER_WORDS.takeOver })).toHaveCount(0);
+  await expect(page.locator('#banners .banner')).toHaveCount(0);
+  expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
   expect(await stored(page, V4)).toBe(junk);
 });
 
@@ -447,12 +452,13 @@ test('a save that opens whole but for its damaged fight, when storage is too ful
     };
   }, BACKUPS);
   await openApp(page);
-  await expect(banner(page, 'The running fight in your save could not be read. Storage is too full')).toHaveCount(1);
-  await expect(banner(page, 'could not be opened')).toHaveCount(0);
-  await go(page, 'status');
+  const win = page.locator('.tk-overlay.show .tk-win');
+  await expect(win).toContainText(TAKEOVER_WORDS.causes.fightUnkept.heading);
+  await expect(win).not.toContainText(TAKEOVER_WORDS.causes.loadUnkept.heading);
+  await expect(win.getByRole('button', { name: TAKEOVER_WORDS.takeOver })).toHaveCount(0);
+  await expect(page.locator('#banners .banner')).toHaveCount(0);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Intact Hero');
-  await editIdentity(page, 'name', 'Written Over');
-  await expect(page.locator('#view-status [data-idname]')).toHaveText('Intact Hero');
+  expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
   expect(await stored(page, V4)).toBe(text);
 });
 

@@ -27,7 +27,12 @@ export type Write = (typeof WRITES)[number];
  * (`mineUnkept`); or the stored text could not be opened nor kept in the backups, so the tab will not write over it
  * (`loadUnkept`), or the same for a save that opened but for its running fight (`fightUnkept`).
  */
-export type ReadOnlyWhy = 'newer' | 'otherTab' | 'mineUnkept' | 'loadUnkept' | 'fightUnkept';
+export const READ_ONLY_WHYS = ['newer', 'otherTab', 'mineUnkept', 'loadUnkept', 'fightUnkept'] as const;
+export type ReadOnlyWhy = (typeof READ_ONLY_WHYS)[number];
+/** Whether notice id `id` is a read-only cause (shown in the blocking takeover window instead of a top banner). */
+export const isReadOnlyWhy = (id: string): id is ReadOnlyWhy => (READ_ONLY_WHYS as readonly string[]).includes(id);
+/** Whether the player may take over saving in this tab for read-only cause `why`: never over a newer app's save or an unbacked load. */
+export const canTakeOver = (why: ReadOnlyWhy): boolean => why === 'otherTab' || why === 'mineUnkept';
 
 /** What another tab stored, as save.ts reads it: a save of this app, a newer app's, or a text no app of this build reads. */
 export type Theirs = 'save' | 'newer' | 'unreadable';
@@ -60,7 +65,11 @@ export type StoreEvent =
   /** The backups took this tab's save (`keepMine`). */
   | { type: 'kept' }
   /** Storage was too full to keep this tab's save in the backups. */
-  | { type: 'keepFailed' };
+  | { type: 'keepFailed' }
+  /** The player tapped Take over here in a read-only tab (only allowed for `otherTab` and `mineUnkept`). */
+  | { type: 'takeOver' }
+  /** Another tab explicitly took over saving (`hunter-system-takeover`). */
+  | { type: 'takenOver' };
 export type StoreEventType = StoreEvent['type'];
 
 /**
@@ -112,19 +121,21 @@ export const TABLE: { readonly [S in StoreState]: { readonly [E in StoreEventTyp
     writeFailed: l => (behind(l.write) ? ready('failing') : same(l)),
     otherTab: (l, e) => otherTab(l, e.theirs),
     replaced: l => ready(l.write === 'failing' || l.write === 'retrying' ? 'retrying' : 'dirty', 'write'),
-    kept: same, keepFailed: same,
+    kept: same, keepFailed: same, takeOver: same,
+    takenOver: l => (behind(l.write) ? { life: { at: 'keeping', theirs: 'save' }, effects: ['keepMine'] } : { life: { at: 'readOnly', why: 'otherTab' }, effects: [] }),
   },
   // the answer to `keepMine` comes before any other event; another one changes nothing until it does
   keeping: {
-    changed: same, due: same, leaving: same, wrote: same, writeFailed: same, otherTab: same, replaced: same,
+    changed: same, due: same, leaving: same, wrote: same, writeFailed: same, otherTab: same, replaced: same, takeOver: same, takenOver: same,
     kept: l => ({ life: { at: 'readOnly', why: 'otherTab' }, effects: l.theirs === 'unreadable' ? [] : ['take'] }),
     keepFailed: () => ({ life: { at: 'readOnly', why: 'mineUnkept' }, effects: [] }),
   },
   readOnly: {
-    changed: same, due: same, leaving: same, wrote: same, writeFailed: same, otherTab: same, kept: same, keepFailed: same,
+    changed: same, due: same, leaving: same, wrote: same, writeFailed: same, otherTab: same, kept: same, keepFailed: same, takenOver: same,
     replaced: () => ready('dirty', 'write'),
+    takeOver: l => (canTakeOver(l.why) ? ready('dirty', 'write') : same(l)),
   },
-  noStorage: { changed: same, due: same, leaving: same, wrote: same, writeFailed: same, otherTab: same, replaced: same, kept: same, keepFailed: same },
+  noStorage: { changed: same, due: same, leaving: same, wrote: same, writeFailed: same, otherTab: same, replaced: same, kept: same, keepFailed: same, takeOver: same, takenOver: same },
 };
 
 /** The next life and what to do. A cell that changes nothing answers the same state object. */
@@ -138,7 +149,53 @@ export const mayChange = (l: StoreLife): boolean => l.at === 'ready' || l.at ===
 /** The refusal `store.apply` answers in a read-only tab. */
 export const READ_ONLY = 'read-only';
 /** What a screen says when the store refused its write (another tab took over, a newer app's save): nothing was saved. */
-export const NOT_SAVED = 'Not saved. This tab cannot save right now. Check the banner at the top for details.';
+export const NOT_SAVED = 'Not saved. This tab cannot save right now.';
+
+/** Per-cause copy for the blocking takeover screen (Variant 1, `src/views/takeover.js`). */
+export type TakeoverCopy = {
+  readonly heading: string;
+  readonly body: readonly string[];
+  readonly exportNote: string;
+};
+const OTHER_TAB_CHOICES = 'Tap Reload to follow the other tab without overwriting it. Tap Take over here to save from this tab instead. You will not be able to save in the other tab.';
+const EXPORT_UNSAVED_NOTE = 'Tap Export backup first to download your data from this tab, including unsaved changes.';
+const EXPORT_TAB_NOTE = 'Tap Export backup first to download your data from this tab.';
+const STORAGE_FULL_LOAD = 'Browser storage is too full to back up your stored save before opening it, so you cannot save changes here. Tap Export backup, free storage, and reload.';
+
+export const TAKEOVER_WORDS = {
+  tag: 'Read-only tab',
+  reload: 'Reload',
+  takeOver: 'Take over here',
+  exportBackup: 'Export backup',
+  exported: 'Backup downloaded.',
+  causes: {
+    otherTab: {
+      heading: 'This campaign is open in another tab',
+      body: ['You cannot save changes here while the other tab is active.', OTHER_TAB_CHOICES],
+      exportNote: EXPORT_UNSAVED_NOTE,
+    },
+    mineUnkept: {
+      heading: 'Unsaved changes could not be backed up',
+      body: ['This campaign is open in another tab, and browser storage is too full to back up your unsaved changes here. Tap Export backup before you reload.', OTHER_TAB_CHOICES],
+      exportNote: EXPORT_UNSAVED_NOTE,
+    },
+    newer: {
+      heading: 'Update the app to edit this save',
+      body: ['This save comes from a newer version of the app. You cannot change it in this tab. Reload to update the app.'],
+      exportNote: EXPORT_TAB_NOTE,
+    },
+    loadUnkept: {
+      heading: 'Your save could not be backed up',
+      body: [STORAGE_FULL_LOAD],
+      exportNote: EXPORT_TAB_NOTE,
+    },
+    fightUnkept: {
+      heading: 'The running fight could not be read',
+      body: [STORAGE_FULL_LOAD],
+      exportNote: EXPORT_TAB_NOTE,
+    },
+  } as const satisfies Record<ReadOnlyWhy, TakeoverCopy>,
+} as const;
 
 /** Whether this phone's own memory (prefs, device memory) was kept at its last write. */
 export type DeviceLife = 'kept' | 'failing';

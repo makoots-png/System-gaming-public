@@ -340,6 +340,6 @@ export function register(app) {
   const ESC = { shut: () => {}, quickstart: gotIt, welcome: skip, role: skip, invite: more, player: skip, gm: skip, hunterCreated: sheet, campaignReady: later };
   app.api.onboard = { quickstart: () => { go({ type: 'help', back: document.activeElement }); } };
   app.on('ready', () => {
-    if (!store.get().settings.onboarded) go({ type: 'start', invited: !!invited() && app.api.sync.conn() !== 'off' });
+    if (!store.get().settings.onboarded && !store.readOnly) go({ type: 'start', invited: !!invited() && app.api.sync.conn() !== 'off' });
   });
 }

@@ -8,8 +8,10 @@ import { chooseMode, roleOf, seatOf } from './core/role.ts';
 import { atSettings } from './core/save-step.ts';
 import { addHunter } from './core/party.ts';
 import { panelDraw, panelDrawn } from './core/panel.ts';
+import { isReadOnlyWhy } from './core/store-life.ts';
 import { PANEL_DEFAULTS, VIEW_DEFAULTS } from './views/app.ts';
 import * as ui from './views/ui.js';
+import * as takeover from './views/takeover.js';
 import * as motion from './views/motion.ts';
 import * as effects from './views/effects.js';
 import * as detail from './views/detail.js';
@@ -172,6 +174,7 @@ function renderView(v, when) {
 }
 
 function route() {
+  if (store.readOnly && current !== null) return;
   ui.went();
   const m = /^#\/([\w-]+)/.exec(location.hash);
   let id = m ? m[1] : role() === 'gm' ? 'gm' : 'status'; // with no view in the address a GM opens on the GM view, a player on Status
@@ -229,8 +232,8 @@ function renderHeader() {
   pill.classList.toggle('gm', gm);
   pill.setAttribute('aria-label', inRoom ? `Role in this room: ${gm ? 'GM' : 'Player'}. Tap to see why` : `Mode: ${gm ? 'GM' : 'Player'}. Tap to switch to ${gm ? 'Player' : 'GM'} mode`);
   document.body.dataset.mode = role();
-  // banners
-  const notes = store.notices(); const bs = JSON.stringify(notes);
+  // banners (read-only causes are shown in the blocking takeover window instead)
+  const notes = store.notices().filter(n => !isReadOnlyWhy(n.id)); const bs = JSON.stringify(notes);
   if (bs !== $('banners').dataset.sig) {
     $('banners').dataset.sig = bs;
     $('banners').innerHTML = notes.map(n => `<div class="banner" role="alert">${ui.esc(n.text)}</div>`).join('');
@@ -303,7 +306,7 @@ app.on('sync:docs', rulesMoved); app.on('sync:status', rulesMoved);
 // ── boot ──
 // Registration order is load order: a module's register may read the api of a module listed before it (a read of one
 // listed after it throws, src/edge/api-table.ts). A register that throws is logged and the rest still register.
-const MODULES = { effects, detail, odds, maker, guild, hunter, quests, skills, inventory, trade, dice, rulesref, keystones, sync, roomPill, bestiary, gates, map, combat, shadows, stories, gm, io, room, onboard, table, uses, coin, forge, loot, mapMaker, workshop, custom, chronicle, feats, words };
+const MODULES = { takeover, effects, detail, odds, maker, guild, hunter, quests, skills, inventory, trade, dice, rulesref, keystones, sync, roomPill, bestiary, gates, map, combat, shadows, stories, gm, io, room, onboard, table, uses, coin, forge, loot, mapMaker, workshop, custom, chronicle, feats, words };
 for (const [name, mod] of Object.entries(MODULES)) {
   ran('register:' + name, () => mod.register(app));
 }

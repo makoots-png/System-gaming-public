@@ -191,7 +191,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches and the economy\'s rules), bound by sync.ts (`bindRoom`)',
     'rules.ts made': 'the rules in force and the overrides, statuses and room rules they were made from',
     'store.ts prefs': 'this phone\'s prefs as read and written', 'store.ts device': 'whether this phone\'s memory is kept or failing',
-    'store.ts state': 'the save', 'store.ts flushTimer': 'the one wait for the save\'s next write: none, the next frame with a second\'s fallback, or the task after that frame (FlushTimer)', 'store.ts life': 'the store\'s life machine\'s state (src/core/store-life.ts)',
+    'store.ts state': 'the save', 'store.ts flushTimer': 'the one wait for the save\'s next write: none, the next frame with a second\'s fallback, or the task after that frame (FlushTimer)', 'store.ts life': 'the store\'s life machine\'s state (src/core/store-life.ts)', 'store.ts unsavedBackup': 'this tab\'s unsaved save snapshot kept for Export backup while read-only (cleared when ready)',
     'sync.ts FIGHT_MOVES': 'a constant: the room messages that are a player\'s own moves in the GM\'s fight',
     'sync.ts inflight': 'the open requests of each gen, so the link\'s `abort` drops them', 'sync.ts timers': 'the poll\'s and the push\'s one timer each, set by their machines\' effects',
     'sync.ts publishers': 'what builds each doc the GM\'s phone publishes',
@@ -1341,6 +1341,7 @@ test('a view waits on a timer only where this list names it with its reason', as
     'src/views/map.js': { count: 2, why: 'the gesture\'s hold timer, whose end is the `hold` event (a GM\'s token lifted, a hotbar slot\'s detail; U9, row 48); the news line\'s life' },
     'src/views/gm.js': { count: 1, why: 'the room\'s presence ages drawn every 5 s' },
     'src/views/io.js': { count: 2, why: 'a download\'s URL revoked; a button\'s label put back' },
+    'src/views/takeover.js': { count: 1, why: 'a backup download\'s URL revoked' },
   };
   const timer = /\bset(Timeout|Interval)\(/g;
   const old: Line = { file: 'src/views/quests.js', line: 0, text: '  setInterval(checkDaily, 60000);' };
@@ -1409,6 +1410,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/gates.js': { count: 3, why: 'the room\'s world doc this GM phone merged last, the solo run machine\'s value (runPhase, its states are core gates/solo-run.ts), and a function\'s local (moved)' },
     'src/views/kit-parts.js': { count: 2, why: 'the count of blocks made, for their ids; a threshold\'s and an end\'s effects editors, drawn when first ticked' },
     'src/views/onboard.js': { count: 2, why: 'first-run setup\'s window and its step (its steps are core onboarding.ts)' },
+    'src/views/takeover.js': { count: 1, why: 'the blocking read-only takeover window\'s open handle and cause while shown' },
     'src/views/skills.js': { count: 2, why: 'the skill maker\'s type and kind on screen' },
     'src/views/coin.js': { count: 1, why: 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design' },
     'src/views/custom.js': { count: 1, why: 'the HP last felt, so a buzz follows only a change' },
@@ -1624,6 +1626,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'table.js pendingBursts': 'the bearers whose stacks went off in the doc just taken, drawn once the HUD shows it',
     'table.js feed': 'the GM\'s Table feed, kept in this tab with store.device',
     'table.js feedEl': what.handle, 'table.js feedSig': what.drawn, 'table.js feedOpen': what.shown,
+    'takeover.js open': what.handle,
     'ui.js actx': what.handle, 'ui.js windows': 'the windows on screen, waiting and going: the one value of src/core/windows.ts, moved only by `move`',
     'ui.js made': 'the count of windows made, for their ids',
   };
@@ -1682,6 +1685,7 @@ test('every Map, Set, list or object a view keeps for the page is named here wit
     'patch.ts bound': 'the nodes a patched list drew and what they drew: ' + what.drawn,
     'quests.js barsWas': 'what each objective\'s bar showed last, by quest id and objective: ' + what.drawn,
     'room.js WAITING': 'a constant: the link states the line pulses for',
+    'takeover.js frozen': 'the document.body siblings frozen (inert + aria-hidden) while the takeover window is up, with their prior state for restore: ' + what.handle,
     'ui.js newsLines': 'the maps\' news lines that take the fight\'s news while they show a fight: ' + what.handle,
     'ui.js parts': 'each window\'s parts on the page by its id (its overlay, its key handler; a System window\'s words, answer and Confirm all), kept until src/core/windows.ts says to forget it: ' + what.handle,
     'ui.js toasts': 'each toast on screen by its element, until it goes: its timer and the write a held toast makes as it ends, so the write runs once and no timer outlives it: ' + what.handle,

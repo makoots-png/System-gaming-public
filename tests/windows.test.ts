@@ -165,6 +165,20 @@ describe('the windows', () => {
     expect([...new Set(draws)]).toEqual(['queued to open']);
   });
 
+  test('a takeover window holds System windows behind it, always owns keys, ignores Escape and tab switches, and releases waiting windows when closed', () => {
+    const TK = windowId(99);
+    const overMaker = run(NO_WINDOWS, { kind: 'open', id: MAKER, of: 'maker' }, { kind: 'open', id: TK, of: 'takeover' }, ...asked(A), { kind: 'open', id: FIRST_RUN, of: 'onboard' });
+    expect(windowAt(overMaker.windows, A)).toBe('queued');
+    expect(keyWindow(overMaker.windows)).toBe(TK);
+    expect(windowStep(overMaker.windows, { kind: 'escape', id: TK }).windows).toBe(overMaker.windows);
+    expect(windowStep(overMaker.windows, { kind: 'went' }).windows).toBe(overMaker.windows);
+    const closed = run(overMaker.windows, { kind: 'close', id: TK }, { kind: 'next' });
+    expect(closed.fx).toEqual([`dismiss ${TK}`, 'next']);
+    const afterOnboard = run(closed.windows, { kind: 'close', id: FIRST_RUN }, { kind: 'next' });
+    expect(afterOnboard.fx).toEqual([`dismiss ${FIRST_RUN}`, 'next', `draw ${A}`]);
+    expect(keyWindow(afterOnboard.windows)).toBe(A);
+  });
+
   test('in every state the walk reaches: one place per window, at most one System window open, none over the first-run window, one sheet of a name, and the keys with the top open one', () => {
     expect([...new Set(WINDOW_WALK.map(e => e.kind))].sort()).toEqual([...WINDOW_EVENTS].sort());
     const walk = bfs([NO_WINDOWS], s => WINDOW_WALK.map(event => ({ event, to: windowStep(s, event).windows })), s => JSON.stringify(s));

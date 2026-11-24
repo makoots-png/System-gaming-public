@@ -15,6 +15,8 @@ export const WALK_EVENTS: readonly StoreEvent[] = [
   { type: 'replaced' },
   { type: 'kept' },
   { type: 'keepFailed' },
+  { type: 'takeOver' },
+  { type: 'takenOver' },
 ];
 
 /**

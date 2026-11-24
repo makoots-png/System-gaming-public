@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { READ_ONLY, STORE_STATES, TABLE, dailyBackupDue, mayChange, noticesOf, opened, storeStep } from '../src/core/store-life.ts';
+import { READ_ONLY, READ_ONLY_WHYS, STORE_STATES, TABLE, TAKEOVER_WORDS, canTakeOver, dailyBackupDue, isReadOnlyWhy, mayChange, noticesOf, opened, storeStep } from '../src/core/store-life.ts';
 import type { StoreEffect, StoreEvent, StoreLife, Theirs } from '../src/core/store-life.ts';
 import { STARTS, WALK_EVENTS } from './models/store-events.ts';
 
@@ -126,6 +126,40 @@ describe('the store\'s life', () => {
     expect(at({ at: 'ready', write: 'failing' }, { type: 'replaced' })).toEqual({ life: { at: 'ready', write: 'retrying' }, effects: ['write'] });
   });
 
+  test('Take over here makes otherTab and mineUnkept writable and refuses newer, loadUnkept and fightUnkept', () => {
+    for (const why of ['otherTab', 'mineUnkept'] as const) {
+      expect(canTakeOver(why)).toBe(true);
+      expect(at({ at: 'readOnly', why }, { type: 'takeOver' })).toEqual({ life: { at: 'ready', write: 'dirty' }, effects: ['write'] });
+    }
+    for (const why of ['newer', 'loadUnkept', 'fightUnkept'] as const) {
+      expect(canTakeOver(why)).toBe(false);
+      const l: StoreLife = { at: 'readOnly', why };
+      expect(at(l, { type: 'takeOver' })).toEqual({ life: l, effects: [] });
+    }
+    expect(at(clean, { type: 'takeOver' })).toEqual({ life: clean, effects: [] });
+  });
+
+  test('another tab taking over locks a clean tab as otherTab and backs up a tab with unsaved changes first', () => {
+    expect(at(clean, { type: 'takenOver' })).toEqual({ life: { at: 'readOnly', why: 'otherTab' }, effects: [] });
+    for (const behind of [at(clean, changed).life, at(clean, changed, due, failed).life, at(clean, changed, due, failed, changed).life]) {
+      expect(at(behind, { type: 'takenOver' })).toEqual({ life: { at: 'keeping', theirs: 'save' }, effects: ['keepMine'] });
+      expect(at(behind, { type: 'takenOver' }, { type: 'kept' })).toEqual({ life: { at: 'readOnly', why: 'otherTab' }, effects: ['keepMine', 'take'] });
+      expect(at(behind, { type: 'takenOver' }, { type: 'keepFailed' })).toEqual({ life: { at: 'readOnly', why: 'mineUnkept' }, effects: ['keepMine'] });
+    }
+  });
+
+  test('every read-only cause is recognized by isReadOnlyWhy and has takeover copy', () => {
+    for (const why of READ_ONLY_WHYS) {
+      expect(isReadOnlyWhy(why)).toBe(true);
+      const copy = TAKEOVER_WORDS.causes[why];
+      expect(copy.heading.length).toBeGreaterThan(0);
+      expect(copy.body.length).toBeGreaterThan(0);
+      expect(copy.exportNote.length).toBeGreaterThan(0);
+    }
+    expect(isReadOnlyWhy('saveFailed')).toBe(false);
+    expect(isReadOnlyWhy('noStorage')).toBe(false);
+  });
+
   test('with no storage the tab plays in memory, writes nothing and says so the whole time', () => {
     const l: StoreLife = { at: 'noStorage' };
     expect(at(l, ...WALK_EVENTS)).toEqual({ life: l, effects: [] });
@@ -148,7 +182,7 @@ describe('the store\'s life', () => {
     // storage holds; a tab whose save storage does not hold has a write coming or a banner; a save a tab loses from
     // view is in the backups; a tab that may not write never writes.
     type World = { life: StoreLife; mem: string; disk: string; kept: string[]; full: boolean; n: number };
-    const MOVES = ['change', 'due', 'leave', 'fill', 'free', 'theirs', 'newer', 'junk', 'replace'] as const;
+    const MOVES = ['change', 'due', 'leave', 'fill', 'free', 'theirs', 'newer', 'junk', 'replace', 'takeOver', 'takenOver'] as const;
     let seed = 7;
     const rand = (n: number): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
     const play = (w: World, move: (typeof MOVES)[number]): void => {
@@ -179,8 +213,10 @@ describe('the store\'s life', () => {
         case 'newer': if (w.life.at !== 'noStorage') { w.disk = `newer${++w.n}`; fire(other('newer'), w.disk); } break;
         case 'junk': if (w.life.at !== 'noStorage') { w.disk = `junk${++w.n}`; fire(other('unreadable')); } break;
         case 'replace': w.mem = `restored${++w.n}`; fire({ type: 'replaced' }); break;
+        case 'takeOver': fire({ type: 'takeOver' }); break;
+        case 'takenOver': if (w.life.at !== 'noStorage') { w.disk = `taken${++w.n}`; fire({ type: 'takenOver' }, w.disk); } break;
       }
-      const overwritten = (move === 'theirs' || move === 'newer' || move === 'junk') && owned;
+      const overwritten = (move === 'theirs' || move === 'newer' || move === 'junk' || move === 'takenOver') && owned;
       const keptOrShown = (): boolean => w.kept.includes(before) || (w.mem === before && noticesOf(w.life, 'kept').includes('mineUnkept'));
       if (overwritten && before !== diskBefore) expect(keptOrShown(), `a change of this tab storage did not hold, overwritten by another tab (${move}), is in the backups or still shown with a banner`).toBe(true);
       if (move === 'junk' && owned) expect(keptOrShown(), 'a save this tab wrote, overwritten by a text no app reads, is in the backups or still shown with a banner').toBe(true);

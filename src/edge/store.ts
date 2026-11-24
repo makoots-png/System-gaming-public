@@ -1,6 +1,7 @@
 // store.ts: the one module that touches the browser's storage (a lint test names the two others: sync.ts's invite and
 // upgrade.ts's note). It keeps the save, the backups ring, the device prefs and the views' device memory, the notices
-// and the subscribers, the one wait for the save's next write (`flushTimer`), and runs the store's life
+// and the subscribers, the one wait for the save's next write (`flushTimer`), this tab's unsaved snapshot kept for
+// Export backup while read-only (`unsavedBackup`), and runs the store's life
 // (src/core/store-life.ts): whether this tab may change the save and whether storage holds it. What a save is, how one is repaired and what an old one becomes is src/core/save.ts.
 import { ACCENTS, TEXT_SCALES, bindSave, rules } from './rules.ts';
 import { featsFor } from '../core/hunter/feats.ts';
@@ -10,11 +11,11 @@ import { stepTime } from '../core/day.ts';
 import type { Change } from '../core/events.ts';
 import { oneOf } from '../core/one-of.ts';
 import { PINS } from '../core/combat/map-view.ts';
-import { dailyQuest, fileKind, keepPhone, loadSave, newHunter, parseSave, repairSave, rulesOf, freshSave } from '../core/save.ts';
+import { dailyQuest, exportedSave, fileKind, keepPhone, loadSave, newHunter, parseSave, repairSave, rulesOf, freshSave } from '../core/save.ts';
 import type { Hunter, LoadNotice, ParseEnv, Save, StoredKeys } from '../core/save.ts';
 import { isRefused, refuse, writeInto } from '../core/save-step.ts';
-import { READ_ONLY, dailyBackupDue, mayChange, noticesOf, opened, storeStep } from '../core/store-life.ts';
-import type { DeviceLife, LifeNotice, Opened, StoreEvent, StoreLife, StoreStep, Theirs } from '../core/store-life.ts';
+import { READ_ONLY, canTakeOver, dailyBackupDue, mayChange, noticesOf, opened, storeStep } from '../core/store-life.ts';
+import type { DeviceLife, LifeNotice, Opened, ReadOnlyWhy, StoreEvent, StoreLife, StoreStep, Theirs } from '../core/store-life.ts';
 import type { Applied, Step } from '../core/save-step.ts';
 import { saveId } from '../core/ids.ts';
 import type { DeviceId, HunterId, IdOf } from '../core/ids.ts';
@@ -33,6 +34,8 @@ const SAVE_KEY = 'hunter-system-v4', OLD_KEY_V3 = 'hunter-system-v3', OLD_KEY_V2
 const BACKUPS_KEY = 'hunter-system-backups';
 /** Device only: never exported, backed up or sent to a room. */
 const PREFS_KEY = 'hunter-system-prefs';
+/** Written when a tab explicitly clicks Take over here, so other open tabs become read-only immediately. */
+const TAKEOVER_KEY = 'hunter-system-takeover';
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const randId = (): DeviceId => ('d-' + Math.random().toString(36).slice(2, 8)) as DeviceId;
@@ -185,6 +188,7 @@ function load(): { save: Save; opened: Opened } {
 const loaded = load();
 let state: Save = loaded.save;
 let life: StoreLife = { at: 'noStorage' };
+let unsavedBackup: string | null = null;
 bindSave(() => state);
 
 /** Where the notice step learns a fact's session and whether a fight holds a hunter, as the save after a step answers. */
@@ -265,10 +269,14 @@ function carry(first: StoreStep, theirs: Save | null = null, quiet = false): voi
     for (const fx of s.effects) {
       if (fx === 'schedule') schedule();
       else if (fx === 'write') { cancelFlush(); queue.push(storeStep(life, { type: writeSave() ? 'wrote' : 'writeFailed' })); }
-      else if (fx === 'keepMine') queue.push(storeStep(life, { type: pushBackup('before another tab saved', JSON.stringify(state), backupCap(state)) ? 'kept' : 'keepFailed' }));
+      else if (fx === 'keepMine') {
+        unsavedBackup = JSON.stringify(exportedSave(state, false), null, 2);
+        queue.push(storeStep(life, { type: pushBackup('before another tab saved', JSON.stringify(state), backupCap(state)) ? 'kept' : 'keepFailed' }));
+      }
       else if (theirs) { state = theirs; took = true; }
     }
   }
+  if (life.at !== 'readOnly' && life.at !== 'keeping') unsavedBackup = null;
   if (life.at !== 'ready') cancelFlush(); // a tab that does not write waits for no write
   if (quiet) return;
   if (took) emit({ reason: 'storage' }); // sync.ts tells a save of another room by its own rule (`otherRoom`)
@@ -425,6 +433,34 @@ export const store = {
   /** Whether storage holds what this tab shows: false while its last write failed, and in a tab that plays in memory. */
   get saveOk(): boolean { return life.at === 'readOnly' || (life.at === 'ready' && life.write !== 'failing' && life.write !== 'retrying'); },
   get readOnly(): boolean { return life.at === 'readOnly'; },
+  /** Why this tab may not write, or null when it may. */
+  readOnlyWhy: (): ReadOnlyWhy | null => (life.at === 'readOnly' ? life.why : null),
+  /**
+   * The JSON text exported by the blocking takeover screen's Export backup button: this tab's unsaved save when
+   * `otherTab` or `mineUnkept` (stripped of phone secrets), or the raw stored text for `newer`, `loadUnkept` and `fightUnkept`.
+   */
+  exportReadOnly(): string {
+    if (life.at === 'readOnly' && (life.why === 'otherTab' || life.why === 'mineUnkept')) {
+      return unsavedBackup ?? JSON.stringify(exportedSave(state, false), null, 2);
+    }
+    return currentText();
+  },
+  /**
+   * Takes over saving in this tab from `otherTab` or `mineUnkept`. Refuses `newer`, `loadUnkept`, `fightUnkept`, or any
+   * stored save written by a newer app build. Signals other tabs only when the write succeeds.
+   */
+  takeOver(): boolean {
+    if (life.at !== 'readOnly' || !canTakeOver(life.why)) return false;
+    try {
+      const raw = readKey(SAVE_KEY);
+      if (raw !== null && parseSave(raw, env()).kind === 'newer') return false;
+    } catch { /* no storage to inspect: the write step below handles blocked storage */ }
+    carry(storeStep(life, { type: 'takeOver' }), null, true);
+    const after = store.life();
+    if (after.at === 'ready' && after.write === 'clean') writeKey(TAKEOVER_KEY, randToken());
+    emit({ reason: 'takeover', replaced: true });
+    return true;
+  },
   /** The store's life (src/core/store-life.ts), for a test to read. */
   life: (): StoreLife => life,
   /** A lasting banner raised after load, for example by the build handshake. One per id. */
@@ -439,6 +475,16 @@ export const store = {
 
 addEventListener('storage', e => {
   if (e.key === PREFS_KEY) { prefs = fixPrefs(readJson(PREFS_KEY)); emit({ reason: 'prefs' }); return; }
+  if (e.key === TAKEOVER_KEY) {
+    if (e.newValue === null) return;
+    let theirs: Save | null = null;
+    try {
+      const raw = readKey(SAVE_KEY), p = raw !== null ? parseSave(raw, env()) : null;
+      if (p && (p.kind === 'save' || p.kind === 'newer')) theirs = p.save;
+    } catch { /* no storage to read: takenOver still locks this tab */ }
+    run({ type: 'takenOver' }, theirs);
+    return;
+  }
   if (e.key !== SAVE_KEY || e.newValue === null) return; // a key removed by another tab: this tab's next write puts the save back
   const parsed = parseSave(e.newValue, env());
   const theirs: Theirs = parsed.kind === 'save' ? 'save' : parsed.kind === 'newer' ? 'newer' : 'unreadable';
