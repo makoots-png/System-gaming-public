@@ -509,7 +509,7 @@ None.
 
 - Imports: `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/day.ts`, `src/core/gates/personal.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/counts.ts`, `src/core/hunter/crystal.ts`, `src/core/hunter/guild.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/job-chain.ts`, `src/core/hunter/level.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/revive-standing.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/icons.ts`, `src/core/registry/items.ts`, `src/core/registry/monsters.ts`, `src/core/registry/powers.ts`, `src/core/repair.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/stats.ts`
 - Imports types from: `src/core/combat/effect-ops.ts`, `src/core/hunter/derive.ts`, `src/core/registry/skills.ts`
-- Imported by: `src/core/hunter/quest-secret.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/repair.ts`, `src/core/save.ts`, `src/core/told.ts`, `src/core/trade/stash.ts`
+- Imported by: `src/core/hunter/quest-secret.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/revive-standing.ts`, `src/core/hunter/sheet.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/repair.ts`, `src/core/save.ts`, `src/core/told.ts`, `src/core/trade/stash.ts`
 
 ### `src/core/hunter/identity.ts`
 
@@ -608,7 +608,7 @@ None.
 ### `src/core/hunter/revive-standing.ts`
 
 - Imports: `src/core/hunter/progress.ts`, `src/core/hunter/vitals.ts`, `src/core/rules.ts`, `src/core/save-step.ts`
-- Imports types from: `src/core/protocol.ts`, `src/core/session-log.ts`
+- Imports types from: `src/core/hunter/hunter.ts`, `src/core/protocol.ts`, `src/core/session-log.ts`
 - Imported by: `src/core/hunter/grant.ts`, `src/core/hunter/guild.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/inventory.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/rules-text.ts`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`
 
 ### `src/core/hunter/shadows.ts`

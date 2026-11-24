@@ -128,7 +128,7 @@ export function deathLine(R: Pick<Rules, 'priceBase' | 'loot' | 'reviveLevelShar
         : '';
   const xpCut = xpRate < 1 ? ` You also earn ${pctNum(xpRate)}% XP from every source until your debt is paid off.` : '';
   const debtOf = (r: Rank) => raiseOwes('debt', r, R);
-  const debt = ` Using a System revive on debt puts you in debt by rank (${goldByRank(debtOf)})${payoffClearsPhrase(debtOf, R)}.${goldSplit}${xpCut}`;
+  const debt = ` Using a System revive on debt puts you in debt for your rank after reviving (${goldByRank(debtOf)})${payoffClearsPhrase(debtOf, R)}.${goldSplit}${xpCut}`;
   return `At 0 HP, a hunter is dead. Healing and resting cannot revive a dead hunter. ${WAYS_BACK} revives them with ${REVIVE_HP} HP and removes every status, so poison does not kill them again. Use a Resurrection Crystal from your bag outside a fight.${cost}${debt}${shop}`;
 }
 

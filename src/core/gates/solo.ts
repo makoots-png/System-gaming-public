@@ -71,8 +71,8 @@ const spawnable = (seeds: readonly Monster[]): SpawnMonster[] =>
   seeds.filter(m => m.kind === 'normal').map(m => ({ id: m.id, rank: m.rank, type: m.type, name: m.name }));
 
 /**
- * `rank`, or the nearest rank below it whose seeds hold a normal monster, else the nearest above: the seeds have no
- * normal S monster (only bosses), so an S hunter's same-rank gate is an A gate.
+ * `rank`, or the nearest rank below it whose pool holds a normal monster, else the nearest above: safe fallback when
+ * custom pools lack a rank (the shipped seeds cover every rank E through S).
  */
 export function pooled(rank: Rank, pool: readonly SpawnMonster[]): Rank {
   const at = RANKS.indexOf(rank), has = (r: Rank): boolean => pool.some(m => m.rank === r);

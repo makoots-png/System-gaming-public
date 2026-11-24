@@ -6,6 +6,8 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
+- **Rank D monster XP after the E fix (optional check):** With E monsters now at 63 XP (your 20:03 ruling), a D monster pays 75, only 1.19x an E monster (it was 3x). Rank D becomes the longest rank: 27.6 clears to reach C, about 33 clears or 17 sessions at 5% death, against 14.3 clears for E, 23.1 for C, 11.3 for B and 6.8 for A. Neon suggests raising D to 120 (17.3 clears to C) or 140 (14.8 clears to C), which keeps E 63 < D < C 250. Nothing changes until you say.
+
 - **Borrow cap anchor under gold table B (shipped on `1.5 * priceBase`, optional check):** With gate clear gold raised 2.25x to 3.33x and item prices frozen on `RULES.priceBase`, keeping the borrow cap on `1.5 * priceBase` preserves your Cap A intent (one plus-grade item of your rank, 1.41 to 1.88 clears to pay off, 21% to 30% of revive debt). Moving it onto `1.5 * clearOf` (table B clears) grows the cap 2.25x to 3.33x (3.55 clears to pay off), which lets a hunter borrow next-rank middle gear from 0 gold at E, B, and A (including Mythic gear at A) and reaches 71% of an S revive debt. Say if you want it switched to `1.5 * clearOf`:
   - E: `150` g (`1.5 * priceBase`, 1.88 cl) vs `338` g (`1.5 * clearOf`, 3.56 cl; D mid is 325 g)
   - D: `488` g (`1.5 * priceBase`, 1.83 cl) vs `1,125` g (`1.5 * clearOf`, 3.54 cl; C mid is 1,250 g)

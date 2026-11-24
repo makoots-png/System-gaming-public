@@ -413,8 +413,9 @@ async function clearPersonalInRoom(page: Page): Promise<string> {
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
   const done = page.locator('.sys-overlay.show', { hasText: 'GATE CLEARED' });
   await expect(done).toBeVisible({ timeout: 30_000 });
+  const goblinXp = RULES.rankTable.E.xp;
   await expect(done).toContainText(PENDING_WORDS.waits);
-  await expect(done).not.toContainText('+25 XP');
+  await expect(done).not.toContainText(`+${goblinXp} XP`);
   await done.locator('.sys-actions button').first().tap();
   return name;
 }
@@ -438,9 +439,10 @@ test('in a room, a player\'s personal-gate clear waits for the GM, and approving
   const row = await waitingRow(gm.page, gateName);
   await expect(row).toContainText('Kai');
   await expect(row).toContainText(PENDING_WORDS.earned('solo', gateName));
-  await expect(row).toContainText('+25 XP');
+  const goblinXp = RULES.rankTable.E.xp;
+  await expect(row).toContainText(`+${goblinXp} XP`);
   const rec = await gm.page.evaluate(name => (hunterApp.store.get().settings.sync.pending ?? []).find((p: any) => p.at === 'waiting' && p.what === name), gateName);
-  expect(rec.rewards.xp).toBe(25);
+  expect(rec.rewards.xp).toBe(goblinXp);
 
   await row.locator('[data-pw-approve]').tap();
   await expect(gm.page.locator('#gm-pw [data-pw]', { hasText: gateName })).toHaveCount(0);

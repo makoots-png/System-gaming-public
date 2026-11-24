@@ -4,8 +4,9 @@
 // the owner, Nov 22: the free revive and the revive on debt are a "System raise" (no GM button). Only a System raise moves
 // the standing; a crystal or the GM's Revive raises the hunter and leaves it as it is. `Hunter.reviveLeft` holds it, and
 // `Hunter.debt` the gold a raise on debt owes. grant.ts (`systemRaise` and `grant`) is the one writer of both.
-import { clearOf, priceBaseOf } from '../rules.ts';
+import { clearOf, priceBaseOf, rankForLevel, rankIdx } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
+import type { RankBy } from './hunter.ts';
 import type { RewardFrom } from '../protocol.ts';
 import type { Said } from '../session-log.ts';
 import { refuse } from '../save-step.ts';
@@ -136,22 +137,36 @@ const gold = (n: number): string => `${numFmt(n)} gold`;
 const ratePct = (n: number): string => `${Math.round(clamp01(n) * 10000) / 100}%`;
 /** The title of the System's window that offers the raise. */
 export const RAISE_TITLE = 'THE SYSTEM CAN REVIVE YOU';
+/**
+ * The rank a hunter comes back at after a raising from death: mirrors `levelMoved` and `RANK_TABLE` (record.ts), so
+ * previews (`raiseOffer`, `raiseLine`) and `systemRaise` agree for every rank, level, and `rankBy` case.
+ */
+export function rankAfterRaising(
+  h: { readonly rank: Rank; readonly level: number; readonly rankBy?: RankBy },
+  R: Pick<Rules, 'rankLevels' | 'reviveLevelShare'>,
+): Rank {
+  const to = levelAfterRaising(h.level, R);
+  if (to >= h.level || h.rankBy === 'gm') return h.rank;
+  const earns = rankForLevel(R, to);
+  return rankIdx(earns) < rankIdx(h.rank) ? earns : h.rank;
+}
 /** What a hunter shows of itself to the words below. */
-type Raisable = { readonly reviveLeft: ReviveStanding; readonly rank: Rank; readonly level: number };
-type WordRules = Pick<Rules, 'priceBase' | 'loot' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveLevelShare'>;
+type Raisable = { readonly reviveLeft: ReviveStanding; readonly rank: Rank; readonly level: number; readonly rankBy?: RankBy };
+type WordRules = Pick<Rules, 'priceBase' | 'loot' | 'rankLevels' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveLevelShare'>;
 /**
  * What the System's window says to dead hunter `h`: its body, its lines (the cost, where the hunter rises, and on debt
  * that no raise is left after), and its Rise button's words, which name the cost on debt. Null past the ladder.
  */
 export function raiseOffer(h: Raisable, R: WordRules): { readonly body: string; readonly lines: readonly string[]; readonly rise: string } | null {
   if (!canRaise(h.reviveLeft)) return null;
-  const to = levelAfterRaising(h.level, R), lost = h.level - to;
-  const rises = `You revive at ${REVIVE_HP} HP${lost > 0 ? ` and level ${to} (${lost} level${lost === 1 ? '' : 's'} lost)` : ''}, with all statuses cleared.`;
+  const to = levelAfterRaising(h.level, R), lost = h.level - to, rank = rankAfterRaising(h, R);
+  const dropped = rank !== h.rank ? `, dropping to rank ${rank}` : '';
+  const rises = `You revive at ${REVIVE_HP} HP${lost > 0 ? ` and level ${to} (${lost} level${lost === 1 ? '' : 's'} lost${dropped})` : ''}, with all statuses cleared.`;
   if (h.reviveLeft === 'free') return { body: 'You have died. The System can revive you once for free.', lines: ['Cost: Free (one-time free revive).', rises], rise: 'Revive for free' };
-  const owes = raiseOwes(h.reviveLeft, h.rank, R);
-  const clears = debtPayoffClears(owes, h.rank, R);
+  const owes = raiseOwes(h.reviveLeft, rank, R);
+  const clears = debtPayoffClears(owes, rank, R);
   const cost = clears !== null
-    ? `You will owe ${gold(owes)}, about ${clears} rank ${h.rank} gate clear${clears === 1 ? '' : 's'} to pay off.`
+    ? `You will owe ${gold(owes)}, about ${clears} rank ${rank} gate clear${clears === 1 ? '' : 's'} to pay off.`
     : `You will owe ${gold(owes)}.`;
   return {
     body: 'You have died. Your free revive is used. The System can revive you once more in exchange for debt.',
@@ -162,7 +177,7 @@ export function raiseOffer(h: Raisable, R: WordRules): { readonly body: string; 
 /** The dead hunter's sheet line of what the System still does for it; `held` while a fight holds the hunter, which ends first. */
 export function raiseLine(h: Raisable, R: WordRules, held: boolean): string {
   if (!canRaise(h.reviveLeft)) return 'You have used all your System revives.';
-  const what = h.reviveLeft === 'free' ? 'once for free' : `once more for ${gold(raiseOwes(h.reviveLeft, h.rank, R))} debt`;
+  const what = h.reviveLeft === 'free' ? 'once for free' : `once more for ${gold(raiseOwes(h.reviveLeft, rankAfterRaising(h, R), R))} debt`;
   return held ? `Once the fight ends, the System can revive you ${what}.` : `The System can revive you ${what}.`;
 }
 /** The GM board's chip of a dead hunter's standing: whether the System can still raise it, and how. */

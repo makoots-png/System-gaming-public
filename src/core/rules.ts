@@ -141,7 +141,7 @@ const SPEC = {
   // A check's DC (easy, medium, hard), a normal monster's XP and the days a gate of the rank stays open. A monster's HP,
   // armor and attacks come from `fight.kinds` and its archetype (src/core/hunter/derive.ts `monsterSheet`).
   rankTable: {
-    E: { dc: each([10, 13, 16], DC), xp: of(25, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
+    E: { dc: each([10, 13, 16], DC), xp: of(63, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
     D: { dc: each([14, 17, 20], DC), xp: of(75, MONSTER_XP), breakDays: of(6, BREAK_DAYS) },
     C: { dc: each([20, 24, 28], DC), xp: of(250, MONSTER_XP), breakDays: of(5, BREAK_DAYS) },
     B: { dc: each([27, 31, 35], DC), xp: of(800, MONSTER_XP), breakDays: of(4, BREAK_DAYS) },
@@ -384,7 +384,7 @@ const SPEC = {
     // shares) and their product is the factor. Not its power: a hit is its dice plus its power, so power times 1.118
     // made an E foe's strike 7% harder, not 11.8%, and raised its heals too. The odds a card shows play that fight.
     // Measured (one play each, 3000 gates a rank, the six plain builds of tests/models/fight-sim.ts at the rank against
-    // a personal gate rolled as soloTick rolls one, the S gate an A one as `pooled` makes it; se 0.9 points each): the
+    // a personal gate rolled as soloTick rolls one, before the normal S seed when `pooled` fell back to A; se 0.9 points each): the
     // run's win chance at 1 then 1.25 is E 45.2% to 37.1%, C 42.7% to 34.7%, S 59.4% to 50.0%.
     autoHarder: real(1.25, 1, 4, 'difficulty multiplier for solo runs compared to table fights, from 1 to 4'),
   },
@@ -926,7 +926,7 @@ export const rewardJobs = (R: Pick<Rules, 'jobs' | 'extractJobs'>): string[] => 
 /** Whether a hunter of this job may extract shadows: the job is one of the rules' `extractJobs`. */
 export const canExtract = (R: Pick<Rules, 'extractJobs'>, job: string | null): boolean => job !== null && (R.extractJobs as readonly string[]).includes(job);
 export const rankIdx = (rank: unknown): number => Math.max(0, (RANKS as readonly unknown[]).indexOf(rank));
-export function rankForLevel(R: Rules, level: number): Rank {
+export function rankForLevel(R: Pick<Rules, 'rankLevels'>, level: number): Rank {
   const rl = R.rankLevels; let r: Rank = 'E';
   for (const k of RANKS) if (level >= rl[k]) r = k;
   return r;

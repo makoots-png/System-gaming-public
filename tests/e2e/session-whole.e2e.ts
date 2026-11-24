@@ -232,7 +232,9 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     await expect(win).toHaveCount(0);
     await expect(combat(gm).locator('.cmb-head').first()).toContainText('No fight');
     await go(gm, 'status');
-    await expect(gm.locator('#view-status [data-xpnums]')).toHaveText(new RegExp(`^${xpBefore + each >= xpNeed ? xpBefore + each - xpNeed : xpBefore + each} / \\d+$`));
+    let wantXp = xpBefore + each, wantNeed = xpNeed;
+    while (wantXp >= wantNeed) { wantXp -= wantNeed; wantNeed += RULES.xpPerLevel; }
+    await expect(gm.locator('#view-status [data-xpnums]')).toHaveText(`${wantXp} / ${wantNeed}`);
     for (const p of [kai, mira]) {
       await go(p, 'combat');
       await expect(combat(p).locator('[data-idle]')).toHaveText('The GM is not running a fight.');

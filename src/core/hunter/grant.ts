@@ -471,7 +471,7 @@ export type SystemRaised = { save: Save; raise: Raise; owes: number; from: numbe
  * The System raise of dead hunter `hid` (world rule 6; the owner, Nov 22: "System raise", no GM button), in one write: its
  * revive standing stepped (revive-standing.ts `standingStep`), the life's revive by the System through `sheetEdit` (up
  * at the revive HP, every status off, its levels lost), and from `debt` the gold it owes added to its debt (`raiseOwes`,
- * at the rank it died at). In a room the GM's phone hears it in the same write (the `systemRaise` message). Refused
+ * at the rank after the raise, `up.rank`). In a room the GM's phone hears it in the same write (the `systemRaise` message). Refused
  * `spent` past the ladder, `cannot` when the hunter is up, `held` while a fight holds it (`o.held`, the caller's
  * `fightHold` of this save: section 21's default, a fight's dead row is the GM's to revive). A crystal or the GM's
  * Revive leaves the standing.
@@ -485,7 +485,7 @@ export function systemRaise(save: Save, hid: string, o: { at: string; room: Room
   // a revive is refused only where the life table does not take it: the hunter is up
   if (isRefused(up)) return refuse('cannot');
   if (o.held) return refuse('held');
-  const owes = raiseOwes(raise, h.rank, o.R);
+  const owes = raiseOwes(raise, up.rank, o.R);
   const raised: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...up, reviveLeft: left, debt: debtStep(up.debt, { type: 'incur', amount: owes }, o.R).debt } : x)) };
   const device = save.settings.deviceId;
   const event = o.room ? newEvent('systemRaise', { by: sheetKeyOf(device, h.id), name: h.name, raise, owes }, { device, now: Date.parse(o.at), rand: idShare(`raise ${hid} ${raise}`) }) : null;

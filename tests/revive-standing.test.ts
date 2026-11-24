@@ -3,7 +3,7 @@
 // death." The owner, Nov 22: the free revive and the revive on debt are a "System raise". Every expected standing is read
 // from those words: a raise from free leaves the one on debt, a raise on debt leaves none, and none is raised no more.
 import { describe, expect, test } from 'bun:test';
-import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, borrowCap, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPayoffClears, debtPreviewLine, debtState, debtStep, debtTermsLine, debtXpClearedLine, debtXpLine, paysDebt, raiseLine, raiseOffer, raiseOwes, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
+import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, borrowCap, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPayoffClears, debtPreviewLine, debtState, debtStep, debtTermsLine, debtXpClearedLine, debtXpLine, paysDebt, raiseLine, raiseOffer, raiseOwes, raisedSaid, rankAfterRaising, standingStep } from '../src/core/hunter/revive-standing.ts';
 import type { DebtEvent, DebtEventType, DebtPaid, DebtState, DebtXpCut, ReviveStanding, StandingEventType } from '../src/core/hunter/revive-standing.ts';
 import { grant, raisedLine, sheetEdit, systemRaise } from '../src/core/hunter/grant.ts';
 import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
@@ -144,6 +144,68 @@ describe('the System raise: the life, the standing and the debt in one write', (
     expect(letter.event.type).toBe('systemRaise');
     expect(letter.event.payload).toMatchObject({ by: 'd-player1:h1', name: hunterOf(deadSave()).name, raise: 'debt', owes: 500 });
     expect(ok(raise(deadSave())).save.settings.sync.outbox ?? []).toEqual([]);
+  });
+
+  test('a System raise on debt bills at the rank after the raise (up.rank), matching rankAfterRaising, raiseOffer, and raiseLine across every rank, level, and rankBy', () => {
+    const base = freshSave(ENV, { onboarded: true });
+    const makeDead = (rank: Rank, level: number, rankBy: 'level' | 'gm'): Save => ({
+      ...base,
+      hunters: [{ ...base.hunters[0]!, id: H, rank, rankBy, level, peakLevel: level, life: { at: 'dead' }, reviveLeft: 'debt' }],
+    });
+
+    // All five rank-crossing boundaries for level-ranked hunters bill the dropped rank (including room outbox event).
+    const BOUNDARIES: readonly (readonly [Rank, number, Rank, number, number])[] = [
+      ['D', 10, 'E', 9, 500],
+      ['C', 20, 'D', 19, 1625],
+      ['B', 35, 'C', 33, 6250],
+      ['A', 50, 'B', 48, 30000],
+      ['S', 70, 'A', 67, 133000],
+    ];
+    for (const [fromRank, fromLv, toRank, toLv, wantOwes] of BOUNDARIES) {
+      const s = makeDead(fromRank, fromLv, 'level');
+      const h = hunterOf(s);
+      expect(rankAfterRaising(h, RULES)).toBe(toRank);
+      const offer = raiseOffer(h, RULES)!;
+      expect(offer.lines[0]).toBe(`You will owe ${wantOwes.toLocaleString('en-US')} gold, about 5 rank ${toRank} gate clears to pay off.`);
+      expect(offer.lines[1]).toContain(`, dropping to rank ${toRank})`);
+      expect(offer.rise).toBe(`Revive on debt (${wantOwes.toLocaleString('en-US')} gold)`);
+      expect(raiseLine(h, RULES, false)).toBe(`The System can revive you once more for ${wantOwes.toLocaleString('en-US')} gold debt.`);
+      const r = ok(raise(s, ROOM));
+      const up = hunterOf(r.save);
+      expect([up.rank, up.level, up.debt, r.owes]).toEqual([toRank, toLv, wantOwes, wantOwes]);
+      const letter = r.save.settings.sync.outbox![0]!.letter;
+      expect(letter.kind === 'event' && letter.event.type === 'systemRaise' && letter.event.payload.owes).toBe(wantOwes);
+    }
+
+    // GM-set rank keeps its rank on level loss (SMX-rules-7.2) and bills the kept rank in preview and write alike.
+    const gmSet = makeDead('B', 35, 'gm');
+    const gmRaised = ok(raise(gmSet));
+    expect([rankAfterRaising(hunterOf(gmSet), RULES), hunterOf(gmRaised.save).rank, gmRaised.owes]).toEqual(['B', 'B', 30000]);
+    expect(raiseOffer(hunterOf(gmSet), RULES)!.lines[1]).not.toContain('dropping to rank');
+    expect(raiseLine(hunterOf(gmSet), RULES, false)).toContain('30,000 gold debt');
+
+    // Behind-level hunter (e.g. rank C at level 35 -> 33) keeps C and bills C.
+    const behind = makeDead('C', 35, 'level');
+    const behindRaised = ok(raise(behind));
+    expect([rankAfterRaising(hunterOf(behind), RULES), hunterOf(behindRaised.save).rank, behindRaised.owes]).toEqual(['C', 'C', 6250]);
+
+    // Exhaustive parity: every rank x every level 1..100 x both rankBy values agrees between preview and write.
+    for (const rank of RANKS) {
+      for (const rankBy of ['level', 'gm'] as const) {
+        for (let level = 1; level <= 100; level++) {
+          const s = makeDead(rank, level, rankBy);
+          const h = hunterOf(s);
+          const predRank = rankAfterRaising(h, RULES);
+          const predOwes = raiseOwes('debt', predRank, RULES);
+          const r = ok(raise(s));
+          const up = hunterOf(r.save);
+          expect(predRank, `${rank} lv${level} ${rankBy} rank`).toBe(up.rank);
+          expect(r.owes, `${rank} lv${level} ${rankBy} owes`).toBe(predOwes);
+          expect(raiseOffer(h, RULES)!.rise, `${rank} lv${level} ${rankBy} button`).toBe(`Revive on debt (${predOwes.toLocaleString('en-US')} gold)`);
+          expect(raiseLine(h, RULES, false), `${rank} lv${level} ${rankBy} line`).toBe(`The System can revive you once more for ${predOwes.toLocaleString('en-US')} gold debt.`);
+        }
+      }
+    }
   });
 });
 

@@ -32,11 +32,11 @@ test('over many rolls every pack stays in its rank\'s range, has at most 3 kinds
     expect(size(g.pack)).toBeGreaterThanOrEqual(lo);
     expect(size(g.pack)).toBeLessThanOrEqual(hi);
     expect(g.pack.length).toBeLessThanOrEqual(MAX_KINDS);
-    // An S gate has no regular in the seeds (Beru, Kamish and Baran are bosses), so its kinds are made (null).
+    // Every rank E through S has at least one regular (non-boss) seed, so packs always draw real monsters.
     const regulars = BESTIARY.filter(m => m.rank === g.rank && !m.boss);
+    expect(regulars.length).toBeGreaterThan(0);
     for (const p of g.pack) {
-      if (regulars.length) expect(regulars.map(m => m.id)).toContain(p.monsterId);
-      else expect(p.monsterId).toBeNull();
+      expect(regulars.map(m => m.id)).toContain(p.monsterId);
     }
     if (g.bossId) expect(BESTIARY.find(m => m.id === g.bossId)).toMatchObject({ rank: g.rank, boss: true });
     expect(RULES.gateNames).toContain(g.name);

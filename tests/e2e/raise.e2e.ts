@@ -10,7 +10,7 @@ import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, cho
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
 const raiseWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: RAISE_TITLE });
-const hunter = (page: Page) => page.evaluate(() => { const h = hunterApp.store.active(); return { life: h.life, reviveLeft: h.reviveLeft, debt: h.debt, level: h.level }; });
+const hunter = (page: Page) => page.evaluate(() => { const h = hunterApp.store.active(); return { life: h.life, reviveLeft: h.reviveLeft, debt: h.debt, level: h.level, rank: h.rank }; });
 /** The player's hunter dead outside any fight (setup: a fall the GM applied by hand). */
 const dies = (player: Page) => player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
 const gmLog = (gm: Page) => gm.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.title.startsWith('System revive')).map((l: any) => l.text) as string[]);
@@ -276,4 +276,34 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await go(player, 'inventory');
   await expect(player.locator('[data-debt]')).toBeHidden();
   await expect(card.locator('[data-debt-chip]')).toHaveCount(0, { timeout: 15_000 });
+});
+
+test('dying at a rank boundary previews and bills System revive debt at the rank after reviving', async ({ device }) => {
+  const player = (await device('boundary')).page;
+  await onboardPlayer(player, HUNTER);
+  await dismissAll(player);
+  await player.evaluate(() => hunterApp.store.update((d: any) => {
+    d.rulesOverrides.solo = { personal: false };
+    const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
+    h.rank = 'B';
+    h.rankBy = 'level';
+    h.level = 35;
+    h.peakLevel = 35;
+    h.reviveLeft = 'debt';
+    h.life = { at: 'dead' };
+  }, 'test-setup'));
+
+  const offer = raiseOffer({ reviveLeft: 'debt', rank: 'B', level: 35, rankBy: 'level' }, RULES)!;
+  const cDebt = raiseOwes('debt', 'C', RULES);
+  const win = raiseWindow(player);
+  await expect(win).toBeVisible();
+  await expect(win).toContainText(offer.lines[0]!);
+  await expect(win).toContainText('dropping to rank C');
+  await expect(win.locator('.sys-actions button', { hasText: offer.rise })).toBeVisible();
+  await win.locator('.sys-actions button', { hasText: offer.rise }).tap();
+  await expect(win).toHaveCount(0);
+
+  await expect.poll(() => hunter(player)).toMatchObject({ life: { at: 'up', hp: 1 }, rank: 'C', level: 33, reviveLeft: 'none', debt: cDebt });
+  await go(player, 'inventory');
+  await expect(player.locator('[data-debt]')).toHaveText(debtLine(cDebt)!);
 });

@@ -186,13 +186,20 @@ group('the seeds as plan section 3.2 restates them', () => {
     const ig = seed('igris');
     expect([ig.extractable, ig.xp]).toEqual([true, Math.round(2500 * 3 * 1.2)]);
   });
+
+  test('Ashen Drake is a plain normal S-rank Dragon brute with full S normal XP', () => {
+    const drake = seed('ashen-drake');
+    expect([drake.rank, drake.type, drake.archetype, drake.kind, drake.extractable, monsterXp(drake, RULES)]).toEqual(['S', 'Dragon', 'brute', 'normal', true, RULES.rankTable.S.xp]);
+    expect(drake.tweak.stats?.ins).toBe(4);
+    expect(drake.abilities).toEqual([]);
+  });
 });
 
 group('a monster made from its rank', () => {
-  test('its XP is the rank table\'s, times 3 for a boss and 1.5 for an elite: E is 25, 75 and 38 (37.5 rounded)', () => {
-    expect(monsterXp(statBlock(RULES, 'E'), RULES)).toBe(25);
-    expect(monsterXp(statBlock(RULES, 'E', { kind: 'boss' }), RULES)).toBe(75);
-    expect(monsterXp(statBlock(RULES, 'E', { kind: 'elite' }), RULES)).toBe(38);
+  test('its XP is the rank table\'s, times 3 for a boss and 1.5 for an elite: E is 63, 189 and 95 (94.5 rounded)', () => {
+    expect(monsterXp(statBlock(RULES, 'E'), RULES)).toBe(63);
+    expect(monsterXp(statBlock(RULES, 'E', { kind: 'boss' }), RULES)).toBe(189);
+    expect(monsterXp(statBlock(RULES, 'E', { kind: 'elite' }), RULES)).toBe(95);
     expect(statBlock(RULES, 'E', { kind: 'boss' })).toMatchObject({ name: 'E-rank Boss', kind: 'boss' });
   });
 
