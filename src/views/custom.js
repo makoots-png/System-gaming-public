@@ -208,8 +208,8 @@ export function register(app) {
         { label: 'Delete', value: 'del', danger: true }, { label: 'Close', value: null, cancel: true }] });
     if (v === 'swap') LO.swap(hid, id);
     else if (v === 'ren') { const n = await ui.promptText({ title: 'Rename loadout', label: 'Name', value: l.name, maxlength: 24 }); if (n) ui.wrote('Loadout', LO.rename(hid, id, n), LOADOUT_WORDS); }
-    else if (v === 'ow') { if (await ui.confirm({ title: `Overwrite ${l.name}?`, body: 'This replaces the saved loadout with the gear you have equipped now.', confirmLabel: 'Overwrite' })) ui.wrote('Loadout', LO.overwrite(hid, id), LOADOUT_WORDS); }
-    else if (v === 'del') { if (await ui.confirm({ title: `Delete ${l.name}?`, danger: true, confirmLabel: 'Delete' })) ui.wrote('Loadout', LO.remove(hid, id), LOADOUT_WORDS); }
+    else if (v === 'ow') { if (await ui.confirm({ title: `Overwrite ${l.name}?`, body: 'Overwriting replaces the saved loadout with your equipped gear.', danger: true, confirmLabel: 'Overwrite loadout' })) ui.wrote('Loadout', LO.overwrite(hid, id), LOADOUT_WORDS); }
+    else if (v === 'del') { if (await ui.confirm({ title: `Delete ${l.name}?`, body: 'Your items stay in your bag.', danger: true, confirmLabel: 'Delete loadout' })) ui.wrote('Loadout', LO.remove(hid, id), LOADOUT_WORDS); }
   }
   app.registerPanel({
     view: 'status', id: 'loadouts', order: 46, title: 'Loadouts',
@@ -253,6 +253,13 @@ export function register(app) {
   const respecBlock = h => { const why = respecWhy(h, rules(), inFight(h.id)); return why ? RESPEC_WHY[why](h) : ''; };
   /** What a refused respec of hunter `h` says (`ui.wrote`'s words): `RESPEC_WHY` for `h` as it is. */
   const respecWords = h => Object.fromEntries(Object.entries(RESPEC_WHY).map(([why, say]) => [why, say(h)]));
+  /** Shared confirmation for every GM respec site (Build panel, local Build menu, and remote Build menu). */
+  const confirmRespec = h => ui.confirm({
+    title: h && h.name ? `Respec ${h.name}?` : 'Respec this hunter?',
+    body: 'Path and perks are cleared. Ability points are not refunded.',
+    danger: true,
+    confirmLabel: 'Respec hunter',
+  });
   // auto-place unspent ability points by the path's alloc weights (autoSpend); points stay undoable until confirmed
   const allocPlan = h => { const p = pathOf(rules(), h.build.path); return p ? autoSpend(h, p, rules()) : {}; };
   const BD = A().build = {
@@ -283,6 +290,7 @@ export function register(app) {
           ...Object.keys(R.paths || {}).filter(id => pathOf(R, id)).map(id => ({ label: `Set path: ${R.paths[id].name || id}`, value: id })),
           { label: 'Respec (clear path and perks)', value: 'respec', danger: true }, { label: 'Cancel', value: null, cancel: true }] });
       if (!v) return;
+      if (v === 'respec' && !(await confirmRespec(h))) return;
       if (who.kind === 'remote') {
         /** @type {import('../core/protocol.ts').BuildChange} */
         const build = isObj(v) ? { tier: Number(v.tier), pick: v.pick === 1 ? 1 : 0 } : v === 'respec' ? 'respec' : { path: String(v) };
@@ -324,7 +332,7 @@ export function register(app) {
     const h = store.hunter(hid); if (!h) return;
     const why = respecBlock(h); if (why) return ui.toast('Build', why, { kind: 'warning' });
     const cost = respecCost(h);
-    if (await ui.confirm({ title: `Respec for ${ui.fmt(cost)} gold?`, body: `You have ${ui.fmt(h.gold)} gold. Path and perks are cleared. Ability points are not refunded.`, danger: true, confirmLabel: `Pay ${ui.fmt(cost)} gold` })) {
+    if (await ui.confirm({ title: `Respec for ${ui.fmt(cost)} gold?`, body: `You have ${ui.fmt(h.gold)} gold. Path and perks are cleared. Ability points are not refunded.`, danger: true, confirmLabel: `Respec for ${ui.fmt(cost)} gold` })) {
       ui.wrote('Build', BD.respec(hid), respecWords(store.hunter(hid) || h));
     }
   }
@@ -346,7 +354,7 @@ export function register(app) {
         if ('bdbuy' in d) return buyRespec(hid);
         if (!app.isGM()) return;
         if ('bdset' in d) return BD.gmMenu({ kind: 'local', hunterId: hid }, null);
-        if ('bdrespec' in d) return ui.confirm({ title: 'Respec this hunter?', body: 'Path and perks are cleared. Ability points are not refunded.', danger: true, confirmLabel: 'Respec' }).then(ok => ok && ui.wrote('Build', BD.respec(hid)));
+        if ('bdrespec' in d) return confirmRespec(store.hunter(hid)).then(ok => ok && ui.wrote('Build', BD.respec(hid)));
         if ('bdtoggle' in d) return BD.setRule({ enabled: !on() });
         if ('bdpp' in d) return BD.setRule({ playerPick: B().playerPick === false });
         if ('kstoggle' in d) { ui.wrote('GM', store.apply('gm-rules', s => keystoneSwitched(s, !rules().fight.keystone.on))); return; }

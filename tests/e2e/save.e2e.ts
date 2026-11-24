@@ -213,7 +213,7 @@ test('a player who opens the app days after their last daily meets the PENALTY w
   const env = { now: new Date(Date.now() - 3 * 86_400_000), newDeviceId: () => parseDeviceId('d-e2e-late')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   const { page } = await device('phone', { seed: { [V4]: JSON.stringify(freshSave(env, { onboarded: true })) } });
   await openApp(page);
-  await expect(page.locator('.sys-overlay.show')).toContainText('PENALTY');
+  await expect(page.locator('.sys-overlay.show')).toContainText('Penalty Zone');
   await dismissAll(page);
   await go(page, 'status');
   await expect(page.locator('#view-status .chip', { hasText: 'Penalized' })).toHaveCount(1);
@@ -473,7 +473,7 @@ test('a reset that cannot back up the campaign first asks before it goes on, and
   await page.locator('#view-data [data-reset]').tap();
   const prompt = page.locator('.sys-overlay.show', { hasText: 'Reset campaign?' });
   await prompt.locator('input').fill('RESET');
-  await prompt.locator('.sys-actions button.primary').tap();
+  await prompt.locator('.sys-actions button.danger').tap();
   await answerWindow(page, 'No backup saved', 'Cancel');
   await go(page, 'status');
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Fixture');

@@ -79,7 +79,7 @@ test('a player who deletes their last hunter and cancels the new one\'s name kee
   const win = page.locator('.sys-overlay.show');
   await expect(win).toContainText('Delete Mira Test?');
   await win.locator('input').fill('Mira Test');
-  await win.locator('.sys-actions button.primary').tap();
+  await win.locator('.sys-actions button.danger').tap();
   await expect(win).toContainText('Create a new hunter');
   await win.locator('.sys-actions button', { hasText: 'Cancel' }).tap();
   await expect(win).toHaveCount(0);

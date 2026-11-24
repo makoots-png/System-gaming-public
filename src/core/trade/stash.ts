@@ -117,7 +117,7 @@ export const STASH_WORDS = {
   howMany: (n: number): string => `How many? The stash has ${n}.`, howMuch: (n: number): string => `How much? The stash has ${n} gold.`, empty: 'The stash is empty.', take: 'Take', takeGold: 'Take gold', remove: 'Remove', undo: 'Undo',
   asOf: (time: string): string => `Updated ${time}.`, order: 'Stash requests are processed in the order they arrive.',
   waiting: 'Pending requests', waitingLine: 'Waiting for the GM\'s device to process this.',
-  stranded: 'The room server did not confirm this request, so the app cannot tell if it went into the stash. Check the stash first.',
+  stranded: 'The room server did not confirm this request, so it may already be in the stash. Check the stash first.',
   refused: 'This request did not reach the room server.', takeBack: 'Take back', putAway: 'Dismiss',
   askLine: (w: Asked): string => (w.kind === 'stash' ? (w.ask.kind === 'put' ? `Put in: ${askWords(w.ask)}.` : `Take: ${askWords(w.ask)}.`) : ''),
   kept: (goods: Goods): string => `In the stash: ${goodsWords(goods)}.`,

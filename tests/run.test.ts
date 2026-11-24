@@ -312,7 +312,7 @@ describe('only the GM\'s tap moves a story', () => {
       store: { get: () => phone },
       once: (eid, step) => { const next = appliedOnce(eid, step)(phone); if (isRefused(next)) return false; phone = next; return true; },
       rules: () => RULES, now: () => AT, today: () => TODAY,
-      toast: () => {}, system: () => {},
+      toast: () => {}, system: () => {}, warn: () => {},
       hunter: { fightOf: () => null, granted: (_hid, g) => ({ lines: g.lines, levelup: g.levelup, popup: null }), gmHolds: () => refuse(TOLD) },
       stepsDone: () => {}, coinRuled: () => {},
     };

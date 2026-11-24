@@ -51,7 +51,8 @@ import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
 import type { AppApi, RemoteSheet, RoomFace, SyncApi } from '../core/api.ts';
 import { API_ERRORS, DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseApiError, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
-import type { DeviceId, DocName, DocOf, EventBody, EventStamp, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent } from '../core/protocol.ts';
+import type { DeviceId, DocName, DocOf, EventBody, EventStamp, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent, SystemKind } from '../core/protocol.ts';
+import type { SystemAction, ToastKind, WarningInput } from '../core/warning.ts';
 import { deviceOf, endIdOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
 import { appliedOnce } from '../core/applied.ts';
@@ -149,13 +150,13 @@ type Data = { kind: 'poll'; r: RoomState; after: number } | { kind: 'head'; now:
 
 /** A System window this file opens: its words, and the actions a player picks from (it answers the value tapped). */
 type SyncWindow = {
-  tag: string; title: string; kind: string; body: string; lines?: string[]; rewards?: string[];
-  actions?: { label: string; value: unknown; cancel?: boolean; primary?: boolean }[];
+  tag: string; title: string; kind: SystemKind; body: string; lines?: string[]; rewards?: string[];
+  actions?: readonly SystemAction[];
 };
 /**
  * What this file uses of the app object src/app.js hands to `register`: the bus, the store, the rules, every module's
- * `app.api`, the seat, the way to a view, the build id it sets, and the toast, the System window and `wrote` (a refused
- * write told by its kind) of src/views/ui.js.
+ * `app.api`, the seat, the way to a view, the build id it sets, and the toast, the System window, the Variant 1 warning
+ * window and `wrote` (a refused write told by its kind) of src/views/ui.js.
  * The `App` of src/views/app.ts has all of it, and app.js's call of `register` is checked against this type
  * (tsconfig.views.json). The edge names what it uses so it imports nothing from the views.
  */
@@ -166,7 +167,7 @@ export type SyncHost = Bus & {
   seat(): Seat;
   go(id: string): void;
   build?: string;
-  ui: { toast(tag: string, text: string, opts?: { kind: string }): void; system(w: SyncWindow): Promise<unknown>; wrote(tag: string, w: ReturnType<typeof Store.apply>): boolean };
+  ui: { toast(tag: string, text: string, opts?: { kind: ToastKind }): void; system(w: SyncWindow): Promise<unknown>; warn(w: WarningInput): Promise<unknown>; wrote(tag: string, w: ReturnType<typeof Store.apply>): boolean };
 };
 
 export function register(app: SyncHost): void {
@@ -470,7 +471,7 @@ export function register(app: SyncHost): void {
   function notice(id: LinkNotice, code: RoomCode | null): void {
     switch (id) {
       case 'gone': {
-        ui.toast('Sync', 'This room no longer exists. You left the room.', { kind: 'warn' });
+        void ui.warn({ tag: 'Room closed', title: 'This room no longer exists', body: 'You left the room. Your hunter is safe on this device.' });
         if (!code) return;
         peeked.delete(code);
         // the room's offers step `roomGone` in the write that refuses its letters: a never-sent one gives its goods back
@@ -479,11 +480,11 @@ export function register(app: SyncHost): void {
         for (const n of ended.news) if (n.kind === 'toast') ui.toast('Trade', n.text);
         return;
       }
-      case 'keyLost': ui.toast('System', `The GM key for room ${code ?? ''} no longer works. You left the room.`, { kind: 'warn' }); return;
+      case 'keyLost': void ui.warn({ tag: 'Room access lost', title: 'GM key no longer works', body: `The GM key for room ${code ?? ''} no longer works, so you left the room. You can enter a valid GM key in Room.` }); return;
       case 'removed': if (code) removalDo({ type: 'removed', room: code, hunter: bound()?.id ?? null }); return;
       case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
       case 'notFound': if (code) peeked.delete(code); return;
-      case 'readOnly': ui.toast('System', code ? `This tab cannot save, so you left room ${code}. Your room is still saved. Reload to rejoin.` : 'This tab cannot save, so it could not open the room.', { kind: 'warn' }); return;
+      case 'readOnly': ui.toast('System', code ? `This tab cannot save, so you left room ${code}. Your room is still saved. Reload to rejoin.` : 'This tab cannot save, so it could not open the room.', { kind: 'warning' }); return;
       case 'keyRefused': case 'notAllowedBack': case 'unreachable': case 'serverError': case 'replaced': return;
     }
   }
@@ -552,14 +553,14 @@ export function register(app: SyncHost): void {
       if (joined !== null && ev && Date.parse(ev.at) < joined) lines.push(`Trade: ${n.text}`); else ui.toast('Trade', n.text);
     }
     if (lines.length) void ui.system({ tag: '! System', title: 'WHILE YOU WERE AWAY', kind: 'info', body: AWAY_BODY, lines });
-    if (landed?.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied. The app saved it and will try again.', { kind: 'warn' });
+    if (landed?.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied. The app saved it and will try again.', { kind: 'warning' });
   }
   const skewFrom = (now: string): void => { const t = Date.parse(now); if (Number.isFinite(t)) srvSkew = t - Date.now(); };
   /** What the appliers in room-events.ts use of the app; read when an event arrives, after every module has registered. */
   const deps: ApplyDeps = {
     store, once: (eid, step) => once(eid, step), rules: () => app.rules(), now: () => new Date().toISOString(),
     today: () => stepTime(store.get(), new Date()).today,
-    toast: (tag, text, o) => ui.toast(tag, text, o), system: w => ui.system({ ...w, body: w.body ?? '' }),
+    toast: (tag, text, o) => ui.toast(tag, text, o), system: w => ui.system({ ...w, body: w.body ?? '' }), warn: w => ui.warn(w),
     get hunter() {
       const h = app.api.hunter!;
       return { fightOf: h.fightOf, granted: h.granted, gmHolds: h.gmHolds };
@@ -611,7 +612,7 @@ export function register(app: SyncHost): void {
   }
   function notOwner(): void {
     const h = bound();
-    ui.system({ tag: '! System', title: 'HUNTER LOCKED TO ANOTHER DEVICE', kind: 'warning', body: `${h?.name || 'This hunter'} is claimed by a different device in this room, so this device cannot update it. Ask your GM to release it, then reopen the app.` });
+    void ui.warn({ tag: 'Room sync', title: 'Hunter locked to another device', body: `${h?.name || 'This hunter'} is claimed by a different device in this room, so this device cannot update it. Ask your GM to release it, then reopen the app.` });
   }
 
   // ── the hunter this phone sends (settings.sync.boundHunterId), not whichever is active ──
@@ -697,8 +698,8 @@ export function register(app: SyncHost): void {
   function showRemoved(code: RoomCode, hid: HunterId | null): void {
     const h = hid ? store.hunter(hid) : null;
     const body = `The GM removed ${h?.name || 'your hunter'} from room ${code}. Your hunter is safe on this device. Ask your GM before joining again.`;
-    void ui.system({ tag: '! System', title: 'REMOVED FROM ROOM', kind: 'warning', body,
-      actions: [{ label: 'OK', value: false, cancel: true }, { label: 'Rejoin when the GM allows', value: true, primary: true }] })
+    void ui.warn({ tag: 'Room sync', title: 'Removed from room', body,
+      actions: [{ label: 'Rejoin when the GM allows', value: true, primary: true }, { label: 'Close', value: false, cancel: true }] })
       .then(v => removalDo({ type: 'answered', room: code, rejoin: v === true }));
   }
 
@@ -721,7 +722,7 @@ export function register(app: SyncHost): void {
     if (!flush('outbox-post', b => { const r = postIn(b, code, letter, key); dropped = r.dropped; return r.box; })) return { ok: false, why: 'noRoom' };
     // each message the full box let go is told to whoever waits on its id (a turn's hold: SMX-sync-4.3)
     for (const d of dropped) app.emit('sync:outbox', { id: d.id, at: 'dropped' });
-    if (dropped.length) ui.toast('Sync', OUTBOX_WORDS.dropped(dropped.length), { kind: 'warn' });
+    if (dropped.length) ui.toast('Sync', OUTBOX_WORDS.dropped(dropped.length), { kind: 'warning' });
     return { ok: true, id: letter.kind === 'event' ? letter.event.payload.eid : `tomb ${letter.hid}`, dropped: dropped.length };
   }
   /**
@@ -756,7 +757,7 @@ export function register(app: SyncHost): void {
     if (ev.type === 'sent') app.emit('sync:outbox', { id: e.id, at: 'sent', seq: c.ok && isObj(c.data) && typeof c.data.seq === 'number' ? c.data.seq : null });
     if (ev.type === 'refused') {
       console.warn(`[sync] the room refused a ${e.letter.kind === 'event' ? e.letter.event.type : 'tombstone'}: ${ev.why}`);
-      ui.toast('Sync', `The room server rejected ${e.letter.kind === 'event' ? WHAT_SENT[e.letter.event.type] ?? 'a message' : 'the removal of a deleted hunter'} (${ev.why}).`, { kind: 'warn' });
+      ui.toast('Sync', `The room server rejected ${e.letter.kind === 'event' ? WHAT_SENT[e.letter.event.type] ?? 'a message' : 'the removal of a deleted hunter'} (${ev.why}).`, { kind: 'warning' });
       app.emit('sync:outbox', { id: e.id, at: 'refused', why: ev.why });
     }
     emitStatus();
@@ -793,7 +794,7 @@ export function register(app: SyncHost): void {
     const show = (): boolean => ui.wrote('System', store.apply('switch-hunter', s => setActive(s, to.id)));
     const asked = playing(), b = bound();
     if (!asked || !b || asked.bound === to.id) return show();
-    const v = await ui.system({ tag: '! System', title: `PLAY AS ${String(to.name).toUpperCase()}?`, kind: 'quest',
+    const v = await ui.system({ tag: '! System', title: `PLAY AS ${String(to.name).toUpperCase()}?`, kind: 'info',
       body: `Play as ${to.name} in room ${asked.room}? ${b.name} leaves the GM's board.`,
       actions: [{ label: 'Cancel', value: 'cancel', cancel: true }, { label: `Only view ${to.name}`, value: 'view' }, { label: `Play as ${to.name}`, value: 'bind', primary: true }] });
     const answer: BindAnswer = v === 'bind' || v === 'view' ? v : 'cancel';

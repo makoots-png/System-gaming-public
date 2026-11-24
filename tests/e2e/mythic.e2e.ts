@@ -105,7 +105,7 @@ test('the GM\'s Next phase moves the strip to phase 2 after a question', async (
   await combat(gm).locator('[data-mynext]').tap();
   const ask = gm.locator('.sys-overlay.show');
   await expect(ask).toContainText(`Move ${script.name} to ${script.phases[1]!.name} now?`);
-  await ask.locator('.sys-actions button', { hasText: 'Move it' }).tap();
+  await ask.locator('.sys-actions button', { hasText: 'Start next phase' }).tap();
   await expect(combat(gm).locator('.myth-phase')).toHaveText(`Phase 2 of ${script.phases.length}: ${script.phases[1]!.name}`);
   await expect(combat(player).locator('.myth-phase')).toHaveText(`Phase 2 of ${script.phases.length}: ${script.phases[1]!.name}`);
   await shot(gm, 'gm-strip');

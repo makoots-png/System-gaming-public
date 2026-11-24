@@ -184,8 +184,8 @@ export function register(app) {
       }
       if ((a === 'del' || a === 'reset') && def) {
         const ok = a === 'reset'
-          ? await ui.confirm({ title: `Reset ${def.label || id}?`, body: `This restores the default ${BUILT_IN_STATUSES[id].label} status. Active copies already on combatants keep their current version.`, danger: true, confirmLabel: 'Reset' })
-          : await ui.confirm({ title: `Delete ${def.label || id}?`, body: 'This removes the status from your lists. Active copies already on combatants keep working.', danger: true, confirmLabel: 'Delete' });
+          ? await ui.confirm({ title: `Reset ${def.label || id}?`, body: `Resetting restores the default ${BUILT_IN_STATUSES[id].label} status. Active copies already on combatants keep their current version.`, danger: true, confirmLabel: 'Reset status' })
+          : await ui.confirm({ title: `Delete ${def.label || id}?`, body: 'Deleting removes the status from your lists. Active copies already on combatants keep working.', danger: true, confirmLabel: 'Delete status' });
         if (ok) ui.wrote('Workshop', store.apply('library-status-del', atLibrary(l => removeStatus(l, id))));
       }
       return;
@@ -199,8 +199,8 @@ export function register(app) {
         ui.wrote('Workshop', store.apply(`library-feat-${a}`, atLibrary(l => step(l, id))), { full: `You can save up to ${LIMITS.libraryFeats} feats.` });
         return;
       }
-      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'This restores the default built-in feat. Hunters keep their current progress toward it.', danger: true, confirmLabel: 'Reset' })) ui.wrote('Workshop', store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id))));
-      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Hunters stop tracking progress toward this feat. Anyone who already earned it keeps it.', danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-feat-del', atLibrary(l => removeFeat(l, id))));
+      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'Resetting restores the default built-in feat. Hunters keep their current progress toward it.', danger: true, confirmLabel: 'Reset feat' })) ui.wrote('Workshop', store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id))));
+      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Hunters stop tracking progress toward this feat. Anyone who already earned it keeps it.', danger: true, confirmLabel: 'Delete feat' })) ui.wrote('Workshop', store.apply('library-feat-del', atLibrary(l => removeFeat(l, id))));
       return;
     }
     if (kind === 'item') {
@@ -209,7 +209,7 @@ export function register(app) {
       if (!it) return;
       if (a === 'edit') return void await A().loot.item({ initial: it });
       if (a === 'dup') return void dup('items', it, 'i', 60, LIMITS.libraryItems);
-      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: it.name, danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-del', atLibrary(l => removeEntry(l, 'items', id))));
+      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: it.name, danger: true, confirmLabel: 'Delete item' })) ui.wrote('Workshop', store.apply('library-del', atLibrary(l => removeEntry(l, 'items', id))));
       return;
     }
     if (kind === 'skill') {
@@ -219,7 +219,7 @@ export function register(app) {
       if (a === 'edit') return void await A().skills.make({ initial: k });
       if (a === 'give') return void await A().skills.give(k);
       if (a === 'dup') return void dup('skills', k, 's', 60, LIMITS.librarySkills);
-      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: `${k.name}. Hunters and monsters who have it keep it.`, danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-skill-del', atLibrary(l => removeEntry(l, 'skills', id))));
+      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: `${k.name}. Hunters and monsters who have it keep it.`, danger: true, confirmLabel: 'Delete skill' })) ui.wrote('Workshop', store.apply('library-skill-del', atLibrary(l => removeEntry(l, 'skills', id))));
       return;
     }
     if (kind === 'bundle') {
@@ -232,7 +232,7 @@ export function register(app) {
         if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `You can save up to ${LIMITS.libraryRewards} bundles.`, { kind: 'warning' });
         { const name = copyName(b.name, L.rewards.map(x => x.name), 60); return void ui.wrote('Workshop', A().bundles.save(name, b.rewards, null, b.window || null), savedWords('bundle', name)); }
       }
-      if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Hunters keep any rewards already given from this bundle.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
+      if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Hunters keep any rewards already given from this bundle.`, danger: true, confirmLabel: 'Delete bundle' })) A().bundles.remove(b.id);
       return;
     }
     if (kind === 'story') {
@@ -244,7 +244,7 @@ export function register(app) {
       if (a === 'dup') return void dup('stories', st, 'st', 60, LIMITS.libraryStories);
       // a story on the table is not deleted under the GM (library.ts `removeStory`): it is ended first, in the GM view
       if (a === 'del' && isRunning(store.get().storyRuns, st.id)) return void ui.toast('Workshop', STORY_WORDS.deleteRunning(st.name), { kind: 'warning' });
-      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-story-del', s => removeStory(s, st.id)));
+      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete story' })) ui.wrote('Workshop', store.apply('library-story-del', s => removeStory(s, st.id)));
       return;
     }
     if (kind === 'map') {
@@ -253,7 +253,7 @@ export function register(app) {
       if (!mp) return;
       if (a === 'edit') return void await A().maps.make(mp);
       if (a === 'dup') return void dup('maps', mp, 'mp', 40, LIMITS.libraryMaps);
-      if (a === 'del' && await ui.confirm({ title: 'Delete map?', body: `${mp.name}. Any gate using this map will use the open arena instead.`, danger: true, confirmLabel: 'Delete' })) A().maps.remove(mp.id);
+      if (a === 'del' && await ui.confirm({ title: 'Delete map?', body: `${mp.name}. Any gate using this map will use the open arena instead.`, danger: true, confirmLabel: 'Delete map' })) A().maps.remove(mp.id);
       return;
     }
     const B = A().bestiary, m = id ? B.get(id) : null;
@@ -261,7 +261,7 @@ export function register(app) {
     if (!m) return;
     if (a === 'edit') return void await B.make(m);
     if (a === 'dup') return void B.save({ ...m, name: copyName(m.name, store.get().monsters.map(x => x.name), 60) }, true);
-    if (a === 'del' && await ui.confirm({ title: 'Delete monster?', body: m.name, danger: true, confirmLabel: 'Delete' })) B.remove(m.id);
+    if (a === 'del' && await ui.confirm({ title: 'Delete monster?', body: m.name, danger: true, confirmLabel: 'Delete monster' })) B.remove(m.id);
   }
   /** A copy of a library entry under a new id and "(copy)" after its name; nothing at the cap, with a toast that says so. */
   function dup(list, x, prefix, n, cap) {

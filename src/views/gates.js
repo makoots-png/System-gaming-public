@@ -88,9 +88,9 @@ export function register(app) {
     const { save: _written, ...did } = moved, broke = did.broke.map(g => ({ ...g }));
     (async () => {
       for (const g of broke) {
-        const pick = await ui.system({ tag: '! Warning', kind: 'warning', title: 'Dungeon Break',
+        const pick = await ui.warn({ tag: 'Dungeon Break', title: 'Dungeon Break',
           body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'],
-          actions: [{ label: 'Later', value: null, cancel: true }, ...(app.isGM() ? [{ label: 'Start fight', value: 'start', primary: true }] : [{ label: 'Understood', value: null, primary: true }])] });
+          actions: app.isGM() ? [{ label: 'Start fight', value: 'start', primary: true }, { label: 'Close', value: null, cancel: true }] : [{ label: 'Close', value: null, cancel: true }] });
         // the next break's window waits until this one's party picker is answered (SMX-gates-7.3b)
         if (pick === 'start') await startEncounter(g.id);
       }
@@ -253,8 +253,8 @@ export function register(app) {
       const key = `${code}|${n.kind}|${n.gate.id}`, g = n.gate; if (asking.has(key)) continue;
       asking.add(key);
       const shown = n.kind === 'appeared'
-        ? ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: g.name, lines: [`Rank: ${g.rank}`, `Type: ${typeChip(g.type)}`, `Breaks on day ${g.breakDay}`], actions: ok })
-        : ui.system({ tag: '! Warning', kind: 'warning', title: 'GATE BREAK', body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'], actions: ok });
+        ? ui.system({ tag: '! Gate', kind: 'quest', title: 'A GATE HAS APPEARED', body: g.name, lines: [`Rank: ${g.rank}`, `Type: ${typeChip(g.type)}`, `Breaks on day ${g.breakDay}`], actions: ok })
+        : ui.warn({ tag: 'Gate Break', title: 'Gate Break', body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'] });
       void shown.then(() => { asking.delete(key); store.tell(gateTold(told.campaign, code, n)); });
     }
     refreshView();
@@ -279,7 +279,7 @@ export function register(app) {
       for (const g of h.solo.gates) {
         const key = `personal|${h.id}|${g.id}`; if (!news.includes(g.id) || asking.has(key)) continue;
         asking.add(key);
-        void ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: `${many ? `${h.name}: ` : ''}${g.name}`, lines: personalNews(g, Date.now()), actions: ok })
+        void ui.system({ tag: '! Gate', kind: 'quest', title: 'A GATE HAS APPEARED', body: `${many ? `${h.name}: ` : ''}${g.name}`, lines: personalNews(g, Date.now()), actions: ok })
           .then(() => { asking.delete(key); store.tell({ type: 'answered', campaign: told.campaign, topic, id: g.id }); });
       }
     }
@@ -341,14 +341,14 @@ export function register(app) {
    */
   async function runAlone(gate, hid) {
     const first = soloReady(store.get(), hid, gate, readyCtx(hid));
-    if (isRefused(first)) { ui.toast('! Gate', SOLO_REFUSAL_WORDS[first.why], { kind: 'warn' }); return; }
+    if (isRefused(first)) { ui.toast('Gate', SOLO_REFUSAL_WORDS[first.why], { kind: 'warning' }); return; }
     const read = await api.odds.ask(oddsKeyOf(gate, hid));
     if (!read) return;
-    const go = await ui.system({ tag: '! Gate', kind: 'warning', title: SOLO_WORDS.confirm, body: first.target.name, lines: soloConfirmLines(read),
-      actions: [{ label: SOLO_WORDS.notNow, value: null, cancel: true }, { label: SOLO_WORDS.enter, value: 'go', primary: true }] });
+    const go = await ui.warn({ tag: 'Solo gate', title: SOLO_WORDS.confirm, body: first.target.name, lines: soloConfirmLines(read),
+      actions: [{ label: SOLO_WORDS.enter, value: 'go', primary: true }, { label: SOLO_WORDS.notNow, value: null, cancel: true }] });
     if (go !== 'go') return;
     const at = readyCtx(hid), ready = soloReady(store.get(), hid, gate, at);
-    if (isRefused(ready)) { ui.toast('! Gate', SOLO_REFUSAL_WORDS[ready.why], { kind: 'warn' }); return; }
+    if (isRefused(ready)) { ui.toast('Gate', SOLO_REFUSAL_WORDS[ready.why], { kind: 'warning' }); return; }
     const made = soloFight(ready.h, ready.target, app.rules()); if (!made) return;
     // the hunter it plays and where it settles, as they stand at the start: the write is refused if either moved
     const from = soloKey(ready.h), route = at.route;
@@ -381,9 +381,14 @@ export function register(app) {
     runMoved({ type: 'wrote' });
     const h = store.hunter(hid), m = h ? api.hunter.sheet(h).sheet : { hpMax: 0, manaMax: 0, fatigueMax: 0 };
     const sy = store.get().settings.sync, waiting = event && (sy.asked || []).find(x => x.id === event.payload.eid);
-    await ui.system({ tag: '! Gate', kind: ran.outcome === 'won' ? 'quest' : 'warning', title: OUTCOME_WORDS[ran.outcome].title,
-      body: waiting ? `${ready.target.name}. ${waitWords(waiting, sy.outbox || [])}` : ready.target.name,
-      lines: runCostLines(ran.before, ran.after, m), rewards: ran.granted ? ran.granted.lines : personalWaits ? [PENDING_WORDS.waits] : [] });
+    const outcomeBody = waiting ? `${ready.target.name}. ${waitWords(waiting, sy.outbox || [])}` : ready.target.name;
+    const lines = runCostLines(ran.before, ran.after, m);
+    if (ran.outcome === 'won') {
+      await ui.system({ tag: '! Gate', kind: 'quest', title: OUTCOME_WORDS[ran.outcome].title, body: outcomeBody, lines,
+        rewards: ran.granted ? ran.granted.lines : personalWaits ? [PENDING_WORDS.waits] : [] });
+    } else {
+      await ui.warn({ tag: 'Solo gate', title: OUTCOME_WORDS[ran.outcome].title, body: outcomeBody, lines });
+    }
     if (ran.granted) api.hunter.granted(hid, ran.granted, { popup: false });
   }
 
@@ -814,7 +819,7 @@ export function register(app) {
         }
         else if (act === 'cancel-panel') { openPanel.delete(id); refresh(id); }
         else if (act === 'close') { if (await ui.confirm({ title: 'Close this gate?', body: 'A closed gate can no longer break.', confirmLabel: 'Close gate' })) ui.wrote('! Gate', store.apply('gate-close', s => closeGate(s, id, stamp()))); }
-        else if (act === 'delete') { if (await ui.confirm({ title: 'Delete this gate?', body: 'This cannot be undone.', danger: true, confirmLabel: 'Delete' })) ui.wrote('! Gate', store.apply('gate-delete', s => deleteGate(s, id))); }
+        else if (act === 'delete') { const g = gate(id); if (await ui.confirm({ title: 'Delete this gate?', body: g ? `You cannot undo deleting ${g.name}.` : 'You cannot undo deleting this gate.', danger: true, confirmLabel: 'Delete gate' })) ui.wrote('! Gate', store.apply('gate-delete', s => deleteGate(s, id))); }
         else if (act === 'add-row') { const f = b.closest('form'); f.querySelector('[data-rows]').appendChild(ui.h(f.querySelector('[data-row-tpl]').innerHTML)); }
         else if (act === 'rm-row') b.closest('[data-mrow]').remove();
       });

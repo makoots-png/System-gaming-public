@@ -31,7 +31,8 @@ import { GUILD_WORDS, guildStep } from '../core/hunter/guild.ts';
 import type { ChapterGiven } from '../core/story/story.ts';
 import { deviceOf, hunterIdOf } from '../core/protocol.ts';
 import { rewardLines } from '../core/rewards.ts';
-import type { EventId, EventType, PayloadOf, QuestOffer, RoomEvent, SheetKey } from '../core/protocol.ts';
+import type { EventId, EventType, PayloadOf, QuestOffer, RoomEvent, SheetKey, SystemKind } from '../core/protocol.ts';
+import type { ToastKind, WarningInput } from '../core/warning.ts';
 import type { Hunter, Rules, Save } from '../core/save.ts';
 import { isRefused, refuse } from '../core/save-step.ts';
 import type { Refused, Step } from '../core/save-step.ts';
@@ -40,7 +41,7 @@ import type { RoomHunter } from '../core/api.ts';
 import type { RollId } from '../core/coin.ts';
 import type { DayKey } from '../core/day.ts';
 
-type Window = { tag: string; title: string; kind: string; body?: string | undefined; lines?: string[]; rewards?: string[] };
+type Window = { tag: string; title: string; kind: SystemKind; body?: string | undefined; lines?: string[]; rewards?: string[] };
 /** What the appliers use of the app. sync.ts passes it in. */
 export type ApplyDeps = {
   store: Pick<typeof store, 'get'>;
@@ -51,8 +52,9 @@ export type ApplyDeps = {
   now: () => string;
   /** Today's day key at the save's reset hour (src/core/rules.ts `dayKey`). */
   today: () => DayKey;
-  toast: (tag: string, text: string, opts?: { kind: string }) => void;
+  toast: (tag: string, text: string, opts?: { kind: ToastKind }) => void;
   system: (w: Window) => unknown;
+  warn: (w: WarningInput) => unknown;
   /** Where a hunter's vitals live (`fightOf`), a grant's windows and fight parts (`granted`), the refusal in the GM's fight. */
   hunter: RoomHunter;
   /** The windows of the Job Change steps a change completed in its own write (quests.js `stepsDone`). */
@@ -165,7 +167,7 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   shadow: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => {
     const ids = idsFrom(s.seq), id = ids.next('sh');
     const next = shadowRises({ ...s, seq: ids.seq() }, h.id, p.shadow, id, { at: app.now(), cap: app.rules().logCap }, app.rules());
-    if (isRefused(next)) return { save: s, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rose, but ${h.name}'s army is full.`, { kind: 'warn' }) };
+    if (isRefused(next)) return { save: s, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rose, but ${h.name}'s army is full.`, { kind: 'warning' }) };
     return { save: next, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rises and joins ${h.name}'s army.`, { kind: 'levelup' }) };
   }) },
   // the GM's phone takes a player's run (gates.js, gates/solo.ts `soloTaken`); a player's phone does nothing with one
@@ -238,7 +240,7 @@ function landSoloAnswer(p: PayloadOf<'soloAnswer'>, _hids: string[], app: ApplyD
   return save => {
     const closed = askAnswered(save, p.run);
     if (isRefused(closed)) return closed;
-    if (p.verdict === 'refused') return { save: closed, tell: () => { app.system({ tag: '! Gate', title: p.why === 'stash-full' ? 'GATE NOT CLEARED' : 'GATE TAKEN', kind: 'warning', body: p.name, lines: [REFUSED_WORDS[p.why]] }); } };
+    if (p.verdict === 'refused') return { save: closed, tell: () => { app.warn({ tag: 'Solo gate', title: p.why === 'stash-full' ? 'Gate not cleared' : 'Gate taken', body: p.name, lines: [REFUSED_WORDS[p.why]] }); } };
     return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE CLEARED', kind: 'quest', body: `Your solo run cleared ${p.name}.`, lines: [PENDING_WORDS.waits] }); } };
   };
 }
@@ -275,7 +277,7 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
 function fallen(app: ApplyDeps, before: Hunter, after: Hunter, reason: string): void {
   if (before.life.at === 'up' && after.life.at === 'dead') diedTold(app, reason, false);
 }
-const diedTold = (app: ApplyDeps, reason: string, inFight: boolean): void => app.toast('! Warning', `You are dead. ${reason || 'Your HP has reached 0.'} ${inFight ? 'The GM\'s Revive brings you back during a fight.' : `${WAYS_BACK} brings you back.`}`, { kind: 'warn' });
+const diedTold = (app: ApplyDeps, reason: string, inFight: boolean): void => app.toast('Warning', `You are dead. ${reason || 'Your HP has reached 0.'} ${inFight ? 'The GM\'s Revive brings you back during a fight.' : `${WAYS_BACK} brings you back.`}`, { kind: 'warning' });
 /**
  * What the GM's fight did to this phone's hunter's life, told from the lives before and after the `vitals` write
  * (vitals.ts `lifeNews`), so the words follow what the row's life did: a death, or a revive.
@@ -306,7 +308,8 @@ function landHp(p: PayloadOf<'hp'>, hids: string[], app: ApplyDeps): Land {
       if (app.hunter.fightOf({ hid: h.id })) return { save: s, tell: () => { app.hunter.gmHolds(); } };
       const next = edits.reduce((x, e) => { const y = sheetEdit(x, e, app.rules()); return isRefused(y) ? x : y; }, h);
       return { save: withHunter(s, next), tell: () => {
-        app.toast('! System', p.reason ? `${bits} · ${p.reason}` : bits, { kind: p.hp < 0 || p.fatigue > 0 ? 'warn' : 'good' });
+        const bad = p.hp < 0 || p.fatigue > 0;
+        app.toast(bad ? 'System' : '! System', p.reason ? `${bits} · ${p.reason}` : bits, { kind: bad ? 'warning' : 'good' });
         fallen(app, h, next, p.reason);
       } };
     });
@@ -317,7 +320,7 @@ function landHp(p: PayloadOf<'hp'>, hids: string[], app: ApplyDeps): Land {
 function statusToast(app: ApplyDeps, s: SheetStatus): void {
   const lines = describeStatus(s.def, s.source.tier, app.rules());
   const what = [...lines, ...(s.rounds ? [`${s.rounds} round${s.rounds === 1 ? '' : 's'}`] : [])].join(' · ');
-  app.toast('! Status', what ? `${s.def.label}: ${what}` : s.def.label, { kind: 'warn' });
+  app.toast('! Status', what ? `${s.def.label}: ${what}` : s.def.label, { kind: 'info' });
 }
 
 /**
@@ -468,6 +471,7 @@ export function awayDeps(app: ApplyDeps, lines: string[]): ApplyDeps {
     store: app.store, once: app.once, rules: app.rules, now: app.now, today: app.today, stepsDone: app.stepsDone, coinRuled: app.coinRuled,
     toast: (_tag, text) => { lines.push(text); },
     system: w => { lines.push(lineOf(w.tag, w.title, [w.body ?? '', ...(w.lines ?? []), ...(w.rewards ?? [])])); },
+    warn: w => { const body = Array.isArray(w.body) ? w.body : [w.body ?? '']; lines.push(lineOf(w.tag, w.title, [...body, ...(w.lines ?? [])])); },
     hunter: {
       fightOf: target => app.hunter.fightOf(target), gmHolds: () => app.hunter.gmHolds(),
       granted: (hid, g, opts) => {

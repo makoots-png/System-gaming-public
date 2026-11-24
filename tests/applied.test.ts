@@ -97,12 +97,12 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
   if (o.asked) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, asked: o.asked } } };
   if (o.room) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, room: o.room } } };
   let rules: Rules = RULES;
-  const windows: { title: string; lines?: string[] }[] = [], toasts: string[] = [], shown: string[][] = [], completed: string[] = [], said: { title: string | undefined; body: string | undefined }[] = [];
+  const windows: { title: string; lines?: readonly string[] }[] = [], toasts: string[] = [], shown: string[][] = [], completed: string[] = [], said: { title: string | undefined; body: string | undefined }[] = [];
   const deps: ApplyDeps = {
     store: { get: () => save },
     once: (eid, step) => { const next = appliedOnce(eid, step)(save); if (isRefused(next)) return false; save = next; return true; },
     rules: () => rules, now: () => AT, today: () => day(AT.slice(0, 10)),
-    toast: (_tag, text) => { toasts.push(text); }, system: w => { windows.push(w); },
+    toast: (_tag, text) => { toasts.push(text); }, system: w => { windows.push(w); }, warn: w => { windows.push(w); },
     hunter: {
       fightOf: () => (o.fight ? { at: 'gm' } : null),
       // hunter.js `granted`: its window is not opened when the caller asks for none (`popup: false`); the lines are answered either way
@@ -706,7 +706,7 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     const p = phone({ asked: [waiting()] }), xp = p.hunter.xp;
     p.receive(1, 'soloAnswer', { ...PAID, verdict: 'refused', why: 'taken' });
     expect([p.asked, p.hunter.xp]).toEqual([[], xp]);
-    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE TAKEN', [REFUSED_WORDS.taken]]]);
+    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['Gate taken', [REFUSED_WORDS.taken]]]);
     const q = phone();
     q.receive(1, 'soloAnswer', PAID);
     expect([q.hunter.xp, q.shown, q.windows]).toEqual([xp, [], []]);

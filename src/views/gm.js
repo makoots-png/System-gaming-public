@@ -571,6 +571,7 @@ export function register(app) {
     if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : out.why === 'answered' || out.why === 'no-reward' ? PENDING_WORDS.refusals[out.why] : 'Could not save. Nothing was sent.', true); return false; }
     if (events.length) A().sync.flush();
     // one System popup per hunter, queued by ui.system; a bundle's in its own words
+    /** @type {import('../core/api.ts').RewardWindow | undefined} */
     const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' }
       : earned ? { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(earned.from, earned.what), tag: '! Reward', kind: 'quest' } : undefined;
     for (const { hid, g } of out.granted) A().hunter.granted(hid, g, words);

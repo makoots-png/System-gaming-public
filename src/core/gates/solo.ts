@@ -309,8 +309,8 @@ export function ranOn(h: Hunter, run: SoloRun, R: Rules): Hunter {
 /** The words of a run's outcome for one hunter: the System window's title and the log's verb. */
 export const OUTCOME_WORDS: { readonly [O in RunOutcome]: { readonly title: string; readonly did: string } } = {
   won: { title: 'GATE CLEARED', did: 'cleared' },
-  lost: { title: 'RUN FAILED', did: 'failed to clear' },
-  stalled: { title: 'RETREAT', did: `retreated from` },
+  lost: { title: 'Run failed', did: 'failed to clear' },
+  stalled: { title: 'Retreat', did: `retreated from` },
 };
 const LIFE_WORDS: { readonly [L in LifeState]: string } = { up: '', dead: ' and died' };
 /** The session log's line of a run: who, what, which gate, how long, and how the hunter came out. */
@@ -622,7 +622,7 @@ export const SOLO_WORDS = {
   personal: 'Personal gates',
   room: 'Room solo gates',
   enter: 'Enter alone',
-  confirm: 'ENTER ALONE?',
+  confirm: 'Enter alone?',
   notNow: 'Not now',
   running: (round: number, moves: number): string => `Round ${round}, ${moves} move${moves === 1 ? '' : 's'} played`,
   open: 'Open to solo runs',

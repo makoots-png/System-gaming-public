@@ -417,7 +417,7 @@ export function mythicHand(m: MythicSeen): MythicHand {
   const to = next && next.ends === 'gate' ? ` Its HP drops to ${Math.round(next.from * 100)}%.` : '';
   return {
     landTitle: omen ? `${script.name}'s turn. The omen lands.` : null, land: omen ? `Land ${omen.name}` : null, drop: omen ? 'Drop the omen' : null,
-    next: next ? { label: 'Next phase', ask: `Move ${script.name} to ${next.name} now?${to}`, yes: 'Move it', no: 'Cancel' } : null,
+    next: next ? { label: 'Next phase', ask: `Move ${script.name} to ${next.name} now?${to}`, yes: 'Start next phase', no: 'Cancel' } : null,
   };
 }
 

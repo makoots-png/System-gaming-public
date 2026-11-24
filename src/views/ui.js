@@ -22,6 +22,7 @@ export { NOT_SAVED };
 import { TOLD } from '../core/save-step.ts';
 import { NO_WINDOWS, anyOpen, keyWindow, openSheet, openSystem, windowId, windowStep } from '../core/windows.ts';
 import { NOT_HELD, heldKey, heldStep } from '../core/held.ts';
+import { matchTyped, pickEnterAction, pickInitialFocus, warningFaults, warningWindow } from '../core/warning.ts';
 export { reduced } from './motion.ts';
 
 // ── chime: generated WebAudio, only after a user gesture, only when settings.sound is on ──
@@ -108,7 +109,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) heldN
 addEventListener('pagehide', heldNow);
 /**
  * @param {string} tag @param {string} msg
- * @param {{ kind?: string; key?: string; amount?: number; fmt?: (n: number) => string; hold?: Hold }} [opts]
+ * @param {{ kind?: import('../core/warning.ts').ToastKind; key?: string; amount?: number; fmt?: (n: number) => string; hold?: Hold }} [opts]
  */
 export function toast(tag, msg, opts = {}) {
   const box = toastBox(); const kind = opts.kind || 'info', hold = opts.hold, key = hold ? undefined : opts.key;
@@ -155,7 +156,7 @@ export const FIGHT_TAG = '! Combat';
 export function wrote(tag, w, words = {}) {
   if (!('why' in w)) return true;
   if (w.why === TOLD) return false;
-  const say = msg => (tag === FIGHT_TAG ? news(msg, 'warning') : toast(tag, msg, { kind: 'warning' }));
+  const say = msg => (tag === FIGHT_TAG ? news(msg, 'warning') : toast(tag.replace(/^!\s*/, ''), msg, { kind: 'warning' }));
   if (w.why === READ_ONLY) say(NOT_SAVED);
   else if (Object.prototype.hasOwnProperty.call(words, w.why)) say(words[w.why]);
   else reported(`write:${tag}`, new Error(`the screen offered a change its rule refuses: ${w.why}`));
@@ -163,7 +164,7 @@ export function wrote(tag, w, words = {}) {
 }
 
 // ── the fight's news: one line over the map while a map shows a fight, else a toast ──
-/** @typedef {(msg: string, kind: string) => boolean} NewsLine A map's line: takes the news (true) while it shows a fight. */
+/** @typedef {(msg: string, kind: import('../core/warning.ts').ToastKind) => boolean} NewsLine A map's line: takes the news (true) while it shows a fight. */
 /** @type {Set<NewsLine>} */
 const newsLines = new Set();
 /** A map offers its line; the answer takes it back. */
@@ -171,10 +172,11 @@ export function newsLine(/** @type {NewsLine} */ line) { newsLines.add(line); re
 /**
  * The fight's news (a use, a refusal, a turn): the line over the map that shows a fight takes it, so no toast covers
  * Next, Use, Cancel or the hotbar; with no such map, or a window or sheet over it (`windowOpen`), it is a toast.
+ * @param {string} msg @param {import('../core/warning.ts').ToastKind} [kind]
  */
-export function news(/** @type {string} */ msg, kind = 'info') {
+export function news(msg, kind = 'info') {
   if (!windowOpen()) for (const line of newsLines) if (line(msg, kind)) return;
-  toast(FIGHT_TAG, msg, { kind });
+  toast(kind === 'warning' ? FIGHT_TAG.replace(/^!\s*/, '') : FIGHT_TAG, msg, { kind });
 }
 
 // ── the windows: one machine (src/core/windows.ts), drawn here ──
@@ -312,11 +314,13 @@ function confirmable() {
 }
 
 /**
- * @typedef {{ label: string; value?: unknown; cancel?: boolean; primary?: boolean; danger?: boolean }} SystemAction
- * @typedef {{ tag?: string; title?: string; kind?: string; body?: string; html?: string; size?: string; layout?: string;
- *   lines?: string[]; rewards?: (string | { label?: string; text?: string })[]; actions?: SystemAction[];
- *   form?: { label?: string; value?: string | number; type: 'text' | 'number'; min?: number; max?: number; maxlength?: number };
- *   drawn?: (win: HTMLElement) => void }} SystemWindow
+ * @typedef {import('../core/warning.ts').SystemAction} SystemAction
+ * @typedef {import('../core/protocol.ts').SystemKind} SystemKind
+ * @typedef {import('../core/warning.ts').ToastKind} ToastKind
+ * @typedef {{ tag?: string; title?: string; kind?: SystemKind; body?: string | readonly string[]; html?: string; size?: string; layout?: string;
+ *   lines?: readonly string[]; rewards?: readonly (string | { label?: string; text?: string })[]; actions?: readonly SystemAction[];
+ *   form?: { label?: string; value?: string | number; type: 'text' | 'number'; min?: number; max?: number; maxlength?: number; match?: import('../core/warning.ts').WarningMatch };
+ *   drawn?: (win: HTMLElement) => void; warn?: boolean }} SystemWindow
  * `drawn` runs once, as the window is put on the page (the machine's `draw`: at once, or when a waiting window's turn
  * comes), with the window: what in it takes its size from the window measures it then, never as `system` is asked.
  */
@@ -330,13 +334,39 @@ export function system(o = {}) {
   });
 }
 
+/**
+ * The one way to open a Variant 1 red warning window (src/core/warning.ts): sentence-case heading, clean tag without
+ * "!", left-aligned body, stacked 44 px buttons in fixed order, safe initial focus, and runtime fault reporting.
+ * @param {import('../core/warning.ts').WarningInput} w
+ * @returns {Promise<any>}
+ */
+export function warn(w) {
+  for (const fault of warningFaults(w)) reported('ui:warn', new Error(`${fault} (${w.tag} / ${w.title})`));
+  const spec = warningWindow(w);
+  return system({
+    tag: spec.tag,
+    title: spec.title,
+    kind: spec.kind,
+    body: spec.body,
+    ...(spec.lines.length ? { lines: spec.lines } : {}),
+    actions: spec.actions,
+    ...(spec.form ? { form: { ...spec.form, type: 'text' } } : {}),
+    warn: true,
+  });
+}
+
 /** Draws a System window whose turn has come. */
 function show(/** @type {SystemWin} */ w) {
   const { o, resolve } = w;
   const kind = o.kind || 'info';
   const trigger = document.activeElement;
-  const uid = 'sysw' + Math.random().toString(36).slice(2, 7);
+  const uid = 'sysw' + w.id;
+  /** @type {readonly SystemAction[]} */
   const actions = o.actions && o.actions.length ? o.actions : [{ label: 'Confirm', value: true, primary: true }];
+  const bodyLines = Array.isArray(o.body) ? o.body.filter(Boolean) : o.body ? [o.body] : [];
+  const bodyHtml = bodyLines.length > 1
+    ? `<div class="n-body" id="${uid}-b">${bodyLines.map(p => `<p>${esc(p)}</p>`).join('')}</div>`
+    : bodyLines.length === 1 ? `<p class="n-body" id="${uid}-b">${esc(bodyLines[0])}</p>` : '';
   const lines = (o.lines || []).map(l => `<li>${esc(l)}</li>`).join('');
   const rewards = (o.rewards || []).map(r => `<li>${esc(typeof r === 'string' ? r : r.label || r.text || '')}</li>`).join('');
   const form = o.form ? `<label class="field sys-field"><span class="lbl">${esc(o.form.label || '')}</span>
@@ -345,11 +375,11 @@ function show(/** @type {SystemWin} */ w) {
         ${o.form.maxlength ? `maxlength="${esc(o.form.maxlength)}"` : ''} ${o.form.type === 'text' ? '' : 'inputmode="numeric"'} autocomplete="off"></label>
       <div class="sys-err" role="alert"></div>` : '';
   const el = h(`<div class="overlay sys-overlay show">
-    <div class="sys-window k-${esc(kind)}${o.size === 'form' ? ' dlg-form' : ''}" role="${kind === 'warning' || kind === 'penalty' ? 'alertdialog' : 'dialog'}" aria-modal="true" aria-labelledby="${uid}-t" ${o.body ? `aria-describedby="${uid}-b"` : ''}>
+    <div class="sys-window k-${esc(kind)}${o.warn ? ' sys-warn' : ''}${o.size === 'form' ? ' dlg-form' : ''}" role="${kind === 'warning' || kind === 'penalty' ? 'alertdialog' : 'dialog'}" aria-modal="true" aria-labelledby="${uid}-t" ${bodyHtml ? `aria-describedby="${uid}-b"` : ''}>
       <span class="cb"></span>
       <div class="n-tag">${esc(o.tag || '! Notification')}</div>
       <h2 class="n-big sys-title" id="${uid}-t">${esc(o.title || '')}</h2>
-      ${o.body ? `<p class="n-body" id="${uid}-b">${esc(o.body)}</p>` : ''}
+      ${bodyHtml}
       ${lines ? `<ul class="sys-lines">${lines}</ul>` : ''}
       ${rewards ? `<div class="lbl sys-rw-h">Rewards</div><ul class="sys-rewards">${rewards}</ul>` : ''}
       ${form}
@@ -362,10 +392,21 @@ function show(/** @type {SystemWin} */ w) {
   const cancelAct = actions.find(a => a.cancel);
   const dismissValue = o.form ? null : cancelAct ? cancelAct.value : null;
   const done = value => { closeWindow(w); if (trigger && trigger.isConnected && trigger.focus) trigger.focus(); resolve(value); };
+  if (input && err) input.addEventListener('input', () => { err.textContent = ''; });
   const choose = a => {
-    if (o.form && input && a.primary !== false && !a.cancel) {
+    if (o.form && input && !a.cancel) {
       let v = input.value.trim();
-      if (o.form.type === 'text') { if (!v) { if (err) err.textContent = 'Enter a value.'; input.focus(); return; } return done(v); }
+      if (o.form.type === 'text') {
+        if (o.form.match) {
+          if (!matchTyped(v, o.form.match)) {
+            if (err) err.textContent = o.form.match.error || `Type ${o.form.match.word} to confirm.`;
+            input.focus(); input.select(); return;
+          }
+          return done(v);
+        }
+        if (!v) { if (err) err.textContent = 'Enter a value.'; input.focus(); return; }
+        return done(v);
+      }
       const n = Number(v);
       if (v === '' || !Number.isFinite(n)) { if (err) err.textContent = 'Enter a number.'; input.focus(); return; }
       if ((o.form.min !== undefined && n < o.form.min) || (o.form.max !== undefined && n > o.form.max)) {
@@ -378,9 +419,10 @@ function show(/** @type {SystemWin} */ w) {
     }
     done(a.value);
   };
-  actions.forEach(a => {
-    const b = h(`<button type="button" class="${a.primary ? 'primary ' : ''}${a.danger ? 'danger ' : ''}">${esc(a.label)}</button>`);
+  const buttons = actions.map(a => {
+    const b = h(`<button type="button" class="${a.primary ? 'primary ' : ''}${a.danger ? 'danger ' : ''}"${a.cancel ? ' data-cancel' : ''}>${esc(a.label)}</button>`);
     b.addEventListener('click', () => choose(a)); bar.appendChild(b);
+    return b;
   });
   const av = autoValue(o);
   if (av !== undefined) {
@@ -395,10 +437,17 @@ function show(/** @type {SystemWin} */ w) {
   }
   w.key = e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(dismissValue); return; }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (o.form || o.size === 'form')) { // B3: Ctrl/Cmd+Enter = primary, even from a textarea
-      const p = bar.querySelector('button.primary'); if (p && !p.disabled) { e.preventDefault(); p.click(); return; }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (o.form || o.size === 'form')) { // B3: Ctrl/Cmd+Enter = submit action, even from a textarea
+      const chosen = pickEnterAction(actions), idx = chosen ? actions.indexOf(chosen) : -1;
+      const p = idx >= 0 ? buttons[idx] : bar.querySelector('button.primary');
+      if (p && !p.disabled) { e.preventDefault(); p.click(); return; }
     }
-    if (e.key === 'Enter' && input && e.target === input) { e.preventDefault(); const chosen = actions.find(a => a.primary) || actions[0]; if (chosen) choose(chosen); return; }
+    if (e.key === 'Enter' && !e.isComposing && input && e.target === input) {
+      e.preventDefault();
+      const chosen = pickEnterAction(actions);
+      if (chosen) choose(chosen);
+      return;
+    }
     if (e.key === 'Tab') trapTab(e, win);
   };
   // a press of its own beside the window dismisses it: `pointerdown`, never the mouse events a phone makes after a tap,
@@ -409,24 +458,45 @@ function show(/** @type {SystemWin} */ w) {
   if (o.drawn) o.drawn(win);
   enter(win); enter(el, 'fade');
   // a window taller than the screen opens at its title: the focus on its button must not scroll it to its end
-  if (input) { input.focus(); input.select(); } else (bar.querySelector('button.primary') || bar.querySelector('button') || win).focus({ preventScroll: true });
+  if (input) { input.focus(); input.select(); }
+  else {
+    const idx = pickInitialFocus(actions);
+    const focusEl = (idx >= 0 ? buttons[idx] : null) || win;
+    focusEl.focus({ preventScroll: true });
+  }
 }
 
-/** @type {(o?: { title?: string; body?: string; danger?: boolean; confirmLabel?: string }) => Promise<boolean>} */
-export const confirm = ({ title = 'Are you sure?', body = '', danger = false, confirmLabel = 'Confirm' } = {}) =>
-  system({ tag: danger ? '! Warning' : '! Confirm', title, body, kind: danger ? 'warning' : 'info',
-    actions: [{ label: 'Cancel', value: false, cancel: true }, { label: confirmLabel, value: true, primary: true, danger }] }).then(v => v === true);
+/** @type {(o: { title: string; confirmLabel: string; body?: string | readonly string[]; danger?: boolean; tag?: string; cancelLabel?: string }) => Promise<boolean>} */
+export const confirm = ({ title, body = '', danger = false, confirmLabel, tag, cancelLabel = 'Cancel' }) => (
+  danger
+    ? warn({ tag: tag || 'Warning', title, body, actions: [{ label: confirmLabel, value: true, danger: true }, { label: cancelLabel, value: false, cancel: true }] })
+    : system({ tag: tag || 'Confirm', title, body, kind: 'info', actions: [{ label: cancelLabel, value: false, cancel: true }, { label: confirmLabel, value: true, primary: true }] })
+).then(v => v === true);
 
-/** @type {(o?: { title?: string; label?: string; value?: number; min?: number; max?: number }) => Promise<number | null>} */
-export const promptNum = ({ title = 'Enter a number', label = 'Value', value = 0, min, max } = {}) =>
-  system({ tag: '! Input', title, form: { label, value, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), type: 'number' },
-    actions: [{ label: 'Cancel', value: null, cancel: true }, { label: 'Confirm', primary: true }] }).then(v => (typeof v === 'number' ? v : null));
+/** @type {(o?: { title?: string; label?: string; value?: number; min?: number; max?: number; tag?: string; confirmLabel?: string }) => Promise<number | null>} */
+export const promptNum = ({ title = 'Enter a number', label = 'Value', value = 0, min, max, tag = 'Input', confirmLabel = 'Confirm' } = {}) =>
+  system({ tag, title, form: { label, value, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), type: 'number' },
+    actions: [{ label: 'Cancel', value: null, cancel: true }, { label: confirmLabel, primary: true }] }).then(v => (typeof v === 'number' ? v : null));
 
 // addition: text prompt, same contract as promptNum but returns string|null
-/** @type {(o?: { title?: string; label?: string; value?: string; maxlength?: number }) => Promise<string | null>} */
-export const promptText = ({ title = 'Enter text', label = 'Value', value = '', maxlength = 60 } = {}) =>
-  system({ tag: '! Input', title, form: { label, value, maxlength, type: 'text' },
-    actions: [{ label: 'Cancel', value: null, cancel: true }, { label: 'Confirm', primary: true }] }).then(v => (typeof v === 'string' ? v : null));
+/** @type {(o?: { title?: string; label?: string; value?: string; maxlength?: number; body?: string | readonly string[]; tag?: string; confirmLabel?: string; danger?: boolean; match?: import('../core/warning.ts').WarningMatch }) => Promise<string | null>} */
+export const promptText = ({ title = 'Enter text', label = 'Value', value = '', maxlength = 60, body, tag, confirmLabel = 'Confirm', danger = false, match } = {}) => (
+  danger
+    ? warn({
+      tag: tag || 'Warning',
+      title,
+      ...(body !== undefined ? { body } : {}),
+      form: { label, value, maxlength, ...(match ? { match } : {}) },
+      actions: [{ label: confirmLabel, value: true, danger: true }, { label: 'Cancel', value: null, cancel: true }],
+    })
+    : system({
+      tag: tag || 'Input',
+      title,
+      ...(body !== undefined ? { body } : {}),
+      form: { label, value, maxlength, type: 'text', ...(match ? { match } : {}) },
+      actions: [{ label: 'Cancel', value: null, cancel: true }, { label: confirmLabel, primary: true }],
+    })
+).then(v => (typeof v === 'string' ? v : null));
 
 // ── hover hints (B5): mouse-only; icon-ish buttons with an aria-label that differs from their text get it as a title ──
 document.addEventListener('pointerover', e => {

@@ -285,7 +285,7 @@ export function register(app) {
     const sy = app.api.sync, joining = sy.joinRoom(code, { hunterId: store.active().id });
     freshen();
     try { await joining; } // rejects only with a tap's kind (src/edge/sync.ts)
-    catch (e) { ui.toast('System', why(e && e.kind ? e.kind : 'net', code), { kind: 'warn' }); freshen(); return; }
+    catch (e) { ui.toast('System', why(e && e.kind ? e.kind : 'net', code), { kind: 'warning' }); freshen(); return; }
     ui.toast('System', `Joined room ${code}.`, { kind: 'info' });
     freshen();
   }
@@ -329,9 +329,8 @@ export function register(app) {
       <p>${esc(ABOUT)}</p>
       <div data-role="${role}">${nextHtml(facts(role))}</div>
       <div class="ob-h3">Tips</div><ol class="ob-tips">${TIPS[role].map(t => `<li>${esc(t)}</li>`).join('')}</ol>
-      <div class="ob-act"><button type="button" class="primary" data-focus data-ok>Got it</button><button type="button" data-skip>Skip</button></div>`);
+      <div class="ob-act"><button type="button" class="primary" data-focus data-ok>Close</button></div>`);
     w.querySelector('[data-ok]').addEventListener('click', gotIt);
-    w.querySelector('[data-skip]').addEventListener('click', gotIt);
   }
 
   /** Each state's window; `shut` takes the window away. */

@@ -152,7 +152,7 @@ test('Delete hunter is in the Party panel, asks for the name and takes a backup 
   const win = player.locator('.sys-overlay.show');
   await expect(win).toContainText('Delete Spare Test?');
   await win.locator('input').fill('Spare Test');
-  await win.locator('.sys-actions button.primary').tap();
+  await win.locator('.sys-actions button.danger').tap();
 
   await expect(player.locator('#view-status [data-panel="party"] li', { hasText: 'Spare Test' })).toHaveCount(0);
   expect(await player.evaluate(() => hunterApp.store.backups().length)).toBe(backups0 + 1);
@@ -176,7 +176,7 @@ test('Delete hunter with no room left for its backup says so and deletes only wh
     await row().locator('[data-pdel]').tap();
     await expect(win).toContainText('Delete Spare Test?');
     await win.locator('input').fill('Spare Test');
-    await win.locator('.sys-actions button.primary').tap();
+    await win.locator('.sys-actions button.danger').tap();
     await expect(win).toContainText('No backup saved');
   };
 

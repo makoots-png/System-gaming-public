@@ -74,7 +74,7 @@ export function register(app) {
   }
   function sendLanding(body) {
     const S = sync();
-    if (!S || !S.post(S.event('coinLand', body), { key: `coin ${body.roll}` }).ok) ui.toast('Sync', 'Not in a room. The coin ruling was not sent.', { kind: 'warn' });
+    if (!S || !S.post(S.event('coinLand', body), { key: `coin ${body.roll}` }).ok) ui.toast('Sync', 'Not in a room. The coin ruling was not sent.', { kind: 'warning' });
   }
 
   // ── a player's coins ──

@@ -122,6 +122,7 @@ export async function tapIfShown(page: Page, selector: string): Promise<boolean>
 export async function dismissAll(page: Page, max = 12): Promise<void> {
   for (let i = 0; i < max; i++) {
     if (await tapIfShown(page, '.sys-overlay.show .primary')) continue;
+    if (await tapIfShown(page, '.sys-overlay.show button:not(.confirm-all):not(.danger):not([hidden])')) continue;
     if (await tapIfShown(page, '.sys-overlay.show button:not(.confirm-all):not([hidden])')) continue;
     if (await tapIfShown(page, '.ob-overlay [data-ok]')) continue;
     if (await tapIfShown(page, '.ob-overlay [data-obsheet]')) continue;
@@ -132,15 +133,27 @@ export async function dismissAll(page: Page, max = 12): Promise<void> {
 }
 
 /**
- * Wait for the System window whose text holds `title`, tap its button `label` (default: its primary or only button), and
- * wait for it to close. Use it after a tap that opens a window: the window comes a moment after the tap, so a look
- * that finds nothing on screen yet does not mean none is coming.
+ * Wait for the System window whose text holds `title`, tap its button `label` (default: its primary, danger, or only
+ * visible button), and wait for it to close. Use it after a tap that opens a window: the window comes a moment after
+ * the tap, so a look that finds nothing on screen yet does not mean none is coming.
  */
 export async function answerWindow(page: Page, title: string | RegExp, label?: string): Promise<void> {
   const win = page.locator('.sys-overlay.show', { hasText: title });
   await expect(win).toBeVisible();
-  await (label ? win.locator('.sys-actions button', { hasText: label }) : win.locator('.sys-actions button.primary, .sys-actions button:only-child')).first().tap();
-  await expect(win).toHaveCount(0);
+  const id = await win.locator('.sys-window').first().getAttribute('aria-labelledby');
+  if (label) {
+    await win.locator('.sys-actions button', { hasText: label }).first().tap();
+  } else {
+    const primary = win.locator('.sys-actions button.primary');
+    const danger = win.locator('.sys-actions button.danger');
+    const target = (await primary.count()) > 0
+      ? primary
+      : (await danger.count()) > 0
+        ? danger
+        : win.locator('.sys-actions button:not(.confirm-all):not([hidden])');
+    await target.first().tap();
+  }
+  await expect(id ? page.locator(`.sys-overlay.show .sys-window[aria-labelledby="${id}"]`) : win).toHaveCount(0);
 }
 
 /** First run as a GM with the starter campaign, answering Later on Campaign ready. */

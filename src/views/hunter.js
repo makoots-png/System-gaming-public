@@ -277,10 +277,19 @@ export function register(app) {
     // R01: delete a local hunter. Typed-name confirm, backup first; deleting the last one makes a fresh hunter instead of refusing
     async deleteHunter(hid) {
       const h = store.hunter(hid); if (!h) return false;
-      const typed = await ui.promptText({ title: `Delete ${h.name}?`, label: `Type ${h.name} to confirm. This deletes all their items and data. A backup is saved first.`, value: '', maxlength: 60 });
+      const typed = await ui.promptText({
+        danger: true,
+        tag: 'Delete hunter',
+        title: `Delete ${h.name}?`,
+        body: `Deleting removes ${h.name} along with all their items and data. A backup is saved first.`,
+        label: `Type ${h.name} to confirm`,
+        value: '',
+        maxlength: 60,
+        confirmLabel: 'Delete hunter',
+        match: { word: String(h.name), error: `Type ${h.name} to confirm.` },
+      });
       if (typed == null) return false;
-      if (typed.replace(/\s+/g, ' ').trim().toLowerCase() !== String(h.name).replace(/\s+/g, ' ').trim().toLowerCase()) { ui.toast('Warning', 'The name did not match. Nothing was deleted.', { kind: 'warning' }); return false; }
-      if (!store.backupNow('pre-delete-hunter') && !(await ui.confirm({ title: 'No backup saved', body: `Storage is full, so a backup of ${h.name} could not be saved. Delete anyway?`, danger: true, confirmLabel: 'Delete' }))) return false;
+      if (!store.backupNow('pre-delete-hunter') && !(await ui.confirm({ title: 'No backup saved', body: `Storage is full, so a backup of ${h.name} could not be saved. Delete anyway?`, danger: true, confirmLabel: 'Delete without backup' }))) return false;
       // the last hunter goes only with the one that takes its place: Cancel on its name deletes nothing
       const last = store.get().hunters.length <= 1;
       const fresh = last ? await ui.promptText({ title: 'Create a new hunter', label: 'New hunter name', value: 'Hunter', maxlength: 60 }) : null;
@@ -381,8 +390,8 @@ export function register(app) {
   async function offerRaise(hid) {
     const h = store.hunter(hid), offer = h && raiseOpen(h) ? raiseOffer(h, rules()) : null;
     if (!offer) return;
-    const rise = await ui.system({ tag: '! System', title: RAISE_TITLE, kind: 'warning', body: offer.body, lines: [...offer.lines],
-      actions: [{ label: 'Not now', value: false, cancel: true }, { label: offer.rise, value: true, primary: true }] });
+    const rise = await ui.warn({ tag: 'System revive', title: RAISE_TITLE, body: offer.body, lines: [...offer.lines],
+      actions: [{ label: offer.rise, value: true, primary: true }, { label: 'Not now', value: false, cancel: true }] });
     // the hunter may have been raised another way while the window stood open (the GM's Revive): then it says nothing
     if (rise !== true || store.hunter(hid)?.life.at !== 'dead') return;
     const w = api.systemRaise(hid);
@@ -801,7 +810,7 @@ export function register(app) {
   /** A boon the player redeems: after a confirm it leaves the hunter, and the GM is told (app.api.uses: the room, or this phone's log). */
   async function redeem(hid, id) {
     const b = store.hunter(hid)?.boons.find(x => x.id === id); if (!b) return;
-    if (!await ui.confirm({ title: `Redeem ${b.name}?`, body: `${b.text ? `${b.text} ` : ''}Using this boon notifies the GM and consumes it.`, confirmLabel: 'Redeem' })) return;
+    if (!await ui.confirm({ title: `Redeem ${b.name}?`, body: `${b.text ? `${b.text} ` : ''}When you redeem this boon, the GM is notified and the boon is spent.`, confirmLabel: 'Redeem boon' })) return;
     // the boon leaves and the GM's report is written in one write (src/core/use-told.ts)
     if (!ui.wrote('System', app.api.uses.told(hid, 'boon-redeem', h => dropBoon(h, id), { what: 'boon', name: b.name, text: b.text, target: 'self', tell: true }))) return;
     ui.toast('System', `${b.name} redeemed. The GM was notified.`);
@@ -810,7 +819,7 @@ export function register(app) {
   /** The GM takes a boon back from a hunter on this phone: nothing is reported, nobody used it. */
   async function removeBoon(hid, id) {
     const b = store.hunter(hid)?.boons.find(x => x.id === id); if (!b) return;
-    if (!await ui.confirm({ title: 'Remove boon?', body: `Remove ${b.name} without redeeming it. The player is not notified.`, danger: true, confirmLabel: 'Remove' })) return;
+    if (!await ui.confirm({ title: 'Remove boon?', body: `Remove ${b.name} without redeeming it. The player is not notified.`, danger: true, confirmLabel: 'Remove boon' })) return;
     ui.wrote('! Hunter', onHunter(hid, 'boon-remove', h => dropBoon(h, id)));
   }
 
@@ -854,7 +863,7 @@ export function register(app) {
         if ('tcancel' in d) { form.hidden = true; editingTitle = null; return; }
         if (d.tdel && gm) {
           const t = h.titles.find(x => x.id === d.tdel);
-          if (t && await ui.confirm({ title: 'Delete title?', body: t.name, danger: true, confirmLabel: 'Delete' })) {
+          if (t && await ui.confirm({ title: 'Delete title?', body: t.name, danger: true, confirmLabel: 'Delete title' })) {
             if (ui.wrote('! Hunter', onHunter(h.id, 'title-del', both(x => removeTitle(x, t.id), fit))) && editingTitle === t.id) { form.hidden = true; editingTitle = null; }
           }
         }

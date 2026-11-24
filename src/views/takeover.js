@@ -94,7 +94,7 @@ export function register(app) {
       freeze();
       return;
     }
-    const root = h('<div class="overlay sys-overlay show tk-overlay"><div class="sys-window k-warning tk-win" role="alertdialog" aria-modal="true" aria-labelledby="tk-title" aria-describedby="tk-body" tabindex="-1"></div></div>');
+    const root = h('<div class="overlay sys-overlay show tk-overlay"><div class="sys-window k-warning sys-warn tk-win" role="alertdialog" aria-modal="true" aria-labelledby="tk-title" aria-describedby="tk-body" tabindex="-1"></div></div>');
     const win = /** @type {HTMLElement} */ (root.firstElementChild);
     win.innerHTML = markup(why);
     root.addEventListener('pointerdown', e => {

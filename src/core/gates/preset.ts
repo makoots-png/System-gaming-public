@@ -283,12 +283,14 @@ export const PRESET_WORDS = {
   confirmNoHunters: {
     title: 'Clear with no rewards?',
     body: 'You picked no hunters, so nobody gets rewards.',
-    confirmLabel: 'Clear anyway',
+    danger: true,
+    confirmLabel: 'Clear without rewards',
   },
   confirmNoHuntersWithStash: {
     title: 'Clear with no hunters?',
     body: 'You picked no hunters, so nobody gets XP or gold. The checked items still go to the party stash.',
-    confirmLabel: 'Clear anyway',
+    danger: true,
+    confirmLabel: 'Clear without hunters',
   },
   summary: (p: PresetPayload, paid: boolean, fmt: (n: number) => string): string => {
     const checked = p.items.filter(i => i.checked);

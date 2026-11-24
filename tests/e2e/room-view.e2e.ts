@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, openApp, go, dismissAll, roomHeaders, ROOM_CODE, type Device } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, openApp, go, dismissAll, answerWindow, roomHeaders, ROOM_CODE, type Device } from './helpers.ts';
 import type { Page } from '@playwright/test';
 
 const V = '#view-room ';
@@ -148,8 +148,8 @@ test('a GM removes a player from the room, the player is told, and Allow back cl
 
   await test.step('Remove and confirm shows the player a removed window', async () => {
     await gm.locator(V + '[data-gmkick]').first().tap();
-    await gm.locator('.sys-overlay.show .primary').tap();
-    await expect(player.locator('.sys-overlay.show', { hasText: /REMOVED FROM ROOM/ })).toBeVisible();
+    await gm.locator('.sys-overlay.show button.danger').tap();
+    await expect(player.locator('.sys-overlay.show', { hasText: /Removed from room/ })).toBeVisible();
     await dismissAll(player, 4);
   });
 
@@ -332,6 +332,7 @@ test('leaving and rejoining the last room works for a player and a GM, and a dro
     let hit = 0;
     const poll = new RegExp(`/api/rooms/${code}\\?after`);
     await player.route(poll, route => { if (!hit++) route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"no such room"}' }); else route.continue(); });
+    await answerWindow(player, 'This room no longer exists', 'Close');
     await expect(player.locator(V + '[data-forgetlast]')).toBeVisible();
     await expect(player.locator(V + '[data-lastgone]')).toContainText(/no longer exists/);
     await player.locator(V + '[data-forgetlast]').tap();
@@ -344,6 +345,7 @@ test('leaving and rejoining the last room works for a player and a GM, and a dro
     let hit = 0;
     const poll = new RegExp(`/api/rooms/${code}\\?after`);
     await player.route(poll, route => { if (!hit++) route.fulfill({ status: 404, contentType: 'application/json', body: '{"code":"NO_SUCH_ROOM","error":"Room expired."}' }); else route.continue(); });
+    await answerWindow(player, 'This room no longer exists', 'Close');
     await expect(player.locator(V + '[data-forgetlast]')).toBeVisible();
     await expect(player.locator(V + '[data-lastgone]')).toContainText(/no longer exists/);
     await player.locator(V + '[data-forgetlast]').tap();

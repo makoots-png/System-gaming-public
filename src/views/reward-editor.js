@@ -191,7 +191,7 @@ export function rewardEditor(app, box, o = {}) {
     if (!name || !name.trim()) return;
     // saving again under a name the library holds replaces that bundle, after the GM says so (a bundle is saved by its id)
     const same = app.api.bundles.list().find(b => b.name.toLowerCase() === name.trim().toLowerCase());
-    if (same && !await ui.confirm({ title: 'Replace bundle?', body: `A bundle named "${same.name}" already exists. Replace it with this reward?`, confirmLabel: 'Replace' })) return;
+    if (same && !await ui.confirm({ title: 'Replace bundle?', body: `A bundle named "${same.name}" already exists. Replace it with this reward?`, danger: true, confirmLabel: 'Replace bundle' })) return;
     const r = app.api.bundles.save(name, rw, same ? same.id : null);
     if (!ui.wrote('Workshop', r, savedWords('bundle', name.trim()))) return;
     render(); const s = box.querySelector('[data-rw-bundle]'); if (s) s.value = r.id;

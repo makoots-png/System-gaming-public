@@ -376,22 +376,22 @@ export function register(app) {
           const it = h.items.find(x => x.id === d.sell); if (!it || wearRefused(h, it.id, 'remove')) return;
           let n = 1;
           if (it.qty > 1) { n = await ui.promptNum({ title: `Sell ${it.name}`, label: `Quantity to sell (${fmt(sellPrice(it))} gold each)`, value: 1, min: 1, max: it.qty }); if (!n) return; }
-          else if (!(await ui.confirm({ title: 'Sell item?', body: `${it.name} for ${fmt(sellPrice(it))} gold`, confirmLabel: 'Sell' }))) return;
+          else if (!(await ui.confirm({ title: 'Sell item?', body: `${it.name} for ${fmt(sellPrice(it))} gold`, confirmLabel: 'Sell item' }))) return;
           const got = api.sell(id, it.id, n);
           if (got) ui.toast('System', `Sold ${it.name} for ${fmt(got)} gold.`);
         } else if (d.del) {
           const it = h.items.find(x => x.id === d.del);
           if (!it || wearRefused(h, it.id, 'remove')) return;
-          if (await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id, inFight(h.id))), GEAR_WORDS);
+          if (await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove item' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id, inFight(h.id))), GEAR_WORDS);
         } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it && !wearRefused(h, it.id, 'edit')) openForm('inv', it); }
         else if (d.buy !== undefined) {
           const tpl = shopList()[Number(d.buy)]; if (!tpl) return;
           const R = rules(), plan = buyPlan(h, tpl, R);
           if (!isRefused(plan) && plan.borrow > 0) {
             const c = borrowConfirm(tpl.name, plan, R);
-            const yes = await ui.system({
-              tag: '! Confirm', title: c.title, kind: 'warning', body: c.body, lines: [...c.lines],
-              actions: [{ label: c.cancel, value: false, cancel: true }, { label: c.confirm, value: true, primary: true }],
+            const yes = await ui.warn({
+              tag: 'Shop debt', title: c.title, body: c.body, lines: [...c.lines],
+              actions: [{ label: c.confirm, value: true, primary: true }, { label: c.cancel, value: false, cancel: true }],
             });
             if (yes !== true) return;
           }
@@ -403,11 +403,11 @@ export function register(app) {
         } else if (d.shopEdit !== undefined) { const tpl = shopList()[Number(d.shopEdit)]; if (tpl) openForm('shop', tpl); }
         else if (d.shopDel !== undefined) {
           const tpl = shopList()[Number(d.shopDel)];
-          if (tpl && await ui.confirm({ title: 'Remove from shop?', body: tpl.name, danger: true, confirmLabel: 'Remove' })) ui.wrote('System', shopEdit(shown => removeShopItem(shown, Number(d.shopDel))));
+          if (tpl && await ui.confirm({ title: 'Remove from shop?', body: tpl.name, danger: true, confirmLabel: 'Remove from shop' })) ui.wrote('System', shopEdit(shown => removeShopItem(shown, Number(d.shopDel))));
         } else if (b.hasAttribute('data-shop-add')) openForm('shop', null);
         else if (b.hasAttribute('data-additem')) openForm('inv', null);
         else if (b.hasAttribute('data-shop-reset')) {
-          if (await ui.confirm({ title: 'Reset shop?', body: 'Restore the default shop list.', danger: true, confirmLabel: 'Reset' })) ui.wrote('System', store.apply('shop-edit', s => withShop(s, null)));
+          if (await ui.confirm({ title: 'Reset shop?', body: 'Restore the default shop list.', danger: true, confirmLabel: 'Reset shop' })) ui.wrote('System', store.apply('shop-edit', s => withShop(s, null)));
         }
       });
     },

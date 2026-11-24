@@ -209,7 +209,7 @@ export function register(app) {
   async function unask(id) {
     const w = askedOf(store.get()).find(x => x.id === id); if (!w) return;
     if (stranded(w, store.get().settings.sync.outbox ?? [])) {
-      const yes = await ui.system({ tag: W.tag, title: W.strandedTitle, body: SW.stranded, actions: [{ label: W.cancel, value: false, cancel: true }, { label: SW.takeBack, value: true, primary: true }] });
+      const yes = await ui.warn({ tag: 'Possible duplicate', title: W.strandedTitle, body: SW.stranded, actions: [{ label: W.returnToBag, value: true, danger: true }, { label: W.cancel, value: false, cancel: true }] });
       if (yes !== true) return;
     }
     ui.wrote(W.tag, store.apply('stash-dismiss', s => stashDismissed(s, id)));
@@ -272,7 +272,7 @@ export function register(app) {
     const r = recordOf(store.get(), id, 'giver') ?? recordOf(store.get(), id, 'taker'); if (!r) return;
     if (r.state === 'stranded') {
       const body = r.side === 'giver' ? W.strandedGiver(r.offer) : W.strandedTaker(r.offer, asideOf(r));
-      const yes = await ui.system({ tag: W.tag, title: W.strandedTitle, body, actions: [{ label: W.cancel, value: false, cancel: true }, { label: W.takeBack, value: true, primary: true }] });
+      const yes = await ui.warn({ tag: 'Possible duplicate', title: W.strandedTitle, body, actions: [{ label: W.returnToBag, value: true, danger: true }, { label: W.cancel, value: false, cancel: true }] });
       if (yes !== true) return;
     }
     const w = store.apply('trade-take-back', s => offerTakenBack(s, id));

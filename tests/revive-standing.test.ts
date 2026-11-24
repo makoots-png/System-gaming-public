@@ -220,7 +220,12 @@ describe('what the System says of its raise', () => {
       rise: 'Revive for free',
     });
     const debt = raiseOffer(at('debt', 'C', 1), RULES)!;
-    expect(debt.lines).toEqual(['You will owe 6,250 gold, about 5 rank C gate clears to pay off.', `You revive at ${REVIVE_HP} HP, with all statuses cleared.`, 'After this, only a Resurrection Crystal or the GM can revive you.']);
+    expect(debt.lines).toEqual([
+      'You will owe 6,250 gold, about 5 rank C gate clears to pay off.',
+      `You revive at ${REVIVE_HP} HP, with all statuses cleared.`,
+      'After this, only a Resurrection Crystal or the GM can revive you.',
+      debtTermsLine(RULES),
+    ]);
     expect(debt.rise).toBe('Revive on debt (6,250 gold)');
     expect(raiseOffer(at('debt', 'E', 1), { ...RULES, reviveDebtShare: 0 })!.lines[0]).toBe('You will owe 500 gold.');
     expect(RANKS.map(r => debtPayoffClears(raiseOwes('debt', r, RULES), r, RULES)), 'every rank promises about 5 clears').toEqual([5, 5, 5, 5, 5, 5]);
@@ -408,5 +413,14 @@ describe('the revive debt machine: every state against every event, three-way sp
     expect([afterClear1.save.hunters[0]!.gold, afterClear1.save.hunters[0]!.debt, afterClear1.save.hunters[0]!.xp, afterClear1.save.hunters[0]!.reviveLeft]).toEqual([25, 7, 10, 'free']);
     const afterClear2 = ok(grant(afterClear1.save, H, { ...newRewards(), gold: 100, xp: 40 }, null, { ...DAY, from: 'clear' }));
     expect([afterClear2.save.hunters[0]!.gold, afterClear2.save.hunters[0]!.debt, afterClear2.save.hunters[0]!.xp, afterClear2.save.hunters[0]!.reviveLeft]).toEqual([114, 0, 50, 'free']);
+  });
+
+  test('raiseOffer includes debtTermsLine on debt revive and omits it on free revive', () => {
+    const terms = debtTermsLine(RULES);
+    expect(terms.length).toBeGreaterThan(0);
+    const debtOffer = raiseOffer({ reviveLeft: 'debt', rank: 'E', level: 10 }, RULES);
+    expect(debtOffer?.lines).toContain(terms);
+    const freeOffer = raiseOffer({ reviveLeft: 'free', rank: 'E', level: 10 }, RULES);
+    expect(freeOffer?.lines).not.toContain(terms);
   });
 });

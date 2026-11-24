@@ -288,6 +288,7 @@ describe('Helix clerk opening, mixed-party crystal shares, and protocol sync', (
       today: () => day('2026-11-23'),
       toast: (_t, msg) => toasts.push(msg),
       system: () => undefined,
+      warn: () => undefined,
       hunter: { fightOf: () => null, granted: () => ({ lines: [], levelup: null, popup: null }), gmHolds: () => ({ ok: false, why: 'told' as never }) },
       stepsDone: () => undefined,
       coinRuled: () => undefined,

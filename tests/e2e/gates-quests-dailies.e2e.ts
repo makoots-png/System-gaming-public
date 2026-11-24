@@ -95,7 +95,7 @@ async function penaltyWindows(page: Page): Promise<string[]> {
   for (let i = 0; i < 10; i++) {
     if (!(await topWindow(page).isVisible())) break;
     const text = (await topWindow(page).innerText()).replace(/\s+/g, ' ');
-    if (/PENALTY/.test(text)) found.push(text.slice(0, 120));
+    if (/Penalty Zone/.test(text)) found.push(text.slice(0, 120));
     await dismissAll(page, 1);
   }
   return found;
@@ -311,7 +311,7 @@ test('a gate cleared with no hunters selected still lets its running fight award
     const form = await openClearPanel(page, gate.id, false);
     for (const box of await form.locator('input[name=hid]').all()) if (await box.isChecked()) await box.tap();
     await form.locator('button[type=submit]').tap();
-    await sys(page, 'Clear anyway');
+    await sys(page, 'Clear without rewards');
     await expect(form).toBeHidden();
     await dismissAll(page);
     expect(await lifetimeXp(page), 'the clear paid nobody').toEqual(start);
@@ -532,7 +532,7 @@ test('an urgent quest fails at its due time, and asks for a new due time before 
     await page.clock.pauseAt(new Date('2026-11-10T12:09:59-05:00'));
     expect(await topWindow(page).isVisible()).toBe(false);
     await page.clock.runFor(2_000);
-    await expect(windowTitle(page)).toHaveText('QUEST FAILED');
+    await expect(windowTitle(page)).toHaveText('Quest failed');
     await dismissAll(page);
   });
 
@@ -877,7 +877,7 @@ test('a GM makes a quest the System counts: two rests complete it with its windo
     await expect(card('Hold the line').locator('[data-onfail]')).toContainText('Loses 50 gold');
     await card('Hold the line').locator('[data-fail]').tap();
     await answerWindow(page, 'Fail quest?', 'Fail quest');
-    const win = page.locator('.sys-overlay.show', { hasText: 'QUEST FAILED' });
+    const win = page.locator('.sys-overlay.show', { hasText: 'Quest failed' });
     await expect(win).toContainText('Hold the line');
     await expect(win).toContainText('Loses 50 gold');
     await expect(page.locator('.sys-overlay', { hasText: 'QUEST COMPLETE' }), 'the completed quest\'s window, told before the reload, was not queued again by it').toHaveCount(0);
@@ -952,7 +952,7 @@ test('two urgent quests that run out at once each show their own cost, and each 
   await urgentWithCost(page, 'Guard the gate', 0.25, 5);
   await page.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().gold = 100; }, 'test-setup'));
   await page.clock.runFor(16 * 60_000);
-  const failed = page.locator('.sys-overlay.show', { hasText: 'QUEST FAILED' });
+  const failed = page.locator('.sys-overlay.show', { hasText: 'Quest failed' });
   await expect(failed.first()).toContainText('Hold the bridge');
   await expect(failed.first()).toContainText('Loses 30 gold');
   await answerWindow(page, 'Hold the bridge');
@@ -969,7 +969,7 @@ test('an urgent quest whose failing write is refused shows no QUEST FAILED and s
   await dismissAll(page);
   const form = page.locator('#view-quests form[data-form]');
   const status = () => page.evaluate(() => hunterApp.store.active().quests.find((q: any) => q.title === 'Hold the bridge').status);
-  const failed = page.locator('.sys-overlay', { hasText: 'QUEST FAILED' });
+  const failed = page.locator('.sys-overlay', { hasText: 'Quest failed' });
   await go(page, 'quests');
   await page.locator('#view-quests [data-new]').tap();
   await form.locator('[name=kind]').selectOption('urgent');

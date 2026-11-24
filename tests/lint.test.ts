@@ -2691,3 +2691,122 @@ test('opted-in strict views carry no @ts- suppressions, no @type {any}, and no J
   }
   expect(report(hits), 'fix nulls and boundary values with real guards or lookups instead of casts or @ts- suppressions').toEqual([]);
 });
+
+test('no view or edge module opens a red System window directly: kind warning and penalty go through ui.warn', async () => {
+  // Variant 1 warning sweep: every red warning or penalty window goes through ui.warn (or confirm/promptText with
+  // danger: true, which call ui.warn). GM custom broadcasts pass dynamic `kind: b.kind` / `kind: p.kind` and keep the
+  // centered System look.
+  const findDirectRed = (file: string, src: string): string[] => {
+    const out: string[] = [];
+    const re = /\b(?:ui|app)\.system\s*\(\s*\{/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) {
+      let depth = 1, i = m.index + m[0].length;
+      while (i < src.length && depth > 0) {
+        const c = src[i]!;
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        i++;
+      }
+      const block = src.slice(m.index, i);
+      if (/\bkind\s*:\s*[^,}\n]*['"](?:warning|penalty)['"]/.test(block)) {
+        const line = src.slice(0, m.index).split('\n').length;
+        out.push(`${file}:${line}: ${block.replace(/\s+/g, ' ').slice(0, 120)}`);
+      }
+    }
+    return out;
+  };
+  expect(findDirectRed('a.js', "ui.system({ tag: '! Gate', kind: 'warning', title: 'GATE BREAK' });").length, 'catches single-line warning').toBe(1);
+  expect(findDirectRed('a.js', "app.system({\n  tag: '! Penalty',\n  kind: 'penalty',\n  title: 'PENALTY',\n});").length, 'catches multi-line penalty').toBe(1);
+  expect(findDirectRed('a.js', "ui.system({ tag: '! Gate', kind: won ? 'quest' : 'warning', title: 'X' });").length, 'catches ternary warning').toBe(1);
+  expect(findDirectRed('a.js', "ui.system({ tag: b.tag, title: b.title, kind: b.kind });"), 'allows dynamic GM broadcast').toEqual([]);
+  expect(findDirectRed('a.js', "ui.toast('Sync', 'Err', { kind: 'warning' });"), 'ignores warning toasts').toEqual([]);
+
+  const hits: string[] = [];
+  for (const dir of ['src/views', 'src/edge']) {
+    const names = (await readdir(`${ROOT}/${dir}`, { recursive: true })).filter(n => /\.(ts|js)$/.test(n)).sort();
+    for (const name of names) {
+      const file = `${dir}/${name}`;
+      if (file === 'src/views/ui.js') continue;
+      hits.push(...findDirectRed(file, await Bun.file(`${ROOT}/${file}`).text()));
+    }
+  }
+  expect(hits, 'open red windows through ui.warn (or ui.confirm / ui.promptText with danger: true), not ui.system({ kind: "warning" | "penalty" })').toEqual([]);
+});
+
+test('every confirmLabel literal has at least two words', async () => {
+  // Variant 1 warning sweep: bare one-word confirm labels ("Delete", "Remove", "Reset", "Confirm") force the player to
+  // reread the body to know what is deleted or changed.
+  const oneWordConfirm = (text: string): boolean => {
+    const re = /\bconfirmLabel\s*:\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const val = m[2]!.replace(/\$\{[^}]*\}/g, 'word').trim();
+      if (val.split(/\s+/).filter(Boolean).length < 2) return true;
+    }
+    return false;
+  };
+  for (const bad of ["confirmLabel: 'Delete'", "confirmLabel: 'Confirm'", "confirmLabel: 'Respec'", "confirmLabel: 'Replace'"]) {
+    expect(oneWordConfirm(bad), `catches ${bad}`).toBe(true);
+  }
+  for (const fine of ["confirmLabel: 'Delete gate'", "confirmLabel: `${what} without backup`", "confirmLabel: `Respec for ${cost} gold`"]) {
+    expect(oneWordConfirm(fine), `passes ${fine}`).toBe(false);
+  }
+  const lines = [...await sourceLines('src/views'), ...await sourceLines('src/core'), ...await sourceLines('src/edge')];
+  const hits = lines.filter(l => !isComment(l.text) && oneWordConfirm(l.text));
+  expect(report(hits), 'name the action and its target in confirmLabel (at least two words)').toEqual([]);
+});
+
+test('no exclamation mark on warning, confirm, input, or red toast tags', async () => {
+  // Variant 1 warning sweep: "!" stays on System fiction (quests, level ups, broadcasts), never on warning windows,
+  // confirm/input prompts, or red warning toasts.
+  const bangModalTag = /\b(?:warn|confirm|promptText|promptNum)\s*\(\s*\{[^;\n]*\btag\s*:\s*['"`][^'"`]*!/;
+  const bangRedToast = /\btoast\s*\(\s*['"`][^'"`]*![^'"`]*['"`][^;\n]*\bkind\s*:\s*(?:[^,}\n]*\?\s*['"]warning['"]|[^,}\n]*:\s*['"]warning['"]|['"]warning['"])/;
+  const fails = (text: string) => bangModalTag.test(text) || bangRedToast.test(text);
+  for (const bad of [
+    "ui.warn({ tag: '! Warning', title: 'Gate Break' });",
+    "ui.confirm({ tag: '! Confirm', title: 'Delete?', confirmLabel: 'Delete item' });",
+    "ui.promptText({ tag: '! Input', title: 'Rename' });",
+    "ui.toast('! Warning', 'You are dead.', { kind: 'warning' });",
+    "ui.toast('! Gate', msg, { kind: 'warning' });",
+    "ui.toast('! Quest', msg, { kind: ok ? 'info' : 'warning' });",
+  ]) {
+    expect(fails(bad), `catches ${bad}`).toBe(true);
+  }
+  for (const fine of [
+    "ui.warn({ tag: 'Gate Break', title: 'Gate Break' });",
+    "ui.toast('Warning', 'You are dead.', { kind: 'warning' });",
+    "ui.toast('! Quest', 'Sent.', { kind: 'info' });",
+    "ui.toast(ok ? '! Quest' : 'Quest', msg, { kind: ok ? 'info' : 'warning' });",
+  ]) {
+    expect(fails(fine), `passes ${fine}`).toBe(false);
+  }
+  const lines = [...await sourceLines('src/views'), ...await sourceLines('src/edge')];
+  const hits = lines.filter(l => !isComment(l.text) && fails(l.text));
+  expect(report(hits), 'remove "!" from warning, confirm, input, and red toast tags').toEqual([]);
+});
+
+test('no toast or fight-news call uses the broken "warn" kind', async () => {
+  // Variant 1 warning sweep: public/app.css defines .toast-warning (not .toast-warn), and ToastKind enforces
+  // 'info' | 'warning' | 'good' | 'levelup'.
+  const badWarnKind = (text: string): boolean =>
+    /\bkind\s*:\s*(?:[^,}\n]*[?:]\s*)?['"]warn['"]/.test(text) || /\bnews\s*\([^;\n]*['"]warn['"]/.test(text);
+  for (const bad of [
+    "ui.toast('Sync', 'Err', { kind: 'warn' });",
+    "ui.toast('! Quest', msg, { kind: st === 'failed' ? 'warn' : 'info' });",
+    "ui.news('Not in a room.', 'warn');",
+    "ui.news(msg, ok ? 'good' : 'warn');",
+  ]) {
+    expect(badWarnKind(bad), `catches ${bad}`).toBe(true);
+  }
+  for (const fine of [
+    "meter.classList.toggle('warn', pct >= 80);",
+    "ui.toast('Sync', 'Err', { kind: 'warning' });",
+    "ui.news('Not in a room.', 'warning');",
+  ]) {
+    expect(badWarnKind(fine), `passes ${fine}`).toBe(false);
+  }
+  const lines = [...await sourceLines('src/views'), ...await sourceLines('src/edge'), ...await sourceLines('src/core')];
+  const hits = lines.filter(l => !isComment(l.text) && badWarnKind(l.text));
+  expect(report(hits), 'use kind: "warning" (ToastKind), never "warn"').toEqual([]);
+});

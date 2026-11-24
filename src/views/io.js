@@ -37,7 +37,7 @@ const total = counts => PACK_KINDS.reduce((n, k) => n + counts[k], 0);
 const CODE_ERROR = {
   'no-code': 'This is not a share code. A share code starts with HS1.',
   damaged: 'This code is damaged or cut short. Copy the whole code again.',
-  unsupported: 'This browser cannot read codes. Ask for a file instead.',
+  unsupported: 'Share codes are not supported in this browser. Ask for a file instead.',
   'not-a-pack': 'This code does not contain custom content.',
   newer: 'This code is from a newer version of the app. Update the app, then try again.',
 };
@@ -54,7 +54,7 @@ export function register(app) {
   const docCounts = doc => { const r = parsePack(doc); return r.ok ? packCounts(r.pack) : libraryCounts(); };
   /** The window with a pack's code in a text box and Copy. */
   async function showCode(doc) {
-    if (!canCode()) return void ui.system({ tag: '! Warning', title: 'No code on this browser', body: 'This browser cannot make a code. Save a file instead.', kind: 'warning' });
+    if (!canCode()) return void ui.warn({ tag: 'Share error', title: 'No code on this browser', body: 'Share codes are not supported in this browser. Save a file instead.' });
     const code = await makeCode(doc);
     await ui.system({ tag: '! Share', title: 'Share code', body: `This code contains ${summary(docCounts(doc))}. On the other device, open Data, paste it under "Paste a code", and tap Read code.`,
       html: `<textarea class="io-code" readonly rows="${Math.min(12, Math.max(4, Math.ceil(code.length / 36)))}" spellcheck="false" aria-label="Share code" data-pack-code>${ui.esc(code)}</textarea>
@@ -81,7 +81,7 @@ export function register(app) {
    * Whether to go on although storage was too full to back up the current save first (`store.backupNow` answered false,
    * or a replace answered `unkept`): the player is asked, as before deleting a hunter.
    */
-  const goOnUnbacked = what => ui.confirm({ title: 'No backup saved', body: `Storage is full, so your current save could not be backed up first. ${what} anyway?`, danger: true, confirmLabel: what });
+  const goOnUnbacked = what => ui.confirm({ title: 'No backup saved', body: `Storage is full, so your current save could not be backed up first. ${what} anyway?`, danger: true, confirmLabel: `${what} without backup` });
   /** A restore, an import or a reset (`go(anyway)`), asked again when it could not back up first. Answers what it did. */
   async function replaceAsking(go, what) {
     const r = go(false);
@@ -100,10 +100,10 @@ export function register(app) {
       if (unreadable) lines.push(`Refused: ${unreadable} ${w(unreadable)} that could not be read`);
       if (over) lines.push(`Skipped: ${over} ${w(over)} over the ${PACK_CAP[k]} share limit`);
     }
-    if (!n) { await ui.system({ tag: '! Warning', title: 'Nothing to import', body: 'This contains no custom content the app can read.', lines, kind: 'warning' }); return false; }
+    if (!n) { await ui.warn({ tag: 'Import error', title: 'Nothing to import', body: 'No readable custom content was found in this file or code.', lines }); return false; }
     const mode = await ui.system({ tag: '! Import', title: o.title || 'Import custom content',
-      body: (o.body ? o.body + ' ' : '') + 'Tap Add to keep your existing entries and add these alongside them (duplicates get numbered, like "Frostbite 2"). Tap Replace to overwrite entries with the same name. Your save is backed up first.',
-      lines, actions: [{ label: o.skip || 'Cancel', value: null, cancel: true }, { label: 'Replace', value: 'replace', danger: true }, { label: 'Add', value: 'add', primary: true }] });
+      body: (o.body ? o.body + ' ' : '') + 'Tap Add alongside existing to keep your entries and add these (duplicates get numbered, like "Frostbite 2"). Tap Replace matching entries to overwrite entries with the same name. Your save is backed up first.',
+      lines, actions: [{ label: o.skip || 'Cancel', value: null, cancel: true }, { label: 'Replace matching entries', value: 'replace', danger: true }, { label: 'Add alongside existing', value: 'add', primary: true }] });
     if (mode !== 'add' && mode !== 'replace') return false;
     const backedUp = store.backupNow('pre-import');
     if (!backedUp && !(await goOnUnbacked('Import'))) return false;
@@ -113,13 +113,13 @@ export function register(app) {
     const added = sum('added'), replaced = sum('replaced');
     ui.toast('System', `Custom content imported: ${added} added${replaced ? `, ${replaced} replaced` : ''}.${backedUp ? ' Previous save kept in backups.' : ''}`);
     const full = PACK_KINDS.filter(k => report[k].full).map(k => `${PACK_WORDS[k][2]}: ${report[k].full} skipped (library limit is ${PACK_CAP[k]})`);
-    if (full.length) await ui.system({ tag: '! Warning', title: 'Some did not fit', body: 'Your library was full, so these were not imported. Delete some in the Workshop and import again.', lines: full, kind: 'warning' });
+    if (full.length) await ui.warn({ tag: 'Library full', title: 'Some did not fit', body: 'Your library was full, so these were not imported. Delete some in the Workshop and import again.', lines: full });
     return true;
   }
   async function readPasted(box) {
     const c = await readCode(box.value);
     const r = c.ok ? parsePack(c.value) : c;
-    if ('why' in r) return void ui.system({ tag: '! Warning', title: 'Code not read', body: CODE_ERROR[r.why], kind: 'warning' });
+    if ('why' in r) return void ui.warn({ tag: 'Import error', title: 'Code not read', body: CODE_ERROR[r.why] });
     if (await importPack(r)) box.value = '';
   }
 
@@ -166,16 +166,16 @@ export function register(app) {
   }
 
   async function doImport(file) {
-    if (file.size > MAX_IMPORT) return ui.system({ tag: '! Warning', title: 'File too large', body: 'Save files over 5 MB are not accepted.', kind: 'warning' });
+    if (file.size > MAX_IMPORT) return ui.warn({ tag: 'Import error', title: 'File too large', body: 'Save files over 5 MB are not accepted.' });
     const text = await readFile(file);
     let raw = null; try { raw = JSON.parse(text); } catch { /* not JSON: store.read below refuses it and the Import failed window says why */ }
     if (isObj(raw) && raw.kind === 'library') {
       const r = parsePack(raw);
-      if ('why' in r) return ui.system({ tag: '! Warning', title: 'Import failed', body: r.why === 'newer' ? 'This file is from a newer version of the app.' : 'This file does not contain custom content.', kind: 'warning' });
+      if ('why' in r) return ui.warn({ tag: 'Import error', title: 'Import failed', body: r.why === 'newer' ? 'This file is from a newer version of the app.' : 'This file does not contain custom content.' });
       return void await importPack(r);
     }
     const r = store.read(text);
-    if (r.ok === false) return ui.system({ tag: '! Warning', title: 'Import failed', body: r.error, kind: 'warning' });
+    if (r.ok === false) return ui.warn({ tag: 'Import error', title: 'Import failed', body: r.error });
     const got = r.save, names = got.hunters.map(h => h.name), hunterFile = r.kind === 'hunter';
     const lines = [`Hunters: ${names.length} (${names.slice(0, 6).join(', ')}${names.length > 6 ? ', …' : ''})`, `Quests: ${got.hunters.reduce((n, h) => n + h.quests.length, 0)}`];
     if (!hunterFile) lines.push(`Gates: ${got.gates.length}`);
@@ -185,7 +185,7 @@ export function register(app) {
     /** @type {import('./ui.js').SystemAction[]} */
     const actions = [{ label: 'Cancel', value: null, cancel: true },
       { label: hunterFile ? 'Add to party' : 'Add hunters to party', value: 'add', primary: hunterFile },
-      { label: 'Replace campaign', value: 'replace', primary: !hunterFile, danger: true }];
+      { label: 'Replace campaign', value: 'replace', danger: true }];
     const choice = await ui.system({ tag: '! Import', title: 'Import preview', body: hunterFile
       ? 'This file contains one hunter. Add them to your party, or replace the whole campaign. Your current save is backed up first.'
       : 'Replace your campaign with this file, or add its hunters to your party. Your current save is backed up first.', lines, actions });
@@ -260,23 +260,32 @@ export function register(app) {
       });
       $('[data-backup-now]').addEventListener('click', () => {
         if (store.backupNow('manual')) ui.toast('System', 'Backup saved.');
-        else ui.system({ tag: '! Warning', title: 'No backup saved', body: 'Storage is full, so a backup could not be saved. Export your data to keep a copy.', kind: 'warning' });
+        else ui.warn({ tag: 'Storage full', title: 'No backup saved', body: 'Storage is full, so a backup could not be saved. Export your data to keep a copy.' });
         refresh();
       });
       $('[data-backups]').addEventListener('click', async e => {
         const b = e.target.closest('[data-restore]'); if (!b) return;
         const i = Number(b.dataset.restore);
         const bk = store.backups()[i]; if (!bk) return;
-        const ok = await ui.confirm({ title: 'Restore this backup?', body: `Your current save will be replaced by the "${backupLabel(bk.reason)}" backup from ${new Date(bk.at).toLocaleString()}. The current save is backed up first.`, danger: true, confirmLabel: 'Restore' });
+        const ok = await ui.confirm({ title: 'Restore this backup?', body: `Your current save will be replaced by the "${backupLabel(bk.reason)}" backup from ${new Date(bk.at).toLocaleString()}. The current save is backed up first.`, danger: true, confirmLabel: 'Restore backup' });
         if (!ok) return;
         const r = await replaceAsking(anyway => store.restore(i, anyway), 'Restore');
         if (r === 'replaced') ui.toast('System', 'Backup restored.');
-        else if (r === 'unreadable') ui.system({ tag: '! Warning', title: 'Restore failed', body: 'That backup could not be read.', kind: 'warning' });
+        else if (r === 'unreadable') ui.warn({ tag: 'Restore error', title: 'Restore failed', body: 'That backup could not be read.' });
       });
       $('[data-reset]').addEventListener('click', async () => {
-        const v = await ui.promptText({ title: 'Reset campaign?', label: 'This replaces every hunter. A backup is kept. Type RESET to confirm.', value: '', maxlength: 10 });
+        const v = await ui.promptText({
+          danger: true,
+          tag: 'Reset campaign',
+          title: 'Reset campaign?',
+          body: 'Resetting replaces every hunter in this campaign. A backup is saved first.',
+          label: 'Type RESET to confirm',
+          value: '',
+          maxlength: 10,
+          confirmLabel: 'Reset campaign',
+          match: { word: 'RESET', error: 'Type RESET to confirm.' },
+        });
         if (v === null) return;
-        if (v !== 'RESET') { ui.toast('System', 'Reset canceled. Type RESET in all caps to confirm.', { kind: 'warning' }); return; }
         if (await replaceAsking(anyway => store.reset(anyway), 'Reset') === 'replaced') ui.toast('System', 'Campaign has been reset.');
       });
 

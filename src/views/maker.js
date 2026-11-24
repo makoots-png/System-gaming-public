@@ -1013,7 +1013,7 @@ function openMaker(o) {
       const s = draftStep(draft, e);
       draft = s.draft;
       if (s.then === 'close') finish(v);
-      else if (s.then === 'ask') void confirm({ title: 'Discard changes?', body: 'Your unsaved changes will be lost.', danger: true, confirmLabel: 'Discard' }).then(drop => step(drop ? 'dropped' : 'kept'));
+      else if (s.then === 'ask') void confirm({ title: 'Discard changes?', body: 'Your unsaved changes will be lost.', danger: true, confirmLabel: 'Discard changes' }).then(drop => step(drop ? 'dropped' : 'kept'));
     }
     const shell = {
       el: win,

@@ -327,9 +327,9 @@ export function register(app) {
     const c = x.call, ok = c.ok === true, n = x.name;
     if (x.act === 'remove') {
       const out = ok ? app.api.combat.removeRemote(x.key) : 0; open.delete(x.key);
-      ui.toast('System', ok ? `Removed ${n} from the room${out ? ' and the fight' : ''}.` : `Could not remove ${n}: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
-    } else if (x.act === 'release') ui.toast('System', ok ? 'Released. The player can now claim this hunter on a new device.' : `Could not release: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
-    else ui.toast('System', ok ? `${n} can rejoin now.` : `Could not allow ${n} back: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
+      ui.toast('System', ok ? `Removed ${n} from the room${out ? ' and the fight' : ''}.` : `Could not remove ${n}: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warning' });
+    } else if (x.act === 'release') ui.toast('System', ok ? 'Released. The player can now claim this hunter on a new device.' : `Could not release: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warning' });
+    else ui.toast('System', ok ? `${n} can rejoin now.` : `Could not allow ${n} back: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warning' });
   }
   const sized = (svg, px) => svg.replace('<svg ', `<svg width="${px}" height="${px}" `);
 

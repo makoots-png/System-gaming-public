@@ -231,7 +231,7 @@ test('probe: GM does not see Next phase during setup, and sees it once started',
   await nextBtn.tap();
   const ask = gm.locator('.sys-overlay.show');
   await expect(ask).toContainText(`Move ${script.name} to ${script.phases[1]!.name} now?`);
-  await ask.locator('.sys-actions button', { hasText: 'Move it' }).tap();
+  await ask.locator('.sys-actions button', { hasText: 'Start next phase' }).tap();
   await expect(combat(gm).locator('.myth-phase')).toContainText('Phase 2 of 3');
 });
 

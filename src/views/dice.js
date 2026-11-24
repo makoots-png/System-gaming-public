@@ -258,7 +258,7 @@ export function register(app) {
       viewInst = controls(el.querySelector('[data-roller]'), { quickChecks: true });
       el.querySelector('[data-clear]').addEventListener('click', async () => {
         if (!store.get().rolls.length) return;
-        if (await ui.confirm({ title: 'Clear roll log?', body: 'This removes all rolls from your roll log.', danger: true, confirmLabel: 'Clear log' })) ui.wrote('! Dice', store.apply('clear-rolls', clearRolls));
+        if (await ui.confirm({ title: 'Clear roll log?', body: 'Clearing removes every roll from your roll log.', danger: true, confirmLabel: 'Clear log' })) ui.wrote('! Dice', store.apply('clear-rolls', clearRolls));
       });
     },
     update(el) {

@@ -90,6 +90,7 @@ export function register(app) {
   const rankOf = r => RANKS[r.tier] || 'E';
   const refs = () => store.get().fightRefs || { gate: null, monsters: {} };
   const newId = () => combatantId(store.id('c'));
+  /** @param {string} msg @param {import('../core/warning.ts').ToastKind} [kind] */
   const toast = (msg, kind = 'info') => ui.news(msg, kind);
   const ctx = () => ({ rules: rules() });
   /** The target each row's move control and use picker start on, by row id. */
@@ -246,7 +247,7 @@ export function register(app) {
 
   // S06/F07: another GM device is already running the room's fight; replacing it needs a confirm.
   const otherGMLive = () => { const d = inRoomAsGM() && !fight() && A().sync.doc('fight'); const me = store.get().settings.deviceId; return !!(d && d.active && !d.ended && d.by && d.by !== me); };
-  const confirmReplace = () => ui.confirm({ title: 'Fight running on another device', body: 'Another GM device is running a fight. Replace it?', danger: true, confirmLabel: 'Replace' });
+  const confirmReplace = () => ui.confirm({ title: 'Fight running on another device', body: 'Another GM device is running a fight. Replace it?', danger: true, confirmLabel: 'Replace fight' });
 
   /**
    * Rows join: a new fight in setup when there is none; while it runs each joins at its opening roll. `gate` links a new
@@ -1169,7 +1170,7 @@ export function register(app) {
       if (b.hasAttribute('data-next')) return next();
       if (b.hasAttribute('data-end')) { overTo({ at: 'none' }); return endEncounter(); }
       if (b.hasAttribute('data-clear')) {
-        if (await ui.confirm({ title: 'Clear the fight?', body: 'This removes everyone and clears the fight log. Nobody gets XP.', danger: true, confirmLabel: 'Clear' })) { send({ type: 'clear' }); sel = null; }
+        if (await ui.confirm({ title: 'Clear the fight?', body: 'Clearing removes every combatant and empties the fight log. Nobody gets XP.', danger: true, confirmLabel: 'Clear fight' })) { send({ type: 'clear' }); sel = null; }
         return;
       }
       if (b.hasAttribute('data-addh')) {
@@ -1209,7 +1210,7 @@ export function register(app) {
       if (b.hasAttribute('data-cforge')) return addStatus(r);
       if (b.hasAttribute('data-defeat')) { adjust(r, { hp: -cardOf(f, r, rules()).hpMax }); return; }
       if (b.hasAttribute('data-revive')) { revive(r); return; }
-      if (b.hasAttribute('data-remove')) { if (await ui.confirm({ title: 'Remove combatant?', body: r.name, danger: true, confirmLabel: 'Remove' })) removeRow(r); return; }
+      if (b.hasAttribute('data-remove')) { if (await ui.confirm({ title: 'Remove combatant?', body: r.name, danger: true, confirmLabel: 'Remove combatant' })) removeRow(r); return; }
       if (b.dataset.ab) return useAbility(r, b.dataset.ab, b);
       if (b.hasAttribute('data-intent-set')) return setIntent(r);
       if (b.hasAttribute('data-intent-reveal')) { send({ type: 'reveal', by: r.id }); return; }

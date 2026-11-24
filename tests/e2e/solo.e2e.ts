@@ -23,7 +23,7 @@ const hunterOf = (s: any) => s.hunters.find((h: any) => h.id === s.settings.acti
 /** Taps Enter alone on the first solo gate: the odds play out, the one question with their numbers, Enter alone. */
 async function enterAlone(page: Page): Promise<void> {
   await soloCard(page).locator('[data-solo-enter]').tap();
-  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  const ask = page.locator('.sys-overlay.show', { hasText: 'Enter alone?' });
   await expect(ask).toBeVisible({ timeout: 60_000 });
   await expect(ask).toContainText(/You clear it in \d+% of 100 plays\./);
   await expect(ask).toContainText('These odds come from 100 simulated fights. Your solo run is a separate fight and can turn out better or worse.');
@@ -105,7 +105,7 @@ async function roomWithSoloDen(device: (label: string, o?: object) => Promise<{ 
 async function runDen(page: Page): Promise<void> {
   const card = worldCard(page, 'Goblin Den');
   await card.locator('[data-solo-enter]').tap();
-  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  const ask = page.locator('.sys-overlay.show', { hasText: 'Enter alone?' });
   await expect(ask).toBeVisible({ timeout: 60_000 });
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
   const ran = page.locator('.sys-overlay.show', { hasText: 'GATE CLEARED' });
@@ -208,7 +208,7 @@ test('two players clear one gate: the first clears it, the second is told it was
   await expect(cleared).toBeVisible({ timeout: 30_000 });
   await runDen(rei!.page);
   hear();
-  const taken = rei!.page.locator('.sys-overlay.show', { hasText: 'GATE TAKEN' });
+  const taken = rei!.page.locator('.sys-overlay.show', { hasText: 'Gate taken' });
   await expect(taken).toBeVisible({ timeout: 30_000 });
   await expect(taken).toContainText(REFUSED_WORDS.taken);
   expect(lifetime(hunterOf(await save(rei!.page))), 'the second run is paid nothing').toBe(reiXp);
@@ -233,10 +233,10 @@ test('a hunter who dies alone shows dead on the GM\'s board, and the GM\'s Reviv
   await frail(kai!.page);
   await seeded(kai!.page, 3);
   await worldCard(kai!.page, 'Goblin Den').locator('[data-solo-enter]').tap();
-  const ask = kai!.page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  const ask = kai!.page.locator('.sys-overlay.show', { hasText: 'Enter alone?' });
   await expect(ask).toBeVisible({ timeout: 60_000 });
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
-  const failed = kai!.page.locator('.sys-overlay.show', { hasText: 'RUN FAILED' });
+  const failed = kai!.page.locator('.sys-overlay.show', { hasText: 'Run failed' });
   await expect(failed).toBeVisible({ timeout: 30_000 });
   await expect(failed).toContainText(`You died. ${WAYS_BACK} brings you back.`);
   await failed.locator('.sys-actions button').first().tap();
@@ -266,7 +266,7 @@ test('while a run plays the card shows only its round and moves, and a reload in
   await go(page, 'gates');
   const before = await kept(), card = soloCard(page);
   await card.locator('[data-solo-enter]').tap();
-  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  const ask = page.locator('.sys-overlay.show', { hasText: 'Enter alone?' });
   await expect(ask).toBeVisible({ timeout: 120_000 });
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 20 });
@@ -302,7 +302,7 @@ async function heldRun(page: Page): Promise<{ release: () => Promise<void> }> {
   }, 'test-setup'));
   await go(page, 'gates');
   await soloCard(page).locator('[data-solo-enter]').tap();
-  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  const ask = page.locator('.sys-overlay.show', { hasText: 'Enter alone?' });
   await expect(ask).toBeVisible({ timeout: 120_000 });
   await page.evaluate(() => {
     const w = window as any, box = document.querySelector('#gt-solo')!;
@@ -332,7 +332,7 @@ test('while a run plays, Enter alone cannot be tapped again, and the run ends in
   const { release } = await heldRun(page);
   await expect(soloCard(page).locator('[data-solo-enter]'), 'a second run of the same hunter cannot start while one plays').toBeDisabled();
   await release();
-  await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|RUN FAILED|RETREAT/ })).toBeVisible({ timeout: 120_000 });
+  await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|Run failed|Retreat/ })).toBeVisible({ timeout: 120_000 });
   await dismissAll(page);
   expect((await save(page)).log.filter((l: any) => l.title === 'Solo run'), 'one run, one write').toHaveLength(1);
 });
@@ -353,7 +353,7 @@ test('a redraw of the solo panel while a run plays keeps its round and moves on 
   await expect(card.locator('[data-solorun]')).toHaveText(/^Round \d+, \d+ moves? played$/);
   await expect(card.locator('[data-solo-enter]')).toBeDisabled();
   await release();
-  await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|RUN FAILED|RETREAT/ })).toBeVisible({ timeout: 120_000 });
+  await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|Run failed|Retreat/ })).toBeVisible({ timeout: 120_000 });
   await dismissAll(page);
   expect((await save(page)).log.filter((l: any) => l.title === 'Solo run'), 'one run, one write').toHaveLength(1);
 });
@@ -408,7 +408,7 @@ async function clearPersonalInRoom(page: Page): Promise<string> {
   });
   const card = page.locator('#view-gates .gate.solo[data-solo^="personal:"]').first();
   await card.locator('[data-solo-enter]').tap();
-  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  const ask = page.locator('.sys-overlay.show', { hasText: 'Enter alone?' });
   await expect(ask).toBeVisible({ timeout: 60_000 });
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
   const done = page.locator('.sys-overlay.show', { hasText: 'GATE CLEARED' });

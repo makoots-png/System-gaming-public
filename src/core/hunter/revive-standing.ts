@@ -136,7 +136,7 @@ const numFmt = (n: number): string => n.toLocaleString('en-US');
 const gold = (n: number): string => `${numFmt(n)} gold`;
 const ratePct = (n: number): string => `${Math.round(clamp01(n) * 10000) / 100}%`;
 /** The title of the System's window that offers the raise. */
-export const RAISE_TITLE = 'THE SYSTEM CAN REVIVE YOU';
+export const RAISE_TITLE = 'The System can revive you';
 /**
  * The rank a hunter comes back at after a raising from death: mirrors `levelMoved` and `RANK_TABLE` (record.ts), so
  * previews (`raiseOffer`, `raiseLine`) and `systemRaise` agree for every rank, level, and `rankBy` case.
@@ -152,10 +152,10 @@ export function rankAfterRaising(
 }
 /** What a hunter shows of itself to the words below. */
 type Raisable = { readonly reviveLeft: ReviveStanding; readonly rank: Rank; readonly level: number; readonly rankBy?: RankBy };
-type WordRules = Pick<Rules, 'priceBase' | 'loot' | 'rankLevels' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveLevelShare'>;
+type WordRules = Pick<Rules, 'priceBase' | 'loot' | 'rankLevels' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'reviveLevelShare'>;
 /**
- * What the System's window says to dead hunter `h`: its body, its lines (the cost, where the hunter rises, and on debt
- * that no raise is left after), and its Rise button's words, which name the cost on debt. Null past the ladder.
+ * What the System's window says to dead hunter `h`: its body, its lines (the cost, debt terms on debt, where the hunter
+ * rises, and on debt that no raise is left after), and its Rise button's words, which name the cost on debt. Null past the ladder.
  */
 export function raiseOffer(h: Raisable, R: WordRules): { readonly body: string; readonly lines: readonly string[]; readonly rise: string } | null {
   if (!canRaise(h.reviveLeft)) return null;
@@ -168,9 +168,10 @@ export function raiseOffer(h: Raisable, R: WordRules): { readonly body: string; 
   const cost = clears !== null
     ? `You will owe ${gold(owes)}, about ${clears} rank ${rank} gate clear${clears === 1 ? '' : 's'} to pay off.`
     : `You will owe ${gold(owes)}.`;
+  const terms = debtTermsLine(R);
   return {
     body: 'You have died. Your free revive is used. The System can revive you once more in exchange for debt.',
-    lines: [cost, rises, 'After this, only a Resurrection Crystal or the GM can revive you.'],
+    lines: [cost, rises, 'After this, only a Resurrection Crystal or the GM can revive you.', ...(terms ? [terms] : [])],
     rise: `Revive on debt (${gold(owes)})`,
   };
 }

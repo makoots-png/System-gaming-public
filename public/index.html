@@ -49,21 +49,35 @@
 <nav id="nav-bottom" class="nav-bottom" aria-label="Main sections"></nav>
 <div class="toast-box" id="toasts" role="status" aria-live="polite"></div>
 
-<section class="wrap" id="file-warn" hidden>
-  <div class="win"><span class="cb"></span>
-    <h2>System</h2>
-    <p>This app can't start from a double-clicked file (browsers block ES modules on <code>file://</code>).</p>
-    <p>Open the live link, or run <code>bun start</code> in the project folder and visit <code>http://localhost:3000</code>.</p>
+<div class="overlay sys-overlay" id="file-warn" hidden>
+  <div class="sys-window k-warning sys-warn" role="alertdialog" aria-modal="true" aria-labelledby="fw-title" aria-describedby="fw-body">
+    <span class="cb"></span>
+    <div class="n-tag">Cannot start here</div>
+    <h2 class="n-big" id="fw-title">Open from a web address</h2>
+    <div class="n-body" id="fw-body">
+      <p>Browsers block app modules when you open a local HTML file directly from <code>file://</code>.</p>
+      <p>Open the live link, or run <code>bun start</code> in the project folder and visit <code>http://localhost:3000</code>.</p>
+    </div>
   </div>
-</section>
+</div>
 
 <script>
-  // Classic inline script: on file:// show the System panel instead of failing; otherwise load the module app.
+  // Classic inline script: on file:// show the Variant 1 warning overlay over frozen dead chrome; otherwise remove it and load the module app.
   (function () {
+    var fw = document.getElementById('file-warn');
     if (location.protocol === 'file:') {
-      document.getElementById('file-warn').hidden = false;
+      fw.hidden = false;
+      fw.classList.add('show');
+      for (var i = 0; i < document.body.children.length; i++) {
+        var el = document.body.children[i];
+        if (el !== fw && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE') {
+          el.inert = true;
+          el.setAttribute('aria-hidden', 'true');
+        }
+      }
       return;
     }
+    if (fw) fw.remove();
     var s = document.createElement('script'); s.type = 'module'; s.src = 'app.js';
     document.head.appendChild(s);
   })();

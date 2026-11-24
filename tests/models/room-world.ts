@@ -481,7 +481,7 @@ function applyOne(w: World, p: Phone, ev: RoomEvent): void {
       write(w, p, s => { s.applied = ring; });
       return true;
     },
-    rules: () => RULES, now: () => new Date(w.clock).toISOString(), today: () => parseDayKey(new Date(w.clock).toISOString().slice(0, 10))!, toast: () => {}, system: () => {},
+    rules: () => RULES, now: () => new Date(w.clock).toISOString(), today: () => parseDayKey(new Date(w.clock).toISOString().slice(0, 10))!, toast: () => {}, system: () => {}, warn: () => {},
     hunter: { fightOf: () => null, granted: () => ({ lines: [], levelup: null, popup: null }), gmHolds: () => refuse(TOLD) },
     stepsDone: () => {},
     // coin.js `ruled`: the coin's table takes the first ruling of a roll

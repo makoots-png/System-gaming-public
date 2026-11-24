@@ -293,7 +293,7 @@ test('a player chooses a path and perks, sees the stat change, finds locked rank
     await page.locator(`${status}[data-bdbuy]`).tap();
     await expect(page.locator(win)).toContainText(`${cost.toLocaleString('en-US')} gold`);
     expect((await activeHunter(page)).gold).toBe(5000);
-    await tapWin(page, 'Pay');
+    await tapWin(page, 'Respec for');
     await expect(page.locator(`${status}[data-bdpath=vanguard]`)).toBeVisible();
     const after = await activeHunter(page);
     expect(after.gold).toBe(5000 - cost);
@@ -397,6 +397,7 @@ test('a GM sets a path and picks a perk for a player from the party board and th
   await test.step('a GM respec empties the path on the player sheet', async () => {
     await card.locator('[data-hbuild]').tap();
     await tapWin(gm, 'Respec');
+    await tapWin(gm, 'Respec hunter');
     await expect.poll(async () => (await activeHunter(player)).build.path).toBeNull();
   });
 });

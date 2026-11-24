@@ -236,7 +236,6 @@ button.primary{background:var(--cyan);border-color:var(--cyan);color:var(--groun
 button.primary:hover{background:var(--cyan);color:var(--ground);box-shadow:0 0 12px rgba(var(--acc-rgb),.6)}
 button.danger{border-color:var(--red);color:var(--red)}
 button.danger:hover{border-color:var(--red);color:var(--red);box-shadow:0 0 8px rgba(255,77,94,.4)}
-button.primary.danger,button.primary.danger:hover{background:var(--red);color:var(--ground)}
 button.quiet{background:none;border-color:transparent;color:var(--cyan-dim)}
 button.quiet:hover{border-color:transparent;box-shadow:none}
 /* a life's word (row-life.ts lifeWord) wherever it shows: dead (a hunter's or a defeated foe's) red and filled */
@@ -360,21 +359,23 @@ select{cursor:pointer}
 .sys-window.k-levelup .n-big{color:var(--gold);text-shadow:0 0 24px rgba(255,201,77,.8)}
 .sys-window.k-arise{border-color:var(--purple);box-shadow:0 0 50px rgba(160,100,255,.55), inset 0 0 40px rgba(60,20,110,.4)}
 .sys-window.k-arise .n-big{color:var(--purple);text-shadow:0 0 26px rgba(160,100,255,.9)}
-/* Blocking takeover window for a read-only tab (src/views/takeover.js, Variant 1) */
+/* Variant 1 warning window layout (ui.warn, takeover.js, #file-warn) */
+.sys-window.sys-warn{text-align:left;overflow-x:hidden}
+.sys-window.sys-warn::before{top:0;left:0}
+.sys-window.sys-warn::after{top:0;right:0}
+.sys-window.sys-warn .cb::before{bottom:0;left:0}
+.sys-window.sys-warn .cb::after{bottom:0;right:0}
+.sys-window.sys-warn .n-tag{text-align:center;margin-bottom:10px}
+.sys-window.sys-warn .n-big{text-align:center;font-size:calc(22px*var(--ts));line-height:1.25;letter-spacing:.02em;text-transform:none;margin:0 0 14px;overflow-wrap:anywhere}
+.sys-window.sys-warn .n-body{margin:0 0 16px;line-height:1.5;overflow-wrap:anywhere}
+.sys-window.sys-warn .n-body p{margin:0 0 10px}
+.sys-window.sys-warn .n-body p:last-child{margin-bottom:0}
+.sys-window.sys-warn .sys-lines{margin:0 0 16px;text-align:left;font-size:calc(14px*var(--ts));font-weight:400;color:var(--ice);display:flex;flex-direction:column;gap:6px;overflow-wrap:anywhere}
+.sys-window.sys-warn .sys-actions{flex-direction:column;align-items:stretch;gap:10px;margin-top:6px}
+.sys-window.sys-warn .sys-actions button{width:100%;min-height:var(--control-h);font-size:calc(14px*var(--ts));padding:8px 14px;text-align:center}
+/* Blocking takeover window extras (src/views/takeover.js, shares .sys-warn) */
 .overlay.tk-overlay{z-index:90}
-.sys-window.tk-win{text-align:left;overflow-x:hidden}
-.sys-window.tk-win::before{top:0;left:0}
-.sys-window.tk-win::after{top:0;right:0}
-.sys-window.tk-win .cb::before{bottom:0;left:0}
-.sys-window.tk-win .cb::after{bottom:0;right:0}
-.sys-window.tk-win .n-tag{text-align:center;margin-bottom:10px}
-.sys-window.tk-win .n-big{text-align:center;font-size:calc(22px*var(--ts));line-height:1.25;letter-spacing:.02em;text-transform:none;margin:0 0 14px}
-.sys-window.tk-win .n-body{margin:0 0 18px;line-height:1.5}
-.sys-window.tk-win .n-body p{margin:0 0 10px}
-.sys-window.tk-win .n-body p:last-child{margin-bottom:0}
 .sys-window.tk-win .tk-export-note{color:var(--muted);font-size:calc(13px*var(--ts))}
-.sys-window.tk-win .tk-actions{flex-direction:column;align-items:stretch;gap:10px;margin-top:0}
-.sys-window.tk-win .tk-actions button{width:100%;min-height:var(--control-h);font-size:calc(14px*var(--ts));padding:8px 14px}
 .sys-window.tk-win .tk-status{margin:10px 0 0;text-align:center;font-size:calc(13px*var(--ts));color:var(--cyan-dim)}
 
 /* ── Toasts ── */

@@ -150,7 +150,7 @@ export function register(app) {
 .mp-blast{position:absolute;left:0;top:0;border-radius:50%;border:2px solid var(--red);pointer-events:none}
 .mp-tools{position:absolute;right:6px;top:6px;z-index:3;display:flex;gap:6px}
 .mp-news{position:absolute;left:6px;right:6px;top:calc(var(--control-h) + 12px);z-index:3;margin:0;padding:6px 10px;pointer-events:none;font-size:13px;line-height:1.35;color:var(--ice);background:color-mix(in srgb,var(--ground) 88%,transparent);border:1px solid var(--line);border-left:3px solid var(--cyan)}
-.mp-news.warning,.mp-news.warn{border-left-color:var(--red)}.mp-news.good{border-left-color:var(--green)}
+.mp-news.warning{border-left-color:var(--red)}.mp-news.good{border-left-color:var(--green)}
 .mp-seenas{position:absolute;left:6px;top:6px;z-index:3;margin:0;padding:4px 10px;max-width:calc(100% - 150px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;font-size:13px;color:var(--warm);background:color-mix(in srgb,var(--ground) 88%,transparent);border:1px solid var(--line)}
 .mp-sending{position:absolute;left:6px;bottom:6px;z-index:3;margin:0;padding:4px 10px;pointer-events:none;font-size:13px;color:var(--ice);background:color-mix(in srgb,var(--ground) 88%,transparent);border:1px solid var(--line)}
 .mp-tog{min-height:var(--control-h);min-width:var(--control-h);padding:0 10px;font-size:13px;background:color-mix(in srgb,var(--ground) 80%,transparent)}

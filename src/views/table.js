@@ -387,7 +387,7 @@ export function register(app) {
     const on = turn ? await waitOn(e, me, a) : null;
     if (turn && !on) return;
     const ok = S.post(S.event('arm', { by: S.myKey(h.id), ability, on })).ok;
-    ui.news(!ok ? 'Not in a room. The reaction was not armed.' : a ? `${a.name} is armed.` : 'Reaction disarmed.', ok ? 'good' : 'warn');
+    ui.news(!ok ? 'Not in a room. The reaction was not armed.' : a ? `${a.name} is armed.` : 'Reaction disarmed.', ok ? 'good' : 'warning');
   }
   /**
    * The row a reaction `a` of row `me` waits for before its turn, picked in a window of `waitChoices` (fight-view.ts);
@@ -408,7 +408,7 @@ export function register(app) {
     const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;
     const S = sync();
     void app.api.uses.command(() => S.post(S.event('pass', { by: S.myKey(h.id), at: e.now })))
-      .then(r => { if (r && !r.ok) ui.news('Not in a room. Your turn was not ended.', 'warn'); });
+      .then(r => { if (r && !r.ok) ui.news('Not in a room. Your turn was not ended.', 'warning'); });
   }
   // ── the map (src/views/map.js) over the room's fight doc ──
   /** The token whose card is open over the map, and the map drawn in the HUD (null while the HUD shows no map). */
@@ -458,7 +458,7 @@ export function register(app) {
       const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;
       const S = sync();
       void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: to.x, y: to.y }, at: e.now, dash })))
-        .then(r => { if (r && !r.ok) ui.news('Not in a room. Your move was not sent.', 'warn'); });
+        .then(r => { if (r && !r.ok) ui.news('Not in a room. Your move was not sent.', 'warning'); });
     },
     place: null,
     use: (a, aim) => {
@@ -471,7 +471,7 @@ export function register(app) {
       const e = encounter(), h = meHunter(e), dg = myDodge(e); if (!e || e.ended !== false || !h || !dg) return;
       const S = sync();
       void app.api.uses.command(() => S.post(S.event('dodge', { by: S.myKey(h.id), n: dg.n, place: { x: to.x, y: to.y } })))
-        .then(r => { if (r && !r.ok) ui.news('Not in a room. Your dodge was not sent.', 'warn'); });
+        .then(r => { if (r && !r.ok) ui.news('Not in a room. Your dodge was not sent.', 'warning'); });
     },
     offTurn: () => {
       const e = encounter(), oth = otherDodge(e);
@@ -524,7 +524,7 @@ export function register(app) {
     const s = (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid); if (!s) return;
     const S = sync();
     void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: s.place.x, y: s.place.y }, at: e.now, dash: false })))
-      .then(r => { if (r && !r.ok) ui.news('Not in a room. Your move was not sent.', 'warn'); });
+      .then(r => { if (r && !r.ok) ui.news('Not in a room. Your move was not sent.', 'warning'); });
   }
   /** The bursts of the doc just drawn: a burst at the bearer's token (or its row), and the count on its chips pops. */
   function playBursts(el) {

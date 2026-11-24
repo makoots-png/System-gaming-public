@@ -173,8 +173,9 @@ export function register(app) {
     const S = app.api.sync, r = S.post(S.event('chain', { to: [key], job, kind })), news = postNews(r, S.conn());
     const sentMsg = kind === 'issue' ? `Job Change quest sent (${job}).` : kind === 'reissue' ? `Job Change reissue sent (${job}).` : `Job Change abandoned (${job}).`;
     const waitMsg = kind === 'issue' ? `Saved. Job Change quest (${job}) will send once the room server confirms it.` : kind === 'reissue' ? `Saved. Job Change reissue (${job}) will send once the room server confirms it.` : `Saved. Job Change abandon request (${job}) will send once the room server confirms it.`;
-    ui.toast('! Quest', news === 'sent' ? sentMsg : news === 'waits' ? waitMsg
-      : news === 'noRoom' ? 'Not in a room. Nothing was sent.' : 'The room server rejected this Job Change.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
+    const ok = news === 'sent' || news === 'waits';
+    ui.toast(ok ? '! Quest' : 'Quest', news === 'sent' ? sentMsg : news === 'waits' ? waitMsg
+      : news === 'noRoom' ? 'Not in a room. Nothing was sent.' : 'The room server rejected this Job Change.', { kind: ok ? 'info' : 'warning' });
   }
 
   // ── player→GM progress (questUpdate, only for from:'gm' quests, only on a player device in a room) ──
@@ -209,7 +210,7 @@ export function register(app) {
     // backup does not log it twice; a progress tick keeps to the poll cursor, so it does not crowd the ring
     if (st === 'done' || st === 'failed') { if (!app.api.sync.once(p.eid, write)) return; }
     else if (!store.apply('quest-update', s => told(s, stamp(), line)).ok) return; // a read-only tab's banner says why
-    ui.toast('! Quest', msg, { kind: st === 'failed' ? 'warn' : 'info' });
+    ui.toast(st === 'failed' ? 'Quest' : '! Quest', msg, { kind: st === 'failed' ? 'warning' : 'info' });
   });
 
   const role = () => (app.isGM() ? 'gm' : 'player');
@@ -274,7 +275,7 @@ export function register(app) {
     });
     if (isRefused(out)) { ui.wrote('! Quest', out); return false; }
     sendUpdate(h.id, q, 'failed');
-    if (out.granted.lines.length) ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: q.title, rewards: out.granted.lines });
+    if (out.granted.lines.length) ui.warn({ tag: 'Quest failed', title: 'Quest failed', body: q.title, lines: out.granted.lines });
     app.api.hunter.granted(hid, out.granted, { popup: false });
     return true;
   }
@@ -333,12 +334,12 @@ export function register(app) {
     if (isRefused(out)) { arm(rolloverRetry(now)); return; }
     const many = store.get().hunters.length > 1;
     for (const p of out.penalties) {
-      ui.system({ tag: '! Penalty', kind: 'penalty', title: 'PENALTY',
+      ui.warn({ tag: 'Penalty Zone', kind: 'penalty', title: 'Penalty',
         body: `${many ? `${p.name}: ` : ''}You have failed to complete the Daily Quest. You will be transported to the Penalty Zone.`,
         lines: [...(p.days > 1 ? [`Days missed: ${p.days}`] : []), 'Streak reset to 0', `Penalized: -${app.rules().penaltyCheck} to all checks until the Penalty Zone is cleared`] });
     }
     for (const f of out.failed) {
-      ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.`, ...(f.granted.lines.length ? { rewards: f.granted.lines } : {}) });
+      ui.warn({ tag: 'Quest expired', title: 'Quest failed', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.`, ...(f.granted.lines.length ? { lines: f.granted.lines } : {}) });
       app.api.hunter.granted(f.hid, f.granted, { popup: false });
     }
   }
@@ -466,8 +467,9 @@ export function register(app) {
       if (to.length && !api.issue(to, { ...partial, from: gm ? 'gm' : 'self' }).length) return;
       if (keys.length) {
         const S = app.api.sync, r = S.post(S.event('quest', { to: keys, quest: questOffer(partial, dueAt) })), news = postNews(r, S.conn()), n = `${keys.length} player${keys.length === 1 ? '' : 's'}`;
-        ui.toast('! Quest', news === 'sent' ? `Quest sent to ${n}.` : news === 'waits' ? `Saved. The quest will go to ${n} once the room server confirms it.`
-          : news === 'noRoom' ? 'Not in a room. Quest not sent.' : 'The room server rejected this quest.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
+        const ok = news === 'sent' || news === 'waits';
+        ui.toast(ok ? '! Quest' : 'Quest', news === 'sent' ? `Quest sent to ${n}.` : news === 'waits' ? `Saved. The quest will go to ${n} once the room server confirms it.`
+          : news === 'noRoom' ? 'Not in a room. Quest not sent.' : 'The room server rejected this quest.', { kind: ok ? 'info' : 'warning' });
       }
     }
     formMoved(el, { type: 'saved' });
@@ -482,7 +484,7 @@ export function register(app) {
     const now = store.hunter(hid)?.quests.find(x => x.id === qid); if (!now) return;
     sendUpdate(hid, now, now.status);
     if (!was && now.objectives.every(x => x.progress >= x.target)) {
-      if (await ui.confirm({ title: 'Complete quest?', body: `All objectives are complete: ${now.title}`, confirmLabel: 'Complete' })) complete(hid, qid);
+      if (await ui.confirm({ title: 'Complete quest?', body: `All objectives are complete: ${now.title}`, confirmLabel: 'Complete quest' })) complete(hid, qid);
     }
   }
 
@@ -569,7 +571,7 @@ export function register(app) {
         if ('cancel' in d) { formMoved(el, { type: 'cancelled' }); return; }
         if ('jobpreset' in d) { questForm.set({ kind: 'job', title: `Job Change: ${questForm.value().rewards.job || ''}` }); autoTitle = true; questForm.rewards.ensure('job'); return; }
         if (d.edit) { const q = find(d.edit); if (q && mayChange(q)) openForm(el, q); return; }
-        if (d.done) { const q = find(d.done); if (q && await ui.confirm({ title: 'Complete quest?', body: q.title, confirmLabel: 'Complete' })) complete(h.id, d.done); return; }
+        if (d.done) { const q = find(d.done); if (q && await ui.confirm({ title: 'Complete quest?', body: q.title, confirmLabel: 'Complete quest' })) complete(h.id, d.done); return; }
         if (d.fail) { const q = find(d.fail); if (q && await ui.confirm({ title: 'Fail quest?', body: q.title, danger: true, confirmLabel: 'Fail quest' })) fail(h.id, d.fail); return; }
         if (d.reopen) {
           const r = store.apply('quest-reopen', atHunter(h.id, x => reopenQuest(x, d.reopen, iso())));
@@ -585,12 +587,12 @@ export function register(app) {
         }
         if ('abandon' in d) {
           const c = h.jobChain;
-          if (c && await ui.confirm({ title: 'Abandon the Job Change?', body: `${h.name} will not become a ${c.job}.`, danger: true, confirmLabel: 'Abandon' })) ui.wrote('! Quest', chainEvent(h.id, () => ({ type: 'abandoned', by: role() })), CHAIN_WORDS);
+          if (c && await ui.confirm({ title: 'Abandon the Job Change?', body: `${h.name} will not become a ${c.job}.`, danger: true, confirmLabel: 'Abandon Job Change' })) ui.wrote('! Quest', chainEvent(h.id, () => ({ type: 'abandoned', by: role() })), CHAIN_WORDS);
           return;
         }
         if (d.del) {
           const q = find(d.del), pardon = q && h.penalty && h.penalty.questId === q.id;
-          if (q && await ui.confirm({ title: 'Delete quest?', body: pardon ? `${q.title}. Deleting it clears ${h.name}'s penalty.` : q.title, danger: true, confirmLabel: 'Delete' })) deleteQuest(h.id, q.id);
+          if (q && await ui.confirm({ title: 'Delete quest?', body: pardon ? `${q.title}. Deleting it clears ${h.name}'s penalty.` : q.title, danger: true, confirmLabel: 'Delete quest' })) deleteQuest(h.id, q.id);
           return;
         }
         const qid = d.od || d.oi || d.os, i = Number(d.i);

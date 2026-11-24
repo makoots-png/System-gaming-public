@@ -332,7 +332,7 @@ export function register(app) {
           if (k) ui.wrote('Skills', onSkills(hid, 'skill-edit', h => editSkill(h, s.id, k)), heldWords(k));
         } else if (b.dataset.del) {
           const s = find(b.dataset.del);
-          if (s && await ui.confirm({ title: 'Remove skill?', body: s.name, danger: true, confirmLabel: 'Remove' })) {
+          if (s && await ui.confirm({ title: 'Remove skill?', body: s.name, danger: true, confirmLabel: 'Remove skill' })) {
             ui.wrote('Skills', onSkills(hid, 'skill-del', h => forgetSkill(h, s.id)));
           }
         }

@@ -524,7 +524,7 @@ describe('the GM\'s hand on a mythic (unit MY7)', () => {
   test('with no omen standing there is nothing to land or drop, and Next phase asks what its HP drops to', () => {
     const h = mythicHand(seen());
     expect([h.land, h.drop]).toEqual([null, null]);
-    expect(h.next).toEqual({ label: 'Next phase', ask: `Move ${script.name} to ${script.phases[1]!.name} now? Its HP drops to ${Math.round((script.phases[1] as { from: number }).from * 100)}%.`, yes: 'Move it', no: 'Cancel' });
+    expect(h.next).toEqual({ label: 'Next phase', ask: `Move ${script.name} to ${script.phases[1]!.name} now? Its HP drops to ${Math.round((script.phases[1] as { from: number }).from * 100)}%.`, yes: 'Start next phase', no: 'Cancel' });
   });
   test('in the last phase there is no Next phase', () => {
     expect(mythicHand(seen({ phase: script.phases.length - 1 })).next).toBeNull();

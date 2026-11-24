@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { test, expect, onboardGM, onboardPlayer, openApp, createRoom, dismissAll, answerWindow, go, activeHunter, chooseList, gmRoomHeaders, roomHeaders, type Page } from './helpers.ts';
 
 const roomView = '#view-room';
-const removedWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: 'REMOVED FROM ROOM' });
+const removedWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: 'Removed from room' });
 const kaiCard = (gm: Page) => gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
 /** The names in the GM's fight, being built or running, as the save holds it. */
 const inFight = (gm: Page): Promise<string[]> => gm.evaluate(() => (hunterApp.store.get().fight?.rows ?? []).map((r: any) => r.name as string));
@@ -376,7 +376,7 @@ test('a player who leaves a room returns with one tap, and a hunter claimed by a
       ? route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"not your sheet"}' }) : route.continue());
     await player.locator(`${roomView} [data-rejoinlast]`).tap();
     await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
-    await expect(player.locator('.sys-overlay.show', { hasText: 'HUNTER LOCKED TO ANOTHER DEVICE' })).toBeVisible();
+    await expect(player.locator('.sys-overlay.show', { hasText: 'Hunter locked to another device' })).toBeVisible();
     await dismissAll(player, 4);
     await go(player, 'room');
     await expect(player.locator(`${roomView} [data-cl="locked"]`)).toBeVisible();
@@ -509,7 +509,10 @@ test('a GM whose key stops working is told and leaves the room', async ({ device
   }, 'test-setup'), code);
   await openApp(gm);
 
-  await expect(gm.locator('#toasts .toast', { hasText: `The GM key for room ${code} no longer works. You left the room.` })).toBeVisible();
+  const lost = gm.locator('.sys-overlay.show', { hasText: 'GM key no longer works' });
+  await expect(lost).toBeVisible();
+  await expect(lost).toContainText(`The GM key for room ${code} no longer works, so you left the room.`);
+  await answerWindow(gm, 'GM key no longer works');
   await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.room())).toBeNull();
   await go(gm, 'room');
   await expect(gm.locator(`${roomView} [data-lobby]`)).toBeVisible();
@@ -714,7 +717,7 @@ test('a player whose hunter is locked to another device deletes it, and the GM s
       ? route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"not your sheet"}' }) : route.continue()));
     await go(player, 'status');
     await player.locator('#view-status [data-hp="-5"]').first().tap();
-    await answerWindow(player, 'HUNTER LOCKED TO ANOTHER DEVICE');
+    await answerWindow(player, 'Hunter locked to another device');
     await player.unroute(sheets);
   });
 
@@ -723,7 +726,7 @@ test('a player whose hunter is locked to another device deletes it, and the GM s
     const win = player.locator('.sys-overlay.show');
     await expect(win).toContainText('Delete Kai Test?');
     await win.locator('input').fill('Kai Test');
-    await win.locator('.sys-actions button.primary').tap();
+    await win.locator('.sys-actions button.danger').tap();
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Mia Test' })).toHaveCount(1, { timeout: 10_000 });
     await expect(kaiCard(gm)).toHaveCount(0);
   });

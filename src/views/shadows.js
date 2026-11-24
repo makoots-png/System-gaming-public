@@ -69,11 +69,11 @@ export function register(app) {
     if (origin && who.kind === 'local') return arise(h, store.hunter(h.id).shadows.find(s => s.id === id));
     if (origin) { ui.toast('ARISE', `${origin.name} rises for ${h.name}. It joins their army on their phone.`, { kind: 'levelup' }); return origin; }
     if (outcome === 'crumbled') {
-      await ui.system({ tag: '! Extraction', title: 'Extraction failed', kind: 'warning', body: `Natural 1. ${m.name}'s corpse is destroyed and cannot be extracted.`, lines: [`Rolled ${r.total} vs DC ${dc}`] });
+      await ui.warn({ tag: 'Shadow extraction', title: 'Extraction failed', body: `Natural 1. ${m.name}'s corpse is destroyed and cannot be extracted.`, lines: [`Rolled ${r.total} vs DC ${dc}`] });
       return null;
     }
     const still = left - 1;
-    await ui.system({ tag: '! Extraction', title: 'Extraction failed', kind: 'warning', body: still > 0 ? `${still} attempt${still === 1 ? '' : 's'} left.` : 'No attempts left.', lines: [`Rolled ${r.total} vs DC ${dc}`] });
+    await ui.warn({ tag: 'Shadow extraction', title: 'Extraction failed', body: still > 0 ? `${still} attempt${still === 1 ? '' : 's'} left.` : 'No attempts left.', lines: [`Rolled ${r.total} vs DC ${dc}`] });
     return null;
   }
 
@@ -142,7 +142,7 @@ export function register(app) {
         if (act === 'summon') return void summon(h.id, s.id);
         if (act === 'heal') return void ui.wrote('System', onArmy(h.id, 'shadow-heal', x => healShadow(x, s.id, rules())));
         if (act === 'rename') { const n = await ui.promptText({ title: 'Rename shadow', label: 'Name', value: s.name }); if (n) ui.wrote('System', onArmy(h.id, 'shadow-rename', x => renameShadow(x, s.id, n))); return; }
-        if (act === 'release' && await ui.confirm({ title: 'Release shadow?', body: `${s.name} leaves your army. This cannot be undone.`, danger: true, confirmLabel: 'Release' })) {
+        if (act === 'release' && await ui.confirm({ title: 'Release shadow?', body: `${s.name} leaves your army. You cannot undo releasing a shadow.`, danger: true, confirmLabel: 'Release shadow' })) {
           ui.wrote('System', onArmy(h.id, 'shadow-release', x => stepShadow(x, s.id, { kind: 'release' })));
         }
       });

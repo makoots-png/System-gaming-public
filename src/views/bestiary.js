@@ -456,7 +456,7 @@ export function register(app) {
           $q('[data-editor]').scrollIntoView({ block: 'nearest' });
         } else if (b.dataset.del) {
           const m = get(b.dataset.del);
-          if (m && await ui.confirm({ title: 'Delete monster?', body: m.name, danger: true, confirmLabel: 'Delete' })) {
+          if (m && await ui.confirm({ title: 'Delete monster?', body: m.name, danger: true, confirmLabel: 'Delete monster' })) {
             remove(m.id);
           }
         } else if (b.hasAttribute('data-ecancel')) $q('[data-editor]').innerHTML = '';

@@ -8,7 +8,7 @@ import type { FeatBook } from './hunter/feats.ts';
 import type { End, Op, SheetStatus, Source, StackRule, StatusDef } from './combat/effect-ops.ts';
 import type { Trigger } from './combat/triggers.ts';
 import type { LootDrop } from './gates/spawn.ts';
-import type { BuildChange, DocName, DocOf, EventBody, EventId, EventStamp, EventType, HunterFace, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
+import type { BuildChange, DocName, DocOf, EventBody, EventId, EventStamp, EventType, HunterFace, QuestOffer, RoomCode, RoomEvent, SystemKind, UsedWhat } from './protocol.ts';
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { TableSeen } from './sync/fight-heard.ts';
 import type { Stats } from './stats.ts';
@@ -49,7 +49,7 @@ import type { Check, RollKind } from './roll.ts';
 import type { DeviceId, FightId, HunterId, HunterRef, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
 
 /** A System window's text (the options `ui.system` takes that a reward window passes on). */
-export type RewardWindow = { tag?: string; title?: string; kind?: string; body?: string | undefined; lines?: string[] | undefined };
+export type RewardWindow = { tag?: string; title?: string; kind?: SystemKind; body?: string | undefined; lines?: string[] | undefined };
 /** What `applyRewards` gives: any part of a reward, and a build change from the GM (a room award carries one). */
 export type RewardGrant = Partial<Rewards> & { build?: BuildChange };
 /** How a reward is shown: `popup: false` leaves out its window, `silent` every window, `levelPopup: false` the level-up's. */
