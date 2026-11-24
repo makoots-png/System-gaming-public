@@ -36,7 +36,7 @@ export type Sheet = {
   readonly armor: number;
   readonly resist: number;
   /**
-   * Penetration (rule 12): the whole percent of a target's armor a physical hit ignores and of its resist a magical one
+   * Penetration (rule 12): the whole percent of a target's armor a physical hit ignores and of its resist a arcane one
    * ignores, each at most `fight.penMax`; then the flat points of either it ignores after the percent (Lethality and
    * Unravel), from bonuses only.
    */
@@ -44,7 +44,7 @@ export type Sheet = {
   readonly resistPen: number;
   readonly armorPenFlat: number;
   readonly resistPenFlat: number;
-  /** Physical, magical and support power: what a damage, heal or shield formula reads. */
+  /** Physical, arcane and support power: what a damage, heal or shield formula reads. */
   readonly phys: number;
   readonly mag: number;
   readonly sup: number;
@@ -111,7 +111,7 @@ export type SheetNumber = keyof Sheet;
 export const SHEET_LABELS: { readonly [K in SheetNumber]: string } = {
   hpMax: 'Max HP', manaMax: 'Max mana', fatigueMax: 'Fatigue capacity', carry: 'Carry capacity', weight: 'Gear weight',
   speed: 'Speed', move: 'Move (tiles per round)', stride: 'Stride (tiles per turn)', armor: 'Armor', resist: 'Resist',
-  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
+  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', phys: 'Physical power', mag: 'Arcane power', sup: 'Support power', react: 'Reaction',
   aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit multiplier', opening: 'Opening bonus',
   tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel break threshold (% of max HP)',
   costCut: 'Ability cost reduction', drain: 'Lifesteal', haste: 'Ability haste',

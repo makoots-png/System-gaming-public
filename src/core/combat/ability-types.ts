@@ -18,8 +18,10 @@ export const abilityId = (s: string): AbilityId => s as AbilityId;
 export const combatantId = (s: string): CombatantId => s as CombatantId;
 export const hunterId = (s: string): HunterId => s as HunterId;
 
-/** Physical damage meets armor, magical meets resist. There is no third type (design summary, point 8). */
-export type DamageType = 'physical' | 'magical';
+/** Physical damage meets armor, arcane meets resist. Abilities use only these two. */
+export type DamageType = 'physical' | 'arcane';
+/** Damage types an op or status may deal: physical meets armor, arcane meets resist, true ignores both. */
+export type OpDamageType = DamageType | 'true';
 
 /** How an ability reaches its target, which decides how the target avoids it (design 3.1 rules 7 and 8). */
 export type Delivery =

@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, KEYSTONE_WORDS, armorCutPct, borrowLine, checkExample, crystalLines, crystalRows, deathLine, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, KEYSTONE_WORDS, borrowLine, checkExample, crystalLines, crystalRows, deathLine, defenceLines, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { GUILD_TABLE_PERKS, guildDisplayName, guildSheetLine } from '../core/hunter/guild.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
@@ -14,7 +14,7 @@ const STAT_USE = {
   ins: 'Reaction, the opening roll, crits',
   dis: 'Will (resisting curses), resist, tenacity (with Strength), holding a channel',
   pre: 'Support power (heals and shields), threat, shadow capacity',
-  pow: 'Magical power, max mana',
+  pow: 'Arcane power, max mana',
   ctl: 'Accuracy, penetration, crit damage, potency, lower ability costs',
 };
 const fmtX = n => String(Math.round(n * 100) / 100);
@@ -122,7 +122,7 @@ export function register(app) {
       ] },
       { id: 'curves', title: 'How a stat turns into numbers', body: [ul([
         `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times as many effective points, not double. ${keystoneLines(R).length ? esc(keystoneLines(R).join(' ')) : 'Spreading points across several stats is worth about as much as focusing on one.'}`,
-        `Physical, magical, and support power equal ${F.powerK} × the effective points of Strength, Power, and Presence. These have no cap, so damage grows with rank.`,
+        `Physical, arcane, and support power equal ${F.powerK} × the effective points of Strength, Power, and Presence. These have no cap, so damage grows with rank.`,
         `<b>Capped stats</b> (such as carry, speed, stat armor, resist, crits, and tenacity) grow from effective points above ${F.statBase}. They reach half their cap at ${F.half} effective points above ${F.statBase} and never reach the full cap.`,
         `<b>Tenacity</b> combines Strength and Discipline using the square root of their product. Equal scores count as that same score, while leaving either stat at ${F.statBase} keeps tenacity low. Control statuses on you last their base duration × (100 + caster's potency) / (100 + your tenacity).`,
         `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Most of it comes from level, so a fight takes about the same number of hits at every rank.`,
@@ -131,7 +131,7 @@ export function register(app) {
         ...(keystoneLines(R).length ? [p(`<button type="button" data-rr-ks>${esc(KEYSTONE_WORDS.browseAll)}</button>`)] : []),
       ] },
       { id: 'armor', title: 'Armor and Resist', body: [ul([
-        `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense). For example, ${kit.heavy.armor} armor cuts damage by ${armorCutPct(R, kit.heavy.armor)}%, and no amount grants full immunity.`,
+        ...defenceLines(R).map(esc),
         `Before that reduction, ${Math.round(F.armorFlat * 100)}% of your defense subtracts directly from each hit, so small hits lose more than large ones.`,
         `<b>Penetration</b> reduces defense first. Armor penetration lowers armor and magic penetration lowers resist by a percentage. Control gives up to ${F.penCap}% of both, and items and perks can raise the total up to ${F.penMax}%. Next, <b>Lethality</b> ignores a flat amount of armor and <b>Unravel</b> ignores a flat amount of resist.`,
         `Most defense comes from gear. A full six-piece set of light gear weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}). Medium weighs ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), and heavy weighs ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Higher-rarity gear has the same base armor and resist as common gear, but can have more bonuses and costs more. Carrying more than half your limit slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),

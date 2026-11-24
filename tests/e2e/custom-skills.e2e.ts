@@ -101,12 +101,12 @@ test('a monster the GM made with a starting status shows it on its card when the
 });
 
 /**
- * A bomb that deals 5 magical damage and puts Blinded on for a round (a round is 1000 ticks, RULES.fight.round). In a
+ * A bomb that deals 5 arcane damage and puts Blinded on for a round (a round is 1000 ticks, RULES.fight.round). In a
  * fight it is its ability (src/core/registry/abilities.ts `itemAbility`): a curse on a foe that nothing avoids.
  */
 const BOMB = {
   name: 'Flash Bomb', type: 'consumable', rar: 'common', slot: null, qty: 2, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
-  effects: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 5 }, when: 'use' }, { op: 'applyStatus', key: 'blinded', def: { label: 'Blinded', desc: '', ops: [] }, duration: 1000 }],
+  effects: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 5 }, when: 'use' }, { op: 'applyStatus', key: 'blinded', def: { label: 'Blinded', desc: '', ops: [] }, duration: 1000 }],
 };
 const bombs = (page: Page) => page.evaluate(() => hunterApp.store.get().hunters.find((h: any) => h.name === 'Brakk Ironhide').items.find((i: any) => i.name === 'Flash Bomb')?.qty ?? 0);
 /** A thrown bomb landed on `name`: its HP went down and it holds Blinded. */
@@ -172,7 +172,7 @@ test('with no fight and no room, a bomb used from the bag says what it does for 
   const hunter = () => page.evaluate(() => JSON.parse(JSON.stringify(hunterApp.store.get().hunters.find((h: any) => h.name === 'Brakk Ironhide'))));
   const before = await hunter();
   await page.locator('#view-status [data-panel="inventory"] button[aria-label="Use Flash Bomb"]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Flash Bomb used. On the target: Deals 5 magical damage, Applies Blinded (1 round).');
+  await expect(page.locator('#toasts .toast').last()).toContainText('Flash Bomb used. On the target: Deals 5 arcane damage, Applies Blinded (1 round).');
   const after = await hunter();
   expect([after.life, after.conditions, after.items.find((i: any) => i.name === 'Flash Bomb').qty]).toEqual([before.life, before.conditions, 1]);
 });

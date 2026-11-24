@@ -184,8 +184,8 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
     const blast = recommended('blast', defaultTicks('blast'), R).text;
     const a = abilityOf('blast', {
       id: abilityId('keystone-cataclysm'), name: 'Cataclysm', shape: { kind: 'radius', radius: tiles(3), ring: null },
-      effect: { type: 'magical', by: 'hand', formula: formula(blast, R) },
-      zone: { name: 'Cataclysm', duration: rounds(2, R), ops: [{ op: 'damage', type: 'magical', when: 'turn', amount: formula('0.2 * mag', R) }], endsWithOwner: false, around: null, grow: null },
+      effect: { type: 'arcane', by: 'hand', formula: formula(blast, R) },
+      zone: { name: 'Cataclysm', duration: rounds(2, R), ops: [{ op: 'damage', type: 'arcane', when: 'turn', amount: formula('0.2 * mag', R) }], endsWithOwner: false, around: null, grow: null },
     }, R);
     return plain('Cataclysm', line, { active: { ...a, gates: [{ kind: 'uses', per: 'fight', n: 1 }] } });
   },
@@ -248,7 +248,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     // Charged goes with the strike by its own trigger, not a stack's leave, so a spell's hit does not spend it.
     const charged: StatusDef = {
       label: 'Charged', desc: 'Its next strike adds magic damage.', ops: [], triggers: [
-        { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'magical', amount: formula('0.125 * mag', R) }] },
+        { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'arcane', amount: formula('0.125 * mag', R) }] },
         { on: 'hitDealt', tag: STRIKE, to: 'self', limit: EACH, ops: [{ op: 'cureStatus', key: key('charged') }] },
       ],
     };
@@ -360,7 +360,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   'ins+pow': R => {
     const line = 'Your spells burn the target for 2 rounds. It takes magic damage equal to 10% of your magic power each round.';
     // On a crit (0.05 a round) A.6's burn weighs 1.4: on every spell's hit, at half the burn.
-    const seared = worn('Seared', 'Takes magic damage each round.', [{ op: 'damage', type: 'magical', when: 'turn', amount: formula('0.1 * mag', R) }]);
+    const seared = worn('Seared', 'Takes magic damage each round.', [{ op: 'damage', type: 'arcane', when: 'turn', amount: formula('0.1 * mag', R) }]);
     return plain('Searing Insight', line, { worn: worn('Searing Insight', line, [], [
       { on: 'hitDealt', tag: SPELL, to: 'other', limit: EACH, ops: [apply('seared', seared, rounds(2, R))] },
     ]) });

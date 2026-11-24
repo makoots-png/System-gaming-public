@@ -661,7 +661,7 @@ describe('every trigger chain stops (kits design 1.3.7, 3.1)', () => {
   const POOL: readonly Trigger[] = [
     { on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: { kind: 'number', value: 3 }, when: 'use' }] },
     { on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: 'echo' as never, def: { label: 'Echo', desc: '', ops: [], stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: null } }, duration: null }] },
-    { on: 'statusGained', key: 'echo' as never, to: { kind: 'area', radius: 3 as never, on: 'all' }, limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 1 }, when: 'use' }] },
+    { on: 'statusGained', key: 'echo' as never, to: { kind: 'area', radius: 3 as never, on: 'all' }, limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 1 }, when: 'use' }] },
     { on: 'kill', tag: null, to: 'self', limit: { kind: 'round' }, ops: [{ op: 'refund', pct: 100 }] },
     { on: 'struck', tag: null, to: 'self', limit: { kind: 'fight', n: 3 }, ops: [{ op: 'applyStatus', key: 'echo' as never, def: { label: 'Echo', desc: '', ops: [], stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: null } }, duration: null, stacks: 2 }] },
   ];

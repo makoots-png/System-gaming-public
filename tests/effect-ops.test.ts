@@ -21,7 +21,7 @@ import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, holds, sheetA
 import type { StatusLife } from '../src/core/combat/standing.ts';
 import { zoneTone } from '../src/core/combat/zones.ts';
 import { giverOf, payDue } from '../src/core/combat/fight-turn.ts';
-import { channelBreaks, held, landOps } from '../src/core/combat/land.ts';
+import { NO_PEN, afterDefence, channelBreaks, held, landOps } from '../src/core/combat/land.ts';
 import { resolve } from '../src/core/combat/resolve.ts';
 import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
 import { STATUS_WALK, WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
@@ -165,13 +165,13 @@ describe('durations (design 3.1 rule 18 and table 4.4)', () => {
   });
 
   test('a status that controls nothing lasts its duration whatever the tenacity', () => {
-    const burn = def({ op: 'damage', type: 'magical', amount: f('3') }), haste = def({ op: 'speed', pct: 20 });
+    const burn = def({ op: 'damage', type: 'arcane', amount: f('3') }), haste = def({ op: 'speed', pct: 20 });
     expect([isControl(burn, 0), isControl(haste, 0), lasting(burn, tick(2000), 0, 0, 60)]).toEqual([false, false, 2000]);
   });
 });
 
 describe('settling a per-round op (design 1.3, table 1.6)', () => {
-  const tenARound = def({ op: 'damage', type: 'magical', amount: f('10') });
+  const tenARound = def({ op: 'damage', type: 'arcane', amount: f('10') });
   // Applied at 0.40 for 2 rounds; the bearer's turns start every interval from 0.
   function paid(interval: number): number[] {
     let list: Status[] = [status('burn', tenARound, 2400, { since: tick(400), settledAt: tick(400) })];
@@ -201,7 +201,7 @@ describe('settling a per-round op (design 1.3, table 1.6)', () => {
 
   test('the total over a span does not depend on how the span is split', () => {
     const r = rng(47);
-    const sevenAThird = def({ op: 'damage', type: 'magical', amount: f('7.3') });
+    const sevenAThird = def({ op: 'damage', type: 'arcane', amount: f('7.3') });
     for (let run = 0; run < 300; run++) {
       const until = r.int(1, 6000);
       let list: Status[] = [status('burn', sevenAThird, until)], now = 0, total = 0;
@@ -222,7 +222,7 @@ describe('settling a per-round op (design 1.3, table 1.6)', () => {
   });
 
   test('the dice the edge rolled for a settle are the formula\'s dice', () => {
-    const r = settle([status('poison', def({ op: 'damage', type: 'magical', amount: f('1d6 + 2') }), null)], tick(1000), RULES);
+    const r = settle([status('poison', def({ op: 'damage', type: 'arcane', amount: f('1d6 + 2') }), null)], tick(1000), RULES);
     expect(dueAmount(r.due[0]!, { user: SELF, target: SELF, charge: 0 }, [5])).toBe(7);
   });
 
@@ -368,7 +368,7 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
   });
 
   test('a per-round op pays at the count the status holds when its bearer settles: 3 stacks of 4 a round pay 12 a round', () => {
-    const burn = stacking({}, { op: 'damage', type: 'magical', amount: f('4'), when: 'turn' });
+    const burn = stacking({}, { op: 'damage', type: 'arcane', amount: f('4'), when: 'turn' });
     const s = settle([of(burn, 3)], tick(RULES.fight.round), RULES);
     expect(s.due.map(d => d.stacks)).toEqual([3]);
     expect(dueAmount(s.due[0]!, { user: body(), target: body(), charge: 0 }, [])).toBe(12);
@@ -431,7 +431,7 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
     const burst: StackDef = {
       label: 'Resonance', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'event', event: 'struck' }, keep: 'fight', threshold: {
         at: { kind: 'count', n: 3 }, to: { kind: 'area', radius: tiles(2), on: 'foes' }, then: 'spend',
-        ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }, { op: 'refund', pct: 50 }],
+        ops: [{ op: 'damage', type: 'arcane', amount: f('1d8 + mag'), when: 'use' }, { op: 'refund', pct: 50 }],
       } },
     };
     expect(parseStatusDef(JSON.parse(JSON.stringify(burst)), RULES)).toEqual(burst);
@@ -442,20 +442,20 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
   });
 
   test('a stacking status says how it stacks, what each stack does and what its count sets off', () => {
-    const marked = stacking({ leave: { kind: 'round' }, threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f('2d8'), when: 'use' }] } },
-      { op: 'damage', type: 'magical', amount: f('4'), when: 'turn' });
+    const marked = stacking({ leave: { kind: 'round' }, threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'arcane', amount: f('2d8'), when: 'use' }] } },
+      { op: 'damage', type: 'arcane', amount: f('4'), when: 'turn' });
     expect(describeStatus(marked, 0, RULES)).toEqual([
-      'Stacks to 5. 1 stack expires each round.', 'Each stack: 4 magical damage a round', 'At 3 stacks: Deals 2d8 magical damage. The stacks are spent.', 'Removed when the fight ends.',
+      'Stacks to 5. 1 stack expires each round.', 'Each stack: 4 arcane damage a round', 'At 3 stacks: Deals 2d8 arcane damage. The stacks are spent.', 'Removed when the fight ends.',
     ]);
   });
 
   test('a trigger and a delayed end each say when they act, on whom and how often (kits design 5.1)', () => {
-    const hemo: StatusDef = { label: 'Hemoplague', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' },
+    const hemo: StatusDef = { label: 'Hemoplague', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'arcane', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' },
       triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'note', text: 'Marked' }] },
         { on: 'turnStart', to: { kind: 'area', radius: tiles(2), on: 'foes' }, limit: { kind: 'fight', n: 2 }, ops: [{ op: 'refund', pct: 50 }] }] };
     expect(describeStatus(hemo, 0, RULES)).toEqual([
       'When its bearer deals a hit: Marked on the other, every time.', 'When its bearer starts its turn: 50% of an action\'s time back on foes within 2 tiles, 2 times a fight.',
-      'When it ends: Deals 1d8 + mag magical damage. Curing this status cancels it.',
+      'When it ends: Deals 1d8 + mag arcane damage. Curing this status cancels it.',
     ]);
   });
 });
@@ -664,10 +664,10 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
     expect(Object.keys(sheetAdds([atA], bareBody(hunterOf(), RULES), RULES))).not.toContain('sight');
   });
 
-  test('a per-round damage reads its bearer\'s damage taken share at the settle: 10 a round on a body taking +50% is 15', () => {
+  test('a per-round damage reads its bearer\'s damage taken share at the settle before rule 12: 10 a round on a body taking +50% is 15 raw', () => {
     const b = body(hunterOf(), { statuses: [status('brittle', def({ op: 'share', on: 'taken', pct: 50 }), null)] });
-    const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
-    expect(rowHp(b) - rowHp(payDue(b, due, [], tick(0), RULES, null))).toBe(15);
+    const due = { key: statusKey('burn'), op: { op: 'damage', type: 'arcane', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
+    expect(rowHp(b) - rowHp(payDue(b, due, [], tick(0), RULES, null))).toBe(afterDefence(15, 'arcane', NO_PEN, b.sheet, RULES));
   });
 
   test('a heal of the target\'s max HP reads "Heals fully" and fills any body; a heal that only reaches a big number is that number', () => {
@@ -678,11 +678,33 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   });
 
   test('a burn meets a shield as a hit does (rule 13): a live shield takes it first, one past its end takes nothing', () => {
-    const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
+    const due = { key: statusKey('burn'), op: { op: 'damage', type: 'arcane', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
     const shielded = body(hunterOf(), { shield: { amount: 4, until: tick(50) } });
+    const dealt = afterDefence(10, 'arcane', NO_PEN, shielded.sheet, RULES);
     const live = payDue(shielded, due, [], tick(40), RULES, null), past = payDue(shielded, due, [], tick(60), RULES, null);
-    expect([rowHp(shielded) - rowHp(live), live.shield]).toEqual([6, null]);
-    expect(rowHp(shielded) - rowHp(past)).toBe(10);
+    expect([rowHp(shielded) - rowHp(live), live.shield]).toEqual([dealt - 4, null]);
+    expect(rowHp(shielded) - rowHp(past)).toBe(dealt);
+  });
+
+  test('per-round status damage meets Armor for physical, Resist for arcane (with NO_PEN), and ignores both for true', () => {
+    const tank = body({ kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: [{ weight: 0, armor: 74, resist: 60 }], perks: {} } });
+    const highPen = { sheet: { ...tank.sheet, armorPen: 50, resistPen: 50, armorPenFlat: 30, resistPenFlat: 30 } };
+    const tickOf = (type: 'physical' | 'arcane' | 'true', expr: string, before = 0, share = 1) =>
+      ({ key: statusKey('dot'), op: { op: 'damage', type, amount: f(expr), when: 'turn' } as const, tier: 0, before, share, stacks: 1 });
+    // 14 arcane vs resist 60 with NO_PEN = round((14 - 0.03*60) * 100 / 160) = round(7.625) = 8; applier pen is ignored
+    expect(rowHp(tank) - rowHp(payDue(tank, tickOf('arcane', '14'), [], tick(0), RULES, highPen))).toBe(8);
+    // 14 physical vs armor 74 with NO_PEN = round((14 - 0.03*74) * 100 / 174) = round(6.77) = 7
+    expect(rowHp(tank) - rowHp(payDue(tank, tickOf('physical', '14'), [], tick(0), RULES, highPen))).toBe(7);
+    // 14 true bypasses both armor and resist
+    expect(rowHp(tank) - rowHp(payDue(tank, tickOf('true', '14'), [], tick(0), RULES, null))).toBe(14);
+    // zero rate deals 0 HP, never clamped to 1
+    expect(rowHp(tank) - rowHp(payDue(tank, tickOf('arcane', '0'), [], tick(0), RULES, null))).toBe(0);
+    // prorating after afterDefence keeps 2 half-round settles equal to 1 full-round settle (4 + 4 = 8)
+    const half1 = payDue(tank, tickOf('arcane', '14', 0, 0.5), [], tick(0), RULES, null);
+    const half2 = payDue(half1, tickOf('arcane', '14', 0.5, 0.5), [], tick(500), RULES, null);
+    expect(rowHp(tank) - rowHp(half1)).toBe(4);
+    expect(rowHp(half1) - rowHp(half2)).toBe(4);
+    expect(rowHp(tank) - rowHp(half2)).toBe(8);
   });
 });
 
@@ -781,7 +803,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
     expect([counts(status('w', ward, 100)), counts(owedOn('w', ward))]).toEqual([true, false]);
     const plain = body(), channel = { ability: abilityId('m'), aim: place(0, 0), charge: 2, spent: 0, state: 'holding' as const };
     const live = withStatuses({ ...body(), channel }, [status('w', ward, 100)], tick(0), RULES), gone = withStatuses({ ...body(), channel }, [owedOn('w', ward)], tick(0), RULES);
-    const foe = body(hunterOf(), { id: combatantId('f'), side: 'foe' }), poison = def({ op: 'damage', type: 'magical', amount: f('2') });
+    const foe = body(hunterOf(), { id: combatantId('f'), side: 'foe' }), poison = def({ op: 'damage', type: 'arcane', amount: f('2') });
     const reads = (b: Body) => [holds(b, 'invulnerable'), holds(b, 'hidden'), wardedDamage(b, 999) < 999, held(b, tick(0)), channelBreaks(b, 0, true, tick(0)),
       b.stats.str, b.sheet.armor, damageShare(foe, b, RULES), sheetAdds(b.statuses, b, RULES).armor, edgeOn([], foe, b).cut, boostsOn(foe, b).length,
       admitted(b, poison, 'foe', 1000, 0, RULES).ok];
@@ -843,11 +865,11 @@ describe('a land op meets the rules a use meets (SMX-rules-2.3b)', () => {
     const r = landOps(rows, ops as never, src, [t.id], { id: src.id, tier: 0 }, tick(0), RULES);
     return { landed: r.landed[0]!, after: rows.get(t.id)! };
   };
-  const bomb = (cleanse: 'cancel' | 'land'): StatusDef => ({ label: 'Bomb', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'magical', amount: f('20') }], cleanse } });
+  const bomb = (cleanse: 'cancel' | 'land'): StatusDef => ({ label: 'Bomb', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'arcane', amount: f('20') }], cleanse } });
 
   test('a status a safeguard refuses is not reported gained, and is not on the bearer', () => {
     const t = body(hunterOf(), { statuses: [status('guard', def({ op: 'safeguard' }), 1000)] });
-    const r = landOn(t, [{ op: 'applyStatus', key: statusKey('poison'), def: def({ op: 'damage', type: 'magical', amount: f('2') }), duration: tick(2000) }]);
+    const r = landOn(t, [{ op: 'applyStatus', key: statusKey('poison'), def: def({ op: 'damage', type: 'arcane', amount: f('2') }), duration: tick(2000) }]);
     expect([r.landed.gained, r.after.statuses.map(s => s.key)]).toEqual([[], ['guard']]);
   });
 

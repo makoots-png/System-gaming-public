@@ -193,7 +193,7 @@ describe('a status the GM sends to a player\'s phone', () => {
     const p = phone({ conditions: [burning(2, 2)] });
     p.status(1, burning(0, 3));
     expect(p.windows).toEqual([]);
-    expect(p.toasts).toEqual(['Burning: 3d8 magical damage a round · 3 rounds']);
+    expect(p.toasts).toEqual(['Burning: 3d8 arcane damage a round · 3 rounds']);
   });
 
   test('the same event arriving twice is applied once', () => {

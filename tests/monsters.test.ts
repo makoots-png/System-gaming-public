@@ -103,7 +103,7 @@ for (const [i, m] of MONSTERS.entries()) {
       const user: Origin = { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? 1, dealt: 1, stats: m.tweak.stats ?? {}, traits: m.tweak.traits ?? [] } };
       const u = body('user', user, place(5, 5), 'foe', m.rank), tank = body('tank', tankOf(m.rank), place(6, 5), 'party', m.rank);
       for (const a of m.abilities) {
-        if (a.effect?.type !== 'physical' && a.effect?.type !== 'magical') continue;
+        if (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane') continue;
         const aim = a.aim === 'place' ? tank.place! : tank.id;
         // A blast catches its user too when it stands inside it, so both roll.
         const dice = diceOf(formulaOf(a, RULES)!).map(mean);
@@ -156,10 +156,10 @@ group('the seeds as plan section 3.2 restates them', () => {
     expect(k.notes).toEqual(['Venom Fang: drops the Kasaka fang']);
   });
 
-  test('Kamish breathes a magical blast of radius 9 (90 feet), frightens with a curse and knocks Prone with a blast of radius 4', () => {
+  test('Kamish breathes a arcane blast of radius 9 (90 feet), frightens with a curse and knocks Prone with a blast of radius 4', () => {
     const k = seed('kamish'), breath = named(k, 'Dragon Breath'), gust = named(k, 'Wing Gust');
     expect([k.archetype, k.kind, k.tweak]).toEqual(['brute', 'boss', { hp: 1.5, stats: { ins: 8 } }]);
-    expect([breath.kind, breath.effect?.type, breath.shape.kind === 'radius' && breath.shape.radius]).toEqual(['blast', 'magical', 9]);
+    expect([breath.kind, breath.effect?.type, breath.shape.kind === 'radius' && breath.shape.radius]).toEqual(['blast', 'arcane', 9]);
     expect(named(k, 'Frightful Presence').ops.map(o => o.op === 'applyStatus' && o.key)).toEqual(['frightened']);
     expect([gust.kind, gust.shape.kind === 'radius' && gust.shape.radius, gust.ops.map(o => o.op === 'applyStatus' && o.key)]).toEqual(['blast', 4, ['prone']]);
   });

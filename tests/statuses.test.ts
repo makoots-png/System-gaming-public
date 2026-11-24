@@ -8,7 +8,9 @@ import type { Formula } from '../src/core/formula.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { describeStatus, isControl, modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Op, Origin, Status, StatusDef, Tiered } from '../src/core/combat/effect-ops.ts';
-import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { abilityId } from '../src/core/combat/ability-types.ts';
 import { hideOf } from '../src/core/combat/standing.ts';
 import { BUILT_IN_STATUSES, STATE_CHIP_DEFS, STATUS_KEYS } from '../src/core/registry/statuses.ts';
 import type { BuiltInStatus } from '../src/core/registry/statuses.ts';
@@ -110,10 +112,16 @@ group('the old statuses restated (plan 3.1)', () => {
     expect(isControl(BUILT_IN_STATUSES.hasted, 0)).toBe(false);
   });
 
-  test('Bleeding is physical damage, every other status that deals damage a round is magical', () => {
+  test('damaging built-in statuses have their R6 types: bleeding physical, burning arcane, poisoned and plague true', () => {
+    const expected: Record<string, string> = { bleeding: 'physical', burning: 'arcane', poisoned: 'true', plague: 'true' };
+    const seen: Record<string, string> = {};
     for (const key of STATUS_KEYS) for (const o of BUILT_IN_STATUSES[key].ops) {
-      if (o.op === 'damage') expect({ key, type: o.type, when: o.when }).toEqual({ key, type: key === 'bleeding' ? 'physical' : 'magical', when: 'turn' });
+      if (o.op === 'damage') {
+        expect(o.when).toBe('turn');
+        seen[key] = o.type;
+      }
     }
+    expect(seen).toEqual(expected);
   });
 
   test('Plague deals Poisoned\'s damage a round without its aim penalty, and passes to a body next to its bearer', () => {
@@ -143,7 +151,7 @@ group('the old statuses restated (plan 3.1)', () => {
 
 group('a status card in words', () => {
   test('a status on a body reads its source\'s rank; the picker\'s card reads every rank E to S', () => {
-    expect(describeStatus(BUILT_IN_STATUSES.poisoned, 2, RULES)).toEqual(['1d6 magical damage a round', 'Control: −16']);
+    expect(describeStatus(BUILT_IN_STATUSES.poisoned, 2, RULES)).toEqual(['1d6 true damage a round', 'Control: −16']);
     expect(describeStatus(BUILT_IN_STATUSES.slowed, null, RULES)).toEqual(['Speed −20% / −25% / −30% / −35% / −40% / −50%, by rank E to S']);
     expect(describeStatus(BUILT_IN_STATUSES.hasted, 5, RULES)).toEqual(['Speed +50%', '25% chance to get 50% of an action\'s time back']);
     expect(describeStatus(BUILT_IN_STATUSES.paralyzed, 0, RULES)).toEqual(['Cannot act', 'Cannot move']);
@@ -154,7 +162,7 @@ group('a status card in words', () => {
       { op: 'applyStatus', key: statusKey('burning'), def: BUILT_IN_STATUSES.burning, duration: tick(3 * RULES.fight.round) },
       { op: 'cureStatus', key: statusKey('hasted') },
     ] };
-    expect(describeStatus(def, 2, RULES)).toEqual(['Applies Burning (3 rounds): 3d8 magical damage a round', 'Cures Hasted']);
+    expect(describeStatus(def, 2, RULES)).toEqual(['Applies Burning (3 rounds): 3d8 arcane damage a round', 'Cures Hasted']);
   });
 });
 
@@ -175,8 +183,20 @@ group('a status def from outside data', () => {
   });
 
   test('dice past the rules\' limits refuse the def', () => {
-    const big = { label: 'Big', desc: '', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: RULES.dice.maxDice + 1, sides: 6 } }] };
+    const big = { label: 'Big', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: RULES.dice.maxDice + 1, sides: 6 } }] };
     expect(parseStatusDef(big, RULES)).toBeNull();
+  });
+
+  test('old saves with damage type "magical" read as "arcane" in both ops and ability effects, missing type is refused, and "true" stays on ops only', () => {
+    const amt = { kind: 'dice', count: 1, sides: 6 };
+    expect(parseOp({ op: 'damage', type: 'magical', amount: amt }, RULES)).toEqual({ op: 'damage', type: 'arcane', amount: amt });
+    expect(parseOp({ op: 'damage', type: 'true', amount: amt }, RULES)).toEqual({ op: 'damage', type: 'true', amount: amt });
+    expect(parseOp({ op: 'damage', amount: amt }, RULES)).toBeNull();
+    const base = abilityOf('curse', { id: abilityId('bolt'), name: 'Bolt' }, RULES);
+    const oldAbility = { ...base, effect: { type: 'magical', by: 'hand', formula: amt } };
+    expect(parseAbility(oldAbility, RULES)?.effect).toEqual({ type: 'arcane', by: 'hand', formula: amt });
+    expect(parseAbility({ ...base, effect: { type: 'true', by: 'hand', formula: amt } }, RULES)).toBeNull();
+    expect(parseAbility({ ...base, effect: { by: 'hand', formula: amt } }, RULES)).toBeNull();
   });
 });
 

@@ -442,7 +442,7 @@ const SPEC = {
     moveBase: whole(6, 1, 40, 'base movement tiles per round at speed 100, from 1 to 40'), // tiles a round at speed 100: 30 feet, the pace the old text assumes
     strideShare: real(0.5, 0.1, 1, 'share of full movement allowed in one move command, from 0.1 to 1'), // one move command walks at most half of `move`, so a turn is never one long walk
     armorVitCap: of(30, STAT_CAP), // gear carries most armor, so the tank pays weight for it; Vitality gives a little to every body
-    resistDisCap: of(40, STAT_CAP), // the magical twin of armor, from the will stat, so the tank in plate is open to magic
+    resistDisCap: of(40, STAT_CAP), // the arcane twin of armor, from the will stat, so the tank in plate is open to magic
     // Penetration in whole percent of the armor or resist a hit meets (rule 12, balance plan section 9). Control's curve
     // gives up to `penCap` of both the armor and the magic percent: Control finds the gap. `penMax` caps the percent with
     // every bonus on it (an item's, a perk's, a status's), so armor always stops at least 40% of what it would; a bonus
@@ -529,7 +529,7 @@ const SPEC = {
       fast: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(30, TRAIT_SPEED), xp: of(1, KIND_XP) },
       // half again, as the boss's armor factor
       armored: { hp: of(1, KIND_FACTOR), armor: of(1.5, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
-      // the magical twin of armored
+      // the arcane twin of armored
       warded: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1.5, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
     },
     // Defence (design 3.1 rule 12)

@@ -39,7 +39,7 @@ async function onMap(gm: Page, player: Page, kai: string): Promise<void> {
 type Ground = { walls?: [number, number][]; fire?: [number, number][]; fog?: boolean; kai: [number, number]; rat: [number, number] };
 /**
  * The GM's fight with the player's hunter and a rat (setup through the store: the ground, the places, the turn Kai's),
- * both phones on the map. The fire burns 10 magical a round. Answers the row ids.
+ * both phones on the map. The fire burns 10 arcane a round. Answers the row ids.
  */
 async function fightOn(gm: Page, player: Page, ground: Ground): Promise<{ kai: string; rat: string }> {
   await go(gm, 'combat');
@@ -56,7 +56,7 @@ async function fightOn(gm: Page, player: Page, ground: Ground): Promise<{ kai: s
       const { w, h } = f.grid, walls = new Set((g.walls ?? []).map(([x, y]: number[]) => y! * w + x!));
       f.grid = { w, h, tiles: Array.from({ length: w * h }, (_, i) => (walls.has(i) ? 'wall' : 'floor')) };
       f.zones = g.fire ? [{ id: 'z-fire', name: 'Fire', ground: { kind: 'tiles', tiles: g.fire.map(([x, y]: number[]) => ({ x, y })) }, owner: null, spares: null, tier: 0, until: null, endsWithOwner: false,
-        ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 10 } }] }] : [];
+        ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 10 } }] }] : [];
       f.fog = g.fog ? { sight: 25, seen: '0'.repeat(w * h) } : null;
       kai.place = { x: g.kai[0], y: g.kai[1] }; rat.place = { x: g.rat[0], y: g.rat[1] };
       kai.at = f.now; kai.tie = 0; rat.at = f.now + 1; rat.tie = 0; f.currentId = kai.id; f.log = [];

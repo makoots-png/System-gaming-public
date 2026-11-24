@@ -16,7 +16,7 @@ import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter, sameLife } from './row-life.ts';
-import { applyStatus, dueAmount, modified, onSheet, owedOf, perRound, resetMoved, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, dueRate, modified, onSheet, owedOf, perRound, prorated, resetMoved, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
 import type { SheetKey } from '../ids.ts';
@@ -36,7 +36,7 @@ import { channelStep } from './fight-channel.ts';
 import { anchorOf, oldEnough, payUpkeep, zoneStep, zoneSync } from './zones.ts';
 import type { Zone } from './zones.ts';
 import { fire, raised } from './triggers.ts';
-import { alive, held, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
+import { NO_PEN, afterDefence, alive, held, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
 export { held };
 import { dismissed, isSummon, timeUp } from './summons.ts';
 import { damageShare, given, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
@@ -78,22 +78,27 @@ export function giverOf(f: Pick<Fight, 'rows'>, statuses: readonly Status[], key
 }
 
 /**
- * What a paid per-round op does to its bearer at `now`: damage takes the shield first (rule 13, `throughShield`), then
- * HP; a heal is `giver`'s to give (standing.ts `given`, `giverOf`) and the bearer's healed share; a heal, mana and
- * fatigue stay in their bounds.
+ * What a paid per-round op does to its bearer at `now`: damage applies the bearer's taken share and rule 12
+ * (`afterDefence` with `NO_PEN`) to the round's rate before prorating, then takes the shield first (rule 13,
+ * `throughShield`) and HP; a heal is `giver`'s to give (standing.ts `given`, `giverOf`) and the bearer's healed share;
+ * a heal, mana and fatigue stay in their bounds.
  */
 export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R: Rules, giver: Pick<Body, 'sheet'> | null): Body {
   if (!alive(b)) return b;
-  const n = dueAmount(due, scopeOf(b), dice);
+  const rawRate = dueRate(due, scopeOf(b), dice);
   switch (due.op.op) {
     case 'damage': {
-      // rule 11c reads the bearer's damage taken share at the settle (kits design 8.1)
-      const hit = Math.max(0, Math.round(n * damageShare(null, b, R))), s = throughShield(b, hit, now);
+      // rule 11c reads the bearer's damage taken share at the settle (kits design 8.1), then rule 12 meets the round's rate before prorating
+      const rate = rawRate * damageShare(null, b, R);
+      if (rate <= 0) return b;
+      const hit = Math.max(0, prorated(afterDefence(rate, due.op.type, NO_PEN, b.sheet, R), due));
+      if (hit <= 0) return b;
+      const s = throughShield(b, hit, now);
       return rowLifeAfter(s.target, { type: 'damage', amount: wardedDamage(s.target, hit - s.absorbed) });
     }
-    case 'heal': return rowLifeAfter(b, { type: 'heal', amount: Math.max(0, Math.round(given(n, giver) * healShare(b, R))) });
-    case 'mana': return { ...b, mana: Math.max(0, Math.min(b.sheet.manaMax, b.mana + n)) };
-    case 'fatigue': return { ...b, fatigue: Math.max(0, Math.min(b.sheet.fatigueMax, b.fatigue + n)) };
+    case 'heal': { const n = prorated(rawRate, due); return rowLifeAfter(b, { type: 'heal', amount: Math.max(0, Math.round(given(n, giver) * healShare(b, R))) }); }
+    case 'mana': { const n = prorated(rawRate, due); return { ...b, mana: Math.max(0, Math.min(b.sheet.manaMax, b.mana + n)) }; }
+    case 'fatigue': { const n = prorated(rawRate, due); return { ...b, fatigue: Math.max(0, Math.min(b.sheet.fatigueMax, b.fatigue + n)) }; }
     // A shield op is not per-round: `settle` never makes it due.
     case 'shield': return b;
     default: return due.op satisfies never;

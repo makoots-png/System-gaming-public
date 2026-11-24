@@ -104,7 +104,7 @@ describe('a hunter on this phone', () => {
 
   test('each consumable in the bag follows the skills as an ability, for another or for its user; a used-up one does not', () => {
     const num = (value: number) => ({ kind: 'number', value }) as const;
-    const bomb = { id: iid('b1'), name: 'Flash Bomb', type: 'consumable', rar: 'common', qty: 2, target: 'other', effects: [{ op: 'damage', type: 'magical', amount: num(5), when: 'use' }] } as const;
+    const bomb = { id: iid('b1'), name: 'Flash Bomb', type: 'consumable', rar: 'common', qty: 2, target: 'other', effects: [{ op: 'damage', type: 'arcane', amount: num(5), when: 'use' }] } as const;
     const potion = { id: iid('p1'), name: 'Health Potion', type: 'consumable', rar: 'common', qty: 1, effects: [{ op: 'heal', amount: num(30), when: 'use' }] } as const;
     const items = [bomb, { ...bomb, id: iid('b0'), qty: 0 }, potion];
     const all = hunterAbilities(hunter({ items, skills: [active(skill('strike', 'Move 0'))] }), RULES);

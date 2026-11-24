@@ -73,7 +73,7 @@ describe('the recipe items in a fight', () => {
     const thorn = wornOf('Thornmail');
     const armor = sheetOf([thorn]).armor;
     const fight = play(...duel(row('A', 'party'), row('M', 'foe', [thorn])), use('A', 'M'));
-    expect(lost(fight, 'A')).toBe(afterDefence(1 + 0.01 * armor, 'magical', sheetOf([]), sheetOf([]), RULES));
+    expect(lost(fight, 'A')).toBe(afterDefence(1 + 0.01 * armor, 'arcane', sheetOf([]), sheetOf([]), RULES));
     expect(lost(fight, 'A')).toBeGreaterThan(0);
   });
 

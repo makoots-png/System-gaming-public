@@ -79,7 +79,7 @@ export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 
 const READ_OVER = 10;
 /**
  * The sample wearer at the first level of a rank (block [2.3]): its sheet with a bonus on it, the body itself, what one
- * point of Strength, Power and Vitality buys of physical power, magical power and armor, and one standard action in damage.
+ * point of Strength, Power and Vitality buys of physical power, arcane power and armor, and one standard action in damage.
  */
 type Rates = {
   readonly rank: Rank; readonly sheet: (perks: Perk) => Sheet;
@@ -137,7 +137,7 @@ function fedCost(k: keyof typeof FED_BY, r: Rates): number {
  * `itemBudget.penFoe` (a brute's armor, a caster's resist) as a point of the key does, both read before rule 12 rounds.
  */
 function penCost(k: PenKey, r: Rates, R: BudgetRules): number {
-  const physical = k === 'armorPen' || k === 'armorPenFlat', type: DamageType = physical ? 'physical' : 'magical';
+  const physical = k === 'armorPen' || k === 'armorPenFlat', type: DamageType = physical ? 'physical' : 'arcane';
   const foe = monsterSheet(r.rank, physical ? 'brute' : 'caster', R.itemBudget.penFoe, R);
   const dealt = (raw: number, user: Sheet): number => throughDefence(raw, defenceLeft(type, user, foe), R);
   const wearer = r.sheet({}), hit = r.strike;

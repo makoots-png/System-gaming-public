@@ -147,7 +147,7 @@ export function eventsOf(a: Pick<Ability, 'ops' | 'kind' | 'channel' | 'tags'>, 
   const user = rowIn(after, by);
   for (const o of outcomes) {
     const mine: Raised[] = [], theirs: Raised[] = [];
-    const hit = (o.type === 'physical' || o.type === 'magical') && o.avoid !== 'out' && o.dealt > 0;
+    const hit = (o.type === 'physical' || o.type === 'arcane') && o.avoid !== 'out' && o.dealt > 0;
     if (hit) { mine.push(raised(by, 'hitDealt', o.target, tags)); theirs.push(raised(o.target, 'struck', by, tags)); }
     if (o.crit) { mine.push(raised(by, 'critDealt', o.target, tags)); theirs.push(raised(o.target, 'critTaken', by, tags)); }
     if (o.down) { mine.push(raised(by, 'kill', o.target, tags)); theirs.push(raised(o.target, 'down', by, tags)); }

@@ -220,7 +220,7 @@ function part2(): void {
   }));
   out('Table 2.5: kits. Speed factor from load for three Strength scores; damage taken after armor and resist (K = 100).');
   out();
-  table(['Kit', 'Weight', 'Armor', 'Resist', 'Physical taken', 'Magical taken', 'Speed factor, Str 10', 'Str 33', 'Str 83'],
+  table(['Kit', 'Weight', 'Armor', 'Resist', 'Physical taken', 'Arcane taken', 'Speed factor, Str 10', 'Str 33', 'Str 83'],
     (Object.keys(F.kits) as Kit[]).map(k => {
       const kit = F.kits[k];
       const f = (str: number): number => body({ ...statsOf('vit', 'dis', 'E'), str, agi: 10 }, 1, k).speed / 100;
@@ -309,7 +309,7 @@ function part3(): void {
   // Example 3: a slow radius blast with a ring.
   const cannon = sheetOf(BUILDS[2]!, 'C'), tank = sheetOf(BUILDS[1]!, 'C');
   const blastLand = F.abilityKinds.blast.windup / F.round;
-  out(`Example 3.C: a slow blast. C cannon (Meteor: 3d8 + 1.5 * mag, magical, radius 2 with a ring to 3 at half, wind-up ${blastLand.toFixed(2)} round,`);
+  out(`Example 3.C: a slow blast. C cannon (Meteor: 3d8 + 1.5 * mag, arcane, radius 2 with a ring to 3 at half, wind-up ${blastLand.toFixed(2)} round,`);
   out('no travel after the wind-up, range 10, cost 10 mana, heavy 150) centred one tile from the target. The target needs 2 tiles');
   out('to reach the ring and 3 to be out. Every face of the target\'s d20:');
   out();
@@ -485,14 +485,14 @@ function part5(): void {
 // 6. Balance bounds, the paper check
 // ════════════════════════════════════════════════════════════════════════════
 
-type Attack = { dice: number; faces: number; flat: (s: Sheet) => number; type: 'physical' | 'magical'; cost: number; land: number; fatigue: number; mana: number };
+type Attack = { dice: number; faces: number; flat: (s: Sheet) => number; type: 'physical' | 'arcane'; cost: number; land: number; fatigue: number; mana: number };
 /** The default attack of each build: the cost's share of the damage budget (quick 0.7, standard 1, heavy 1.5). */
 const ATTACK: Record<string, Attack> = {
   speed: { dice: 1, faces: 6, flat: s => 0.7 * s.phys, type: 'physical', cost: COST.quick, land: 0.2, fatigue: 6, mana: 0 },
   tank: { dice: 1, faces: 8, flat: s => s.phys, type: 'physical', cost: COST.standard, land: 0.1, fatigue: 8, mana: 0 },
-  cannon: { dice: 1, faces: 8, flat: s => s.mag, type: 'magical', cost: COST.standard, land: 0.25, fatigue: 8, mana: 0 },
+  cannon: { dice: 1, faces: 8, flat: s => s.mag, type: 'arcane', cost: COST.standard, land: 0.25, fatigue: 8, mana: 0 },
   bruiser: { dice: 1, faces: 8, flat: s => s.phys, type: 'physical', cost: COST.standard, land: 0.1, fatigue: 8, mana: 0 },
-  support: { dice: 1, faces: 6, flat: s => s.sup, type: 'magical', cost: COST.standard, land: 0, fatigue: 6, mana: 0 },
+  support: { dice: 1, faces: 6, flat: s => s.sup, type: 'arcane', cost: COST.standard, land: 0, fatigue: 6, mana: 0 },
 };
 const faces20 = Array.from({ length: 20 }, (_, i) => i + 1);
 /** Expected damage of one use of `a` by `u` on `t`, over the target's 20 faces (touch when land * move < 1 tile). */
@@ -511,7 +511,7 @@ function expected(a: Attack, u: Sheet, t: Sheet): number {
 }
 const perRound = (a: Attack, u: Sheet): number => u.speed / 100 * 100 / a.cost;
 /** The blast a mana build spends its mana on: heavy, 3d8 + 1.5 * mag, a radius a fast body can leave. */
-const BLAST: Attack = { dice: 3, faces: 8, flat: s => 1.5 * s.mag, type: 'magical', cost: COST.heavy, land: 0.6, fatigue: 0, mana: F.abilityKinds.blast.mana };
+const BLAST: Attack = { dice: 3, faces: 8, flat: s => 1.5 * s.mag, type: 'arcane', cost: COST.heavy, land: 0.6, fatigue: 0, mana: F.abilityKinds.blast.mana };
 /** Damage a round: the default attack every turn, plus what a mana build's casts add, spread over a reference fight. */
 function dps(id: string, u: Sheet, t: Sheet): number {
   const a = ATTACK[id]!, base = expected(a, u, t) * perRound(a, u);

@@ -38,7 +38,7 @@ const JOBS = {
   Necromancer: { steps: STANDARD, pair: 'pre+pow', alloc: { pre: 2, pow: 1 } },
   // the first and the most turns: Agility is speed, Instinct the opening, Reaction and crit faces
   Assassin: { steps: STANDARD, pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
-  // the spell and its aim: Power is magical power and mana, Control accuracy, penetration and the cost cut
+  // the spell and its aim: Power is arcane power and mana, Control accuracy, penetration and the cost cut
   Mage: { steps: STANDARD, pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 } },
   // the guard on both sides: Vitality is HP and armor, Discipline resist, will and tenacity
   Tanker: { steps: STANDARD, pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },

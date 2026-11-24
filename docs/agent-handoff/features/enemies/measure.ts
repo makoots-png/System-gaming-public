@@ -134,7 +134,7 @@ function hitOf(r: Row): Hit {
   const tank = bodyOf('tank', { kind: 'hunter', build: buildOf('tank', r.rank) }, place(6, 5), 'foe', r.rank);
   const origin: Origin = { kind: 'monster', name: 'Monster', rank: r.rank, archetype: r.archetype, monsterKind: bodyKindOf(r), tweak: NO_TWEAK };
   for (const a of abilitiesOf(r)) {
-    if (a.effect?.type !== 'physical' && a.effect?.type !== 'magical') continue;
+    if (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane') continue;
     const blast = a.shape.kind === 'radius';
     const u = bodyOf('user', origin, blast ? place(0, 5) : place(5, 5), 'party', r.rank);
     // a wide blast may reach its own user: its rolls are given too, and only the tank's outcome is read

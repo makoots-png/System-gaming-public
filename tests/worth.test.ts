@@ -45,8 +45,8 @@ describe('the yardstick: a recommended ability is worth its pace\'s budget', () 
     expect(worthLine(abilityWorth(of('curse'), RULES))).toBe('Power rating: 1.00 (target 1.08 for this action speed, matching Arc Bolt).');
   });
 
-  test('a curse with no formula of its own is weighed against a magical curse, its kind\'s, not a physical one', () => {
-    const end: StatusDef = { label: 'Later', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
+  test('a curse with no formula of its own is weighed against a arcane curse, its kind\'s, not a physical one', () => {
+    const end: StatusDef = { label: 'Later', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'arcane', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
     const later = of('curse', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('later'), def: end, duration: tick(3 * RULES.fight.round) }] });
     // the end lands whole (against a curse that delivers 0.775 of its average), on 55% of uses, half the time 3 rounds late in 6
     expect(abilityWorth(later, RULES).worth).toBeCloseTo(0.55 / 0.775 * 0.5, 6);
@@ -128,7 +128,7 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
     const exec = suggestScaler('curse', 'execute', RULES), plain = recommended('curse', { ...defaultTicks('curse'), pace: 'standard' }, RULES);
     const scaled = recommended('curse', { ...defaultTicks('curse'), pace: 'standard', scalers: [exec] }, RULES);
     const mark = (formula: Formula): StackDef => ({ label: 'Mark', desc: '', ops: [], stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
-      at: { kind: 'count', n: 2 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: formula, when: 'use' }] } } });
+      at: { kind: 'count', n: 2 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'arcane', amount: formula, when: 'use' }] } } });
     const worth = (formula: Formula) => abilityWorth(of('curse', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('mark'), def: mark(formula), duration: tick(2000), stacks: 1 }] }), RULES).worth;
     // the base cut pays the scaler's mean back over the reference dungeon, so against the larger of its two foes it is within the tolerance of plain
     expect(worth(scaled.formula) / worth(plain.formula)).toBeGreaterThanOrEqual(0.99);
@@ -146,8 +146,8 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
   test('Bloodletting, a curse at 0.7 that adds a Resonance stack bursting for 1.6 SA at 3: 0.7 plus 1.6 / 3 of the 55% it lands, in whole firings, whole', () => {
     const burst = recommended('curse', { ...defaultTicks('curse'), pace: 'standard' }, RULES).text;
     const resonance: StackDef = { label: 'Resonance', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: {
-      at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f(`1.6 * (${burst})`), when: 'use' }] } } };
-    const blood = of('curse', { effect: { type: 'magical', by: 'hand', formula: f(`0.7 * (${burst})`) }, ops: [{ op: 'applyStatus', key: statusKey('resonance'), def: resonance, duration: tick(2000), stacks: 1 }] });
+      at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'arcane', amount: f(`1.6 * (${burst})`), when: 'use' }] } } };
+    const blood = of('curse', { effect: { type: 'arcane', by: 'hand', formula: f(`0.7 * (${burst})`) }, ops: [{ op: 'applyStatus', key: statusKey('resonance'), def: resonance, duration: tick(2000), stacks: 1 }] });
     const w = abilityWorth(blood, RULES);
     // its stacks last 2 rounds and the cannon casts once a round, so one miss lets them lapse (no use in a row may miss)
     expect(w.worth).toBeCloseTo(0.7 + 1.6 / 3 * 0.55 * firings(3, 1, 0.55, 6, 0) / 0.775, 2);
@@ -155,7 +155,7 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
   });
 
   test('Hemoplague at 1.4 of a curse is over a standard budget alone and inside it with Crimson Pact\'s credit of 0.40', () => {
-    const hemo = of('curse', { effect: { type: 'magical', by: 'hand', formula: f('1.4 * (1d8 + mag)') } });
+    const hemo = of('curse', { effect: { type: 'arcane', by: 'hand', formula: f('1.4 * (1d8 + mag)') } });
     expect(abilityWorth(hemo, RULES).over).toBe(true);
     expect(abilityWorth(hemo, RULES, { credit: modeCredit({ hpShare: 0.1, rounds: 3 }, 'C', RULES).credit }).over).toBe(false);
   });
@@ -281,8 +281,8 @@ describe('what the bar cannot estimate it names, never counting it as 0', () => 
   });
 
   test('a status alone weighs its per-round damage over the reference fight, whole, and names its stat change and its end', () => {
-    const rot: StatusDef = { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'turn' }, { op: 'stat', key: 'str', amount: { kind: 'number', value: -2 } }],
-      end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
+    const rot: StatusDef = { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: f('1d8 + mag'), when: 'turn' }, { op: 'stat', key: 'str', amount: { kind: 'number', value: -2 } }],
+      end: { ops: [{ op: 'damage', type: 'arcane', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
     const w = defWorth(rot, RULES);
     expect(w.worth).toBeCloseTo(RULES.fight.kit.referenceRounds / 0.775, 6);
     expect(w.unweighed).toEqual(['stat', 'end']);

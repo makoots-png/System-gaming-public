@@ -189,7 +189,8 @@ const MOVE_FROM_LABEL = [['user', 'User to target'], ['target', 'Target to user'
 const WHICH_LABEL = [['first', 'One harmful status'], ['all', 'All harmful statuses']];
 /** A tag's form (fight-parse.ts `TAG_RE`): lower-case words joined by hyphens. */
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const DAMAGE_TYPES = [['physical', 'Physical'], ['magical', 'Magical']];
+const DAMAGE_TYPES = [['physical', 'Physical'], ['arcane', 'Arcane']];
+const OP_DAMAGE_TYPES = [...DAMAGE_TYPES, ['true', 'True']];
 const WHEN_LABEL = [['turn', 'Each round'], ['use', 'Once, when applied']];
 const CHANNEL_LABEL = [['protect', 'Protect channel from hits'], ['break', 'Break target\'s channel']];
 const RARITY_SHORT = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary', mythic: 'Mythic' };
@@ -204,7 +205,7 @@ const QUICK = {
   status: [
     ['slow', 'Speed −20%', { op: 'speed', pct: -20 }], ['haste', 'Speed +20%', { op: 'speed', pct: 20 }],
     ['ctl', 'Control −8', { op: 'stat', key: 'ctl', amount: num(-8) }], ['dis', 'Discipline −8', { op: 'stat', key: 'dis', amount: num(-8) }],
-    ['d4', '1d4 damage a round', { op: 'damage', type: 'physical', amount: dice(1, 4) }], ['d6', '1d6 magical a round', { op: 'damage', type: 'magical', amount: dice(1, 6) }],
+    ['d4', '1d4 damage a round', { op: 'damage', type: 'physical', amount: dice(1, 4) }], ['d6', '1d6 arcane a round', { op: 'damage', type: 'arcane', amount: dice(1, 6) }], ['d4t', '1d4 true a round', { op: 'damage', type: 'true', amount: dice(1, 4) }],
     ['h4', '1d4 heal a round', { op: 'heal', amount: dice(1, 4) }], ['hold', 'Cannot act', { op: 'hold' }], ['root', 'Cannot move', { op: 'root' }],
   ],
   item: [
@@ -215,7 +216,7 @@ const QUICK = {
   ],
   skill: [['apply', 'Apply status', { op: 'applyStatus' }], ['cure', 'Cure status', { op: 'cureStatus' }], ['note', 'Note', { op: 'note', text: '' }]],
   land: [
-    ['damage', 'Damage 2d6', { op: 'damage', type: 'magical', amount: dice(2, 6), when: 'use' }], ['heal', 'Heal 2d4', { op: 'heal', amount: dice(2, 4), when: 'use' }],
+    ['damage', 'Damage 2d6', { op: 'damage', type: 'arcane', amount: dice(2, 6), when: 'use' }], ['heal', 'Heal 2d4', { op: 'heal', amount: dice(2, 4), when: 'use' }],
     ['apply', 'Apply status', { op: 'applyStatus' }], ['cure', 'Cure status', { op: 'cureStatus' }],
   ],
 };
@@ -499,7 +500,7 @@ function effects(box, o) {
         ${r.kind === 'stat' ? `<select data-f="stat" aria-label="Stat of effect ${i + 1}">${STAT_KEYS.map(k => `<option value="${k}"${k === r.stat ? ' selected' : ''}>${esc(STAT_LABELS[k])}</option>`).join('')}</select>` : ''}
         ${r.kind === 'sheet' ? `<select data-f="sheetKey" aria-label="Number of effect ${i + 1}">${SHEET_KEY_LABEL.map(([k, l]) => `<option value="${k}"${k === r.sheetKey ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
         <button type="button" class="icon-btn" data-rm aria-label="Remove effect ${i + 1}">&times;</button></div>
-      ${r.kind === 'damage' ? seg('data-type', `Damage type of effect ${i + 1}`, DAMAGE_TYPES, r.type) : ''}
+      ${r.kind === 'damage' ? seg('data-type', `Damage type of effect ${i + 1}`, item ? DAMAGE_TYPES : OP_DAMAGE_TYPES, r.type) : ''}
       ${r.kind === 'share' ? segF('shareOn', `What effect ${i + 1} changes`, SHARE_LABEL, r.shareOn) : ''}
       ${FORMULA_KINDS.includes(r.kind) && o.kind === 'status' ? seg('data-when', `When effect ${i + 1} acts`, WHEN_LABEL, r.when || 'turn') : ''}
       ${modes.length ? seg('data-mode', `Amount of effect ${i + 1}`, modes, r.mode) : ''}
@@ -634,8 +635,8 @@ function effects(box, o) {
 
 // ── the formula field ──
 /** What an ability's effect is, as the GM names it: aimed at Armor or Resist, a heal, a shield, or nothing. */
-const EFFECT_TYPES = [['physical', 'Physical damage'], ['magical', 'Magical damage'], ['heal', 'Heal'], ['shield', 'Shield'], ['none', 'None']];
-const DEFENCE_WORD = { physical: 'Armor', magical: 'Resist' };
+const EFFECT_TYPES = [['physical', 'Physical damage'], ['arcane', 'Arcane damage'], ['heal', 'Heal'], ['shield', 'Shield'], ['none', 'None']];
+const DEFENCE_WORD = { physical: 'Armor', arcane: 'Resist' };
 /** The kits' formula names (formula.ts, kits design 1.5) a chip inserts; KEY is the status picked beside them. */
 const FORMULA_NAMES = [
   ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks this use spent'], ['field(KEY)', 'Its stacks on everyone'],
@@ -646,7 +647,7 @@ const lastingLine = op => `On a sample rank ${SAMPLE_RANK} hunter: ${opLines([op
 /** The averages line of a formula: at E, C and S on a same-rank brute, and after its Armor or Resist for a damage type. */
 function averagesLine(f, type, main) {
   const rows = averages(f, type, main, rules()), r = n => String(Math.round(n));
-  const dealt = rows.every(x => x.dealt !== null) ? `. After ${DEFENCE_WORD[type]}: ${rows.map(x => r(x.dealt)).join(', ')}` : '';
+  const dealt = rows.every(x => x.dealt !== null) ? `. After ${DEFENCE_WORD[type]}: ${rows.map(x => r(x.dealt)).join(', ')}` : type === 'true' ? '. Ignores Armor and Resist' : '';
   return `Average on a same-rank brute: ${rows.map(x => `${x.rank} ${r(x.average)}`).join(', ')}${dealt}`;
 }
 /**
@@ -658,7 +659,7 @@ function averagesLine(f, type, main) {
  * makes it the GM's, Reset gives it back to the rule (implicit audit 3, M2).
  * @param {HTMLElement} box
  * `typed`: a formula the GM typed under another kind, kept as it was typed (edited, its Reset this kind's recommendation).
- * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; effect?: import('../core/combat/ability-types.ts').AbilityEffect | null; ticks?: import('../core/registry/ability-kinds.ts').Ticks | null; typed?: { text: string; type: 'physical' | 'magical' | 'heal' | 'shield' } | null }} o
+ * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; effect?: import('../core/combat/ability-types.ts').AbilityEffect | null; ticks?: import('../core/registry/ability-kinds.ts').Ticks | null; typed?: { text: string; type: 'physical' | 'arcane' | 'heal' | 'shield' } | null }} o
  */
 function formulaField(box, o) {
   const kind = o.kind, typed0 = o.typed || null, hand = o.effect && o.effect.by === 'hand' ? o.effect : null;
@@ -746,7 +747,7 @@ function formulaField(box, o) {
       type = String(picked(box, 'ftype') || type);
       if (type !== 'none') {
         const was = ticks.type;
-        ticks = { ...ticks, type: oneOf(type, ['physical', 'magical', 'heal', 'shield'], 'physical') };
+        ticks = { ...ticks, type: oneOf(type, ['physical', 'arcane', 'heal', 'shield'], 'physical') };
         if (!scaleTouched && ticks.scale === powerStat(was)) ticks = { ...ticks, scale: powerStat(ticks.type) };
         if (!gapOn) gap = gapOf(ticks.type);
         box.querySelector('[data-tick="scale"]').value = ticks.scale || '';
@@ -816,7 +817,7 @@ const WHERE_LABEL = [['lands', 'Where it lands'], ['user', 'Around the user']];
  * each group collapsed until opened: cost, reach, how it is avoided, and the channel. The skill maker holds it, and the
  * enemy maker's abilities are edited in the skill maker.
  * @param {HTMLElement} box
- * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; ability?: import('../core/combat/ability-types.ts').Ability | null; typed?: { text: string; type: 'physical' | 'magical' | 'heal' | 'shield' } | null; kit?: any }} o
+ * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; ability?: import('../core/combat/ability-types.ts').Ability | null; typed?: { text: string; type: 'physical' | 'arcane' | 'heal' | 'shield' } | null; kit?: any }} o
  */
 function buildAbility(box, o) {
   const R = rules(), round = R.fight.round;
@@ -870,7 +871,7 @@ function buildAbility(box, o) {
     <div class="mk-kit-ability" data-kit-ability></div></div>`;
   const $ = s => box.querySelector(s), val = k => $(`[data-a="${k}"]`).value, on = k => $(`[data-a="${k}"]`).checked;
   // the field's ops through the effects editor, a burn of 1d6 a round to start (what Burning deals at E)
-  const zfx = effects($('[data-zone-fx]'), { ops: a.zone ? a.zone.ops : [{ op: 'damage', type: 'magical', amount: dice(1, 6) }], kind: 'status' });
+  const zfx = effects($('[data-zone-fx]'), { ops: a.zone ? a.zone.ops : [{ op: 'damage', type: 'arcane', amount: dice(1, 6) }], kind: 'status' });
   // what lands when the field ends (zones.ts `ZoneKit.end`), drawn when its box is first ticked and empty until the GM adds to it
   const NO_END = { ops: () => [], blocked: () => false };
   let zendFx = NO_END;

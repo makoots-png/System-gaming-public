@@ -253,8 +253,8 @@ test('a GM\'s HP change to a player\'s hunter in a fight stays on the GM\'s card
 
 test('a status the GM puts on a remote hunter in a fight shows the same scaled numbers on the player\'s phone as on the GM\'s card', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: SMALL_PHONE })).page;
-  // Burning deals 1d6, 2d6, 3d8, 4d10, 5d12, 7d12 magical damage a round by rank E to S (statuses.ts): 4d10 at B.
-  const atB = '4d10 magical damage a round';
+  // Burning deals 1d6, 2d6, 3d8, 4d10, 5d12, 7d12 arcane damage a round by rank E to S (statuses.ts): 4d10 at B.
+  const atB = '4d10 arcane damage a round';
 
   await test.step('the GM opens a room, the player joins, and the fight has the player\'s hunter and a monster', async () => {
     await onboardGM(gm);
@@ -314,9 +314,9 @@ test('on a phone one tap on a built-in status in the Status dialog applies it, a
   await chip.tap();
   await expect(gm.locator('.fg-overlay')).toHaveCount(0);
   await expect(gmCard(gm).locator('.cmb-conds')).toContainText('Poisoned');
-  // Poisoned at an E-rank target's strength (statuses.ts): 1d4 magical damage a round, Control: −8
+  // Poisoned at an E-rank target's strength (statuses.ts): 1d4 true damage a round, Control: −8
   await gmCard(gm).locator('[data-chip="poisoned"] [data-dt-key]').tap();
-  await expect(gmCard(gm).locator('.cmb-conds .dt')).toContainText('1d4 magical damage a round');
+  await expect(gmCard(gm).locator('.cmb-conds .dt')).toContainText('1d4 true damage a round');
   await expect(gmCard(gm).locator('.cmb-conds .dt')).toContainText('Control: −8');
 });
 

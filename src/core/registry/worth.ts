@@ -383,7 +383,7 @@ export function wornWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C', o: { 
  * ability sets one, so it is named as not weighed here.
  */
 export function defWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C'): Worth {
-  const at = atOf('curse', 'magical', rank, { land: 1, time: R.fight.cost.standard, on: 'build' }, R);
+  const at = atOf('curse', 'arcane', rank, { land: 1, time: R.fight.cost.standard, on: 'build' }, R);
   const worth = statusWorth(def, isStacking(def) ? def.stack.cap : 1, null, at, R);
   return judged(worth, 1, at, R);
 }

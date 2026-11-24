@@ -582,7 +582,7 @@ async function gmFight(g: Phone, p: Phone | null) {
       const f = d.fight, { w, h } = f.grid, wall = (x: number, y: number) => x === 4 && y >= 1 && y <= 4;
       f.grid = { w, h, tiles: Array.from({ length: w * h }, (_, i) => { const x = i % w, y = Math.floor(i / w); return wall(x, y) ? 'wall' : y === 6 && x >= 3 && x <= 5 ? 'cover' : 'floor'; }) };
       f.zones = [{ id: 'z-shots', name: 'Burning ground', ground: { kind: 'tiles', tiles: [{ x: 3, y: 9 }, { x: 4, y: 9 }, { x: 3, y: 10 }, { x: 4, y: 10 }] }, owner: null, spares: null, tier: 0, until: null, endsWithOwner: false,
-        ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 3 } }] }];
+        ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] }];
       // the party saw the right of the map once (remembered, dim) and never the rest it cannot see now (mist)
       f.fog = { sight: 8, seen: Array.from({ length: w * h }, (_, i) => (i % w >= 12 ? '1' : '0')).join('') };
     }, 'ui-shots'));

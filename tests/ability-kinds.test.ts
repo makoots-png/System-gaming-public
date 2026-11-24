@@ -22,7 +22,7 @@ const SCALER_SETS: readonly (readonly Scaler[])[] = [
   [], [{ measure: 'target', dir: 'under', start: 0.5, scale: 1 }],
   [{ measure: 'maxPair', dir: 'over', start: 2 / 3, scale: 0.25 }, { measure: 'user', dir: 'under', start: 0.3, scale: 0.6 }],
 ];
-const TYPES: readonly AbilityEffect['type'][] = ['physical', 'magical', 'heal', 'shield'];
+const TYPES: readonly AbilityEffect['type'][] = ['physical', 'arcane', 'heal', 'shield'];
 
 // A C bruiser on a C body, so every power and stat a formula reads is above 0.
 const user = { stats: { ...baseStats(RULES.fight), str: 63, pow: 63, pre: 63 }, sheet: sheetOf({ stats: { ...baseStats(RULES.fight), str: 63, pow: 63, pre: 63 }, level: 20, gear: kitGear('medium', RULES), perks: {} }, RULES) };
@@ -47,7 +47,7 @@ describe('every kind\'s recommended formulas', () => {
     expect(text('blast')).toBe('1.5 * (2d8 + mag)');
     expect(text('curse')).toBe('1d8 + mag');
     expect(text('support')).toBe('1.5 * sup');
-    expect(text('strike', { type: 'magical' })).toBe('1d8 + mag');
+    expect(text('strike', { type: 'arcane' })).toBe('1d8 + mag');
     expect(text('strike', { scale: null })).toBe('1d8');
   });
 
@@ -86,8 +86,8 @@ describe('the ticks of the formula field', () => {
     expect(byIns).toBeCloseTo(byStr, 10);
   });
 
-  test('magical damage is aimed at Resist and reads mag; the picked pace sets the share of the budget and the time', () => {
-    expect(text('strike', { type: 'magical' })).toBe('1d8 + mag');
+  test('arcane damage is aimed at Resist and reads mag; the picked pace sets the share of the budget and the time', () => {
+    expect(text('strike', { type: 'arcane' })).toBe('1d8 + mag');
     expect(text('strike', { pace: 'heavy' })).toBe('1.5 * (1d8 + phys)');
     expect(abilityOf('strike', { id: abilityId('s'), name: 's', ticks: { pace: 'quick' } }, RULES).cost.time as number).toBe(70);
   });
@@ -118,10 +118,10 @@ describe('the ticks of the formula field', () => {
   });
 
   test('a gap insists on a cap above 0 and two different stats', () => {
-    expect(checkGap(gapOf('magical'))).toBeNull();
-    expect(checkGap({ ...gapOf('magical'), cap: 0 })).toContain('needs a cap');
-    expect(checkGap({ ...gapOf('magical'), cap: Number.NaN })).toContain('needs a cap');
-    expect(checkGap({ ...gapOf('magical'), theirs: 'pow' })).toContain('two different stats');
+    expect(checkGap(gapOf('arcane'))).toBeNull();
+    expect(checkGap({ ...gapOf('arcane'), cap: 0 })).toContain('needs a cap');
+    expect(checkGap({ ...gapOf('arcane'), cap: Number.NaN })).toContain('needs a cap');
+    expect(checkGap({ ...gapOf('arcane'), theirs: 'pow' })).toContain('two different stats');
   });
 
   test('the preview\'s averages are at E, C and S on a normal brute, grow with rank, and a hit loses some to Armor', () => {
@@ -175,9 +175,9 @@ describe('each kind\'s defaults (design 3.3)', () => {
     expect([a.shape, a.delivery, a.range, a.cost.time]).toEqual([{ kind: 'radius', radius: 2, ring: { outer: 3, share: 50 } }, { kind: 'travel', windup: 1000, speed: 'instant' }, 10, 150]);
   });
 
-  test('a curse is direct, range 8 and magical', () => {
+  test('a curse is direct, range 8 and arcane', () => {
     const a = of('curse');
-    expect([a.delivery, a.range, a.effect?.type]).toEqual([{ kind: 'direct' }, 8, 'magical']);
+    expect([a.delivery, a.range, a.effect?.type]).toEqual([{ kind: 'direct' }, 8, 'arcane']);
   });
 
   test('a support aims at an ally, is sure and deals no damage', () => {
@@ -304,7 +304,7 @@ describe('the conditional scalers, in place of the execute (kits design 8.0)', (
 
   test('a stored ability with scalers and the kits\' names reads back through the fight\'s parser as it was', () => {
     const a = abilityOf('curse', { id: abilityId('x'), name: 'x', ticks: { scalers: [EXECUTE, { measure: 'hpPair', dir: 'under', start: 0.5, scale: 0.35 }] } }, RULES);
-    const named = { ...a, effect: { type: 'magical' as const, by: 'hand', formula: { kind: 'binary' as const, op: '*' as const, left: formulaOf(a, RULES)!, right: { kind: 'stacks' as const, whose: 'target' as const, key: statusKey('hemo-plague') } } } };
+    const named = { ...a, effect: { type: 'arcane' as const, by: 'hand', formula: { kind: 'binary' as const, op: '*' as const, left: formulaOf(a, RULES)!, right: { kind: 'stacks' as const, whose: 'target' as const, key: statusKey('hemo-plague') } } } };
     for (const x of [a, named]) expect(parseAbility(JSON.parse(JSON.stringify(x)), RULES)).toEqual(x);
   });
 

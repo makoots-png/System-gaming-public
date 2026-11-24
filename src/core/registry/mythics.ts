@@ -91,23 +91,23 @@ export const MYTHICS = {
     moves: {
       // 1.0 at the farthest, not 0.55 at the crowd: the walk in stepped off the crowd's tile, and at 0.55 a party that
       // never stepped won 0.83 of the share of one that did (row B5, sim-log.md MY5 fifth pass)
-      'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 1, sure: false,
+      'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'arcane', reach: 2, range: 12, hits: 1, sure: false,
         applies: { status: 'burning', rounds: 2 }, leaves: { name: 'Fallen stars', rounds: 2, status: 'burning' }, self: null },
       // 1.2, not 0.35: a shield on the hunter it names cancels it, so its hit is the cost of no shield, as the Sinking's
       // is of not stepping off. At 0.35 three cannons, who hold no shield, lost little to it and won 0.17 of their
       // fights (row B4); at 1.2 0.093, and the mixed party, who shields it, as before (sim-log.md, "Mythic balance")
-      'weighed': { name: 'Weighed and Found Wanting', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.2, sure: false,
+      'weighed': { name: 'Weighed and Found Wanting', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 1.2, sure: false,
         applies: { status: 'paralyzed', rounds: 2 }, leaves: null, self: null },
-      'found-wanting': { name: 'Found Wanting', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 0.2, sure: false,
+      'found-wanting': { name: 'Found Wanting', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 0.2, sure: false,
         applies: { status: 'slowed', rounds: 2 }, leaves: null, self: null },
-      'first-breath': { name: 'The First Breath', kind: 'blast', type: 'magical', reach: 4, range: 0, hits: 0.7, sure: false,
+      'first-breath': { name: 'The First Breath', kind: 'blast', type: 'arcane', reach: 4, range: 0, hits: 0.7, sure: false,
         applies: { status: 'prone', rounds: 1 }, leaves: null, self: null },
-      'half-breath': { name: 'Half a Breath', kind: 'blast', type: 'magical', reach: 4, range: 0, hits: 0.35, sure: false,
+      'half-breath': { name: 'Half a Breath', kind: 'blast', type: 'arcane', reach: 4, range: 0, hits: 0.35, sure: false,
         applies: null, leaves: null, self: null },
-      'final-note': { name: 'The Final Note', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 1.6, sure: true,
+      'final-note': { name: 'The Final Note', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 1.6, sure: true,
         applies: { status: 'stunned', rounds: 1 }, leaves: null, self: CRESCENDO },
       // 1.2, not B.6's 0.7: a party that broke the bar at every note outlived the clock (row B6, sim-log.md MY5)
-      'broken-note': { name: 'The Broken Note', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 1.2, sure: true,
+      'broken-note': { name: 'The Broken Note', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 1.2, sure: true,
         applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
@@ -148,9 +148,9 @@ export const MYTHICS = {
       'rising': { name: 'The Sea Rises', kind: 'blast', type: 'physical', reach: 2, range: 16, hits: 0.8, sure: false,
         applies: null, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
       // 1.2, not 0.75, for the same reason as the Sinking: a step off its tile weakens it, and a stun cancels it
-      'trench': { name: 'Breath of the Deep Trench', kind: 'blast', type: 'magical', reach: 2, range: 16, hits: 1.2, sure: false,
+      'trench': { name: 'Breath of the Deep Trench', kind: 'blast', type: 'arcane', reach: 2, range: 16, hits: 1.2, sure: false,
         applies: { status: 'stunned', rounds: 1 }, leaves: null, self: null },
-      'spray': { name: 'Spray of the Trench', kind: 'blast', type: 'magical', reach: 2, range: 16, hits: 0.35, sure: false,
+      'spray': { name: 'Spray of the Trench', kind: 'blast', type: 'arcane', reach: 2, range: 16, hits: 0.35, sure: false,
         applies: null, leaves: null, self: null },
       'go-under': { name: 'It Goes Under', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.4, sure: true,
         applies: { status: 'prone', rounds: 1 }, leaves: null, self: CRESCENDO },
@@ -187,18 +187,18 @@ export const MYTHICS = {
     name: 'The Fourth Rider', hp: 0.78,
     shape: 'He marks one hunter at a time to die. The party must stop him or shield the target to save them.',
     moves: {
-      'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,
+      'named': { name: 'Named in the Book', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 1.1, sure: true,
         applies: null, leaves: null, self: null },
-      'struck': { name: 'Struck from the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 0.45, sure: true,
+      'struck': { name: 'Struck from the Book', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 0.45, sure: true,
         applies: { status: 'frightened', rounds: 2 }, leaves: null, self: null },
-      'pale-wake': { name: 'Pale Wake', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 0.3, sure: false,
+      'pale-wake': { name: 'Pale Wake', kind: 'blast', type: 'arcane', reach: 2, range: 12, hits: 0.3, sure: false,
         applies: { status: 'plague', rounds: 3 }, leaves: { name: 'Pale wake', rounds: 3, status: 'plague' }, self: null },
-      'all-end': { name: 'All Things End', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 0.55, sure: true,
+      'all-end': { name: 'All Things End', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 0.55, sure: true,
         applies: { status: 'frightened', rounds: 2 }, leaves: null, self: null },
-      'not-all': { name: 'Not Yet, Not All', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 0.25, sure: true,
+      'not-all': { name: 'Not Yet, Not All', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 0.25, sure: true,
         applies: null, leaves: null, self: null },
       // Every name, not B.6's one: a doom that took one hunter a landing left the other two time to win (row B6, sim-log.md MY5)
-      'reaping': { name: 'The Reaping', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 2.5, sure: true,
+      'reaping': { name: 'The Reaping', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 2.5, sure: true,
         applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {

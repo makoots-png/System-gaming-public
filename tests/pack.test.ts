@@ -29,7 +29,7 @@ import type { StoryId } from '../src/core/ids.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const AT = '2026-11-13T10:00:00.000Z';
-const FROSTBITE: StatusDef = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: 1, sides: 6 } }] };
+const FROSTBITE: StatusDef = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 1, sides: 6 } }] };
 const CHILL: StatusDef = { label: 'Chill', desc: 'Slower in the cold.', ops: [{ op: 'speed', pct: -10 }] };
 /** A status that puts Chill on when it lands: a status naming another. */
 const DEEP_FREEZE: StatusDef = { label: 'Deep Freeze', desc: 'Frozen through.', ops: [{ op: 'applyStatus', key: statusKey('chill'), def: CHILL, duration: tick(2000) }] };
@@ -375,7 +375,7 @@ describe('a status named anywhere in a shared thing travels with it', () => {
     { where: 'the status a move op turns its stacks into', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ ops: [{ op: 'move', key: 'harmful', take: 'all', from: 'target', as: rot }] })]; } },
     { where: 'an ability\'s hand formula', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ effect: { type: 'physical', by: 'hand', formula: { kind: 'stacks', whose: 'target', key: rot } } })]; } },
     { where: 'the formula of an ability\'s op', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ ops: [{ op: 'shield', amount: { kind: 'field', key: rot } }] })]; } },
-    { where: 'one tier of a worn status\'s op formula', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [{ op: 'damage', type: 'magical', amount: [one(1), one(2), one(3), one(4), one(5), { kind: 'held', key: rot }] }] })]; } },
+    { where: 'one tier of a worn status\'s op formula', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [{ op: 'damage', type: 'arcane', amount: [one(1), one(2), one(3), one(4), one(5), { kind: 'held', key: rot }] }] })]; } },
     { where: 'a worn status\'s trigger on a status gained', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [], triggers: [{ on: 'statusGained', key: rot, to: 'self', limit: each, ops: [heal] }] })]; } },
     { where: 'a worn status\'s trigger that needs a status held', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [], triggers: [{ on: 'turnStart', to: 'self', limit: each, need: { kind: 'holds', key: rot }, ops: [heal] }] })]; } },
     { where: 'a worn status\'s threshold formula', kind: 'skills', name: 'Hunger', put: s => {

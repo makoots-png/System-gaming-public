@@ -240,7 +240,7 @@ const sheet = (b: Build, rank: Rank, mods: readonly StatusMod[] = []): Sheet =>
   sheetOf({ stats: statsOf(b, rank), level: RULES.rankLevels[rank], gear: kitGear(BUILD[b].kit, RULES), perks: {} }, RULES, mods);
 const brute = (rank: Rank, kind: MonsterKind): Sheet => monsterSheet(rank, 'brute', kind, RULES);
 
-type Type = 'physical' | 'magical';
+type Type = 'physical' | 'arcane';
 const edge = (mine: number, theirs: number): number => Math.max(-F.reactCap, Math.min(F.reactCap, Math.round(F.reactK * (mine - theirs))));
 const FACES = many(20, i => i + 1);
 const dealt = (raw: number, type: Type, u: Sheet, t: Sheet): number => afterDefence(raw, type, u, t, RULES);
@@ -272,11 +272,11 @@ type Attack = { raw: (s: Sheet) => number; type: Type; cost: number; land: numbe
 const ATTACK: { readonly [B in Build]: Attack } = {
   speed: { raw: s => 3.5 + 0.7 * s.phys, type: 'physical', cost: F.cost.quick, land: 0.2 },
   tank: { raw: s => 4.5 + s.phys, type: 'physical', cost: F.cost.standard, land: 0.1 },
-  cannon: { raw: s => 4.5 + s.mag, type: 'magical', cost: F.cost.standard, land: 0.25 },
+  cannon: { raw: s => 4.5 + s.mag, type: 'arcane', cost: F.cost.standard, land: 0.25 },
   bruiser: { raw: s => 4.5 + s.phys, type: 'physical', cost: F.cost.standard, land: 0.1 },
-  support: { raw: s => 3.5 + s.sup, type: 'magical', cost: F.cost.standard, land: 0 },
+  support: { raw: s => 3.5 + s.sup, type: 'arcane', cost: F.cost.standard, land: 0 },
 };
-const BLAST: Attack = { raw: s => 13.5 + 1.5 * s.mag, type: 'magical', cost: F.cost.heavy, land: 0.6 };
+const BLAST: Attack = { raw: s => 13.5 + 1.5 * s.mag, type: 'arcane', cost: F.cost.heavy, land: 0.6 };
 const FIGHT_ROUNDS = 6; // the reference fight of design 6 (rw-paper's PAPER.FIGHT_ROUNDS)
 const exp = (a: Attack, u: Sheet, t: Sheet): number => use(a.raw(u), a.type, u, t, { kind: 'travel', land: a.land }).dealt;
 function dps(b: Build, u: Sheet, t: Sheet): number {
@@ -318,8 +318,8 @@ function eventRates(rank: Rank): (string | number)[][] {
 type KitName = 'blood' | 'mark' | 'pain';
 type KitRow = { readonly kit: KitName; readonly label: string; readonly user: Build; readonly type: Type };
 const KITS: readonly KitRow[] = [
-  { kit: 'blood', label: 'Blood stacker (Glas)', user: 'cannon', type: 'magical' },
-  { kit: 'mark', label: 'Signature (Hwei)', user: 'cannon', type: 'magical' },
+  { kit: 'blood', label: 'Blood stacker (Glas)', user: 'cannon', type: 'arcane' },
+  { kit: 'mark', label: 'Signature (Hwei)', user: 'cannon', type: 'arcane' },
   { kit: 'pain', label: 'Pain (Einar)', user: 'bruiser', type: 'physical' },
 ];
 /**
@@ -347,8 +347,8 @@ function kitDamage(k: KitRow, lever: number, rank: Rank, t: Sheet, rounds: numbe
     const more = cycles * (use(sa * (1 + lever * spent), 'physical', u, t, STRIKE).dealt - strike.dealt);
     return { kit: acts * strike.dealt + more, plain: acts * strike.dealt, best: use(sa * (1 + lever * L.cap), 'physical', u, t, STRIKE).dealt };
   }
-  const L = SHAPE[k.kit], plain = use(sa, 'magical', u, t, CURSE), hit = use(L.share * sa, 'magical', u, t, CURSE);
-  const burst = dealt(lever * sa, 'magical', u, t), n = firings(acts, hit.caught, L.at);
+  const L = SHAPE[k.kit], plain = use(sa, 'arcane', u, t, CURSE), hit = use(L.share * sa, 'arcane', u, t, CURSE);
+  const burst = dealt(lever * sa, 'arcane', u, t), n = firings(acts, hit.caught, L.at);
   return { kit: acts * hit.dealt + n * burst * (1 + extra), plain: acts * plain.dealt, best: hit.dealt + burst };
 }
 /** The targets a kit is measured on: the triangle's three builds. */
@@ -400,7 +400,7 @@ function part3(): void {
   out('Table 3.4: what one of each block is worth, in SA of a C cannon and a C bruiser against a C normal brute (after defence).');
   out();
   const c = sheet('cannon', 'C'), b = sheet('bruiser', 'C'), m = brute('C', 'normal');
-  const saC = dealt(SA(c, 'magical'), 'magical', c, m), saB = dealt(SA(b, 'physical'), 'physical', b, m);
+  const saC = dealt(SA(c, 'arcane'), 'arcane', c, m), saB = dealt(SA(b, 'physical'), 'physical', b, m);
   const rate = hpRate('C');
   table(['Block', 'Rule for its worth', 'Cannon', 'Bruiser'], [
     ['One stack of a status that deals d a round per stack', 'd x rounds held / SA, at the cap for a per-round op (the maker shows it at the cap)', 'per op', 'per op'],
@@ -710,8 +710,8 @@ type KindRow = { readonly kind: 'strike' | 'shot' | 'curse' | 'blast'; readonly 
 const DAMAGE_KINDS: readonly KindRow[] = [
   { kind: 'strike', user: 'bruiser', type: 'physical', share: 1, how: () => STRIKE },
   { kind: 'shot', user: 'speed', type: 'physical', share: F.cost.quick / F.cost.standard, how: () => ({ kind: 'travel', land: F.abilityKinds.shot.windup / F.round + F.lineGap / F.abilityKinds.shot.travel }) },
-  { kind: 'curse', user: 'cannon', type: 'magical', share: 1, how: () => CURSE },
-  { kind: 'blast', user: 'cannon', type: 'magical', share: F.cost.heavy / F.cost.standard, how: () => ({ kind: 'travel', land: F.abilityKinds.blast.windup / F.round }) },
+  { kind: 'curse', user: 'cannon', type: 'arcane', share: 1, how: () => CURSE },
+  { kind: 'blast', user: 'cannon', type: 'arcane', share: F.cost.heavy / F.cost.standard, how: () => ({ kind: 'travel', land: F.abilityKinds.blast.windup / F.round }) },
 ];
 /**
  * The most of a same-rank tank's max HP one use of the kind removes with the scaler, its base cut to `1 / (1 + mean)`:

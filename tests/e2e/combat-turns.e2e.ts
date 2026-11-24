@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { shareEach } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
+import { NO_PEN, afterDefence } from '../../src/core/combat/land.ts';
 import { test, expect, onboardGM, go, startGoblinDenFight, answerWindow, openApp, fightRow, PHONE, SMALL_PHONE, LANDSCAPE, chooseList } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
@@ -197,9 +198,10 @@ test('a goblin burning at strength C loses more HP over its turn than one burnin
 
   await test.step('at each goblin\'s next turn its HP has fallen by its Burning\'s rate over the time since', async () => {
     for (const name of [hot, mild]) {
-      const lost = Math.round(rate[strength[name]!]! * (burnt[name]!.at - on[name]!.at) / round);
-      expect(on[name]!.hp - burnt[name]!.hp).toBe(lost);
       const row = await fightRow(page, name);
+      const dealtRate = afterDefence(rate[strength[name]!]!, 'arcane', NO_PEN, row.sheet, RULES);
+      const lost = Math.round(dealtRate * (burnt[name]!.at - on[name]!.at) / round);
+      expect(on[name]!.hp - burnt[name]!.hp).toBe(lost);
       await expect(rowOf(row.id).locator('.cmb-mini')).toContainText(`${row.hp}/${row.sheet.hpMax}`);
     }
     expect(on[hot]!.hp - burnt[hot]!.hp).toBeGreaterThan(on[mild]!.hp - burnt[mild]!.hp);
@@ -225,7 +227,7 @@ test('a caster rat\'s Curse tapped on its card hurts Brakk by what the damage ru
   await expect(currentRow(page)).toContainText('Cave Rat');
   const rat = await fightRow(page, 'Cave Rat'), brakk = await fightRow(page, 'Brakk Ironhide');
   const F = await page.evaluate(() => hunterApp.rules().fight);
-  // A caster's Curse is 1d8 + mag, magical, direct (src/core/registry/abilities.ts). With every die on 1 the reaction d20
+  // A caster's Curse is 1d8 + mag, arcane, direct (src/core/registry/abilities.ts). With every die on 1 the reaction d20
   // is 1: under the resist DC, so caught, and within the rat's crit faces, so a crit (design 3.1 rules 8b and 9). Rule
   // 11 multiplies by the crit size; rule 12 takes Brakk's Resist, less the rat's magic penetration (percent, then Unravel), off the hit.
   const raw = (1 + rat.sheet.mag) * rat.sheet.critSize;

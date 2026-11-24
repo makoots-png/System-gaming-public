@@ -150,7 +150,7 @@ export const ABILITY_LINES = 4;
 export function abilityLines(a: Ability, R: KindRules): string[] {
   const out: string[] = [];
   if (a.effect) {
-    const what = a.effect.type === 'heal' ? 'Heals' : a.effect.type === 'shield' ? 'Shields' : `${a.effect.type === 'physical' ? 'Physical' : 'Magical'} damage`;
+    const what = a.effect.type === 'heal' ? 'Heals' : a.effect.type === 'shield' ? 'Shields' : `${a.effect.type === 'physical' ? 'Physical' : 'Arcane'} damage`;
     const f = formulaOf(a, R);
     if (f) out.push(`${what} ${printFormula(f)}`);
   }

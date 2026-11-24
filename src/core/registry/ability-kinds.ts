@@ -18,7 +18,7 @@ import type { Shape, Tiles } from '../combat/space.ts';
 import { paceCost, roundsOf, tick } from '../combat/timeline.ts';
 import type { Cost, Pace, Tick } from '../combat/timeline.ts';
 import { tag } from '../combat/ability-types.ts';
-import type { Ability, AbilityEffect, AbilityId, AbilityKind, Delivery, AbilityGate, AbilityEffectType, Gap, Price, RuleTicks, Tag } from '../combat/ability-types.ts';
+import type { Ability, AbilityEffect, AbilityId, AbilityKind, Delivery, AbilityGate, AbilityEffectType, Gap, OpDamageType, Price, RuleTicks, Tag } from '../combat/ability-types.ts';
 import { baseOf, bounded, FAMILY, scalerLine, scalersOf, scalerText, suggestScaler } from './scalers.ts';
 import type { Scaler, ScalerName } from './scalers.ts';
 
@@ -70,12 +70,12 @@ export const KINDS: { readonly [K in AbilityKind]: KindForm<KindNumbers[K]> } = 
     shape: () => ({ kind: 'line', width: tiles(0), pierce: false }), delivery: n => ({ kind: 'travel', windup: tick(n.windup), speed: n.travel }),
   },
   blast: {
-    pace: 'heavy', aim: 'place', foesOnly: false, type: 'magical', dice: '2d8', power: 1,
+    pace: 'heavy', aim: 'place', foesOnly: false, type: 'arcane', dice: '2d8', power: 1,
     shape: (n, R) => ({ kind: 'radius', radius: tiles(n.radius), ring: { outer: tiles(n.ring), share: percent(R.fight.ringShare * 100) } }),
     delivery: n => ({ kind: 'travel', windup: tick(n.windup), speed: 'instant' }),
   },
   curse: {
-    pace: 'standard', aim: 'foe', foesOnly: true, type: 'magical', dice: '1d8', power: 1,
+    pace: 'standard', aim: 'foe', foesOnly: true, type: 'arcane', dice: '1d8', power: 1,
     shape: n => ({ kind: 'touch', reach: tiles(n.range) }), delivery: () => ({ kind: 'direct' }),
   },
   // The shield is sup * 1.5: 1.45 to 2.05 same-rank hits (table 4.6).
@@ -100,11 +100,11 @@ export function kindDefaults<K extends AbilityKind>(kind: K, R: KindRules): Kind
  */
 const POWER: { readonly [T in AbilityEffect['type']]: { readonly power: SheetNumber; readonly mine: StatKey; readonly theirs: StatKey } } = {
   physical: { power: 'phys', mine: 'str', theirs: 'vit' },
-  magical: { power: 'mag', mine: 'pow', theirs: 'dis' },
+  arcane: { power: 'mag', mine: 'pow', theirs: 'dis' },
   heal: { power: 'sup', mine: 'pre', theirs: 'dis' },
   shield: { power: 'sup', mine: 'pre', theirs: 'dis' },
 };
-/** The stat the power of a type grows with: Strength for physical damage, Power for magical, Presence for a heal or a shield. */
+/** The stat the power of a type grows with: Strength for physical damage, Power for arcane, Presence for a heal or a shield. */
 export const powerStat = (type: AbilityEffect['type']): StatKey => POWER[type].mine;
 
 export type { Gap };
@@ -283,12 +283,12 @@ export const PREVIEW_RANKS: readonly Rank[] = ['E', 'C', 'S'];
  * `main` on a normal brute of the same rank, the monster a GM meets most, with no charge. A damage type also gives what
  * is left after the brute's Armor or Resist (`dealt`, rule 12).
  */
-export function averages(formula: Formula, type: AbilityEffect['type'] | null, main: StatKey, R: SampleRules): { rank: Rank; average: number; dealt: number | null }[] {
+export function averages(formula: Formula, type: AbilityEffect['type'] | OpDamageType | null, main: StatKey, R: SampleRules): { rank: Rank; average: number; dealt: number | null }[] {
   return PREVIEW_RANKS.map(rank => {
     const user = sampleBody(rank, main, R), sheet = monsterSheet(rank, 'brute', 'normal', R);
     const target = { stats: monsterStats(rank, 'brute', R), sheet };
     const avg = average(formula, { user, target, charge: 0 });
-    const dealt = type === 'physical' || type === 'magical' ? afterDefence(avg, type, user.sheet, sheet, R) : null;
+    const dealt = type === 'physical' || type === 'arcane' ? afterDefence(avg, type, user.sheet, sheet, R) : null;
     return { rank, average: avg, dealt };
   });
 }

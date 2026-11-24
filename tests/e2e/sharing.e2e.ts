@@ -2,7 +2,7 @@
 // made on one phone, read on another, merged with Add or Replace.
 import { test, expect, onboardGM, go, answerWindow, save, type Page } from './helpers.ts';
 
-const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 3 } }] };
+const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] };
 /** Frostbite for 2 rounds: a round is 1000 ticks of fight time (RULES.fight.round). */
 const FROST_BOMB = {
   name: 'Frost Bomb', type: 'consumable', rar: 'rare', slot: null, qty: 2, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
@@ -116,8 +116,8 @@ test('a GM copies the code for everything; on a second phone it shows what it ho
     expect(added(before, await content(other))).toEqual(ALL_FIVE);
   });
 
-  await test.step('the Frost Bomb\'s row says it applies the Frostbite it came with: 3 magical damage a round for 2 rounds', async () => {
-    await expect(workshop(other, 'item').locator('li', { hasText: 'Frost Bomb' })).toContainText('Applies Frostbite (2 rounds): 3 magical damage a round');
+  await test.step('the Frost Bomb\'s row says it applies the Frostbite it came with: 3 arcane damage a round for 2 rounds', async () => {
+    await expect(workshop(other, 'item').locator('li', { hasText: 'Frost Bomb' })).toContainText('Applies Frostbite (2 rounds): 3 arcane damage a round');
   });
 });
 

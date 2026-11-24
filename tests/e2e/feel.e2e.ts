@@ -404,7 +404,7 @@ async function setupMap(device: DeviceFn): Promise<{ dev: Device; page: Page; ma
       f.grid = { w, h, tiles: Array.from({ length: w * h }, (_, i) => { const x = i % w, y = Math.floor(i / w); return wall(x, y) ? 'wall' : y === 5 && x >= 4 && x <= 6 ? 'cover' : y === 8 && x >= 12 && x <= 15 ? 'rough' : 'floor'; }) };
       const area = (x0: number, y0: number, x1: number, y1: number) => Array.from({ length: (x1 - x0 + 1) * (y1 - y0 + 1) }, (_, i) => ({ x: x0 + (i % (x1 - x0 + 1)), y: y0 + Math.floor(i / (x1 - x0 + 1)) }));
       f.zones = [
-        { id: 'z-fire', name: 'Burning ground', ground: { kind: 'tiles', tiles: area(5, 7, 7, 8) }, owner: null, spares: null, tier: 0, until: null, endsWithOwner: false, ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 3 } }] },
+        { id: 'z-fire', name: 'Burning ground', ground: { kind: 'tiles', tiles: area(5, 7, 7, 8) }, owner: null, spares: null, tier: 0, until: null, endsWithOwner: false, ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] },
         { id: 'z-mud', name: 'Mud', ground: { kind: 'tiles', tiles: area(11, 5, 13, 6) }, owner: null, spares: null, tier: 0, until: null, endsWithOwner: false, ops: [{ op: 'speed', pct: -30 }] },
       ];
       f.fog = { sight: 8, seen: '0'.repeat(w * h) };

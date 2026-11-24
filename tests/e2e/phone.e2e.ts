@@ -516,7 +516,7 @@ async function seedBusy(gm: Page, player: Page): Promise<void> {
       };
       const bastion = {
         label: 'Sovereign Ironwake Bulwark & Ward',
-        desc: 'Reinforces physical and magical defense across long dungeon raids.',
+        desc: 'Reinforces physical and arcane defense across long dungeon raids.',
         color: '#4dd8ff',
         ops: [{ op: 'sheet', key: 'armor', amount: 18 }, { op: 'sheet', key: 'resist', amount: 15 }],
       };

@@ -2986,3 +2986,27 @@ test('fightRest is applied only in core fight-turn.ts: playDungeon carries post-
   const allowed = new Set(['src/core/rules.ts', 'src/core/rules-text.ts', 'src/core/combat/fight-turn.ts']);
   expect([...new Set(srcHits)].filter(f => !allowed.has(f)), 'only fight-turn.ts applies fightRest (rules.ts defines it and rules-text.ts describes it)').toEqual([]);
 });
+
+test('the old damage-type word "magical" appears in src/ and public/ only at the parser alias', async () => {
+  // Unit R6: "arcane" replaced "magical" across code and UI copy so Resist has one damage word everywhere.
+  // Only the one-way parser alias in src/core/combat/fight-parse.ts may mention "magical" to read old saves, packs, and room docs.
+  const word = /\bmagical\b/i;
+  expect(word.test("type: 'magical'"), 'catches lowercase token').toBe(true);
+  expect(word.test('Magical damage'), 'catches capitalized copy').toBe(true);
+  expect(word.test('non-magical damage'), 'catches hyphenated form').toBe(true);
+  expect(word.test("formula('1d6 + mag')"), 'allows the saved formula variable mag').toBe(false);
+  expect(word.test('Magic penetration (%)'), 'allows unrelated word magic').toBe(false);
+
+  const hits: Line[] = [];
+  for (const dir of ['src', 'public']) {
+    const names = (await readdir(`${ROOT}/${dir}`, { recursive: true })).filter(n => /\.(ts|js|html|css|json|svg)$/.test(n)).sort();
+    for (const name of names) {
+      const file = `${dir}/${name}`, lines = (await Bun.file(`${ROOT}/${file}`).text()).split('\n');
+      lines.forEach((text, i) => { if (word.test(text)) hits.push({ file, line: i + 1, text }); });
+    }
+  }
+  const alias = hits.filter(h => h.file === 'src/core/combat/fight-parse.ts' && /const readDamageType\b/.test(h.text));
+  expect(alias.length, 'the parser alias line in src/core/combat/fight-parse.ts must exist').toBe(1);
+  const bad = hits.filter(h => !alias.includes(h));
+  expect(report(bad), 'use "arcane" instead of "magical" in src/ and public/ (keep "magical" only at readDamageType in fight-parse.ts)').toEqual([]);
+});

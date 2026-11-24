@@ -145,7 +145,7 @@ export function register(app) {
             brush = b.dataset.brush; if (brush.startsWith('zone:')) zoneAt = Number(brush.slice(5));
             drawBrushes(); drawZone();
           } else if (b.hasAttribute('data-newzone')) {
-            st.zones.push({ id: `z${Date.now().toString(36)}${st.zones.length}`, name: `Field ${st.zones.length + 1}`, ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 3 } }], tiles: new Set() });
+            st.zones.push({ id: `z${Date.now().toString(36)}${st.zones.length}`, name: `Field ${st.zones.length + 1}`, ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }], tiles: new Set() });
             zoneAt = st.zones.length - 1; brush = `zone:${zoneAt}`; drawBrushes(); drawZone();
           } else if (b.hasAttribute('data-delzone')) {
             st.zones.splice(zoneAt, 1); brush = 'wall'; drawBrushes(); drawZone(); drawGrid();

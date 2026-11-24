@@ -78,7 +78,7 @@ function caught(f: Running, me: Body, a: Ability, t: Body): { foes: number; alli
 /** What one use of a damaging `a` on `t` is worth: its formula's average, once for each foe it catches. 0 for any other. */
 function damageOf(f: Running, me: Body, a: Ability, t: Body, R: Rules): number {
   const type = a.effect?.type;
-  if (type !== 'physical' && type !== 'magical') return 0;
+  if (type !== 'physical' && type !== 'arcane') return 0;
   const formula = formulaOf(a, R);
   if (!formula) return 0;
   const { foes, allies } = caught(f, me, a, t);

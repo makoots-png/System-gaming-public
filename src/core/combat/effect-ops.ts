@@ -16,7 +16,7 @@ import { tiles } from './space.ts';
 import type { Place, Side, Tiles } from './space.ts';
 import { roundsOf, tick, withSpeed } from './timeline.ts';
 import type { Clock, Tick } from './timeline.ts';
-import type { Ability, AbilityId, CombatantId, DamageType, HunterId, Tag } from './ability-types.ts';
+import type { Ability, AbilityId, CombatantId, HunterId, OpDamageType, Tag } from './ability-types.ts';
 import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
 import type { MythicStanding } from './mythic-types.ts';
@@ -128,7 +128,7 @@ export const reactionMayHold = (o: UseOp): boolean => landsAlone(o) || o.op === 
  * stun floor; `taunt` forces the bearer's target and makes a threat burst; `refund` gives the bearer back part of a turn.
  */
 export type Op =
-  | { readonly op: 'damage'; readonly type: DamageType; readonly amount: Tiered<Formula>; readonly when?: When }
+  | { readonly op: 'damage'; readonly type: OpDamageType; readonly amount: Tiered<Formula>; readonly when?: When }
   | { readonly op: 'heal'; readonly amount: Tiered<Formula>; readonly when?: When }
   | { readonly op: 'mana'; readonly amount: Tiered<Formula>; readonly when?: When }
   /** A negative amount removes fatigue. */
@@ -729,15 +729,23 @@ export function settle(statuses: readonly Status[], now: Tick, R: OpRules): { st
 }
 
 /**
- * What a due op pays: its formula with the dice the edge rolled for this settle is the rate, and it pays the rounded
- * running total less what the rounded total had already paid, `round(rate * (before + share)) - round(rate * before)`.
- * For a fixed rate the sum over any split of a span is `round(rate * span)`, so rounding never drifts. A status's
- * formula reads its bearer.
+ * The unprorated per-round rate of a due op: its formula with the dice rolled for this settle, times its stacks.
+ * A status's formula reads its bearer.
  */
-export function dueAmount(d: Due, scope: Scope, dice: readonly number[]): number {
-  const rate = evaluate(atTier(d.op.amount, d.tier), { ...scope, dice }) * d.stacks;
-  return Math.round(rate * (d.before + d.share)) - Math.round(rate * d.before);
-}
+export const dueRate = (d: Due, scope: Scope, dice: readonly number[]): number =>
+  evaluate(atTier(d.op.amount, d.tier), { ...scope, dice }) * d.stacks;
+
+/**
+ * What a per-round `rate` pays across `d.share` after `d.before` rounds already paid:
+ * `round(rate * (before + share)) - round(rate * before)`.
+ * For a fixed rate the sum over any split of a span is `round(rate * span)`, so rounding never drifts.
+ */
+export const prorated = (rate: number, d: Pick<Due, 'before' | 'share'>): number =>
+  Math.round(rate * (d.before + d.share)) - Math.round(rate * d.before);
+
+/** What a due op pays when no defence step sits between its rate and its share: `prorated(dueRate(...), d)`. */
+export const dueAmount = (d: Due, scope: Scope, dice: readonly number[]): number =>
+  prorated(dueRate(d, scope, dice), d);
 
 // ── what statuses do to a sheet ──
 
@@ -1019,7 +1027,7 @@ function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string 
   const need = !t.need ? '' : t.need.kind === 'holds' ? ` Only while it holds ${R.conditions[t.need.key]?.label ?? t.need.key}.` : ` Only inside ${t.need.zone}.`;
   return `When its bearer ${what}: ${t.ops.map(o => landLine(o, tier, R)).join(', ')}${where}, ${often}.${need}`;
 }
-/** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag magical damage. Curing this status cancels it." */
+/** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag arcane damage. Curing this status cancels it." */
 const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
   `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join(', ')}. ${e.cleanse === 'cancel' ? 'Curing this status cancels it.' : 'Curing this status triggers it right away.'}`;
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */

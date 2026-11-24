@@ -68,9 +68,9 @@ const status = (key: string, duration: number | null, ...ops: Op[]): UseOp =>
 const STRIKE = make('strike', 'strike', { range: tiles(2) });
 const SHOT = make('shot', 'shot');
 const BLAST = make('blast', 'blast', { cost: { fatigue: 0, mana: 4, time: 150 as never, cooldown: tick(0) },
-  zone: { name: 'Embers', duration: tick(2500), ops: [{ op: 'damage', type: 'magical', amount: f('1d4') }, { op: 'speed', pct: -20 }], endsWithOwner: true, around: null,
+  zone: { name: 'Embers', duration: tick(2500), ops: [{ op: 'damage', type: 'arcane', amount: f('1d4') }, { op: 'speed', pct: -20 }], endsWithOwner: true, around: null,
     grow: { step: tiles(1), cap: tiles(4) } } });
-const CURSE = make('curse', 'curse', { ops: [status('burning', 2000, { op: 'damage', type: 'magical', amount: f('1d4 + 1') }), status('slowed', 1500, { op: 'speed', pct: -30 })] });
+const CURSE = make('curse', 'curse', { ops: [status('burning', 2000, { op: 'damage', type: 'arcane', amount: f('1d4 + 1') }), status('slowed', 1500, { op: 'speed', pct: -30 })] });
 const STUN = make('strike', 'stun', { range: tiles(3), ops: [status('stunned', 800, { op: 'hold' })] });
 const ROOT = make('shot', 'snare', { ops: [status('rooted', 1200, { op: 'root' }), status('weakened', 3000, { op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } })] });
 const TAUNT = make('curse', 'taunt', { effect: null, delivery: { kind: 'sure' }, range: tiles(12), shape: { kind: 'touch', reach: tiles(12) },
@@ -82,7 +82,7 @@ const WARD = make('support', 'ward', { aim: 'self', shape: { kind: 'self' }, ran
 const MEND = make('support', 'mend', { effect: { type: 'heal', by: 'hand', formula: f('1d6 + sup') }, ops: [status('regen', 3000, { op: 'heal', amount: f('4') }), status('hasted', 2000, { op: 'speed', pct: 25 })] });
 const CHARGE = make('blast', 'charge', {
   cost: { fatigue: 0, mana: 3, time: 100 as never, cooldown: tick(0) }, range: tiles(14),
-  effect: { type: 'magical', by: 'hand', formula: f('(1d8 + mag) * (1 + 0.5 * charge)') }, channel: { growth: 'linear', max: 3 },
+  effect: { type: 'arcane', by: 'hand', formula: f('(1d8 + mag) * (1 + 0.5 * charge)') }, channel: { growth: 'linear', max: 3 },
 });
 const BITE = make('strike', 'bite', { range: tiles(2), ops: [status('bleeding', 1500, { op: 'damage', type: 'physical', amount: f('2') })] });
 const HOWL = make('curse', 'howl', { ops: [status('stunned', 600, { op: 'hold' })] });
@@ -109,8 +109,8 @@ const STORAGE = stackDef('Storage', 5, { leave: { kind: 'event', event: 'moved' 
 const EASEL = wornStatus('easel', 'Easel', { on: 'turnStart', to: 'self', limit: { kind: 'each' }, ops: [addTo('storage', STORAGE)] });
 /** Resonance: three burst for a hit with an execute scaler (design 8.0), and are spent. */
 const RESONANCE = stackDef('Resonance', 3, { threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend',
-  ops: [{ op: 'damage', type: 'magical', amount: f('1.28 * (1d8 + mag) * (1 + max(0, min(1, (target.missing - 0.5) / 0.5)))'), when: 'use' }] } });
-const BLOODLETTING = make('curse', 'bloodletting', { effect: { type: 'magical', by: 'hand', formula: f('0.7 * (1d8 + mag)') }, ops: [addTo('resonance', RESONANCE, 2)] });
+  ops: [{ op: 'damage', type: 'arcane', amount: f('1.28 * (1d8 + mag) * (1 + max(0, min(1, (target.missing - 0.5) / 0.5)))'), when: 'use' }] } });
+const BLOODLETTING = make('curse', 'bloodletting', { effect: { type: 'arcane', by: 'hand', formula: f('0.7 * (1d8 + mag)') }, ops: [addTo('resonance', RESONANCE, 2)] });
 /** Violence: spends all Pain for more damage, only with some. */
 const VIOLENCE = make('strike', 'violence', { range: tiles(2), effect: { type: 'physical', by: 'hand', formula: f('(1d8 + phys) * (1 + 0.06 * spent)') },
   prices: [{ kind: 'stacks', key: statusKey('pain'), from: 'self', take: { kind: 'all' } }], gates: [{ kind: 'holds', key: statusKey('pain'), on: 'self', atLeast: 1 }] });
@@ -123,11 +123,11 @@ const PACT = make('support', 'pact', { aim: 'self', shape: { kind: 'self' }, ran
  * the stun's rule moved the seeds (Nov 22: 126 put on, 51 lost to a cleared fight, 7 to a removed row, none reached its end).
  */
 const HEMOPLAGUE = make('curse', 'hemoplague', { gates: [{ kind: 'holds', key: statusKey('crimson-pact'), on: 'self', atLeast: 1 }, { kind: 'uses', per: 'fight', n: 2 }],
-  ops: [addTo('hemoplague', { label: 'Hemoplague', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d4') }], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } }, 1, 200)] });
+  ops: [addTo('hemoplague', { label: 'Hemoplague', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: f('1d4') }], end: { ops: [{ op: 'damage', type: 'arcane', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } }, 1, 200)] });
 /** A boundary around Mira until removed that costs 5 fatigue a round and heals a little, and hits who stands in it when it ends. */
 const BOUNDARY = make('support', 'boundary', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
   zone: { name: 'Boundary', duration: null, ops: [{ op: 'heal', amount: f('1') }], endsWithOwner: true, around: tiles(1), grow: null, upkeep: { fatigue: 5, mana: 0 },
-    end: [{ op: 'damage', type: 'magical', amount: f('1d6'), when: 'use' }] } });
+    end: [{ op: 'damage', type: 'arcane', amount: f('1d6'), when: 'use' }] } });
 const SHATTER = make('support', 'shatter', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, prices: [{ kind: 'zone', name: 'Boundary', take: 'all' }] });
 /** A sprite for 2 rounds, once a gate. */
 /** A stacking status already on a body as the fight starts, from the GM. */
@@ -229,8 +229,8 @@ function rollsFor(g: Rng, fight: Fight, by: CombatantId, a: Ability, aim: Aim, a
 const def = (label: string, ...ops: Op[]): StatusDef => ({ label, desc: '', ops });
 const GM_STATUSES: readonly [string, StatusDef][] = [
   ['stunned', def('Stunned', { op: 'hold' })], ['slowed', def('Slowed', { op: 'speed', pct: -30 })],
-  ['burning', def('Burning', { op: 'damage', type: 'magical', amount: f('1d6') })], ['weakened', def('Weakened', { op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } })],
-  ['sickness', def('Radiating sickness', { op: 'damage', type: 'magical', amount: f('2') }, { op: 'speed', pct: -10 }, { op: 'aura', radius: 2, on: 'all' })],
+  ['burning', def('Burning', { op: 'damage', type: 'arcane', amount: f('1d6') })], ['weakened', def('Weakened', { op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } })],
+  ['sickness', def('Radiating sickness', { op: 'damage', type: 'arcane', amount: f('2') }, { op: 'speed', pct: -10 }, { op: 'aura', radius: 2, on: 'all' })],
   ['plague', def('Plague', { op: 'damage', type: 'physical', amount: f('1d4') }, { op: 'spread', range: 2 })],
 ];
 function gmStatus(g: Rng, id: CombatantId): Command {
@@ -266,8 +266,8 @@ function gmRevive(g: Rng, fight: Fight, anyId: () => CombatantId): Command {
 
 // ── the GM's ground: paint and zones ──
 const ZONE_OPS: readonly (readonly Op[])[] = [
-  [{ op: 'damage', type: 'magical', amount: f('3') }], [{ op: 'damage', type: 'physical', amount: f('1d6'), when: 'use' }],
-  [{ op: 'speed', pct: -40 }, { op: 'heal', amount: f('2') }], [{ op: 'root' }], [{ op: 'stat', key: 'agi', amount: { kind: 'number', value: -10 } }, { op: 'damage', type: 'magical', amount: f('2'), when: 'use' }],
+  [{ op: 'damage', type: 'arcane', amount: f('3') }], [{ op: 'damage', type: 'physical', amount: f('1d6'), when: 'use' }],
+  [{ op: 'speed', pct: -40 }, { op: 'heal', amount: f('2') }], [{ op: 'root' }], [{ op: 'stat', key: 'agi', amount: { kind: 'number', value: -10 } }, { op: 'damage', type: 'arcane', amount: f('2'), when: 'use' }],
 ];
 function ground(g: Rng, fight: Fight, anyRow: () => Place): Command {
   const k = g.int(0, 3);

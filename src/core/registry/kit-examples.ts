@@ -33,18 +33,18 @@ const rounds = (n: number, R: Rules) => tick(n * R.fight.round);
 export function exampleStatuses(R: Rules): Record<string, StatusDef> {
   const K = R.fight.kit.examples;
   const resonance: StackDef = {
-    label: 'Resonance', desc: 'At 3 stacks, all stacks are spent and the bearer takes magical damage. The lower the bearer\'s HP, the more damage it takes.', ops: [],
+    label: 'Resonance', desc: 'At 3 stacks, all stacks are spent and the bearer takes arcane damage. The lower the bearer\'s HP, the more damage it takes.', ops: [],
     stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: {
       at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend',
       // the burst with the suggested execute (design 8.0): from half HP, up to +100%, the base cut to 0.8
-      ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`(2d6 + mag) * ${K.blood.burst * K.blood.base} * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))`, R) }],
+      ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: formula(`(2d6 + mag) * ${K.blood.burst * K.blood.base} * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))`, R) }],
     } },
   };
   const signature: StackDef = {
-    label: 'Signature', desc: 'At 2 stacks, both are spent, and the bearer and its allies within 2 tiles take magical damage.', ops: [],
+    label: 'Signature', desc: 'At 2 stacks, both are spent, and the bearer and its allies within 2 tiles take arcane damage.', ops: [],
     stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
       at: { kind: 'count', n: 2 }, to: { kind: 'area', radius: tiles(2), on: 'allies' }, then: 'spend',
-      ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.mark.burst} * (2d6 + mag)`, R) }],
+      ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: formula(`${K.mark.burst} * (2d6 + mag)`, R) }],
     } },
   };
   const pain: StackDef = { label: 'Pain', desc: 'Each hit you deal adds a stack. Violence spends all of them.', ops: [], stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
@@ -52,8 +52,8 @@ export function exampleStatuses(R: Rules): Record<string, StatusDef> {
     resonance, signature, pain,
     'crimson-pact': { label: 'Crimson Pact', desc: 'While you have it, you can use Hemoplague.', ops: [] },
     hemoplague: {
-      label: 'Hemoplague', desc: 'When it ends, the bearer takes magical damage. Removing it early cancels the damage.', ops: [],
-      end: { ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.hemo.end} * (1d8 + mag)`, R) }], cleanse: 'cancel' },
+      label: 'Hemoplague', desc: 'When it ends, the bearer takes arcane damage. Removing it early cancels the damage.', ops: [],
+      end: { ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: formula(`${K.hemo.end} * (1d8 + mag)`, R) }], cleanse: 'cancel' },
     },
     // Hidden even in a foe's sight, at a level that follows the user's rank E to S (section 5, example 1).
     vanished: {
@@ -72,10 +72,10 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
   const execute = suggestedScaler('strike', 'execute', R);
   const vanish = make('support', 'Vanish', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('vanished', 2)] }, R);
   return [
-    active('Bloodletting', 'A curse that deals magical damage and adds a Resonance stack to the target.',
-      make('curse', 'Bloodletting', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
+    active('Bloodletting', 'A curse that deals arcane damage and adds a Resonance stack to the target.',
+      make('curse', 'Bloodletting', { effect: { type: 'arcane', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
     active('Fester', 'A curse that deals more damage for each Resonance stack on the target, then adds one more stack.',
-      make('curse', 'Fester', { effect: { type: 'magical', by: 'hand', formula: formula('0.6 * (2d6 + mag) * (1 + 0.15 * target.stacks(resonance))', R) }, ops: [apply('resonance', 2)] }, R)),
+      make('curse', 'Fester', { effect: { type: 'arcane', by: 'hand', formula: formula('0.6 * (2d6 + mag) * (1 + 0.15 * target.stacks(resonance))', R) }, ops: [apply('resonance', 2)] }, R)),
     active('Crimson Pact', 'Costs half your max HP. You get Crimson Pact for 3 rounds.',
       { ...make('support', 'Crimson Pact', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('crimson-pact', 3)] }, R),
         prices: [{ kind: 'hp', amount: { kind: 'share', share: R.fight.kit.hpShare } }] }),
@@ -84,7 +84,7 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
     active('Executioner\'s Cut', 'Costs 5% of your max HP. The lower the target\'s HP, the more damage it deals.',
       { ...make('strike', 'Executioner\'s Cut', { ticks: { scalers: [execute] } }, R), prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.05 } }] }),
     active('Disaster Stroke', 'A curse that adds 1 Signature stack to the target. At 2 stacks, Signature deals its damage.',
-      make('curse', 'Disaster Stroke', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`, R) }, ops: [apply('signature', 2)] }, R)),
+      make('curse', 'Disaster Stroke', { effect: { type: 'arcane', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`, R) }, ops: [apply('signature', 2)] }, R)),
     active('Violence', 'A strike that spends all your Pain stacks and deals 6% more damage for each one.',
       { ...make('strike', 'Violence', { effect: { type: 'physical', by: 'hand', formula: formula(`(1d8 + phys) * (1 + ${K.pain.perStack} * spent)`, R) } }, R),
         prices: [{ kind: 'stacks', key: statusKey('pain'), from: 'self', take: { kind: 'all' } }] }),

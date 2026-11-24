@@ -746,7 +746,7 @@ describe('a status change', () => {
   });
 
   test('a def with a dice count past the shipped rules\' limit does not read, as every room message is read before any GM\'s rules', () => {
-    const dice = (count: number) => grant({ def: { ...BURNING, ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count, sides: 6 } }] } });
+    const dice = (count: number) => grant({ def: { ...BURNING, ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count, sides: 6 } }] } });
     expect(status({ add: [dice(RULES.dice.maxDice)] })!.add).toHaveLength(1);
     expect(status({ add: [dice(RULES.dice.maxDice + 1)] })!.add).toEqual([]);
   });
@@ -1032,7 +1032,7 @@ describe('the fight doc', () => {
   });
 
   test('a revealed intent carries at most four lines of its numbers, each cut to 80 characters, and its area\'s radius and ring; an unrevealed one carries none', () => {
-    const reveal = { lines: ['Magical damage 2d8 + power', 'Radius 3 tiles, ring to 4 at 50%', 'Range 10 tiles', 'Slow to land: a quick body can move out', 'a fifth line'], radius: 3, outer: 4 };
+    const reveal = { lines: ['Arcane damage 2d8 + power', 'Radius 3 tiles, ring to 4 at 50%', 'Range 10 tiles', 'Slow to land: a quick body can move out', 'a fifth line'], radius: 3, outer: 4 };
     const [shown, hidden] = rowsOf([{ ...GOBLIN_ROW, intent: { name: 'Hellfire', target: 'c1', reveal: { ...reveal, lines: [...reveal.lines.slice(0, 4), 'x'.repeat(200)] } } }, { ...GOBLIN_ROW, id: 'c3' }]);
     expect(shown!.intent.reveal).toEqual({ lines: reveal.lines.slice(0, 4), radius: 3, outer: 4 });
     expect(rowsOf([{ ...GOBLIN_ROW, intent: { name: 'Hellfire', target: 'c1', reveal: { ...reveal, lines: ['x'.repeat(200)] } } }])[0]!.intent.reveal.lines).toEqual(['x'.repeat(80)]);
@@ -1156,7 +1156,7 @@ describe('the fight doc', () => {
     const six = Object.entries(BUILT_IN_STATUSES).sort((a, b) => b[1].label.length - a[1].label.length).slice(0, 6);
     const id = (i: number) => `m-${String(i).padStart(2, '0')}`;
     /** A GM's own def of about `n` characters under a built-in's name, so it fills the table: its longest description and ops of a damage of 1. */
-    const op = { op: 'damage', type: 'magical', amount: { kind: 'number', value: 1 } };
+    const op = { op: 'damage', type: 'arcane', amount: { kind: 'number', value: 1 } };
     const big = (label: string, n: number) => {
       const ops = many(Math.min(12, Math.floor((n - 100) / (JSON.stringify(op).length + 1))), () => op), bare = { label, desc: '', ops };
       return { label, desc: 'd'.repeat(Math.max(0, Math.min(500, n - JSON.stringify(bare).length))), ops };

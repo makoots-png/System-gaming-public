@@ -339,8 +339,8 @@ group('an item card', () => {
   const burning = (rar: ItemTemplate['rar']) => ({ rar, effects: [{ op: 'applyStatus', key: statusKey('burning'), def: BUILT_IN_STATUSES.burning, duration: tick(3 * RULES.fight.round) }] as Op[] });
 
   test('a rare item that applies Burning shows the C-rank 3d8 it deals; a common one shows 1d6', () => {
-    expect(describeItem(RULES, burning('rare'))).toEqual(['Applies Burning (3 rounds): 3d8 magical damage a round']);
-    expect(describeItem(RULES, burning('common'))).toEqual(['Applies Burning (3 rounds): 1d6 magical damage a round']);
+    expect(describeItem(RULES, burning('rare'))).toEqual(['Applies Burning (3 rounds): 3d8 arcane damage a round']);
+    expect(describeItem(RULES, burning('common'))).toEqual(['Applies Burning (3 rounds): 1d6 arcane damage a round']);
   });
 
   test('a worn item does nothing through ops; a rank-capped potion shows its rank cap line and ops', () => {
@@ -545,6 +545,20 @@ group('an item\'s icon', () => {
     const worn = (icon: unknown) => parseItem({ name: 'Charm', type: 'accessory', slot: 'neck', worn: { label: 'Warded', desc: '', ops: [], icon } })!.worn!;
     expect(worn('ward').icon).toBe('ward');
     expect(worn('nope')).not.toHaveProperty('icon');
+  });
+
+  test('a thrown item refuses a true damage op, while an item applying a true-damage status like Poisoned is kept', () => {
+    const thrownTrue = parseItem({ name: 'True Bomb', type: 'consumable', target: 'other', effects: [{ op: 'damage', type: 'true', amount: number(8), when: 'use' }] })!;
+    expect(thrownTrue.effects).toBeUndefined();
+    const mixed = parseItem({ name: 'Mixed Bomb', type: 'consumable', target: 'other', effects: [
+      { op: 'damage', type: 'true', amount: number(8), when: 'use' },
+      { op: 'damage', type: 'arcane', amount: number(5), when: 'use' },
+    ] })!;
+    expect(mixed.effects).toEqual([{ op: 'damage', type: 'arcane', amount: number(5), when: 'use' }]);
+    const vial = parseItem({ name: 'Venom Flask', type: 'consumable', target: 'other', effects: [
+      { op: 'applyStatus', key: statusKey('poisoned'), def: BUILT_IN_STATUSES.poisoned, duration: tick(3 * RULES.fight.round) },
+    ] })!;
+    expect(vial.effects?.length).toBe(1);
   });
 });
 

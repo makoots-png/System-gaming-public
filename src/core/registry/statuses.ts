@@ -22,11 +22,11 @@ const STATUSES = {
   bleeding: { label: 'Bleeding', desc: 'Takes physical damage every round.', ops: [
     { op: 'damage', type: 'physical', when: 'turn', amount: each(dice(1, 4), dice(1, 6), dice(2, 6), dice(2, 8), dice(3, 8), dice(4, 8)) },
   ] },
-  burning: { label: 'Burning', desc: 'Takes magical damage every round.', ops: [
-    { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 6), dice(2, 6), dice(3, 8), dice(4, 10), dice(5, 12), dice(7, 12)) },
+  burning: { label: 'Burning', desc: 'Takes arcane damage every round.', ops: [
+    { op: 'damage', type: 'arcane', when: 'turn', amount: each(dice(1, 6), dice(2, 6), dice(3, 8), dice(4, 10), dice(5, 12), dice(7, 12)) },
   ] },
-  poisoned: { label: 'Poisoned', desc: 'Takes magical damage every round and has lower Control, reducing Accuracy.', ops: [
-    { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
+  poisoned: { label: 'Poisoned', desc: 'Takes true damage every round and has lower Control, reducing Accuracy.', ops: [
+    { op: 'damage', type: 'true', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
     { op: 'stat', key: 'ctl', amount: FOUR_N },
   ] },
   paralyzed: { label: 'Paralyzed', desc: 'Cannot move or act.', ops: [{ op: 'hold' }, { op: 'root' }] },
@@ -62,8 +62,8 @@ const STATUSES = {
   ] },
   // A monster's sickness that passes on (design 4.8): Poisoned's damage a round without its aim penalty, and a spread of
   // 1, so a body next to the bearer resists it or catches it once a round of holding it, and never twice in a fight.
-  plague: { label: 'Plague', desc: 'Takes magical damage every round. Anyone next to the bearer who fails to resist it gets it too, at most once a fight.', ops: [
-    { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
+  plague: { label: 'Plague', desc: 'Takes true damage every round. Anyone next to the bearer who fails to resist it gets it too, at most once a fight.', ops: [
+    { op: 'damage', type: 'true', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
     { op: 'spread', range: 1 },
   ] },
 } satisfies Record<string, StatusDef>;

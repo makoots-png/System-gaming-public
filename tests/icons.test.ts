@@ -289,7 +289,8 @@ describe('a status\'s default icon', () => {
   });
 
   test('of a damage op is by its type, of a speed or stat op by the sign of its E value', () => {
-    expect(opIcon({ op: 'damage', type: 'magical', amount: num(3) })).toBe('spark');
+    expect(opIcon({ op: 'damage', type: 'arcane', amount: num(3) })).toBe('spark');
+    expect(opIcon({ op: 'damage', type: 'true', amount: num(3) })).toBe('bolt');
     expect(opIcon({ op: 'speed', pct: -20 })).toBe('snail');
     expect(opIcon({ op: 'speed', pct: [10, -20, -20, -20, -20, -20] })).toBe('wing');
     expect(opIcon({ op: 'stat', key: 'ctl', amount: { kind: 'number', value: -4 } })).toBe('down');

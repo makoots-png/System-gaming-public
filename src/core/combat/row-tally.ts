@@ -100,7 +100,7 @@ export function tallied(rows: readonly Body[], e: TallyEvent): Body[] {
       for (const o of e.outcomes) {
         const target = map.get(o.target);
         if (!target) continue;
-        const foe = target.side !== user.side, hit = (o.type === 'physical' || o.type === 'magical') && o.avoid !== 'out' && o.dealt > 0;
+        const foe = target.side !== user.side, hit = (o.type === 'physical' || o.type === 'arcane') && o.avoid !== 'out' && o.dealt > 0;
         if (hit && foe) {
           bump(e.by, t => {
             const run = o.crit ? t.critRun + 1 : 0;

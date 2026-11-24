@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, defenceLines, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
 import { keystoneDiff, keystoneReach, nearestKeystone } from '../src/core/hunter/keystones.ts';
 import { keystoneSwitched } from '../src/core/hunter/build.ts';
 import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
@@ -98,6 +98,17 @@ describe('the points line', () => {
     expect(line).toContain('Tap Confirm allocation to lock');
     expect(line).toContain('even if you leave the Status view');
     expect(line).not.toMatch(/leave the Status view,? to lock/);
+  });
+});
+
+describe('the defence lines (rule 12)', () => {
+  test('names physical, arcane, and true damage, and states that damaging status ticks meet Armor or Resist with no penetration', () => {
+    const lines = defenceLines(RULES);
+    expect(lines[0]).toContain('Armor reduces physical damage and Resist reduces arcane damage.');
+    expect(lines[0]).toContain('True damage ignores both Armor and Resist.');
+    expect(lines[0]).toContain(`${armorCutPct(RULES, RULES.fight.kits.heavy.armor)}%`);
+    expect(lines[1]).toContain('Damaging status effects also meet your Armor or Resist each round (with no penetration), unless the status deals true damage.');
+    expect(afterDefence(100, 'true', { armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0 }, { armor: 100, resist: 100 }, RULES)).toBe(100);
   });
 });
 

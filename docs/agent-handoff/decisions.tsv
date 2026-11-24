@@ -795,3 +795,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T19:53Z	arch	fight-rest (A3) and r1-paths (R1) landed on lead-backlog; A3 unit 6978, browser 604 + 6 alone green; R1 unit 6925, browser 596 + 10 alone (1 real look.e2e fix) green; warn.e2e conflict kept lead's plain hunter
 2026-11-24T20:08Z	ops	PR 113 (fight-rest A3 + r1-paths R1) merged to main
 2026-11-24T20:21Z	arch	auto-turn (A6) landed on lead-backlog; unit 6975, browser 607 + 8 alone green; merged clean
+2026-11-24T20:37Z	ops	PR 114 (auto-turn A6) merged to main
+2026-11-24T20:57Z	arch	status-types (R6) landed on lead-backlog; unit 6974, browser 605 + 2 real e2e fixes + 2 load reruns green; merge conflicts (jobs.ts comment, lint appends) resolved

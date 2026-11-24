@@ -107,7 +107,7 @@ test('a player completes the GM\'s quest: the GM\'s log says so once, and a repl
 });
 
 /** Frostbite for 2 rounds: a round is 1000 ticks of fight time (RULES.fight.round). */
-const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 3 } }] };
+const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] };
 const FROST_BOMB = {
   name: 'Frost Bomb', type: 'consumable', rar: 'rare', slot: null, qty: 2, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
   effects: [{ op: 'applyStatus', key: 'frostbite', def: FROSTBITE, duration: 2000 }],

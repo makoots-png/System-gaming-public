@@ -29,7 +29,7 @@ const BONUS_LABEL = { ...BONUS_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 const KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
 const KIND_LABEL = { strike: 'Strike (melee)', shot: 'Shot (ranged)', blast: 'Blast (area)', curse: 'Curse (spell)', support: 'Support (heal or shield)', none: 'No fight use' };
 const AIM_LABEL = { foe: 'On a foe', ally: 'On an ally', self: 'On the user', place: 'On a place' };
-const EFFECT_LABEL = { physical: 'Physical damage', magical: 'Magical damage', heal: 'Heals', shield: 'Shield' };
+const EFFECT_LABEL = { physical: 'Physical damage', arcane: 'Arcane damage', heal: 'Heals', shield: 'Shield' };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /** @param {import('./app.ts').App} app */

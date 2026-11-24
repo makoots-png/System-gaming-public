@@ -42,7 +42,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
   await workshop(page, 'status').locator('[data-new]').tap();
   await d.locator('[data-name]').fill('Resonance');
 
-  await test.step('Stacks: 10 at most, never leave, gone after the fight; at the bearer\'s Vitality 3d6 magical lands and the stacks are spent', async () => {
+  await test.step('Stacks: 10 at most, never leave, gone after the fight; at the bearer\'s Vitality 3d6 arcane lands and the stacks are spent', async () => {
     const g = await group(d, 'stacks');
     await expect(g.locator('[data-sum="stacks"]')).toHaveText('Stacks: no');
     await g.locator('[data-k="stack"]').check();
@@ -70,7 +70,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
   await test.step('the preview reads as rules a player understands', async () => {
     const preview = d.locator('.mk-preview');
     await expect(preview).toContainText('Stacks to 10.');
-    await expect(preview).toContainText('At vit stacks: Deals 3d6 magical damage. The stacks are spent.');
+    await expect(preview).toContainText('At vit stacks: Deals 3d6 arcane damage. The stacks are spent.');
     await expect(preview).toContainText('When its bearer is struck: Heal: 1d4 on the other, every time.');
     await expect(preview).toContainText('Removed when the fight ends.');
   });
@@ -84,7 +84,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
     expect(def.stack).toEqual({
       cap: 10, leave: { kind: 'never' }, keep: 'fight',
       threshold: { at: { kind: 'formula', formula: formulaOf('vit') }, to: { kind: 'bearer' }, then: 'spend',
-        ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: 3, sides: 6 }, when: 'use' }] },
+        ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 3, sides: 6 }, when: 'use' }] },
     });
     expect(def.triggers).toEqual([{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: { kind: 'dice', count: 1, sides: 4 }, when: 'use' }] }]);
   });
@@ -101,7 +101,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
   });
 });
 
-test('a GM makes Hemoplague\'s mark in the status maker: 3 rounds of nothing, then 4d6 magical when it ends, which a cleanse cancels', async ({ device }) => {
+test('a GM makes Hemoplague\'s mark in the status maker: 3 rounds of nothing, then 4d6 arcane when it ends, which a cleanse cancels', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
   await onboardGM(page);
   await go(page, 'workshop');
@@ -113,11 +113,11 @@ test('a GM makes Hemoplague\'s mark in the status maker: 3 rounds of nothing, th
   await g.locator('[data-end-fx] [data-quick] [data-q="damage"]').tap();
   await g.locator('[data-end-fx] [data-row="0"] [data-f="q"]').fill('4d6');
   await expect(g.locator('[data-sum="end"]')).toHaveText('When it ends: 1 effect, curing cancels it');
-  await expect(d.locator('.mk-preview')).toContainText('When it ends: Deals 4d6 magical damage. Curing this status cancels it.');
+  await expect(d.locator('.mk-preview')).toContainText('When it ends: Deals 4d6 arcane damage. Curing this status cancels it.');
   await d.getByRole('button', { name: 'Save status' }).tap();
   await expect(d).toHaveCount(0);
   const [, def] = await libraryStatus(page, 'Hemoplague');
-  expect(def.end).toEqual({ ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: 4, sides: 6 }, when: 'use' }], cleanse: 'cancel' });
+  expect(def.end).toEqual({ ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 4, sides: 6 }, when: 'use' }], cleanse: 'cancel' });
 });
 
 // ── Glas's kit, built through the makers and played ──
@@ -434,7 +434,7 @@ test('a GM gives a field an upkeep and something that lands on who stands in it 
   await expect(km).toHaveCount(0);
   const zone = (await librarySkill(page, 'Boundary')).ability.zone;
   expect(zone.upkeep).toEqual({ fatigue: 3, mana: 2 });
-  expect(zone.end).toEqual([{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: 4, sides: 6 }, when: 'use' }]);
+  expect(zone.end).toEqual([{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 4, sides: 6 }, when: 'use' }]);
 });
 
 test('a GM builds Einar\'s Harmony boundary: a field that gives one inside it a Harmony stack at each turn start and stuns who stands in it when it ends, and it reads back as made', async ({ device }) => {

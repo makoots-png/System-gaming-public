@@ -38,7 +38,7 @@ describe('a battle map', () => {
   });
 
   test('a zone that does not read, or lies around an anchor, is dropped; a map\'s zone is owned by nobody and lasts until removed; at most 16', () => {
-    const lava = { id: 'z1', name: 'Lava', ground: { kind: 'tiles', tiles: [{ x: 1, y: 1 }] }, ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 5 } }], until: 3000, owner: 'c1' };
+    const lava = { id: 'z1', name: 'Lava', ground: { kind: 'tiles', tiles: [{ x: 1, y: 1 }] }, ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 5 } }], until: 3000, owner: 'c1' };
     const ring = { ...lava, id: 'z3', ground: { kind: 'around', anchor: { kind: 'place', at: { x: 2, y: 2 } }, radius: 1 } };
     const m = read({ zones: [lava, { id: 'z2', name: 'Bad', ground: { kind: 'tiles', tiles: [{ x: 9, y: 9 }] }, ops: [] }, ring, { name: 'No id' }] })!;
     expect(m.zones).toEqual([{ ...lava, until: null, owner: null, endsWithOwner: false, spares: null, tier: 0, ground: { kind: 'tiles', tiles: [place(1, 1)] } }]);

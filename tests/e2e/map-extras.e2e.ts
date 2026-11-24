@@ -184,7 +184,7 @@ test('a hit breaks the player\'s channel: its pips shatter on both phones and it
 // ── the kits at the table (kits design 1.1, 1.2, 8.4): a stack count, its threshold's burst, a reaction armed and fired ──
 
 /** Pain: stacks to 5, and at 2 it goes off for 3 damage and the stacks are spent. */
-const PAIN = { label: 'Pain', desc: 'It builds.', ops: [], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'count', n: 2 }, to: { kind: 'bearer' }, ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 3 }, when: 'use' }], then: 'spend' } } };
+const PAIN = { label: 'Pain', desc: 'It builds.', ops: [], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'count', n: 2 }, to: { kind: 'bearer' }, ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 }, when: 'use' }], then: 'spend' } } };
 /** Particles drawn on a page so far (motion.ts keeps its pool on the page): a burst played when the count grows. */
 const bits = (page: Page) => page.evaluate(() => document.querySelectorAll('.m-bit').length);
 /** It is `id`'s turn now: setup, as the other scenes' turns are. */
@@ -250,7 +250,7 @@ test.describe('stack threshold particle burst with motion enabled', () => {
 test('the GM makes a status of their own on the rat\'s card, and the player opens it on the rat\'s token and reads what it does', async ({ device }) => {
   const { gm, player, ids } = await extrasFight(device, 'kits');
   const forge = gm.locator('.fg-overlay [role=dialog]');
-  await test.step('the GM makes Frostbite, 1d6 magical a round, and puts it on the rat', async () => {
+  await test.step('the GM makes Frostbite, 1d6 arcane a round, and puts it on the rat', async () => {
     await chooseList(gm);
     await go(gm, 'combat');
     await combat(gm).locator(`.cmb-row:has-text("${RAT}") .cmb-pick`).tap();
@@ -258,16 +258,16 @@ test('the GM makes a status of their own on the rat\'s card, and the player open
     await expect(forge).toBeVisible();
     await forge.locator('[data-name]').fill('Frostbite');
     await forge.locator('[data-quick] [data-q="d6"]').tap();
-    await expect(forge.locator('.mk-preview')).toContainText('1d6 magical damage a round');
+    await expect(forge.locator('.mk-preview')).toContainText('1d6 arcane damage a round');
     await forge.locator('[data-apply]').tap();
     await expect(forge).toHaveCount(0);
-    await expect(combat(gm).locator('.cmb-card', { hasText: RAT })).toContainText('1d6 magical damage a round');
+    await expect(combat(gm).locator('.cmb-card', { hasText: RAT })).toContainText('1d6 arcane damage a round');
   });
   await test.step('the player taps the rat and opens Frostbite: the same sentence as the GM\'s', async () => {
     await token(player, ids.rat).tap();
     const chip = combat(player).locator('[data-tbsheet] [data-chip]', { hasText: 'Frostbite' });
     await chip.locator('[data-dt-key]').tap();
-    await expect(combat(player).locator('[data-tbsheet] .dt')).toContainText('1d6 magical damage a round');
+    await expect(combat(player).locator('[data-tbsheet] .dt')).toContainText('1d6 arcane damage a round');
   });
 });
 

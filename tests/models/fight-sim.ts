@@ -92,7 +92,7 @@ type BuiltIns = ReturnType<typeof builtIns>;
 /** What a build may use that no built-in gives: the blast, the channel, the taunt, a Presence build's bolt, Burning. */
 export function abilities(R: Rules = RULES) {
   return {
-    /** A magical bolt that does not travel, `1d8 + mag` (the caster archetype's Curse): the support's attack. */
+    /** A arcane bolt that does not travel, `1d8 + mag` (the caster archetype's Curse): the support's attack. */
     bolt: make('curse', 'Bolt', {}, R),
     /** The cannon's mana blast: heavy, a radius with a ring, a long wind-up a fast body steps out of. */
     blast: make('blast', 'Blast', {}, R),
@@ -107,9 +107,9 @@ export function abilities(R: Rules = RULES) {
      */
     stun: ((a: Ability): Ability => ({ ...a, cost: { ...a.cost, cooldown: tick(R.itemBudget.cooldownRounds * R.fight.round) } }))(
       make('curse', 'Stun', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: R.conditions.stunned, duration: tick(R.fight.round) }] }, R)),
-    /** The status build's signature: Burning for 3 rounds, per-round magical damage by the user's rank, no direct damage. */
+    /** The status build's signature: Burning for 3 rounds, per-round arcane damage by the user's rank, no direct damage. */
     ignite: make('curse', 'Ignite', {
-      effect: null, ops: [status('burning', 3, { op: 'damage', type: 'magical', amount: BURNING.map(formula) as unknown as Tiers<ReturnType<typeof formula>> }, R)],
+      effect: null, ops: [status('burning', 3, { op: 'damage', type: 'arcane', amount: BURNING.map(formula) as unknown as Tiers<ReturnType<typeof formula>> }, R)],
     }, R),
     ...kitAbilities(R),
   };
@@ -123,13 +123,13 @@ const resonance = (R: Rules): StackDef => ({
   label: 'Resonance', desc: 'Blood that answers its caller.', ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: {
     at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend',
     // its execute scaler at the suggestion (design 8.0): from half HP, up to +100%, the base cut to 0.8
-    ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`(2d6 + mag) * ${R.fight.kit.examples.blood.burst * R.fight.kit.examples.blood.base} * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))`) }],
+    ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: formula(`(2d6 + mag) * ${R.fight.kit.examples.blood.burst * R.fight.kit.examples.blood.base} * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))`) }],
   } },
 });
 const mark = (R: Rules): StackDef => ({
   label: 'Signature', desc: 'The mark of the visionary.', ops: [], stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
     at: { kind: 'count', n: 2 }, to: { kind: 'area', radius: tiles(2), on: 'allies' }, then: 'spend',
-    ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${R.fight.kit.examples.mark.burst} * (2d6 + mag)`) }],
+    ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: formula(`${R.fight.kit.examples.mark.burst} * (2d6 + mag)`) }],
   } },
 });
 /** Einar's Pain: a fight's count to 10 that never leaves. */
@@ -144,10 +144,10 @@ function kitAbilities(R: Rules) {
   const K = R.fight.kit.examples;
   return {
     /** Glas's Bloodletting: a curse at a share of Arc Bolt that adds a Resonance when it is not resisted (a stack lasts 2 rounds). */
-    bloodletting: make('curse', 'Bloodletting', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`) },
+    bloodletting: make('curse', 'Bloodletting', { effect: { type: 'arcane', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`) },
       ops: [{ op: 'applyStatus', key: statusKey('resonance'), def: resonance(R), duration: tick(2 * R.fight.round) }] }, R),
     /** Hwei's Disaster Stroke: a curse at a share of Arc Bolt that adds a mark; two burst on every foe within 2. */
-    stroke: make('curse', 'Disaster-Stroke', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`) },
+    stroke: make('curse', 'Disaster-Stroke', { effect: { type: 'arcane', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`) },
       ops: [{ op: 'applyStatus', key: statusKey('signature'), def: mark(R), duration: tick(2 * R.fight.round) }] }, R),
     /** Einar's Violence: a strike that spends all Pain, `1 + perStack` a Pain more. */
     violence: { ...make('strike', 'Violence', { effect: { type: 'physical', by: 'hand', formula: formula(`(1d8 + phys) * (1 + ${K.pain.perStack} * spent)`) } }, R),
@@ -578,7 +578,7 @@ export function scripted(id: MythicScriptId, R: Rules = scriptsOn()): SimRow {
  */
 const mythicPolicy: Policy = (f, me, plan, R) => {
   if (me.mythic && me.mythic.at !== 'calm') return sensible(f, me, R);
-  const target = suggested(f, me)!, uses = beatUses(me, me.abilities).filter(a => a.effect?.type === 'physical' || a.effect?.type === 'magical');
+  const target = suggested(f, me)!, uses = beatUses(me, me.abilities).filter(a => a.effect?.type === 'physical' || a.effect?.type === 'arcane');
   const a = uses.find(x => usable(f, me, x, target.place) && clearLine(f, me, x, target)) ?? uses[0];
   return a ? (clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target)) : monsterPolicy(f, me, plan, R);
 };
@@ -711,7 +711,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
     const t = tally[user.id]!;
     t.acts[a.id] = (t.acts[a.id] ?? 0) + 1;
     for (const o of r.outcomes) {
-      if (o.type !== 'physical' && o.type !== 'magical') continue;
+      if (o.type !== 'physical' && o.type !== 'arcane') continue;
       const victim = f.rows.find(b => b.id === o.target)!;
       if (victim.side === user.side) continue;
       t[o.avoid]++;

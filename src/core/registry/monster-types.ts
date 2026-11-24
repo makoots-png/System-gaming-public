@@ -1,6 +1,6 @@
 // monster-types.ts: the sixteen enemy types (the enemy draft's, balance plan sections 5 and 8) and what a type means.
 // A type means one thing in the rules: whether a fallen monster of it may be extracted as a shadow. Damage is physical
-// or magical and there are no elements, so a type is never a weakness. Its picture is icon-defaults.ts's, keyed by
+// or arcane and there are no elements, so a type is never a weakness. Its picture is icon-defaults.ts's, keyed by
 // `MonsterType`. A monster's type is text the GM types; `monsterTypeOf` reads it (any case, spaces around it trimmed).
 // To add a type: a member of `MonsterType`, its row here (the typecheck then asks icon-defaults.ts for its picture),
 // and its case in tests/monster-types.test.ts. Whether one monster may be extracted is `extractableOf`: its kind first

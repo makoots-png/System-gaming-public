@@ -126,7 +126,7 @@ describe('the single-hit bound of design section 6', () => {
     const over: string[] = [];
     let tried = 0;
     for (const { label, ability: a, user } of ENTRIES) {
-      if (a.effect?.type !== 'physical' && a.effect?.type !== 'magical') continue;
+      if (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane') continue;
       for (const rank of RANKS) {
         const tank = body('tank', hunter('tank', rank), place(6, 5), 'foe', rank);
         const users = user === 'hunter'
@@ -150,7 +150,7 @@ describe('the single-hit bound of design section 6', () => {
   test('every built-in blast that leaves a field stays inside the bound with one round of its field: the hit and the field\'s per-round damage at mean dice', () => {
     const lines: string[] = [], over: string[] = [];
     for (const m of seedMonsters(RULES)) for (const a of m.abilities) {
-      if (!a.zone || (a.effect?.type !== 'physical' && a.effect?.type !== 'magical')) continue;
+      if (!a.zone || (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane')) continue;
       const tank = body('tank', hunter('tank', m.rank), place(6, 5), 'foe', m.rank);
       // the user out of its own blast's ring, the tank at its centre
       const u = body('user', { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { ...NO_TWEAK, ...m.tweak, stats: { ...NO_TWEAK.stats, ...m.tweak.stats } } }, place(0, 5), 'party', m.rank);
@@ -251,7 +251,7 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
 
 describe('a consumable used in a fight', () => {
   const num = (value: number) => ({ kind: 'number', value }) as const;
-  const FROSTBITE: StatusDef = { label: 'Frostbite', desc: '', ops: [{ op: 'damage', type: 'magical', amount: num(3) }] };
+  const FROSTBITE: StatusDef = { label: 'Frostbite', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: num(3) }] };
   const item = (name: string): ItemDef => [...SHOP_ITEMS, ...LOOT_ITEMS].find(i => i.name === name)!;
   const NOW = tick(5000);
   /** A level 1 hunter at (5, 5) with `hp`, `mana` and `fatigue`. */
@@ -353,7 +353,7 @@ describe('a consumable used in a fight', () => {
   });
 
   test('drunk in a fight, a draught that only dispels cures every harmful status of its drinker', () => {
-    const burn: Status = { key: statusKey('burn'), def: { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'magical', amount: num(5), when: 'turn' }] }, source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW };
+    const burn: Status = { key: statusKey('burn'), def: { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: num(5), when: 'turn' }] }, source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW };
     const me = { ...hunterBody(30, 0, 0), statuses: [burn] };
     const a = itemAbility({ id: iid('p3'), name: 'Cleansing Draught', rar: 'common', effects: [{ op: 'dispel', which: 'all' }] }, R)!;
     const r = resolve(a, me, [me], me.id, openGrid(20, 14), { dice: { [me.id]: [] }, react: {} }, NOW, R);

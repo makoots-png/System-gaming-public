@@ -26,6 +26,7 @@ import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts
 import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
+import { NO_PEN, afterDefence } from '../../src/core/combat/land.ts';
 import { MONSTER_TRAITS, TRAIT_LABEL } from '../../src/core/registry/monsters.ts';
 import { iconsOf } from '../../src/core/registry/icons.ts';
 
@@ -86,7 +87,7 @@ test('a GM makes Frostbite with damage by rank in 6 taps from the home screen, a
   await onboardGM(page);
   const t = tapCounter(), d = statusMaker(page);
 
-  await test.step('the GM makes the status: 1d6 magical a round by rank, S changed to 9d12', async () => {
+  await test.step('the GM makes the status: 1d6 arcane a round by rank, S changed to 9d12', async () => {
     await makeFromHome(page, t, 'status');
     await t.tap(d.locator('[data-name]'));
     await d.locator('[data-name]').fill('Frostbite');
@@ -96,7 +97,7 @@ test('a GM makes Frostbite with damage by rank in 6 taps from the home screen, a
     await expect(tiers).toHaveCount(6);
     await t.tap(tiers.nth(5));
     await tiers.nth(5).fill('9d12');
-    await expect(d.locator('.mk-preview')).toContainText('1d6 / 2d6 / 3d8 / 4d10 / 5d12 / 9d12 magical damage a round, by rank E to S');
+    await expect(d.locator('.mk-preview')).toContainText('1d6 / 2d6 / 3d8 / 4d10 / 5d12 / 9d12 arcane damage a round, by rank E to S');
     await t.tap(d.locator('[data-apply]'));
     await expect(d).toHaveCount(0);
     expect(t.count).toBeLessThanOrEqual(6);
@@ -105,7 +106,7 @@ test('a GM makes Frostbite with damage by rank in 6 taps from the home screen, a
   await test.step('the library holds the op with six formulas', async () => {
     const lib = await page.evaluate(() => hunterApp.store.get().library.statuses);
     const dice = (count: number, sides: number) => ({ kind: 'dice', count, sides });
-    expect(lib.frostbite.ops).toEqual([{ op: 'damage', type: 'magical', amount: [dice(1, 6), dice(2, 6), dice(3, 8), dice(4, 10), dice(5, 12), dice(9, 12)] }]);
+    expect(lib.frostbite.ops).toEqual([{ op: 'damage', type: 'arcane', amount: [dice(1, 6), dice(2, 6), dice(3, 8), dice(4, 10), dice(5, 12), dice(9, 12)] }]);
   });
 
   await test.step('put on a C-rank monster by hand at its own rank, the card says 3d8', async () => {
@@ -113,7 +114,7 @@ test('a GM makes Frostbite with damage by rank in 6 taps from the home screen, a
     await statusOn(page, wolf);
     await expect(d.locator('[data-chips="strength"] [data-chip="C"]')).toHaveAttribute('aria-pressed', 'true');
     await d.locator('[data-existing] [data-chip="frostbite"]').tap();
-    await expect(card(page, wolf)).toContainText('3d8 magical damage a round');
+    await expect(card(page, wolf)).toContainText('3d8 arcane damage a round');
   });
 });
 
@@ -814,12 +815,12 @@ test('the Workshop says what an empty kind is, lists the GM\'s status, item, ski
 
   await page.evaluate(([k, i]) => hunterApp.store.update((d: any) => {
     d.library.skills.push(k); d.library.items.push(i);
-    d.library.statuses.frostbite = { label: 'Frostbite', desc: 'Cold bites.', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: 1, sides: 6 } }] };
+    d.library.statuses.frostbite = { label: 'Frostbite', desc: 'Cold bites.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 1, sides: 6 } }] };
     d.monsters.push({ id: 'm900', name: 'Ice Warden', rank: 'C', type: '', archetype: 'caster', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 250, extractable: true, desc: '', statuses: [], loot: { gold: 0, items: [] } });
   }, 'test-setup'), [FROST_LANCE, FROST_SHARD] as const);
 
   await test.step('each section lists the GM\'s own', async () => {
-    await expect(workshop(page, 'status').locator('.ws-list li', { hasText: 'Frostbite' })).toContainText('1d6 magical damage a round');
+    await expect(workshop(page, 'status').locator('.ws-list li', { hasText: 'Frostbite' })).toContainText('1d6 arcane damage a round');
     await expect(workshop(page, 'item').locator('li', { hasText: 'Frost Shard' })).toHaveCount(1);
     await expect(workshop(page, 'skill').locator('li', { hasText: 'Frost Lance' })).toHaveCount(1);
     await expect(workshop(page, 'monster').locator('li', { hasText: 'Ice Warden' })).toContainText('C-rank normal caster');
@@ -1026,10 +1027,10 @@ test('a GM ticks "scales with Power" and "aimed at Resist" and saves the recomme
   await d.locator('#skm-name').fill('Mind Spike');
 
   await test.step('the ticks build the recommendation: a strike aimed at Resist that scales with Power reads 1d8 + mag', async () => {
-    await d.locator('[data-chips="ftype"] [data-chip="magical"]').tap();
+    await d.locator('[data-chips="ftype"] [data-chip="arcane"]').tap();
     await d.locator('[data-group="ticks"] > summary').tap();
     await d.locator('[data-tick="scale"]').selectOption('pow');
-    // magical damage meets Resist and its power is mag, 0.6 times the curve of Power (design 2.2, ability-kinds.ts)
+    // arcane damage meets Resist and its power is mag, 0.6 times the curve of Power (design 2.2, ability-kinds.ts)
     await expect(field).toHaveValue('1d8 + mag');
     await expect(d.locator('[data-edited]')).toBeHidden();
     await expect(d.locator('[data-formula-avg]')).toContainText('After Resist:');
@@ -1055,7 +1056,7 @@ test('a GM ticks "scales with Power" and "aimed at Resist" and saves the recomme
     await d.locator('[data-apply]').tap();
     await expect(d).toHaveCount(0);
     const spike = await librarySkill(page, 'Mind Spike');
-    expect(spike.ability.effect, 'a reset formula follows the rule: its ticks are kept, never its text').toEqual({ type: 'magical', by: 'rule', ticks: { scale: 'pow', gap: null, scalers: [] } });
+    expect(spike.ability.effect, 'a reset formula follows the rule: its ticks are kept, never its text').toEqual({ type: 'arcane', by: 'rule', ticks: { scale: 'pow', gap: null, scalers: [] } });
     expect(formulaNow(spike.ability, RULES)).toEqual(formulaOf('1d8 + mag'));
   });
 });
@@ -1448,7 +1449,7 @@ test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a figh
   await expect(d).toHaveCount(0);
 
   const rain: Ability = (await librarySkill(page, 'Fire Rain')).ability;
-  expect(rain.zone).toEqual({ name: 'Burning ground', duration: 2000, ops: [{ op: 'damage', type: 'magical', amount: formulaOf('4') }], endsWithOwner: false, around: null, grow: null });
+  expect(rain.zone).toEqual({ name: 'Burning ground', duration: 2000, ops: [{ op: 'damage', type: 'arcane', amount: formulaOf('4') }], endsWithOwner: false, around: null, grow: null });
   // the caster far from the blast, a rooted tank at its centre that cannot step out: it stays in the ground
   const caster = newRow('A', 'party', cHunter('pow', 'ctl', 'light'), place(2, 6), [rain]);
   const tank = newRow('T', 'foe', cHunter('vit', 'str', 'heavy'), place(9, 6));
@@ -1466,7 +1467,8 @@ test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a figh
     { type: 'status', id: combatantId('T'), add: { key: statusKey('rooted'), def: { label: 'Rooted', desc: '', ops: [{ op: 'root' }] }, duration: null, tier: 0 } });
   const hitPlain = then(g, { type: 'act', by: combatantId('A'), ability: plain.id, aim: place(9, 6), rolls: { dice, react: { T: 1 } } as never });
   expect((hit as any).currentId).toBe('T');
-  expect(rowHp(rowIn(hitPlain, 'T')) - rowHp(rowIn(hit, 'T'))).toBe(Math.round(4 * ((hit as any).now - (f as any).now) / 1000));
+  const groundRate = afterDefence(4, 'arcane', NO_PEN, rowIn(hit, 'T').sheet, RULES);
+  expect(rowHp(rowIn(hitPlain, 'T')) - rowHp(rowIn(hit, 'T'))).toBe(Math.round(groundRate * ((hit as any).now - (f as any).now) / 1000));
   expect(rowIn(hit, 'T').statuses.some(s => s.def.label === 'Burning ground' && s.until === null)).toBe(true);
 });
 
@@ -1489,7 +1491,7 @@ test('in the skill maker "Add what lands when it ends" goes the moment an effect
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
   const ember: Ability = (await librarySkill(page, 'Ember Field')).ability;
-  expect(ember.zone?.end?.map(op => [op.op, (op as { type?: string }).type])).toEqual([['damage', 'magical']]);
+  expect(ember.zone?.end?.map(op => [op.op, (op as { type?: string }).type])).toEqual([['damage', 'arcane']]);
 });
 
 test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: the library holds what the form said, the list says its rule, and Edit opens it as saved', async ({ device }) => {

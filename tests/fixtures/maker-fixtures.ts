@@ -54,7 +54,7 @@ export const WORST_STATUS_OPS: StatusDef = must(parseStatusDef({
   color: '#ff4d5e',
   icon: 'flame',
   ops: [
-    { op: 'damage', type: 'magical', amount: [mustFormula('1d4'), mustFormula('1d6'), mustFormula('2d6'), mustFormula('2d8'), mustFormula('3d8'), mustFormula('4d10')] },
+    { op: 'damage', type: 'arcane', amount: [mustFormula('1d4'), mustFormula('1d6'), mustFormula('2d6'), mustFormula('2d8'), mustFormula('3d8'), mustFormula('4d10')] },
     { op: 'speed', pct: [-10, -15, -20, -25, -30, -40] },
     { op: 'stat', key: 'str', amount: mustFormula('2 + 0.05 * vit') },
     { op: 'sheet', key: 'armor', amount: mustFormula('0.02 * hpmax') },
@@ -80,7 +80,7 @@ export const WORST_STATUS_KITS: StatusDef = must(parseStatusDef({
     threshold: {
       at: { kind: 'formula', formula: mustFormula('3 + 0.1 * vit') },
       to: { kind: 'most', of: 'hp', radius: tiles(4), on: 'foes' },
-      ops: [{ op: 'damage', type: 'magical', amount: mustFormula('2d6') }],
+      ops: [{ op: 'damage', type: 'arcane', amount: mustFormula('2d6') }],
       then: 'keep',
     },
   },
@@ -207,7 +207,7 @@ export const WORST_SKILL_ACTIVE: Skill = {
       shape: { kind: 'radius', radius: tiles(3), ring: { outer: tiles(5), share: percent(40) } },
       delivery: { kind: 'travel', windup: tick(Math.round(0.5 * ROUND)), speed: 60 },
       foesOnly: false,
-      effect: { type: 'magical', by: 'hand', formula: mustFormula('3d8 + mag') },
+      effect: { type: 'arcane', by: 'hand', formula: mustFormula('3d8 + mag') },
       ops: [
         { op: 'shove', dir: 'away', from: 'aim', tiles: 2 },
         { op: 'stagger', share: 0.3 },
@@ -216,7 +216,7 @@ export const WORST_SKILL_ACTIVE: Skill = {
       zone: {
         name: 'Starlight Field',
         duration: null,
-        ops: [{ op: 'damage', type: 'magical', amount: mustFormula('1d6') }],
+        ops: [{ op: 'damage', type: 'arcane', amount: mustFormula('1d6') }],
         endsWithOwner: true,
         around: tiles(3),
         grow: { step: tiles(1), cap: tiles(6) },
@@ -398,7 +398,7 @@ export const WORST_MAP: BattleMap = must(parseBattleMap({
     ground: { kind: 'tiles', tiles: [{ x: 1, y: 2 }, { x: 2, y: 2 }] },
     spares: 'foe',
     tier: 3,
-    ops: [{ op: 'damage', type: 'magical', amount: mustFormula('1d6') }],
+    ops: [{ op: 'damage', type: 'arcane', amount: mustFormula('1d6') }],
     upkeep: { fatigue: 2, mana: 4 },
     end: [{ op: 'heal', amount: mustFormula('5') }],
     triggers: [{

@@ -190,7 +190,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
     worn: {
       label: 'Thornmail', desc: 'Foes that strike you take magic damage.', ops: [],
       triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [
-        { op: 'damage', type: 'magical', amount: formula('1 + 0.01 * armor'), when: 'use' },
+        { op: 'damage', type: 'arcane', amount: formula('1 + 0.01 * armor'), when: 'use' },
       ] }],
     },
   },
@@ -452,7 +452,9 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (isIconKey(v.icon)) out.icon = v.icon;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
-  const effects = (Array.isArray(v.effects) ? v.effects : []).flatMap(o => parseOp(o, RULES) ?? []).slice(0, B.effects);
+  const effects = (Array.isArray(v.effects) ? v.effects : [])
+    .flatMap(o => { const p = parseOp(o, RULES); return p && !(p.op === 'damage' && p.type === 'true') ? [p] : []; })
+    .slice(0, B.effects);
   if (effects.length) out.effects = effects;
   if (v.target === 'other') out.target = 'other';
   if (v.tell === true) out.tell = true;

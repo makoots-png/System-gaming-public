@@ -41,7 +41,7 @@ import { sensible } from '../src/core/combat/policy.ts';
 import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/ability-types.ts';
 import { modified, shadowId, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
-import { afterDefence, landOps } from '../src/core/combat/land.ts';
+import { NO_PEN, afterDefence, landOps } from '../src/core/combat/land.ts';
 import { ARMED, endStep } from '../src/core/combat/delayed.ts';
 import { ENDS, WALK_EVENTS } from './models/delayed-events.ts';
 import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
@@ -643,18 +643,18 @@ describe('the GM\'s moves', () => {
   });
 
   test('a per-round op with dice waits for them; one without pays at its bearer\'s turn start (1.3)', () => {
-    const burn = st('burn', 3000, { op: 'damage', type: 'magical', amount: f('1d6') }), sear = st('sear', 3000, { op: 'damage', type: 'magical', amount: f('10') });
+    const burn = st('burn', 3000, { op: 'damage', type: 'arcane', amount: f('1d6') }), sear = st('sear', 3000, { op: 'damage', type: 'arcane', amount: f('10') });
     const r = play(...duel({}, { statuses: [burn, sear] }), pass('A'));
     expect(r.effects.filter(e => e.type === 'rollSettle')).toEqual([
       { type: 'rollSettle', id: id('M'), key: statusKey('burn'), dice: [{ count: 1, sides: 6 }], share: 0.5 },
       { type: 'rollSettle', id: id('M'), key: statusKey('sear'), dice: [], share: 0.5 },
     ]);
     const m = body(r.fight, 'M');
-    expect(m.sheet.hpMax - rowHp(m)).toBe(5);
+    expect(m.sheet.hpMax - rowHp(m)).toBe(Math.round(afterDefence(10, 'arcane', NO_PEN, m.sheet, RULES) * 0.5));
     refuses(r.fight, { type: 'settle', id: id('M'), key: statusKey('burn'), dice: [] }, 'needsRoll');
     refuses(r.fight, { type: 'settle', id: id('M'), key: statusKey('sear'), dice: [] }, 'nothingDue');
     const paid = reduce(r.fight, { type: 'settle', id: id('M'), key: statusKey('burn'), dice: [6] }, ctx);
-    expect(rowHp(m) - rowHp(body(paid.fight, 'M'))).toBe(3);
+    expect(rowHp(m) - rowHp(body(paid.fight, 'M'))).toBe(Math.round(afterDefence(6, 'arcane', NO_PEN, m.sheet, RULES) * 0.5));
     expect(running(paid).pending).toEqual([]);
   });
 
@@ -799,7 +799,7 @@ describe('a row\'s life: every change of a row\'s HP goes through its life (row-
   });
 
   test('a poisoned hunter raised by the GM\'s Revive has no status and is not killed again by the poison', () => {
-    const venom = st('venom', null, { op: 'damage', type: 'magical', amount: f('999') });
+    const venom = st('venom', null, { op: 'damage', type: 'arcane', amount: f('999') });
     const turnOf = (x: Fight | null): CombatantId => running({ fight: x }).currentId;
     let now = play(add(row('A', 'party', { statuses: [venom] }), row('B', 'party'), row('M', 'foe')), start(['B', 20], ['M', 15], ['A', 10])).fight;
     for (let i = 0; i < 6 && body(now, 'A').life.at === 'up'; i++) now = reduce(now, pass(turnOf(now)), ctx).fight;
@@ -1056,7 +1056,7 @@ describe('a zone on the ground (4.7)', () => {
   const zone = (name: string, at: [number, number][], ops: Op[], o: Partial<ZoneDraft> = {}): Command => ({
     type: 'zoneAdd', zone: { id: zoneId(name), name, tiles: at.map(([x, y]) => place(x, y)), spares: null, tier: 0, duration: null, ops, ...o },
   });
-  const burn = (n: number): Op => ({ op: 'damage', type: 'magical', amount: N(n) });
+  const burn = (n: number): Op => ({ op: 'damage', type: 'arcane', amount: N(n) });
   /** The duel with A standing in `cmds`'s zones from the start of its first turn, then A and M passing `turns` times each. */
   const inFire = (turns: number, ...cmds: Command[]) => {
     const out = play(...duel(), ...cmds, ...Array.from({ length: turns }, () => [pass('A'), pass('M')]).flat());
@@ -1066,17 +1066,19 @@ describe('a zone on the ground (4.7)', () => {
   test('a body that stands in a fire of 10 a round pays it for the time inside at its turn start, as a status settles', () => {
     const { r, t0 } = inFire(1, zone('Fire', [[0, 2]], [burn(10)]));
     const a = body(r.fight, 'A'), start = body(play(...duel()).fight, 'A');
-    // A's turn starts again a round after it passed: 10 a round for (now - t0) ticks, a round being 1000
+    const dealtRate = afterDefence(10, 'arcane', NO_PEN, start.sheet, RULES);
+    // A's turn starts again a round after it passed: dealtRate a round for (now - t0) ticks, a round being 1000
     expect(running(r).currentId).toBe(id('A'));
-    expect(rowHp(start) - rowHp(a)).toBe(Math.round(10 * (running(r).now - t0) / RULES.fight.round));
+    expect(rowHp(start) - rowHp(a)).toBe(Math.round(dealtRate * (running(r).now - t0) / RULES.fight.round));
     expect(a.statuses.some(s => s.def.label === 'Fire' && s.until === null)).toBe(true);
   });
 
   test('what a fire pays over a span does not depend on how the span is split into turns', () => {
-    const rate = 7, one = inFire(1, zone('Fire', [[0, 2]], [burn(rate)])), three = inFire(3, zone('Fire', [[0, 2]], [burn(rate)]));
-    const paid = (x: typeof one) => rowHp(body(play(...duel()).fight, 'A')) - rowHp(body(x.r.fight, 'A'));
-    expect(paid(one)).toBe(Math.round(rate * (running(one.r).now - one.t0) / RULES.fight.round));
-    expect(paid(three)).toBe(Math.round(rate * (running(three.r).now - three.t0) / RULES.fight.round));
+    const rate = 7, start = body(play(...duel()).fight, 'A'), dealtRate = afterDefence(rate, 'arcane', NO_PEN, start.sheet, RULES);
+    const one = inFire(1, zone('Fire', [[0, 2]], [burn(rate)])), three = inFire(3, zone('Fire', [[0, 2]], [burn(rate)]));
+    const paid = (x: typeof one) => rowHp(start) - rowHp(body(x.r.fight, 'A'));
+    expect(paid(one)).toBe(Math.round(dealtRate * (running(one.r).now - one.t0) / RULES.fight.round));
+    expect(paid(three)).toBe(Math.round(dealtRate * (running(three.r).now - three.t0) / RULES.fight.round));
   });
 
   test('a zone\'s part that acts on use pays once on each entry: twice in, twice paid; standing still pays nothing more', () => {
@@ -1091,10 +1093,10 @@ describe('a zone on the ground (4.7)', () => {
       return f;
     };
     const step = (x: number): Command => ({ type: 'move', by: id('A'), to: place(x, 2) });
-    const hp0 = rowHp(body(play(...duel()).fight, 'A'));
-    expect(hp0 - rowHp(body(asA(step(1)), 'A'))).toBe(5);
-    expect(hp0 - rowHp(body(asA(step(1), pass('A'), pass('A')), 'A'))).toBe(5);
-    expect(hp0 - rowHp(body(asA(step(1), step(2), step(1)), 'A'))).toBe(10);
+    const startA = body(play(...duel()).fight, 'A'), hp0 = rowHp(startA), dealt = afterDefence(5, 'physical', NO_PEN, startA.sheet, RULES);
+    expect(hp0 - rowHp(body(asA(step(1)), 'A'))).toBe(dealt);
+    expect(hp0 - rowHp(body(asA(step(1), pass('A'), pass('A')), 'A'))).toBe(dealt);
+    expect(hp0 - rowHp(body(asA(step(1), step(2), step(1)), 'A'))).toBe(2 * dealt);
   });
 
   test('two slowing zones on one tile apply the stronger slow, not both, and a slow holds only while the body stands inside', () => {
@@ -1112,9 +1114,10 @@ describe('a zone on the ground (4.7)', () => {
 
   test('a zone ends at its time and is gone from the fight; its body pays only to that end', () => {
     const { r, t0 } = inFire(2, zone('Fire', [[0, 2]], [burn(10)], { duration: tick(500) }));
+    const startA = body(play(...duel()).fight, 'A'), dealtRate = afterDefence(10, 'arcane', NO_PEN, startA.sheet, RULES);
     expect(running(r).zones).toEqual([]);
     expect(running(r).log.some(l => l.text.includes('Fire is gone.'))).toBe(true);
-    expect(rowHp(body(play(...duel()).fight, 'A')) - rowHp(body(r.fight, 'A'))).toBe(Math.round(10 * 500 / RULES.fight.round));
+    expect(rowHp(startA) - rowHp(body(r.fight, 'A'))).toBe(Math.round(dealtRate * 500 / RULES.fight.round));
     expect(body(r.fight, 'A').statuses.filter(s => s.zone !== undefined)).toEqual([]);
     void t0;
   });
@@ -1196,12 +1199,12 @@ describe('a zone on the ground (4.7)', () => {
     const spikes: Op = { op: 'damage', type: 'physical', amount: N(5), when: 'use' };
     const a = auraOf([spikes], 1, { foesOnly: true });
     const r = play(...trio(a, [0, 5], [2, 2]), cast(a));
-    const hp0 = rowHp(body(r.fight, 'M'));
+    const startM = body(r.fight, 'M'), hp0 = rowHp(startM), dealt = afterDefence(5, 'physical', NO_PEN, startM.sheet, RULES);
     const came = onA(r.fight, step(1, 2));
-    expect(hp0 - rowHp(body(came, 'M'))).toBe(5);
+    expect(hp0 - rowHp(body(came, 'M'))).toBe(dealt);
     expect(inAura(came, 'A')).toBe(false);
     const stayed = onA(came, step(1, 3), { type: 'endTurn', by: id('A') });
-    expect(hp0 - rowHp(body(stayed, 'M'))).toBe(5);
+    expect(hp0 - rowHp(body(stayed, 'M'))).toBe(dealt);
   });
 
   test('an aura ends when its user goes down, and closes the hold of who stood in it', () => {
@@ -1723,7 +1726,7 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   const atPlace = (by: string, a: Ability, to: Place, who: string): Command => ({ type: 'act', by: id(by), ability: a.id, aim: to, rolls: rolls({ [who]: 1 }, { [who]: [] }) });
   /** The GM burns A, and its burn pays on A's next turn. */
   const burnt: readonly Command[] = [
-    { type: 'status', id: id('A'), add: { key: statusKey('burn'), def: st('burn', null, { op: 'damage', type: 'magical', amount: f('3'), when: 'turn' }).def, duration: null, tier: 0 } },
+    { type: 'status', id: id('A'), add: { key: statusKey('burn'), def: st('burn', null, { op: 'damage', type: 'arcane', amount: f('3'), when: 'turn' }).def, duration: null, tier: 0 } },
     pass('M'), pass('A'), pass('M'),
   ];
   const hurtOf = (fight: Fight | null, name: string) => body(fight, name).sheet.hpMax - rowHp(body(fight, name));
@@ -2022,7 +2025,7 @@ describe('a zone act: shift and grow (kits design 8.5.4)', () => {
   const free = { ...HIT.cost, mana: 0 };
   const field = (act: 'shift' | 'grow', by: number): Ability => ability('blast', `field-${act}`, null, { range: tiles(20), effect: null, foesOnly: true, cost: free,
     zoneAct: { act, name: null, by } });
-  const LAY = ability('blast', 'lay', null, { range: tiles(20), effect: null, foesOnly: true, cost: { ...HIT.cost, mana: 0 }, zone: { name: 'Mire', duration: null, ops: [{ op: 'damage', type: 'magical', amount: f('7'), when: 'use' }], endsWithOwner: false, around: null, grow: null } });
+  const LAY = ability('blast', 'lay', null, { range: tiles(20), effect: null, foesOnly: true, cost: { ...HIT.cost, mana: 0 }, zone: { name: 'Mire', duration: null, ops: [{ op: 'damage', type: 'arcane', amount: f('7'), when: 'use' }], endsWithOwner: false, around: null, grow: null } });
   const SHIFT = field('shift', 6), GROW = field('grow', 2);
   const begin = () => [add(row('A', 'party', { abilities: [LAY, SHIFT, GROW], place: place(5, 2) }), row('M', 'foe', { place: place(5, 12) })), start(['A', 20], ['M', 10])] as const;
   const at = (x: number, y: number) => (by: string, a: Ability): Command => ({ type: 'act', by: id(by), ability: a.id, aim: place(x, y), rolls: rolls() });
@@ -2241,11 +2244,11 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
   test('a reaction that pushes its aim past a threshold sets it off for all to see: its burst lands, is logged and is told (rules-4.3b)', () => {
     const mark = (threshold: StackDef['stack']['threshold']): StackDef => ({ label: 'Mark', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold } });
     const brand = (d: StackDef) => reaction('brand', 'after', { ops: [{ op: 'applyStatus', key: statusKey('mark'), def: d, duration: null }] });
-    const pop = mark({ at: { kind: 'count', n: 1 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f('7'), when: 'use' }] });
+    const pop = mark({ at: { kind: 'count', n: 1 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'arcane', amount: f('7'), when: 'use' }] });
     const fought = (d: StackDef) => play(...foeFirst([HIT, brand(d)]), armed('A', brand(d)), hit('M', 'A'));
     const plain = fought(mark(null)), burst = fought(pop);
     const m = body(burst.fight, 'M');
-    expect(rowHp(body(plain.fight, 'M')) - rowHp(m)).toBe(afterDefence(7, 'magical', body(burst.fight, 'A').sheet, m.sheet, RULES));
+    expect(rowHp(body(plain.fight, 'M')) - rowHp(m)).toBe(afterDefence(7, 'arcane', body(burst.fight, 'A').sheet, m.sheet, RULES));
     expect(burst.effects).toContainEqual({ type: 'burst', id: id('M') });
     expect(running(burst).log.some(l => l.text.includes('M\'s Mark goes off (M '))).toBe(true);
   });

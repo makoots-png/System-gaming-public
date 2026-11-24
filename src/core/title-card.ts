@@ -10,7 +10,7 @@ import type { Powers } from './registry/powers.ts';
 import { rankIdx } from './rules.ts';
 import type { Rank, Rules } from './rules.ts';
 
-const EFFECT_WORD = { physical: 'Physical damage', magical: 'Magical damage', heal: 'Heals', shield: 'Shields' } as const;
+const EFFECT_WORD = { physical: 'Physical damage', arcane: 'Arcane damage', heal: 'Heals', shield: 'Shields' } as const;
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /** An ability's lines on a title's card: its name, what it does with the amount as the holder reads it, its ops, its wait and its gates. */

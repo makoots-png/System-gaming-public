@@ -300,6 +300,18 @@ export function dailyPointsLine(R: Pick<Rules, 'dailyTemplate' | 'streakBonusEve
 export const armorCutPct = (R: Pick<Rules, 'fight'>, armor: number): number => Math.round(100 - 100 * R.fight.armorK / (R.fight.armorK + armor));
 
 /**
+ * Rule 12 in plain words for the Rules page (`rulesref.js`): Armor cuts physical damage, Resist cuts arcane damage,
+ * true damage ignores both, and per-round damaging status ticks meet Armor or Resist with no penetration.
+ */
+export function defenceLines(R: Pick<Rules, 'fight'>): readonly string[] {
+  const F = R.fight, kit = F.kits;
+  return [
+    `Armor reduces physical damage and Resist reduces arcane damage. True damage ignores both Armor and Resist. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense). For example, ${kit.heavy.armor} armor cuts damage by ${armorCutPct(R, kit.heavy.armor)}%, and no amount grants full immunity.`,
+    `Damaging status effects also meet your Armor or Resist each round (with no penetration), unless the status deals true damage.`,
+  ];
+}
+
+/**
  * How a world gate pays (gates/pay.ts `shareEach`, design 4.1): its gold roll and its XP one pot of `gateParty` shares
  * among the hunters it pays; each one's share of 100 from 1 hunter to two past the party; a fight from a gate shared the
  * same way and one from no gate whole to each; a solo run of a world gate a party of one.

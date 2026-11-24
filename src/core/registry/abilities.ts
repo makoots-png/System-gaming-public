@@ -218,8 +218,8 @@ export const itemOfAbility = (a: Pick<Ability, 'item'>): ItemId | null => a.item
  */
 export function itemAbility(item: ThrownItem, R: KindRules & Pick<Rules, 'rarities'>): Ability | null {
   const tier = itemSource(item).tier, effects = item.effects ?? [], self = item.target !== 'other';
-  const damage = self ? undefined : effects.find(o => o.op === 'damage'), heal = effects.find(o => o.op === 'heal');
-  const effect: AbilityEffect | null = damage?.op === 'damage' ? { type: damage.type, by: 'hand', formula: atTier(damage.amount, tier) }
+  const damage = self ? undefined : effects.find(o => o.op === 'damage' && o.type !== 'true'), heal = effects.find(o => o.op === 'heal');
+  const effect: AbilityEffect | null = damage?.op === 'damage' && damage.type !== 'true' ? { type: damage.type, by: 'hand', formula: atTier(damage.amount, tier) }
     : heal?.op === 'heal' ? { type: 'heal', by: 'hand', formula: atTier(heal.amount, tier) } : null;
   const ops = effects.filter(isUseOp).flatMap((o): UseOp[] => o.op !== 'mana' && o.op !== 'fatigue' ? [o] : self ? [{ op: o.op, amount: atTier(o.amount, tier) }] : []);
   if (effect === null && ops.length === 0) return null;

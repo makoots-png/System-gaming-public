@@ -514,20 +514,20 @@ test('An item of a higher rarity applies a stronger status than a common one', a
   await test.step('the common flask\'s detail says its Burning deals 1d6, the epic one\'s 4d10', async () => {
     await go(p, 'status');
     await card('Ember Flask').locator('.i-name').tap();
-    await expect(card('Ember Flask').locator('.dt')).toContainText('Applies Burning (3 rounds): 1d6 magical damage a round');
+    await expect(card('Ember Flask').locator('.dt')).toContainText('Applies Burning (3 rounds): 1d6 arcane damage a round');
     await card('Inferno Flask').locator('.i-name').tap();
-    await expect(card('Inferno Flask').locator('.dt')).toContainText('Applies Burning (3 rounds): 4d10 magical damage a round');
+    await expect(card('Inferno Flask').locator('.dt')).toContainText('Applies Burning (3 rounds): 4d10 arcane damage a round');
     await expect(card('Ember Flask').locator('.dt'), 'one detail open at a time in a list').toHaveCount(0);
   });
 
   await test.step('using the common flask burns the hunter for 1d6 a round', async () => {
     await card('Ember Flask').locator('[data-use]').tap();
-    expect(await chipCard(p, 'burning')).toContain('1d6 magical damage a round');
+    expect(await chipCard(p, 'burning')).toContain('1d6 arcane damage a round');
   });
 
   await test.step('using the epic flask on top makes it 4d10, still one Burning chip', async () => {
     await card('Inferno Flask').locator('[data-use]').tap();
-    expect(await chipCard(p, 'burning')).toContain('4d10 magical damage a round');
+    expect(await chipCard(p, 'burning')).toContain('4d10 arcane damage a round');
     await expect(p.locator('#view-status [data-chips] [data-chip="burning"]')).toHaveCount(1);
   });
 });
@@ -570,7 +570,7 @@ test('Editing a library item in the item maker shows a row for each of its six e
   await onboardGM(p);
   const dice = (count: number, sides: number) => ({ kind: 'dice', count, sides }), n = (value: number) => ({ kind: 'number', value });
   const effects = [
-    { op: 'heal', amount: [1, 2, 3, 4, 5, 6].map(c => dice(c, 4)), when: 'use' }, { op: 'damage', type: 'magical', amount: n(10), when: 'use' },
+    { op: 'heal', amount: [1, 2, 3, 4, 5, 6].map(c => dice(c, 4)), when: 'use' }, { op: 'damage', type: 'arcane', amount: n(10), when: 'use' },
     { op: 'mana', amount: n(5), when: 'use' }, { op: 'fatigue', amount: n(-10), when: 'use' }, { op: 'cureStatus', key: 'poisoned' }, { op: 'note', text: 'Smells of ash' },
   ];
   await p.evaluate(fx => hunterApp.store.update((d: any) => {
@@ -605,7 +605,7 @@ test('A GM\'s edit of Burning to a flat 1d4 is flat at every rank in the rules r
     await d.locator('[data-apply]').tap();
     await expect(d).toHaveCount(0);
   });
-  await test.step('the GM makes Ember Mark: 1d6 magical a round', async () => {
+  await test.step('the GM makes Ember Mark: 1d6 arcane a round', async () => {
     await p.locator('#view-workshop [data-ws="status"] [data-new]').tap();
     await d.locator('[data-name]').fill('Ember Mark');
     await d.locator('[data-quick] [data-q="d6"]').tap();
@@ -615,9 +615,9 @@ test('A GM\'s edit of Burning to a flat 1d4 is flat at every rank in the rules r
   await test.step('the rules reference lists Burning at 1d4 with no rank and Ember Mark at 1d6', async () => {
     await go(p, 'rules');
     const burning = p.locator('#rr-conditions tr', { hasText: 'Burning' });
-    await expect(burning).toContainText('1d4 magical damage a round');
+    await expect(burning).toContainText('1d4 arcane damage a round');
     await expect(burning).not.toContainText('by rank');
-    await expect(p.locator('#rr-conditions tr', { hasText: 'Ember Mark' })).toContainText('1d6 magical damage a round');
+    await expect(p.locator('#rr-conditions tr', { hasText: 'Ember Mark' })).toContainText('1d6 arcane damage a round');
   });
 });
 
@@ -628,7 +628,7 @@ test('The rules reference shows a scaled status\'s six values, E to S', async ({
   await go(p, 'rules');
   const row = p.locator('#view-rules tr', { hasText: 'Burning' }).first();
   await row.scrollIntoViewIfNeeded();
-  await expect(row).toContainText('1d6 / 2d6 / 3d8 / 4d10 / 5d12 / 7d12 magical damage a round, by rank E to S');
+  await expect(row).toContainText('1d6 / 2d6 / 3d8 / 4d10 / 5d12 / 7d12 arcane damage a round, by rank E to S');
 });
 
 test('the rules reference says a timed status is paid at the start of its bearer\'s turn and ends when its rounds have passed, as the fight counts it', async ({ device }) => {

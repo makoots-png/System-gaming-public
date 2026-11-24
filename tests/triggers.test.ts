@@ -109,7 +109,7 @@ describe('the events a use raises, in rule 19b\'s order', () => {
     const cure = { ops: [{ op: 'cureStatus', key: statusKey('burn') }] as Ability['ops'], kind: 'support', channel: null } as const;
     const before = [{ ...row('M', 'foe'), statuses: [on('burn', worn('Burn'))] }] as unknown as Body[], after = [{ ...row('M', 'foe') }] as unknown as Body[];
     expect(eventsOf(cure, id('A'), [o('M', { type: 'heal' })], before, after).map(e => e.event)).toEqual(['statusEnded', 'used']);
-    expect(eventsOf({ ops: [], kind: 'curse', channel: null }, id('A'), [o('M', { avoid: 'resisted', type: 'magical' })], [], []).map(e => e.event)).toEqual(['hitDealt', 'struck', 'avoided', 'used']);
+    expect(eventsOf({ ops: [], kind: 'curse', channel: null }, id('A'), [o('M', { avoid: 'resisted', type: 'arcane' })], [], []).map(e => e.event)).toEqual(['hitDealt', 'struck', 'avoided', 'used']);
   });
 });
 
@@ -386,9 +386,9 @@ describe('a fall under the low share and a status imposed (item-stats design 3)'
     expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - d, 1]);
   });
 
-  // A burn of `rate` a round that lasts half a round from the fight's start: A's next turn comes after it ends (the end
-  // above lands by then), so it pays `rate` times half a round (effect-ops.ts `dueAmount`), with no defence.
-  const burn = (rate: string): Status => ({ ...on('burn', { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f(rate), when: 'turn' }] }), until: tick(RULES.fight.round / 2) } as Status);
+  // A true-damage burn of `rate` a round that lasts half a round from the fight's start: A's next turn comes after it
+  // ends (the end above lands by then), so it pays `rate` times half a round with no defence reduction.
+  const burn = (rate: string): Status => ({ ...on('burn', { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'true', amount: f(rate), when: 'turn' }] }), until: tick(RULES.fight.round / 2) } as Status);
   const aRound = (): Command[] => [{ type: 'endTurn', by: id('A') }, { type: 'endTurn', by: id('M') }];
 
   test('a burn that takes a hunter under 30% HP fires its Lifeline', () => {

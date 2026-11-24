@@ -180,7 +180,7 @@ function bestUse(rank: Rank, uses: number, builds: readonly Archetype[] = PLAIN_
     const user = hunter(a, rank, 'user'), tank = foe(hunter('tank', rank, 'tank'));
     for (const ability of user.row.abilities) {
       // a channel, and a use with a price (Violence spends Pain it holds none of here), are not single uses on a fresh body
-      if (ability.channel || ability.prices || !ability.effect || (ability.effect.type !== 'physical' && ability.effect.type !== 'magical')) continue;
+      if (ability.channel || ability.prices || !ability.effect || (ability.effect.type !== 'physical' && ability.effect.type !== 'arcane')) continue;
       const gap = ability.range <= 1 ? 1 : 4;
       const rows = [{ ...user.row, place: place(5, 5) }, { ...tank.row, place: place(5, 5 + gap) }];
       const ctx = { rules: RULES };
@@ -615,7 +615,7 @@ const ROWS: readonly Row[] = [
     name: `the best single use takes at most 60% of a same-rank tank's HP at ${rank}`, setup: `one use ${rank}`, runs: 400,
     measure: () => bestUse(rank, 400), low: 0, high: 0.6, lever: 'cost.heavy (the heavy share 1.5) and critSizeCap',
   })),
-  { name: 'a status build against a tank at C (measured, no bound)', setup: 'status v tank C', runs: RUNS.even, measure: () => wins('status v tank C', duel('status', 'tank', 'C'), RUNS.even), low: 0, high: 1, lever: 'per-round damage skips armor and resist (notes-u4)' },
+  { name: 'a status build against a tank at C (measured, no bound)', setup: 'status v tank C', runs: RUNS.even, measure: () => wins('status v tank C', duel('status', 'tank', 'C'), RUNS.even), low: 0, high: 1, lever: 'per-round damage meets armor and resist (R6)' },
   ...KIT_ROWS,
   ...W2_ROWS,
   ...PEN_ROWS,

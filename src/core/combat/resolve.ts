@@ -240,7 +240,7 @@ function multiplied(raw: number, a: Ability, user: Body, avoid: Avoid, isCrit: b
 // Rule 11b: a target standing in cover takes `coverShare` less from a damaging use that travels to it across the ground
 // (a line or an area), and nothing less from a touch, which reaches round the cover (design 4.7).
 export const inCover = (a: Pick<Ability, 'delivery' | 'shape' | 'effect'>, at: Place, grid: Grid): boolean =>
-  a.delivery.kind === 'travel' && (a.shape.kind === 'line' || a.shape.kind === 'radius') && (a.effect?.type === 'physical' || a.effect?.type === 'magical')
+  a.delivery.kind === 'travel' && (a.shape.kind === 'line' || a.shape.kind === 'radius') && (a.effect?.type === 'physical' || a.effect?.type === 'arcane')
   && TERRAIN[terrain(grid, at.x, at.y)].cover;
 const covered = (raw: number, a: Ability, target: Body, grid: Grid, R: ResolveRules): number =>
   inCover(a, target.place, grid) ? raw * (1 - R.fight.coverShare) : raw;
@@ -254,7 +254,7 @@ function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R
   const type = a.effect?.type;
   if (type === 'heal') return given(raw, user) * healShare(target, R);
   if (type === 'shield') return given(raw, user) * shieldShare(target, R);
-  if (type !== 'physical' && type !== 'magical') return raw;
+  if (type !== 'physical' && type !== 'arcane') return raw;
   return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R)) * dealtBy(user);
 }
 /**
@@ -616,7 +616,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     const struck = guard ? raw * (1 - guard) : raw, dealt = defended(struck, a, u, t, R);
     let absorbed = 0, hpDamage = 0, threat = 0, fill = 0, stag = false;
     const before = rowHp(t);
-    if (type === 'physical' || type === 'magical') {
+    if (type === 'physical' || type === 'arcane') {
       const shield = throughShield(t, dealt, now);
       t = shield.target; absorbed = shield.absorbed; hpDamage = wardedDamage(t, dealt - absorbed);
       // rule 13b: a hit about to take a body to 0 sets off an armed lethal reaction, which lands before the hit does

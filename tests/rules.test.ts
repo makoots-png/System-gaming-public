@@ -137,7 +137,7 @@ test('a reward may name every job a hunter can hold: the rules\' jobs, then an e
 });
 
 test('the GM\'s statuses lie over the built-ins: a custom key adds a status, a built-in key replaces that built-in whole', () => {
-  const ember: StatusDef = { label: 'Ember Mark', desc: 'Marked by embers.', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'dice', count: 1, sides: 6 } }] };
+  const ember: StatusDef = { label: 'Ember Mark', desc: 'Marked by embers.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 1, sides: 6 } }] };
   const venom: StatusDef = { label: 'Venom', desc: 'Stings.', ops: [] };
   const R = rulesOf({}, { 'ember-mark': ember, poisoned: venom });
   expect(R.conditions['ember-mark' as keyof typeof R.conditions]).toEqual(ember);

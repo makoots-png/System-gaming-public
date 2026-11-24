@@ -191,24 +191,24 @@ describe('each rule of design 3.1', () => {
   // * 100 / (100 + left)). With 100 defence, 50% and 20 flat leave 30: a 130 hit deals 129.1 * 100 / 130 = 99.3, 99.
   // With the other pair's numbers only, all 100 stand: (130 - 3) * 100 / 200 = 63.5, 64.
   const NO_PEN = { armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0 };
-  const magical = (raw: number): Ability => { const a = ability('strike', {}, String(raw)); return { ...a, effect: { ...a.effect!, type: 'magical' } } as Ability; };
+  const arcane = (raw: number): Ability => { const a = ability('strike', {}, String(raw)); return { ...a, effect: { ...a.effect!, type: 'arcane' } } as Ability; };
   test('rule 12: a physical hit meets armor, less the armor percent first, then Lethality', () => {
     const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 100, resist: 0 });
     const piercer = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, armorPen: 50, armorPenFlat: 20 });
     expect(hitFoe(ability('strike', {}, '130'), piercer, t).outcomes[0]!.dealt).toBe(99);
   });
 
-  test('rule 12: a magical hit meets resist, less the magic percent first, then Unravel', () => {
+  test('rule 12: a arcane hit meets resist, less the magic percent first, then Unravel', () => {
     const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 0, resist: 100 });
     const piercer = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, resistPen: 50, resistPenFlat: 20 });
-    expect(hitFoe(magical(130), piercer, t).outcomes[0]!.dealt).toBe(99);
+    expect(hitFoe(arcane(130), piercer, t).outcomes[0]!.dealt).toBe(99);
   });
 
-  test('rule 12: the other pair cuts nothing: the magic pair on a physical hit and the armor pair on a magical one leave all 100', () => {
+  test('rule 12: the other pair cuts nothing: the magic pair on a physical hit and the armor pair on a arcane one leave all 100', () => {
     const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 100, resist: 100 });
     const magicPen = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, resistPen: 50, resistPenFlat: 20 });
     const armorPen = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, armorPen: 50, armorPenFlat: 20 });
-    expect([hitFoe(ability('strike', {}, '130'), magicPen, t).outcomes[0]!.dealt, hitFoe(magical(130), armorPen, t).outcomes[0]!.dealt]).toEqual([64, 64]);
+    expect([hitFoe(ability('strike', {}, '130'), magicPen, t).outcomes[0]!.dealt, hitFoe(arcane(130), armorPen, t).outcomes[0]!.dealt]).toEqual([64, 64]);
   });
 
   test('rule 12: flat penetration past what the percent leaves takes the defence to 0, never below', () => {
@@ -539,7 +539,7 @@ describe('the kits\' rules of a use (kits design 1.4 and 1.5: rules 3b, 4, 6b, 1
 
   test('rule 18a: a threshold reaching an area lands on every body of the side it names within its radius of the bearer', () => {
     const mark: StackDef = { label: 'Mark', desc: '', ops: [], stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
-      at: { kind: 'count', n: 2 }, to: { kind: 'area', radius: tiles(2), on: 'allies' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: formula('10'), when: 'use' }] } } };
+      at: { kind: 'count', n: 2 }, to: { kind: 'area', radius: tiles(2), on: 'allies' }, then: 'spend', ops: [{ op: 'damage', type: 'arcane', amount: formula('10'), when: 'use' }] } } };
     const near = body('n', monsterOrigin('brute'), place(8, 5), 'foe'), far = body('f', monsterOrigin('brute'), place(12, 5), 'foe');
     const stroke = sure('0', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('mark'), def: mark, duration: null, stacks: 1 }] });
     const r = ok(use(stroke, user, holding(foe, mark, 'mark', 1), [near, far]));
@@ -618,7 +618,7 @@ describe('wave 2\'s sheet and share ops in a use (kits design 8.1, rule 11c)', (
 
   test('a use\'s dispel of a bomb a cure sets off lands its end as a land op\'s dispel does: the same hit on the same body (SMX-rules-2.3b)', () => {
     const u = body('u', hunterOrigin('support'), place(5, 5), 'party');
-    const def: StatusDef = { label: 'Bomb', desc: '', ops: [{ op: 'root' }], end: { ops: [{ op: 'damage', type: 'magical', amount: formula('20') }], cleanse: 'land' } };
+    const def: StatusDef = { label: 'Bomb', desc: '', ops: [{ op: 'root' }], end: { ops: [{ op: 'damage', type: 'arcane', amount: formula('20') }], cleanse: 'land' } };
     const t = withOps(body('t', hunterOrigin('tank'), place(6, 5), 'party'), statusOn(def, { key: statusKey('bomb'), source: { id: null, tier: 0 }, until: tick(NOW + 3000), since: NOW, settledAt: NOW }));
     const used = run(ability('support', { effect: null, ops: [{ op: 'dispel', which: 'all' }] }), u, [u, t], t.id, rolls({ t: [] }));
     const rows = new Map([[t.id, t]]), land = landOps(rows, [{ op: 'dispel', which: 'all' }], null, [t.id], { id: null, tier: 0 }, NOW, RULES);
