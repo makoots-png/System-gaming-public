@@ -355,7 +355,23 @@ test('a GM\'s fight opens on the map, and while it runs the screen is the fight:
   await expect(combat(gm).locator('[data-build]')).toBeVisible();
   await combat(gm).locator('[data-start]').tap();
   await expect(map(gm).locator('[data-frame]')).toBeVisible();
+  await expect(map(gm).locator('.mp-tok.now')).toHaveCount(1);
+  const { kai, rat } = await gm.evaluate(name => {
+    let out = { kai: '', rat: '' };
+    hunterApp.store.update((d: any) => {
+      const f = d.fight, k = f.rows.find((r: any) => r.name === name), m = f.rows.find((r: any) => r.kind === 'monster');
+      k.at = f.now; k.tie = 0; m.at = f.now + 1; m.tie = 0;
+      f.currentId = k.id;
+      out = { kai: k.id, rat: m.id };
+    }, 'test-setup');
+    return out;
+  }, HUNTER);
+  await expect(token(gm, kai)).toHaveClass(/\bnow\b/);
+  await expect(map(gm).locator('[data-hot]')).toBeHidden();
+  await combat(gm).locator('[data-next]').tap();
+  await expect(token(gm, rat)).toHaveClass(/\bnow\b/);
   await expect(map(gm).locator('[data-hot]')).toBeVisible();
+  await expect(map(gm).locator('[data-hot] .mp-hb').first()).toBeVisible();
   for (const hidden of ['[data-build]', '[data-log]', '[data-end]', '.cmb-list']) await expect(combat(gm).locator(hidden)).toBeHidden();
   await combat(gm).locator('[data-tools-open]').tap();
   const tools = combat(gm).getByRole('dialog', { name: 'Fight tools' });
@@ -365,6 +381,7 @@ test('a GM\'s fight opens on the map, and while it runs the screen is the fight:
   await go(player, 'combat');
   await expect(combat(player).locator('[data-fview="map"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(map(player).locator('[data-frame]')).toBeVisible();
+  await expect(map(player).locator('[data-hot]')).toBeVisible();
 });
 
 test('a player who zoomed the map out in one fight finds the next fight on the same ground opened at the zoom a fight opens at', async ({ device }) => {
