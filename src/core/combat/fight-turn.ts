@@ -223,8 +223,9 @@ function answered(f: Running, before: readonly Body[], a: Body, R: Rules, fx: Fx
     row = next;
     const weak = omen.weak === null ? null : script.moves[omen.weak]!;
     const then = m.outcome === 'cancel' || !weak ? `${omen.name} is canceled` : `${omen.name} will land as ${weak.name}`;
-    g = logged(g, line(`${answerWords(g, b, a, omen, m, R)}. ${then}.`, [a.id]), R);
-    fx.push({ type: 'answered', id: a.id, how: m.how, outcome: m.outcome });
+    const text = `${answerWords(g, b, a, omen, m, R)}. ${then}.`;
+    g = logged(g, line(text, [a.id]), R);
+    fx.push({ type: 'omenAnswered', id: a.id, omen: s.omen, how: m.how, outcome: m.outcome, line: text });
   }
   return { fight: g, row };
 }

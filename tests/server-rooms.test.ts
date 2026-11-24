@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
 import { MEM_EVENTS, database, handler, memoryStore, openDatabase, postgresStore, serverOf } from '../server.ts';
-import { parseEvent } from '../src/core/protocol.ts';
+import { apiError, parseEvent } from '../src/core/protocol.ts';
 import type { StoredEvent } from '../src/core/protocol.ts';
 import type { Store } from '../server.ts';
 import { DOC_MAX, ROOM_SHEETS, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
@@ -82,7 +82,7 @@ describe('room lifecycle', () => {
       expect(r.status).toBe(200);
       expect(r.body.gmKey).toHaveLength(32);
       const asPlayer = await call('POST', `/api/rooms/${r.body.code}/events`, { body: { from: 'd-player1', type: 'award', payload: {} } });
-      expect(asPlayer).toEqual({ status: 403, body: { error: 'gm only' } });
+      expect(asPlayer).toEqual({ status: 403, body: apiError('gmOnly') });
     }
   });
 
@@ -101,16 +101,16 @@ describe('room lifecycle', () => {
       expect(await call('GET', `/api/rooms/${code}?peek=1`)).toEqual({ status: 200, body: { exists: true } });
       Date.now = () => t0 + 31 * day;
       expect(await call('GET', `/api/rooms/${code}?peek=1`)).toEqual({ status: 200, body: { exists: false } });
-      expect(await call('GET', `/api/rooms/${code}?after=0`)).toEqual({ status: 404, body: { error: 'no such room' } });
+      expect(await call('GET', `/api/rooms/${code}?after=0`)).toEqual({ status: 404, body: apiError('noSuchRoom') });
     } finally { Date.now = realNow; }
   });
 
   test('reading an unknown room is 404 with the reason players see', async () => {
-    expect(await call('GET', '/api/rooms/ZZZZZZ')).toEqual({ status: 404, body: { error: 'no such room' } });
+    expect(await call('GET', '/api/rooms/ZZZZZZ')).toEqual({ status: 404, body: apiError('noSuchRoom') });
   });
 
   test('polling an unknown room with a cursor is 404, the answer that marks a saved room gone', async () => {
-    expect(await call('GET', `/api/rooms/ZZZZZZ?after=5&d=${PLAYER}`)).toEqual({ status: 404, body: { error: 'no such room' } });
+    expect(await call('GET', `/api/rooms/ZZZZZZ?after=5&d=${PLAYER}`)).toEqual({ status: 404, body: apiError('noSuchRoom') });
   });
 
   test('a cursor past the last event returns no events but still returns the sheets', async () => {
@@ -172,14 +172,14 @@ describe('events', () => {
     test(`a player cannot send a ${type} event`, async () => {
       const { code } = await newRoom();
       const r = await call('POST', `/api/rooms/${code}/events`, { body: { from: PLAYER, type, payload: {} } });
-      expect(r).toEqual({ status: 403, body: { error: 'gm only' } });
+      expect(r).toEqual({ status: 403, body: apiError('gmOnly') });
     });
   }
 
   test('a player cannot set the fight\'s totals on their own hunter, and the room is unchanged', async () => {
     const { code } = await newRoom();
     const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'vitals', payload: vitals } });
-    expect(r).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(r).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
@@ -191,14 +191,14 @@ describe('events', () => {
   test('a player cannot keep an item by saying the GM\'s fight took it from another hunter, and the room is unchanged', async () => {
     const { code } = await newRoom();
     const spent = { eid: 'd-gm-e9', to: [`${PLAYER}:h1`], item: 'i3' };
-    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'spent', payload: spent } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'spent', payload: spent } })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
   test('a player cannot send facts of its own hunter as the GM\'s noted, and the room is unchanged; the GM can', async () => {
     const { code, gm } = await newRoom();
     const noted = { eid: 'd-gm-e11', to: [`${PLAYER}:h1`], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }] };
-    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'noted', payload: noted } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'noted', payload: noted } })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'noted', payload: noted } })).status).toBe(200);
   });
@@ -206,7 +206,7 @@ describe('events', () => {
   test('a player cannot raise a shadow for their own hunter, and the room is unchanged; the GM can', async () => {
     const { code, gm } = await newRoom();
     const shadow = { eid: 'd-gm-e10', to: [`${PLAYER}:h1`], shadow: { rank: 'C', archetype: 'brute', grade: 'Knight', monster: null, name: 'Ice Bear' } };
-    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'shadow', payload: shadow } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'shadow', payload: shadow } })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'shadow', payload: shadow } })).status).toBe(200);
   });
@@ -214,7 +214,7 @@ describe('events', () => {
   test('a player cannot open a story\'s chapter for their own hunter, and the room is unchanged', async () => {
     const { code } = await newRoom();
     const chapter = { eid: 'd-gm-e12', to: [`${PLAYER}:h1`], words: { title: 'THE DEEP ASKS', line: '' }, rewards: { points: 5 }, quest: null };
-    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'chapter', payload: chapter } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'chapter', payload: chapter } })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
@@ -231,7 +231,7 @@ describe('events', () => {
     const { code, gm } = await newRoom();
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'coinCall', payload: coinCall } })).status).toBe(200);
     const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'coinLand', payload: coinLand } });
-    expect(r).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(r).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.events.map((e: any) => e.type)).toEqual(['coinCall']);
   });
 
@@ -244,14 +244,14 @@ describe('events', () => {
     const { code } = await newRoom();
     const chain = { eid: 'd-player1-e9', to: [`${PLAYER}:h1`], job: 'Ranger', kind: 'issue' };
     const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'chain', payload: chain } });
-    expect(r).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(r).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
   test('a player cannot answer its own solo run, and the room is unchanged; the GM\'s phone can', async () => {
     const { code, gm } = await newRoom();
     const answer = { eid: 'd-gm-e11', to: [`${PLAYER}:h1`], run: 'd-player1-e8', gate: 'g1', name: 'Den', verdict: 'cleared' };
-    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'soloAnswer', payload: answer } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'soloAnswer', payload: answer } })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'soloAnswer', payload: answer } })).status).toBe(200);
   });
@@ -268,7 +268,7 @@ describe('events', () => {
     test(`a player cannot post a ${type} in another player's name, and the room is unchanged`, async () => {
       const { code } = await newRoom();
       const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p2'), body: { from: OTHER, type, payload } });
-      expect(r).toEqual({ status: 403, body: { error: 'not your sheet' } });
+      expect(r).toEqual({ status: 403, body: apiError('notYourSheet') });
       expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     });
   }
@@ -276,7 +276,7 @@ describe('events', () => {
   test('a roll whose hunter key only starts with the sender\'s device id is refused', async () => {
     const { code } = await newRoom();
     const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: 'd-player', type: 'roll', payload: roll } });
-    expect(r).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(r).toEqual({ status: 403, body: apiError('notYourSheet') });
   });
 
   // Each from the GM, so only the event itself is wrong. The reason code says which part.
@@ -295,7 +295,7 @@ describe('events', () => {
   for (const [what, body, reason] of refused) {
     test(`an event with ${what} is refused with its reason, and the room is unchanged`, async () => {
       const { code, gm } = await newRoom();
-      expect(await call('POST', `/api/rooms/${code}/events`, { headers: gm, body })).toEqual({ status: 400, body: { error: 'bad event', reason } });
+      expect(await call('POST', `/api/rooms/${code}/events`, { headers: gm, body })).toEqual({ status: 400, body: apiError('badEvent', { reason }) });
       expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     });
   }
@@ -325,8 +325,8 @@ describe('events', () => {
     const { code, gm } = await newRoom();
     const post = (payload: unknown, type = 'system') => call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type, payload } });
     expect((await post(system('one', 'd-gm-a1'))).body).toEqual({ seq: 1 });
-    expect(await post(system('another', 'd-gm-a1')), 'the same type with another body').toEqual({ status: 409, body: { error: 'id taken' } });
-    expect(await post(award(5, 'd-gm-a1'), 'award'), 'another type').toEqual({ status: 409, body: { error: 'id taken' } });
+    expect(await post(system('another', 'd-gm-a1')), 'the same type with another body').toEqual({ status: 409, body: apiError('idTaken') });
+    expect(await post(award(5, 'd-gm-a1'), 'award'), 'another type').toEqual({ status: 409, body: apiError('idTaken') });
     expect((await post(system('one', 'd-gm-a1'))).body).toEqual({ seq: 1 });
     const all = await call('GET', `/api/rooms/${code}`);
     expect(all.body.events.map((e: any) => [e.seq, e.type, e.payload.title])).toEqual([[1, 'system', 'one']]);
@@ -354,10 +354,10 @@ describe('events', () => {
     const post = (from: string, type: string, payload: unknown, headers: Record<string, string> = token(from)) => call('POST', `/api/rooms/${code}/events`, { headers, body: { from, type, payload } });
     const offer = 'd-player1-mo2', A = `${PLAYER}:h1`, B = `${OTHER}:h3`;
     const body = { eid: offer, by: A, to: [B], names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } };
-    expect(await post(OTHER, 'offer', body)).toEqual({ status: 403, body: { error: 'not your sheet' } });
-    expect(await post(OTHER, 'offerEnd', { eid: `${offer}-e`, by: A, to: [B], offer, how: 'withdraw', gives: { gold: 0, items: [] } })).toEqual({ status: 403, body: { error: 'not your sheet' } });
-    expect(await post(PLAYER, 'offerStop', { eid: `${offer}-e`, to: [A, B], offer })).toEqual({ status: 403, body: { error: 'gm only' } });
-    expect(await post(PLAYER, 'roll', { ...roll, eid: `${offer}-e` })).toEqual({ status: 400, body: { error: 'bad event', reason: 'payload' } });
+    expect(await post(OTHER, 'offer', body)).toEqual({ status: 403, body: apiError('notYourSheet') });
+    expect(await post(OTHER, 'offerEnd', { eid: `${offer}-e`, by: A, to: [B], offer, how: 'withdraw', gives: { gold: 0, items: [] } })).toEqual({ status: 403, body: apiError('notYourSheet') });
+    expect(await post(PLAYER, 'offerStop', { eid: `${offer}-e`, to: [A, B], offer })).toEqual({ status: 403, body: apiError('gmOnly') });
+    expect(await post(PLAYER, 'roll', { ...roll, eid: `${offer}-e` })).toEqual({ status: 400, body: apiError('badEvent', { reason: 'payload' }) });
     expect((await post('gm', 'offerStop', { eid: `${offer}-e`, to: [A, B], offer }, gm)).status).toBe(200);
   });
 
@@ -491,20 +491,20 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
   test('a secret quest to two hunters is refused, and the room is unchanged', async () => {
     const { gm, post, poll } = await tradeRoom();
     const r = await post('gm', 'quest', { eid: 'd-gm-q2', to: [A, B], quest: { kind: 'side', title: 'Unmask the traitor', secret: true } }, gm);
-    expect(r).toEqual({ status: 400, body: { error: 'bad event', reason: 'payload' } });
+    expect(r).toEqual({ status: 400, body: apiError('badEvent', { reason: 'payload' }) });
     expect(eids(await poll(null, gm))).toEqual(['d-gm-w1', 'd-player1-mo1', 'd-player1-mo1-e']);
   });
 
   test('a player cannot send another\'s word nor answer one, and the room is unchanged', async () => {
     const { post, poll, gm } = await tradeRoom();
     expect((await post(OTHER, 'word', { eid: 'd-player2-wd1', by: A, name: 'Kai', text: 'Not me' })).status).toBe(403);
-    expect(await post(PLAYER, 'wordBack', { eid: 'd-player1-wb1', to: [A], re: 'd-player1-wd1', text: 'Yes.' })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await post(PLAYER, 'wordBack', { eid: 'd-player1-wb1', to: [A], re: 'd-player1-wd1', text: 'Yes.' })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect(eids(await poll(null, gm))).toEqual(['d-gm-w1', 'd-player1-mo1', 'd-player1-mo1-e']);
   });
 
   test('a player cannot weigh their own hunter\'s dice, and the room is unchanged', async () => {
     const { post, poll, gm } = await tradeRoom();
-    expect(await post(PLAYER, 'weigh', { eid: 'd-player1-wt1', to: [A], total: 5, force: 20 })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await post(PLAYER, 'weigh', { eid: 'd-player1-wt1', to: [A], total: 5, force: 20 })).toEqual({ status: 403, body: apiError('gmOnly') });
     expect(eids(await poll(null, gm))).not.toContain('d-player1-wt1');
   });
 
@@ -552,14 +552,14 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect(eids(await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token(NEW) }))).toEqual([]);
     expect((await call('PUT', `/api/rooms/${code}/sheets/${D}`, { headers: token(NEW), body: sheetOf(NEW, 'Rin') })).status).toBe(200);
     expect(eids(await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token(NEW) }))).toEqual(['d-player1-mo2']);
-    expect(await call('PUT', `/api/rooms/${code}/sheets/${D}`, { headers: token('thief'), body: sheetOf(NEW, 'Mallory') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await call('PUT', `/api/rooms/${code}/sheets/${D}`, { headers: token('thief'), body: sheetOf(NEW, 'Mallory') })).toEqual({ status: 403, body: apiError('notYourSheet') });
     expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets[D].data.hunter.name).toBe('Rin');
   });
 
   test('a face pushed as a sheet is refused, and the room is unchanged', async () => {
     const { code, gm } = await newRoom();
     const face = { from: PLAYER, data: { face: { name: 'Kai', level: 99, job: null, bag: [] } } };
-    expect(await call('PUT', `/api/rooms/${code}/sheets/${A}`, { headers: token(PLAYER), body: face })).toEqual({ status: 400, body: { error: 'bad sheet' } });
+    expect(await call('PUT', `/api/rooms/${code}/sheets/${A}`, { headers: token(PLAYER), body: face })).toEqual({ status: 400, body: apiError('badSheet') });
     expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets).toEqual({});
   });
 });
@@ -587,7 +587,7 @@ describe('a phone\'s hold on its hunters (SMX-sync-5)', () => {
     const thief = await poll(token('thief'));
     expect(titles(thief)).toEqual([]);
     expect(thief.body.sheets[TWO].data).toEqual({ face: { name: 'Rin', level: 1, job: null, bag: [] } });
-    expect(await push(token('thief'), 'Mallory')).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await push(token('thief'), 'Mallory')).toEqual({ status: 403, body: apiError('notYourSheet') });
     expect((await push(token(VIC), 'Rin')).status).toBe(200);
     expect(titles(await poll(token(VIC)))).toEqual(['SECRET CHAPTER']);
   });
@@ -600,8 +600,8 @@ describe('a phone\'s hold on its hunters (SMX-sync-5)', () => {
     expect(thief.body.sheets[TWO].data).toHaveProperty('face');
     expect((await push(token('newphone'), 'Rin')).status).toBe(200);
     expect(titles(await poll(token('newphone')))).toEqual(['SECRET CHAPTER']);
-    expect(await push(token('thief'), 'Mallory')).toEqual({ status: 403, body: { error: 'not your sheet' } });
-    expect(await push(token(VIC), 'Rin')).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await push(token('thief'), 'Mallory')).toEqual({ status: 403, body: apiError('notYourSheet') });
+    expect(await push(token(VIC), 'Rin')).toEqual({ status: 403, body: apiError('notYourSheet') });
   });
 
   test('removing a phone\'s last hunter frees it: once the GM allows it back, the player\'s new phone may push it', async () => {
@@ -611,7 +611,7 @@ describe('a phone\'s hold on its hunters (SMX-sync-5)', () => {
     expect((await call('DELETE', path, { headers: gm })).status).toBe(200);
     expect((await call('DELETE', `/api/rooms/${code}/kicks/${ONE}`, { headers: gm })).status).toBe(200);
     expect((await call('PUT', path, { headers: token('newphone'), body: two('Kai', 'h1') })).status).toBe(200);
-    expect(await call('PUT', path, { headers: token(VIC), body: two('Kai', 'h1') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await call('PUT', path, { headers: token(VIC), body: two('Kai', 'h1') })).toEqual({ status: 403, body: apiError('notYourSheet') });
   });
 });
 
@@ -630,7 +630,7 @@ describe('sheets', () => {
     const { code, gm } = await newRoom();
     await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body: sheet('Kai') });
     const steal = await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('thief'), body: sheet('Mallory') });
-    expect(steal).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(steal).toEqual({ status: 403, body: apiError('notYourSheet') });
     const room = await call('GET', `/api/rooms/${code}`, { headers: gm });
     expect(room.body.sheets[`${PLAYER}:h1`].data.hunter.name).toBe('Kai');
   });
@@ -641,7 +641,7 @@ describe('sheets', () => {
     await call('PUT', path, { headers: token('p1'), body: sheet('Kai') });
     expect((await call('DELETE', path, { headers: gm })).status).toBe(200);
     expect((await call('GET', `/api/rooms/${code}`)).body.sheets).toEqual({});
-    expect(await call('PUT', path, { headers: token('p1'), body: sheet('Kai') })).toEqual({ status: 403, body: { error: 'removed' } });
+    expect(await call('PUT', path, { headers: token('p1'), body: sheet('Kai') })).toEqual({ status: 403, body: apiError('removed') });
     expect((await call('DELETE', `/api/rooms/${code}/kicks/${PLAYER}:h1`, { headers: gm })).status).toBe(200);
     expect((await call('PUT', path, { headers: token('p1'), body: sheet('Kai') })).status).toBe(200);
   });
@@ -662,7 +662,7 @@ describe('sheets', () => {
   test('not even the GM can write the removal doc by hand', async () => {
     const { code, gm } = await newRoom();
     const r = await call('PUT', `/api/rooms/${code}/sheets/_kicked`, { headers: gm, body: { from: 'd-gm', data: { keys: {}, names: {} } } });
-    expect(r).toEqual({ status: 403, body: { error: 'server doc' } });
+    expect(r).toEqual({ status: 403, body: apiError('serverDoc') });
   });
 
   test('a player cannot remove a sheet', async () => {
@@ -688,7 +688,7 @@ describe('sheets', () => {
     /** The room's rules, padded with a field the parser drops, so the doc's JSON is `n` characters long. */
     const padded = (n: number) => { const d = { ...RULES_DOC, pad: '' }; d.pad = 'x'.repeat(n - JSON.stringify(d).length); return d; };
     expect(JSON.stringify(padded(DOC_MAX)).length).toBe(DOC_MAX);
-    expect((await call('PUT', path, { headers: gm, body: { from: 'gm', data: padded(DOC_MAX + 1) } }))).toEqual({ status: 413, body: { error: 'too large' } });
+    expect((await call('PUT', path, { headers: gm, body: { from: 'gm', data: padded(DOC_MAX + 1) } }))).toEqual({ status: 413, body: apiError('tooLarge') });
     expect((await call('GET', `/api/rooms/${code}`)).body.docs).toEqual({});
     expect((await call('PUT', path, { headers: gm, body: { from: 'gm', data: padded(DOC_MAX) } })).status).toBe(200);
     expect((await call('GET', `/api/rooms/${code}`)).body.docs.rules.data).toEqual(RULES_DOC);
@@ -700,14 +700,14 @@ describe('sheets', () => {
     const padded = (n: number) => { const d = { hunter: { id: 'h1', notes: '' } }; d.hunter.notes = 'x'.repeat(n - JSON.stringify(d).length); return d; };
     expect(JSON.stringify(padded(SHEET_MAX)).length).toBe(SHEET_MAX);
     const put = (n: number) => call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body: { from: PLAYER, data: padded(n) } });
-    expect(await put(SHEET_MAX + 1)).toEqual({ status: 413, body: { error: 'too large' } });
+    expect(await put(SHEET_MAX + 1)).toEqual({ status: 413, body: apiError('tooLarge') });
     expect((await put(SHEET_MAX)).status).toBe(200);
   });
 
   test('a sheet whose data is not an object is refused', async () => {
     const { code } = await newRoom();
     const r = await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body: { from: PLAYER, data: 'hello' } });
-    expect(r).toEqual({ status: 400, body: { error: 'bad sheet' } });
+    expect(r).toEqual({ status: 400, body: apiError('badSheet') });
   });
 
   test('the 25th hunter is told the room is full', async () => {
@@ -718,14 +718,14 @@ describe('sheets', () => {
       expect(r.status).toBe(200);
     }
     const r = await call('PUT', `/api/rooms/${code}/sheets/d-late:h1`, { headers: token('late'), body: sheetOf('d-late', 'Late') });
-    expect(r).toEqual({ status: 413, body: { error: 'room full' } });
+    expect(r).toEqual({ status: 413, body: apiError('roomFull') });
   });
 
   const badSheets: [string, string, unknown, Record<string, unknown>][] = [
-    ['a hunter id that is not the one in its key', `${PLAYER}:h1`, sheetOf(PLAYER, 'Kai', { id: 'h2' }), { error: 'bad sheet' }],
-    ['no hunter id', `${PLAYER}:h1`, { from: PLAYER, data: { hunter: { name: 'Kai' } } }, { error: 'bad sheet' }],
-    ['a key without the device', 'h1', sheetOf(PLAYER, 'Kai'), { error: 'bad hunter id' }],
-    ['a sender that is not a device id', `${PLAYER}:h1`, { ...sheetOf(PLAYER, 'Kai'), from: 'not a device!' }, { error: 'bad sheet' }],
+    ['a hunter id that is not the one in its key', `${PLAYER}:h1`, sheetOf(PLAYER, 'Kai', { id: 'h2' }), apiError('badSheet')],
+    ['no hunter id', `${PLAYER}:h1`, { from: PLAYER, data: { hunter: { name: 'Kai' } } }, apiError('badSheet')],
+    ['a key without the device', 'h1', sheetOf(PLAYER, 'Kai'), apiError('badHunterId')],
+    ['a sender that is not a device id', `${PLAYER}:h1`, { ...sheetOf(PLAYER, 'Kai'), from: 'not a device!' }, apiError('badSheet')],
   ];
   for (const [what, key, body, error] of badSheets) {
     test(`a sheet with ${what} is refused, and the room is unchanged`, async () => {
@@ -754,7 +754,7 @@ describe('sheets', () => {
   for (const [what, name, data] of badDocs) {
     test(`a room doc with ${what} is refused, and the room is unchanged`, async () => {
       const { code, gm } = await newRoom();
-      expect(await call('PUT', `/api/rooms/${code}/sheets/${name}`, { headers: gm, body: { from: 'gm', data } })).toEqual({ status: 400, body: { error: 'bad doc' } });
+      expect(await call('PUT', `/api/rooms/${code}/sheets/${name}`, { headers: gm, body: { from: 'gm', data } })).toEqual({ status: 400, body: apiError('badDoc') });
       expect((await call('GET', `/api/rooms/${code}`)).body.docs).toEqual({});
     });
   }
@@ -832,7 +832,7 @@ describe('a room keeps every message it took (notes-5-trade.md 13, ruling 3)', (
     try {
       for (let n = 1; n <= MEM_EVENTS; n++) await st.addEvent(code, GM_PHONE, told(n), Date.now());
       const post = (payload: unknown) => call('POST', `/api/rooms/${code}/events`, { server, headers: gm, body: { from: 'd-gm', type: 'system', payload } });
-      expect(await post({ eid: 'd-gm-late', title: 'One too many' })).toEqual({ status: 413, body: { error: 'room full' } });
+      expect(await post({ eid: 'd-gm-late', title: 'One too many' })).toEqual({ status: 413, body: apiError('roomFull') });
       expect(await post({ eid: 'd-gm-s1', title: 'Message 1' }), 'a message the room holds is that message again').toEqual({ status: 200, body: { seq: 1 } });
       const events = await all(st, code);
       expect([events.length, events[0]?.payload.eid, events.at(-1)?.seq]).toEqual([MEM_EVENTS, 'd-gm-s1', MEM_EVENTS]);
@@ -849,7 +849,7 @@ describe('a Postgres that does not answer', () => {
       expect(health.body).toMatchObject({ ok: false, db: 'postgres', error: 'ERR_POSTGRES_CONNECTION_REFUSED' });
       expect(Number.isNaN(Date.parse(health.body.since))).toBe(false);
       for (const [method, path] of [['POST', '/api/rooms'], ['GET', '/api/rooms/ABCD23?peek=1'], ['GET', '/api/rooms/ABCD23?after=0']] as const) {
-        expect(await call(method, path, { server })).toEqual({ status: 503, body: { error: 'no database' } });
+        expect(await call(method, path, { server })).toEqual({ status: 503, body: apiError('noDatabase') });
       }
     } finally { await db.close(); }
   });
@@ -886,7 +886,7 @@ describe('a database the server shuts (SMX-sync-7)', () => {
     expect((await db.now()).at).toBe('closed');
     expect(closes).toBe(1);
     expect(await call('GET', '/api/health', { server })).toEqual(closedHealth);
-    expect(await call('POST', '/api/rooms', { server })).toEqual({ status: 503, body: { error: 'no database' } });
+    expect(await call('POST', '/api/rooms', { server })).toEqual({ status: 503, body: apiError('noDatabase') });
   });
 
   test('shut while Postgres does not answer: no other try is made', async () => {
@@ -908,7 +908,7 @@ describe('a database the server shuts (SMX-sync-7)', () => {
     await db.close();
     expect(closes).toBe(1);
     expect(await call('GET', '/api/health', { server })).toEqual(closedHealth);
-    expect(await call('POST', '/api/rooms', { server })).toEqual({ status: 503, body: { error: 'no database' } });
+    expect(await call('POST', '/api/rooms', { server })).toEqual({ status: 503, body: apiError('noDatabase') });
   });
 });
 
@@ -924,7 +924,7 @@ describe('a removal is one record, the room\'s', () => {
       expect((await call('PUT', path, { server: first, headers: token('p1'), body: kai })).status).toBe(200);
       expect((await call('DELETE', path, { server: first, headers: gm })).status).toBe(200);
       Date.now = () => t0 + 19_000;
-      expect(await call('PUT', path, { server: restarted, headers: token('p1'), body: kai })).toEqual({ status: 403, body: { error: 'removed' } });
+      expect(await call('PUT', path, { server: restarted, headers: token('p1'), body: kai })).toEqual({ status: 403, body: apiError('removed') });
       Date.now = () => t0 + 21_000;
       expect((await call('PUT', path, { server: restarted, headers: token('p1'), body: kai })).status).toBe(200);
     } finally {
@@ -973,8 +973,8 @@ describe('requests at the same moment (audit BUG-sync-6, AW-sync-2)', () => {
       const polled = await room.poll();
       expect(polled.body.sheets).toEqual({});
       expect(polled.body.docs.kicked.data.names).toEqual({ [keyOf(PLAYER)]: 'Kai', [keyOf(OTHER)]: 'Bo' });
-      expect(await room.push(PLAYER, 'Kai')).toEqual({ status: 403, body: { error: 'removed' } });
-      expect(await room.push(OTHER, 'Bo')).toEqual({ status: 403, body: { error: 'removed' } });
+      expect(await room.push(PLAYER, 'Kai')).toEqual({ status: 403, body: apiError('removed') });
+      expect(await room.push(OTHER, 'Bo')).toEqual({ status: 403, body: apiError('removed') });
     } finally { await room.close(); }
   });
 
@@ -988,7 +988,7 @@ describe('requests at the same moment (audit BUG-sync-6, AW-sync-2)', () => {
       expect(answers.map(a => a.status)).toEqual([200, 200]);
       expect(Object.keys((await room.poll()).body.docs.kicked.data.keys)).toEqual([keyOf(OTHER)]);
       expect((await room.push(PLAYER, 'Kai')).status).toBe(200);
-      expect(await room.push(OTHER, 'Bo')).toEqual({ status: 403, body: { error: 'removed' } });
+      expect(await room.push(OTHER, 'Bo')).toEqual({ status: 403, body: apiError('removed') });
     } finally { await room.close(); }
   });
 
@@ -1028,13 +1028,13 @@ describe('requests at the same moment (audit BUG-sync-6, AW-sync-2)', () => {
 describe('a write for a phone carries its token', () => {
   test('a sheet pushed with no device token is refused, and the room is unchanged', async () => {
     const { code } = await newRoom();
-    expect(await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { body: sheetOf(PLAYER, 'Kai') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { body: sheetOf(PLAYER, 'Kai') })).toEqual({ status: 403, body: apiError('notYourSheet') });
     expect((await call('GET', `/api/rooms/${code}`)).body.sheets).toEqual({});
   });
 
   test('a roll posted with no device token is refused, and the room is unchanged', async () => {
     const { code } = await newRoom();
-    expect(await call('POST', `/api/rooms/${code}/events`, { body: { from: PLAYER, type: 'roll', payload: roll } })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await call('POST', `/api/rooms/${code}/events`, { body: { from: PLAYER, type: 'roll', payload: roll } })).toEqual({ status: 403, body: apiError('notYourSheet') });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
@@ -1043,7 +1043,7 @@ describe('a write for a phone carries its token', () => {
     const odd = 'phone7', path = `/api/rooms/${code}/sheets/${odd}:h1`;
     expect((await call('PUT', path, { body: sheetOf(odd, 'Kai') })).status).toBe(403);
     expect((await call('PUT', path, { headers: token('mine'), body: sheetOf(odd, 'Kai') })).status).toBe(200);
-    expect(await call('PUT', path, { headers: token('thief'), body: sheetOf(odd, 'Mallory') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await call('PUT', path, { headers: token('thief'), body: sheetOf(odd, 'Mallory') })).toEqual({ status: 403, body: apiError('notYourSheet') });
   });
 
   test('the GM\'s key writes without a token', async () => {
@@ -1093,5 +1093,36 @@ describe('paths outside the API', () => {
       const res = await handler(new Request('http://test' + path));
       expect([400, 404]).toContain(res.status);
     }
+  });
+});
+
+describe('wire error compatibility across one deploy', () => {
+  test('live server error replies keep the legacy error string beside code so an older phone still matches', async () => {
+    const { code, gm } = await newRoom();
+    const missing = await call('GET', '/api/rooms/ZZZZZZ?after=0');
+    expect(missing).toEqual({ status: 404, body: { code: 'NO_SUCH_ROOM', error: 'no such room' } });
+
+    const asPlayer = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'award', payload: award(10) } });
+    expect(asPlayer).toEqual({ status: 403, body: { code: 'GM_ONLY', error: 'gm only' } });
+
+    const sheetPath = `/api/rooms/${code}/sheets/${PLAYER}:h1`;
+    expect((await call('PUT', sheetPath, { headers: token('p1'), body: sheetOf(PLAYER, 'Kai') })).status).toBe(200);
+    const thief = await call('PUT', sheetPath, { headers: token('thief'), body: sheetOf(PLAYER, 'Mallory') });
+    expect(thief).toEqual({ status: 403, body: { code: 'NOT_YOUR_SHEET', error: 'not your sheet' } });
+
+    expect((await call('DELETE', sheetPath, { headers: gm })).status).toBe(200);
+    const kicked = await call('PUT', sheetPath, { headers: token('p1'), body: sheetOf(PLAYER, 'Kai') });
+    expect(kicked).toEqual({ status: 403, body: { code: 'REMOVED', error: 'removed' } });
+
+    const big = await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'system', payload: { text: 'x'.repeat(70_000) } } });
+    expect(big).toEqual({ status: 413, body: { code: 'TOO_LARGE', error: 'too large' } });
+
+    const fullRoom = await newRoom();
+    for (let i = 0; i < ROOM_SHEETS; i++) {
+      const dev = `d-compat${i}`;
+      expect((await call('PUT', `/api/rooms/${fullRoom.code}/sheets/${dev}:h1`, { headers: token(dev), body: sheetOf(dev, 'H' + i) })).status).toBe(200);
+    }
+    const full = await call('PUT', `/api/rooms/${fullRoom.code}/sheets/d-over:h1`, { headers: token('over'), body: sheetOf('d-over', 'Over') });
+    expect(full).toEqual({ status: 413, body: { code: 'ROOM_FULL', error: 'room full' } });
   });
 });

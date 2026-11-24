@@ -152,7 +152,7 @@ export function register(app) {
     for (const fx of of('staggered')) { const b = rowOf(fight(), fx.id); if (b) toast(`${b.name} is staggered and loses the next turn.`, 'warning'); }
     for (const fx of of('omen')) { const b = rowOf(fight(), fx.id), o = b && b.mythic && mythicScriptOf(b.mythic.script).omens[fx.omen]; if (b && o) toast(`${b.name} readies ${o.name}.`, 'warning'); }
     for (const fx of of('phased')) { const b = rowOf(fight(), fx.id), p = b && b.mythic && mythicScriptOf(b.mythic.script).phases[fx.phase]; if (p) toast(`Phase ${fx.phase + 1}: ${p.name}.`); }
-    for (const fx of of('answered')) { const said = (fight() ? fight().log : []).slice(0, 4).find(l => /is canceled\.$|will land as /.test(l.text)); if (said && rowOf(fight(), fx.id)) toast(said.text); }
+    for (const fx of of('omenAnswered')) toast(fx.line);
     for (const fx of asked ? [] : of('refused')) toast(REFUSAL_WORDS[fx.reason], 'warning');
     if (of('burst').length) lastBurst = { n: (lastBurst ? lastBurst.n : 0) + 1, ids: of('burst').map(x => x.id) };
     showEffects(effects, hpWas, readyWas);

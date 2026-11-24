@@ -2615,8 +2615,25 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
     const r = go(until(told.fight, turnOf('A')).fight, hit('A', 'X', STUN));
     expect(standing(r.fight).at).toBe('calm');
-    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'interrupt', outcome: 'cancel' });
+    expect(r.effects).toContainEqual({
+      type: 'omenAnswered', id: id('X'), omen: 'named', how: 'interrupt', outcome: 'cancel',
+      line: 'The Fourth Rider is stunned by A. Named in the Book is canceled.',
+    });
     expect(logs(r.fight)).toContain('The Fourth Rider is stunned by A. Named in the Book is canceled.');
+  });
+
+  test('a stun on a mythic weakens an omen whose interrupt weakens and carries the line on omenAnswered', () => {
+    const f0 = begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5)));
+    const p2 = running(go(f0, gm('next')));
+    const told = until(p2, omenUp);
+    expect(standing(told.fight)).toMatchObject({ at: 'omen', omen: 'breath' });
+    const r = go(until(told.fight, turnOf('A')).fight, hit('A', 'X', STUN));
+    expect(standing(r.fight).at).toBe('faltering');
+    expect(r.effects).toContainEqual({
+      type: 'omenAnswered', id: id('X'), omen: 'breath', how: 'interrupt', outcome: 'weaken',
+      line: 'The Angel of the Last Trumpet is stunned by A. The First Breath will land as Half a Breath.',
+    });
+    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet is stunned by A. The First Breath will land as Half a Breath.');
   });
 
   test('an answered omen winds its phase\'s clock back by the rule\'s rounds, and a landed one does not', () => {
@@ -2643,7 +2660,10 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(standing(go(f1, hit('B', 'B', GUARD)).fight).at, 'B shields itself, not the one named').toBe('omen');
     const r = go(f1, hit('B', 'A', GUARD));
     expect(standing(r.fight).at).toBe('calm');
-    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'shield', outcome: 'cancel' });
+    expect(r.effects).toContainEqual({
+      type: 'omenAnswered', id: id('X'), omen: 'named', how: 'shield', outcome: 'cancel',
+      line: 'A is shielded. Named in the Book is canceled.',
+    });
     expect(logs(r.fight)).toContain('A is shielded. Named in the Book is canceled.');
   });
 
@@ -2661,7 +2681,10 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(standing(go(f1, hit('A', 'X')).fight).at, 'a hit from the tile answers nothing').toBe('omen');
     const r = go(f1, { type: 'move', by: id('A'), to: place(9, 5) });
     expect(standing(r.fight).at).toBe('calm');
-    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'step', outcome: 'cancel' });
+    expect(r.effects).toContainEqual({
+      type: 'omenAnswered', id: id('X'), omen: 'stars', how: 'step', outcome: 'cancel',
+      line: 'No one stands where Stars Fall was aimed. Stars Fall is canceled.',
+    });
     expect(logs(r.fight)).toContain('No one stands where Stars Fall was aimed. Stars Fall is canceled.');
   });
 

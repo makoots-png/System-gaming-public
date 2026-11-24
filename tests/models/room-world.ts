@@ -12,7 +12,7 @@ import { boot, paceOf, reduce as linkReduce } from '../../src/core/sync/link.ts'
 import type { FailKind, Gen, GmKey, Last, Link, LinkCall, LinkEffect, LinkEvent, SaveFields } from '../../src/core/sync/link.ts';
 import { PUSH_OFF, reduce as pushReduce } from '../../src/core/sync/push.ts';
 import type { Push, PushEffect, PushEvent, RefusedWhy } from '../../src/core/sync/push.ts';
-import { DOCS, REMOVED_MS, newEvent, onTurn, parseDeviceId, parseRoomState, parseSheetKey } from '../../src/core/protocol.ts';
+import { API_ERRORS, DOCS, REMOVED_MS, newEvent, onTurn, parseApiError, parseDeviceId, parseRoomState, parseSheetKey } from '../../src/core/protocol.ts';
 import type { DeviceId, EventId, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, SheetKey } from '../../src/core/protocol.ts';
 import { recordApplied } from '../../src/core/applied.ts';
 import { ringDrop, ringGone, ringKeep } from '../../src/core/sync/bind.ts';
@@ -376,12 +376,11 @@ function request(w: World, p: Phone, lane: Lane, gen: Gen | null, room: RoomCode
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const errorOf = (a: Answer): string => (isObj(a.data) && typeof a.data.error === 'string' ? a.data.error : '');
 const ok = (r: Reply): boolean => 'status' in r && r.status >= 200 && r.status < 300;
 
 /** `linkRequest` and `ask`: one reply per request, turned into link events as sync.ts does. */
 function linkRequest(w: World, p: Phone, gen: Gen, timeoutMs: number, call: LinkCall): void {
-  const failedOf = (a: Answer): LinkEvent => (a.status === 404 && errorOf(a) === 'no such room' ? { type: 'gone', gen } : { type: 'failed', gen, kind: 'server' });
+  const failedOf = (a: Answer): LinkEvent => (a.status === 404 && parseApiError(a.data).code === API_ERRORS.noSuchRoom.code ? { type: 'gone', gen } : { type: 'failed', gen, kind: 'server' });
   const failedServer: LinkEvent = { type: 'failed', gen, kind: 'server' };
   const go = (events: LinkEvent[], data: Data = null): void => events.forEach((e, i) => linkDo(w, p, e, i === 0 ? data : null));
   const on = (http: Http, room: RoomCode | null, answer: (a: Answer) => void): void =>
@@ -635,11 +634,11 @@ function sendSheet(w: World, p: Phone, gen: Gen, timeoutMs: number): void {
     let e: PushEvent | LinkEvent;
     if ('none' in r) e = { type: 'failed', gen, kind: r.none satisfies FailKind };
     else {
-      const why = errorOf(r);
+      const err = parseApiError(r.data);
       e = ok(r) ? { type: 'sent', gen }
-        : r.status === 403 && why === 'not your sheet' ? { type: 'notYours', gen }
+        : r.status === 403 && err.code === API_ERRORS.notYourSheet.code ? { type: 'notYours', gen }
         : r.status === 403 ? { type: 'removed', gen }
-        : r.status === 400 || r.status === 413 ? { type: 'refused', gen, why: (r.status === 400 ? 'bad' : why === 'room full' ? 'room-full' : 'too-large') satisfies RefusedWhy }
+        : r.status === 400 || r.status === 413 ? { type: 'refused', gen, why: (r.status === 400 ? 'bad' : err.code === API_ERRORS.roomFull.code ? 'room-full' : 'too-large') satisfies RefusedWhy }
         : { type: 'failed', gen, kind: 'server' };
     }
     if (e.type === 'removed') linkDo(w, p, e as LinkEvent); else pushDo(w, p, e as PushEvent);
@@ -679,7 +678,7 @@ function flushOut(w: World, p: Phone, first: ((s: PhoneSave) => void) | null = n
   const out = pick.e;
   if (!out || !code) return;
   deliver(w, p, code, key, out, r => {
-    const ev = sentEvent('none' in r ? { ok: false, why: 'offline' } : callOf(r.status, errorOf(r), r.data));
+    const ev = sentEvent('none' in r ? { ok: false, why: 'offline' } : callOf(r.status, parseApiError(r.data).text, r.data));
     if (ev.type === 'failed') write(w, p, s => { s.outbox = outStep(s.outbox, out.id, ev); });
     // sync.ts `answered`: a solo run whose message the room took is heard taken in the same write, before its letter leaves
     // and an offer's letter heard taken (trade/offer.ts `letterTaken`), in that write too

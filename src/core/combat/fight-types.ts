@@ -297,8 +297,8 @@ export type Effect =
   | { readonly type: 'phased'; readonly id: CombatantId; readonly phase: number }
   /** Mythic `id` announced omen `omen` of its script: it lands on its next turn unless answered. */
   | { readonly type: 'omen'; readonly id: CombatantId; readonly omen: OmenKey }
-  /** A change met an answer (`how`) to mythic `id`'s omen, which it cancelled or weakened. */
-  | { readonly type: 'answered'; readonly id: CombatantId; readonly how: Answer; readonly outcome: Exclude<AnswerOutcome, 'none'> }
+  /** A change met an answer (`how`) to mythic `id`'s omen (`omen`), which it canceled or weakened. */
+  | { readonly type: 'omenAnswered'; readonly id: CombatantId; readonly omen: OmenKey; readonly how: Answer; readonly outcome: Exclude<AnswerOutcome, 'none'>; readonly line: string }
   | { readonly type: 'ended'; readonly summary: Summary }
   | { readonly type: 'refused'; readonly reason: Refusal };
 export type EffectType = Effect['type'];

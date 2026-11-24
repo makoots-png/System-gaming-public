@@ -2419,3 +2419,68 @@ test('every test in tests/fight-sim.test.ts uses simTest with a CPU budget and w
     .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/WALL_TIMEOUT_MS/.test(line) && !/^\s*test\(name,\s*\(\)\s*=>\s*\{/.test(line) && !/^\s*\/\//.test(line));
   expect(rawTests, 'call simTest(...) instead of test(...) in tests/fight-sim.test.ts so every test uses the CPU budget and wall guard').toEqual([]);
 });
+
+test('no view or edge module tests a pattern against log text or .text', async () => {
+  // Unit 1 (wire-codes): views and edge modules must read structured fields from core effects or state,
+  // never scrape rendered log strings or display `.text` with regexes or string literals.
+  const scrapes = [
+    /\/(?:\\.|[^/\n])+\/[a-z]*\.test\([^)]*\.text\b/,
+    /\.text\.match\s*\(/,
+    /\.text\.(?:includes|startsWith|endsWith)\s*\(\s*['"`]/,
+    /\.log\b[^;]*\.(?:find|findLast|some|filter)\([^)]*(?:\.test\(|\.match\(|\.(?:includes|startsWith|endsWith)\s*\(\s*['"`])/,
+  ];
+  const matches = (text: string) => scrapes.some(re => re.test(text));
+  const bad = [
+    "const line = (f.log || []).findLast(l => /is canceled\\.|will land as /.test(l.text));",
+    "if (entry.text.match(/^R\\d+:/)) return;",
+    "if (entry.text.includes('is canceled')) toast(entry.text);",
+    "const hit = fight.log.some(l => l.text.startsWith('R1:'));",
+  ];
+  for (const s of bad) expect(matches(s), `the rule catches: ${s}`).toBe(true);
+  const fine = [
+    "for (const fx of of('omenAnswered')) toast(fx.line);",
+    "if (q && !(e.title + ' ' + (e.text || '')).toLowerCase().includes(q)) return false;",
+  ];
+  for (const s of fine) expect(matches(s), `the rule passes: ${s}`).toBe(false);
+  const lines = [...await sourceLines('src/views'), ...await sourceLines('src/edge')];
+  const hits = lines.filter(l => !isComment(l.text) && matches(l.text));
+  expect(report(hits), 'carry the fact as a structured field from core instead of matching patterns against log text or .text').toEqual([]);
+});
+
+test('server.ts and src/edge/sync.ts name room API errors only through API_ERRORS in src/core/protocol.ts', async () => {
+  // Unit 1 (wire-codes): every room API error code lives once in src/core/protocol.ts (`API_ERRORS`, `apiError`,
+  // `parseApiError`). server.ts builds room API error JSON with `apiError(...)`; sync.ts checks `parseApiError(...).code`
+  // against `API_ERRORS.*.code` instead of matching English error strings.
+  const serverLiteral = /\bJ\(\s*\{[^}]*\b(?:error|code)\s*:\s*['"`]/;
+  const syncLiteral = /\b(?:errorOf\s*\(|data\??\.error\b|[\w$.]+\.error\s*[!=]==?\s*['"`])/;
+  const badServer = [
+    "if (!room) return J({ error: 'no such room' }, 404);",
+    "return J({ code: 'GM_ONLY', error: 'gm only' }, 403);",
+  ];
+  for (const s of badServer) expect(serverLiteral.test(s), `the rule catches server.ts: ${s}`).toBe(true);
+  const fineServer = [
+    "if (!room) return J(apiError('noSuchRoom'), 404);",
+    "if (!st) return J({ ok: false, db: database.kind, error: codeOf(e) }, 503);",
+    "return J({ code, gmKey });",
+  ];
+  for (const s of fineServer) expect(serverLiteral.test(s), `the rule passes server.ts: ${s}`).toBe(false);
+
+  const badSync = [
+    "if (res.status === 426 && isObj(data) && data.error === 'upgrade') {",
+    "if (a.status === 404 && errorOf(a) === 'no such room') return { type: 'gone', gen };",
+    "if (r.status === 403 && err.error === 'not your sheet') return { type: 'notYours', gen };",
+  ];
+  for (const s of badSync) expect(syncLiteral.test(s), `the rule catches sync.ts: ${s}`).toBe(true);
+  const fineSync = [
+    "const err = parseApiError(a.data);",
+    "if (a.status === 404 && err.code === API_ERRORS.noSuchRoom.code) return { type: 'gone', gen };",
+  ];
+  for (const s of fineSync) expect(syncLiteral.test(s), `the rule passes sync.ts: ${s}`).toBe(false);
+
+  const sHits = (await serverLines()).filter(l => !isComment(l.text) && serverLiteral.test(l.text));
+  expect(report(sHits), 'build every room API error in server.ts with apiError(...) from src/core/protocol.ts').toEqual([]);
+  const syncText = await Bun.file(`${ROOT}/src/edge/sync.ts`).text();
+  const yHits = syncText.split('\n').map((text, i) => ({ file: 'src/edge/sync.ts', line: i + 1, text }))
+    .filter(l => !isComment(l.text) && syncLiteral.test(l.text));
+  expect(report(yHits), 'parse room API errors in src/edge/sync.ts with parseApiError(...) and compare against API_ERRORS.*.code').toEqual([]);
+});

@@ -152,6 +152,81 @@ const side = choiceOf(SIDES);
 /** A forced face of a d20: 1 or 20, anything else refused. */
 const forcedFace = (v: unknown): ForcedFace => oneOf(v, FORCED_FACES, null) ?? refuse();
 
+// ── wire error codes (room API JSON errors; /api/health uses room-server.ts dbHealth / Postgres driver codes instead) ──
+const apiErr = <C extends string, L extends string>(code: C, legacy: L, text: string = legacy) =>
+  ({ code, legacy, text } as const);
+
+/**
+ * Every JSON error the room server returns. `code` is the stable machine contract checked by clients.
+ * `legacy` is the pre-unit-1 `error` string kept on the wire for older phones during a deploy and matched
+ * as a fallback when talking to an older server. `text` is what a person reads in refusal toasts.
+ * Distinct from /api/health diagnostic codes (`dbHealth` in src/core/room-server.ts and Postgres codes in server.ts).
+ */
+export const API_ERRORS = {
+  badDevice: apiErr('BAD_DEVICE', 'bad device'),
+  badDoc: apiErr('BAD_DOC', 'bad doc'),
+  badEvent: apiErr('BAD_EVENT', 'bad event'),
+  badHunterId: apiErr('BAD_HUNTER_ID', 'bad hunter id'),
+  badJson: apiErr('BAD_JSON', 'bad json'),
+  badPath: apiErr('BAD_PATH', 'bad path'),
+  badSheet: apiErr('BAD_SHEET', 'bad sheet'),
+  busy: apiErr('BUSY', 'busy'),
+  gmOnly: apiErr('GM_ONLY', 'gm only'),
+  idTaken: apiErr('ID_TAKEN', 'id taken'),
+  method: apiErr('METHOD', 'method'),
+  noDatabase: apiErr('NO_DATABASE', 'no database'),
+  noSuchRoom: apiErr('NO_SUCH_ROOM', 'no such room'),
+  notFound: apiErr('NOT_FOUND', 'not found'),
+  notYourSheet: apiErr('NOT_YOUR_SHEET', 'not your sheet'),
+  removed: apiErr('REMOVED', 'removed'),
+  roomFull: apiErr('ROOM_FULL', 'room full'),
+  serverDoc: apiErr('SERVER_DOC', 'server doc'),
+  serverError: apiErr('SERVER_ERROR', 'server error'),
+  tooLarge: apiErr('TOO_LARGE', 'too large'),
+  upgrade: apiErr('UPGRADE', 'upgrade'),
+} as const;
+export type ApiErrorKey = keyof typeof API_ERRORS;
+export type ApiErrorCode = (typeof API_ERRORS)[ApiErrorKey]['code'];
+export type ApiErrorBody<K extends ApiErrorKey = ApiErrorKey> = {
+  readonly code: (typeof API_ERRORS)[K]['code'];
+  readonly error: (typeof API_ERRORS)[K]['legacy'];
+};
+
+/** Wire JSON body for a room API error: carries stable `code` beside `error` for older phones. */
+export function apiError<K extends ApiErrorKey>(key: K): ApiErrorBody<K>;
+export function apiError<K extends ApiErrorKey, E extends Record<string, unknown>>(key: K, extra: E): ApiErrorBody<K> & E;
+export function apiError<K extends ApiErrorKey>(key: K, extra?: Record<string, unknown>): ApiErrorBody<K> & Record<string, unknown> {
+  const entry = API_ERRORS[key];
+  return extra ? { code: entry.code, error: entry.legacy, ...extra } : { code: entry.code, error: entry.legacy };
+}
+
+/** A room API error response parsed at the network boundary. */
+export type ParsedApiError = { readonly code: ApiErrorCode | null; readonly text: string };
+const API_ERROR_BY_CODE: ReadonlyMap<string, (typeof API_ERRORS)[ApiErrorKey]> =
+  new Map(Object.values(API_ERRORS).map(e => [e.code, e]));
+const API_ERROR_BY_LEGACY: ReadonlyMap<string, (typeof API_ERRORS)[ApiErrorKey]> =
+  new Map(Object.values(API_ERRORS).map(e => [e.legacy, e]));
+
+/**
+ * Parses a room API error JSON body. Reads `code` first, then falls back to `error` against legacy
+ * server strings so a newer phone handles an older server during a deploy.
+ */
+export function parseApiError(data: unknown): ParsedApiError {
+  if (!isObj(data)) return { code: null, text: '' };
+  const rawCode = own(data, 'code');
+  if (typeof rawCode === 'string') {
+    const hit = API_ERROR_BY_CODE.get(rawCode);
+    if (hit) return { code: hit.code, text: hit.text };
+  }
+  const rawError = own(data, 'error');
+  if (typeof rawError === 'string') {
+    const hit = API_ERROR_BY_LEGACY.get(rawError);
+    if (hit) return { code: hit.code, text: hit.text };
+    return { code: null, text: rawError.slice(0, 60) };
+  }
+  return { code: null, text: '' };
+}
+
 // ── shared shapes ──
 /** A build change the GM sends: clear the path and perks, set a path, or pick the perk of the next open tier. */
 export type BuildChange = 'respec' | { path: string } | { tier: number; pick: 0 | 1 };

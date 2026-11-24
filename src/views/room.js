@@ -6,6 +6,7 @@ import * as motion from './motion.ts';
 import { qrSvg } from '../core/qr.js';
 import { ROOM_IS, ROOM_PATH } from '../core/first-run.ts';
 import { LOBBY_START, checkAnswer, checkAsking, lobbyStep, seatBusy } from '../core/sync/lobby.ts';
+import { rosterSignature, rosterStatus } from '../core/sync/connection.ts';
 /** Whether `v` is a room code (src/core/ids.ts `parseRoomCode`). */
 const isCode = v => parseRoomCode(v) !== null;
 const STYLE = `
@@ -416,11 +417,11 @@ export function register(app) {
     for (const k of [...open]) if (!rs.some(r => r.key === k)) open.delete(k);
     set(q.count, !rs.length ? 'No players yet. Share the code or the link.' : rs.some(r => r.state !== 'unknown') ? `${rs.length} here: ${on} online${away ? `, ${away} away` : ''}` : `${rs.length} here`);
     // a key whose seat action is out has its buttons wait (src/core/sync/lobby.ts `seatBusy`)
-    const waits = k => (seatBusy(lobbyNow.seats, k, code) ? ' disabled aria-busy="true"' : ''), sig = JSON.stringify(rs) + [...open].join() + '|' + rs.map(r => waits(r.key)).join();
+    const isBusy = k => seatBusy(lobbyNow.seats, k, code), waits = k => (isBusy(k) ? ' disabled aria-busy="true"' : '');
+    const sig = rosterSignature(rs, open, isBusy);
     if (q.roster.dataset.sig !== sig) {
       q.roster.dataset.sig = sig;
-      const st = r => r.state === 'online' ? 'online' : r.state === 'away' ? (r.seen === 'now' || !r.seen ? 'away' : `away ${r.seen}`) : r.seen ? `last sync ${r.seen === 'now' ? 'a moment ago' : r.seen + ' ago'}` : '';
-      q.roster.innerHTML = rs.map(r => { const o = open.has(r.key); return `<li class="rm-p"><div class="rm-prow"><span class="rm-pm" data-st="${r.state}" aria-hidden="true"></span><div class="rm-pi"><b>${esc(r.name)}</b><small>Lv ${esc(r.level)}${r.job ? ' · ' + esc(r.job) : ''}${st(r) ? ' · ' + esc(st(r)) : ''}</small></div><button type="button" data-manage="${esc(r.key)}" aria-expanded="${o}" aria-label="Manage ${esc(r.name)}">Manage</button></div>${o ? `<div class="rm-pact"><button type="button" class="danger" data-gmkick="${esc(r.key)}"${waits(r.key)}>Remove from room</button><button type="button" data-gmrelease="${esc(r.key)}"${waits(r.key)}>Release to a new device</button></div>` : ''}</li>`; }).join('');
+      q.roster.innerHTML = rs.map(r => { const o = open.has(r.key), st = rosterStatus(r.state, r.seenMs); return `<li class="rm-p"><div class="rm-prow"><span class="rm-pm" data-st="${r.state}" aria-hidden="true"></span><div class="rm-pi"><b>${esc(r.name)}</b><small>Lv ${esc(r.level)}${r.job ? ' · ' + esc(r.job) : ''}${st ? ' · ' + esc(st) : ''}</small></div><button type="button" data-manage="${esc(r.key)}" aria-expanded="${o}" aria-label="Manage ${esc(r.name)}">Manage</button></div>${o ? `<div class="rm-pact"><button type="button" class="danger" data-gmkick="${esc(r.key)}"${waits(r.key)}>Remove from room</button><button type="button" data-gmrelease="${esc(r.key)}"${waits(r.key)}>Release to a new device</button></div>` : ''}</li>`; }).join('');
     }
     const ks = A.recentKicks().filter(k => !rs.some(r => r.key === k.key)), ksig = JSON.stringify(ks) + '|' + ks.map(k => waits(k.key)).join();
     q.kickbox.hidden = !ks.length;

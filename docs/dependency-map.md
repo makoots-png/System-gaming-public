@@ -954,7 +954,7 @@ None.
 ### `src/core/sync/connection.ts`
 
 - Imports types from: `src/core/sync/link.ts`, `src/core/sync/push.ts`
-- Imported by: `src/core/api.ts`, `src/core/events.ts`, `src/edge/sync.ts`, `src/views/combat.js`, `src/views/gm.js`, `src/views/guild.js`, `src/views/inventory.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/skills.js`, `src/views/stories.js`
+- Imported by: `src/core/api.ts`, `src/core/events.ts`, `src/edge/sync.ts`, `src/views/combat.js`, `src/views/gm.js`, `src/views/guild.js`, `src/views/inventory.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/skills.js`, `src/views/stories.js`
 
 ### `src/core/sync/fight-heard.ts`
 
@@ -1427,7 +1427,7 @@ None.
 
 ### `src/views/room.js`
 
-- Imports: `src/core/first-run.ts`, `src/core/ids.ts`, `src/core/qr.js`, `src/core/sync/lobby.ts`, `src/core/sync/taps.ts`, `src/views/motion.ts`
+- Imports: `src/core/first-run.ts`, `src/core/ids.ts`, `src/core/qr.js`, `src/core/sync/connection.ts`, `src/core/sync/lobby.ts`, `src/core/sync/taps.ts`, `src/views/motion.ts`
 - Imported by: `src/app.js`
 - Uses: `app.api.combat` (removeRemote) from `src/views/combat.js`; `app.api.sync` (allowBack, bound, check, conn, create, detail, dropInvite, forgetKey, forgetLast, gmRooms, invite, inviteLink, joinRoom, kick, lastRoom, leave, parseInvite, recentKicks, rejoinGM, release, retry, room, roster, switchTo) from `src/edge/sync.ts`; `app.api.trade` (removeLine) from `src/views/trade.js`; `app.api.words` (player) from `src/views/words.js`
 - Hears: `change` (emitted by `src/app.js`), `sync:docs` (emitted by `src/edge/sync.ts`), `sync:room` (emitted by `src/edge/sync.ts`), `sync:sheets` (emitted by `src/edge/sync.ts`), `sync:status` (emitted by `src/edge/sync.ts`)
@@ -1889,7 +1889,7 @@ Registered in `src/edge/sync.ts`. Type: `SyncApi`.
 | `remoteSheets` | `(): RemoteSheet[]` | `src/views/chronicle.js`, `src/views/combat.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/table.js` |
 | `retry` | `(): Promise<void>` | `src/views/room.js` |
 | `room` | `(): RoomCode \| null` | `src/app.js`, `src/views/combat.js`, `src/views/dice.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/guild.js`, `src/views/hunter.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/stories.js`, `src/views/trade.js`, `src/views/uses.js`, `src/views/words.js` |
-| `roster` | `(): { key: string; name: string; level: number; job: string; state: 'online' \| 'away' \| 'unknown'; seen: string }[]` | `src/views/gm.js`, `src/views/room.js` |
+| `roster` | `(): RosterEntry[]` | `src/views/gm.js`, `src/views/room.js` |
 | `stamp` | `(): EventStamp` | `src/views/gm.js`, `src/views/trade.js`, `src/views/words.js` |
 | `status` | `(): 'off' \| 'offline' \| 'connected'` | `src/views/gm.js`, `src/views/onboard.js`, `src/views/uses.js` |
 | `switchTo` | `(hid: string): Promise<boolean>` | `src/app.js`, `src/views/hunter.js`, `src/views/room.js` |

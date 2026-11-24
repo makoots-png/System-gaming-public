@@ -50,7 +50,7 @@ import type { Bus } from './bus.ts';
 import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
 import type { AppApi, RemoteSheet, RoomFace, SyncApi } from '../core/api.ts';
-import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
+import { API_ERRORS, DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseApiError, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
 import type { DeviceId, DocName, DocOf, EventBody, EventStamp, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent } from '../core/protocol.ts';
 import { deviceOf, endIdOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
@@ -127,9 +127,6 @@ class NoAnswer extends Error { constructor(readonly kind: 'net' | 'timeout') { s
  */
 const failKind = (e: unknown): FailKind => { if (e instanceof NoAnswer) return e.kind; reported('sync', e); return 'server'; };
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const errorOf = (a: Answer): string => (isObj(a.data) && typeof a.data.error === 'string' ? a.data.error : '');
-/** A server error answer, as the views read it (`status`, `reason`). */
-const httpError = (a: Answer): Error & { status: number; reason: string } => Object.assign(new Error(`HTTP ${a.status}`), { status: a.status, reason: errorOf(a) });
 /** What a failed Create or Join tap rejects with: why it failed (src/core/sync/taps.ts), which the views word with `tapWords`. */
 class TapError extends Error {
   constructor(readonly kind: TapKind) { super(kind); }
@@ -205,7 +202,7 @@ export function register(app: SyncHost): void {
       try { data = await res.json(); } catch { if (ac.signal.aborted) throw new NoAnswer(outer?.aborted ? 'net' : 'timeout'); } // a body that is not JSON (a proxy's page): the status decides
       if (isObj(data) && data.offline) throw new NoAnswer('net'); // sw.js answers 200 {offline:true} when the network is down
       lastOk = Date.now();
-      if (rooms && res.status === 426 && isObj(data) && data.error === 'upgrade') upgrade(String(data.build));
+      if (rooms && res.status === 426 && parseApiError(data).code === API_ERRORS.upgrade.code && isObj(data)) upgrade(String(data.build));
       return { status: res.status, data };
     } finally { clearTimeout(timer); outer?.removeEventListener('abort', stop); }
   }
@@ -223,7 +220,7 @@ export function register(app: SyncHost): void {
     if (link.at === 'upgrading') return { ok: false, why: 'server' };
     let a: Answer;
     try { a = await fetchApi(method, path, { body, key: key ?? null, ...(signal ? { signal } : {}) }); } catch (e) { return { ok: false, why: failKind(e) === 'server' ? 'server' : 'offline' }; }
-    return callOf(a.status, errorOf(a), a.data);
+    return callOf(a.status, parseApiError(a.data).text, a.data);
   }
 
   // ── the two machines ──
@@ -393,7 +390,7 @@ export function register(app: SyncHost): void {
     });
   }
   const failedOf = (a: Answer, gen: Gen): LinkEvent =>
-    a.status === 404 && errorOf(a) === 'no such room' ? { type: 'gone', gen } : { type: 'failed', gen, kind: 'server' };
+    a.status === 404 && parseApiError(a.data).code === API_ERRORS.noSuchRoom.code ? { type: 'gone', gen } : { type: 'failed', gen, kind: 'server' };
   /** The server's answer to one link request, as link events. A poll's `removed` or `keyLost` comes after the poll answer. */
   async function ask(call: LinkCall, gen: Gen, signal: AbortSignal, timeoutMs: number): Promise<{ events: LinkEvent[]; data: Data }> {
     const one = (e: LinkEvent): { events: LinkEvent[]; data: Data } => ({ events: [e], data: null });
@@ -599,11 +596,11 @@ export function register(app: SyncHost): void {
       let e: PushEvent | LinkEvent;
       try {
         const a = await fetchApi('PUT', `/rooms/${code}/sheets/${encodeURIComponent(myKey(h.id))}`, { body: { from: deviceId(), data: { hunter: JSON.parse(text) } }, signal: ac.signal, timeoutMs });
-        const why = errorOf(a);
+        const { code: errCode } = parseApiError(a.data);
         e = a.status >= 200 && a.status < 300 ? { type: 'sent', gen }
-          : a.status === 403 && why === 'not your sheet' ? { type: 'notYours', gen }
+          : a.status === 403 && errCode === API_ERRORS.notYourSheet.code ? { type: 'notYours', gen }
           : a.status === 403 ? { type: 'removed', gen }
-          : a.status === 400 || a.status === 413 ? { type: 'refused', gen, why: (a.status === 400 ? 'bad' : why === 'room full' ? 'room-full' : 'too-large') satisfies RefusedWhy }
+          : a.status === 400 || a.status === 413 ? { type: 'refused', gen, why: (a.status === 400 ? 'bad' : errCode === API_ERRORS.roomFull.code ? 'room-full' : 'too-large') satisfies RefusedWhy }
           : { type: 'failed', gen, kind: 'server' };
       } catch (x) { e = { type: 'failed', gen, kind: failKind(x) }; }
       untrack(gen, ac);
@@ -1021,19 +1018,16 @@ export function register(app: SyncHost): void {
   const detail = () => ({ conn: conn(), room: room(), lastOk, online: navigator.onLine, unsent: unsent(), locked: locked(), waiting: waiting(box(), room()),
     joining: link.at === 'joining' ? link.code : null });
   const nInt = (x: unknown, max = 99999): number => Math.max(-max, Math.min(max, Math.trunc(Number(x)) || 0));
-  /** Since `iso` on the server's clock, in words. */
-  const agoS = (iso: string | null): string => {
-    const t = Date.parse(iso || ''); if (!Number.isFinite(t)) return '';
-    const m = Math.round((Date.now() + srvSkew - t) / 60000);
-    return m < 1 ? 'now' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
-  };
   /** The GM's list of sheets, online (polled in the last 15 s), away, or unknown when the server sent no presence. */
   function roster(): ReturnType<SyncApi['roster']> {
     const now = Date.now() + srvSkew, presenceOk = view().presenceOk;
     return remoteSheets().map((r): ReturnType<SyncApi['roster']>[number] => {
-      const d = r.data, t = Date.parse(r.polledAt || '');
-      return { key: r.key, name: d.name, level: d.level, job: d.job ?? '',
-        state: !presenceOk ? 'unknown' : Number.isFinite(t) && now - t < ONLINE_MS ? 'online' : 'away', seen: agoS(r.polledAt || r.at) };
+      const d = r.data, polled = Date.parse(r.polledAt || ''), at = Date.parse(r.polledAt || r.at || '');
+      return {
+        key: r.key, name: d.name, level: d.level, job: d.job ?? '',
+        state: !presenceOk ? 'unknown' : Number.isFinite(polled) && now - polled < ONLINE_MS ? 'online' : 'away',
+        seenMs: Number.isFinite(at) ? Math.max(0, now - at) : null,
+      };
     }).sort((a, b) => (a.state === 'online' ? 0 : 1) - (b.state === 'online' ? 0 : 1));
   }
   /** An invite link: this app's address and `?room=CODE`. Only the code travels; the GM key never goes in a link. */

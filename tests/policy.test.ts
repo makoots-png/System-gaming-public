@@ -108,7 +108,9 @@ describe('the policy answers a mythic\'s omen (design B.4)', () => {
     expect(choice.type === 'act' && [choice.ability.id, choice.aim]).toEqual(['shield-wall', combatantId('C')]);
     if (choice.type !== 'act') return;
     const r = reduce(f, { type: 'act', by: combatantId('T'), ability: choice.ability.id, aim: choice.aim, rolls: { dice: {}, react: {} } }, ctx);
-    expect(r.effects, 'Named in the Book is cancelled').toContainEqual({ type: 'answered', id: X, how: 'shield', outcome: 'cancel' });
+    const answered = r.effects.find(e => e.type === 'omenAnswered');
+    expect(answered, 'Named in the Book is cancelled').toMatchObject({ type: 'omenAnswered', id: X, omen: 'named', how: 'shield', outcome: 'cancel' });
+    expect(answered?.type === 'omenAnswered' ? answered.line : '').toContain('Named in the Book is canceled.');
   });
 
   test('a mythic with an omen standing lands it', () => {

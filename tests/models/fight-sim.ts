@@ -694,7 +694,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
       if (!trace || !phases || !('id' in e) || e.id !== mid) continue;
       if (e.type === 'phased') phases.push({ phase: e.phase, turns: 0 });
       if (e.type === 'omen') trace.omens[e.omen] = (trace.omens[e.omen] ?? 0) + 1;
-      if (e.type === 'answered') trace.answers[`${e.how} ${e.outcome}`] = (trace.answers[`${e.how} ${e.outcome}`] ?? 0) + 1;
+      if (e.type === 'omenAnswered') trace.answers[`${e.how} ${e.outcome}`] = (trace.answers[`${e.how} ${e.outcome}`] ?? 0) + 1;
       if (e.type === 'omen' || e.type === 'turnStarted') {
         phases[phases.length - 1]!.turns++;
         const now = e.type === 'turnStarted' ? e.now : after.now;

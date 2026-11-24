@@ -6,7 +6,7 @@
 
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
 import { buildApp, type Built } from './scripts/build.ts';
-import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedPage, sheetFor, speaksFor } from './src/core/protocol.ts';
+import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, apiError, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedPage, sheetFor, speaksFor } from './src/core/protocol.ts';
 import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
 import { DB_RETRY_MS, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent, Pushed, RemovalChange } from './src/core/room-server.ts';
@@ -469,10 +469,10 @@ const faceBags = (docs: RoomDocs): { readonly bags: boolean } => ({ bags: docs.r
 
 async function readJson(req: Request): Promise<Record<string, unknown> | Response> {
   const len = Number(req.headers.get('content-length') || 0);
-  if (len > MAX_BODY) return J({ error: 'too large' }, 413);
+  if (len > MAX_BODY) return J(apiError('tooLarge'), 413);
   const text = await req.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY) return J({ error: 'too large' }, 413);
-  try { const v = JSON.parse(text); return isObj(v) ? v : J({ error: 'bad json' }, 400); } catch { return J({ error: 'bad json' }, 400); } // the client sent a body that is not JSON
+  if (new TextEncoder().encode(text).length > MAX_BODY) return J(apiError('tooLarge'), 413);
+  try { const v = JSON.parse(text); return isObj(v) ? v : J(apiError('badJson'), 400); } catch { return J(apiError('badJson'), 400); } // the client sent a body that is not JSON
 }
 
 async function api(req: Request, parts: string[], database: Database): Promise<Response> {
@@ -487,30 +487,30 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     const health = dbHealth(db, database.kind);
     return J(health.body, health.status);
   }
-  if (parts[0] !== 'rooms') return J({ error: 'not found' }, 404);
+  if (parts[0] !== 'rooms') return J(apiError('notFound'), 404);
   // Build handshake: an app from another build may speak another wire format, so no room route answers it.
   // Nothing is touched or written. The client updates itself and reloads (src/edge/upgrade.ts).
   const { build } = await built();
-  if (req.headers.get('X-Hunter-Build') !== build) return J({ error: 'upgrade', build }, 426);
+  if (req.headers.get('X-Hunter-Build') !== build) return J(apiError('upgrade', { build }), 426);
   // A database that does not answer serves no room. Never 404: a phone would take its room for gone.
-  if (db.at !== 'ready') return J({ error: 'no database' }, 503);
+  if (db.at !== 'ready') return J(apiError('noDatabase'), 503);
   const st = db.store;
   if (parts.length === 1) {
-    if (m !== 'POST') return J({ error: 'method' }, 405);
+    if (m !== 'POST') return J(apiError('method'), 405);
     await st.sweep(now);
     for (let i = 0; i < 8; i++) {
       const code = newCode(), gmKey = newKey();
       if (await st.create(code, await sha(gmKey), now)) return J({ code, gmKey });
     }
-    return J({ error: 'busy' }, 503);
+    return J(apiError('busy'), 503);
   }
   const code = parseRoomCode((parts[1] ?? '').toUpperCase()), query = new URL(req.url).searchParams;
   // a typed code is checked before joining: always 200, so a wrong code prints no console error and downloads nothing
   if (parts.length === 2 && m === 'GET' && query.get('peek') === '1') return J({ exists: !!code && (await st.exists(code, now)) }); // a peek is not a use: it never keeps a dead room alive
-  if (!code || !(await st.touch(code, now))) return J({ error: 'no such room' }, 404);
+  if (!code || !(await st.touch(code, now))) return J(apiError('noSuchRoom'), 404);
   const gm = await gmOk(req, st, code);
   if (parts.length === 2) {
-    if (m !== 'GET') return J({ error: 'method' }, 405);
+    if (m !== 'GET') return J(apiError('method'), 405);
     const after = Math.max(0, Math.floor(Number(query.get('after'))) || 0);
     const dev = parseDeviceId(query.get('d'));
     if (dev) st.see(code, dev, now);
@@ -530,70 +530,70 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     return J({ ...answer, docs: wireDocs(board.docs) });
   }
   if (parts[2] === 'events' && parts.length === 3) {
-    if (m !== 'POST') return J({ error: 'method' }, 405);
+    if (m !== 'POST') return J(apiError('method'), 405);
     const b = await readJson(req); if (b instanceof Response) return b;
     const from = parseDeviceId(b.from);
-    if (!from) return J({ error: 'bad event', reason: 'sender' }, 400);
-    if (!isEventType(b.type)) return J({ error: 'bad event', reason: 'type' }, 400);
-    if (EVENTS[b.type].gmOnly && !gm) return J({ error: 'gm only' }, 403);
-    if (!(await mayWriteFor(req, st, code, from, gm))) return J({ error: 'not your sheet' }, 403);
+    if (!from) return J(apiError('badEvent', { reason: 'sender' }), 400);
+    if (!isEventType(b.type)) return J(apiError('badEvent', { reason: 'type' }), 400);
+    if (EVENTS[b.type].gmOnly && !gm) return J(apiError('gmOnly'), 403);
+    if (!(await mayWriteFor(req, st, code, from, gm))) return J(apiError('notYourSheet'), 403);
     const event = parseEvent(b.type, b.payload); // only a parsed event is stored
-    if (!event) return J({ error: 'bad event', reason: 'payload' }, 400);
+    if (!event) return J(apiError('badEvent', { reason: 'payload' }), 400);
     // an event that speaks for one hunter (`ownSheet` in DEFS, src/core/protocol.ts): only that hunter's phone may post it
     const by = speaksFor(event);
-    if (by && deviceOf(by) !== from) return J({ error: 'not your sheet' }, 403);
+    if (by && deviceOf(by) !== from) return J(apiError('notYourSheet'), 403);
     const seq = await st.addEvent(code, from, event, now);
     // a different message under an id the room holds is refused, never answered as taken: its sender made the id twice
-    return seq === null ? J({ error: 'room full' }, 413) : seq === 'idTaken' ? J({ error: 'id taken' }, 409) : J({ seq });
+    return seq === null ? J(apiError('roomFull'), 413) : seq === 'idTaken' ? J(apiError('idTaken'), 409) : J({ seq });
   }
   if (parts[2] === 'kicks' && parts.length === 4) { // S11: the GM lifts a removal so the player can rejoin at once
-    if (m !== 'DELETE') return J({ error: 'method' }, 405);
-    if (!gm) return J({ error: 'gm only' }, 403);
+    if (m !== 'DELETE') return J(apiError('method'), 405);
+    if (!gm) return J(apiError('gmOnly'), 403);
     const key = parseSheetKey(parts[3]);
-    if (!key) return J({ error: 'bad hunter id' }, 400);
+    if (!key) return J(apiError('badHunterId'), 400);
     return J({ ok: true, kicked: await st.setRemoval(code, key, 'allow', now) });
   }
   if (parts[2] === 'release' && parts.length === 3) { // S07: the GM frees a device's slot, so the player's new phone binds it by its first write
-    if (m !== 'POST') return J({ error: 'method' }, 405);
-    if (!gm) return J({ error: 'gm only' }, 403);
+    if (m !== 'POST') return J(apiError('method'), 405);
+    if (!gm) return J(apiError('gmOnly'), 403);
     const b = await readJson(req); if (b instanceof Response) return b;
     const dev = parseDeviceId(b.device);
-    if (!dev) return J({ error: 'bad device' }, 400);
+    if (!dev) return J(apiError('badDevice'), 400);
     await st.moveOwner(code, dev, { type: 'release' }); return J({ ok: true });
   }
   if (parts[2] === 'sheets' && parts.length === 4) {
-    if (m !== 'PUT' && m !== 'DELETE') return J({ error: 'method' }, 405);
+    if (m !== 'PUT' && m !== 'DELETE') return J(apiError('method'), 405);
     // a row is a hunter sheet under its sheet key, or a room doc under '_' and the doc's name
     const hid = parts[3] ?? '', isDoc = hid.startsWith('_'), key = isDoc ? null : parseSheetKey(hid), docName = isDoc ? parseDocName(hid.slice(1)) : null;
-    if (!isDoc && !key) return J({ error: 'bad hunter id' }, 400);
+    if (!isDoc && !key) return J(apiError('badHunterId'), 400);
     if (m === 'DELETE') { // R01: the GM removes a player's hunter from the room (their device keeps its own copy)
-      if (!key || !gm) return J({ error: 'gm only' }, 403);
+      if (!key || !gm) return J(apiError('gmOnly'), 403);
       return J({ ok: true, kicked: await st.setRemoval(code, key, 'remove', now) }); // S07: the removal of a phone's last sheet frees its slot too
     }
-    if (docName === 'kicked') return J({ error: 'server doc' }, 403); // only the removal routes write it (`setRemoval`)
-    if (isDoc && !gm) return J({ error: 'gm only' }, 403);
+    if (docName === 'kicked') return J(apiError('serverDoc'), 403); // only the removal routes write it (`setRemoval`)
+    if (isDoc && !gm) return J(apiError('gmOnly'), 403);
     const b = await readJson(req); if (b instanceof Response) return b;
-    const bad = J({ error: isDoc ? 'bad doc' : 'bad sheet' }, 400), from = parseDeviceId(b.from);
+    const bad = J(apiError(isDoc ? 'badDoc' : 'badSheet'), 400), from = parseDeviceId(b.from);
     if (!from) return bad;
-    if (JSON.stringify(b.data ?? null).length > (isDoc ? DOC_MAX : SHEET_MAX)) return J({ error: 'too large' }, 413);
+    if (JSON.stringify(b.data ?? null).length > (isDoc ? DOC_MAX : SHEET_MAX)) return J(apiError('tooLarge'), 413);
     if (key) { // only a parsed sheet is stored
       const sheet = parseSheet(key, b.data);
       if (!sheet) return bad;
-      if (!(await mayWriteFor(req, st, code, deviceOf(key), gm))) return J({ error: 'not your sheet' }, 403);
+      if (!(await mayWriteFor(req, st, code, deviceOf(key), gm))) return J(apiError('notYourSheet'), 403);
       switch (await st.pushSheet(code, key, from, sheet, now)) {
         case 'stored': return J({ ok: true });
-        case 'removed': return J({ error: 'removed' }, 403); // so the player's phone reads the removal and stops
-        case 'full': return J({ error: 'room full' }, 413);
+        case 'removed': return J(apiError('removed'), 403); // so the player's phone reads the removal and stops
+        case 'full': return J(apiError('roomFull'), 413);
       }
     }
     return docName ? putDoc(st, code, docName, from, b.data, now) : bad;
   }
-  return J({ error: 'not found' }, 404);
+  return J(apiError('notFound'), 404);
 }
 /** Only a parsed doc is stored. One generic step, so the parser and the store agree on the doc's type. */
 async function putDoc<K extends Exclude<DocName, 'kicked'>>(st: Store, code: RoomCode, name: K, from: DeviceId, data: unknown, now: number): Promise<Response> {
   const doc = DOCS[name](data);
-  if (!doc) return J({ error: 'bad doc' }, 400);
+  if (!doc) return J(apiError('badDoc'), 400);
   await st.putDoc(code, name, from, doc, now);
   return J({ ok: true });
 }
@@ -604,17 +604,17 @@ export function serverOf(database: Database): (req: Request) => Promise<Response
     try {
       const url = new URL(req.url);
       let path: string;
-      try { path = decodeURIComponent(url.pathname); } catch { return J({ error: 'bad path' }, 400); } // a path with a broken escape names no file
+      try { path = decodeURIComponent(url.pathname); } catch { return J(apiError('badPath'), 400); } // a path with a broken escape names no file
       if (path === '/healthz') return J({ ok: true });
-      if (path.includes('..') || path.includes('\0') || path.includes('\\')) return J({ error: 'bad path' }, 400);
+      if (path.includes('..') || path.includes('\0') || path.includes('\\')) return J(apiError('badPath'), 400);
       if (path.startsWith('/api/')) return await api(req, path.slice(5).split('/').filter(Boolean), database);
-      if (req.method !== 'GET' && req.method !== 'HEAD') return J({ error: 'method' }, 405);
+      if (req.method !== 'GET' && req.method !== 'HEAD') return J(apiError('method'), 405);
       if (path === '/') path = '/index.html';
       if (path.split('/').some(s => s.startsWith('.'))) return new Response('Not found', { status: 404, headers: BASE_HEADERS });
       return (await staticFile(path)) ?? new Response('Not found', { status: 404, headers: BASE_HEADERS });
     } catch (e) {
       console.error('[server]', messageOf(e));
-      return J({ error: 'server error' }, 500);
+      return J(apiError('serverError'), 500);
     }
   };
 }

@@ -450,10 +450,11 @@ function spendEdges(a: Ability, user: Body, targets: readonly Body[], rows: Map<
 }
 
 /**
- * The bodies a use of `user` may catch: those on the map, but a foe that is untargetable (kits design 8.1). A hidden body
- * is caught: a shape at a place finds it whatever the sight (notes-7-stealth.md section 3).
+ * The bodies a use of `user` may catch: those that can be aimed at (`canAimAt`, up and alive), excluding a foe that is
+ * untargetable (kits design 8.1). A hidden body is caught: a shape at a place finds it whatever the sight
+ * (notes-7-stealth.md section 3).
  */
-const catchable = (bodies: readonly Body[], user: Body): Body[] => bodies.filter(b => alive(b) && !warded(b, user.side));
+const catchable = (bodies: readonly Body[], user: Body): Body[] => bodies.filter(b => canAimAt(b) && !warded(b, user.side));
 
 const outcome = (target: CombatantId, avoid: Avoid, to: Place | null, type: Outcome['type']): Outcome =>
   ({ target, avoid, to, crit: false, raw: 0, dealt: 0, absorbed: 0, type, statuses: [], threat: 0, stagger: 0, staggered: false, channelBroken: false, down: false });

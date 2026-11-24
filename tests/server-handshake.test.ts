@@ -7,7 +7,7 @@ type Reply = { status: number; body: Record<string, any> };
 const { build } = await buildApp();
 const CURRENT = { 'x-hunter-build': build }, OLD = { 'x-hunter-build': 'old-build-01' };
 const PLAYER = 'd-player1', TOKEN = { 'x-device-token': 'p1'.padEnd(16, 'x') };
-const REFUSED = { status: 426, body: { error: 'upgrade', build } };
+const REFUSED = { status: 426, body: { code: 'UPGRADE', error: 'upgrade', build } };
 
 async function call(method: string, path: string, opts: { body?: unknown; headers?: Record<string, string> } = {}): Promise<Reply> {
   const init: RequestInit = { method, headers: { 'content-type': 'application/json', ...opts.headers } };

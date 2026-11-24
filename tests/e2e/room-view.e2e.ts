@@ -338,6 +338,75 @@ test('leaving and rejoining the last room works for a player and a GM, and a dro
     await expect(player.locator(V + '[data-forgetlast]')).toBeHidden();
     await player.unroute(poll);
   });
+
+  await test.step('a 404 with code NO_SUCH_ROOM and reworded error prose still marks the room gone', async () => {
+    await playerJoinsInView(player, code);
+    let hit = 0;
+    const poll = new RegExp(`/api/rooms/${code}\\?after`);
+    await player.route(poll, route => { if (!hit++) route.fulfill({ status: 404, contentType: 'application/json', body: '{"code":"NO_SUCH_ROOM","error":"Room expired."}' }); else route.continue(); });
+    await expect(player.locator(V + '[data-forgetlast]')).toBeVisible();
+    await expect(player.locator(V + '[data-lastgone]')).toContainText(/no longer exists/);
+    await player.locator(V + '[data-forgetlast]').tap();
+    await expect(player.locator(V + '[data-forgetlast]')).toBeHidden();
+    await player.unroute(poll);
+  });
+});
+
+test('the GM roster keeps focus across polls in the same age bucket and redraws when the bucket changes', async ({ device }) => {
+  const gm = (await device('gm', { blockServiceWorker: true })).page;
+  const player = (await device('player', { blockServiceWorker: true })).page;
+  const code = await gmCreatesRoomInView(gm);
+  await onboardPlayer(player, 'Kai Test');
+  await playerJoinsInView(player, code);
+  await expect(gm.locator(V + '[data-roster]')).toContainText('Kai');
+
+  let ageMs = 45_000;
+  let intercepted = 0;
+  const poll = new RegExp(`/api/rooms/${code}\\?after`);
+  await gm.route(poll, async route => {
+    const res = await route.fetch();
+    const json = await res.json();
+    const now = Date.parse(json.now || new Date().toISOString());
+    const stamped = new Date(now - ageMs).toISOString();
+    if (json.presence) {
+      for (const dev of Object.keys(json.presence)) {
+        json.presence[dev] = stamped;
+      }
+    }
+    if (json.sheets) {
+      for (const k of Object.keys(json.sheets)) {
+        json.sheets[k].at = stamped;
+      }
+    }
+    intercepted++;
+    await route.fulfill({ status: res.status(), contentType: 'application/json', body: JSON.stringify(json) });
+  });
+
+  await expect(gm.locator(V + '[data-roster] .rm-pi small')).toContainText(/· away 1 min$/);
+  await gm.locator(V + '[data-manage]').first().tap();
+  const kick = gm.locator(V + '[data-gmkick]').first();
+  await expect(kick).toBeVisible();
+  await kick.focus();
+  await gm.evaluate(() => {
+    const btn = document.querySelector('#view-room [data-gmkick]');
+    (window as any).__keptKickBtn = btn;
+  });
+
+  ageMs = 50_000;
+  const beforePoll = intercepted;
+  await expect.poll(() => intercepted).toBeGreaterThan(beforePoll + 1);
+  const check = await gm.evaluate(() => {
+    const btn = document.querySelector('#view-room [data-gmkick]');
+    return {
+      sameNode: btn !== null && btn === (window as any).__keptKickBtn,
+      focused: btn !== null && document.activeElement === btn,
+    };
+  });
+  expect(check, 'a poll inside the same age bucket keeps the Manage panel DOM and focus').toEqual({ sameNode: true, focused: true });
+
+  ageMs = 180_000;
+  await expect(gm.locator(V + '[data-roster] .rm-pi small')).toContainText(/· away 3 min$/);
+  await gm.unroute(poll);
 });
 
 test('the GM tab room strip makes one room on a double tap and drops a room the server lost', async ({ device }) => {

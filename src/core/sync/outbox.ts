@@ -11,7 +11,7 @@
 //
 // One entry's life is a machine (docs/state-machines.md, "A message to the room"): `queued`, `sending`, then `sent`,
 // `refused` (the room answered 4xx: kept, with the reason, until the box is full of them) or `dropped`.
-import { parseEvent, parseRoomCode, sentAgain } from '../protocol.ts';
+import { API_ERRORS, parseEvent, parseRoomCode, sentAgain } from '../protocol.ts';
 import type { RoomCode, RoomEvent } from '../protocol.ts';
 import type { Save } from '../save.ts';
 import { parseSaveId } from '../ids.ts';
@@ -143,7 +143,7 @@ export const stepAll = (box: Outbox, pick: (e: Entry) => boolean, e: EntryEvent)
 export const reloaded = (box: Outbox): Outbox => stepAll(box, e => e.at === 'sending', { type: 'reload' });
 /** The room no longer exists: nothing will take what waits for it or what is on its way to it, so both are refused. */
 export const roomGone = (box: Outbox, room: RoomCode): Outbox =>
-  stepAll(box, e => e.room === room && (e.at === 'queued' || e.at === 'sending'), { type: 'refused', why: 'no such room' });
+  stepAll(box, e => e.room === room && (e.at === 'queued' || e.at === 'sending'), { type: 'refused', why: API_ERRORS.noSuchRoom.text });
 /** Hunter `hid` is bound again on this phone: its tombstones are dropped (a bound hunter's card is never tombstoned). */
 export const rebound = (box: Outbox, hid: string): Outbox => stepAll(box, e => e.letter.kind === 'tomb' && e.letter.hid === hid, { type: 'drop' });
 

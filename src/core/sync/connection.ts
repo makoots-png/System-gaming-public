@@ -54,3 +54,45 @@ export function postNews(posted: PostAnswer, conn: Connection): PostNews {
 }
 /** The words after a use reported to the GM was posted (`uses.told`'s `sent`): going now, or waiting for the room. */
 export const reportWords = (conn: Connection): string => (postNews({ ok: true }, conn) === 'sent' ? 'Sent to the GM.' : conn === 'waiting' ? 'Saved. The GM gets it once the room server confirms it.' : 'Saved. The GM gets it when your phone reconnects to the room server.');
+
+// ── GM roster presence age and formatting ──
+/** Whether a player on the GM's roster polled recently, is away, or has no presence data from the server. */
+export type RosterState = 'online' | 'away' | 'unknown';
+/** Structured age bucket for a player's last poll or sheet push. */
+export type PresenceAge =
+  | { readonly unit: 'now' }
+  | { readonly unit: 'min'; readonly value: number }
+  | { readonly unit: 'hour'; readonly value: number }
+  | { readonly unit: 'day'; readonly value: number };
+/** One player row on the GM's Room view roster. `seenMs` is milliseconds since the player's last poll or sheet push, or null. */
+export type RosterEntry = {
+  readonly key: string; readonly name: string; readonly level: number; readonly job: string;
+  readonly state: RosterState; readonly seenMs: number | null;
+};
+
+/** Buckets an elapsed duration in ms into the display unit (`now`, minutes, hours, days), or null when missing. */
+export function presenceAge(ageMs: number | null): PresenceAge | null {
+  if (ageMs === null || !Number.isFinite(ageMs)) return null;
+  const m = Math.round(Math.max(0, ageMs) / 60_000);
+  if (m < 1) return { unit: 'now' };
+  if (m < 60) return { unit: 'min', value: m };
+  if (m < 1440) return { unit: 'hour', value: Math.round(m / 60) };
+  return { unit: 'day', value: Math.round(m / 1440) };
+}
+const ageWords = (age: Exclude<PresenceAge, { unit: 'now' }>): string =>
+  age.unit === 'min' ? `${age.value} min` : age.unit === 'hour' ? `${age.value} h` : `${age.value} d`;
+
+/** Status text drawn beside a roster entry in the GM's Room view from structured state and elapsed ms. */
+export function rosterStatus(state: RosterState, ageMs: number | null): string {
+  if (state === 'online') return 'online';
+  const age = presenceAge(ageMs);
+  if (state === 'away') return !age || age.unit === 'now' ? 'away' : `away ${ageWords(age)}`;
+  if (!age) return '';
+  return age.unit === 'now' ? 'last sync a moment ago' : `last sync ${ageWords(age)} ago`;
+}
+
+/** Stable DOM cache key for the Room view's roster: changes only when drawn fields or age buckets change. */
+export function rosterSignature(rows: readonly RosterEntry[], open: Iterable<string>, busy: (key: string) => boolean): string {
+  return rows.map(r => `${r.key}\0${r.name}\0${r.level}\0${r.job}\0${r.state}\0${rosterStatus(r.state, r.seenMs)}\0${busy(r.key) ? 1 : 0}`).join('\n')
+    + '\x01' + [...open].join('\0');
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
-import { DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, newEvent, newEventId, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
+import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, newEvent, newEventId, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, WORD_MAX, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { EventAudience, PayloadOf, RoomEvent, RoomViewer } from '../src/core/protocol.ts';
@@ -1781,5 +1781,61 @@ describe('the party stash on the wire (notes-5-trade.md 3.2)', () => {
     const ev = newEvent('award', { to: ['d-p1:h1' as never], rewards: { xp: 100, points: 0, gold: 50, crystal: 12, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, earned: { from: 'clear', what: 'Goblin Den' } }, { device: 'd-gm', now: 1700000000001, rand: 0.5 });
     expect(ev?.type).toBe('award');
     expect(ev?.type === 'award' && ev.payload.earned).toEqual({ from: 'clear', what: 'Goblin Den' });
+  });
+});
+
+describe('wire error codes (API_ERRORS, apiError, parseApiError)', () => {
+  test('every error has a unique UPPER_SNAKE_CASE code and unique legacy wire string', () => {
+    const entries = Object.values(API_ERRORS);
+    const codes = entries.map(e => e.code);
+    const legacies = entries.map(e => e.legacy);
+    expect(new Set(codes).size).toBe(entries.length);
+    expect(new Set(legacies).size).toBe(entries.length);
+    for (const c of codes) expect(c).toMatch(/^[A-Z]+(?:_[A-Z]+)*$/);
+  });
+
+  test('apiError keeps the legacy error field beside code so older phones still match during a deploy', () => {
+    expect(apiError('upgrade', { build: 'b-1' })).toEqual({ code: 'UPGRADE', error: 'upgrade', build: 'b-1' });
+    expect(apiError('badEvent', { reason: 'payload' })).toEqual({ code: 'BAD_EVENT', error: 'bad event', reason: 'payload' });
+    expect(apiError('noSuchRoom')).toEqual({ code: 'NO_SUCH_ROOM', error: 'no such room' });
+    expect(apiError('notYourSheet')).toEqual({ code: 'NOT_YOUR_SHEET', error: 'not your sheet' });
+    expect(apiError('roomFull')).toEqual({ code: 'ROOM_FULL', error: 'room full' });
+    expect(apiError('tooLarge')).toEqual({ code: 'TOO_LARGE', error: 'too large' });
+    expect(apiError('gmOnly')).toEqual({ code: 'GM_ONLY', error: 'gm only' });
+    expect(apiError('removed')).toEqual({ code: 'REMOVED', error: 'removed' });
+  });
+
+  test('parseApiError reads both newer server bodies (code + error) and older server bodies (error only)', () => {
+    for (const [key, entry] of Object.entries(API_ERRORS) as [keyof typeof API_ERRORS, (typeof API_ERRORS)[keyof typeof API_ERRORS]][]) {
+      expect(parseApiError(apiError(key)), `newer server ${key}`).toEqual({ code: entry.code, text: entry.text });
+      expect(parseApiError({ error: entry.legacy }), `older server ${key}`).toEqual({ code: entry.code, text: entry.text });
+    }
+  });
+
+  test('code takes precedence over error prose when a newer server rewords error', () => {
+    expect(parseApiError({ code: 'NO_SUCH_ROOM', error: 'This room has expired.' })).toEqual({
+      code: 'NO_SUCH_ROOM',
+      text: API_ERRORS.noSuchRoom.text,
+    });
+    expect(parseApiError({ code: 'UPGRADE', error: 'App update required.' })).toEqual({
+      code: 'UPGRADE',
+      text: API_ERRORS.upgrade.text,
+    });
+  });
+
+  test('unknown, malformed, and prototype-named inputs never invent a code and bound text to 60 characters', () => {
+    expect(parseApiError(null)).toEqual({ code: null, text: '' });
+    expect(parseApiError(undefined)).toEqual({ code: null, text: '' });
+    expect(parseApiError(42)).toEqual({ code: null, text: '' });
+    expect(parseApiError([])).toEqual({ code: null, text: '' });
+    expect(parseApiError({})).toEqual({ code: null, text: '' });
+    expect(parseApiError({ code: 'FUTURE_CODE', error: 'x'.repeat(80) })).toEqual({ code: null, text: 'x'.repeat(60) });
+    expect(parseApiError({ code: 'toString', error: 'constructor' })).toEqual({ code: null, text: 'constructor' });
+  });
+
+  test('/api/health diagnostic codes are distinct from API_ERRORS and never parse as room API error codes', () => {
+    for (const healthCode of ['opening', 'closed', 'unreachable', 'ERR_POSTGRES_CONNECTION_REFUSED', 'ECONNREFUSED']) {
+      expect(parseApiError({ ok: false, db: 'postgres', error: healthCode })).toEqual({ code: null, text: healthCode });
+    }
   });
 });

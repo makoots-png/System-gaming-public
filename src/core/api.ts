@@ -20,7 +20,7 @@ import type { Archetype, MonsterKind, Sheet } from './hunter/derive.ts';
 import type { Checks } from './hunter/sheet.ts';
 import type { RewardBundle, SystemWords } from './rewards.ts';
 import type { PackKind } from './pack.ts';
-import type { Connection } from './sync/connection.ts';
+import type { Connection, RosterEntry } from './sync/connection.ts';
 import type { Call } from './sync/outbox.ts';
 import type { ItemTemplate } from './registry/items.ts';
 import type { IconItem } from './registry/icon-defaults.ts';
@@ -688,7 +688,7 @@ export type SyncApi = {
   joinRoom(text: unknown, o?: { hunterId?: string; name?: string }): Promise<string>;
   /** Rejoin room `code` as its GM: with `key` typed by hand, or else the GM key this phone keeps for that room. */
   rejoinGM(code: string, key?: string): Promise<void>;
-  roster(): { key: string; name: string; level: number; job: string; state: 'online' | 'away' | 'unknown'; seen: string }[];
+  roster(): RosterEntry[];
   lastRoom(): { code: RoomCode; gone: boolean; gm: boolean } | null;
   bound(): Hunter | null;
   switchTo(hid: string): Promise<boolean>;

@@ -109,7 +109,7 @@ export function dbStep<S>(db: Db<S>, e: DbEvent<S>): Db<S> {
     case 'close': return { at: 'closed' };
   }
 }
-/** What /api/health answers for the database, apart from a ready store's own check. */
+/** What /api/health answers for the database, apart from a ready store's own check. Uses DB diagnostic strings, distinct from room API `API_ERRORS`. */
 export type Health = { status: 200 | 503; body: { ok: boolean; db: string; since?: string; error?: string } };
 export function dbHealth<S>(db: Db<S>, kind: string): Health {
   switch (db.at) {

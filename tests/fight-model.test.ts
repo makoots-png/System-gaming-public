@@ -18,7 +18,8 @@ import { held, partyView } from '../src/core/combat/fight-turn.ts';
 import { isUp, rowHp } from '../src/core/combat/row-hp.ts';
 import { hpOf } from '../src/core/hunter/vitals.ts';
 import { alive } from '../src/core/combat/land.ts';
-import { warded } from '../src/core/combat/standing.ts';
+import { boostsOn, counts, edgeOn, exposedOf, hides, holds, rangeWith, shareOf, stealthOf, stealthState, warded, wardedDamage } from '../src/core/combat/standing.ts';
+import { tick } from '../src/core/combat/timeline.ts';
 import { perceivedBy } from '../src/core/combat/sight.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
 import { MAX_SPREAD, reduce, runningState } from '../src/core/combat/fight.ts';
@@ -51,8 +52,19 @@ function same(a: unknown, b: unknown): boolean {
  * from each write-back).
  */
 type Told = { hp: number; mana: number; fatigue: number; keys: string };
-type Memory = { fightId: string | null; settled: Map<string, number>; since: Map<string, number>; told: Map<string, Told>; reacted: Map<string, number>; wards: Map<string, number> };
-const fresh = (): Memory => ({ fightId: null, settled: new Map(), since: new Map(), told: new Map(), reacted: new Map(), wards: new Map() });
+type Memory = {
+  fightId: string | null; settled: Map<string, number>; since: Map<string, number>; told: Map<string, Told>;
+  reacted: Map<string, number>; wards: Map<string, number>; triggers: Map<string, number>; parsedTriggers: number;
+};
+const fresh = (): Memory => ({
+  fightId: null, settled: new Map(), since: new Map(), told: new Map(), reacted: new Map(), wards: new Map(), triggers: new Map(), parsedTriggers: 0,
+});
+/** Log lines added by the command that took `before` to `after`, oldest first. Matches `before.log[0]` by object identity (`logged` spreads `...f.log` without cloning). */
+function freshLogs(before: Fight | null, after: Fight): string[] {
+  if (!before || before.id !== after.id || !before.log.length) return after.log.map(l => l.text).reverse();
+  const at = after.log.indexOf(before.log[0]!);
+  return (at < 0 ? after.log : after.log.slice(0, at)).map(l => l.text).reverse();
+}
 /** A sheet's status keys: a zone's hold is the ground's, and a fight's count or a delayed effect the fight's (`onSheet`): neither reaches a sheet. */
 const keysOf = (list: readonly { key: string; zone?: string }[]): string => list.filter(s => s.zone === undefined).map(s => s.key).sort().join(',');
 const sheetKeysOf = (list: readonly Status[]): string => keysOf(list.filter(onSheet));
@@ -81,13 +93,14 @@ function toldWrong(after: Fight, effects: readonly Effect[], mem: Memory): strin
 
 /** What is wrong after `cmd` took `before` to `after`, or null. */
 function check(before: Fight | null, cmd: Command, after: Fight | null, effects: readonly Effect[], mem: Memory): string | null {
+  const refused = effects.some(e => e.type === 'refused');
   if (effects.length && effects.every(e => e.type === 'refused') && after !== before && json(after) !== json(before)) return 'a refused command changed the fight';
-  const by = 'by' in cmd ? before?.rows.find(r => r.id === cmd.by) : undefined;
-  if (by && by.kind !== 'hunter' && !isUp(by) && ['act', 'move', 'endTurn', 'release'].includes(cmd.type) && !effects.some(e => e.type === 'refused')) {
-    return `${by.id}, down, took ${cmd.type}`;
-  }
+  const deadAct = deadActWrong(before, cmd, after, effects, refused);
+  if (deadAct) return deadAct;
   if (!after) return null;
-  if (after.id !== mem.fightId) { mem.fightId = after.id; mem.settled.clear(); mem.since.clear(); mem.told.clear(); mem.reacted.clear(); mem.wards.clear(); }
+  if (after.id !== mem.fightId) { mem.fightId = after.id; mem.settled.clear(); mem.since.clear(); mem.told.clear(); mem.reacted.clear(); mem.wards.clear(); mem.triggers.clear(); }
+  const rose = roseWrong(before, cmd, after, refused);
+  if (rose) return rose;
   const told = toldWrong(after, effects, mem);
   if (told) return told;
   const ids = after.rows.map(r => r.id);
@@ -106,14 +119,9 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
     const max = r.abilities.find(a => a.id === r.channel?.ability)?.channel?.max ?? RULES.fight.channelMax;
     if (r.channel && (r.channel.charge < 0 || r.channel.charge > max)) return `${r.id}'s channel has charge ${r.channel.charge} of ${max}`;
   }
-  const paid = new Map<string, number>();
-  for (const e of effects) if (e.type === 'rollSettle') { const k = `${e.id}|${e.key}`; paid.set(k, (paid.get(k) ?? 0) + e.share * RULES.fight.round); }
-  for (const r of after.rows) for (const s of r.statuses.filter(x => x.def.ops.some(perRound))) {
-    const k = `${r.id}|${s.key}`;
-    const total = (mem.since.get(k) === s.since ? mem.settled.get(k) ?? 0 : 0) + (paid.get(k) ?? 0);
-    mem.since.set(k, s.since); mem.settled.set(k, total);
-    if (Math.abs(total - (s.settledAt - s.since)) > 1e-6) return `${r.id}'s ${s.key} settled for ${total} ticks over a span of ${s.settledAt - s.since}`;
-  }
+  const fresh = freshLogs(before, after);
+  const expired = expiredStatusWrong(before, cmd, after, effects, mem, fresh, refused);
+  if (expired) return expired;
   if (before && 'now' in before && 'now' in after && before.id === after.id && after.now < before.now) return `now went back from ${before.now} to ${after.now}`;
   if (after.fog && after.phase !== 'ended') {
     const lit = partyView(after)!, missed = [...lit].find(i => after.fog!.seen[i] !== '1');
@@ -152,7 +160,7 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   if (tally) return tally;
   const kits = kitsWrong(before, cmd, after, effects);
   if (kits) return kits;
-  const wave2 = wave2Wrong(before, cmd, after, effects, mem);
+  const wave2 = wave2Wrong(before, cmd, after, effects, mem, fresh, refused);
   if (wave2) return wave2;
   const asked = askedWrong(before, cmd, effects);
   if (asked) return asked;
@@ -232,10 +240,7 @@ function kitsWrong(before: Fight | null, cmd: Command, after: Fight, effects: re
  * actions in a round. (A forced move never ending on a wall, a pit or a body is the place checks of `check`, which every
  * command meets.)
  */
-function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: readonly Effect[], mem: Memory): string | null {
-  const refused = effects.some(e => e.type === 'refused');
-  const texts = after.log.map(l => l.text), at = before ? texts.indexOf(before.log[0]?.text ?? '') : texts.length;
-  const fresh = (before && before.id === after.id ? (at < 0 ? [] : texts.slice(0, at)) : texts).slice().reverse();
+function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: readonly Effect[], mem: Memory, fresh: readonly string[], refused: boolean): string | null {
   for (const line of fresh) for (const r of after.rows) {
     if (line.endsWith(`: ${r.name}'s turn.`)) mem.reacted.set(r.id, 0);
     const n = line.split(`${r.name} reacts with `).length - 1;
@@ -303,7 +308,223 @@ function mythicWrong(before: Fight | null, cmd: Command, after: Fight, effects: 
     const due = !!cur?.mythic && cur.mythic.at !== 'calm' && st.at !== 'owing';
     if (due !== (st.at === 'landing')) return `the fight is ${st.at} on ${after.currentId}'s turn, whose standing is ${cur?.mythic?.at ?? 'none'}`;
   }
-  if (effects.some(e => e.type === 'answered') && !before?.rows.some(r => r.mythic && r.mythic.at !== 'calm')) return 'an omen was answered while none stood';
+  if (effects.some(e => e.type === 'omenAnswered') && !before?.rows.some(r => r.mythic && r.mythic.at !== 'calm')) return 'an omen was answered while none stood';
+  return null;
+}
+
+/**
+ * Invariant 1: no row rises from dead outside a revive path.
+ * In src/core/combat/, rowLifeAfter (row-life.ts) is the single life writer, and fight.ts `revive` is the only
+ * command that sends `{ type: 'revive' }` (both TABLE.dead in vitals.ts and FOE_TABLE.dead in row-life.ts accept
+ * only `revive`). Any dead row that is up after another command, or any other row that rises during `revive`, fails.
+ */
+function roseWrong(before: Fight | null, cmd: Command, after: Fight, refused: boolean): string | null {
+  for (const r of after.rows) if (isUp(r) !== (rowHp(r) > 0)) return `${r.id} has inconsistent life state and HP ${rowHp(r)}`;
+  if (!before || before.id !== after.id) return null;
+  if (!refused && cmd.type === 'revive') {
+    const target = before.rows.find(x => x.id === cmd.id);
+    if (!target || isUp(target)) return `revive landed on ${cmd.id}, which was not dead`;
+  }
+  for (const r of after.rows) {
+    const was = before.rows.find(x => x.id === r.id);
+    if (!was || isUp(was) || !isUp(r)) continue;
+    if (refused || cmd.type !== 'revive' || cmd.id !== r.id) return `${r.id} rose from dead on ${cmd.type} without a revive command`;
+  }
+  return null;
+}
+
+const DEAD_ACTOR_CMDS = new Set<Command['type']>(['act', 'move', 'endTurn', 'release', 'arm', 'setIntent', 'mythic']);
+const DEAD_TARGET_FX = new Set<Effect['type']>(['crit', 'burst', 'staggered', 'moved', 'turnStarted']);
+/**
+ * Invariant 2: no act targets or runs from a dead row outside an explicit revive or shadow extraction.
+ * Allowed dead-target paths in src/core/combat/: `revive` (fight.ts:545), `extract` on a dead monster (fight.ts:736),
+ * and a mythic `landing` turn whose omen target died before landing, which fizzles with no `used` effect (fight.ts:625).
+ * Guards ce1c6ada (heal on a dead hunter), 6fc6b2e8 (downed reactor armed), and area acts hitting a dead hunter.
+ */
+function deadActWrong(before: Fight | null, cmd: Command, after: Fight | null, effects: readonly Effect[], refused: boolean): string | null {
+  if (before && !refused && 'by' in cmd && DEAD_ACTOR_CMDS.has(cmd.type)) {
+    const by = before.rows.find(r => r.id === cmd.by);
+    if (by && !isUp(by)) return `${by.id}, dead, landed ${cmd.type}`;
+  }
+  if (after) {
+    for (const r of after.rows) if (!isUp(r) && r.armed) return `dead row ${r.id} still has an armed reaction`;
+  }
+  if (before && cmd.type === 'act' && typeof cmd.aim === 'string') {
+    const t = before.rows.find(r => r.id === cmd.aim);
+    if (t && !isUp(t)) {
+      if (effects.some(e => e.type === 'used' && e.by === cmd.by)) return `${cmd.by} landed ${cmd.ability} on dead target ${t.id}`;
+      if (effects.some(e => e.type === 'channel' && e.id === cmd.by && e.state === 'holding')) return `${cmd.by} began channeling ${cmd.ability} on dead target ${t.id}`;
+      const st = before.phase === 'running' ? runningState(before) : null;
+      const fizzle = st?.at === 'landing' && st.id === cmd.by;
+      if (!refused && !fizzle) return `${cmd.by}'s act on dead target ${t.id} was not refused`;
+    }
+  }
+  if (before && after && before.id === after.id && !refused && (cmd.type === 'act' || cmd.type === 'release')) {
+    for (const was of before.rows) {
+      if (isUp(was)) continue;
+      const badFx = effects.find(e => 'id' in e && e.id === was.id && (DEAD_TARGET_FX.has(e.type) || (e.type === 'channel' && e.state !== null)));
+      if (badFx) return `${cmd.type} emitted ${badFx.type} on already-dead row ${was.id}`;
+      const now = after.rows.find(x => x.id === was.id);
+      if (!now) continue;
+      if (now.place.x !== was.place.x || now.place.y !== was.place.y) return `${cmd.type} moved already-dead row ${was.id} from ${was.place.x},${was.place.y} to ${now.place.x},${now.place.y}`;
+      const touched = now.statuses.find(s => {
+        if (s.zone !== undefined) return false;
+        const prev = was.statuses.find(x => x.key === s.key);
+        if (!prev) return true;
+        return (s.stacks ?? 1) > (prev.stacks ?? 1) || (prev.until !== null && (s.until === null || s.until > prev.until));
+      });
+      if (touched) return `${cmd.type} applied or extended ${touched.key} on already-dead row ${was.id}`;
+    }
+  }
+  return null;
+}
+
+const WARD_FLAGS = ['untargetable', 'invulnerable', 'safeguard', 'hidden', 'alert'] as const;
+const SHARE_ONS = ['dealt', 'taken', 'healed', 'shielded'] as const;
+/**
+ * Invariant 3: an expired status does nothing. Once a status runs out (duration, uses, or a broken ward), it pays no
+ * tick, ward, modifier, or trigger. Reuses `mem.settled` and `mem.since` for tick accounting and `fresh` for trigger
+ * logs. Guards c77cf322 (expired owed status still counting for wards, modifiers, dice, or triggers).
+ */
+function expiredStatusWrong(
+  before: Fight | null, cmd: Command, after: Fight, effects: readonly Effect[], mem: Memory, fresh: readonly string[], refused: boolean,
+): string | null {
+  const now = after.phase === 'setup' ? tick(0) : after.now;
+  const paid = new Map<string, number>();
+  for (const e of effects) if (e.type === 'rollSettle') { const k = `${e.id}|${e.key}`; paid.set(k, (paid.get(k) ?? 0) + e.share * RULES.fight.round); }
+  const seenKeys = new Set<string>();
+  for (const r of after.rows) for (const s of r.statuses.filter(x => x.def.ops.some(perRound))) {
+    const k = `${r.id}|${s.key}`;
+    seenKeys.add(k);
+    if (s.until !== null && s.settledAt > s.until) return `${r.id}'s ${s.key} settled to ${s.settledAt}, past its end ${s.until}`;
+    const total = (mem.since.get(k) === s.since ? mem.settled.get(k) ?? 0 : 0) + (paid.get(k) ?? 0);
+    mem.since.set(k, s.since); mem.settled.set(k, total);
+    if (Math.abs(total - (s.settledAt - s.since)) > 1e-6) return `${r.id}'s ${s.key} settled for ${total} ticks over a span of ${s.settledAt - s.since}`;
+    if (s.until !== null && total > (s.until - s.since) + 1e-6) return `${r.id}'s ${s.key} paid ${total} ticks over a duration of ${s.until - s.since}`;
+  }
+  for (const [k, ticks] of paid) {
+    if (seenKeys.has(k) || k.endsWith('-in') || k.endsWith('-spread')) continue;
+    const sep = k.indexOf('|'), rowId = k.slice(0, sep), key = k.slice(sep + 1);
+    const sBefore = before?.rows.find(x => x.id === rowId)?.statuses.find(x => x.key === key);
+    if (sBefore) {
+      if (sBefore.until !== null && sBefore.settledAt >= sBefore.until) return `${rowId}'s expired ${key} paid ${ticks} ticks after settling to ${sBefore.until}`;
+      const total = (mem.since.get(k) === sBefore.since ? mem.settled.get(k) ?? 0 : 0) + ticks;
+      mem.since.set(k, sBefore.since); mem.settled.set(k, total);
+      if (sBefore.until !== null && total > (sBefore.until - sBefore.since) + 1e-6) return `${rowId}'s expired ${key} paid ${total} ticks over a duration of ${sBefore.until - sBefore.since}`;
+    } else if (!key.startsWith('zone-')) {
+      const rowName = (after.rows.find(x => x.id === rowId) ?? before?.rows.find(x => x.id === rowId))?.name;
+      if (!rowName || !fresh.some(l => l.includes(`${rowName}: `) && l.includes(' ends.'))) {
+        return `${rowId}'s absent status ${key} paid ${ticks} ticks`;
+      }
+    }
+  }
+  if (after.phase === 'running') {
+    for (const r of after.rows) {
+      if (r.shield && r.shield.until <= after.now) return `${r.id} has an expired shield (until ${r.shield.until}) at ${after.now}`;
+      for (const s of r.statuses) {
+        if (s.until !== null && s.settledAt > s.until) return `${r.id}'s ${s.key} settled to ${s.settledAt}, past its end ${s.until}`;
+        if (s.owed && (s.until === null || s.until > after.now)) return `${r.id}'s ${s.key} is marked owed before its end`;
+        if (s.until !== null && s.until <= after.now) {
+          if (s.zone === undefined) {
+            if (!s.owed) return `${r.id}'s expired ${s.key} (until ${s.until}) is still active at ${after.now}`;
+            if (counts(s)) return `${r.id}'s expired ${s.key} still counts at ${after.now}`;
+            const owes = (s.settledAt < s.until && s.def.ops.some(perRound)) || s.def.end !== undefined;
+            if (!owes) return `${r.id}'s expired ${s.key} owes nothing and stays on the row at ${after.now}`;
+          } else {
+            if (s.settledAt >= s.until || !s.def.ops.some(perRound) || !s.def.ops.every(perRound)) {
+              return `${r.id}'s closed zone hold ${s.key} has active ops or nothing owed at ${after.now}`;
+            }
+          }
+        }
+      }
+    }
+    for (const z of after.zones) {
+      const g = z.ground, a = g.kind === 'around' && g.anchor.kind === 'body' ? g.anchor : null, b = a && after.rows.find(r => r.id === a.id);
+      if (a?.status && b && !b.statuses.some(s => s.key === a.status && s.zone === undefined && counts(s) && (s.until === null || s.until > after.now))) {
+        return `aura ${z.id} stays on the ground after ${a.id}'s ${a.status} expired`;
+      }
+    }
+  }
+  for (const r of after.rows) {
+    const was = before?.rows.find(x => x.id === r.id);
+    const hasExpired = r.statuses.some(s => s.owed || (s.until !== null && s.until <= now));
+    const statusLeft = !!was && was.statuses.some(s => !r.statuses.some(x => x.key === s.key && x.since === s.since));
+    if (hasExpired || statusLeft) {
+      const active = r.statuses.filter(s => !s.owed && (s.until === null || s.until > now));
+      const m = modified(r.origin, active, RULES);
+      if (!same(r.stats, m.stats) || !same(r.sheet, m.sheet) || r.speed !== m.sheet.speed) return `${r.id}'s stats or sheet still reflect an expired status`;
+      if (hasExpired) {
+        const stripped = { ...r, statuses: active };
+        for (const f of WARD_FLAGS) if (holds(r, f) !== holds(stripped, f)) return `${r.id}'s expired status still grants ${f}`;
+        if (held(r, now) !== held(stripped, now)) return `${r.id}'s expired status still stuns it`;
+        if (wardedDamage(r, rowHp(r)) !== wardedDamage(stripped, rowHp(stripped))) return `${r.id}'s expired invulnerable ward still blocks lethal damage`;
+        if (stealthState(stealthOf(r)) !== stealthState(stealthOf(stripped))) return `${r.id}'s expired status still grants stealth`;
+        for (const on of SHARE_ONS) if (shareOf(r, on) !== shareOf(stripped, on)) return `${r.id}'s expired status still alters its ${on} share`;
+        if (exposedOf(r) !== exposedOf(stripped) || rangeWith(10, r, RULES) !== rangeWith(10, stripped, RULES)) return `${r.id}'s expired status still alters exposed or range`;
+        if (edgeOn([], r, stripped).cut !== edgeOn([], stripped, stripped).cut || edgeOn([], stripped, r).cut !== edgeOn([], stripped, stripped).cut) return `${r.id}'s expired status still grants an edge`;
+        if (boostsOn(r, stripped).length !== boostsOn(stripped, stripped).length || boostsOn(stripped, r).length !== boostsOn(stripped, stripped).length) return `${r.id}'s expired status still grants a held die`;
+      }
+    }
+    const beforeNow = before && 'now' in before ? before.now : tick(0);
+    for (const [tk, trip] of Object.entries(r.trips ?? {})) {
+      const wasTrip = was?.trips?.[tk];
+      if (wasTrip?.at === 'spent' && trip.at !== 'spent') return `${r.id}'s spent trigger ${tk} reset to ${trip.at}`;
+      if (wasTrip?.at === 'tripped' && trip.at === 'tripped' && trip.round < wasTrip.round) return `${r.id}'s trigger ${tk} round moved back from ${wasTrip.round} to ${trip.round}`;
+      const hash = tk.lastIndexOf('#'), sk = tk.slice(0, hash), idx = Number(tk.slice(hash + 1));
+      const sBefore = was?.statuses.find(s => s.key === sk), sAfter = r.statuses.find(s => s.key === sk);
+      if (json(trip) !== json(wasTrip)) {
+        if (!sBefore && !sAfter) return `${r.id}'s absent status ${sk} updated trigger ${tk}`;
+        if (sBefore && (sBefore.owed || (sBefore.until !== null && sBefore.until <= beforeNow)) && (!sAfter || sAfter.since === sBefore.since)) {
+          return `${r.id}'s expired status ${sk} updated trigger ${tk}`;
+        }
+      }
+      if (trip.at === 'counting') {
+        const lim = (sAfter ?? sBefore)?.def.triggers?.[idx]?.limit;
+        if (lim?.kind === 'fight' && (trip.k < 1 || trip.k >= lim.n)) return `${r.id}'s trigger ${tk} counted ${trip.k} of ${lim.n}`;
+      }
+    }
+  }
+  if (before && !refused && (cmd.type === 'act' || cmd.type === 'release') && effects.some(e => e.type === 'used' && e.by === cmd.by)) {
+    const uBefore = before.rows.find(r => r.id === cmd.by), uAfter = after.rows.find(r => r.id === cmd.by);
+    const omen = uBefore && cmd.type === 'act' ? omenMove(uBefore, RULES) : null;
+    const aid = cmd.type === 'act' ? cmd.ability : uBefore?.channel?.ability;
+    const a = omen?.ability.id === aid ? omen!.ability : uBefore?.abilities.find(x => x.id === aid);
+    if (uBefore && uAfter && a && (a.aim === 'foe' || a.aim === 'place') && !hides(a) && holds(uBefore, 'untargetable') && holds(uAfter, 'untargetable')) {
+      return `${uAfter.id}'s untargetable ward stayed active after acting with ${a.id}`;
+    }
+  }
+  const beforeNow = before && 'now' in before ? before.now : tick(0);
+  for (const line of fresh) {
+    const m = /^R(\d+): Then: (.+)\.$/.exec(line);
+    if (!m || m[2]!.includes(' reacts with ')) continue;
+    const logRound = m[1]!, parts = m[2]!.replace(/ \([^)]*\)/g, '').split(', ');
+    for (const part of parts) {
+      const sep = part.indexOf("'s ");
+      if (sep < 0) continue;
+      const name = part.slice(0, sep), label = part.slice(sep + 3);
+      const matches = after.rows.filter(x => x.name === name);
+      if (matches.length !== 1) continue;
+      const r = matches[0]!, was = before?.rows.find(x => x.id === r.id);
+      const sBefore = was?.statuses.find(x => x.def.label === label), sAfter = r.statuses.find(x => x.def.label === label);
+      mem.parsedTriggers++;
+      if (!sBefore && !sAfter) return `${r.id}'s absent status ${label} fired a trigger`;
+      if (sBefore && (sBefore.owed || (sBefore.until !== null && sBefore.until <= beforeNow)) && (!sAfter || sAfter.since === sBefore.since)) {
+        return `${r.id}'s expired status ${sBefore.key} fired a trigger`;
+      }
+      const s = sAfter ?? sBefore!, trs = s.def.triggers ?? [];
+      if (trs.length && trs.every(t => t.limit.kind === 'fight')) {
+        const cap = trs.reduce((sum, t) => sum + (t.limit.kind === 'fight' ? t.limit.n : 0), 0);
+        const tk = `${r.id}|${s.key}`, n = (mem.triggers.get(tk) ?? 0) + 1;
+        mem.triggers.set(tk, n);
+        if (n > cap) return `${r.id}'s spent trigger ${s.key} fired ${n} times (limit ${cap})`;
+      }
+      if (trs.length && trs.every(t => t.limit.kind === 'round')) {
+        const tk = `${r.id}|${s.key}|R${logRound}`, n = (mem.triggers.get(tk) ?? 0) + 1;
+        mem.triggers.set(tk, n);
+        if (n > trs.length) return `${r.id}'s round-limited trigger ${s.key} fired ${n} times in round ${logRound}`;
+      }
+    }
+  }
   return null;
 }
 
@@ -332,6 +553,7 @@ function runSeed(seed: number, tally: Map<string, number>): Failure | null {
     if (before?.phase !== out.fight?.phase) tally.set(`${before?.phase ?? 'none'}>${out.fight?.phase ?? 'none'}`, 1);
     fight = out.fight;
   }
+  if (mem.parsedTriggers > 0) tally.set('triggerParsed', (tally.get('triggerParsed') ?? 0) + mem.parsedTriggers);
   return null;
 }
 
@@ -394,6 +616,24 @@ describe('what random play found', () => {
     expect(r.problem).toBeNull();
     expect(tallyOf(r.fight!.rows.find(x => x.id === 'c-w2')!).kills.map(k => k.row)).toEqual([cid('c-mira')]);
   });
+
+  // Seed 227 and seed 2032: an area blast over a dead hunter caught the corpse in `catchable` and let it dodge and move tiles.
+  test('an area blast over a dead hunter leaves the dead hunter unmoved and unaffected', () => {
+    const sela = ROSTER.find(x => x.id === 'c-sela')!, hp = modified(sela.origin, [], RULES).sheet.hpMax;
+    const setup = replay([...opening('c-shade'), { type: 'adjust', id: cid('c-sela'), hp: -hp }]);
+    expect(setup.problem).toBeNull();
+    const deadSela = setup.fight!.rows.find(x => x.id === 'c-sela')!;
+    const r = replay([
+      ...opening('c-shade'),
+      { type: 'adjust', id: cid('c-sela'), hp: -hp },
+      { type: 'place', id: cid('c-shade'), to: place(deadSela.place.x, deadSela.place.y + 2) },
+      { type: 'act', by: cid('c-shade'), ability: abilityId('blast'), aim: deadSela.place, rolls: rolls({}, {}) },
+    ]);
+    expect(r.problem).toBeNull();
+    const afterSela = r.fight!.rows.find(x => x.id === 'c-sela')!;
+    expect(afterSela.place).toEqual(deadSela.place);
+    expect(r.effects.filter(e => 'id' in e && e.id === cid('c-sela') && (e.type === 'moved' || e.type === 'crit'))).toEqual([]);
+  });
 });
 
 /**
@@ -442,7 +682,7 @@ describe('the reworked fight under random play', () => {
     expect(failures).toEqual([]);
     // a mythic's phase change and omen (Nov 22: 98 and 38 in the 2,500 seeds; an answer met once and a landing a few times, too rare to count on)
     for (const seen of ['turnStarted', 'rollSettle', 'vitals', 'sendRemote', 'shadowHp', 'moved', 'channel', 'staggered', 'crit', 'defeated', 'ended', 'refused', 'phased', 'omen',
-      'none>setup', 'setup>running', 'running>ended', 'ended>none', 'spread', ...KIT_LINES.map(([k]) => k)]) {
+      'none>setup', 'setup>running', 'running>ended', 'ended>none', 'spread', 'triggerParsed', ...KIT_LINES.map(([k]) => k)]) {
       expect(tally.get(seen) ?? 0, `random play reaches ${seen}`).toBeGreaterThan(0);
     }
   // A compute budget, not a wait: the test asserts no time. Measured Nov 19 on the lead's 4-core box after its restart:

@@ -765,3 +765,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T02:32Z	economy	guild-cuts landed on lead-backlog: arena guild gold-cut table, flat crystal shares, debtFirst stacking, Helix for guild hunters; unit 6850 and browser 581 + 10 load reruns green
 2026-11-24T02:53Z	ops	PR 99 (guild-cuts) merged to main
 2026-11-24T04:24Z	economy	balance-fixes landed on lead-backlog: E xp 63, debt billed at post-raise rank, Ashen Drake S seed, Stair price doc-only; unit 6860 and browser 586 + 6 load reruns green
+2026-11-24T04:50Z	ops	PR 100 (balance-fixes) merged to main
+2026-11-24T06:06Z	arch	wire-codes (from-scratch 1) and fight-invariants (from-scratch 3) landed on lead-backlog; unit 6876 green, browser 588 + 5 load reruns green

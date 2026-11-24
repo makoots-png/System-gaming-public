@@ -94,6 +94,9 @@ test('a stun on the mythic weakens the First Breath on every phone', async ({ de
   await gm.evaluate(() => { const angel = hunterApp.store.get().fight.rows.find((r: any) => r.kind === 'monster'); return hunterApp.api.combat.status(angel.id, { add: { key: 'stunned', def: hunterApp.rules().conditions.stunned, rounds: 1, tier: 0 } }); });
   await expect(combat(gm).locator('.myth-title')).toHaveText(`OMEN, WEAKENED: ${b.name}`);
   await expect(combat(player).locator('.myth-title')).toHaveText(`OMEN, WEAKENED: ${b.name}`);
+  const toast = gm.locator('#toasts .toast', { hasText: `${b.name} will land as ` });
+  await expect(toast).toHaveCount(1);
+  await expect(toast).not.toContainText(/^R\d+:/);
 });
 
 test('the GM\'s Next phase moves the strip to phase 2 after a question', async ({ device }) => {
