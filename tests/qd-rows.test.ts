@@ -1,176 +1,246 @@
-// Row numbering guard for docs/agent-handoff/questionable-decisions.md.
-// Two parallel branches once both added row 53; a non-conflicting merge would have let duplicate numbers through
-// silently, breaking citations in for-the-owner.md and the Google Doc.
+// Date-slug ID and legacy alias guard for docs/agent-handoff/questionable-decisions.md.
+// Parallel branches previously collided on sequential 1..N row numbers at merge time.
+// Rows now use unique `YYYY-MM-DD-kebab-slug` IDs, while historical rows 1..87 keep frozen `(row N)` aliases.
 import { describe, expect, test } from 'bun:test';
+import {
+  LEGACY_ROW_MAX,
+  QD_DEFAULT_PATH,
+  addQdRow,
+  checkQdRows,
+  isValidCalendarDate,
+  parseQdId,
+} from '../scripts/qd.ts';
 
-const QD_PATH = `${import.meta.dir}/../docs/agent-handoff/questionable-decisions.md`;
-
-export type QdRowCheck = {
-  readonly count: number;
-  readonly duplicates: readonly number[];
-  readonly missing: readonly number[];
-  readonly invalid: readonly number[];
-  readonly errors: readonly string[];
-};
-
-/**
- * Checks row headers (`N. **...`) in sections before `## Neon review`.
- * Rows across those sections must form 1..N with no duplicates, no gaps, and no invalid numbers.
- * Numbered lists in `## Neon review` and later sections (`## Top 5`, etc.) are ignored.
- */
-export function checkQdRows(markdown: string): QdRowCheck {
-  const lines = markdown.split(/\r?\n/);
-  const cutoff = lines.findIndex(line => /^## Neon review\b/.test(line));
-  const scope = cutoff >= 0 ? lines.slice(0, cutoff) : lines;
-
-  const linesByNum = new Map<number, number[]>();
-  const invalid: number[] = [];
-  const invalidDetails: string[] = [];
-  let count = 0;
-
-  for (let i = 0; i < scope.length; i++) {
-    const match = /^(\d+)\.\s+\*\*/.exec(scope[i]!);
-    if (!match) continue;
-    count++;
-    const raw = match[1]!;
-    const num = Number(raw);
-    const lineNo = i + 1;
-    if (num < 1 || raw !== String(num)) {
-      invalid.push(num);
-      invalidDetails.push(`${raw} (line ${lineNo})`);
-      continue;
-    }
-    const prev = linesByNum.get(num);
-    if (prev) prev.push(lineNo);
-    else linesByNum.set(num, [lineNo]);
-  }
-
-  const duplicates = [...linesByNum.entries()]
-    .filter(([, at]) => at.length > 1)
-    .map(([num]) => num)
-    .sort((a, b) => a - b);
-
-  const positiveNums = [...linesByNum.keys()];
-  const max = positiveNums.length > 0 ? Math.max(...positiveNums) : 0;
-  const missing: number[] = [];
-  for (let n = 1; n <= max; n++) {
-    if (!linesByNum.has(n)) missing.push(n);
-  }
-
-  const errors: string[] = [];
-  if (count === 0) errors.push('no rows found before "## Neon review"');
-  if (invalidDetails.length > 0) errors.push(`invalid row number(s): ${invalidDetails.join(', ')}`);
-  if (duplicates.length > 0) {
-    const detail = duplicates.map(n => `${n} (lines ${linesByNum.get(n)!.join(', ')})`).join(', ');
-    errors.push(`duplicate row number(s): ${detail}`);
-  }
-  if (missing.length > 0) errors.push(`missing row number(s) in 1..${max}: ${missing.join(', ')}`);
-
-  return { count, duplicates, missing, invalid, errors };
-}
-
-describe('questionable-decisions.md row numbering', () => {
-  test('rows before "## Neon review" are 1..N with no duplicates or gaps', async () => {
-    const text = await Bun.file(QD_PATH).text();
+describe('questionable-decisions.md date-slug IDs', () => {
+  test('live file passes with unique date-slug IDs and every frozen legacy alias 1..87 intact', async () => {
+    const text = await Bun.file(QD_DEFAULT_PATH).text();
     const res = checkQdRows(text);
-    expect(res.errors, `questionable-decisions.md row numbering failed: ${res.errors.join('; ')}`).toEqual([]);
-    expect(res.count).toBeGreaterThan(0);
+    expect(res.errors, `questionable-decisions.md check failed: ${res.errors.join('; ')}`).toEqual([]);
+    expect(res.count).toBeGreaterThanOrEqual(LEGACY_ROW_MAX);
+    expect(res.duplicateIds).toEqual([]);
+    expect(res.missingAliases).toEqual([]);
+    expect(res.duplicateAliases).toEqual([]);
+    expect(res.invalidAliases).toEqual([]);
+    expect(res.reusedRetired).toEqual([]);
+    // Spot-check that historical citations like "QD row 70" remain findable by `(row 70)` on the row line.
+    const row70 = res.rows.find(r => r.legacyRow === 70);
+    expect(row70).toBeDefined();
+    expect(row70!.id).toMatch(/^2026-11-23-/);
   });
 
-  test('fails and names the duplicated row number when two branches add the same number', () => {
+  test('CLI `bun scripts/qd.ts check` succeeds on the live file', () => {
+    const res = Bun.spawnSync([process.execPath, 'scripts/qd.ts', 'check']);
+    expect(res.exitCode, res.stderr.toString()).toBe(0);
+    expect(res.stdout.toString()).toContain(`legacy aliases 1..${LEGACY_ROW_MAX} intact`);
+  });
+
+  test('validates calendar dates and date-slug shapes', () => {
+    expect(isValidCalendarDate('2026-11-23')).toBe(true);
+    expect(isValidCalendarDate('2028-02-29')).toBe(true);
+    expect(isValidCalendarDate('2026-02-29')).toBe(false);
+    expect(isValidCalendarDate('2026-13-01')).toBe(false);
+    expect(isValidCalendarDate('2026-00-10')).toBe(false);
+    expect(isValidCalendarDate('2025-11-23')).toBe(false);
+
+    expect(parseQdId('2026-11-23-personal-gate-wait')).toEqual({
+      id: '2026-11-23-personal-gate-wait',
+      date: '2026-11-23',
+      slug: 'personal-gate-wait',
+    });
+    expect(parseQdId('2026-11-24-row-32-shatter')).not.toBeNull();
+
+    // Disguised sequential numbers, bad casing, bad separators, impossible dates, and bad lengths fail.
+    for (const bad of [
+      '2026-11-24-88',
+      '2026-11-24-1-2',
+      '2026-11-24-ab',
+      `2026-11-24-${'a'.repeat(65)}`,
+      '2026-11-24-Personal-Gate',
+      '2026-11-24-personal_gate',
+      '2026-11-24-personal--gate',
+      '2026-11-24--personal',
+      '2026-11-24-personal-',
+      '2026-02-30-impossible-date',
+      'personal-gate-wait',
+      '',
+    ]) {
+      expect(parseQdId(bad), `expected "${bad}" to be rejected`).toBeNull();
+    }
+  });
+
+  test('fails and names duplicate slug IDs with their line numbers', () => {
+    const sample = [
+      '# Questionable decisions',
+      '',
+      '## Decisions (Nov 24 onward)',
+      '',
+      '- `2026-11-24-personal-gate-wait` (row 1): **First call.** Details.',
+      '- `2026-11-24-guild-cap-floor`: **Branch A call.** Details.',
+      '- `2026-11-24-guild-cap-floor`: **Branch B duplicate.** Details.',
+      '',
+      '## Neon review (Nov 22)',
+      '1. Row 1: something.',
+    ].join('\n');
+
+    const res = checkQdRows(sample, 1);
+    expect(res.duplicateIds).toEqual(['2026-11-24-guild-cap-floor']);
+    expect(res.errors.join('; ')).toContain('duplicate row ID(s): 2026-11-24-guild-cap-floor (lines 6, 7)');
+  });
+
+  test('rejects sequential numbered rows, un-slugged bold bullets, and malformed headers', () => {
     const sample = [
       '# Questionable decisions',
       '',
       '## Decided while he was away',
+      '- `2026-11-22-first-call` (row 1): **First.** Details.',
+      '88. **Old numbered row.** Details.',
+      '- **Forgot the slug.** Details.',
+      '- `2026-11-24-missing-colon` **No colon.** Details.',
+      '- `2026-11-24-wrong-alias` (#2): **Wrong alias syntax.** Details.',
+      '- `2026-11-24-88`: **Numeric slug disguised as counter.** Details.',
+    ].join('\n');
+
+    const res = checkQdRows(sample, 1);
+    expect(res.malformedLines).toEqual([5, 6, 7, 8]);
+    expect(res.invalidIds).toEqual(['2026-11-24-88']);
+    expect(res.errors.length).toBeGreaterThanOrEqual(2);
+    expect(res.errors.join('; ')).toContain('line 5');
+    expect(res.errors.join('; ')).toContain('2026-11-24-88');
+  });
+
+  test('enforces frozen legacy aliases: no duplicates, no gaps, no zero/padded, no new numbers above max', () => {
+    const sample = [
+      '## Decided',
+      '- `2026-11-22-one-a` (row 1): **One A.**',
+      '- `2026-11-22-one-b` (row 1): **One B.**',
+      '- `2026-11-22-zero` (row 0): **Zero.**',
+      '- `2026-11-22-padded` (row 02): **Padded.**',
+      '- `2026-11-24-too-high` (row 4): **Above frozen max.**',
+    ].join('\n');
+
+    const res = checkQdRows(sample, 3);
+    expect(res.duplicateAliases).toEqual([1]);
+    expect(res.missingAliases).toEqual([2, 3]);
+    expect(res.invalidAliases).toEqual(['0', '02', '4']);
+    expect(res.errors.join('; ')).toContain('duplicate legacy alias(es): row 1 (lines 2, 3)');
+    expect(res.errors.join('; ')).toContain('missing legacy alias(es) in 1..3: 2, 3');
+    expect(res.errors.join('; ')).toContain('row 4');
+  });
+
+  test('blocks reuse of retired IDs and flags invalid or duplicate retired entries', () => {
+    const sample = [
+      '# Questionable decisions',
       '',
-      '1. **First call.** Details.',
-      '2. **Second call.** Details.',
-      '3. **Row 53 equivalent from branch A.** Details.',
-      '3. **Row 53 equivalent from branch B.** Details.',
+      '## Decisions (Nov 24 onward)',
+      '- `2026-11-22-keep-one` (row 1): **Keep.** Details.',
+      '- `2026-11-24-old-idea`: **Reused retired ID.** Details.',
       '',
       '## Neon review (Nov 22)',
-      '## Top 5',
-      '1. Row 3: something.',
+      '1. Row 1: fine.',
+      '',
+      '## Retired ids',
+      '- `2026-11-24-old-idea` (retired)',
+      '- `2026-11-24-old-idea` (duplicate)',
+      '- `bad-retired-id`',
     ].join('\n');
 
-    const res = checkQdRows(sample);
-    expect(res.duplicates).toEqual([3]);
-    expect(res.missing).toEqual([]);
-    expect(res.errors.length).toBeGreaterThan(0);
-    expect(res.errors.join('; ')).toContain('3');
-    expect(res.errors.join('; ')).toContain('lines 7, 8');
+    const res = checkQdRows(sample, 1);
+    expect(res.reusedRetired).toEqual(['2026-11-24-old-idea']);
+    expect(res.invalidIds).toContain('bad-retired-id');
+    expect(res.errors.join('; ')).toContain('reused retired ID(s): 2026-11-24-old-idea (lines 5)');
+    expect(res.errors.join('; ')).toContain('duplicate retired ID(s): 2026-11-24-old-idea (lines 11, 12)');
   });
 
-  test('fails on the real row-53-twice shape and names 53', () => {
-    const rows = Array.from({ length: 53 }, (_, i) => `${i + 1}. **Call ${i + 1}.**`);
-    rows.push('53. **Second branch also used 53.**');
-    const res = checkQdRows(['## Decided while he was away', ...rows, '## Neon review (Nov 22)'].join('\n'));
-    expect(res.duplicates).toEqual([53]);
-    expect(res.errors.join('; ')).toContain('duplicate row number(s): 53');
-  });
-
-  test('fails and names missing numbers when there is a gap or rows do not start at 1', () => {
-    const withGap = [
-      '## Decided while he was away',
-      '1. **First.**',
-      '2. **Second.**',
-      '4. **Fourth.**',
-      '6. **Sixth.**',
-    ].join('\n');
-    const gapRes = checkQdRows(withGap);
-    expect(gapRes.missing).toEqual([3, 5]);
-    expect(gapRes.errors.join('; ')).toContain('3, 5');
-
-    const noOne = [
-      '## Decided while he was away',
-      '2. **Second.**',
-      '3. **Third.**',
-    ].join('\n');
-    const noOneRes = checkQdRows(noOne);
-    expect(noOneRes.missing).toEqual([1]);
-    expect(noOneRes.errors.join('; ')).toContain('1');
-  });
-
-  test('fails on invalid row numbers or no rows', () => {
-    const zeroRes = checkQdRows('## Decided\n0. **Zero.**\n1. **One.**\n');
-    expect(zeroRes.invalid).toEqual([0]);
-    expect(zeroRes.errors.join('; ')).toContain('0');
-
-    const paddedRes = checkQdRows('## Decided\n01. **Padded.**\n');
-    expect(paddedRes.invalid).toEqual([1]);
-    expect(paddedRes.errors.join('; ')).toContain('01');
-
-    const emptyRes = checkQdRows('# Questionable decisions\n\n## Neon review (Nov 22)\n1. **Not a row.**\n');
-    expect(emptyRes.count).toBe(0);
-    expect(emptyRes.errors.length).toBeGreaterThan(0);
-  });
-
-  test('allows rows split across sections before "## Neon review" and ignores later lists', () => {
+  test('ignores numbered lists and bullets after "## Neon review"', () => {
     const sample = [
       '# Questionable decisions',
       '',
       '## Decided while he was away',
-      '1. **First.**',
-      '2. **Second.**',
-      '5. **Fifth.**',
-      '6. **Sixth.**',
-      '1. Not bold, so not a row.',
-      '',
-      '## Decided earlier in this session',
-      '3. **Third.**',
-      '4. **Fourth.**',
+      '- `2026-11-22-first-call` (row 1): **First.** Details.',
+      '- `2026-11-24-new-call`: **New call without alias.** Details.',
       '',
       '## Neon review (Nov 22)',
       '## Top 5',
-      '1. Row 5 (change): something.',
-      '2. Row 1 (needs the owner): something else.',
-      '1. **Even a bold list item after Neon review is ignored.**',
+      '1. Row 1 (change): something.',
+      '2. **Even a bold numbered item after Neon review is ignored.**',
+      '## Wording flags',
+      '- Row 1 (`src/core/dc-pick.ts`): wording note.',
     ].join('\n');
 
-    const res = checkQdRows(sample);
+    const res = checkQdRows(sample, 1);
     expect(res.errors).toEqual([]);
-    expect(res.count).toBe(6);
-    expect(res.duplicates).toEqual([]);
-    expect(res.missing).toEqual([]);
+    expect(res.count).toBe(2);
+  });
+
+  test('addQdRow appends valid date-slug rows, blocks duplicates/retired IDs, and merges parallel branches without renumbering', () => {
+    const base = [
+      '# Questionable decisions',
+      '',
+      '## Decided while he was away',
+      '',
+      '- `2026-11-22-first-call` (row 1): **First.** Details.',
+      '',
+      '## Decisions (Nov 24 onward)',
+      '',
+      '## Neon review (Nov 22)',
+      '1. Row 1: notes.',
+      '',
+      '## Retired ids',
+      '- `2026-11-24-retired-rule`',
+      '',
+    ].join('\n');
+
+    const branchA = addQdRow(base, {
+      slug: 'personal-gate-wait',
+      title: 'Personal gates wait for GM approval.',
+      body: 'Undo with: "pay personal gates at once".',
+      date: '2026-11-24',
+    }, 1);
+    expect(branchA.ok).toBe(true);
+    if (!branchA.ok) return;
+    expect(branchA.id).toBe('2026-11-24-personal-gate-wait');
+    expect(checkQdRows(branchA.markdown, 1).errors).toEqual([]);
+
+    // Adding a second branch's decision on top keeps both distinct IDs with zero renumbering.
+    const merged = addQdRow(branchA.markdown, {
+      slug: 'guild-cap-floor',
+      title: 'Guild cut keeps at least 1 gold.',
+      body: 'Undo with: "allow zero kept gold".',
+      date: '2026-11-24',
+    }, 1);
+    expect(merged.ok).toBe(true);
+    if (!merged.ok) return;
+    const mergedCheck = checkQdRows(merged.markdown, 1);
+    expect(mergedCheck.errors).toEqual([]);
+    expect(mergedCheck.rows.map(r => r.id)).toEqual([
+      '2026-11-22-first-call',
+      '2026-11-24-personal-gate-wait',
+      '2026-11-24-guild-cap-floor',
+    ]);
+
+    // Refuses duplicate, retired, and invalid IDs.
+    const dup = addQdRow(merged.markdown, {
+      slug: 'guild-cap-floor',
+      title: 'Dup.',
+      body: 'Dup.',
+      date: '2026-11-24',
+    }, 1);
+    expect(dup.ok).toBe(false);
+
+    const retired = addQdRow(merged.markdown, {
+      slug: 'retired-rule',
+      title: 'Reused.',
+      body: 'Reused.',
+      date: '2026-11-24',
+    }, 1);
+    expect(retired.ok).toBe(false);
+
+    const bad = addQdRow(base, {
+      slug: '88',
+      title: 'Counter.',
+      body: 'Counter.',
+      date: '2026-11-24',
+    }, 1);
+    expect(bad.ok).toBe(false);
   });
 });

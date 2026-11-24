@@ -131,8 +131,10 @@ Start a unit only when no running unit changes the same files.
 - A bug that is not a state machine is fixed only if it scores 6 or more out of 10
   (`docs/audit/2026-11-20-ranked.md`); score a new finding before planning it.
 - When you decide something he might have decided otherwise, build it and add a row to
-  `docs/agent-handoff/questionable-decisions.md` in plain words, with the words that undo it. The same rows are in
-  his Google Doc "Hunter System: questionable decisions" (kept current through row 52).
+  `docs/agent-handoff/questionable-decisions.md` in plain words, with the words that undo it. Use a date-slug ID via
+  `bun scripts/qd.ts add <kebab-slug> "<Bold summary.>" "<Details and undo words.>"` (never add a sequential row
+  number; historical rows 1 to 87 keep `(row N)` aliases). The same rows are in his Google Doc "Hunter System:
+  questionable decisions" (kept current through row 52).
 - When you ask him something, ask in plain words a table would use. Record each ruling with his words in
   `docs/agent-handoff/for-the-owner.md` under Answered.
 - No new dependencies. No AI attribution lines in a commit (`.githooks/commit-msg` refuses them). The skills in

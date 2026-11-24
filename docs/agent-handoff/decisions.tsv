@@ -769,3 +769,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T06:06Z	arch	wire-codes (from-scratch 1) and fight-invariants (from-scratch 3) landed on lead-backlog; unit 6876 green, browser 588 + 5 load reruns green
 2026-11-24T06:26Z	ops	PR 101 (wire-codes + fight-invariants) merged to main
 2026-11-24T08:31Z	arch	untrack-docs (from-scratch 2), fightsim-load (fst-2, work-count budgets) and maker-roundtrip (from-scratch 4, 10 round-trip fixes) landed on lead-backlog; unit 6888 pass 0 fail, browser 592 + 5 load reruns green
+2026-11-24T08:45Z	ops	PR 102 (untrack-docs + fightsim-load + maker-roundtrip) merged to main
+2026-11-24T08:46Z	docs	slug-ids landed on lead-backlog: qd rows use date-slug ids, rows 1-87 keep (row N) aliases; qd-rows, ci-plan, lint 151 pass
