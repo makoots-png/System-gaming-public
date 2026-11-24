@@ -12,8 +12,7 @@ import { RANKS, RULES } from '../../src/core/rules.ts';
 import type { BonusKey, Rank, Rules } from '../../src/core/rules.ts';
 import { baseStats } from '../../src/core/stats.ts';
 import type { StatKey, Stats } from '../../src/core/stats.ts';
-import { TIER_BUDGET } from '../../src/core/registry/paths.ts';
-import { kitGear, NO_TWEAK, pointsAt, split } from '../../src/core/hunter/derive.ts';
+import { kitGear, NO_TWEAK, pointsAt, referenceBonus, split } from '../../src/core/hunter/derive.ts';
 import type { Archetype as MonsterArchetype, SheetBasis, Kit, MonsterKind, MonsterTrait } from '../../src/core/hunter/derive.ts';
 import { diceOf, parseFormula } from '../../src/core/formula.ts';
 import { dist, inShape, openGrid, place, reachable, straightCost, tiles } from '../../src/core/combat/space.ts';
@@ -194,8 +193,8 @@ type BuildRow = {
   readonly worn?: () => Status[];
 };
 
-/** Every perk point a body of `rank` has had, all on its main stat (the paper's builds). */
-const perkPoints = (rank: Rank): number => TIER_BUDGET.slice(0, tierOf(rank) + 1).reduce((s, v) => s + v, 0);
+/** Reference stat bonus for a paper build of `rank`, applied to its main stat (derive.ts `referenceBonus`). */
+const perkPoints = (rank: Rank): number => referenceBonus(rank);
 /** The stats of a build at `rank`: its points split 2:1 (derive.ts `split`), every perk on the main stat. */
 export function statsOf(main: StatKey, second: StatKey, rank: Rank, R: Rules = RULES): Stats {
   const st = split(main, second, pointsAt(R.rankLevels[rank], R), R);
@@ -771,9 +770,14 @@ export function playFight(setup: Setup, seed: number): FightRecord {
       }
     }
     heard(s.effects, p.fight);
+    for (const r of p.fight.rows) { const t = tally[r.id]; if (t && r.fatigue > t.fatigue) t.fatigue = r.fatigue; }
   }
   const ended = p as Play & { readonly fight: Ended }, f = ended.fight;
-  for (const r of f.rows) { const t = tally[r.id]!; t.fatigue = r.fatigue; t.mana = r.mana; }
+  for (const r of f.rows) {
+    const t = tally[r.id]!;
+    t.fatigue = Math.max(t.fatigue, r.fatigue + (f.summary.rested?.[r.id] ?? 0));
+    t.mana = r.mana;
+  }
   channels.dropped = channels.begun - channels.completed - channels.broken;
   return {
     winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, dead: [...ended.down], staggers, held, ticks: f.now, channels, tally,
@@ -792,16 +796,16 @@ const capped = (p: Play & { readonly fight: Running }, limits: Limits, R: Rules)
 const holds = (a: Ability): boolean => a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hold'));
 
 /**
- * Three fights in a row with the same party (a dungeon): HP back to full between fights, `rest` fatigue back, no mana
- * back. Returns each fight's record.
+ * Three fights in a row with the same party (a dungeon): HP back to full between fights, `RULES.fight.fightRest`
+ * fatigue back as applied by the reducer's `ended()` step itself, no mana back. Returns each fight's record.
  */
-export function playDungeon(make: (fight: number) => Setup, seed: number, fights: number, rest: number): FightRecord[] {
+export function playDungeon(make: (fight: number) => Setup, seed: number, fights: number): FightRecord[] {
   const out: FightRecord[] = [];
   let carry: Record<string, { fatigue: number; mana: number }> = {};
   for (let i = 0; i < fights; i++) {
     const r = playFight({ ...make(i), carry }, seed * 7 + i);
     out.push(r);
-    carry = Object.fromEntries(Object.entries(r.end).map(([id, v]) => [id, { fatigue: Math.max(0, v.fatigue - rest), mana: v.mana }]));
+    carry = Object.fromEntries(Object.entries(r.end).map(([id, v]) => [id, { fatigue: v.fatigue, mana: v.mana }]));
   }
   return out;
 }

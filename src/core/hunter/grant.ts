@@ -1,6 +1,6 @@
 // grant.ts: what reaches a hunter's sheet from outside it, each as one step on the save. Pure.
 //
-// `grant` gives a reward whole: points, title, job, build, skills, boons, statuses, gold, items, XP and the level-up's
+// `grant` gives a reward whole: points, title, job, skills, boons, statuses, gold, items, XP and the level-up's
 // refill in one answer, so a reward is all given in one write or not at all (a reward used to be five or more writes,
 // and a throw part way left the rest ungiven). `sheetEdit` is the GM's change of HP, mana, fatigue, life or a status,
 // and the fight's totals; a raising from death through it costs levels (`reviveLevelShare`, the owner's ruling 9).
@@ -15,7 +15,7 @@
 // `told` takes them (src/core/session-log.ts), so a step needs no id reserved outside it.
 import { gmSource } from '../effects.ts';
 import type { LevelUp } from '../events.ts';
-import type { BuildChange, RewardFrom } from '../protocol.ts';
+import type { RewardFrom } from '../protocol.ts';
 import { grantLines } from '../rewards.ts';
 import type { RewardStatus, RewardTitle, Rewards } from '../rewards.ts';
 import type { Rank, Rules } from '../rules.ts';
@@ -27,7 +27,6 @@ import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import type { SheetStatus } from '../combat/effect-ops.ts';
 import type { AbilityId } from '../combat/ability-types.ts';
-import { buildAward } from './build.ts';
 import { dropStatus, putStatus } from './conditions.ts';
 import type { StatusIn } from './conditions.ts';
 import { addGold, putItem, stackOf } from './inventory.ts';
@@ -167,11 +166,11 @@ const titleGiven = (t: RewardTitle, replaced: string | undefined): RewardTitle =
 export const statusGiven = (s: RewardStatus, rank: Rank): StatusIn => ({ key: s.key, rounds: s.rounds, source: gmSource(rank), ...(s.def ? { def: s.def } : {}) });
 
 /**
- * Hunter `hid` given `r` (read by `parseRewards`) and a build change, at time `at`, as one answer. Order: points,
- * title, job, build, skills, boons, then the sheet's maxima fitted; statuses; gold and items, fitted again (gear weighs);
+ * Hunter `hid` given `r` (read by `parseRewards`), at time `at`, as one answer. Order: points,
+ * title, job, skills, boons, then the sheet's maxima fitted; statuses; gold and items, fitted again (gear weighs);
  * XP last, so a level-up's refill fills the maxima the rest of the reward gave. A hunter that is not there is refused.
  */
-export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | null, o: Day & { vitals: VitalsAt; from?: RewardFrom | null | undefined }): Granted | Refused<'no-hunter'> {
+export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: VitalsAt; from?: RewardFrom | null | undefined }): Granted | Refused<'no-hunter'> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const { R } = o, ids = idsFrom(save.seq), h0 = save.hunters[at]!;
@@ -183,8 +182,6 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
   const replaced = titleNew && r.title?.replaces ? titleNamed(h, r.title.replaces, R.titles) : undefined;
   if (r.title && titleNew) h = giveTitle(h, r.title, ids.next('t'), R.titles);
   if (r.job) { const j = setJob(h, r.job); if (!isRefused(j)) h = j; }
-  let buildLine = '';
-  if (build !== null) { const b = buildAward(h, build, R); buildLine = b.line; h = { ...h, build: b.build }; }
   for (const k of r.skills) h = giveSkill(h, k, ids.next('s'));
   h = giveBoons(h, r.boons.map(b => ({ id: ids.next('bn'), name: b.name, text: b.text })), o.at);
   h = fitted(h, R);
@@ -250,7 +247,6 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     R,
     { ...r, xp, gold, crystal, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
     {
-      build: buildLine,
       level: { from: h0.level, to: h.level },
       ...(debtPaid ? { debt: debtPaid } : {}),
       ...(guildCut ? { guildCut } : {}),
@@ -306,7 +302,7 @@ export type Finished = {
 export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt; by?: QuestCompletedBy }): Finished | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
   const d = questDone(save, hid, qid, o);
   if (isRefused(d)) return d;
-  const g = grant(d.save, hid, d.rewards, null, o);
+  const g = grant(d.save, hid, d.rewards, o);
   if (isRefused(g)) return g;
   return { save: g.save, quest: d.quest, completed: d.completed, granted: g, job: d.job, done: [...d.done, ...g.done] };
 }
@@ -349,7 +345,7 @@ export function questFailed(save: Save, hid: string, qid: string, o: Day & { vit
   const f = failQuest(h, qid, o.at);
   if (isRefused(f)) return f;
   const done = told({ ...save, hunters: save.hunters.map(x => (x.id === hid ? f.hunter : x)) }, { at: o.at, cap: o.R.logCap }, ...f.said);
-  const g = grant(done, hid, quest.onFail, null, o);
+  const g = grant(done, hid, quest.onFail, o);
   if (isRefused(g)) return g;
   return { save: g.save, quest, granted: g, effects: f.effects };
 }
@@ -399,7 +395,7 @@ export function rolledOver(save: Save, o: Day & { nowMs: number; gm: boolean; vi
   for (const f of r.told.failed) {
     const q = s.hunters.find(h => h.id === f.hid)?.quests.find(x => x.id === f.qid);
     if (!q || q.status !== 'failed') continue;
-    const g = grant(s, f.hid, q.onFail, null, { ...o, vitals: o.vitals(f.hid) });
+    const g = grant(s, f.hid, q.onFail, { ...o, vitals: o.vitals(f.hid) });
     if (isRefused(g)) continue;
     s = g.save;
     if (ROOM_HEARS.overdue && o.room && reportsProgress(q, 'player')) s = questEnded(s, f.hid, q, { at: o.at, room: o.room });

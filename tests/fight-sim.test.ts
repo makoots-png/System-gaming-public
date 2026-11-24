@@ -110,7 +110,7 @@ const vsBoss = (ids: readonly Archetype[], rank: Rank, channel: Plan['channel'] 
 const FIVE: readonly Archetype[] = ['speed', 'tank', 'cannon', 'bruiser', 'support'];
 const dungeon = (rank: Rank) => {
   const rows = once(() => [...party(FIVE, rank), monster(rank, 'brute', 'boss', 'boss-1'), monster(rank, 'brute', 'boss', 'boss-2')]);
-  return (seed: number): FightRecord[] => playDungeon(() => ({ rows: rows(), endAtRounds: 6, tallyDamage: false }), seed, 3, RULES.fight.fightRest);
+  return (seed: number): FightRecord[] => playDungeon(() => ({ rows: rows(), endAtRounds: 6, tallyDamage: false }), seed, 3);
 };
 
 type Play = (seed: number) => FightRecord[];

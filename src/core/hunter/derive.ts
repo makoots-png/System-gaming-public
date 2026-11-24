@@ -4,7 +4,7 @@
 // `SHEET_LABELS` (the typecheck asks), its formula here, its reason in design.md section 2.2 and its row in
 // tests/derive.test.ts. A formula may then name it with no change to src/core/formula.ts.
 
-import { BONUS_HUNDREDTHS } from '../rules.ts';
+import { BONUS_HUNDREDTHS, RANKS } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { above, baseStats, capped, eff } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
@@ -169,6 +169,15 @@ export const kitGear = (kit: Kit, R: DeriveRules): GearPiece[] => [R.fight.kits[
 
 /** The points a body has to spend at `level`: the creation points, then the points of every level after the first. */
 export const pointsAt = (level: number, R: DeriveRules): number => R.fight.creationPoints + R.pointsPerLevel * (level - 1);
+
+/**
+ * Reference bonus stat points added to the main stat of paper and simulation hunter bodies at each rank (E +2, D +4,
+ * C +7, B +10, A +14, S +18), standing in for the title, passive-skill, and worn-item stat bonuses that real hunters
+ * carry while `kitGear` carries weight, armor, and resist alone.
+ */
+export const REFERENCE_RANK_BONUS = [2, 4, 7, 10, 14, 18] as const;
+/** Reference bonus stat points for `rank` (`REFERENCE_RANK_BONUS`), 0 if unreadable. */
+export const referenceBonus = (rank: Rank): number => REFERENCE_RANK_BONUS[RANKS.indexOf(rank)] ?? 0;
 
 /** Every stat at its base, with `points` split 2:1 between `main` and `second` (the main takes the rounded `mainShare`). */
 export function split(main: StatKey, second: StatKey, points: number, R: DeriveRules): Stats {

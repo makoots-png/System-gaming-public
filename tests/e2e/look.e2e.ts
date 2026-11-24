@@ -97,7 +97,7 @@ test('on a 360 px phone a Poisoned, Penalized hunter sees both condition chips o
 
   await test.step('the jump chips are in the order of the sections they lead to, Skills after Titles and Chronicle', async () => {
     const chips = await player.locator('#view-status [data-jump]').evaluateAll(bs => bs.map(b => (b as HTMLElement).dataset.jump!));
-    expect(chips).toEqual(['attributes', 'build', 'titles', 'chronicle', 'skills', 'equipment', 'inventory']);
+    expect(chips).toEqual(['attributes', 'titles', 'chronicle', 'skills', 'equipment', 'inventory']);
     const onPage = await player.locator('#view-status [data-panel]').evaluateAll(ps => ps.map(p => (p as HTMLElement).dataset.panel!));
     expect(onPage.filter(id => chips.includes(id)), 'the sheet draws the same sections in the same order').toEqual(chips);
   });

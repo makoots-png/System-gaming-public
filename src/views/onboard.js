@@ -11,7 +11,6 @@ import { READ_ONLY } from '../core/store-life.ts';
 import { chooseMode } from '../core/role.ts';
 import { ABOUT, LOADED, ROOM_IS, TIPS, createdLine, nextSteps } from '../core/first-run.ts';
 import { available } from '../core/hunter/progress.ts';
-import { buildsOn, mayPick } from '../core/hunter/build.ts';
 import { enter } from './motion.ts';
 import { closeWindow, openWindow, trapTab } from './ui.js';
 
@@ -139,8 +138,7 @@ export function register(app) {
     const sy = app.api.sync, d = sy.detail();
     if (role === 'gm') return { role, rooms, room: d.conn === 'creating' ? null : sy.room(), players: sy.remoteSheets().length };
     const h = store.active(), R = app.rules();
-    const path = !buildsOn(R) || !mayPick(R, 'player') ? 'closed' : h.build.path ? 'picked' : 'open';
-    return { role, rooms, points: available(h, R), path, room: d.joining ? null : sy.room(), joining: d.joining };
+    return { role, rooms, points: available(h, R), room: d.joining ? null : sy.room(), joining: d.joining };
   }
   /** The next steps as list items: a done step says so in words for a screen reader and with a mark for the eye. */
   const stepsHtml = f => nextSteps(f, app.rules()).map(s => `<li data-k="${s.key}"${s.done ? ' data-done' : ''}><span class="ob-mark" aria-hidden="true">${s.done ? '✓' : '○'}</span><span>${s.done ? '<span class="sr-only">Done: </span>' : ''}${esc(s.words)}</span></li>`).join('');

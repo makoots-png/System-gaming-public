@@ -101,7 +101,7 @@ function payAll(save: Save, locals: readonly { hid: string; rewards: Rewards }[]
   let s = save;
   const granted: { hid: string; g: Granted }[] = [];
   for (const { hid, rewards } of locals) {
-    const g = grant(s, hid, rewards, null, { ...day, vitals: 'sheet', from });
+    const g = grant(s, hid, rewards, { ...day, vitals: 'sheet', from });
     if (isRefused(g)) continue;
     s = g.save; granted.push({ hid, g });
   }

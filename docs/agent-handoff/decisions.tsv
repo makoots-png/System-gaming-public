@@ -791,3 +791,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T16:52Z	arch	write-leaks (pick D1) landed on lead-backlog; unit 6937 pass, browser 598 + 3 load reruns alone green; lint conflict with warn-v1 resolved (both kept)
 2026-11-24T17:22Z	ops	PR 111 (write-leaks D1) merged to main
 2026-11-24T17:59Z	arch	atsync (pick D4) and dodge-v2 landed on lead-backlog; D4 unit 6949 + 1 sim timeout alone green, browser 599 + 9 alone green; dv2 unit 6936 + 1 sim timeout alone green, browser 595 + 7 alone green; merged clean, typecheck, lint, deps green
+2026-11-24T18:13Z	ops	PR 112 (dodge-v2 + atsync D4) merged to main
+2026-11-24T19:53Z	arch	fight-rest (A3) and r1-paths (R1) landed on lead-backlog; A3 unit 6978, browser 604 + 6 alone green; R1 unit 6925, browser 596 + 10 alone (1 real look.e2e fix) green; warn.e2e conflict kept lead's plain hunter

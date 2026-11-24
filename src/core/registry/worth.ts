@@ -11,12 +11,11 @@
 import { RANKS } from '../rules.ts';
 import type { Rank } from '../rules.ts';
 import type { StatKey } from '../stats.ts';
-import { kitGear, monsterSheet, monsterStats, pointsAt, sheetOf, split } from '../hunter/derive.ts';
+import { kitGear, monsterSheet, monsterStats, pointsAt, referenceBonus, sheetOf, split } from '../hunter/derive.ts';
 import type { Kit, Sheet } from '../hunter/derive.ts';
 import type { Stats } from '../stats.ts';
 import { average, NO_KIT } from '../formula.ts';
 import type { Formula, Scope } from '../formula.ts';
-import { TIER_BUDGET } from './paths.ts';
 import { SKILL_ABILITIES } from './abilities.ts';
 import type { SkillRules } from './abilities.ts';
 import { defaultTicks, formulaOf, KINDS, kindDefaults, recommended } from './ability-kinds.ts';
@@ -44,8 +43,8 @@ const BUILDS: { readonly [B in RefBuild]: { readonly main: StatKey; readonly sec
 export const BUILD_OF: { readonly [K in AbilityKind]: RefBuild } = { strike: 'bruiser', shot: 'speed', blast: 'cannon', curse: 'cannon', support: 'support' };
 /** A paper build at `rank`: the level the rank starts at, its points split two to one, its perk points on its main stat. */
 export function referenceBody(build: RefBuild, rank: Rank, R: WorthRules): { readonly stats: Stats; readonly sheet: Sheet } {
-  const b = BUILDS[build], level = R.rankLevels[rank], perks = TIER_BUDGET.slice(0, RANKS.indexOf(rank) + 1).reduce((s, v) => s + v, 0);
-  const base = split(b.main, b.second, pointsAt(level, R), R), stats = { ...base, [b.main]: base[b.main] + perks };
+  const b = BUILDS[build], level = R.rankLevels[rank], bonus = referenceBonus(rank);
+  const base = split(b.main, b.second, pointsAt(level, R), R), stats = { ...base, [b.main]: base[b.main] + bonus };
   return { stats, sheet: sheetOf({ stats, level, gear: kitGear(b.kit, R), perks: {} }, R) };
 }
 /** What a use by paper build `build` reads at `rank`: the build on a same-rank normal brute, with no kit snapshot (no stacks, full HP). */

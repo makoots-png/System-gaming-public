@@ -505,3 +505,47 @@ describe('a fight\'s end is remembered', () => {
     expect(inbox[0]).toMatchObject({ kind: 'fight', outcome: 'ended', up: true, allies: 1, foes: 1, gate: den('detected').name, names: 'Goblin' });
   });
 });
+
+describe('post-fight fatigue recovery on local and remote sheets (A3)', () => {
+  const REST = RULES.fight.fightRest;
+  const postedVitals = (s: Save) => (s.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' && e.letter.event.type === 'vitals' ? [e.letter.event] : []));
+
+  test('ending a running fight lowers local fatigue atomically, queues one vitals update for a fatigued remote hunter, and stays idempotent across reload', () => {
+    const p = bleedingKai();
+    write(p, { type: 'adjust', id: id('c1'), fatigue: 70 });
+    write(p, { type: 'adjust', id: id('c2'), fatigue: 80 });
+    expect([p.save.hunters[0]!.fatigue, postedVitals(p.save)[0]!.payload.fatigue]).toEqual([70, 80]);
+
+    write(p, { type: 'end' });
+    expect(p.save.fight?.phase).toBe('ended');
+    expect(p.save.hunters[0]!.fatigue).toBe(70 - REST);
+    expect(postedVitals(p.save)).toHaveLength(1);
+    expect(postedVitals(p.save)[0]!.payload.fatigue).toBe(80 - REST);
+
+    // Reloading an ended fight and clearing it never applies fightRest a second time
+    reload(p);
+    expect(p.save.hunters[0]!.fatigue).toBe(70 - REST);
+    expect(reduce(p.save.fight, { type: 'end' }, ctxOf(p.save)).effects).toEqual([{ type: 'refused', reason: 'notNow' }]);
+    write(p, { type: 'clear' });
+    expect(p.save.fight).toBeNull();
+    expect(p.save.hunters[0]!.fatigue).toBe(70 - REST);
+  });
+
+  test('a remote hunter at 0 fatigue queues no extra vitals on fight end, and a dead hunter recovers no fatigue', () => {
+    const p = bleedingKai();
+    p.save = { ...p.save, settings: { ...p.save.settings, sync: { ...p.save.settings.sync, outbox: [] } } };
+    write(p, { type: 'adjust', id: id('c1'), hp: -9999, fatigue: 70 });
+    p.save = { ...p.save, settings: { ...p.save.settings, sync: { ...p.save.settings.sync, outbox: [] } } };
+    write(p, { type: 'end' });
+    expect(p.save.hunters[0]!.fatigue).toBe(70);
+    expect(postedVitals(p.save)).toEqual([]);
+  });
+
+  test('a hunter who collapsed during the fight lowers fatigue by fightRest on fight end while staying Exhausted', () => {
+    const p = bleedingKai();
+    write(p, { type: 'adjust', id: id('c1'), fatigue: 999 });
+    expect([p.save.hunters[0]!.fatigue, p.save.hunters[0]!.collapsed]).toEqual([RULES.fight.fatigueBase, true]);
+    write(p, { type: 'end' });
+    expect([p.save.hunters[0]!.fatigue, p.save.hunters[0]!.collapsed]).toEqual([RULES.fight.fatigueBase - REST, true]);
+  });
+});

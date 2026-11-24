@@ -350,7 +350,7 @@ describe('the revive debt machine: every state against every event, three-way sp
     const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 
     // clear reward: 3-way gold split (200 -> 100 debt, 50 kept, 50 lost) and 0.25x XP (48 -> 12)
-    const partial = ok(grant(withDebt(950), H, { ...newRewards(), gold: 200, xp: 48 }, null, { ...DAY, from: 'clear' }));
+    const partial = ok(grant(withDebt(950), H, { ...newRewards(), gold: 200, xp: 48 }, { ...DAY, from: 'clear' }));
     expect([partial.save.hunters[0]!.gold, partial.save.hunters[0]!.xp, partial.save.hunters[0]!.debt, partial.save.hunters[0]!.reviveLeft]).toEqual([60, 12, 850, 'none']);
     expect(partial.debtPaid).toEqual({ total: 200, paid: 100, burn: 50, kept: 50, left: 850 });
     expect(partial.debtXp).toEqual({ base: 48, xp: 12, rate: 0.25, left: 850 });
@@ -364,7 +364,7 @@ describe('the revive debt machine: every state against every event, three-way sp
     });
 
     // solo clear: final payoff (debt 40 on 200 gold -> 40 debt, 20 proportional burn, 140 kept) finishes debt first, so full XP applies
-    const paidOff = ok(grant(withDebt(40), H, { ...newRewards(), gold: 200, xp: 60 }, null, { ...DAY, from: 'solo' }));
+    const paidOff = ok(grant(withDebt(40), H, { ...newRewards(), gold: 200, xp: 60 }, { ...DAY, from: 'solo' }));
     expect([paidOff.save.hunters[0]!.gold, paidOff.save.hunters[0]!.xp, paidOff.save.hunters[0]!.debt, paidOff.save.hunters[0]!.reviveLeft]).toEqual([150, 60, 0, 'none']);
     expect(paidOff.debtPaid).toEqual({ total: 200, paid: 40, burn: 20, kept: 140, left: 0 });
     expect(paidOff.debtXp).toBeNull();
@@ -375,7 +375,7 @@ describe('the revive debt machine: every state against every event, three-way sp
 
     // non-clear rewards leave gold untouched, but still cut positive XP from every source (quest, feat, GM award, fight/story)
     for (const from of ['quest', 'feat', null, undefined] as const) {
-      const g = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60, xp: 40 }, null, { ...DAY, from }));
+      const g = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60, xp: 40 }, { ...DAY, from }));
       expect([g.save.hunters[0]!.gold, g.save.hunters[0]!.xp, g.save.hunters[0]!.debt, g.debtPaid], `from=${String(from)}`).toEqual([70, 10, 100, null]);
       expect(g.debtXp, `from=${String(from)}`).toEqual({ base: 40, xp: 10, rate: 0.25, left: 100 });
       expect(g.lines).toEqual(['XP is reduced to 25% while you owe 100 gold: +10 XP (from 40 XP).', '+60 gold']);
@@ -383,19 +383,19 @@ describe('the revive debt machine: every state against every event, three-way sp
     }
 
     // XP rounding to 0 (rate 0 or tiny XP) still reports the reduction line without adding XP
-    const zeroXp = ok(grant(withDebt(100), H, { ...newRewards(), xp: 1 }, null, { ...DAY, from: 'quest' }));
+    const zeroXp = ok(grant(withDebt(100), H, { ...newRewards(), xp: 1 }, { ...DAY, from: 'quest' }));
     expect([zeroXp.save.hunters[0]!.xp, zeroXp.debtXp]).toEqual([0, { base: 1, xp: 0, rate: 0.25, left: 100 }]);
     expect(zeroXp.lines).toEqual(['XP is reduced to 25% while you owe 100 gold: +0 XP (from 1 XP).']);
 
     // negative XP is never reduced while in debt
-    const negXp = ok(grant(withDebt(100, 10, 50), H, { ...newRewards(), xp: -20 }, null, { ...DAY, from: null }));
+    const negXp = ok(grant(withDebt(100, 10, 50), H, { ...newRewards(), xp: -20 }, { ...DAY, from: null }));
     expect([negXp.save.hunters[0]!.xp, negXp.debtXp]).toEqual([30, null]);
     expect(negXp.lines).toEqual(['Loses 20 XP']);
 
     // level-up near threshold (level 1 needs 100 XP): 90 + 20 base would level at full XP, but 0.25x gives +5 (95, no level-up); 40 base gives +10 (level 2!)
-    const noLevel = ok(grant(withDebt(500, 10, 90), H, { ...newRewards(), xp: 20 }, null, { ...DAY, from: 'quest' }));
+    const noLevel = ok(grant(withDebt(500, 10, 90), H, { ...newRewards(), xp: 20 }, { ...DAY, from: 'quest' }));
     expect([noLevel.save.hunters[0]!.level, noLevel.save.hunters[0]!.xp, noLevel.levelup]).toEqual([1, 95, null]);
-    const leveled = ok(grant(withDebt(500, 10, 90), H, { ...newRewards(), xp: 40 }, null, { ...DAY, from: 'quest' }));
+    const leveled = ok(grant(withDebt(500, 10, 90), H, { ...newRewards(), xp: 40 }, { ...DAY, from: 'quest' }));
     expect([leveled.save.hunters[0]!.level, leveled.save.hunters[0]!.xp, leveled.levelup?.to]).toEqual([2, 0, 2]);
 
     // trade and shop sell leave debt untouched
@@ -409,9 +409,9 @@ describe('the revive debt machine: every state against every event, three-way sp
     // shop-borrowed debt pays off through the exact same gate clear split and 0.25x XP rule
     const borrowed = ok(buy({ ...withDebt(0, 10, 0).hunters[0]!, reviveLeft: 'free' as const }, parseItem({ name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', value: 67 })!, iid('i2'), RULES));
     expect([borrowed.gold, borrowed.debt, borrowed.reviveLeft]).toEqual([0, 57, 'free']);
-    const afterClear1 = ok(grant({ ...base0, hunters: [borrowed] }, H, { ...newRewards(), gold: 100, xp: 40 }, null, { ...DAY, from: 'clear' }));
+    const afterClear1 = ok(grant({ ...base0, hunters: [borrowed] }, H, { ...newRewards(), gold: 100, xp: 40 }, { ...DAY, from: 'clear' }));
     expect([afterClear1.save.hunters[0]!.gold, afterClear1.save.hunters[0]!.debt, afterClear1.save.hunters[0]!.xp, afterClear1.save.hunters[0]!.reviveLeft]).toEqual([25, 7, 10, 'free']);
-    const afterClear2 = ok(grant(afterClear1.save, H, { ...newRewards(), gold: 100, xp: 40 }, null, { ...DAY, from: 'clear' }));
+    const afterClear2 = ok(grant(afterClear1.save, H, { ...newRewards(), gold: 100, xp: 40 }, { ...DAY, from: 'clear' }));
     expect([afterClear2.save.hunters[0]!.gold, afterClear2.save.hunters[0]!.debt, afterClear2.save.hunters[0]!.xp, afterClear2.save.hunters[0]!.reviveLeft]).toEqual([114, 0, 50, 'free']);
   });
 

@@ -230,7 +230,7 @@ test('penalty window, quest failed without Rewards heading, and GM EMERGENCY QUE
   await answerWindow(gm, 'EMERGENCY QUEST');
 });
 
-test('gate break (GM Dungeon Break and player Gate Break), room gone, GM key lost, and GM respec confirm', async ({ device }) => {
+test('gate break (GM Dungeon Break and player Gate Break) and room gone', async ({ device }) => {
   const { page: gm } = await device('gm-room', { viewport: PHONE, blockServiceWorker: true });
   await onboardGM(gm);
   const code = await createRoom(gm);
@@ -240,28 +240,7 @@ test('gate break (GM Dungeon Break and player Gate Break), room gone, GM key los
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
   await dismissAll(player, 4);
 
-  // 1. GM respec from Build menu asks for confirmation before clearing path
-  await go(gm, 'gm');
-  const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
-  await expect(card).toHaveCount(1);
-  await card.locator('[data-hbuild]').tap();
-  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Set path: Vanguard' }).tap();
-  await expect.poll(async () => (await activeHunter(player)).build.path).toBe('vanguard');
-
-  await card.locator('[data-hbuild]').tap();
-  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Respec (clear path and perks)' }).tap();
-  await expectVariant1(gm, PHONE.width);
-  await expect(gm.locator('.sys-overlay.show .n-big')).toHaveText('Respec Kai Test?');
-  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Cancel' }).tap();
-  expect((await activeHunter(player)).build.path, 'Cancel keeps the hunter path').toBe('vanguard');
-
-  await card.locator('[data-hbuild]').tap();
-  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Respec (clear path and perks)' }).tap();
-  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Respec hunter' }).tap();
-  await expect.poll(async () => (await activeHunter(player)).build.path).toBeNull();
-  await dismissAll(player, 6);
-
-  // 2. Gate break: GM advances day past breakDay -> GM sees Dungeon Break (with Start fight + Close), player sees Gate Break
+  // 1. Gate break: GM advances day past breakDay -> GM sees Dungeon Break (with Start fight + Close), player sees Gate Break
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.doc('world')?.gates?.length ?? 0), { timeout: 30_000 }).toBeGreaterThan(0);
   await go(gm, 'gates');
   await gm.evaluate(() => hunterApp.api.gates.advanceDay(10));

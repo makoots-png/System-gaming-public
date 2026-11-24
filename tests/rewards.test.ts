@@ -202,9 +202,9 @@ describe('a reward in words', () => {
       'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
   });
-  test('the reward window says what was acquired, with a build change after the items', () => {
-    expect(grantLines(RULES, { ...FULL, xp: 1500 }, { build: 'Path: Vanguard' })).toEqual([
-      '+1,500 XP', 'Loses 40 gold', '+15 mana crystal', '+2 ability points', 'Item acquired: Health Potion (E) ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
+  test('the reward window says what was acquired', () => {
+    expect(grantLines(RULES, { ...FULL, xp: 1500 })).toEqual([
+      '+1,500 XP', 'Loses 40 gold', '+15 mana crystal', '+2 ability points', 'Item acquired: Health Potion (E) ×2', 'Title acquired: Gatebreaker', 'Job: Ranger',
       'Skill acquired: Slash', 'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
     expect(grantLines(RULES, { ...newRewards(), points: 1, statuses: [{ key: statusKey('hasted'), rounds: 1 }] })).toEqual(['+1 ability point', 'Status: Hasted (1 round)']);
@@ -215,7 +215,7 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
   const AT = '2026-11-14T12:00:00.000Z';
   const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
   const given = (save: Save, r: Rewards, vitals: 'sheet' | 'fight' = 'sheet'): Granted => {
-    const g = grant(save, 'h1', r, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals });
+    const g = grant(save, 'h1', r, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals });
     if (isRefused(g)) throw new Error(g.why);
     return g;
   };
@@ -318,7 +318,7 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
   });
 
   test('a hunter that is not there is refused', () => {
-    expect(grant(fresh(), 'h9', FULL, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
+    expect(grant(fresh(), 'h9', FULL, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
   });
 });
 
@@ -326,7 +326,7 @@ describe('a cost a reward takes away (a story\'s chapter, stories ruling 2)', ()
   const AT = '2026-11-19T12:00:00.000Z';
   const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
   const given = (save: Save, r: Rewards): Granted => {
-    const g = grant(save, 'h1', r, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' });
+    const g = grant(save, 'h1', r, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' });
     if (isRefused(g)) throw new Error(g.why);
     return g;
   };
@@ -399,7 +399,7 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
     if (isRefused(u)) throw new Error(u.why);
     expect([u.hunter.life, u.hunter.items.some(i => i.revive)]).toEqual([{ at: 'up', hp: 1 }, false]);
   };
-  const granted = (s: Save, r: Rewards): Save => { const g = grant(s, 'h1', r, null, DAY); if (isRefused(g)) throw new Error(g.why); return g.save; };
+  const granted = (s: Save, r: Rewards): Save => { const g = grant(s, 'h1', r, DAY); if (isRefused(g)) throw new Error(g.why); return g.save; };
 
   test('read by the one reader every reward goes through, it keeps its revive', () => {
     expect(parseRewards(copy(WITH))!.items).toEqual([CRYSTAL]);

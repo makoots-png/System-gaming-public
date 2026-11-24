@@ -50,7 +50,7 @@ const id = combatantId;
 const stats = (o: Partial<Stats> = {}): Stats => ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
 const hunter = (o: Partial<RowHunter> = {}): RowHunter => ({
   id: 'h1', name: 'Brakk', stats: stats(), level: 1, rank: 'E', life: { at: 'up', hp: 30 }, mana: 5, fatigue: 0, penalty: null,
-  hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, build: { path: null, picks: [] }, skills: [],
+  hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, skills: [],
   conditions: [], ...o,
 });
 const skill = (kind: AbilityKind, name: string): Ability => abilityOf(kind, { id: abilityId(name.toLowerCase().replace(/ /g, '-')), name }, RULES);

@@ -234,6 +234,18 @@ describe('what the GM\'s fight sends a player\'s phone', () => {
     expect(p.toasts).toEqual(['Bleeding: 2d6 physical damage a round · 2 rounds']);
   });
 
+  test('a vitals update that lowers a living hunter\'s fatigue toasts the recovery, and notes Exhausted when collapsed stays latched', () => {
+    const p = phone({ sheet: { fatigue: 80 } });
+    p.receive(1, 'vitals', { ...VITALS, fatigue: 25, statuses: [] });
+    expect(p.hunter.fatigue).toBe(25);
+    expect(p.toasts).toEqual(['You recovered 55 fatigue.']);
+
+    const exhausted = phone({ sheet: { fatigue: 100, collapsed: true } });
+    exhausted.receive(1, 'vitals', { ...VITALS, fatigue: 45, statuses: [] });
+    expect([exhausted.hunter.fatigue, exhausted.hunter.collapsed]).toEqual([45, true]);
+    expect(exhausted.toasts).toEqual(['You recovered 55 fatigue. You are still Exhausted until you rest or clear a gate.']);
+  });
+
   test('a board change of mana reaches the hunter as mana, and HP and fatigue stay', () => {
     const p = phone(), before = p.hunter;
     p.receive(1, 'hp', { to: ['d-player1:h1'], hp: 0, mana: -4, fatigue: 0 });

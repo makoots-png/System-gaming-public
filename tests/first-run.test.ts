@@ -6,16 +6,15 @@ import { room } from './fixtures/ids.ts';
 
 const CODE = room('ABC234');
 const player = (o: Partial<Extract<FirstRunFacts, { role: 'player' }>> = {}): FirstRunFacts =>
-  ({ role: 'player', points: 5, path: 'open', rooms: true, room: null, joining: null, ...o });
+  ({ role: 'player', points: 5, rooms: true, room: null, joining: null, ...o });
 const gm = (o: Partial<Extract<FirstRunFacts, { role: 'gm' }>> = {}): FirstRunFacts =>
   ({ role: 'gm', rooms: true, room: null, players: 0, ...o });
 const step = (facts: FirstRunFacts, key: string) => nextSteps(facts, RULES).find(s => s.key === key);
 
 describe('a new player\'s next steps', () => {
-  test('a new player is told to spend points, pick a path and join the GM\'s room, in that order, none done', () => {
+  test('a new player is told to spend points and join the GM\'s room, in that order, none done', () => {
     expect(nextSteps(player(), RULES)).toEqual([
       { key: 'points', done: false, words: 'Spend your 5 ability points. On the Status tab, tap + on a stat, then tap Confirm allocation.' },
-      { key: 'path', done: false, words: 'Pick a path in the Build panel on the Status tab.' },
       { key: 'join', done: false, words: 'Join your GM\'s room. Ask the GM for the room code or an invite link.' },
     ]);
   });
@@ -26,12 +25,8 @@ describe('a new player\'s next steps', () => {
   test('the points a level gives are the rules\' own', () => {
     expect(nextSteps(player({ points: 0 }), { ...RULES, pointsPerLevel: 4 })[0]?.words).toBe('Ability points spent. Each level gives 4 more.');
   });
-  test('a picked path is done; with builds off or picks closed there is no path step', () => {
-    expect(step(player({ path: 'picked' }), 'path')).toEqual({ key: 'path', done: true, words: 'Path picked.' });
-    expect(nextSteps(player({ path: 'closed' }), RULES).map(s => s.key)).toEqual(['points', 'join']);
-  });
   test('with no room server there is no join step', () => {
-    expect(nextSteps(player({ rooms: false }), RULES).map(s => s.key)).toEqual(['points', 'path']);
+    expect(nextSteps(player({ rooms: false }), RULES).map(s => s.key)).toEqual(['points']);
   });
   test('joining names the room and is not done yet; in the room the step is done', () => {
     expect(step(player({ joining: CODE }), 'join')).toEqual({ key: 'join', done: false, words: 'Joining room ABC234.' });

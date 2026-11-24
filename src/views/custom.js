@@ -1,19 +1,16 @@
 // custom.js: player customization. Device prefs (own localStorage key, never in a save/sheet/event; written by
 // store.setPrefs), hunter identity (emblem + color on the sheet, hunter/identity.ts), equipment loadouts
-// (hunter/loadouts.ts), build paths (hunter/build.ts over the rules.ts table, GM-overridable). This file draws and taps.
+// (hunter/loadouts.ts), and GM room-rule switches (hunter/build.ts). This file draws and taps.
 import { iconDef, iconsOf, isIconKey } from '../core/registry/icons.ts';
-import { HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS, BONUS_HUNDREDTHS, BONUS_KEYS, BONUS_LABELS, pathOf, perkOf, tiersOpen } from '../edge/rules.ts';
+import { HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS } from '../edge/rules.ts';
 import * as ui from './ui.js';
 import { oneOf } from '../core/one-of.ts';
-import { available, raiseMany } from '../core/hunter/progress.ts';
-import { atHunter, atSettings, refuse } from '../core/save-step.ts';
+import { atHunter, atSettings } from '../core/save-step.ts';
 import { withSound } from '../core/settings.ts';
 import { withBadge } from '../core/hunter/identity.ts';
 import { LOADOUT_WORDS, fits, loadoutCap, overwriteLoadout, removeLoadout, renameLoadout, saveLoadout, swapLoadout } from '../core/hunter/loadouts.ts';
-import { choosePath as pathChosen, mayPick, perkText, pickPerk, respec as respecHunter, respecBlock as respecWhy, respecCost as respecGold, buildRuleSet, buildRulesReset, keystoneSwitched, roomRulesOf } from '../core/hunter/build.ts';
+import { keystoneSwitched, roomRulesOf } from '../core/hunter/build.ts';
 import { KEYSTONE_SWITCH_WORDS } from '../core/rules-text.ts';
-import { autoSpend } from '../core/hunter/sheet.ts';
-import { newRewards } from '../core/rewards.ts';
 
 const { esc } = ui;
 /** @param {unknown} v @returns {v is Record<string, unknown>} */
@@ -40,21 +37,12 @@ const STYLE = `
 .lo-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lo-chip small{color:var(--muted);font-weight:400;flex:none}.lo-chip[aria-pressed=true]{border-color:var(--cyan);color:var(--cyan)}
 .lo-row .lo-more{min-width:36px}
-.lo-acts,.bd-acts{display:flex;flex-wrap:wrap;gap:8px}.bd-acts{margin-top:8px}.bd-acts:empty{display:none}
-.lo-pv,.bd-pv{list-style:none;margin:0;padding:0;font-size:14px}.lo-pv li,.bd-pv li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid rgba(27,74,110,.5)}
-.lo-pv .bad{color:#ff8a96}.bd-pv .up{color:var(--green)}
-.bd-paths{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-.bd-paths button{min-height:64px;text-align:left;display:flex;flex-direction:column;gap:2px;padding:8px 10px}.bd-paths small{font-weight:400;color:var(--muted);letter-spacing:0}
-.bd-tiers{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:8px}
-.bd-tier{display:grid;grid-template-columns:52px 1fr 1fr;gap:6px;align-items:stretch}
-.bd-tier .bd-r{display:flex;flex-direction:column;justify-content:center;font-size:12px;color:var(--muted)}
-.bd-tier button{min-height:40px;padding:4px 6px;font-size:13px}.bd-tier button[aria-pressed=true]{border-color:var(--cyan);color:var(--cyan);background:rgba(77,216,255,.16)}
-.bd-tier.locked button{border-style:dashed}.bd-tier button[aria-pressed=true]:disabled{opacity:1}
+.lo-acts{display:flex;flex-wrap:wrap;gap:8px}
+.lo-pv{list-style:none;margin:0;padding:0;font-size:14px}.lo-pv li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid rgba(27,74,110,.5)}
+.lo-pv .bad{color:#ff8a96}
 .cz-grid [data-pc=""] .cz-sw{border:2px dashed var(--ice)}
-.bd-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-.bd-off{color:var(--gold)}
 .id-del .emb-btn{margin-right:auto;color:var(--ice);border-color:var(--edge);display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 6px}
-${TOUCH}{.lo-acts button,.bd-acts button,.lo-row .lo-chip,.bd-tier button,.id-del .emb-btn,.sys-actions button{min-height:44px}
+${TOUCH}{.lo-acts button,.lo-row .lo-chip,.id-del .emb-btn,.sys-actions button{min-height:44px}
   .lo-row .lo-more{min-width:44px;min-height:44px}.cz-check{min-height:44px}}
 `;
 
@@ -239,162 +227,29 @@ export function register(app) {
     },
   });
 
-  // ── build paths ──────────────────────────────────────────────────────────
-  const B = () => rules().build;
-  const on = () => B().enabled !== false;
-  const canPick = () => mayPick(rules(), role());
-  const respecCost = h => respecGold(h, rules());
-  const role = () => (app.isGM() ? 'gm' : 'player');
-  // why a player can't buy a respec right now ('' = allowed). GM mode never asks.
-  const RESPEC_WHY = {
-    'no-path': () => 'There is no path to respec.', 'in-fight': () => 'You cannot respec during a fight.',
-    short: h => `Respec costs ${ui.fmt(respecCost(h))} gold. You have ${ui.fmt(h.gold)}.`,
-  };
-  const respecBlock = h => { const why = respecWhy(h, rules(), inFight(h.id)); return why ? RESPEC_WHY[why](h) : ''; };
-  /** What a refused respec of hunter `h` says (`ui.wrote`'s words): `RESPEC_WHY` for `h` as it is. */
-  const respecWords = h => Object.fromEntries(Object.entries(RESPEC_WHY).map(([why, say]) => [why, say(h)]));
-  /** Shared confirmation for every GM respec site (Build panel, local Build menu, and remote Build menu). */
-  const confirmRespec = h => ui.confirm({
-    title: h && h.name ? `Respec ${h.name}?` : 'Respec this hunter?',
-    body: 'Path and perks are cleared. Ability points are not refunded.',
-    danger: true,
-    confirmLabel: 'Respec hunter',
-  });
-  // auto-place unspent ability points by the path's alloc weights (autoSpend); points stay undoable until confirmed
-  const allocPlan = h => { const p = pathOf(rules(), h.build.path); return p ? autoSpend(h, p, rules()) : {}; };
-  const BD = A().build = {
-    setPath: (hid, id, force = false) => store.apply('build', atHunter(hid, h => pathChosen(h, id, rules(), force))),
-    pick: (hid, tier, choice) => store.apply('build', atHunter(hid, h => pickPerk(h, tier, choice, rules(), role()))),
-    // GM mode: free. Player: pays respecCost in the same step; refused in a fight or when short of gold.
-    respec: hid => store.apply('build', atHunter(hid, h => respecHunter(h, rules(), role(), inFight(hid)))),
-    // GM board line: path name + active perks from a sheet (a player's sheet is read by the room's parser; caller escapes)
-    label(h) {
-      const b = h.build, p = pathOf(rules(), b.path); if (!p) return '';
-      const pk = b.picks, bad = pk.findIndex(x => x !== 0 && x !== 1);
-      const n = Math.min(bad < 0 ? pk.length : bad, tiersOpen(p, h.rank));
-      return `${p.name} ${n}/${p.tiers.length}`;
-    },
-    auto(hid) {
-      const h = store.hunter(hid); if (!h) return refuse('no-hunter'); const plan = allocPlan(h);
-      return store.apply('stat', atHunter(hid, x => raiseMany(x, plan, rules())));
-    },
-    // GM board: local hunter -> applied here; remote sheet -> award event (old players ignore the unknown key)
-    async gmMenu(who, sheet) {
-      const R = rules(), h = who.kind === 'remote' ? sheet : store.hunter(who.hunterId); if (!h) return;
-      // the next open tier's two perks (same checks as build.pick / reward; a player's sheet is read by the room's parser)
-      const b = h.build, p = pathOf(R, b.path), pk = b.picks, t = pk.length;
-      const next = on() && p && pk.every(x => x === 0 || x === 1) && t < tiersOpen(p, h.rank) ? t : -1;
-      const v = await ui.system({ tag: '! GM', title: `Build: ${h.name}`, layout: 'list', kind: 'info',
-        body: `Path: ${(p || {}).name || 'none'}`,
-        actions: [...(next < 0 ? [] : [0, 1].map(c => ({ label: `Rank ${RANKS[next]}: ${perkText(perkOf(p, next, c))}`, value: { tier: next, pick: c } }))),
-          ...Object.keys(R.paths || {}).filter(id => pathOf(R, id)).map(id => ({ label: `Set path: ${R.paths[id].name || id}`, value: id })),
-          { label: 'Respec (clear path and perks)', value: 'respec', danger: true }, { label: 'Cancel', value: null, cancel: true }] });
-      if (!v) return;
-      if (v === 'respec' && !(await confirmRespec(h))) return;
-      if (who.kind === 'remote') {
-        /** @type {import('../core/protocol.ts').BuildChange} */
-        const build = isObj(v) ? { tier: Number(v.tier), pick: v.pick === 1 ? 1 : 0 } : v === 'respec' ? 'respec' : { path: String(v) };
-        const ok = A().sync.post(A().sync.event('award', { to: [who.remote], rewards: { ...newRewards(), build } })).ok;
-        ui.toast('GM', ok ? 'Build change sent.' : 'Not in a room. Nothing was sent.', { kind: ok ? 'info' : 'warning' });
-      } else {
-        const h = store.hunter(who.hunterId);
-        ui.wrote('Build', isObj(v) ? BD.pick(who.hunterId, Number(v.tier), v.pick === 1 ? 1 : 0) : v === 'respec' ? BD.respec(who.hunterId) : BD.setPath(who.hunterId, v, true), h ? respecWords(h) : {});
-      }
-    },
-    setRule(patch) { // GM: enabled / playerPick; published in the room's 'rules' doc, which players' rules follow
-      ui.wrote('GM', store.apply('gm-rules', s => buildRuleSet(s, patch)));
-    },
-    resetRules() { ui.wrote('GM', store.apply('gm-rules', buildRulesReset)); },
-  };
-  // the room's rules doc follows the GM's switches however they changed (app.api.sync.publish): the build's and the
-  // personal gates' (build.ts `roomRulesOf`); a player's phone in the room plays by it through rules()
-  // (src/edge/rules.ts), and its own switches are never written by the room
+  // ── room rules & GM Keystones switch ─────────────────────────────────────
+  // the room's rules doc follows the GM's switches however they changed (app.api.sync.publish): personal gates,
+  // feats, trade, keystones, economy (build.ts `roomRulesOf`); a player's phone in the room plays by it through
+  // rules() (src/edge/rules.ts), and its own switches are never written by the room
   A().sync.publish('rules', () => roomRulesOf(rules()));
 
-  const deltaRows = (h, bonus) => {
-    const d = A().hunter.sheet(h);
-    return BONUS_KEYS.filter(k => bonus[k]).map(k => { const cur = k in d.stats ? d.stats[k] : d.sheet[k], add = Math.trunc(bonus[k]) / (BONUS_HUNDREDTHS.includes(k) ? 100 : 1); return `<li><span>${BONUS_LABELS[k]}</span><span>${esc(cur)} → <b class="up">${esc(cur + add)}</b></span></li>`; }).join('');
-  };
-  async function choosePath(hid, id) {
-    const p = pathOf(rules(), id); if (!p) return;
-    const rows = (p.tiers || []).map((t, i) => `<li><span>Rank ${RANKS[i] || '?'}</span><span>${esc(perkText(perkOf(p, i, 0)))} <i>or</i> ${esc(perkText(perkOf(p, i, 1)))}</span></li>`).join('');
-    const ok = await ui.system({ tag: '! Path', title: p.name || id, kind: 'info', body: 'You pick one perk at each rank. Your path stays until you respec, which costs gold.', html: `<ul class="bd-pv">${rows}</ul>`,
-      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Choose path', value: true, primary: true }] });
-    if (ok === true) ui.wrote('Build', BD.setPath(hid, id));
-  }
-  async function confirmPick(hid, tier, choice) {
-    const h = store.hunter(hid), p = pathOf(rules(), h.build.path), b = perkOf(p, tier, choice);
-    const ok = await ui.system({ tag: '! Perk', title: perkText(b), kind: 'levelup', html: `<ul class="bd-pv">${deltaRows(h, b)}</ul>`, body: 'This choice stays until a respec.',
-      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Take perk', value: true, primary: true }] });
-    if (ok === true) ui.wrote('Build', BD.pick(hid, tier, choice));
-  }
-  async function buyRespec(hid) {
-    const h = store.hunter(hid); if (!h) return;
-    const why = respecBlock(h); if (why) return ui.toast('Build', why, { kind: 'warning' });
-    const cost = respecCost(h);
-    if (await ui.confirm({ title: `Respec for ${ui.fmt(cost)} gold?`, body: `You have ${ui.fmt(h.gold)} gold. Path and perks are cleared. Ability points are not refunded.`, danger: true, confirmLabel: `Respec for ${ui.fmt(cost)} gold` })) {
-      ui.wrote('Build', BD.respec(hid), respecWords(store.hunter(hid) || h));
-    }
-  }
-  async function confirmAuto(hid) {
-    const h = store.hunter(hid), plan = allocPlan(h); if (!Object.keys(plan).length) return;
-    const ok = await ui.system({ tag: '! Points', title: 'Auto-place ability points', kind: 'info', html: `<ul class="bd-pv">${deltaRows(h, plan)}</ul>`, body: 'You can still undo with the minus button until you confirm.',
-      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Place ability points', value: true, primary: true }] });
-    if (ok === true) ui.wrote('Points', BD.auto(hid));
-  }
   app.registerPanel({
-    view: 'status', id: 'build', order: 13, title: 'Build', jump: 'Build',
+    view: 'status', id: 'build', order: 13, title: KEYSTONE_SWITCH_WORDS.label, gmOnly: true,
     mount(el) {
-      el.innerHTML = '<div data-bd></div><div class="bd-acts" data-bdgm></div><p class="cz-note" data-ksgm-hint hidden></p>';
+      el.innerHTML = '<div class="lo-acts" data-bdgm></div><p class="cz-note" data-ksgm-hint hidden></p>';
       el.addEventListener('click', e => {
-        const b = e.target.closest('button'); if (!b) return; const d = b.dataset, hid = store.active().id;
-        if (d.bdpath) return choosePath(hid, d.bdpath);
-        if (d.bdtier) return confirmPick(hid, Number(d.bdtier), Number(d.bdc));
-        if ('bdauto' in d) return confirmAuto(hid);
-        if ('bdbuy' in d) return buyRespec(hid);
-        if (!app.isGM()) return;
-        if ('bdset' in d) return BD.gmMenu({ kind: 'local', hunterId: hid }, null);
-        if ('bdrespec' in d) return confirmRespec(store.hunter(hid)).then(ok => ok && ui.wrote('Build', BD.respec(hid)));
-        if ('bdtoggle' in d) return BD.setRule({ enabled: !on() });
-        if ('bdpp' in d) return BD.setRule({ playerPick: B().playerPick === false });
-        if ('kstoggle' in d) { ui.wrote('GM', store.apply('gm-rules', s => keystoneSwitched(s, !rules().fight.keystone.on))); return; }
-        if ('bdreset' in d) return BD.resetRules();
+        const b = e.target.closest('button'); if (!b || !app.isGM()) return;
+        if ('kstoggle' in b.dataset) ui.wrote('GM', store.apply('gm-rules', s => keystoneSwitched(s, !rules().fight.keystone.on)));
       });
     },
     update(el) {
-      const h = store.active(), R = rules(), p = pathOf(R, h.build.path), gm = app.isGM(), open = tiersOpen(p, h.rank);
-      let html;
-      if (!on()) html = `<p class="cz-note bd-off">The GM turned builds off. Your saved path is still kept.</p>`;
-      else if (!p) html = `<p class="cz-note">Pick a path. Each rank unlocks one perk.</p>
-        <div class="bd-paths">${Object.keys(R.paths || {}).filter(id => pathOf(R, id)).map(id => `<button type="button" data-bdpath="${esc(id)}"${canPick() ? '' : ' disabled'}><span>${esc(R.paths[id].name || id)}</span>
-          <small>${esc(Object.keys(R.paths[id].alloc || {}).map(k => BONUS_LABELS[k] || k).join(' · '))}</small></button>`).join('')}</div>`;
-      else {
-        const next = h.build.picks.length, free = available(h, R);
-        html = `<div class="bd-head"><span>${badge(h, 'sm')}<b>${esc(p.name || h.build.path)}</b></span><span class="cz-note">${Math.min(next, open)}/${(p.tiers || []).length} perks</span></div>
-          <ol class="bd-tiers">${(p.tiers || []).map((t, i) => {
-            const got = h.build.picks[i], locked = i >= open, live = i === next && !locked && canPick();
-            return `<li class="bd-tier${locked ? ' locked' : ''}"><span class="bd-r">Rank ${RANKS[i] || '?'}${locked ? '<br>locked' : got !== undefined && i >= open ? '<br>inactive' : ''}</span>
-              ${[0, 1].map(c => `<button type="button" data-bdtier="${i}" data-bdc="${c}" aria-pressed="${got === c}"${live ? '' : ' disabled'}>${esc(perkText(perkOf(p, i, c)))}</button>`).join('')}</li>`;
-          }).join('')}</ol>
-          ${canPick() ? '' : '<p class="cz-note">The GM picks perks in this game.</p>'}
-          <div class="bd-acts">${free > 0 && Object.keys(allocPlan(h)).length ? `<button type="button" data-bdauto>Auto-place ${free} ability point${free === 1 ? '' : 's'}</button>` : ''}${
-            !gm && canPick() ? `<button type="button" data-bdbuy>Respec (${ui.fmt(respecCost(h))} gold)</button>` : ''}</div>`;
-      }
-      if (el._h !== html) { el._h = html; el.querySelector('[data-bd]').innerHTML = html; }
-      const ksOn = R.fight.keystone.on, KW = KEYSTONE_SWITCH_WORDS;
-      el.querySelector('[data-bdgm]').innerHTML = gm ? `<button type="button" data-bdset>Set path</button><button type="button" data-bdrespec class="danger"${h.build.path ? '' : ' disabled'}>Respec</button>
-        <button type="button" data-bdtoggle aria-pressed="${on()}">Build paths: ${on() ? 'On' : 'Off'}</button><button type="button" data-bdpp aria-pressed="${B().playerPick !== false}">Players choose perks: ${B().playerPick !== false ? 'Yes' : 'No'}</button>
-        <button type="button" data-kstoggle aria-pressed="${ksOn}">${esc(KW.label)}: ${ksOn ? KW.on : KW.off}</button>
-        <button type="button" data-bdreset>Reset build rules</button>` : '';
+      const gm = app.isGM(), ksOn = rules().fight.keystone.on, KW = KEYSTONE_SWITCH_WORDS;
+      el.querySelector('[data-bdgm]').innerHTML = gm
+        ? `<button type="button" data-kstoggle aria-pressed="${ksOn}">${esc(KW.label)}: ${ksOn ? KW.on : KW.off}</button>`
+        : '';
       const kh = el.querySelector('[data-ksgm-hint]');
       kh.hidden = !gm;
       kh.textContent = gm ? KW.hint : '';
     },
-  });
-  // the Path skill card's "Build" button lives in .panels, outside hunter.js's jump-chip listener
-  document.addEventListener('click', e => {
-    const b = e.target.closest('#view-status .panels [data-jump]'); if (!b) return;
-    const t = document.querySelector(`#view-status [data-panel="${CSS.escape(b.dataset.jump)}"]`);
-    if (t) t.scrollIntoView({ behavior: ui.reduced() ? 'auto' : 'smooth', block: 'start' });
   });
 }

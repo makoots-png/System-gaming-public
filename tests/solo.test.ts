@@ -272,7 +272,7 @@ describe('personal-gate clear rewards wait for the GM in a room and pay at once 
     expect(waitingIn(approved, ROOM)).toEqual([]);
     expect(pendingApproved(approved, rec.id, rec.rewards)).toEqual({ ok: false, why: 'answered' });
 
-    const paid = ok(grant(ran.save, H1, rec.rewards, null, { ...day, vitals: 'sheet' }));
+    const paid = ok(grant(ran.save, H1, rec.rewards, { ...day, vitals: 'sheet' }));
     const h = hunter(paid.save);
     expect([h.xp, h.gold, h.items.map(i => i.name)]).toEqual([63, 45, [SHOP_ITEMS[0]!.name]]);
   });

@@ -226,8 +226,6 @@ export function parseApiError(data: unknown): ParsedApiError {
 }
 
 // ── shared shapes ──
-/** A build change the GM sends: clear the path and perks, set a path, or pick the perk of the next open tier. */
-export type BuildChange = 'respec' | { path: string } | { tier: number; pick: 0 | 1 };
 /** A quest the GM issues to another phone. That phone gives it an id and the times it keeps. */
 export type QuestOffer = Pick<Quest, 'kind' | 'title' | 'desc' | 'objectives' | 'dueAt' | 'penaltyText' | 'secret'> & { rewards: Rewards; onFail: Rewards };
 export const SYSTEM_KINDS = ['info', 'quest', 'warning', 'penalty', 'levelup', 'arise'] as const;
@@ -271,16 +269,6 @@ const rewards = (v: unknown): Rewards => need(parseRewards(v));
 function givenBundle(v: unknown): GivenBundle {
   const o = obj(v), w = own(o, 'window');
   return { key: filled(BUNDLE_KEY_MAX)(own(o, 'key')), name: filled(BUNDLE_NAME)(own(o, 'name')), window: w === null || w === undefined ? null : need(parseWords(w)) };
-}
-function buildChange(v: unknown): BuildChange {
-  if (v === 'respec') return v;
-  const o = obj(v);
-  if (own(o, 'tier') !== undefined) {
-    const pick = own(o, 'pick');
-    return { tier: int(0, 99)(own(o, 'tier')), pick: pick === 0 || pick === 1 ? pick : refuse() };
-  }
-  const path = own(o, 'path');
-  return { path: typeof path === 'string' && WORD_RE.test(path) ? path : refuse() };
 }
 function objective(v: unknown): Objective {
   const o = obj(v), target = opt(own(o, 'target'), int(1, 99999), 1), count = parseObjectiveCount(own(o, 'count'));
@@ -330,7 +318,7 @@ export type EarnedBy = { from: RewardFrom; what: string };
  * `earned`: the reward waited for the GM's approval (hunter/pending.ts) and was earned so; the player's window says what
  * earned it.
  */
-export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards & { build?: BuildChange }; bundle?: GivenBundle; earned?: EarnedBy };
+export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards; bundle?: GivenBundle; earned?: EarnedBy };
 /**
  * Hunter `by` (`name`) earned `rewards` by itself (`from`, `what`): on a player's phone in a room the reward is not paid
  * but asked of the GM, whose phone keeps it waiting until the GM approves or refuses it (hunter/pending.ts). Sealed to
@@ -613,9 +601,9 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       title: filled(120)(own(o, 'title')), body: opt(own(o, 'body'), text(1000), ''), kind: opt(own(o, 'kind'), choiceOf(SYSTEM_KINDS), 'info') };
   } },
   award: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
-    const r = obj(own(o, 'rewards')), build = own(r, 'build'), given = own(o, 'bundle'), why = own(o, 'earned');
+    const r = obj(own(o, 'rewards')), given = own(o, 'bundle'), why = own(o, 'earned');
     return {
-      ...base(o), to: toList(own(o, 'to')), rewards: { ...rewards(r), ...(build === undefined ? {} : { build: buildChange(build) }) }, ...(given === undefined ? {} : { bundle: givenBundle(given) }),
+      ...base(o), to: toList(own(o, 'to')), rewards: rewards(r), ...(given === undefined ? {} : { bundle: givenBundle(given) }),
       ...(why === undefined ? {} : { earned: earned(obj(why)) }),
     };
   } },
@@ -931,14 +919,14 @@ export type CodexDoc = { at: string; entries: CodexDocEntry[] };
 /** How many entries the codex doc holds at most; the GM's phone builds it within this and `DOC_MAX` (bestiary.ts `codexDoc`). */
 export const CODEX_DOC_ENTRIES = 200;
 /**
- * The GM's rules a player's phone plays by in the room (src/core/hunter/build.ts `withRoomRules`): the build switches,
+ * The GM's rules a player's phone plays by in the room (src/core/hunter/build.ts `withRoomRules`):
  * the personal gates' switch, hours and share of the loot (`RULES.solo`), and the economy (each rule's reason in
  * economy design 7.1), so a GM's edit prices an item the same on every phone. Laid over the player's own rules, never
  * written to its save. `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it
- * reads as on, and so does one without `trade.on`, the GM's trading switch; one without `mythic.scripts` reads as off. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
+ * reads as on, and so does one without `trade.on`, the GM's trading switch; one without `mythic.scripts` reads as off.
+ * Legacy `build` keys on pre-R1 room docs are ignored cleanly. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
  */
 export type RoomRules = {
-  build: { enabled: boolean; playerPick: boolean };
   solo: { personal: boolean; hours: number; lootShare: number };
   feats: { on: boolean };
   /** The GM's trading switch (`RULES.trade`): a doc without it reads as on. */
@@ -1391,12 +1379,11 @@ function roomGuilds(v: unknown): Rules['guilds'] {
 }
 /** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and crystal/guilds (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
-  const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
+  const so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   const reviveDebtShare = rule('reviveDebtShare'), reviveDebtBurn = rule('reviveDebtBurn');
   if (reviveDebtShare + reviveDebtBurn > 1 + 1e-9) return refuse();
   return {
-    build: { enabled: bool(own(b, 'enabled')), playerPick: bool(own(b, 'playerPick')) },
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
     feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false },
     trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },

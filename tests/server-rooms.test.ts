@@ -746,7 +746,7 @@ describe('sheets', () => {
   const badDocs: [string, string, unknown][] = [
     ['a name the app does not publish', '_nope', { enabled: true, playerPick: true }],
     ['a name Object.prototype has', '_constructor', { enabled: true, playerPick: true }],
-    ['build switches that are not true or false', '_rules', { ...RULES_DOC, build: { enabled: 'yes', playerPick: true } }],
+    ['solo switch that is not true or false', '_rules', { ...RULES_DOC, solo: { ...RULES_DOC.solo, personal: 'yes' } }],
     ['the old build doc', '_build', { enabled: true, playerPick: true }],
     ['a running fight without its rows', '_fight', { id: 'e1', by: 'd-gm', active: true, ended: false, at: '', now: 0, currentId: null, ahead: [], grid: { w: 20, h: 14 }, log: [] }],
     ['the old encounter doc', '_encounter', { id: 'e1', active: false, ended: true, at: '' }],

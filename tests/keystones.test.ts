@@ -198,7 +198,7 @@ const AT = '2026-11-22T12:00:00.000Z';
 type Hunter = SheetHunter & KeystoneHunter;
 const hunter = (o: Partial<Hunter> = {}): Hunter => ({
   stats: built({}), level: 10, rank: 'D', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, build: { path: null, picks: [] }, skills: [], conditions: [], job: null, jobDone: null, ...o,
+  items: [], equipped: {}, skills: [], conditions: [], job: null, jobDone: null, ...o,
 });
 const keys = (h: Hunter): readonly KeystoneKey[] => keystonesOf(keystoneBasis(h), F);
 

@@ -32,7 +32,6 @@ const HUNTER: RowHunter = {
   level: 1, rank: 'E', life: { at: 'up', hp: 30 }, mana: 20, fatigue: 0,
   penalty: null, hpAdj: 0, manaAdj: 0, titleId: null,
   items: [], equipped: {}, skills: [], titles: [], conditions: [],
-  build: { path: null, picks: [] },
 };
 
 describe('mythic-phases-on adversarial probes', () => {

@@ -42,8 +42,9 @@ test('a write of the save reaches the next read: new overrides, a new status, th
   expect(rules().xpPerLevel).toBe(150);
   save.library = { statuses: { ...library(2), 'gm-new': { ...burning, label: 'Fresh' } } };
   expect(status('gm-new')?.label).toBe('Fresh');
-  room = { ...roomRulesOf(RULES), build: { enabled: false, playerPick: false }, solo: { personal: false, hours: 12, lootShare: RULES.solo.lootShare } };
-  expect([rules().build.enabled, rules().solo.hours]).toEqual([false, 12]);
+  const baseRoom = roomRulesOf(RULES);
+  room = { ...baseRoom, solo: { personal: false, hours: 12, lootShare: RULES.solo.lootShare } };
+  expect([rules().solo.personal, rules().solo.hours]).toEqual([false, 12]);
   room = { ...room, solo: { ...room.solo, hours: 6 } };
   expect(rules().solo.hours, 'the room\'s rules are read by value: a new doc of other hours is a change').toBe(6);
 });

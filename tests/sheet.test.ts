@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoSpend, buildOf, checkBonus, checksOf, explain, hunterSheet, setMaximum } from '../src/core/hunter/sheet.ts';
 import { newHunter } from '../src/core/save.ts';
-import type { SheetCondition, SheetHunter, SheetItem, SheetPath, SheetRules } from '../src/core/hunter/sheet.ts';
+import type { SheetCondition, SheetHunter, SheetItem, SheetRules } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { levelPoints } from '../src/core/hunter/progress.ts';
@@ -18,11 +18,10 @@ import { withKeystones } from './fixtures/keystone-rules.ts';
 const stats = (o: Partial<Stats> = {}): Stats => ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
 const hunter = (o: Partial<SheetHunter> = {}): SheetHunter => ({
   stats: stats(), level: 1, rank: 'E', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, build: { path: null, picks: [] }, skills: [], conditions: [], ...o,
+  items: [], equipped: {}, skills: [], conditions: [], ...o,
 });
 
-const STRIKER: SheetPath = { alloc: { agi: 2, str: 1 }, tiers: [[{ agi: 2 }, { hpMax: 20 }], [{ agi: 1, str: 1 }, { armor: 5 }]] };
-const R: SheetRules = { ...RULES, paths: { striker: STRIKER } };
+const R: SheetRules = RULES;
 
 const VEST: SheetItem = { id: 'vest', weight: 6, armor: 12, resist: 3 };
 const KNIFE: SheetItem = { id: 'knife', weight: 1, bonus: { str: 2, armorPenFlat: 5 } };
@@ -47,34 +46,20 @@ describe('buildOf', () => {
     expect(b.perks).toEqual({ str: 2, armorPenFlat: 5 });
   });
 
-  test('the active title, worn gear, open path perks, passive skills and the GM\'s adjustments all add up', () => {
+  test('the active title, worn gear, passive skills and the GM\'s adjustments all add up', () => {
     const h = hunter({
       titleId: 'wolf', titles: [{ id: 'wolf', bonus: { str: 2 } }],
       items: [KNIFE, RING], equipped: { weapon: 'knife', ring1: 'ring' },
-      build: { path: 'striker', picks: [0] },
       skills: [{ type: 'passive', bonus: { str: 1, hpMax: 10 } }, { type: 'active' }],
       hpAdj: 7, manaAdj: -3,
     });
-    expect(buildOf(h, R).perks).toEqual({ str: 5, vit: 5, agi: 2, hpMax: 17, manaMax: -3, armorPenFlat: 5 });
+    expect(buildOf(h, R).perks).toEqual({ str: 5, vit: 5, hpMax: 17, manaMax: -3, armorPenFlat: 5 });
   });
 
   test('only the active title counts', () => {
     const titles = [{ id: 'wolf', bonus: { str: 2 } }, { id: 'king', bonus: { pow: 5 } }];
     expect(buildOf(hunter({ titles, titleId: 'king' }), R).perks).toEqual({ pow: 5 });
     expect(buildOf(hunter({ titles, titleId: null }), R).perks).toEqual({});
-  });
-
-  test('a path\'s picks count up to the tier the rank has opened, and no further', () => {
-    const build = { path: 'striker', picks: [0, 1] };
-    expect(buildOf(hunter({ rank: 'E', build }), R).perks).toEqual({ agi: 2 });
-    expect(buildOf(hunter({ rank: 'D', build }), R).perks).toEqual({ agi: 2, armor: 5 });
-    expect(buildOf(hunter({ rank: 'S', build: { path: 'striker', picks: [1, 0, 1] } }), R).perks).toEqual({ hpMax: 20, agi: 1, str: 1 });
-  });
-
-  test('path picks count nothing when builds are off or the rules no longer have the path', () => {
-    const h = hunter({ rank: 'D', build: { path: 'striker', picks: [0, 0] } });
-    expect(buildOf(h, { ...R, build: { ...R.build, enabled: false } }).perks).toEqual({});
-    expect(buildOf(h, { ...R, paths: {} }).perks).toEqual({});
   });
 });
 
@@ -179,19 +164,21 @@ describe('autoSpend', () => {
   // exactly the bonus points free.
   const free = (n: number): Progress => ({ level: 1, xp: 0, peakLevel: 1, bonusPoints: n, spent: levelPoints(RULES, 1), pending: {} });
 
-  test('places every free point by the path\'s weights, a tie to the stat listed first', () => {
-    expect(autoSpend(free(6), STRIKER, RULES)).toEqual({ agi: 4, str: 2 });
-    expect(autoSpend(free(3), STRIKER, RULES)).toEqual({ str: 1, agi: 2 });
-    expect(autoSpend(free(1), STRIKER, RULES)).toEqual({ str: 1 });
+  test('places every free point by stat weights, favoring the higher-weighted stat on a tie', () => {
+    const weights = { agi: 2, str: 1 };
+    expect(autoSpend(free(6), weights, RULES)).toEqual({ agi: 4, str: 2 });
+    expect(autoSpend(free(3), weights, RULES)).toEqual({ agi: 2, str: 1 });
+    expect(autoSpend(free(1), weights, RULES)).toEqual({ agi: 1 });
+    expect(autoSpend(free(1), { pow: 1, str: 1 }, RULES)).toEqual({ str: 1 });
   });
 
   test('a stat weighted 0 gets no point', () => {
-    expect(autoSpend(free(4), { alloc: { pow: 1, ctl: 0 }, tiers: [] }, RULES)).toEqual({ pow: 4 });
+    expect(autoSpend(free(4), { pow: 1, ctl: 0 }, RULES)).toEqual({ pow: 4 });
   });
 
-  test('places nothing when no point is free or the path weighs no stat', () => {
-    expect(autoSpend(free(0), STRIKER, RULES)).toEqual({});
-    expect(autoSpend(free(5), { alloc: {}, tiers: [] }, RULES)).toEqual({});
+  test('places nothing when no point is free or weights name no stat', () => {
+    expect(autoSpend(free(0), { agi: 2, str: 1 }, RULES)).toEqual({});
+    expect(autoSpend(free(5), {}, RULES)).toEqual({});
   });
 });
 

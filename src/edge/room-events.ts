@@ -120,10 +120,16 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     // the fight's own totals, its row's life among them: written on the sheet wherever the fight is, so a repeat changes nothing
     const next = sheetEdit(h, { type: 'totals', life: p.life, mana: p.mana, fatigue: p.fatigue, statuses: p.statuses }, app.rules());
     if (isRefused(next)) return { save: s, tell: nothing };
-    const had = new Set(h.conditions.map(c => c.key)), was = h.level; // the save is written into `h`: the level before is kept here
+    const had = new Set(h.conditions.map(c => c.key)), was = h.level, fatigueWas = h.fatigue; // the save is written into `h`: pre-write values are kept here
     return { save: withHunter(s, next), tell: () => {
       for (const st of p.statuses) if (!had.has(st.key)) statusToast(app, st);
       fightLifeTold(app, h.life, next.life, p.reason, was, next.level);
+      const recovered = fatigueWas - next.fatigue;
+      if (next.life.at === 'up' && recovered > 0) {
+        app.toast('! System', next.collapsed
+          ? `You recovered ${recovered} fatigue. You are still Exhausted until you rest or clear a gate.`
+          : `You recovered ${recovered} fatigue.`, { kind: next.collapsed ? 'info' : 'good' });
+      }
     } };
   }) },
   // the GM's fight took this hunter's use of an item: one leaves the bag (src/core/hunter/use.ts `spendItem`); an item
@@ -258,7 +264,7 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
     const b = p.bundle;
     for (const hid of hids) {
       const at = app.hunter.fightOf({ hid });
-      const g = grant(s, hid, p.rewards, p.rewards.build ?? null, { at: app.now(), today: app.today(), R: app.rules(), vitals: at ? 'fight' : 'sheet', from: p.earned?.from ?? null });
+      const g = grant(s, hid, p.rewards, { at: app.now(), today: app.today(), R: app.rules(), vitals: at ? 'fight' : 'sheet', from: p.earned?.from ?? null });
       if (isRefused(g)) continue;
       const off = at?.at === 'row' && (g.fight.statuses.length > 0 || g.fight.refill);
       // a bundle the GM gave by hand is a fact of the hunter's chronicle, in the award's write
@@ -266,10 +272,21 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
       given.push([hid, off ? { ...g, fight: { statuses: [], refill: false } } : g, off]);
     }
     // one window a hunter, in the bundle's words when it has them, else "REWARD RECEIVED" (saying what earned it when the
-    // reward waited for the GM's approval); a level-up window may follow
+    // reward waited for the GM's approval); a level-up window may follow. Legacy build-only awards arrive with empty
+    // rewards after parseRewards drops `build`, so skip an empty window while still recording the event id.
     const words = b?.window ? { title: b.window.title, body: b.window.line || b.name }
       : { title: 'REWARD RECEIVED', body: p.earned ? PENDING_WORDS.approvedBody(p.earned.from, p.earned.what) : 'The System has delivered a reward.' };
-    return { save: s, tell: () => { for (const [hid, g, off] of given) { app.hunter.granted(hid, g, { ...words, tag: '! Reward', kind: 'quest' }); if (off) app.hunter.gmHolds(); } } };
+    return {
+      save: s,
+      tell: () => {
+        for (const [hid, g, off] of given) {
+          if (g.lines.length || g.levelup || b?.window || g.done.length || g.fight.statuses.length || g.fight.refill) {
+            app.hunter.granted(hid, g, { ...words, tag: '! Reward', kind: 'quest' });
+          }
+          if (off) app.hunter.gmHolds();
+        }
+      },
+    };
   };
 }
 

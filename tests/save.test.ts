@@ -527,7 +527,7 @@ describe('a damaged or hostile save', () => {
     const save = parseRaw({ schema: SCHEMA,
       log: many(5000, i => ({ id: `l${i + 1}`, title: `entry ${i}` })), rolls: many(5000, i => ({ id: `r${i + 6000}` })),
       library: { items: many(500, i => ({ id: `i${i + 20000}`, name: 'Stock' })) },
-      hunters: [{ id: 'h1', build: { path: 'vanguard', picks: many(50, () => 0 as unknown as Raw) },
+      hunters: [{ id: 'h1',
         items: [{ id: 'i1', name: 'Wand', effects: many(100, () => heal) }],
         conditions: many(40, i => ({ ...SLOWED, key: `slowed-${i}` })),
         loadouts: many(100, i => ({ id: `lo${i + 30000}`, name: `Set ${i}` })) }] });
@@ -537,7 +537,6 @@ describe('a damaged or hostile save', () => {
     expect(save.library.items).toHaveLength(200);
     const h = onlyHunter(save);
     expect(h.loadouts).toHaveLength(24);
-    expect(h.build.picks).toHaveLength(12);
     expect(h.items[0]!.effects).toHaveLength(ITEM_BOUNDS.effects);
     expect(h.conditions).toHaveLength(MAX_STATUSES);
   });
@@ -645,18 +644,22 @@ describe('what a repair fixes', () => {
     expect('statsLocked' in h).toBe(false);
   });
 
-  test('a hunter on a build path keeps its path and picks, and no skill is added for them: the sheet reads the path itself', () => {
-    const h = onlyHunter(parseRaw(withHunter({ build: { path: 'vanguard', picks: [0, 1, 0] }, skills: [{ id: 's9', name: 'Sprint' }] })));
-    expect(h.build).toEqual({ path: 'vanguard', picks: [0, 1, 0] });
+  test('a pre-R1 hunter with a stored build field loads cleanly, keeps the unknown build field on round-trip, and gets no path bonuses', () => {
+    const legacyBuild = { path: 'vanguard', picks: [0, 1, 0] };
+    const save = parseRaw(withHunter({ build: legacyBuild, skills: [{ id: 's9', name: 'Sprint' }] }));
+    const h = onlyHunter(save);
+    expect((h as unknown as Record<string, unknown>).build).toEqual(legacyBuild);
     expect(h.skills.map(k => k.name)).toEqual(['Sprint']);
+    const roundTripped = onlyHunter(parseRaw(JSON.parse(JSON.stringify(save))));
+    expect((roundTripped as unknown as Record<string, unknown>).build).toEqual(legacyBuild);
   });
 
-  test('a path the rules do not have is cleared with its picks', () => {
-    expect(onlyHunter(parseRaw(withHunter({ build: { path: 'pirate', picks: [0, 1] } }))).build).toEqual({ path: null, picks: [] });
-  });
-
-  test('picks stop at the first value that is not 0 or 1', () => {
-    expect(onlyHunter(parseRaw(withHunter({ build: { path: 'striker', picks: [1, 0, 2, 1] } }))).build.picks).toEqual([1, 0]);
+  test('pre-R1 build and paths rulesOverrides are dropped cleanly while keeping valid sibling overrides', () => {
+    const save = parseRaw({
+      schema: SCHEMA, hunters: [],
+      rulesOverrides: { logCap: 42, build: { enabled: false, playerPick: false }, paths: { vanguard: { name: 'Custom' } } },
+    });
+    expect(save.rulesOverrides).toEqual({ logCap: 42 });
   });
 
   test('a condition keeps its key, def, source and rounds left; one that does not read, or a chip the hunter\'s state draws, is dropped', () => {

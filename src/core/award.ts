@@ -48,7 +48,7 @@ export function gmAward(save: Save, locals: readonly { readonly hid: string; rea
   let next = save;
   const granted: { hid: string; g: Granted }[] = [];
   for (const { hid, vitals } of locals) {
-    const g = grant(next, hid, rewards, null, { ...day, vitals, from });
+    const g = grant(next, hid, rewards, { ...day, vitals, from });
     if (isRefused(g)) continue;
     next = given ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: given.key, name: given.name }) : h)) } : g.save;
     granted.push({ hid, g: { ...g, save: next } });

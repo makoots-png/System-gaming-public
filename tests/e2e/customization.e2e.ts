@@ -218,234 +218,107 @@ test('a player saves gear sets, swaps them in one tap, keeps them when the GM lo
   });
 });
 
-test('a player chooses a path and perks, sees the stat change, finds locked ranks locked, and pays gold to respec', async ({ device }) => {
+test('a player has no Build panel and uses Auto-allocate with a stat-focus picker before Job Change', async ({ device }) => {
   const page = (await device('phone')).page;
   await onboardPlayer(page, 'Kai Test');
   await dismissAll(page);
-  // Level 22 holds the 12 creation points and 21 x 3 = 63 more, 75; with 72 spent, 3 are free.
-  await patchHunter(page, { level: 22, peakLevel: 22, spent: 72, rank: 'C', gold: 5000 });
-  const level = 22, cost = 5 * level * level;
-  const str0 = await stat(page, 'str');
-  const tier = (i: number, c: number) => page.locator(`${status}[data-bdtier="${i}"][data-bdc="${c}"]`);
+  await go(page, 'status');
 
-  await test.step('a path is chosen from its preview window and grants nothing until a perk is taken', async () => {
-    await openBuild(page);
-    await page.locator(`${status}[data-bdpath=vanguard]`).tap();
-    await tapWin(page, 'Choose path');
-    await expect(tier(0, 0)).toBeEnabled();
-    expect(await stat(page, 'str')).toBe(str0);
+  await test.step('players see no Build panel or Build jump chip, and Auto-allocate shows when points are free', async () => {
+    await expect(page.locator(`${status}[data-panel=build]`)).toBeHidden();
+    await expect(page.locator(`${status}[data-jump=build]`)).toHaveCount(0);
+    await expect(page.locator(`${status}[data-auto-alloc]`)).toBeVisible();
   });
 
-  await test.step('the perk window shows before and after, and taking it adds the number to the sheet', async () => {
-    await tier(0, 0).tap();
-    await expect(page.locator(`${win} .bd-pv`)).toContainText('→');
-    await tapWin(page, 'Take perk');
-    await expect(tier(0, 0)).toHaveAttribute('aria-pressed', 'true');
-    expect(await stat(page, 'str')).toBe(str0 + 2);
-  });
+  await test.step('the picker lets a player pick a job preset or custom stats, previews the split, and remembers focus across reloads', async () => {
+    const str0 = await stat(page, 'str'), vit0 = await stat(page, 'vit');
+    const agi0 = await stat(page, 'agi'), ins0 = await stat(page, 'ins');
+    await page.locator(`${status}[data-auto-alloc]`).tap();
+    await expect(page.locator(`${win} .af-pick`)).toBeVisible();
 
-  await test.step('rank C opens three ranks and the rank B perks stay locked', async () => {
-    const vit0 = await stat(page, 'vit');
-    await tier(1, 1).tap();
-    await tapWin(page, 'Take perk');
-    await tier(2, 0).tap();
-    await tapWin(page, 'Take perk');
-    await expect(page.locator(`${status}.bd-head`)).toContainText('3/6 perks');
-    expect(await stat(page, 'str')).toBe(str0 + 5);
-    expect(await stat(page, 'vit')).toBe(vit0 + 2);
-    await expect(tier(3, 0)).toBeDisabled();
-    await expect(tier(3, 1)).toBeDisabled();
-  });
+    // Tap Fighter preset -> Strength + Vitality (2:1)
+    await page.locator(`${win} [data-af-job="Fighter"]`).tap();
+    await expect(page.locator(`${win} [data-af-main]`)).toHaveValue('str');
+    await expect(page.locator(`${win} [data-af-second]`)).toHaveValue('vit');
+    await expect(page.locator(`${win} [data-af-match]`)).toHaveText('Matches Fighter focus.');
+    await expect(page.locator(`${win} [data-af-pv]`)).toContainText(`Strength (STR)`);
+    await expect(page.locator(`${win} [data-af-pv]`)).toContainText(`Vitality (VIT)`);
 
-  // Vanguard weighs Strength 2 and Vitality 1; each point goes to the stat with the fewest placed for its weight, a tie
-  // to the first stat: Strength, Vitality, Strength.
-  await test.step('Auto-place spends the free points by the path weights', async () => {
-    const before = await activeHunter(page);
-    await page.locator(`${status}[data-bdauto]`).tap();
+    // Switch to Agility + Instinct -> matches Assassin focus, then place 12 creation points (8 AGI, 4 INS)
+    await page.locator(`${win} [data-af-main]`).selectOption('agi');
+    await page.locator(`${win} [data-af-second]`).selectOption('ins');
+    await expect(page.locator(`${win} [data-af-match]`)).toHaveText('Matches Assassin focus.');
     await tapWin(page, 'Place ability points');
+
     await expect.poll(() => freePoints(page)).toBe(0);
-    const after = await activeHunter(page);
-    expect(after.derived.stats.str).toBe(before.derived.stats.str + 2);
-    expect(after.derived.stats.vit).toBe(before.derived.stats.vit + 1);
+    expect(await stat(page, 'agi')).toBe(agi0 + 8);
+    expect(await stat(page, 'ins')).toBe(ins0 + 4);
+    expect(await stat(page, 'str')).toBe(str0);
+    expect(await stat(page, 'vit')).toBe(vit0);
+
+    // Points stay undoable until confirmed
+    await page.locator(`${status}.stat[data-k=agi] [data-dir="-1"]`).tap();
+    await expect.poll(() => freePoints(page)).toBe(1);
+    await page.locator(`${status}[data-confirm]`).tap();
+
+    // Reload and reopen Auto-allocate: remembers Agility + Instinct
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForFunction(() => window.hunterApp && hunterApp.api.hunter);
+    await go(page, 'status');
+    await page.locator(`${status}[data-auto-alloc]`).tap();
+    await expect(page.locator(`${win} [data-af-main]`)).toHaveValue('agi');
+    await expect(page.locator(`${win} [data-af-second]`)).toHaveValue('ins');
+    await tapWin(page, 'Cancel');
   });
 
-  await test.step('respec states its price and is refused when gold is short', async () => {
-    await expect(page.locator(`${status}[data-bdbuy]`)).toContainText(`${cost.toLocaleString('en-US')}`);
-    await patchHunter(page, { gold: cost - 1 });
-    await page.locator(`${status}[data-bdbuy]`).tap();
-    await expect(toasts(page).filter({ hasText: `You have ${(cost - 1).toLocaleString('en-US')}` })).toHaveCount(1);
-    await expect(page.locator(win)).toHaveCount(0);
-    expect((await activeHunter(page)).gold).toBe(cost - 1);
-    expect((await activeHunter(page)).build.path).toBe('vanguard');
-  });
-
-  await test.step('respec is refused during a fight', async () => {
-    await patchHunter(page, { gold: 5000 });
-    await startLocalFight(page);
-    await page.locator(`${status}[data-bdbuy]`).tap();
-    await expect(toasts(page).filter({ hasText: /fight/ })).toHaveCount(1);
-    expect((await activeHunter(page)).gold).toBe(5000);
-    await endLocalFight(page);
-  });
-
-  await test.step('paying clears the path and perks, keeps stats and points, and takes the gold', async () => {
-    const before = await activeHunter(page), points = await freePoints(page);
-    await page.locator(`${status}[data-bdbuy]`).tap();
-    await expect(page.locator(win)).toContainText(`${cost.toLocaleString('en-US')} gold`);
-    expect((await activeHunter(page)).gold).toBe(5000);
-    await tapWin(page, 'Respec for');
-    await expect(page.locator(`${status}[data-bdpath=vanguard]`)).toBeVisible();
-    const after = await activeHunter(page);
-    expect(after.gold).toBe(5000 - cost);
-    expect(after.stats).toEqual(before.stats);
-    expect(await freePoints(page)).toBe(points);
-    expect(after.derived.stats.str, 'the stat as placed, confirmed or pending, without the perks').toBe(before.stats.str + (before.pending.str ?? 0));
-  });
-
-  await test.step('a GM rule can retune the respec price or hand perk choices to the GM', async () => {
-    await page.evaluate(id => hunterApp.api.build.setPath(id, 'vanguard'), await page.evaluate(() => hunterApp.store.active().id as string));
-    await setRules(page, { build: { respecGold: 1 } });
-    await expect(page.locator(`${status}[data-bdbuy]`)).toContainText('484');
-    await setRules(page, { build: { playerPick: false } });
-    await expect(page.locator(`${status}[data-bdbuy]`)).toHaveCount(0);
-    await expect(tier(0, 0)).toBeDisabled();
-    await expect(page.locator(`${status}[data-panel=build]`)).toContainText('The GM picks perks');
+  await test.step('a hunter with a built-in job gets their job focus pre-selected in Auto-allocate', async () => {
+    await patchHunter(page, { job: 'Necromancer', bonusPoints: 3 });
+    await go(page, 'status');
+    const pre0 = await stat(page, 'pre'), pow0 = await stat(page, 'pow');
+    await page.locator(`${status}[data-auto-alloc]`).tap();
+    await expect(page.locator(`${win} [data-af-main]`)).toHaveValue('pre');
+    await expect(page.locator(`${win} [data-af-second]`)).toHaveValue('pow');
+    await expect(page.locator(`${win} [data-af-job="Necromancer"]`)).toHaveAttribute('aria-pressed', 'true');
+    await tapWin(page, 'Place ability points');
+    await expect.poll(() => stat(page, 'pre')).toBe(pre0 + 3);
+    expect(await stat(page, 'pow')).toBe(pow0 + 1);
   });
 });
 
-test('a GM on their own hunter switches builds off and on, retunes a path, and respecs for free', async ({ device }) => {
-  const gm = (await device('gm')).page;
-  await onboardGM(gm);
-  // Level 22 holds the 12 creation points and 21 x 3 = 63 more, 75, all spent.
-  await patchHunter(gm, { level: 22, peakLevel: 22, spent: 75, rank: 'C', gold: 0 });
-  const hid = await gm.evaluate(() => hunterApp.store.active().id as string);
-  await gm.evaluate(id => { const B = hunterApp.api.build; B.setPath(id, 'vanguard'); B.pick(id, 0, 0); B.pick(id, 1, 1); B.pick(id, 2, 0); }, hid);
-  const str0 = (await activeHunter(gm)).stats.str;
-  await openBuild(gm);
-
-  await test.step('turning builds off removes the bonus and the chooser, and turning them on brings both back', async () => {
-    expect(await stat(gm, 'str')).toBe(str0 + 5);
-    await gm.locator(`${status}[data-bdtoggle]`).tap();
-    await expect(gm.locator(`${status}.bd-off`)).toBeVisible();
-    await expect.poll(() => stat(gm, 'str')).toBe(str0);
-    await gm.locator(`${status}[data-bdtoggle]`).tap();
-    await expect(gm.locator(`${status}.bd-off`)).toHaveCount(0);
-    await expect.poll(() => stat(gm, 'str')).toBe(str0 + 5);
-    await expect(gm.locator(`${status}.bd-head`)).toContainText('3/6 perks');
-  });
-
-  await test.step('Players pick: no shows the GM-picks note, and Reset build rules restores it', async () => {
-    await gm.locator(`${status}[data-bdpp]`).tap();
-    await expect(gm.locator(`${status}[data-bdpp]`)).toContainText('Players choose perks: No');
-    await gm.locator(`${status}[data-bdreset]`).tap();
-    await expect(gm.locator(`${status}[data-bdpp]`)).toContainText('Players choose perks: Yes');
-  });
-
-  await test.step('a GM path override renames the path and changes the number on the sheet, and Reset build rules drops it', async () => {
-    await setRules(gm, { paths: { vanguard: { name: 'Bulwark', tiers: [[{ str: 4 }, { hpMax: 20 }], [{ str: 1, vit: 1 }, { vit: 2 }], [{ str: 3 }, { hpMax: 30 }]] } } });
-    await expect(gm.locator(`${status}.bd-head`)).toContainText('Bulwark');
-    expect(await stat(gm, 'str')).toBe(str0 + 7);
-    await gm.locator(`${status}[data-bdreset]`).tap();
-    await expect(gm.locator(`${status}.bd-head`)).toContainText('Vanguard');
-    expect(await stat(gm, 'str')).toBe(str0 + 5);
-  });
-
-  await test.step('the GM respec costs no gold even in a fight, and ability points are not refunded', async () => {
-    await startLocalFight(gm);
-    await gm.locator(`${status}[data-bdrespec]`).tap();
-    await tapWin(gm, 'Respec');
-    await expect(gm.locator(`${status}[data-bdpath=vanguard]`)).toBeVisible();
-    const after = await activeHunter(gm);
-    expect(after.gold).toBe(0);
-    expect(await freePoints(gm)).toBe(0);
-    expect(after.derived.stats.str).toBe(str0);
-    await endLocalFight(gm);
-  });
-});
-
-test('a GM sets a path and picks a perk for a player from the party board and the player sheet changes', async ({ device }) => {
+test('a GM room rule switch reaches players without writing their overrides, and GM cards have no Build menu', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
   await onboardGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Kai Test', code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
   await dismissAll(player, 4);
-  await go(gm, 'gm');
-  const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
-  await expect(card).toHaveCount(1);
-  const str0 = await stat(player, 'str');
 
-  await test.step('the GM assigns a path through the Build menu and the player and the card both show it', async () => {
-    await card.locator('[data-hbuild]').tap();
-    await tapWin(gm, 'Set path: Vanguard');
-    await expect.poll(async () => (await activeHunter(player)).build.path).toBe('vanguard');
-    await openBuild(player);
-    await expect(player.locator(`${status}.bd-head`)).toContainText('Vanguard');
-    await expect(card.locator('[data-gmpath]')).toHaveText('Vanguard 0/6');
+  await test.step('the GM party board shows no path label or Build button', async () => {
+    await go(gm, 'gm');
+    const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('[data-hbuild]')).toHaveCount(0);
+    await expect(card.locator('[data-gmpath]')).toHaveCount(0);
   });
 
-  await test.step('with players not allowed to pick, the GM picks the first perk and the player gains the number', async () => {
-    await gm.evaluate(() => hunterApp.api.build.setRule({ playerPick: false }));
-    await expect(player.locator(`${status}[data-panel=build]`)).toContainText('The GM picks perks');
-    await card.locator('[data-hbuild]').tap();
-    await gm.locator(`${win} .sys-actions button`, { hasText: /^Rank E:/ }).first().tap();
-    await expect.poll(() => stat(player, 'str')).toBe(str0 + 2);
-    await expect(player.locator(`${status}.bd-head`)).toContainText('1/6 perks');
-    await expect(card.locator('[data-gmpath]')).toHaveText('Vanguard 1/6');
-  });
-
-  await test.step('a GM respec empties the path on the player sheet', async () => {
-    await card.locator('[data-hbuild]').tap();
-    await tapWin(gm, 'Respec');
-    await tapWin(gm, 'Respec hunter');
-    await expect.poll(async () => (await activeHunter(player)).build.path).toBeNull();
-  });
-});
-
-test('build switches a GM sets reach the room, a player plays by them while their own stay as they were, and leaving the room gives the player their own back', async ({ device }) => {
-  const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
-  const code = await createRoom(gm);
-  await onboardPlayer(player, 'Kai Test', code);
-  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
-  await dismissAll(player, 4);
-  const roomBuild = async () => (await (await gm.request.get(`/api/rooms/${code}?after=999999999`, { headers: await roomHeaders(gm) })).json()).docs?.rules?.data?.build ?? null;
-  const own = { build: { playerPick: false } };
+  const roomKeystone = async () => (await (await gm.request.get(`/api/rooms/${code}?after=999999999`, { headers: await roomHeaders(gm) })).json()).docs?.rules?.data?.keystone?.on ?? null;
+  const own = { logCap: 50 };
   await setRules(player, own);
 
-  await test.step('a room made with default rules lists builds on and player picks on', async () => {
-    await expect.poll(roomBuild).toMatchObject({ enabled: true, playerPick: true });
-  });
-
-  await test.step('in the room the player may choose a path, though on their own the GM picks', async () => {
-    await openBuild(player);
-    await expect(player.locator(`${status}[data-bdpath=vanguard]`)).toBeEnabled();
-  });
-
-  await test.step("the GM turns builds off and the player is told the GM turned them off; the player's own switches are not written", async () => {
+  await test.step('the GM turns Keystones on in the room, the player sees them, and leaving restores the player\'s own rules', async () => {
     await openBuild(gm);
-    await gm.locator(`${status}[data-bdtoggle]`).tap();
-    await expect.poll(roomBuild).toMatchObject({ enabled: false });
-    await openBuild(player);
-    await expect(player.locator(`${status}.bd-off`)).toBeVisible();
+    await gm.locator(`${status}[data-kstoggle]`).tap();
+    await expect.poll(roomKeystone).toBe(true);
+    await go(player, 'status');
+    await expect(player.locator(`${status}[data-panel=keystones]`)).toBeVisible();
     expect((await save(player)).rulesOverrides).toEqual(own);
-  });
 
-  await test.step('after leaving the room the player has their own switches back, and the GM keeps their own switch after leaving', async () => {
     await go(player, 'room');
     await player.locator('#view-room [data-leave]').tap();
     await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBeNull();
-    await openBuild(player);
-    await expect(player.locator(`${status}.bd-off`)).toHaveCount(0);
-    await expect(player.locator(`${status}[data-bdpath=vanguard]`)).toBeDisabled();
+    await go(player, 'status');
+    await expect(player.locator(`${status}[data-panel=keystones]`)).toBeHidden();
     expect((await save(player)).rulesOverrides).toEqual(own);
-
-    await go(gm, 'room');
-    await gm.locator('#view-room [data-leave]').tap();
-    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.room())).toBeNull();
-    await openBuild(gm);
-    await expect(gm.locator(`${status}[data-bdtoggle]`)).toContainText('Build paths: Off');
-    expect((await save(gm)).rulesOverrides.build.enabled).toBe(false);
   });
 });
 

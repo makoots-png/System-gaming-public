@@ -127,7 +127,7 @@ describe('Order C debt + guild stacking and grant scope', () => {
       const h = setGuild({ ...s0.hunters[0]!, rank, gold: 0, debt }, { archetype: 'ironwake', standing: 'core' });
       const s1 = { ...s0, hunters: [h] };
       const minRoll = RULES.loot[rank].gold[0]!;
-      const g = grant(s1, h.id, { ...newRewards(), gold: minRoll }, null, { ...DAY, vitals: 'sheet', from: 'clear' });
+      const g = grant(s1, h.id, { ...newRewards(), gold: minRoll }, { ...DAY, vitals: 'sheet', from: 'clear' });
       expect(isRefused(g)).toBe(false);
       if (isRefused(g)) continue;
       expect(g.debtPaid).not.toBeNull();
@@ -150,7 +150,7 @@ describe('Order C debt + guild stacking and grant scope', () => {
     const h = setGuild({ ...s0.hunters[0]!, rank: 'C' as const, gold: 0, debt: 0 }, { archetype: 'ironwake', standing: 'core' });
     const s1 = { ...s0, hunters: [h] };
     for (const from of ['solo', 'quest', 'feat', null] as const) {
-      const g = grant(s1, h.id, { ...newRewards(), gold: 1000 }, null, { ...DAY, vitals: 'sheet', from });
+      const g = grant(s1, h.id, { ...newRewards(), gold: 1000 }, { ...DAY, vitals: 'sheet', from });
       expect(isRefused(g)).toBe(false);
       if (!isRefused(g)) {
         expect(g.guildCut).toBeNull();

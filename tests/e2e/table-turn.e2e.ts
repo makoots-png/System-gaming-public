@@ -563,3 +563,26 @@ test('the GM extracts a fallen monster with a player\'s Necromancer, and the sha
     await expect(player.locator('#toasts .toast', { hasText: 'joins' }).first()).toBeVisible();
   });
 });
+
+test('ending a live fight recovers fightRest fatigue on the GM\'s summary and on the player\'s sheet through vitals sync', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 3 });
+  const startFatigue = RULES.fight.fightRest + 15;
+  await gm.evaluate(({ name, fat }) => {
+    const f = hunterApp.store.get().fight, row = f.rows.find((r: any) => r.name === name);
+    hunterApp.store.update((d: any) => {
+      const r = d.fight.rows.find((x: any) => x.id === row.id);
+      r.fatigue = fat;
+    }, 'test-setup');
+  }, { name: HUNTER, fat: startFatigue });
+  await player.evaluate(fat => hunterApp.store.update(() => { hunterApp.store.active().fatigue = fat; }, 'test-setup'), startFatigue);
+
+  await combat(gm).locator('[data-end]').first().tap();
+  const win = gm.locator('.sys-overlay.show', { hasText: 'Fight over' });
+  await expect(win).toBeVisible();
+  await expect(win).toContainText(`Fatigue recovered: ${HUNTER} ${RULES.fight.fightRest}.`);
+  await answerWindow(gm, 'Fight over', 'End without XP');
+
+  await expect.poll(() => player.evaluate(() => hunterApp.store.active().fatigue), { timeout: 20_000 }).toBe(15);
+  await expect(player.locator('#toasts .toast', { hasText: `You recovered ${RULES.fight.fightRest} fatigue.` }).first()).toBeVisible();
+});

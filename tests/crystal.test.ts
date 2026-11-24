@@ -182,7 +182,7 @@ describe('rewards, grant, debt, saves, room rules, and gate clears', () => {
     const h0 = { ...s0.hunters[0]!, debt: 600 };
     const s1 = { ...s0, hunters: [h0] };
     const rw = { ...newRewards(), gold: 200, crystal: 39 };
-    const g = grant(s1, h0.id, rw, null, { ...DAY, vitals: 'sheet', from: 'clear' });
+    const g = grant(s1, h0.id, rw, { ...DAY, vitals: 'sheet', from: 'clear' });
     expect(isRefused(g)).toBe(false);
     if (!isRefused(g)) {
       // Gold splits 50% debt (100), 25% burn (50), 25% kept (50); crystal lands 100% untouched
@@ -194,7 +194,7 @@ describe('rewards, grant, debt, saves, room rules, and gate clears', () => {
 
     // Negative crystal clamps to 0 and reports actual loss
     const s2 = { ...s0, hunters: [addCrystal(s0.hunters[0]!, 10)] };
-    const loss = grant(s2, h0.id, { ...newRewards(), crystal: -25 }, null, { ...DAY, vitals: 'sheet' });
+    const loss = grant(s2, h0.id, { ...newRewards(), crystal: -25 }, { ...DAY, vitals: 'sheet' });
     expect(isRefused(loss)).toBe(false);
     if (!isRefused(loss)) {
       expect(loss.save.hunters[0]!.crystal).toBe(0);

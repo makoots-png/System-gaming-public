@@ -250,7 +250,7 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
 }
 
 /** The parts of a hunter a row is built from, as one string: another string means the hunter changed since a run began. */
-export const soloKey = (h: Hunter): string => JSON.stringify([h.life, h.mana, h.fatigue, h.collapsed, h.used, h.conditions, h.items, h.equipped, h.skills, h.stats, h.pending, h.level, h.rank, h.shadows, h.titleId, h.build]);
+export const soloKey = (h: Hunter): string => JSON.stringify([h.life, h.mana, h.fatigue, h.collapsed, h.used, h.conditions, h.items, h.equipped, h.skills, h.stats, h.pending, h.level, h.rank, h.shadows, h.titleId]);
 
 /** The fight a run plays with the rules it plays by (`Weighed`: the card's odds take this value too), and how its rows map back to the sheet. */
 export type SoloFight = Weighed & { readonly fight: Setup; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>> };

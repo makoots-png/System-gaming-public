@@ -5,7 +5,7 @@ import { parseOverrides } from '../src/core/overrides.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { StatKey } from '../src/core/stats.ts';
-import { ARCHETYPES, NO_TWEAK, kitGear, pointsAt, split } from '../src/core/hunter/derive.ts';
+import { ARCHETYPES, NO_TWEAK, kitGear, pointsAt, referenceBonus, split } from '../src/core/hunter/derive.ts';
 import type { Archetype, Kit, MonsterKind } from '../src/core/hunter/derive.ts';
 import { diceOf, mean, parseFormula, printFormula } from '../src/core/formula.ts';
 import { openGrid, place } from '../src/core/combat/space.ts';
@@ -19,7 +19,6 @@ import { seedMonsters } from '../src/core/registry/monsters.ts';
 import type { Body, Origin, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
 import { diceFor, resolve } from '../src/core/combat/resolve.ts';
 import { formulaOf, abilityOf, kindDefaults } from '../src/core/registry/ability-kinds.ts';
-import { TIER_BUDGET } from '../src/core/registry/paths.ts';
 import { LOOT_ITEMS, SHOP_ITEMS, STARTER_GEAR } from '../src/core/registry/items.ts';
 import type { ItemDef } from '../src/core/registry/items.ts';
 import { SKILL_SEEDS } from '../src/core/registry/skills.ts';
@@ -100,7 +99,7 @@ describe('the single-hit bound of design section 6', () => {
   };
   const KINDS_OF_MONSTER: MonsterKind[] = ['normal', 'elite', 'boss'];
   const tier = (rank: Rank): number => RANKS.indexOf(rank);
-  const perks = (rank: Rank): number => TIER_BUDGET.slice(0, tier(rank) + 1).reduce((s, v) => s + v, 0);
+  const perks = (rank: Rank): number => referenceBonus(rank);
   const hunter = (build: string, rank: Rank): Origin => {
     const [main, second, kit] = BUILDS[build]!, level = R.rankLevels[rank];
     const stats = split(main, second, pointsAt(level, R), R);

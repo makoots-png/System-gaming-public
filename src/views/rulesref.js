@@ -127,7 +127,7 @@ export function register(app) {
         `<b>Tenacity</b> combines Strength and Discipline using the square root of their product. Equal scores count as that same score, while leaving either stat at ${F.statBase} keeps tenacity low. Control statuses on you last their base duration × (100 + caster's potency) / (100 + your tenacity).`,
         `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Most of it comes from level, so a fight takes about the same number of hits at every rank.`,
         `Max mana = ${F.manaBase} + Power's capped share (up to ${F.manaCap}). Fatigue capacity = ${F.fatigueBase} + Vitality's capped share (up to ${F.fatigueCap}).`,
-        'Bonuses come from your active title, equipped gear, build path, and passive skills. Open the Status view to see all your numbers.']),
+        'Bonuses come from your active title, equipped gear, and passive skills. Open the Status view to see all your numbers.']),
         ...(keystoneLines(R).length ? [p(`<button type="button" data-rr-ks>${esc(KEYSTONE_WORDS.browseAll)}</button>`)] : []),
       ] },
       { id: 'armor', title: 'Armor and Resist', body: [ul([

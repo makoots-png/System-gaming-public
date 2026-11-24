@@ -63,8 +63,6 @@ function title(v: unknown): { key: string; name: string; desc: string; bonus: Pe
   const band = parseBand(v.band) ?? 'E';
   return typeof desc === 'string' && bonus && key ? { key, name: v.name, desc, bonus, band, ...(v.gmOnly === true ? { gmOnly: true } : {}) } : null;
 }
-/** A path's tier: a list of perks. */
-const tier: Entry = v => (Array.isArray(v) && v.every(p => perk(p) !== null) ? v.map(perk) : null);
 
 /** A list whose entries `entry` reads; each entry it refuses is left out and told by its index. */
 const entries = (entry: Entry): Reader => (v, path, no) => {
@@ -159,7 +157,6 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'loot.*.gold': lowToHigh,
   'gateSpawn.regulars.*': lowToHigh,
   gateNames: entries(text),
-  'paths.*.tiers': entries(tier),
   rarities,
   reviveDebtPrices,
   'solo.pack': lowToHigh,

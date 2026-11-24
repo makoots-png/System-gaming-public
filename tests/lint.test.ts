@@ -1385,7 +1385,6 @@ test('a view hangs state on an element only where this list names it with its re
   // with what it holds, and each file's count is what it holds.
   const named: Record<string, { count: number; why: string }> = {
     'src/views/chronicle.js': { count: 1, why: 'the markup a box drew last (`_h`), so only a change is drawn' },
-    'src/views/custom.js': { count: 1, why: 'the markup a box drew last (`_h`), so only a change is drawn' },
     'src/views/hunter.js': { count: 2, why: 'the markup a box and a select drew last (`_h`), so only a change is drawn' },
     'src/views/gates.js': { count: 1, why: 'what a gate card was drawn from (`_sig`), so only a changed card is drawn again' },
     'src/views/room.js': { count: 1, why: 'a copied button\'s timer that puts its label back (`_t`)' },
@@ -2975,4 +2974,15 @@ test('only save-step.ts atSync (and save.ts exportedSave) spreads settings.sync'
   const settingsOwners = ['src/core/save-step.ts', 'src/core/save.ts'];
   expect(settingsOwners.filter(f => !settingsHits.some(h => h.file === f)), 'a settings.sync permit that matches nothing leaves the list').toEqual([]);
   expect(settingsHits.filter(h => !settingsOwners.includes(h.file)).map(h => h.hit), 'write save.settings.sync through atSync in src/core/save-step.ts instead of spreading settings with sync').toEqual([]);
+});
+
+test('fightRest is applied only in core fight-turn.ts: playDungeon carries post-ended fatigue without subtracting it again', async () => {
+  const sim = await Bun.file(`${ROOT}/tests/models/fight-sim.ts`).text();
+  const body = sim.slice(sim.indexOf('export function playDungeon'));
+  const manualRest = /\bfatigue\s*-\s*(?:rest|fightRest|R\.fight\.fightRest)\b/;
+  expect(manualRest.test('Math.max(0, v.fatigue - rest)'), 'catches manual rest subtraction in playDungeon').toBe(true);
+  expect(manualRest.test(body), 'playDungeon must carry r.end fatigue directly from core ended(), never subtract fightRest a second time').toBe(false);
+  const srcHits = (await sourceLines('src')).filter(l => !isComment(l.text) && /\bfightRest\b/.test(l.text)).map(l => l.file);
+  const allowed = new Set(['src/core/rules.ts', 'src/core/rules-text.ts', 'src/core/combat/fight-turn.ts']);
+  expect([...new Set(srcHits)].filter(f => !allowed.has(f)), 'only fight-turn.ts applies fightRest (rules.ts defines it and rules-text.ts describes it)').toEqual([]);
 });

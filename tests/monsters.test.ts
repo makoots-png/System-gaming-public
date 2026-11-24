@@ -3,7 +3,7 @@ import { describe as group, expect, test } from 'bun:test';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
-import { ARCHETYPES, kitGear, monsterSheet, pointsAt, split } from '../src/core/hunter/derive.ts';
+import { ARCHETYPES, kitGear, monsterSheet, pointsAt, referenceBonus, split } from '../src/core/hunter/derive.ts';
 import { diceOf, mean, printFormula } from '../src/core/formula.ts';
 import { openGrid, place } from '../src/core/combat/space.ts';
 import type { Place } from '../src/core/combat/space.ts';
@@ -17,7 +17,6 @@ import { resolve } from '../src/core/combat/resolve.ts';
 import { monsterRows } from '../src/core/combat/rows.ts';
 import type { RowMonster } from '../src/core/combat/rows.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
-import { TIER_BUDGET } from '../src/core/registry/paths.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../src/core/registry/abilities.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, SEEDS, copiesOf, lootOf, monsterScript, monsterSheetOf, parseMonster, seedMonsters, statBlock, monsterXp, xpOf } from '../src/core/registry/monsters.ts';
 import { mythicScriptOf, scriptFits } from '../src/core/registry/mythics.ts';
@@ -38,7 +37,7 @@ const round = RULES.fight.round;
 const GRID = openGrid(20, 14), NOW = tick(5000), D20 = 7;
 const tankOf = (rank: Rank): Origin => {
   const level = RULES.rankLevels[rank], stats = split('vit', 'str', pointsAt(level, RULES), RULES);
-  const perks = TIER_BUDGET.slice(0, RANKS.indexOf(rank) + 1).reduce((s, v) => s + v, 0);
+  const perks = referenceBonus(rank);
   return { kind: 'hunter', build: { stats: { ...stats, vit: stats.vit + perks }, level, gear: kitGear('heavy', RULES), perks: {} } };
 };
 const body = (id: string, origin: Origin, at: Place, side: Body['side'], rank: Rank): Body => {

@@ -270,10 +270,10 @@ export function register(app) {
     const streak = h.daily && num(h.daily.streak) ? `<span class="gm-chip">Daily streak ${esc(int(h.daily.streak))}</span>` : '';
     const pen = h.penalty ? `<span class="gm-chip pen">Penalty${h.penalty.days ? ` (${esc(int(h.penalty.days))} day${int(h.penalty.days) === 1 ? '' : 's'})` : ''}</span>` : '';
     const bar = (cls, label, v, m) => `<div class="bar-row"><div class="bar-head"><span class="lbl">${label}</span><span class="bar-nums">${esc(ui.fmt(v))} / ${esc(ui.fmt(m))}</span></div><div class="bar bar-${cls}" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="${esc(m)}" aria-valuenow="${esc(v)}">${motion.fillMarkup(m > 0 ? v / m : 0)}</div></div>`;
-    const hid = esc(remote ? key : h.id), path = A().build.label(h); // path name + active perks, validated against rules()
+    const hid = esc(remote ? key : h.id);
     return `<article class="gm-card${remote ? ' remote' : ''}" data-hid="${hid}">
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
-      <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · player phone' : ''}</div>
+      <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${remote ? ' · player phone' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
       <div class="gm-chips">${ladder}${debt}${guild}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
@@ -281,7 +281,7 @@ export function register(app) {
         <span class="lbl gm-hp-lbl">Quick HP</span>
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>
         <button type="button" data-hp="1" aria-label="Heal 1 to ${esc(h.name)}" title="Heal 1 to ${esc(h.name)}">+1</button><button type="button" data-hp="5" aria-label="Heal 5 to ${esc(h.name)}" title="Heal 5 to ${esc(h.name)}">+5</button>
-        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">+ Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-hguild aria-label="Guild for ${esc(h.name)}">${esc(GUILD_WORDS.button)}</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give award…</button></div>
+        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">+ Status</button>` : ''}<button type="button" data-hguild aria-label="Guild for ${esc(h.name)}">${esc(GUILD_WORDS.button)}</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give award…</button></div>
       <div class="hp-amt" role="group" aria-label="Type an HP amount for ${esc(h.name)}">
         <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 (or +5 to heal)" title="Press Enter to deal damage. Type +5 or press Shift+Enter to heal." data-gmamt aria-label="HP amount for ${esc(h.name)}"></label>
         <button type="button" class="danger" data-gmdmg aria-label="Damage ${esc(h.name)}">Damage</button><button type="button" data-gmheal aria-label="Heal ${esc(h.name)}">Heal</button></div>
@@ -1025,7 +1025,6 @@ export function register(app) {
           const r = remotes().find(x => x.key === key), c = r && (r.data.conditions || []).find(x => x && x.key === sk);
           sendStatus(key, { remove: sk }, n => `Removed ${c ? condLabel(c) : sk} from ${n}`); return; }
         if (t.dataset.rstatus !== undefined) { addRemoteStatus(t.closest('[data-hid]').dataset.hid); return; }
-        if (t.dataset.hbuild !== undefined) { const c = t.closest('[data-hid]'), r = c.classList.contains('remote') && remotes().find(x => x.key === c.dataset.hid); const h = r ? null : store.hunter(c.dataset.hid); if (r) A().build.gmMenu({ kind: 'remote', remote: r.key }, r.data); else if (h) A().build.gmMenu({ kind: 'local', hunterId: h.id }, null); return; }
         if (t.dataset.hguild !== undefined) { const c = t.closest('[data-hid]'), r = c.classList.contains('remote') && remotes().find(x => x.key === c.dataset.hid); const h = r ? null : store.hunter(c.dataset.hid); if (r) void A().guild.edit({ kind: 'remote', remote: r.key }, r.data); else if (h) void A().guild.edit({ kind: 'local', hunterId: h.id }, null); return; }
         const pw = t.closest('[data-pw]');
         if (pw) { answerWaiting(pw.dataset.pw, t.hasAttribute('data-pw-approve') ? 'approve' : t.hasAttribute('data-pw-edit') ? 'edit' : 'refuse'); return; }

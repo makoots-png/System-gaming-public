@@ -203,18 +203,14 @@ test('what is not an object is refused whole, and a __proto__ key is an unknown 
   expect(refused.map(r => r.path)).toEqual(['__proto__', 'fatigue.__proto__']);
 });
 
-test('every override the roll tables and the Build panel write passes unchanged, and rulesOf reads it', () => {
+test('every override the roll tables write passes unchanged, and rulesOf reads it', () => {
   const ov = {
     gateNames: ['Ash Pit', 'Bone Hall'],
     gmTables: { whisper: ['A cold wind.'], urgent: ['Save the miners'], encounter: { E: ['2 goblins'], S: ['A dragon'] } },
-    build: { enabled: false, playerPick: false, respecGold: 9 },
-    paths: { vanguard: { name: 'Bulwark', tiers: [[{ str: 3 }, { vit: 3 }]] } },
   };
   expect(parseOverrides(ov)).toEqual({ overrides: ov, refused: [] });
   const R = rulesOf(parseOverrides(ov).overrides);
   expect(R.gateNames).toEqual(['Ash Pit', 'Bone Hall']);
-  expect(R.build).toEqual({ enabled: false, playerPick: false, respecGold: 9 });
-  expect(R.paths.vanguard.name).toBe('Bulwark');
 });
 
 test('a GM\'s override of a fight number passes, a wrong one is refused, and the rest of the fight keeps its numbers', () => {

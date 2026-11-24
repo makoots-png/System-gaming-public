@@ -6,10 +6,9 @@
 
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
-import { TIER_BUDGET } from '../src/core/registry/paths.ts';
 import { above, capped, eff } from '../src/core/stats.ts';
 import type { StatKey, Stats } from '../src/core/stats.ts';
-import { kitGear, monsterSheet as monsterOf, pointsAt, SHEET_LABELS, sheetOf as derive, split } from '../src/core/hunter/derive.ts';
+import { kitGear, monsterSheet as monsterOf, pointsAt, referenceBonus, SHEET_LABELS, sheetOf as derive, split } from '../src/core/hunter/derive.ts';
 import type { Archetype, Kit, MonsterKind, Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
 import { before, cost, interval as ticks, opening, stunned, tick, walkCost, withSpeed } from '../src/core/combat/timeline.ts';
 import type { Clock, Tick } from '../src/core/combat/timeline.ts';
@@ -184,11 +183,10 @@ const BUILDS: readonly Build[] = [
   { id: 'support', name: 'Support (Presence 2 : Discipline 1)', main: 'pre', second: 'dis', kit: 'light' },
 ];
 const LEVEL = RULES.rankLevels;
-const perkPoints = (rank: Rank): number => TIER_BUDGET.slice(0, RANKS.indexOf(rank) + 1).reduce((s, v) => s + v, 0);
-/** A paper build's stats at `rank`: its points split 2:1 (derive.ts), every perk on the main stat. */
+/** A paper build's stats at `rank`: its points split 2:1 (derive.ts), plus the rank's reference bonus on the main stat. */
 function statsOf(main: StatKey, second: StatKey, rank: Rank): Stats {
   const st = split(main, second, pointsAt(LEVEL[rank], RULES), RULES);
-  return { ...st, [main]: st[main] + perkPoints(rank) };
+  return { ...st, [main]: st[main] + referenceBonus(rank) };
 }
 /** The sheet of a body with these stats at `level` in `kit` (derive.ts). */
 const body = (stats: Stats, level: number, kit: Kit): Sheet => derive({ stats, level, gear: kitGear(kit, RULES), perks: {} }, RULES);

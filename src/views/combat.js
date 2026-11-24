@@ -496,6 +496,11 @@ export function register(app) {
     const loot = lootOf(plan.dead.flatMap(r => { const mid = links.monsters[r.id], m = mid ? A().bestiary.get(mid) : null; return m ? [m.loot] : []; }));
     const lootLine = lootText(loot);
     if (lootLine) lines.push(`Loot: ${lootLine}`);
+    const rested = shown.summary.rested ? Object.entries(shown.summary.rested) : [];
+    if (rested.length) {
+      const who = rested.map(([id, n]) => { const r = shown.rows.find(x => x.id === id); return `${r ? r.name : id} ${n}`; });
+      lines.push(`Fatigue recovered: ${who.join(', ')}.`);
+    }
     /** @type {import('./ui.js').SystemAction[]} */
     const actions = [over ? { label: 'Close', value: null, cancel: true } : { label: 'Keep fighting', value: null, cancel: true }];
     if (plan.award > 0 && nPart) actions.push({ label: 'Award XP to party', value: 'award', primary: true });

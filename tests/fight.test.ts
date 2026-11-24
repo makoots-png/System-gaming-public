@@ -232,7 +232,7 @@ describe('act: one use, then the next turn', () => {
     const r = play(...duel({}, { xp: 40 }), hit('A', 'M', BIG));
     expect(r.fight?.phase).toBe('ended');
     expect(r.effects.filter(e => e.type === 'defeated' || e.type === 'ended')).toEqual([
-      { type: 'defeated', id: id('M') }, { type: 'ended', summary: { rounds: 0, winner: 'party', down: [id('M')], xp: 40 } },
+      { type: 'defeated', id: id('M') }, { type: 'ended', summary: { rounds: 0, winner: 'party', down: [id('M')], xp: 40, rested: { [id('A')]: BIG.cost.fatigue } } },
     ]);
   });
 
@@ -2964,5 +2964,74 @@ describe('dodge-tile picker in the fight reducer', () => {
     const fHeldSkip = running(reduce(fStun, pass('M'), ctx));
     expect(fHeldSkip.currentId).toBe(id('M'));
     expect('moved' in body(fHeldSkip, 'A')).toBe(false);
+  });
+});
+
+describe('post-fight fatigue recovery (fightRest)', () => {
+  const REST = RULES.fight.fightRest;
+
+  test('ending a running fight drops living hunters by fightRest clamped at 0, emits vitals, and logs recovery below fight end', () => {
+    const r = play(
+      add(row('A', 'party', { fatigue: REST + 20 }), row('B', 'party', { fatigue: 20 }), row('M', 'foe')),
+      start(['A', 20], ['B', 10], ['M', 1]),
+      { type: 'end' },
+    );
+    expect(r.fight?.phase).toBe('ended');
+    if (r.fight?.phase !== 'ended') throw new Error('expected ended');
+    expect([body(r.fight, 'A').fatigue, body(r.fight, 'B').fatigue]).toEqual([20, 0]);
+    expect(r.fight.summary.rested).toEqual({ [id('A')]: REST, [id('B')]: 20 });
+    expect(r.effects.filter(e => e.type === 'vitals')).toEqual([
+      { type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: HP }, mana: RULES.fight.manaBase, fatigue: 20, statuses: [] },
+      { type: 'vitals', hunterId: hunterId('h-B'), life: { at: 'up', hp: HP }, mana: RULES.fight.manaBase, fatigue: 0, statuses: [] },
+    ]);
+    expect(r.fight.log[0]!.text).toBe('R1: The fight ends.');
+    expect(r.fight.log[1]!.text).toBe(`R1: Fatigue recovered: A ${REST}, B 20.`);
+  });
+
+  test('automatic fight end (overIf) applies fightRest to living hunters and leaves dead hunters unchanged', () => {
+    const mid = play(
+      add(row('A', 'party', { fatigue: 80 }), row('B', 'party', { fatigue: 80 }), row('M', 'foe')),
+      start(['A', 20], ['B', 10], ['M', 1]),
+      adjust('B', { hp: -9999 }),
+    );
+    const r = reduce(mid.fight, { type: 'remove', id: id('M') }, ctx);
+    expect(r.fight?.phase).toBe('ended');
+    if (r.fight?.phase !== 'ended') throw new Error('expected ended');
+    expect([body(r.fight, 'A').fatigue, body(r.fight, 'B').fatigue]).toEqual([80 - REST, 80]);
+    expect(r.fight.summary.rested).toEqual({ [id('A')]: REST });
+    expect(r.effects.filter(e => e.type === 'vitals').map(e => [e.hunterId, e.fatigue])).toEqual([[hunterId('h-A'), 80 - REST]]);
+  });
+
+  test('ending a fight in setup before start grants no fightRest, and fightRest 0 changes nothing', () => {
+    const setupEnd = play(add(row('A', 'party', { fatigue: 70 }), row('M', 'foe')), { type: 'end' });
+    expect(setupEnd.fight?.phase).toBe('ended');
+    if (setupEnd.fight?.phase !== 'ended') throw new Error('expected ended');
+    expect(body(setupEnd.fight, 'A').fatigue).toBe(70);
+    expect(setupEnd.fight.summary.rested).toBeUndefined();
+    expect(setupEnd.effects.filter(e => e.type === 'vitals')).toEqual([]);
+
+    const zeroRules = { ...RULES, fight: { ...RULES.fight, fightRest: 0 } };
+    const started = reduce(reduce(null, add(row('A', 'party', { fatigue: 70 }), row('M', 'foe')), { rules: zeroRules }).fight, start(['A', 20], ['M', 1]), { rules: zeroRules });
+    const endedZero = reduce(started.fight, { type: 'end' }, { rules: zeroRules });
+    expect(endedZero.fight?.phase).toBe('ended');
+    if (endedZero.fight?.phase !== 'ended') throw new Error('expected ended');
+    expect(body(endedZero.fight, 'A').fatigue).toBe(70);
+    expect(endedZero.fight.summary.rested).toBeUndefined();
+  });
+
+  test('parseFight round-trips ended fights with summary.rested, loads older ended fights without it, and rejects malformed rested maps', () => {
+    const r = play(add(row('A', 'party', { fatigue: 80 }), row('M', 'foe')), start(['A', 20], ['M', 1]), { type: 'end' });
+    if (r.fight?.phase !== 'ended') throw new Error('expected ended');
+    const raw = JSON.parse(JSON.stringify(r.fight));
+    expect(parseFight(raw, RULES)).toEqual(r.fight);
+
+    const legacy = JSON.parse(JSON.stringify(r.fight));
+    delete legacy.summary.rested;
+    const parsedLegacy = parseFight(legacy, RULES);
+    expect(parsedLegacy?.phase === 'ended' && parsedLegacy.summary.rested).toBeUndefined();
+
+    expect(parseFight({ ...raw, summary: { ...raw.summary, rested: { [id('A')]: 0 } } }, RULES)).toBeNull();
+    expect(parseFight({ ...raw, summary: { ...raw.summary, rested: { [id('A')]: -5 } } }, RULES)).toBeNull();
+    expect(parseFight({ ...raw, summary: { ...raw.summary, rested: 'bad' } }, RULES)).toBeNull();
   });
 });

@@ -34,7 +34,7 @@ const ON: Rules = RULES;
 const ANGEL = seedMonsters(RULES).find(m => m.script === 'angel-of-the-last-trumpet')!;
 const HUNTER: RowHunter = {
   id: 'h1', name: 'Brakk', stats: { str: 30, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10 }, level: 1, rank: 'E', life: { at: 'up', hp: 30 },
-  mana: 5, fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, build: { path: null, picks: [] },
+  mana: 5, fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null },
   skills: [], conditions: [],
 };
 const ctx = { rules: ON };

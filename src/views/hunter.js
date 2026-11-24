@@ -7,13 +7,14 @@ import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { fightHold, heldLines } from '../core/combat/fight-save.ts';
 import { combatantId, hunterId } from '../core/combat/ability-types.ts';
 import { titlePowerLines } from '../core/title-card.ts';
-import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
+import { checksOf, fitted, hunterSheet, setAdjust, setMaximum, autoSpend } from '../core/hunter/sheet.ts';
 import { keystoneBasis, keystoneConfirmDiff, keystoneReach, keystonesOf, nearestKeystone } from '../core/hunter/keystones.ts';
 import { keystoneOf } from '../core/registry/keystones.ts';
+import { AUTO_ALLOC_WORDS, JOB_NAMES, focusWeights, isJobName, jobFocus, matchingJob, parseStatFocus } from '../core/registry/jobs.ts';
 import {
   KEYSTONE_WORDS, keystoneAwakenedLine, keystoneConfirmLine, keystoneNextLine, keystoneShareAria, keystoneShareText, keystoneTierLabel,
 } from '../core/rules-text.ts';
-import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
+import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, raiseMany, setPoints, setStat } from '../core/hunter/progress.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
@@ -114,6 +115,17 @@ button.dv{display:block;width:100%;min-height:var(--control-h);color:inherit;fon
 .t-form{border:1px solid var(--line);padding:10px;margin-top:10px;display:grid;gap:8px}
 .t-form[hidden]{display:none}
 .raw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.af-pick{text-align:left;display:grid;gap:10px}
+.af-presets{display:flex;flex-wrap:wrap;gap:6px}
+.af-presets button{min-height:44px;padding:6px 10px;font-size:13px}
+.af-presets button[aria-pressed=true]{border-color:var(--cyan);color:var(--cyan);background:rgba(77,216,255,.16)}
+.af-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.af-fields select{width:100%;min-height:44px;box-sizing:border-box}
+.af-match{margin:0;font-size:13px;color:var(--cyan-dim)}
+.af-match[hidden]{display:none}
+.af-pv{list-style:none;margin:0;padding:0;font-size:14px}
+.af-pv li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid rgba(27,74,110,.5)}
+.af-pv .up{color:var(--green)}
 @media (max-width:720px){.row-li .r-acts button{flex:1 0 auto}}
 @media (pointer:coarse),(max-width:720px){.chip,.chip button{min-height:44px}.chip button{min-width:44px}}
 `;
@@ -156,9 +168,9 @@ export function register(app) {
    * grant did (`api.granted` shows it), or null when there is no such hunter. `rw` comes from a view: read it here.
    */
   function give(hid, rw) {
-    const r = parseRewards(rw) ?? newRewards(), build = rw.build !== undefined ? rw.build : null;
+    const r = parseRewards(rw) ?? newRewards();
     const day = dayNow(), held = !!fightOf({ hid });
-    const w = grantWrite('rewards', s => { const x = grant(s, hid, r, build, { ...day, vitals: held ? 'fight' : 'sheet' }); return isRefused(x) ? x : { ...x, held: [{ who: { hid }, ...x.fight }] }; });
+    const w = grantWrite('rewards', s => { const x = grant(s, hid, r, { ...day, vitals: held ? 'fight' : 'sheet' }); return isRefused(x) ? x : { ...x, held: [{ who: { hid }, ...x.fight }] }; });
     return isRefused(w) ? null : w;
   }
   /**
@@ -685,12 +697,95 @@ export function register(app) {
         <button type="button" data-st="${k}" data-dir="1" aria-label="Increase ${alias}">+</button>
       </div></div>`; };
 
+  const focusMemory = store.device('auto-focus');
+  /**
+   * Initial stat focus for hunter `h`: job's 2:1 pair, else saved device focus, else highest spent stats (or Strength).
+   * @returns {import('../core/registry/jobs.ts').StatFocus}
+   */
+  function initialFocus(h, R) {
+    if (isJobName(h.job)) { const jf = jobFocus(h.job); if (jf) return jf; }
+    const saved = focusMemory.read();
+    const kept = saved && typeof saved === 'object' && !Array.isArray(saved) ? parseStatFocus(saved[h.id]) : null;
+    if (kept) return kept;
+    const put = allocated(h), base = R.fight.statBase;
+    const spent = STAT_KEYS.filter(k => put[k] > base).sort((a, b) => put[b] - put[a]);
+    return spent.length ? { main: spent[0], second: spent[1] ?? null } : { main: 'str', second: null };
+  }
+  async function openAutoAllocate(hid) {
+    const h = store.hunter(hid), R = rules();
+    if (!h || available(h, R) <= 0) return;
+    const init = initialFocus(h, R);
+    /** @type {{ main: import('../core/stats.ts').StatKey; second: import('../core/stats.ts').StatKey | null }} */
+    const picked = { main: init.main, second: init.second };
+    const job = isJobName(h.job) ? h.job : null;
+    const jf = job ? jobFocus(job) : null;
+    const lead = job && jf
+      ? AUTO_ALLOC_WORDS.jobHint(job, STAT_LABELS[jf.main], jf.second ? STAT_LABELS[jf.second] : null)
+      : h.job ? AUTO_ALLOC_WORDS.customJobHint : AUTO_ALLOC_WORDS.preJobHint;
+    const statOpts = STAT_KEYS.map(k => `<option value="${k}">${esc(STAT_LABELS[k])} (${STAT_SHORT[k]})</option>`).join('');
+    const html = `<div class="af-pick">
+      <div class="lbl">${esc(AUTO_ALLOC_WORDS.jobPresetsLabel)}</div>
+      <div class="af-presets" role="group" aria-label="${esc(AUTO_ALLOC_WORDS.jobPresetsLabel)}">${JOB_NAMES.map(j => `<button type="button" data-af-job="${esc(j)}" aria-pressed="false">${esc(j)}</button>`).join('')}</div>
+      <div class="af-fields">
+        <label class="field"><span class="lbl">${esc(AUTO_ALLOC_WORDS.mainLabel)}</span><select data-af-main>${statOpts}</select></label>
+        <label class="field"><span class="lbl">${esc(AUTO_ALLOC_WORDS.secondLabel)}</span><select data-af-second><option value="">${esc(AUTO_ALLOC_WORDS.secondNone)}</option>${statOpts}</select></label>
+      </div>
+      <p class="af-match" data-af-match hidden></p>
+      <div class="lbl">${esc(AUTO_ALLOC_WORDS.previewLabel)}</div>
+      <ul class="af-pv" data-af-pv aria-live="polite"></ul>
+      <p class="dv-note">${esc(AUTO_ALLOC_WORDS.undoHint)}</p>
+    </div>`;
+    const ok = await ui.system({
+      tag: '! Points', title: AUTO_ALLOC_WORDS.title, kind: 'info', body: lead, html,
+      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: AUTO_ALLOC_WORDS.placeAction, value: true, primary: true }],
+      drawn(win) {
+        const box = win.querySelector('.af-pick');
+        if (!box) return;
+        const mainSel = box.querySelector('[data-af-main]'), secSel = box.querySelector('[data-af-second]');
+        const matchEl = box.querySelector('[data-af-match]'), pvEl = box.querySelector('[data-af-pv]');
+        const drawFocus = () => {
+          if (picked.second === picked.main) picked.second = null;
+          mainSel.value = picked.main;
+          for (const opt of secSel.querySelectorAll('option')) opt.disabled = opt.value === picked.main;
+          secSel.value = picked.second ?? '';
+          const match = matchingJob(picked);
+          for (const b of box.querySelectorAll('[data-af-job]')) b.setAttribute('aria-pressed', String(b.dataset.afJob === match));
+          matchEl.hidden = !match;
+          matchEl.textContent = match ? AUTO_ALLOC_WORDS.matchesJob(match) : '';
+          const plan = autoSpend(h, focusWeights(picked), R), d = sheetOf(h);
+          pvEl.innerHTML = STAT_KEYS.filter(k => plan[k] > 0).map(k => `<li><span>${esc(STAT_LABELS[k])} (${STAT_SHORT[k]})</span><span>${esc(d.stats[k])} &rarr; <b class="up">${esc(d.stats[k] + plan[k])}</b> (+${esc(plan[k])})</span></li>`).join('');
+        };
+        box.addEventListener('click', e => {
+          const b = e.target.closest('[data-af-job]'); if (!b) return;
+          const j = b.dataset.afJob;
+          if (!isJobName(j)) return;
+          const next = jobFocus(j);
+          picked.main = next.main; picked.second = next.second;
+          drawFocus();
+        });
+        mainSel.addEventListener('change', () => { picked.main = oneOf(mainSel.value, STAT_KEYS, 'str'); drawFocus(); });
+        secSel.addEventListener('change', () => { picked.second = secSel.value ? oneOf(secSel.value, STAT_KEYS, null) : null; drawFocus(); });
+        drawFocus();
+      },
+    });
+    if (ok !== true) return;
+    const cur = store.hunter(hid);
+    if (!cur) return;
+    const prev = focusMemory.read();
+    const nextMem = prev && typeof prev === 'object' && !Array.isArray(prev) ? { ...prev, [hid]: { main: picked.main, second: picked.second } } : { [hid]: { main: picked.main, second: picked.second } };
+    focusMemory.write(nextMem);
+    const plan = autoSpend(cur, focusWeights(picked), rules());
+    if (!Object.keys(plan).length) return;
+    ui.wrote('Points', store.apply('stat', atHunter(hid, both(x => raiseMany(x, plan, rules()), x => fitted(x, rules())))), ALLOCATION_WORDS);
+  }
+
   app.registerPanel({
     view: 'status', id: 'attributes', order: 12, title: 'Attributes', jump: 'Stats',
     mount(el) {
       el.innerHTML = `<div class="stats">${STAT_KEYS.map(statCell).join('')}</div>
         <div class="ap-row">
           <span class="lbl">Ability points</span><span class="ap-num" data-ap>0</span>
+          <button type="button" data-auto-alloc hidden>${esc(AUTO_ALLOC_WORDS.button)}</button>
           <button type="button" class="primary" data-confirm hidden>${esc(KEYSTONE_WORDS.confirmAction)}</button>
           <button type="button" data-grant hidden>+1 point</button>
         </div>
@@ -711,6 +806,7 @@ export function register(app) {
           ui.wrote('! Hunter', store.apply('stat', atHunter(h.id, both(move, x => fitted(x, rules())))), ALLOCATION_WORDS);
           return;
         }
+        if ('autoAlloc' in d) { void openAutoAllocate(h.id); return; }
         if ('confirm' in d) { ui.wrote('! Hunter', store.apply('confirm-alloc', atHunter(h.id, confirm))); return; }
         if ('grant' in d && role === 'gm') ui.wrote('! Hunter', store.apply('grant', atHunter(h.id, x => plusPoint(x, rules()))));
       });
@@ -740,6 +836,7 @@ export function register(app) {
         c.querySelector('.s-roll').setAttribute('aria-label', `Roll ${STAT_SHORT[k]} check (${STAT_LABELS[k]}), bonus ${sgn(b)}`);
       });
       el.querySelector('[data-ap]').textContent = points;
+      el.querySelector('[data-auto-alloc]').hidden = points <= 0;
       const pending = hasPending(h);
       el.querySelector('[data-confirm]').hidden = !pending;
       el.querySelector('[data-grant]').hidden = !gm;

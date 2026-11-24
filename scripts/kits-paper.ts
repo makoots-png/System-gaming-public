@@ -6,9 +6,8 @@
 
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
-import { TIER_BUDGET } from '../src/core/registry/paths.ts';
 import type { StatKey, Stats } from '../src/core/stats.ts';
-import { kitGear, monsterSheet, pointsAt, sheetOf, split } from '../src/core/hunter/derive.ts';
+import { kitGear, monsterSheet, pointsAt, referenceBonus, sheetOf, split } from '../src/core/hunter/derive.ts';
 import type { Kit, MonsterKind, Sheet, StatusMod } from '../src/core/hunter/derive.ts';
 import { afterDefence } from '../src/core/combat/resolve.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
@@ -232,10 +231,9 @@ const BUILD: { readonly [B in Build]: { readonly main: StatKey; readonly second:
   support: { main: 'pre', second: 'dis', kit: 'light' },
 };
 const SIM: readonly Rank[] = ['E', 'C', 'S'];
-const perkPoints = (rank: Rank): number => TIER_BUDGET.slice(0, RANKS.indexOf(rank) + 1).reduce((s, v) => s + v, 0);
 function statsOf(b: Build, rank: Rank): Stats {
   const { main, second } = BUILD[b], st = split(main, second, pointsAt(RULES.rankLevels[rank], RULES), RULES);
-  return { ...st, [main]: st[main] + perkPoints(rank) };
+  return { ...st, [main]: st[main] + referenceBonus(rank) };
 }
 /** A paper build's sheet (design 2.3's five), under `mods` (a mode's stat bonus). */
 const sheet = (b: Build, rank: Rank, mods: readonly StatusMod[] = []): Sheet =>

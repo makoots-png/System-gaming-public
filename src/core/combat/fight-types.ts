@@ -113,9 +113,13 @@ export const spreadKey = (key: StatusKey): StatusKey => `${key}-spread` as Statu
 export const pendingKey = (p: DueTurn): StatusKey => 'due' in p ? p.due.key : p.spread.key;
 /**
  * What the end of a fight reports: its length in rounds with one decimal, the side still up (null if neither), who is
- * down, and the XP of the foes that went down (those still in the fight and those removed while down).
+ * down, the XP of the foes that went down (those still in the fight and those removed while down), and the fatigue each
+ * living hunter recovered when the fight ended (`fightRest`, absent when nobody recovered any).
  */
-export type Summary = { readonly rounds: number; readonly winner: Side | null; readonly down: readonly CombatantId[]; readonly xp: number };
+export type Summary = {
+  readonly rounds: number; readonly winner: Side | null; readonly down: readonly CombatantId[]; readonly xp: number;
+  readonly rested?: Readonly<Record<CombatantId, number>>;
+};
 
 /** `Omit` on each member of a union, so a row's kind keeps the life that goes with it (effect-ops.ts `BodyLife`). */
 type OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

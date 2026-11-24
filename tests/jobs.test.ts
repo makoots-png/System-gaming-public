@@ -1,6 +1,7 @@
 // Every job in src/core/registry/jobs.ts must pass these. A new job is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
+import { AUTO_ALLOC_WORDS, BUILT_IN_JOBS, JOB_NAMES, focusWeights, jobAlloc, jobFocus, matchingJob, parseStatFocus } from '../src/core/registry/jobs.ts';
+import { statsOfPair } from '../src/core/hunter/keystones.ts';
 import { chainAfter, stepQuest } from '../src/core/hunter/job-chain.ts';
 import type { ChainResult, JobChain } from '../src/core/hunter/job-chain.ts';
 import { jcid, qid } from './fixtures/ids.ts';
@@ -49,5 +50,60 @@ for (const job of JOB_NAMES) {
         expect(r.effects).toContainEqual({ type: 'grantJob', job });
       }
     });
+
+    test('has a 2:1 stat allocation matching its keystone pair and round-trips through jobFocus and matchingJob', () => {
+      const pairStats = statsOfPair(def.pair);
+      const focus = jobFocus(job);
+      expect(focus).not.toBeNull();
+      if (!focus || !focus.second) throw new Error(`${job} focus missing second stat`);
+      expect(pairStats).toContain(focus.main);
+      expect(pairStats).toContain(focus.second);
+      expect(focus.main).not.toBe(focus.second);
+      expect(jobAlloc(job)).toEqual({ [focus.main]: 2, [focus.second]: 1 });
+      expect(focusWeights(focus)).toEqual(def.alloc);
+      expect(matchingJob(focus)).toBe(job);
+    });
   });
 }
+
+group('stat focus helpers', () => {
+  test('jobAlloc returns null for unknown or empty job names', () => {
+    expect(jobAlloc(null)).toBeNull();
+    expect(jobAlloc('')).toBeNull();
+    expect(jobAlloc('Shadow Monarch')).toBeNull();
+  });
+
+  test('focusWeights supports single-stat focus and ignores duplicate second stat', () => {
+    expect(focusWeights({ main: 'str', second: null })).toEqual({ str: 1 });
+    expect(focusWeights({ main: 'str', second: 'str' })).toEqual({ str: 1 });
+    expect(focusWeights({ main: 'agi', second: 'ctl' })).toEqual({ agi: 2, ctl: 1 });
+  });
+
+  test('matchingJob finds a job regardless of order or returns null when no job matches', () => {
+    expect(matchingJob({ main: 'vit', second: 'str' })).toBe('Fighter');
+    expect(matchingJob({ main: 'str', second: null })).toBeNull();
+    expect(matchingJob({ main: 'str', second: 'pow' })).toBeNull();
+  });
+
+  test('parseStatFocus validates outside values and drops invalid or duplicate second stats', () => {
+    expect(parseStatFocus({ main: 'pow', second: 'ctl' })).toEqual({ main: 'pow', second: 'ctl' });
+    expect(parseStatFocus({ main: 'pow', second: 'pow' })).toEqual({ main: 'pow', second: null });
+    expect(parseStatFocus({ main: 'pow', second: 'bogus' })).toEqual({ main: 'pow', second: null });
+    expect(parseStatFocus({ main: 'bogus', second: 'str' })).toBeNull();
+    expect(parseStatFocus(null)).toBeNull();
+  });
+
+  test('AUTO_ALLOC_WORDS follow the app voice rules', () => {
+    const lines = [
+      AUTO_ALLOC_WORDS.button, AUTO_ALLOC_WORDS.title, AUTO_ALLOC_WORDS.preJobHint,
+      AUTO_ALLOC_WORDS.customJobHint, AUTO_ALLOC_WORDS.jobHint('Fighter', 'Strength', 'Vitality'),
+      AUTO_ALLOC_WORDS.jobPresetsLabel, AUTO_ALLOC_WORDS.mainLabel, AUTO_ALLOC_WORDS.secondLabel,
+      AUTO_ALLOC_WORDS.secondNone, AUTO_ALLOC_WORDS.previewLabel, AUTO_ALLOC_WORDS.matchesJob('Fighter'),
+      AUTO_ALLOC_WORDS.undoHint, AUTO_ALLOC_WORDS.placeAction,
+    ];
+    for (const s of lines) {
+      expect(s).not.toMatch(/[—;]/);
+      expect(s).not.toMatch(/\bjust\b/i);
+    }
+  });
+});

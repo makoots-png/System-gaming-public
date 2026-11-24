@@ -20,8 +20,8 @@ import type { Hunter } from './hunter/hunter.ts';
 /** What a read needs from outside: the clock, and the makers of this phone's device id and device token (random, the edge's). */
 export type ParseEnv = { now: Date; newDeviceId: () => DeviceId; newDeviceToken: () => string };
 
-/** Bounds for junk or hostile saves only. GM rules (loadoutCap, path tiers) never prune saved data. */
-export const LIMITS = { loadouts: 24, picks: 12, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, boons: 50 } as const;
+/** Bounds for junk or hostile saves only. GM rules (loadoutCap) never prune saved data. */
+export const LIMITS = { loadouts: 24, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, boons: 50 } as const;
 
 export type Rec = Record<string, unknown>;
 export const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -71,10 +71,9 @@ export function optional<T extends object>(o: T, key: keyof T & string, ok: (v: 
 export type BadId = [o: { id: string }, prefix: string, owner: Hunter | null];
 /**
  * One repair run: the save's rules, and every id seen so far with the entities whose id must be replaced. `owner`: the
- * hunter whose lists this run is reading (hunter.ts `fixHunter` reads them with a run of its own), else null. `sheet`
- * is a hunter another phone sent: its build path is checked against that phone's rules, which this run does not have.
+ * hunter whose lists this run is reading (hunter.ts `fixHunter` reads them with a run of its own), else null.
  */
-export type RepairRun = { R: Rules; env: ParseEnv; ids: Set<string>; bad: BadId[]; owner: Hunter | null; sheet?: true };
+export type RepairRun = { R: Rules; env: ParseEnv; ids: Set<string>; bad: BadId[]; owner: Hunter | null };
 
 /** A list of entities: drops what is not an object, fills defaults, and notes a missing or repeated id for a new one. */
 export function list<T extends { id: string }>(run: RepairRun, value: unknown, prefix: string, example: () => T, fix?: (o: T) => void): T[] {

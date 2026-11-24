@@ -913,7 +913,21 @@ function summaryOf(v: unknown): Summary | null {
   if (!isObj(v)) return null;
   const rounds = num(v.rounds, 0, BIG), winner = v.winner === null ? null : oneOf(v.winner, SIDES, undefined), down = all(v.down, MAX_ROWS, idText);
   const xp = whole(v.xp, 0, Number.MAX_SAFE_INTEGER);
-  return rounds === null || winner === undefined || !down || xp === null ? null : { rounds, winner, down: down.map(combatantId), xp };
+  if (rounds === null || winner === undefined || !down || xp === null) return null;
+  let rested: Record<CombatantId, number> | undefined;
+  if (v.rested !== undefined) {
+    if (!isObj(v.rested)) return null;
+    const entries = Object.entries(v.rested);
+    if (entries.length > MAX_ROWS) return null;
+    const out: Record<CombatantId, number> = {};
+    for (const [k, raw] of entries) {
+      const id = idText(k), n = num(raw, 0, BIG);
+      if (!id || n === null || n <= 0) return null;
+      out[combatantId(id)] = n;
+    }
+    if (entries.length) rested = out;
+  }
+  return { rounds, winner, down: down.map(combatantId), xp, ...(rested ? { rested } : {}) };
 }
 
 /** Who has held each spreading status: at most `MAX_SPREAD` keys, each with at most `MAX_ROWS` row ids. */

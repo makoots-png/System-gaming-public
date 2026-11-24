@@ -241,9 +241,8 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
   return out;
 }
 
-/** What a grant did beside the reward's own parts: a build change's line, the level before and after its XP, any clear gold split for System revive debt, and any debt XP reduction. */
+/** What a grant did beside the reward's own parts: the level before and after its XP, any clear gold split for System revive debt, and any debt XP reduction. */
 export type GrantMore = {
-  readonly build?: string;
   readonly level?: { readonly from: number; readonly to: number };
   readonly debt?: DebtPaid;
   readonly guildCut?: GuildGoldCut;
@@ -254,10 +253,10 @@ export type GrantMore = {
 /**
  * The reward window's lines, as the player sees them when a reward arrives (`applyRewards` in src/views/hunter.js shows
  * them; the reward editor's preview draws them): "+100 XP", "+50 gold", "Loses 1 ability point", "Item acquired: Potion
- * ×2", "Title acquired: ...", "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `more.build` is a build
- * change's line, shown after the items. A level lost to an XP cost is said after the XP ("Loses 1 level: now level 2");
- * a level gained has a window of its own (`levelup`). `more.debt` replaces the plain gold line with the three-way debt
- * split; `more.debtXp` replaces the plain XP line with the reduced XP line.
+ * ×2", "Title acquired: ...", "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". A level lost to an XP
+ * cost is said after the XP ("Loses 1 level: now level 2"); a level gained has a window of its own (`levelup`).
+ * `more.debt` replaces the plain gold line with the three-way debt split; `more.debtXp` replaces the plain XP line
+ * with the reduced XP line.
  */
 export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): string[] {
   const out: string[] = [];
@@ -271,7 +270,6 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));
   if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
-  if (more.build) out.push(more.build);
   if (r.title) out.push(`Title acquired: ${titleWords(r.title)}`);
   if (r.job) out.push(`Job: ${r.job}`);
   for (const s of r.skills) out.push(`Skill acquired: ${s.name}`);

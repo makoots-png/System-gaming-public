@@ -3,7 +3,6 @@
 // rulesOverrides) are deep-merged by rulesOf(), and the GM's statuses (a save's library.statuses) are laid over the
 // built-in ones.
 import { BUILT_IN_STATUSES } from './registry/statuses.ts';
-import { BUILT_IN_PATHS } from './registry/paths.ts';
 import { STAT_KEYS, STAT_SHORT } from './stats.ts';
 import { GRID_SIDE } from './combat/space.ts';
 import { LEVELS } from './combat/sight-levels.ts';
@@ -114,16 +113,13 @@ const DIFFICULTY_LEVEL = wholeIn(1, 10, 'gate or boss difficulty level, 1 to 10'
 const DIFFICULTY_WIN_PCT = wholeIn(1, 99, 'expected three-hunter win chance in percent for one difficulty step');
 const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty multiplier for one step or rank');
 const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty multiplier applied to max HP. The rest applies to damage dealt');
-/** The points a build path's main and second stat take of each level's points (registry/paths.ts `alloc`). */
-export const PATH_ALLOC = wholeIn(0, 10, 'auto-allocation weight for this stat per level. 0 puts no points here, up to 10');
-/** A perk's points on a bonus key (a title's bonus, a path tier's perk): the bound of every flat bonus a parser reads. */
+/** A bonus's points on a bonus key (a title's bonus, a passive skill, an item): the bound of every flat bonus a parser reads. */
 export const PERK_POINTS = wholeIn(-999, 999, 'flat stat or sheet bonus, between -999 and 999');
 /** A daily objective's target. */
 export const OBJECTIVE_TARGET = realIn(0.1, 100_000, 'target count for a daily quest objective. Must be above 0 and at most 100,000');
 
 /** A rule number whose rule is an open map: each entry of the map has this domain. `*` stands for any one key. */
 const OPEN_DOMAINS: ReadonlyArray<{ readonly re: RegExp; readonly domain: Domain }> = [
-  { re: /^paths\.[^.]+\.alloc\.[^.]+$/, domain: PATH_ALLOC },
   { re: /^gateSpawn\.regulars\.[^.]+$/, domain: PACK },
 ];
 
@@ -397,8 +393,6 @@ const SPEC = {
   // room's `rules` doc carries it to the players. Off refuses a new offer and an accept at the tap, never a refuse, a take
   // back, a stop or the read of an end (notes-5-trade.md 2.2)
   trade: { on: true },
-  build: { enabled: true, playerPick: true, respecGold: whole(5, 0, 1_000_000, 'gold cost multiplier for respec (multiplied by level squared). 0 makes respec free') }, // respecGold: a player's own respec costs respecGold * level * level gold (GM mode is free)
-  paths: BUILT_IN_PATHS, // the build paths and their perks: src/core/registry/paths.ts; each `alloc` number in PATH_ALLOC (OPEN_DOMAINS), each perk in PERK_POINTS
   // The reworked fight's numbers (docs/agent-handoff/rw/design.md; scripts/rw-paper.ts prints the tables they make).
   // src/core/stats.ts, src/core/hunter/derive.ts, combat/timeline.ts and combat/space.ts read them. Each comment is the
   // reason for the value; the last words of each rule are the reason for its domain.
@@ -935,9 +929,9 @@ export function rankForLevel(R: Pick<Rules, 'rankLevels'>, level: number): Rank 
   return r;
 }
 
-// ── build paths (pure; also used by the save repair in save.ts on raw data, so every lookup tolerates junk) ──
+// ── bonus keys (pure; used by titles, items, passive skills, keystones, and save repair) ──
 /**
- * The keys of every bonus (balance plan section 10): what a perk, a title, a passive skill, a worn item or the GM's grant
+ * The keys of every bonus (balance plan section 10): what a title, a passive skill, a worn item, a keystone or the GM's grant
  * may add. The eight stats add before their curves; every other key is the sheet number of that name (derive.ts), added
  * after its stat's curve cap and never past its sheet clamp. Three sheet numbers are left out: `weight`, `armor` and
  * `resist` are a worn piece's own fields (what its weight buys), so each has one route; `sight` takes the higher, not
@@ -964,7 +958,6 @@ const BONUS_STEP: { readonly [K in BonusKey]: 'whole' | 'hundredth' } = {
 /** The bonus keys a point of which is a hundredth of their number (`BONUS_STEP`). */
 export const BONUS_HUNDREDTHS: readonly BonusKey[] = BONUS_KEYS.filter(k => BONUS_STEP[k] === 'hundredth');
 export type Perk = Partial<Record<BonusKey, number>>;
-export type Path = { name: string; alloc: Partial<Record<StatKey, number>>; tiers: Perk[][] };
 /**
  * The short words for each bonus key, read after a signed number ("+5 Lethality"). A screen that says "Max HP"
  * overrides hpMax and manaMax itself. A key read in hundredths says so with its %.
@@ -976,27 +969,6 @@ export const BONUS_LABELS: Readonly<Record<BonusKey, string>> = {
   critSize: '% Crit multiplier', opening: 'Opening', tenacity: 'Tenacity', potency: 'Potency', threat: '% Threat', hold: '% Channel break threshold', costCut: '% Ability cost reduction',
   drain: '% Lifesteal', haste: 'Ability haste', healPower: '% Heal and shield power', shieldDrain: '% Damage to shield',
 };
-export const pathOf = (R: Rules, id: unknown): Path | null => {
-  const paths = (R.paths || {}) as Record<string, unknown>;
-  return typeof id === 'string' && Object.hasOwn(paths, id) && isObj(paths[id]) ? paths[id] as Path : null;
-};
-export const perkOf = (p: Path | null, tier: number, pick: number): Perk => {
-  const t: unknown = p && Array.isArray(p.tiers) && Array.isArray(p.tiers[tier]) ? p.tiers[tier] : [];
-  const perk = (t as unknown[])[pick];
-  return isObj(perk) ? perk as Perk : {};
-};
-export const tiersOpen = (p: Path | null, rank: unknown): number => Math.min(p && Array.isArray(p.tiers) ? p.tiers.length : 0, rankIdx(rank) + 1);
-/** Summed bonus of the picks that the hunter's rank has unlocked; picks beyond the rank are kept but inactive. */
-export function pathBonus(R: Rules, build: { path?: unknown; picks?: unknown } | null | undefined, rank: unknown): { p: Path | null; out: Perk; n: number } {
-  const p = pathOf(R, build && build.path), out: Perk = {};
-  if (!build || !p || !Array.isArray(build.picks)) return { p, out, n: 0 };
-  const n = Math.min(build.picks.length, tiersOpen(p, rank));
-  for (let i = 0; i < n; i++) {
-    const b = perkOf(p, i, build.picks[i] as number);
-    for (const k of BONUS_KEYS) { const v = b[k]; if (Number.isFinite(v) && v) out[k] = (out[k] || 0) + Math.trunc(v as number); }
-  }
-  return { p, out, n };
-}
 
 // ── cosmetic registries (not game rules, so not in RULES / rulesOverrides). The emblems are icons: src/core/registry/icons.ts ──
 export const HUNTER_COLORS = ['#4dd8ff', '#59e6a8', '#ffc94d', '#ff6b3d', '#ff4d5e', '#c79bff', '#4d8cff', '#ff7ad9', '#dff3ff', '#9fb6c9'];

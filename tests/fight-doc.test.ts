@@ -615,7 +615,7 @@ describe('keystones on the table (notes-11-keystones.md, design A.9 and A.10, un
     ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
   const mkHunter = (i: number, name: string, o: Partial<RowHunter>): RowHunter => ({
     id: `h${i}`, name, stats: statsOf(), level: 70, rank: 'S', life: { at: 'up', hp: 999 }, mana: 99, fatigue: 0, penalty: null,
-    hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, build: { path: null, picks: [] }, skills: [],
+    hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, skills: [],
     conditions: [], ...o,
   });
   const mkBoss: RowMonster = { name: 'Dragon', rank: 'S', archetype: 'brute', kind: 'boss', tweak: {}, abilities: [], statuses: [] };

@@ -138,7 +138,7 @@ describe('each fact is recorded by its one writer, in that thing\'s write', () =
   });
 
   test('a new level, a new rank and a title given', () => {
-    const g = ok(grant(saveOf(mira()), H1, { ...newRewards(), xp: 100000 }, null, { at: AT, today: TODAY, R: RULES, vitals: 'sheet' }));
+    const g = ok(grant(saveOf(mira()), H1, { ...newRewards(), xp: 100000 }, { at: AT, today: TODAY, R: RULES, vitals: 'sheet' }));
     const h = g.save.hunters[0]!;
     expect(inbox(h)).toEqual([{ kind: 'level', level: h.level }]);
     expect(inbox(setRank(mira(), 'D'))).toEqual([{ kind: 'rank', rank: 'D' }]);

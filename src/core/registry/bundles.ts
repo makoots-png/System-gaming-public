@@ -205,8 +205,8 @@ const ENTRIES: readonly Entry[] = [
   // ── changed the hunter's mind ──
   // A36 1 ability point
   { key: 'seed-file-updated', moment: 'mind', when: 'Changed a belief the hunter held, for a reason the table saw', name: 'File Updated', rewards: points(1), window: words('THE SYSTEM HAS UPDATED YOUR FILE', 'Your hunter changed a belief, and the table saw why. You get 1 ability point.') },
-  // A37 a one-use boon: a respec at no gold, before the next session
-  { key: 'seed-new-shape', moment: 'mind', when: 'Changed the hunter\'s mind in a way that changes how they fight', name: 'New Shape', rewards: boon('New Shape', 'One free build respec (path and perks). Use it before the next session or you lose it.'), window: words('THE OLD SHAPE NO LONGER FITS', 'Your hunter changed their mind in a way that changes how they fight. You get one free build respec (path and perks). Use it before the next session or you lose it.') },
+  // A37 a one-use boon: reassign spent ability points once with the GM, before the next session
+  { key: 'seed-new-shape', moment: 'mind', when: 'Changed the hunter\'s mind in a way that changes how they fight', name: 'New Shape', rewards: boon('New Shape', 'Reassign your spent ability points once with the GM. Use it before the next session or you lose it.'), window: words('THE OLD SHAPE NO LONGER FITS', 'Your hunter changed their mind in a way that changes how they fight. Reassign your spent ability points once with the GM. Use it before the next session or you lose it.') },
 
   // ── owned a failure ──
   // 1 ability point

@@ -109,10 +109,12 @@ describe('a gate\'s end', () => {
 });
 
 describe('the Rules page', () => {
-  test('says what a rest gives, how many a gate, and what a Clear gives back', () => {
+  test('says what a rest gives, how many a gate, what a fight\'s end and a Clear give back, and follows fightRest overrides', () => {
     const [rest, perGate, dead] = restLines(RULES);
     expect(rest).toBe(`Resting restores 25% of your max HP and 25% of your max mana, up to your maximum. It also removes 75% of your fatigue. Exhausted ends once your remaining fatigue drops below ${RULES.fatigue.collapseAt}% of your capacity.`);
-    expect(perGate).toBe('You get 2 rests per gate. Clearing a gate restores full HP and mana, clears your fatigue, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests.');
+    expect(perGate).toBe(`You get 2 rests per gate. Clearing a gate restores full HP and mana, clears your fatigue, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests. After a fight ends, each living hunter recovers ${RULES.fight.fightRest} fatigue (Exhausted still needs a rest or gate clear).`);
     expect(dead).toBe(`A dead hunter cannot rest and gains nothing from clearing a gate. ${WAYS_BACK} brings you back. You cannot rest during a fight.`);
+    expect(restLines({ ...RULES, fight: { ...RULES.fight, fightRest: 30 } })[1]).toContain('each living hunter recovers 30 fatigue');
+    expect(restLines({ ...RULES, fight: { ...RULES.fight, fightRest: 0 } })[1]).not.toContain('After a fight ends');
   });
 });

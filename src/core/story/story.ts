@@ -182,7 +182,7 @@ export function chapterBody(c: Pick<Chapter, 'words' | 'rewards' | 'quest'>, at:
  * window shows the grant's own lines, so it says what reached the sheet. A hunter that is not there is refused.
  */
 export function chapterLanded(save: Save, hid: string, c: ChapterBody, o: Day & { vitals: VitalsAt }): ChapterGiven | Refused<'no-hunter'> {
-  const g = grant(save, hid, c.rewards, null, o);
+  const g = grant(save, hid, c.rewards, o);
   if (isRefused(g)) return g;
   let next = g.save;
   if (c.quest) {

@@ -34,7 +34,7 @@ import { MYTHICS } from '../src/core/registry/mythics.ts';
 const BASE = Object.fromEntries(STAT_KEYS.map(k => [k, 10])) as Stats;
 const striker = (R: Rules, str: number): SheetHunter => ({
   stats: { ...BASE, str }, level: 1, rank: 'E', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, build: { path: null, picks: [] }, skills: [], conditions: [],
+  items: [], equipped: {}, skills: [], conditions: [],
 });
 const curved = (fight: Partial<Rules['fight']>): Rules => ({ ...RULES, fight: { ...RULES.fight, ...fight } });
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;

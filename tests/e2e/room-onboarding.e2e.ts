@@ -226,7 +226,7 @@ test('the Welcome window shows what the site is below the window, without scroll
   });
 });
 
-test('a new player who names a hunter sees Hunter created with three next steps, and Open my sheet lands on Status', async ({ device }) => {
+test('a new player who names a hunter sees Hunter created with two next steps, and Open my sheet lands on Status', async ({ device }) => {
   const phone = (await device('phone')).page;
   await openApp(phone);
   await toPlayerStep(phone);
@@ -238,9 +238,9 @@ test('a new player who names a hunter sees Hunter created with three next steps,
   const win = await windowTitled(phone, 'Hunter created');
   await expect(win).toContainText('Your hunter Nova Reed is ready.');
   const steps = await nextOf(phone);
-  expect(steps.map(s => s.done)).toEqual([false, false, false]);
+  expect(steps.map(s => s.done)).toEqual([false, false]);
   expect(steps[0]!.text).toMatch(/^Spend your \d+ ability points?\. On the Status tab, tap \+ on a stat, then tap Confirm allocation\.$/);
-  expect(steps.slice(1).map(s => s.text)).toEqual(['Pick a path in the Build panel on the Status tab.', 'Join your GM\'s room. Ask the GM for the room code or an invite link.']);
+  expect(steps.slice(1).map(s => s.text)).toEqual(['Join your GM\'s room. Ask the GM for the room code or an invite link.']);
   await expect(win.locator('[data-objoin]')).toBeVisible();
 
   await win.locator('[data-obsheet]').tap();
@@ -295,7 +295,7 @@ test('the ? guide lists this role\'s next steps and tips only: a player\'s, then
     await player.locator('#help-btn').tap();
     const win = await windowTitled(player, 'How it works');
     await expect(win).toContainText(ABOUT);
-    expect((await nextOf(player)).map(s => s.text.replace(/^Done: /, '').split('.')[0])).toEqual([expect.stringMatching(/^Spend your \d+ ability points?$/), 'Pick a path in the Build panel on the Status tab', 'Join your GM\'s room']);
+    expect((await nextOf(player)).map(s => s.text.replace(/^Done: /, '').split('.')[0])).toEqual([expect.stringMatching(/^Spend your \d+ ability points?$/), 'Join your GM\'s room']);
     for (const t of TIPS.player) await expect(win).toContainText(t);
     for (const t of TIPS.gm) await expect(win).not.toContainText(t);
   });

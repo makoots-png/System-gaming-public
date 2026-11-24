@@ -22,7 +22,7 @@ import type { Archetype } from './derive.ts';
 import { oneOf } from '../one-of.ts';
 import { STAT_KEYS, baseStats, statsBy } from '../stats.ts';
 import type { Stats } from '../stats.ts';
-import { HUNTER_COLORS, BONUS_KEYS, RANKS, RULES as BASE_RULES, pathOf } from '../rules.ts';
+import { HUNTER_COLORS, BONUS_KEYS, RANKS, RULES as BASE_RULES } from '../rules.ts';
 import { isIconKey } from '../registry/icons.ts';
 import type { Perk, Rank, Rules } from '../rules.ts';
 import { REWARD_BOUNDS, newRewards, parseBand, parseRewards } from '../rewards.ts';
@@ -115,7 +115,6 @@ export type Shadow = {
   notes: string;
 };
 export type Daily = { streak: number; lastCompleteKey: DayKey | null; lastCheckedKey: DayKey | null };
-export type Build = { path: string | null; picks: (0 | 1)[] };
 /** Who set a hunter's rank: its level (`level`: at the start, or by Re-evaluate) or the GM by hand (`gm`). record.ts `rankStep` writes it. */
 export const RANK_BY = ['level', 'gm'] as const;
 export type RankBy = (typeof RANK_BY)[number];
@@ -137,7 +136,7 @@ export type Hunter = Progress & Vitals & {
   hpAdj: number; manaAdj: number; conditions: Condition[];
   titleId: TitleId | null; titles: Title[]; quests: Quest[]; skills: Skill[]; items: Item[]; equipped: Record<Slot, ItemId | null>;
   shadows: Shadow[]; daily: Daily; penalty: Penalty | null; jobChain: JobChain | null; notes: string; updatedAt: string;
-  emblem: string; color: string; loadouts: Loadout[]; build: Build; boons: Boon[];
+  emblem: string; color: string; loadouts: Loadout[]; boons: Boon[];
   /** The rests taken since a gate last ended for it: src/core/hunter/rests.ts. Only grant.ts `sheetEdit` changes it. */
   restsTaken: number;
   /** What is left of its revive ladder (src/core/hunter/revive-standing.ts): `free`, `debt` or `none`. Only a System raise moves it. */
@@ -175,7 +174,7 @@ export const newHunter = (R: Rules = BASE_RULES): Hunter => {
     gold: 0, crystal: 0, guild: null, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
-    emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], restsTaken: 0, reviveLeft: 'free', debt: 0, solo: newSolo(), chronicle: newChronicle(),
+    emblem: '', color: '', loadouts: [], boons: [], restsTaken: 0, reviveLeft: 'free', debt: 0, solo: newSolo(), chronicle: newChronicle(),
   };
   return Object.assign(h, newVitals(hunterSheet(h, R).sheet));
 };
@@ -281,17 +280,11 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   d.streak = Math.max(0, d.streak);
   h.solo = parseSolo(h.solo);
   h.chronicle = parseChronicle(h.chronicle);
-  // Looks: an unknown emblem or color means "automatic". The build path must exist. A lowered loadoutCap or fewer
-  // tiers keep the data. A loadout's slots are references: `fixRefs` reads them.
+  // Looks: an unknown emblem or color means "automatic". A lowered loadoutCap keeps saved sets. A loadout's slots are references: `fixRefs` reads them.
+  // Any legacy `build` field on a pre-R1 save or sheet stays untouched as an unknown key (`fill` keeps unknown keys).
   if (!isIconKey(h.emblem)) h.emblem = '';
   if (!HUNTER_COLORS.includes(h.color)) h.color = '';
   h.loadouts = list(run, h.loadouts, 'lo', newLoadout, l => { l.name = l.name.replace(/\s+/g, ' ').trim().slice(0, 24) || 'Set'; }).slice(0, LIMITS.loadouts);
-  const b = h.build;
-  if (run.sheet ? !isStr(b.path) : !pathOf(R, b.path)) b.path = null;
-  if (run.sheet && b.path !== null) b.path = b.path.slice(0, 40);
-  const cut = b.picks.findIndex(x => x !== 0 && x !== 1);
-  if (cut >= 0) b.picks.length = cut;
-  b.picks.length = Math.min(b.picks.length, b.path ? LIMITS.picks : 0);
   // The sheet reads the gear and the title by the ids as stored, which name the objects `fixRefs` points them at.
   fixVitals(h, R);
 }
@@ -327,15 +320,15 @@ export function fixRefs(h: Hunter, storedAs: ReadonlyMap<string, string>, now: s
 
 /**
  * A hunter another phone sent to a room (its sheet), repaired the way a save's hunter is, or null when it is not an
- * object or its id is not a hunter id. In place, like the save repair. Two differences: the build path is kept as sent
- * (it means something only under the sending phone's rules), and a malformed id inside the hunter
- * (a quest's, an item's) is kept, since no other phone looks things up by those ids. A penalty with no start date
- * takes the epoch: the sending phone's own repair always sets one.
+ * object or its id is not a hunter id. In place, like the save repair. Unknown keys (including legacy `build` from
+ * older phones) stay untouched, and a malformed id inside the hunter (a quest's, an item's) is kept, since no other
+ * phone looks things up by those ids. A penalty with no start date takes the epoch: the sending phone's own repair
+ * always sets one.
  */
 export function parseSheetHunter(value: unknown): Hunter | null {
   if (!isObj(value)) return null;
   const now = new Date(0);
-  const run: RepairRun = { R: BASE_RULES, env: { now, newDeviceId: () => NO_DEVICE, newDeviceToken: () => '' }, ids: new Set(), bad: [], owner: null, sheet: true };
+  const run: RepairRun = { R: BASE_RULES, env: { now, newDeviceId: () => NO_DEVICE, newDeviceToken: () => '' }, ids: new Set(), bad: [], owner: null };
   const h = fill(value, hunterExample(BASE_RULES));
   if (!SAVE_ID_RE.test(h.id)) return null;
   fixHunter(run, h);

@@ -134,10 +134,10 @@ for (const r of RANKS) console.log(`${r} | ${[1, 2, 3, 4, 5, 6].map(n => goldEac
 console.log('\n[5] crystal by its rank: rank | price | table sessions at its rank | daily sessions | today 100000 in table sessions');
 for (const r of RANKS) { const p = RULES.revivePrices * priceBaseOf(RULES, r), s = session(r, DESIGN_ECON), t = session(r, TODAY); console.log(`${r} | ${p} | ${f1(p / s.table)} | ${f1(p / s.daily)} | ${f1(100000 / t.table)}`); }
 
-console.log('\n[6] sessions to afford (table player): rank | own-rank middle item | next rank middle item | two own-rank potions | own-rank crystal | respec at the rank\'s first level | daily/table');
+console.log('\n[6] sessions to afford (table player): rank | own-rank middle item | next rank middle item | two own-rank potions | own-rank crystal | daily/table');
 for (const [i, r] of RANKS.entries()) {
-  const s = session(r, DESIGN_ECON), own = priceBaseOf(RULES, r), next = priceBaseOf(RULES, RANKS[Math.min(5, i + 1)]!), crystal = RULES.revivePrices * own, respec = RULES.build.respecGold * RULES.rankLevels[r] ** 2;
-  console.log(`${r} | ${f1(own / s.table)} | ${i < 5 ? f1(next / s.table) : '-'} | ${f1(own / s.table)} | ${f1(crystal / s.table)} | ${respec} = ${f1(respec / s.table)} | ${f1(s.daily / s.table)}`);
+  const s = session(r, DESIGN_ECON), own = priceBaseOf(RULES, r), next = priceBaseOf(RULES, RANKS[Math.min(5, i + 1)]!), crystal = RULES.revivePrices * own;
+  console.log(`${r} | ${f1(own / s.table)} | ${i < 5 ? f1(next / s.table) : '-'} | ${f1(own / s.table)} | ${f1(crystal / s.table)} | ${f1(s.daily / s.table)}`);
 }
 
 // XP a session and the sessions a hunter spends at a rank. A world gate holds the rank's mean pack of normals (E 1 to 3,

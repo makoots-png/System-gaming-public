@@ -11,13 +11,12 @@ import type { Rank } from '../rules.ts';
 import type { ShadowGrade } from '../save.ts';
 import type { StatKey } from '../stats.ts';
 import { diceOf, mean as meanOf } from '../formula.ts';
-import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, split } from '../hunter/derive.ts';
+import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, referenceBonus, split } from '../hunter/derive.ts';
 import type { Archetype, Bonus, SheetBasis, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
 import { buildOf, heldKeystones } from '../hunter/sheet.ts';
 import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
-import { TIER_BUDGET } from '../registry/paths.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
 import type { Powers } from '../registry/powers.ts';
 import { monsterScript, monsterXp, tweakOfMonster } from '../registry/monsters.ts';
@@ -232,8 +231,8 @@ export type BarBody = { readonly rank: Rank; readonly archetype: Archetype; read
 export function sameRankHit(on: BarBody, R: RowRules): number {
   const rank = on.rank, a = ARCHETYPES.brute, level = R.rankLevels[rank];
   const points = split(a.main, a.second, pointsAt(level, R), R);
-  const perks = TIER_BUDGET.slice(0, rankIdx(rank) + 1).reduce((s, v) => s + v, 0);
-  const build: SheetBasis = { stats: { ...points, [a.main]: points[a.main] + perks }, level, gear: kitGear(a.kit, R), perks: {} };
+  const bonus = referenceBonus(rank);
+  const build: SheetBasis = { stats: { ...points, [a.main]: points[a.main] + bonus }, level, gear: kitGear(a.kit, R), perks: {} };
   const strike = ARCHETYPE_ATTACKS.brute(R);
   const standing = (id: string, side: Body['side'], origin: Origin, at: Place) => {
     const { stats, sheet } = modified(origin, [], R);

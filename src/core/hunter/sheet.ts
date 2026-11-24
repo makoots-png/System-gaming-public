@@ -1,10 +1,9 @@
 // sheet.ts: what a hunter's sheet is built from, a check's bonus and Auto's placement of free points
 // (docs/agent-handoff/rw/m2-plan.md section 4.2, unit P2; design.md sections 2.2 and 2.3). Pure. `buildOf` is the one
-// place that sums a hunter's bonuses: the active title, the worn gear, the open path perks, the passive skills, the keystones
+// place that sums a hunter's bonuses: the active title, the worn gear, the passive skills, the keystones
 // (the `keystone` source) and the GM's `hpAdj` and `manaAdj`. A new source of bonuses is a field of `SheetHunter` and a line in `buildOf`, with a case
 // in tests/sheet.test.ts. The numbers themselves are derive.ts's.
 
-import { rankIdx } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { STAT_KEYS, above, baseStats } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
@@ -15,28 +14,19 @@ import type { Source, Status, StatusDef, StatusKey } from '../combat/effect-ops.
 import { tick } from '../combat/timeline.ts';
 import { checkPenalty } from './penalty.ts';
 import { weightOf } from '../registry/items.ts';
+import type { StatWeights } from '../registry/jobs.ts';
 import { keystoneOf } from '../registry/keystones.ts';
 import type { Keystone } from '../registry/keystones.ts';
 import type { Powers } from '../registry/powers.ts';
 import { keystoneBasis, keystonesOf } from './keystones.ts';
-import type { Quest } from './hunter.ts';
 import type { Penalty } from './penalty.ts';
 import { allocated, available } from './progress.ts';
 import { fatiguePast, vitalStep } from './vitals.ts';
 import type { Vitals } from './vitals.ts';
 import type { Progress } from './progress.ts';
 
-/** A build path as this file reads it: where Auto places free points, and one list of perks per tier (E to S). */
-export type SheetPath = {
-  readonly alloc: Partial<Readonly<Record<StatKey, number>>>;
-  readonly tiers: readonly (readonly Bonus[])[];
-};
-
 /** The rules this file reads. */
-export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck' | 'dice'> & {
-  readonly build: { readonly enabled: boolean };
-  readonly paths: Readonly<Record<string, SheetPath>>;
-};
+export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck' | 'dice'>;
 
 /** An item as the sheet reads it. Only a worn one counts; a field it lacks adds nothing. */
 export type SheetItem = {
@@ -69,7 +59,6 @@ export type SheetHunter = {
   readonly titles: readonly { readonly id: string; readonly bonus: Bonus }[];
   readonly items: readonly SheetItem[];
   readonly equipped: Readonly<Record<string, string | null>>;
-  readonly build: { readonly path: string | null; readonly picks: readonly number[] };
   readonly skills: readonly SheetSkill[];
   readonly conditions: readonly SheetCondition[];
   /**
@@ -109,23 +98,6 @@ const worn = (h: SheetHunter): SheetItem[] =>
 const gearOf = (i: SheetItem): GearPiece =>
   ({ weight: weightOf(i), armor: i.armor ?? 0, resist: i.resist ?? 0 });
 
-/** The hunter's path, or null when builds are off or the rules no longer have it. */
-function pathOf(h: SheetHunter, R: SheetRules): SheetPath | null {
-  const id = h.build.path;
-  return R.build.enabled && id !== null && Object.hasOwn(R.paths, id) ? R.paths[id] ?? null : null;
-}
-
-/**
- * The perks of the picks the hunter's rank has opened: tier i opens at rank i (E 0 to S 5). Later picks are kept, not
- * counted. The rank held opens them, also above its level's (record.ts `RANK_TABLE`'s `above`: a rank the GM set by hand, SMX-rules-7.2).
- */
-function pathPerks(h: SheetHunter, R: SheetRules): Bonus[] {
-  const path = pathOf(h, R);
-  if (!path) return [];
-  const open = Math.min(h.build.picks.length, path.tiers.length, rankIdx(h.rank) + 1);
-  return h.build.picks.slice(0, open).map((pick, tier) => path.tiers[tier]?.[pick] ?? {});
-}
-
 /** What `derive` builds the hunter's sheet from: its spent stats, its level, its worn gear and every bonus it holds. */
 export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
   const gear = worn(h);
@@ -136,7 +108,6 @@ export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
     perks: sum([
       h.titles.find(t => t.id === h.titleId)?.bonus ?? {},
       ...gear.map(i => i.bonus ?? {}),
-      ...pathPerks(h, R),
       ...h.skills.map(s => s.type === 'passive' ? s.bonus : {}),
       ...heldKeystones(h, R).map(k => k.keystone.bonus),
       { hpMax: h.hpAdj, manaMax: h.manaAdj },
@@ -147,15 +118,15 @@ export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
 // A condition has no fight time; `modified` reads only its def and its source.
 const asStatus = (c: SheetCondition): Status => statusOn(c.def, { key: c.key, source: c.source, until: null, since: tick(0), settledAt: tick(0) }, c.stacks);
 
-/** The hunter's stats (spent, plus perks, plus what its conditions do) and its sheet under its conditions. */
+/** The hunter's stats (spent, plus bonuses, plus what its conditions do) and its sheet under its conditions. */
 export const hunterSheet = (h: SheetHunter, R: SheetRules): { stats: Stats; sheet: Sheet } =>
   modified({ kind: 'hunter', build: buildOf(h, R) }, h.conditions.map(asStatus), R);
 
 /** Where a part of a sheet number comes from, in the order `explain` adds them. */
-export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'path', 'skills', 'keystone', 'gm', 'statuses'] as const;
+export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'skills', 'keystone', 'gm', 'statuses'] as const;
 export type SheetSource = (typeof SOURCES)[number];
 export const SOURCE_LABELS: { readonly [K in SheetSource]: string } = {
-  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', path: 'Path', skills: 'Passive skills', keystone: 'Keystones', gm: 'GM edit', statuses: 'Statuses',
+  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', skills: 'Passive skills', keystone: 'Keystones', gm: 'GM edit', statuses: 'Statuses',
 };
 /** One part of a sheet number: where it comes from and how much it adds. */
 export type Part = { readonly from: SheetSource; readonly amount: number };
@@ -174,11 +145,10 @@ export function explain(h: SheetHunter, key: SheetNumber, R: SheetRules): { tota
   const stats: SheetBasis = { ...level, stats: allocated(h) };
   const geared: SheetBasis = add({ ...stats, gear: gear.map(gearOf) }, sum(gear.map(i => i.bonus ?? {})));
   const title = add(geared, h.titles.find(t => t.id === h.titleId)?.bonus ?? {});
-  const path = add(title, sum(pathPerks(h, R)));
-  const skills = add(path, sum(h.skills.map(s => s.type === 'passive' ? s.bonus : {})));
+  const skills = add(title, sum(h.skills.map(s => s.type === 'passive' ? s.bonus : {})));
   const keys = add(skills, sum(heldKeystones(h, R).map(k => k.keystone.bonus)));
   const steps: readonly (readonly [SheetSource, SheetBasis, readonly Status[]])[] = [
-    ['base', base, []], ['level', level, []], ['stats', stats, []], ['gear', geared, []], ['title', title, []], ['path', path, []],
+    ['base', base, []], ['level', level, []], ['stats', stats, []], ['gear', geared, []], ['title', title, []],
     ['skills', skills, []], ['keystone', keys, []], ['gm', full, []], ['statuses', full, h.conditions.map(asStatus)],
   ];
   const values = steps.map(([, b, s]) => modified({ kind: 'hunter', build: b }, s, R).sheet[key]);
@@ -212,7 +182,7 @@ export function checksOf(h: SheetHunter, at: { stats: Stats; sheet: Sheet }, R: 
 }
 
 /**
- * The hunter after a change to what its sheet is built from (a stat, a level, worn gear, a title, a perk, a passive):
+ * The hunter after a change to what its sheet is built from (a stat, a level, worn gear, a title, a passive):
  * HP, mana and fatigue brought down to the maxima its sheet now gives (vitals.ts `vitalStep`'s `maxChanged`).
  */
 export const fitted = <H extends SheetHunter & Vitals>(h: H, R: SheetRules): H => ({ ...h, ...vitalStep(h, { type: 'maxChanged' }, hunterSheet(h, R).sheet, R) });
@@ -234,17 +204,21 @@ export const setAdjust = <H extends SheetHunter & Vitals>(h: H, key: 'hpAdj' | '
 export const checkBonus = (h: SheetHunter, stat: StatKey, R: SheetRules): number => checksOf(h, hunterSheet(h, R), R).bonus[stat];
 
 /**
- * Where Auto places the points free, one at a time, each to the path's stat with the fewest placed for its weight; a tie
- * goes to the stat first in `STAT_KEYS`. A stat with no weight gets none. Answers the points per stat, to show and then
- * spend; empty when nothing is free or the path weighs no stat.
+ * Where Auto-allocate places free points, one at a time, each to the stat with the fewest placed for its weight; ties go
+ * to the higher weight first and then to `STAT_KEYS` order. A stat with no positive weight gets none. Answers the points
+ * per stat to preview and then spend; empty when nothing is free or no stat has positive weight.
  */
-export function autoSpend(h: Progress, path: SheetPath, R: Rules): Partial<Record<StatKey, number>> {
-  const keys = STAT_KEYS.filter(k => (path.alloc[k] ?? 0) > 0);
+export function autoSpend(h: Progress, weights: StatWeights, R: Rules): Partial<Record<StatKey, number>> {
+  const keys = STAT_KEYS.filter(k => (weights[k] ?? 0) > 0);
   const out: Partial<Record<StatKey, number>> = {};
   if (!keys.length) return out;
-  const share = (k: StatKey): number => (out[k] ?? 0) / path.alloc[k]!;
+  const share = (k: StatKey): number => (out[k] ?? 0) / weights[k]!;
   for (let i = available(h, R); i > 0; i--) {
-    const k = keys.reduce((a, b) => share(b) < share(a) ? b : a);
+    const k = keys.reduce((a, b) => {
+      const sa = share(a), sb = share(b);
+      if (sb !== sa) return sb < sa ? b : a;
+      return weights[b]! > weights[a]! ? b : a;
+    });
     out[k] = (out[k] ?? 0) + 1;
   }
   return out;

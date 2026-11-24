@@ -91,7 +91,7 @@ describe('the level step hears every level change in the same step', () => {
 
   const DAY = { at: AT2, today: day(AT2.slice(0, 10)), R: RULES };
   const given = (save: Save, xp: number) => {
-    const g = grant(save, 'h1', { ...newRewards(), xp }, null, { ...DAY, vitals: 'sheet' });
+    const g = grant(save, 'h1', { ...newRewards(), xp }, { ...DAY, vitals: 'sheet' });
     if (isRefused(g)) throw new Error(g.why);
     return g;
   };

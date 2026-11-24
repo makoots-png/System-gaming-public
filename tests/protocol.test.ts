@@ -402,12 +402,11 @@ describe('an award', () => {
     expect(award({ items: [{ ...POTION, bonus }] })!.rewards.items[0].bonus).toEqual({ str: 2, vit: 999 });
   });
 
-  test('a build change is a respec, a path, or the pick of a tier', () => {
-    expect(award({ build: 'respec' })!.rewards.build).toBe('respec');
-    expect(award({ build: { path: 'vanguard' } })!.rewards.build).toEqual({ path: 'vanguard' });
-    expect(award({ build: { tier: 1, pick: 0 } })!.rewards.build).toEqual({ tier: 1, pick: 0 });
-    expect(award({ build: { tier: 1, pick: 2 } })).toBeNull();
-    expect(award({ build: 'everything' })).toBeNull();
+  test('a legacy award carrying a build change drops build cleanly and preserves sibling rewards', () => {
+    const empty = { xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] };
+    expect(award({ build: 'respec', xp: 50 })!.rewards).toEqual({ ...empty, xp: 50 });
+    expect(award({ build: { path: 'vanguard' } })!.rewards).toEqual(empty);
+    expect(award({ build: { tier: 1, pick: 0 } })!.rewards).toEqual(empty);
   });
 
   test('an award without rewards, or for no one, is refused', () => {
@@ -1289,15 +1288,15 @@ describe('the other room docs', () => {
     expect(DOCS.kicked({ v: 1, keys, names: { [KEY]: 'Kai' } })).toEqual({ keys: { [sk(KEY)]: '2026-11-12T12:00:00.000Z' }, names: { [sk(KEY)]: 'Kai' } });
   });
 
-  test('the room\'s rules: the build switches and the personal gates\' switch true or false, its hours whole within their bounds', () => {
-    const rules = { ...roomRulesOf(RULES), build: { enabled: false, playerPick: true }, solo: { ...roomRulesOf(RULES).solo, personal: false, hours: 4 }, feats: { on: false } };
+  test('the room\'s rules: the personal gates\' switch true or false, its hours whole within their bounds, and legacy build keys ignored', () => {
+    const rules = { ...roomRulesOf(RULES), solo: { ...roomRulesOf(RULES).solo, personal: false, hours: 4 }, feats: { on: false } };
     expect(DOCS.rules(copy(rules))).toEqual(rules);
+    expect(DOCS.rules(copy({ ...rules, build: { enabled: false, playerPick: true } })), 'legacy pre-R1 room rules doc parses cleanly').toEqual(rules);
     const { feats: _none, ...older } = rules;
     expect(DOCS.rules(older)!.feats, 'a doc without the feats switch reads as on').toEqual({ on: true });
     const { trade: _no, ...noTrade } = { ...rules, trade: { on: false } };
     expect(DOCS.rules(copy({ ...rules, trade: { on: false } }))!.trade, 'the trading switch comes through').toEqual({ on: false });
     expect(DOCS.rules(noTrade)!.trade, 'a doc without the trading switch reads as on').toEqual({ on: true });
-    expect(DOCS.rules({ ...rules, build: { enabled: 'no', playerPick: true } })).toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, personal: 'yes' } })).toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 0 } })!.solo.hours).toBe(1);
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 1e6 } })!.solo.hours).toBe(168);
@@ -1365,7 +1364,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'build', 'crystal', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'crystal', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
@@ -1418,7 +1417,7 @@ describe('the other room docs', () => {
         ['a shipped weight missing', () => loot('E', { weights: { common: 70, uncommon: 25 } })],
         ['a weight that is text', () => loot('E', { weights: { ...doc.loot.E.weights, common: 'many' } })],
         ['a rank missing from the loot', () => { const { S: _gone, ...five } = copy(doc.loot); return read({ loot: five }); }],
-        ['the rules doc before the economy', () => DOCS.rules({ build: doc.build, solo: { personal: true, hours: 8 }, feats: doc.feats })],
+        ['the rules doc before the economy', () => DOCS.rules({ solo: { personal: true, hours: 8 }, feats: doc.feats })],
       ];
       for (const [why, parsed] of WRONG) expect(parsed(), why).toBeNull();
     });
@@ -1563,7 +1562,7 @@ describe('a hunter sheet', () => {
     expect(JSON.stringify(read).length).toBeLessThan(SHEET_MAX / 6);
   });
 
-  test('the build path is kept as the phone sent it, even one the default rules do not have', () => {
+  test('an older phone\'s pushed sheet carrying a legacy build field parses cleanly and keeps the unknown field intact', () => {
     expect(hunterOf(parseSheet(sk(KEY), sheet({ build: { path: 'house-path', picks: [0, 1] } })))).toMatchObject({ build: { path: 'house-path', picks: [0, 1] } });
   });
 });
@@ -1585,7 +1584,7 @@ describe('the poll answer', () => {
     const state = parse({
       events: [event(1), { ...event(2), payload: { eid: EID } }], next: 2,
       sheets: { ...ANSWER.sheets, [OTHER]: { at: '', from: 'd-player2', data: { hunter: { name: 'not h4' } } } },
-      docs: { rules: { at: '', from: 'd-gm1', data: { build: { enabled: 'yes' } } }, nope: { at: '', from: 'd-gm1', data: {} } },
+      docs: { rules: { at: '', from: 'd-gm1', data: { solo: { personal: 'yes' } } }, nope: { at: '', from: 'd-gm1', data: {} } },
     })!;
     expect(state.events.map((e: Raw) => e.seq)).toEqual([1]);
     expect(state.next).toBe(2);

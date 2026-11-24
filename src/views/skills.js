@@ -273,7 +273,7 @@ export function register(app) {
     const title = thing ? `<button type="button" class="s-title"${app.api.detail.control('skills', s.id)}>${esc(s.name)}</button>` : `<span class="s-title">${esc(s.name)}</span>`;
     return `<li class="skill sk-${s.type}" data-skill="${esc(s.id)}">
       <div class="sk-head">${title}
-        <span class="sk-type">${typeof s.perk === 'string' ? 'Path' : s.type === 'active' ? 'Active' : 'Passive'}</span>
+        <span class="sk-type">${s.type === 'active' ? 'Active' : 'Passive'}</span>
         <span class="s-rank">${esc(lv)}${max ? ' <b class="sk-max">MAX</b>' : ''}</span></div>
       ${thing ? app.api.detail.panel('skills', s.id, thing) : ''}
       ${meta ? `<div class="sk-meta">${esc(meta)}</div>` : ''}
@@ -281,9 +281,9 @@ export function register(app) {
       ${s.desc ? `<div class="sk-desc">${esc(s.desc)}</div>` : ''}
       <div class="sk-acts">
         ${s.type === 'active' ? `<button type="button" data-use="${esc(s.id)}" aria-label="Use ${esc(s.name)}">Use</button>` : ''}
-        ${typeof s.perk === 'string' ? '<button type="button" data-jump="build">View in Build</button>' /* path skill: rebuilt from the build, never edited here */ : `<button type="button" data-lvup="${esc(s.id)}"${max ? ' disabled' : ''} aria-label="Level up ${esc(s.name)}">Level up</button>
+        <button type="button" data-lvup="${esc(s.id)}"${max ? ' disabled' : ''} aria-label="Level up ${esc(s.name)}">Level up</button>
         <button type="button" data-edit="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">Edit</button>
-        <button type="button" class="icon-btn danger" data-del="${esc(s.id)}" aria-label="Remove skill ${esc(s.name)}">&times;</button>`}
+        <button type="button" class="icon-btn danger" data-del="${esc(s.id)}" aria-label="Remove skill ${esc(s.name)}">&times;</button>
       </div></li>`;
   };
   const cards = () => { const list = store.active().skills; return list.length ? list.map(card).join('') : '<li class="empty">No skills yet.</li>'; };

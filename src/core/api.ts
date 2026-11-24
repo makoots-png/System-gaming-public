@@ -8,7 +8,7 @@ import type { FeatBook } from './hunter/feats.ts';
 import type { End, Op, SheetStatus, Source, StackRule, StatusDef } from './combat/effect-ops.ts';
 import type { Trigger } from './combat/triggers.ts';
 import type { LootDrop } from './gates/spawn.ts';
-import type { BuildChange, DocName, DocOf, EventBody, EventId, EventStamp, EventType, HunterFace, QuestOffer, RoomCode, RoomEvent, SystemKind, UsedWhat } from './protocol.ts';
+import type { DocName, DocOf, EventBody, EventId, EventStamp, EventType, HunterFace, QuestOffer, RoomCode, RoomEvent, SystemKind, UsedWhat } from './protocol.ts';
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { TableSeen } from './sync/fight-heard.ts';
 import type { Stats } from './stats.ts';
@@ -50,8 +50,8 @@ import type { DeviceId, FightId, HunterId, HunterRef, ItemId, MonsterId, RollEnt
 
 /** A System window's text (the options `ui.system` takes that a reward window passes on). */
 export type RewardWindow = { tag?: string; title?: string; kind?: SystemKind; body?: string | undefined; lines?: string[] | undefined };
-/** What `applyRewards` gives: any part of a reward, and a build change from the GM (a room award carries one). */
-export type RewardGrant = Partial<Rewards> & { build?: BuildChange };
+/** What `applyRewards` gives: any part of a reward. */
+export type RewardGrant = Partial<Rewards>;
 /** How a reward is shown: `popup: false` leaves out its window, `silent` every window, `levelPopup: false` the level-up's. */
 export type RewardShown = { popup?: boolean; silent?: boolean; levelPopup?: boolean };
 /** What a reward showed: the window's lines, the level-up, and the window while it is open. */
@@ -80,21 +80,6 @@ export type BestiaryApi = {
   make(m: Monster | null): Promise<string | null>;
   /** Deletes one of the GM's monsters; its codex record stays, without a link to it. Answers whether it was deleted. */
   remove(id: string): boolean;
-};
-
-export type BuildApi = {
-  /** Each change of a build answers the write's Applied whole (build.ts refuses it), for the caller's `ui.wrote`. */
-  setPath(hid: string, id: string, force?: boolean): Applied;
-  pick(hid: string, tier: number, choice: 0 | 1): Applied;
-  /** Clears the path. A player pays gold; refused in a fight or when short (`respecWhy`). */
-  respec(hid: string): Applied;
-  label(h: Hunter): string;
-  /** Spends the free points by the path's plan (progress.ts `raiseMany`). */
-  auto(hid: string): Applied;
-  /** The GM's build menu for a hunter of this phone, or a player's (`sheet`: the sheet it pushed; a change goes as an award). */
-  gmMenu(who: HunterRef, sheet: Hunter | null): Promise<void>;
-  setRule(patch: Record<string, unknown>): void;
-  resetRules(): void;
 };
 
 /** The GM view's Award form. */
@@ -856,7 +841,6 @@ export type AppApi = {
   award: AwardApi;
   coin: CoinApi;
   bestiary: BestiaryApi;
-  build: BuildApi;
   bundles: BundlesApi;
   chronicle: ChronicleApi;
   combat: CombatApi;

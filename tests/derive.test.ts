@@ -4,7 +4,7 @@ import { KIT_SHARE, piece } from '../src/core/registry/items.ts';
 import type { Archetype, SheetBasis, GearPiece, MonsterKind, Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import { explain, hunterSheet, SOURCES } from '../src/core/hunter/sheet.ts';
-import type { SheetCondition, SheetHunter, SheetItem, SheetPath, SheetRules, SheetSource } from '../src/core/hunter/sheet.ts';
+import type { SheetCondition, SheetHunter, SheetItem, SheetRules, SheetSource } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -391,20 +391,19 @@ test('the fight\'s rule numbers are the ones the timeline and the map read', () 
 describe('explain', () => {
   const hunter = (o: Partial<SheetHunter> = {}): SheetHunter => ({
     stats: stats(), level: 1, rank: 'E', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-    items: [], equipped: {}, build: { path: null, picks: [] }, skills: [], conditions: [], ...o,
+    items: [], equipped: {}, skills: [], conditions: [], ...o,
   });
-  const PATH: SheetPath = { alloc: { agi: 1 }, tiers: [[{ agi: 2, armor: 4 }, { hpMax: 20 }]] };
-  const R: SheetRules = { ...RULES, paths: { striker: PATH } };
+  const R: SheetRules = RULES;
   const VEST: SheetItem = { id: 'vest', weight: 6, armor: 12, resist: 3, bonus: { str: 2 } };
   const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
   const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: -8 } }] };
   const on = (key: string, def: StatusDef): SheetCondition => ({ key: statusKey(key), def, source: { id: null, tier: 0 } });
   const part = (h: SheetHunter, key: SheetNumber, from: SheetSource): number => explain(h, key, R).parts.find(p => p.from === from)!.amount;
-  // every source at once: points spent, a level, worn gear with a bonus, a title, a path pick, a passive, the GM's change, two statuses
+  // every source at once: points spent, a level, worn gear with a bonus, a title, a passive, the GM's change, two statuses
   const FULL = hunter({
     stats: stats({ vit: 18, agi: 16, str: 14, pow: 12 }), level: 9, rank: 'D',
     items: [VEST], equipped: { chest: 'vest' }, titleId: 't', titles: [{ id: 't', bonus: { ins: 3, threat: 10 } }],
-    build: { path: 'striker', picks: [0] }, skills: [{ type: 'passive', bonus: { dis: 2, critSize: 0.05 } }],
+    skills: [{ type: 'passive', bonus: { dis: 2, critSize: 0.05 } }],
     hpAdj: 7, manaAdj: -2, conditions: [on('slowed', SLOWED), on('frightened', FRIGHTENED)],
   });
 
@@ -434,8 +433,8 @@ describe('explain', () => {
     expect(part(FULL, 'manaMax', 'gm')).toBe(-2);
   });
 
-  test('a path perk on Armor and a title\'s threat are parts of their own', () => {
-    expect(part(FULL, 'armor', 'path')).toBe(4);
+  test('a title\'s threat is a part of its own, and path is no longer a source', () => {
+    expect(SOURCES).not.toContain('path');
     expect(part(FULL, 'threat', 'title')).toBeCloseTo(0.1, 9);
   });
 

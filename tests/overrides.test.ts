@@ -52,10 +52,14 @@ describe('an override of a list rule', () => {
     expect(refused).toEqual([{ path: 'dailyTemplate.objectives.1', reason: 'entry' }, { path: 'dailyTemplate.objectives.2', reason: 'entry' }]);
   });
 
-  test('a path tier holds perks: a tier with an unknown bonus key is refused, the others kept', () => {
-    const { overrides, refused } = parseOverrides({ paths: { vanguard: { tiers: [[{ str: 3 }, { hpMax: 25 }], [{ charm: 2 }]] } } });
-    expect(overrides).toEqual({ paths: { vanguard: { tiers: [[{ str: 3 }, { hpMax: 25 }]] } } });
-    expect(refused).toEqual([{ path: 'paths.vanguard.tiers.1', reason: 'entry' }]);
+  test('legacy build and paths overrides are refused as unknown while valid sibling overrides are kept', () => {
+    const { overrides, refused } = parseOverrides({
+      logCap: 75,
+      build: { enabled: false, playerPick: false },
+      paths: { vanguard: { tiers: [[{ str: 3 }, { hpMax: 25 }]] } },
+    });
+    expect(overrides).toEqual({ logCap: 75 });
+    expect(refused).toEqual([{ path: 'build', reason: 'unknown' }, { path: 'paths', reason: 'unknown' }]);
   });
 
   test('the daily reward\'s items, skills and title are read as a reward\'s are', () => {

@@ -159,14 +159,44 @@ export function overIf(f: Running, fx: Fx, R: Rules): Ended | null {
 /** The sides with a body up that keeps its side in the fight (`holdsSide`). */
 const standing = (f: Running): Side[] => (['party', 'foe'] as const).filter(side => f.rows.some(r => r.side === side && holdsSide(r)));
 
-/** The fight ended at its `now`, with the side still up. Its XP is the banked XP and that of every foe down. */
+/**
+ * Post-fight fatigue recovery (`R.fight.fightRest`): each living hunter drops by `fightRest`, down to 0. Dead hunters
+ * and non-hunters do not change. Returns the updated rows and how much fatigue each recovered hunter dropped.
+ */
+export function fightRested(rows: readonly Body[], R: Pick<Rules, 'fight'>): { readonly rows: readonly Body[]; readonly rested: Readonly<Record<CombatantId, number>> } {
+  const amount = Math.max(0, R.fight.fightRest);
+  if (amount === 0) return { rows, rested: {} };
+  const rested: Record<CombatantId, number> = {};
+  let changed = false;
+  const next = rows.map(r => {
+    if (r.kind !== 'hunter' || !isUp(r) || r.fatigue <= 0) return r;
+    const after = Math.max(0, r.fatigue - amount), got = r.fatigue - after;
+    if (got <= 0) return r;
+    rested[r.id] = got;
+    changed = true;
+    return { ...r, fatigue: after };
+  });
+  return changed ? { rows: next, rested } : { rows, rested };
+}
+
+/**
+ * The fight ended at its `now`, with the side still up. Its XP is the banked XP and that of every foe down. A running
+ * fight applies `fightRest` once to its living hunters (`fightRested`), so `reduce`'s `sheetBacks` writes the lower
+ * fatigue to local and remote sheets in the same step; ending in setup does not.
+ */
 export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): Ended {
   const now = f.phase === 'setup' ? tick(0) : f.now;
-  const down = f.rows.filter(r => !isUp(r));
+  const after = f.phase === 'running' ? fightRested(f.rows, R) : { rows: f.rows, rested: {} as Readonly<Record<CombatantId, number>> };
+  const restedIds = Object.keys(after.rested) as CombatantId[];
+  const down = after.rows.filter(r => !isUp(r));
   const xp = down.reduce((n, r) => r.side === 'foe' ? n + r.xp : n, f.banked);
-  const summary: Summary = { rounds: roundsOf(now, R, 'near'), winner, down: down.map(r => r.id), xp };
+  const summary: Summary = { rounds: roundsOf(now, R, 'near'), winner, down: down.map(r => r.id), xp, ...(restedIds.length ? { rested: after.rested } : {}) };
   fx.push({ type: 'ended', summary });
-  const out: Ended = { phase: 'ended', id: f.id, grid: f.grid, zones: f.zones, fog: f.fog, rows: f.rows, log: f.log, banked: f.banked, had: f.had, now, summary };
+  let out: Ended = { phase: 'ended', id: f.id, grid: f.grid, zones: f.zones, fog: f.fog, rows: after.rows, log: f.log, banked: f.banked, had: f.had, now, summary };
+  if (restedIds.length) {
+    const names = restedIds.map(id => { const r = after.rows.find(x => x.id === id); return `${r ? r.name : id} ${after.rested[id]}`; });
+    out = logged(out, line(`Fatigue recovered: ${names.join(', ')}.`, restedIds), R);
+  }
   return logged(out, line(`The fight ends${winner ? `. The ${winner === 'party' ? 'party' : 'foes'} won` : ''}.`), R);
 }
 

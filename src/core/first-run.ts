@@ -42,33 +42,28 @@ export const TIPS: Readonly<Record<Role, readonly string[]>> = {
   ],
 };
 
-export type NextKey = 'points' | 'path' | 'join' | 'create' | 'invite';
+export type NextKey = 'points' | 'join' | 'create' | 'invite';
 export interface NextStep { readonly key: NextKey; readonly words: string; readonly done: boolean }
 
 /**
  * What this phone knows now. `rooms`: whether this build has a room server (with none, no room step is listed).
- * A player: `points` free (`available`), `path` open, picked, or closed (builds off, or the player may not pick),
- * the room it is in, and the room it is joining. A GM: the room it holds and how many players are in it.
+ * A player: `points` free (`available`), the room it is in, and the room it is joining.
+ * A GM: the room it holds and how many players are in it.
  */
 export type FirstRunFacts =
-  | { readonly role: 'player'; readonly points: number; readonly path: 'open' | 'picked' | 'closed';
+  | { readonly role: 'player'; readonly points: number;
       readonly rooms: boolean; readonly room: RoomCode | null; readonly joining: RoomCode | null }
   | { readonly role: 'gm'; readonly rooms: boolean; readonly room: RoomCode | null; readonly players: number };
 
 const several = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
-/** The role's next steps, in order (a player: points, path, join; a GM: create, invite), each done or not. */
+/** The role's next steps, in order (a player: points, join; a GM: create, invite), each done or not. */
 export function nextSteps(facts: FirstRunFacts, R: Rules): readonly NextStep[] {
   const out: NextStep[] = [];
   if (facts.role === 'player') {
     out.push(facts.points === 0
       ? { key: 'points', done: true, words: `Ability points spent. Each level gives ${R.pointsPerLevel} more.` }
       : { key: 'points', done: false, words: `Spend your ${several(facts.points, 'ability point', 'ability points')}. On the Status tab, tap + on a stat, then tap Confirm allocation.` });
-    if (facts.path !== 'closed') {
-      out.push(facts.path === 'picked'
-        ? { key: 'path', done: true, words: 'Path picked.' }
-        : { key: 'path', done: false, words: 'Pick a path in the Build panel on the Status tab.' });
-    }
     if (facts.rooms) {
       out.push(facts.room !== null ? { key: 'join', done: true, words: `In room ${facts.room}.` }
         : facts.joining !== null ? { key: 'join', done: false, words: `Joining room ${facts.joining}.` }
