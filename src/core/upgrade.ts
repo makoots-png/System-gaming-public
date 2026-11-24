@@ -7,6 +7,7 @@
 // of `none`, so a later refusal writes nothing. The worker (src/sw.js) counts its files with `counted` and `installOf`
 // below, the same rule the tab reads.
 // Pure: src/edge/upgrade.ts reads the inputs, sends the events and carries out the effects, one step at a time.
+import type { ReadOnlyWhy } from './store-life.ts';
 
 // ── the decision a refusal brings ──
 export type UpgradeInput = {
@@ -144,3 +145,26 @@ export function updateStep(u: Update, e: UpdateEvent): UpdateStep {
   const cell = TABLE[u.at][e.type] as (u: Update, e: UpdateEvent) => UpdateStep;
   return cell(u, e);
 }
+
+// ── blocking takeover when the update is stuck ──
+/** Why the blocking Variant 1 takeover window (src/views/takeover.js) is shown: a read-only store cause or a stuck update. */
+export type TakeoverCause = ReadOnlyWhy | 'upgradeStuck';
+
+/**
+ * The active takeover cause, or null when the tab may run normally.
+ * A stuck update takes priority over read-only causes: an out-of-date build must never offer Take over here.
+ */
+export const takeoverCause = (readOnlyWhy: ReadOnlyWhy | null, update: Update): TakeoverCause | null =>
+  (update.at === 'stuck' ? 'upgradeStuck' : readOnlyWhy);
+
+/** Plain summary shown when the app update is stuck (re-exported by src/edge/upgrade.ts). */
+export const STUCK_TEXT = 'A newer version of The Hunter System is live, and the update did not finish. Close every tab with this app open, then open it again.';
+
+/** Copy for the stuck-update Variant 1 blocking takeover window (src/views/takeover.js). */
+export const UPGRADE_TAKEOVER_WORDS = {
+  tag: 'Update required',
+  heading: 'The update did not finish',
+  body: [STUCK_TEXT, 'Tap Reload app to try loading the latest version here.'],
+  exportNote: 'Tap Export backup first to download your data from this tab, including any unsaved changes.',
+  reload: 'Reload app',
+} as const;

@@ -39,7 +39,7 @@ import { reported } from './report.ts';
 import { bindRoom } from './rules.ts';
 import { awayDeps, landAll } from './room-events.ts';
 import type { ApplyDeps, PageLanded } from './room-events.ts';
-import { STUCK_TEXT, upgradeRefused } from './upgrade.ts';
+import { upgradeRefused } from './upgrade.ts';
 import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
 import { released } from '../core/hunter/noticed.ts';
@@ -483,9 +483,9 @@ export function register(app: SyncHost): void {
       }
       case 'keyLost': void ui.warn({ tag: 'Room access lost', title: 'GM key no longer works', body: `The GM key for room ${code ?? ''} no longer works, so you left the room. You can enter a valid GM key in Room.` }); return;
       case 'removed': if (code) removalDo({ type: 'removed', room: code, hunter: bound()?.id ?? null }); return;
-      case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
+      case 'upgradeStuck': return; // shown by src/views/takeover.js through onUpdate/updateNow
       case 'notFound': if (code) peeked.delete(code); return;
-      case 'readOnly': ui.toast('System', code ? `This tab cannot save, so you left room ${code}. Your room is still saved. Reload to rejoin.` : 'This tab cannot save, so it could not open the room.', { kind: 'warning' }); return;
+      case 'readOnly': ui.toast('System', code ? `Saving is paused in this tab, so you left room ${code}. Your room is still saved. Reload to rejoin.` : 'Saving is paused in this tab, so you cannot open the room right now. Reload to continue.', { kind: 'warning' }); return;
       case 'keyRefused': case 'notAllowedBack': case 'unreachable': case 'serverError': case 'replaced': return;
     }
   }

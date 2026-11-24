@@ -30,7 +30,7 @@ export function register(app: App): void {
     if (u.at === 'installing' && u.count) return [`Updating ${Math.floor(u.count.done / u.count.of * 100)}%`, `Updating the app: ${u.count.done} of ${u.count.of} files`];
     if (u.at === 'ready') return ['Updating 100%', 'Updating the app: every file is ready'];
     if (u.at === 'reloading') return ['Reloading', 'Reloading into the new version of the app'];
-    if (u.at === 'stuck') return ['Out of date', 'This app is out of date and could not update itself'];
+    if (u.at === 'stuck') return ['Out of date', 'Out of date. Close every tab with this app open, then open it again.'];
     return ['Updating', 'Updating the app'];
   };
 

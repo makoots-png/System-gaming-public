@@ -1,22 +1,22 @@
 // upgrade.ts: carries out the app update (src/core/upgrade.ts). The room server refused this tab because it runs
 // another build (426, reason `upgrade`): this file keeps the per-tab note, follows the new service worker (its count,
 // its takeover) and reloads once. It is the one writer of the update's state and the one listener to the worker's
-// messages; the pill reads the state through `updateNow` and `onUpdate`.
+// messages; the pill and the blocking takeover window read the state through `updateNow` and `onUpdate`.
 //
 // State this file owns (the lint rule in tests/lint.test.ts allows these `let`s and no other):
 //   update   the app update's state, written only by `send` below
 //   quiet    the timer of `UPDATE_QUIET_MS`, restarted by each `wait` effect
 // and these containers: `queue` (the events told while a step runs, the running one at its head), `watchers`.
 
-import { NO_UPDATE, UPDATE_QUIET_MS, countOf, decideUpgrade, updateStep } from '../core/upgrade.ts';
+import { NO_UPDATE, STUCK_TEXT, UPDATE_QUIET_MS, countOf, decideUpgrade, updateStep } from '../core/upgrade.ts';
 import type { Update, UpdateEffect, UpdateEvent } from '../core/upgrade.ts';
+
+export { STUCK_TEXT };
 
 type Looked = Extract<UpdateEvent, { type: 'looked' }>['worker'];
 
 /** Holds the server build this tab last reloaded for. Per tab, and gone when the tab closes. */
 const KEY = 'hunter-system-upgrade';
-
-export const STUCK_TEXT = 'This app is out of date and could not update itself. Close every tab of it and open it again.';
 
 let update: Update = NO_UPDATE;
 let quiet: ReturnType<typeof setTimeout> | undefined;

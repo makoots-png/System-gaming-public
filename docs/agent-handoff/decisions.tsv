@@ -800,3 +800,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T21:26Z	ops	PR 115 (R6 status damage types: Bleeding physical, Burning arcane, Poisoned true, Plague true, Seared/Cataclysm arcane) merged to main
 2026-11-24T21:27Z	arch	shadow-mana (A2) landed on lead-backlog; summonMp E1 D2 C3 B5 A7 S10, resting shadows heal on Gate Clear, RoomRules carries summonMp; unit 6949, browser 609 (2 load timeouts passed alone)
 2026-11-24T21:37Z	arch	clear-presets (V3) landed on lead-backlog; clears route to pay, one Clear panel, Approve all; unit 6951, browser 610 (3 selector fixes, 3 load reruns); merged with A2, cross-check 8 browser tests green
+2026-11-24T22:09Z	arch	stuck-takeover (warn sweep PR 2) landed on lead-backlog; stuck update opens the takeover window, export strips secrets; unit 6958, browser 618 (2 load reruns)
+2026-11-24T22:17Z	ops	PR 116 (A2 shadow summon costs + Gate Clear heal, V3 GM clears pay directly + Approve all) merged to main

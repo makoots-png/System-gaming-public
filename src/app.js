@@ -1,5 +1,6 @@
 // app.js: bootstrap, view/panel registry, nav, hash routing, header (hunter switcher + mode pill), banners.
 import { store } from './edge/store.ts';
+import { updateNow } from './edge/upgrade.ts';
 import { newBus } from './edge/bus.ts';
 import { apiTable } from './edge/api-table.ts';
 import { reported } from './edge/report.ts';
@@ -174,7 +175,7 @@ function renderView(v, when) {
 }
 
 function route() {
-  if (store.readOnly && current !== null) return;
+  if ((store.readOnly || updateNow().at === 'stuck') && current !== null) return;
   ui.went();
   const m = /^#\/([\w-]+)/.exec(location.hash);
   let id = m ? m[1] : role() === 'gm' ? 'gm' : 'status'; // with no view in the address a GM opens on the GM view, a player on Status

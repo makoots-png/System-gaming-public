@@ -106,12 +106,12 @@ const LOAD_TEXT: { readonly [N in LoadNotice]: string } = {
   fight: 'The running fight in your save could not be read, so it was dropped. Everything else opened, and the save as it was is kept in Backups.',
 };
 const LIFE_TEXT: { readonly [N in LifeNotice]: string } = {
-  newer: 'This save is from a newer version of the app. You can view it in this tab, but you cannot change it.',
-  otherTab: 'Another tab saved this campaign, so this tab stopped saving. Reload to continue. Anything this tab had not saved is in Backups.',
+  newer: 'This save comes from a newer version of the app. You cannot change it in this tab. Reload to update the app.',
+  otherTab: 'This campaign is open in another tab. You cannot save changes here while the other tab is active. Reload to continue.',
   noStorage: 'Browser storage is unavailable. Progress will not be saved.',
-  mineUnkept: 'Another tab saved this campaign. Storage is too full to back up this tab\'s unsaved changes. Export them from the Data tab now, then reload.',
-  loadUnkept: 'Your save could not be opened. Storage is too full to back it up, so this tab will not overwrite it. Free some storage and reload, or reset the campaign in the Data tab.',
-  fightUnkept: 'The running fight in your save could not be read. Storage is too full to back up your save, so you can view everything else in this tab without overwriting it. Free some storage and reload.',
+  mineUnkept: 'This campaign is open in another tab, and browser storage is too full to back up your unsaved changes here. Export a backup before you reload.',
+  loadUnkept: 'Browser storage is too full to back up your stored save before opening it, so you cannot save changes here. Export a backup, free storage, and reload.',
+  fightUnkept: 'The running fight could not be read, and browser storage is too full to back up your stored save. Export a backup, free storage, and reload.',
   saveFailed: 'Saving failed (storage full or blocked). Export your data from the Data tab to avoid losing progress.',
   deviceFailed: 'Could not save device settings, such as pinned abilities and the fight view. Storage is full or blocked.',
 };
@@ -426,14 +426,18 @@ export const store = {
   /** Why this tab may not write, or null when it may. */
   readOnlyWhy: (): ReadOnlyWhy | null => (life.at === 'readOnly' ? life.why : null),
   /**
-   * The JSON text exported by the blocking takeover screen's Export backup button: this tab's unsaved save when
-   * `otherTab` or `mineUnkept` (stripped of phone secrets), or the raw stored text for `newer`, `loadUnkept` and `fightUnkept`.
+   * The JSON text exported by the blocking takeover screen's Export backup button (read-only tab or stuck update):
+   * the raw stored text for `newer`, `loadUnkept` and `fightUnkept`, the captured `unsavedBackup` snapshot for
+   * `otherTab` and `mineUnkept`, or this tab's current save stripped of phone secrets (and zero storage writes).
    */
   exportReadOnly(): string {
-    if (life.at === 'readOnly' && (life.why === 'otherTab' || life.why === 'mineUnkept')) {
-      return unsavedBackup ?? JSON.stringify(exportedSave(state, false), null, 2);
+    if (life.at === 'readOnly' && (life.why === 'newer' || life.why === 'loadUnkept' || life.why === 'fightUnkept')) {
+      return currentText();
     }
-    return currentText();
+    if (life.at === 'readOnly' && (life.why === 'otherTab' || life.why === 'mineUnkept') && unsavedBackup !== null) {
+      return unsavedBackup;
+    }
+    return JSON.stringify(exportedSave(state, false), null, 2);
   },
   /**
    * Takes over saving in this tab from `otherTab` or `mineUnkept`. Refuses `newer`, `loadUnkept`, `fightUnkept`, or any

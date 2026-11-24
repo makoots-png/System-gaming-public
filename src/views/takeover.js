@@ -1,7 +1,10 @@
-// takeover.js: blocking full-screen choice when this tab may not write (src/core/store-life.ts ReadOnlyWhy).
+// takeover.js: blocking full-screen choice when this tab may not write (src/core/store-life.ts ReadOnlyWhy) or when
+// an app update is stuck (src/core/upgrade.ts 'stuck').
 // Variant 1: System warning window over dimmed, frozen (inert) app chrome. Opens on the one window stack (ui.js)
 // as kind 'takeover' so it holds System windows behind it, traps Tab, swallows Escape, and ignores backdrop taps.
 import { TAKEOVER_WORDS, canTakeOver } from '../core/store-life.ts';
+import { UPGRADE_TAKEOVER_WORDS, takeoverCause } from '../core/upgrade.ts';
+import { onUpdate, updateNow } from '../edge/upgrade.ts';
 import { enter } from './motion.ts';
 import { closeWindow, openWindow, trapTab } from './ui.js';
 
@@ -20,7 +23,7 @@ export function register(app) {
   const { store, ui } = app;
   const { esc, h } = ui;
 
-  /** @type {{ why: import('../core/store-life.ts').ReadOnlyWhy; root: HTMLElement; win: HTMLElement; handle: import('./ui.js').Win } | null} */
+  /** @type {{ why: import('../core/upgrade.ts').TakeoverCause; root: HTMLElement; win: HTMLElement; handle: import('./ui.js').Win } | null} */
   let open = null;
   /** Siblings of the takeover overlay in document.body that this module froze, with their prior inert and aria-hidden. @type {Map<HTMLElement, { inert: boolean; hidden: string | null }>} */
   const frozen = new Map();
@@ -50,19 +53,22 @@ export function register(app) {
     if (btn) btn.focus({ preventScroll: true });
   }
 
-  /** @param {import('../core/store-life.ts').ReadOnlyWhy} why */
+  /** @param {import('../core/upgrade.ts').TakeoverCause} why */
   function markup(why) {
-    const copy = TAKEOVER_WORDS.causes[why];
+    const tag = why === 'upgradeStuck' ? UPGRADE_TAKEOVER_WORDS.tag : TAKEOVER_WORDS.tag;
+    const copy = why === 'upgradeStuck' ? UPGRADE_TAKEOVER_WORDS : TAKEOVER_WORDS.causes[why];
+    const reloadLabel = why === 'upgradeStuck' ? UPGRADE_TAKEOVER_WORDS.reload : TAKEOVER_WORDS.reload;
+    const showTakeOver = why !== 'upgradeStuck' && canTakeOver(why);
     return `<span class="cb"></span>
-      <div class="n-tag">${esc(TAKEOVER_WORDS.tag)}</div>
+      <div class="n-tag">${esc(tag)}</div>
       <h2 class="n-big" id="tk-title">${esc(copy.heading)}</h2>
       <div class="n-body" id="tk-body">
         ${copy.body.map(p => `<p>${esc(p)}</p>`).join('')}
         <p class="tk-export-note">${esc(copy.exportNote)}</p>
       </div>
       <div class="sys-actions tk-actions">
-        <button type="button" class="primary" data-tk-reload>${esc(TAKEOVER_WORDS.reload)}</button>
-        ${canTakeOver(why) ? `<button type="button" class="danger" data-tk-takeover>${esc(TAKEOVER_WORDS.takeOver)}</button>` : ''}
+        <button type="button" class="primary" data-tk-reload>${esc(reloadLabel)}</button>
+        ${showTakeOver ? `<button type="button" class="danger" data-tk-takeover>${esc(TAKEOVER_WORDS.takeOver)}</button>` : ''}
         <button type="button" data-tk-export>${esc(TAKEOVER_WORDS.exportBackup)}</button>
       </div>
       <p class="tk-status" role="status" aria-live="polite" data-tk-status hidden></p>`;
@@ -74,7 +80,7 @@ export function register(app) {
   }
 
   function sync() {
-    const why = store.readOnlyWhy();
+    const why = takeoverCause(store.readOnlyWhy(), updateNow());
     if (!why) {
       if (!open) return;
       const closing = open;
@@ -106,7 +112,7 @@ export function register(app) {
       const t = e.target instanceof Element ? e.target : null;
       if (!t) return;
       if (t.closest('[data-tk-reload]')) { location.reload(); return; }
-      if (t.closest('[data-tk-takeover]')) { store.takeOver(); return; }
+      if (t.closest('[data-tk-takeover]')) { if (open && open.why !== 'upgradeStuck') store.takeOver(); return; }
       if (t.closest('[data-tk-export]')) {
         download(`hunter-system-backup-${localDate(new Date())}.json`, store.exportReadOnly());
         const st = /** @type {HTMLElement | null} */ (win.querySelector('[data-tk-status]'));
@@ -129,6 +135,7 @@ export function register(app) {
 
   app.on('ready', sync);
   app.on('change', sync);
+  onUpdate(sync);
   // Open immediately if the store loaded read-only, before later modules register and ask for System windows (coin.js).
   sync();
 }

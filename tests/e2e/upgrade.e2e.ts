@@ -1,10 +1,96 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, editIdentity, go, save, type Page } from './helpers.ts';
+import { mkdir, readFile } from 'node:fs/promises';
+import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
+import { UPGRADE_TAKEOVER_WORDS } from '../../src/core/upgrade.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, editIdentity, go, save, chooseList, startGoblinDenFight, PHONE, type Page } from './helpers.ts';
 
 // Chromium logs every 426 answer as a console error. The 426 is the refusal these tests are about.
 const REFUSED_LOG = /Failed to load resource: the server responded with a status of 426 \(Upgrade Required\)/;
-const STUCK = 'This app is out of date and could not update itself. Close every tab of it and open it again.';
 const OLD_BUILD = 'old-build-01';
+const V4 = 'hunter-system-v4';
+const UPGRADE_KEY = 'hunter-system-upgrade';
+
+const tkOverlay = (page: Page) => page.locator('.tk-overlay.show');
+const tkWin = (page: Page) => page.locator('.tk-overlay.show .tk-win');
+
+const fillStorage = (page: Page, ...keys: string[]): Promise<void> => page.evaluate(ks => {
+  const w = window as any;
+  if (!w.e2eFull) {
+    w.e2eFull = new Set<string>();
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k: string, v: string) {
+      if (w.e2eFull.has(k)) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      return set.call(this, k, v);
+    };
+  }
+  for (const k of ks) w.e2eFull.add(k);
+}, keys);
+
+async function expectStuckTakeover(page: Page, { expectNoBanners = true }: { expectNoBanners?: boolean } = {}): Promise<void> {
+  const win = tkWin(page);
+  await expect(tkOverlay(page)).toHaveCount(1);
+  await expect(win).toBeVisible();
+  await expect(win).toHaveAttribute('role', 'alertdialog');
+  await expect(win).toHaveAttribute('aria-modal', 'true');
+  await expect(win.locator('.n-tag')).toHaveText(UPGRADE_TAKEOVER_WORDS.tag);
+  await expect(win.locator('#tk-title')).toHaveText(UPGRADE_TAKEOVER_WORDS.heading);
+  for (const p of UPGRADE_TAKEOVER_WORDS.body) await expect(win.locator('#tk-body')).toContainText(p);
+  await expect(win.locator('.tk-export-note')).toHaveText(UPGRADE_TAKEOVER_WORDS.exportNote);
+  await expect(win.getByRole('button', { name: UPGRADE_TAKEOVER_WORDS.reload })).toBeVisible();
+  await expect(win.getByRole('button', { name: TAKEOVER_WORDS.exportBackup })).toBeVisible();
+  await expect(win.getByRole('button', { name: TAKEOVER_WORDS.takeOver })).toHaveCount(0);
+  if (expectNoBanners) await expect(page.locator('#banners .banner')).toHaveCount(0);
+  const inertState = await page.evaluate(() => ['header.sys-head', '#main', '#nav-bottom', '#nav-top'].map(sel => {
+    const el = document.querySelector(sel) as HTMLElement | null;
+    return { sel, inert: !!el?.inert, hidden: el?.getAttribute('aria-hidden') };
+  }));
+  for (const row of inertState) {
+    expect(row.inert, `${row.sel} is inert behind stuck-update takeover`).toBe(true);
+    expect(row.hidden, `${row.sel} is aria-hidden behind stuck-update takeover`).toBe('true');
+  }
+}
+
+async function expectStuckLayoutClean(page: Page, width: number): Promise<void> {
+  const metrics = await page.evaluate(() => {
+    const win = document.querySelector('.tk-overlay.show .tk-win') as HTMLElement | null;
+    if (!win) return null;
+    const wr = win.getBoundingClientRect();
+    const buttons = [...win.querySelectorAll('.tk-actions button')].map(b => {
+      const r = b.getBoundingClientRect();
+      return { text: (b.textContent ?? '').trim(), x: r.x, right: r.right, y: r.y, bottom: r.bottom, width: r.width, height: r.height };
+    });
+    return {
+      innerWidth: window.innerWidth,
+      docScrollWidth: document.scrollingElement!.scrollWidth,
+      winScrollWidth: win.scrollWidth,
+      winClientWidth: win.clientWidth,
+      winRect: { x: wr.x, right: wr.right, y: wr.y, bottom: wr.bottom },
+      buttons,
+    };
+  });
+  expect(metrics, 'stuck-update takeover window is mounted').not.toBeNull();
+  const m = metrics!;
+  expect(m.docScrollWidth, `no horizontal page scroll at ${width}px`).toBeLessThanOrEqual(m.innerWidth);
+  expect(m.winScrollWidth, `no horizontal dialog scroll at ${width}px`).toBeLessThanOrEqual(m.winClientWidth);
+  expect(m.winRect.x).toBeGreaterThanOrEqual(0);
+  expect(m.winRect.right).toBeLessThanOrEqual(m.innerWidth + 1);
+  for (const b of m.buttons) {
+    expect(b.height, `${b.text} is at least 44px tall at ${width}px`).toBeGreaterThanOrEqual(44);
+    expect(b.height, `${b.text} stays single-line at ${width}px`).toBeLessThanOrEqual(56);
+    expect(b.x, `${b.text} starts inside window`).toBeGreaterThanOrEqual(m.winRect.x);
+    expect(b.right, `${b.text} fits inside window`).toBeLessThanOrEqual(m.winRect.right + 1);
+    expect(b.right, `${b.text} fits inside viewport`).toBeLessThanOrEqual(m.innerWidth);
+  }
+}
+
+async function exportFromStuckTakeover(page: Page): Promise<string> {
+  const dl = page.waitForEvent('download');
+  await tkWin(page).getByRole('button', { name: TAKEOVER_WORDS.exportBackup }).tap();
+  const path = (await (await dl).path()) ?? '';
+  expect(path).not.toBe('');
+  await expect(tkWin(page).locator('[data-tk-status]')).toHaveText(TAKEOVER_WORDS.exported);
+  return readFile(path, 'utf8');
+}
 
 const countLoads = (page: Page): (() => number) => {
   let loads = 0;
@@ -67,27 +153,154 @@ test('a phone with an old app updates itself and is back in the room', async ({ 
   });
 });
 
-test('a phone that cannot update says so and does not reload again', async ({ device }) => {
+test('a phone that cannot update shows the blocking takeover window, does not reload again, exports cleanly, and reloads on Reload app', async ({ device }) => {
   const gm = (await device('gm')).page;
   const player = (await device('player', { blockServiceWorker: true, allowConsole: [REFUSED_LOG] })).page;
   const code = await gmAndPlayerInARoom(gm, player);
   const before = { hunters: await hunters(player), sync: await syncState(player) };
   const loads = countLoads(player);
+  let forceOld = true;
 
-  await test.step('the phone reloads once and then says it could not update', async () => {
-    await sendOldBuild(player, () => true);
+  await test.step('the phone reloads once and then shows the Variant 1 stuck-update takeover', async () => {
+    await sendOldBuild(player, () => forceOld);
     await expect.poll(loads).toBe(1);
-    await expect(player.locator('#banners .banner', { hasText: STUCK })).toHaveCount(1);
+    await expectStuckTakeover(player);
+    await expectStuckLayoutClean(player, PHONE.width);
   });
 
-  await test.step('it does not reload again and keeps its room and hunter', async () => {
+  await test.step('it does not reload again, ignores Escape/backdrop/hash changes, traps Tab, and keeps its room and hunter', async () => {
+    await player.keyboard.press('Escape');
+    await expect(tkOverlay(player)).toHaveCount(1);
+    await player.keyboard.press('?');
+    await expect(player.locator('.sys-overlay.show', { hasText: 'KEYBOARD' })).toHaveCount(0);
+    await player.touchscreen.tap(8, 8);
+    await expect(tkOverlay(player)).toHaveCount(1);
+
+    const hashBefore = await player.evaluate(() => location.hash);
+    await player.evaluate(() => { location.hash = '#/dice'; });
+    await expect(player.locator('#view-dice')).not.toBeVisible();
+    await expect(tkOverlay(player)).toHaveCount(1);
+    if (hashBefore) await player.evaluate(h => { location.hash = h; }, hashBefore);
+
+    const focusedText = () => player.evaluate(() => (document.activeElement as HTMLElement | null)?.textContent?.trim() ?? '');
+    await expect.poll(focusedText).toBe(UPGRADE_TAKEOVER_WORDS.reload);
+    await player.keyboard.press('Tab');
+    await expect.poll(focusedText).toBe(TAKEOVER_WORDS.exportBackup);
+    await player.keyboard.press('Tab');
+    await expect.poll(focusedText).toBe(UPGRADE_TAKEOVER_WORDS.reload);
+    await player.keyboard.press('Shift+Tab');
+    await expect.poll(focusedText).toBe(TAKEOVER_WORDS.exportBackup);
+
     await player.waitForTimeout(6000);
     expect(loads()).toBe(1);
-    await expect(player.locator('#banners .banner', { hasText: STUCK })).toHaveCount(1);
+    await expectStuckTakeover(player);
     expect((await syncState(player)).room).toBe(code);
     expect((await syncState(player)).bound).toBe(before.sync.bound);
     expect(await hunters(player)).toEqual(before.hunters);
   });
+
+  await test.step('Export backup downloads the save without phone secrets', async () => {
+    const exported = JSON.parse(await exportFromStuckTakeover(player));
+    expect(exported.hunters[0].name).toBe('Kai Test');
+    expect(exported.settings.deviceId).toBeUndefined();
+    expect(exported.settings.sync.deviceToken).toBeUndefined();
+    expect(exported.settings.sync.gmKey).toBeUndefined();
+    expect(exported.settings.sync.gmKeys).toBeUndefined();
+  });
+
+  await test.step('Reload app reloads the tab and returns live once the build matches', async () => {
+    forceOld = false;
+    const reloaded = player.waitForEvent('load');
+    await tkWin(player).getByRole('button', { name: UPGRADE_TAKEOVER_WORDS.reload }).tap();
+    await reloaded;
+    await appIsUp(player);
+    await expect(tkOverlay(player)).toHaveCount(0);
+    await expect.poll(() => syncState(player)).toEqual({ ...before.sync, room: code, conn: 'live' });
+  });
+});
+
+test('a stuck update during a running fight freezes combat behind the takeover and preserves the fight in Export backup', async ({ device }) => {
+  const gm = (await device('gm', { blockServiceWorker: true, allowConsole: [REFUSED_LOG] })).page;
+  await onboardGM(gm);
+  await createRoom(gm);
+  await chooseList(gm);
+  await startGoblinDenFight(gm);
+  await expect.poll(async () => (await save(gm)).fight?.phase).toBe('running');
+  await fillStorage(gm, UPGRADE_KEY);
+  await sendOldBuild(gm, () => true);
+  await expectStuckTakeover(gm);
+  expect((await save(gm)).fight?.phase).toBe('running');
+  const exported = JSON.parse(await exportFromStuckTakeover(gm));
+  expect(exported.fight?.phase).toBe('running');
+  expect(exported.fight?.rows?.length).toBeGreaterThan(0);
+  expect(exported.settings.deviceId).toBeUndefined();
+  expect(exported.settings.sync.gmKey).toBeUndefined();
+  expect(exported.settings.sync.gmKeys).toBeUndefined();
+});
+
+test('a stuck update when storage is full opens immediately without reloading and Export backup includes unsaved changes', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  const player = (await device('player', { blockServiceWorker: true, allowConsole: [REFUSED_LOG] })).page;
+  await gmAndPlayerInARoom(gm, player);
+  const loads = countLoads(player);
+
+  await go(player, 'status');
+  await fillStorage(player, UPGRADE_KEY, V4);
+  await editIdentity(player, 'name', 'Kai Full Storage');
+  await expect(player.locator('#banners .banner')).toContainText('Saving failed');
+
+  await sendOldBuild(player, () => true);
+  await expectStuckTakeover(player, { expectNoBanners: false });
+  expect(loads()).toBe(0);
+
+  const exported = JSON.parse(await exportFromStuckTakeover(player));
+  expect(exported.hunters[0].name).toBe('Kai Full Storage');
+  expect(exported.settings.deviceId).toBeUndefined();
+  expect(exported.settings.sync.deviceToken).toBeUndefined();
+});
+
+test('a stuck update while the tab also becomes read-only keeps one stuck-update overlay without Take over here and exports unsaved changes', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  const { page: player, ctx } = await device('player', { blockServiceWorker: true, allowConsole: [REFUSED_LOG] });
+  await gmAndPlayerInARoom(gm, player);
+  const other = await ctx.newPage();
+  await other.goto('/');
+  await appIsUp(other);
+
+  await go(player, 'status');
+  await fillStorage(player, UPGRADE_KEY, V4);
+  await editIdentity(player, 'name', 'Kai Stuck Unsaved');
+  await expect(player.locator('#banners .banner')).toContainText('Saving failed');
+
+  await sendOldBuild(player, () => true);
+  await expectStuckTakeover(player, { expectNoBanners: false });
+
+  // Second tab saves: tab 1 also enters read-only (otherTab) while stuck.
+  await go(other, 'status');
+  await editIdentity(other, 'name', 'Kai Saved Tab 2');
+  await expect.poll(() => player.evaluate(() => hunterApp.store.readOnlyWhy())).toBe('otherTab');
+
+  // Stuck-update takeover still wins, stays a single overlay, and never offers Take over here.
+  await expectStuckTakeover(player, { expectNoBanners: false });
+  const exported = JSON.parse(await exportFromStuckTakeover(player));
+  expect(exported.hunters[0].name).toBe('Kai Stuck Unsaved');
+  expect(exported.settings.deviceId).toBeUndefined();
+});
+
+test('stuck-update takeover fits 390 px and 360 px viewports with no horizontal scroll and whole 44 px buttons', async ({ device }) => {
+  const shotDir = process.env.E2E_SHOT_DIR || '';
+  if (shotDir) await mkdir(shotDir, { recursive: true });
+
+  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 844 }]) {
+    const gm = (await device(`gm-${viewport.width}`, { viewport, blockServiceWorker: true, allowConsole: [REFUSED_LOG] })).page;
+    await onboardGM(gm);
+    await createRoom(gm);
+    await fillStorage(gm, UPGRADE_KEY);
+    await sendOldBuild(gm, () => true);
+    await expectStuckTakeover(gm);
+    await expectStuckLayoutClean(gm, viewport.width);
+    if (shotDir) await gm.screenshot({ path: `${shotDir}/upgradeStuck-${viewport.width}.png` });
+  }
 });
 
 // Beside the run's own server (E2E_PORT, 3217 by default), so two runs on two ports do not share it.

@@ -200,7 +200,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts inflight': 'the open requests of each gen, so the link\'s `abort` drops them', 'sync.ts timers': 'the poll\'s and the push\'s one timer each, set by their machines\' effects',
     'sync.ts publishers': 'what builds each doc the GM\'s phone publishes',
     'sync.ts publishing': 'each room doc\'s publish machine\'s state (src/core/sync/publish.ts)', 'sync.ts peeked': 'the Room view\'s code checks, reused for 30 s',
-    'upgrade.ts watchers': 'what is told of the update machine\'s state (the pill)',
+    'upgrade.ts watchers': 'what is told of the update machine\'s state (the pill and the takeover window)',
     'store.ts subs': 'the store\'s subscribers', 'store.ts noticeOf': 'the notice step\'s session and fight hold, bound by sync.ts (`bindNotice`)', 'report.ts seen': 'each error already reported, by place and message, so each is logged once',
   };
   const container = /^(?:new\s+(?:Weak)?(?:Map|Set)\b)/;
@@ -1428,7 +1428,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/gates.js': { count: 3, why: 'the room\'s world doc this GM phone merged last, the solo run machine\'s value (runPhase, its states are core gates/solo-run.ts), and a function\'s local (moved)' },
     'src/views/kit-parts.js': { count: 2, why: 'the count of blocks made, for their ids; a threshold\'s and an end\'s effects editors, drawn when first ticked' },
     'src/views/onboard.js': { count: 2, why: 'first-run setup\'s window and its step (its steps are core onboarding.ts)' },
-    'src/views/takeover.js': { count: 1, why: 'the blocking read-only takeover window\'s open handle and cause while shown' },
+    'src/views/takeover.js': { count: 1, why: 'the blocking takeover window\'s open handle and cause while shown (read-only or stuck update)' },
     'src/views/skills.js': { count: 2, why: 'the skill maker\'s type and kind on screen' },
     'src/views/coin.js': { count: 1, why: 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design' },
     'src/views/custom.js': { count: 1, why: 'the HP last felt, so a buzz follows only a change' },

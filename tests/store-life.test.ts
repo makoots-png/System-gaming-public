@@ -314,6 +314,18 @@ describe('the save\'s write after a change, on the page (src/edge/store.ts)', ()
       drawFrame();
       expect(page.writes.length, 'and the frame that comes later writes nothing more').toBe(4);
       expect(store.life()).toEqual({ at: 'ready', write: 'clean' });
+
+      // Export from a ready tab (used by the stuck-update takeover) strips phone secrets while preserving unsaved edits.
+      store.update(s => {
+        s.hunters[0]!.name = 'Unsaved During Stuck';
+        s.settings.sync.gmKey = 'gmkeygmkeygmkey1' as NonNullable<typeof s.settings.sync.gmKey>;
+      });
+      const exported = JSON.parse(store.exportReadOnly());
+      expect(exported.hunters[0].name).toBe('Unsaved During Stuck');
+      expect(exported.settings.deviceId).toBeUndefined();
+      expect(exported.settings.sync.deviceToken).toBeUndefined();
+      expect(exported.settings.sync.gmKey).toBeUndefined();
+      expect(exported.settings.sync.gmKeys).toBeUndefined();
     } finally {
       Object.assign(g, real);
     }

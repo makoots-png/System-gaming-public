@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { NO_UPDATE, TABLE, UPDATE_QUIET_MS, UPDATE_STATES, countOf, counted, decideUpgrade, firstCount, installOf, updateStep } from '../src/core/upgrade.ts';
+import { NO_UPDATE, STUCK_TEXT, TABLE, UPDATE_QUIET_MS, UPDATE_STATES, UPGRADE_TAKEOVER_WORDS, countOf, counted, decideUpgrade, firstCount, installOf, takeoverCause, updateStep } from '../src/core/upgrade.ts';
 import type { Count, Update, UpdateEffect, UpdateEvent, UpdateState } from '../src/core/upgrade.ts';
+import { READ_ONLY_WHYS, TAKEOVER_WORDS } from '../src/core/store-life.ts';
+import { warningFaults } from '../src/core/warning.ts';
 import { BUILD, WALK_EVENTS } from './models/upgrade-events.ts';
 
 describe('the decision a refusal brings', () => {
@@ -323,5 +325,43 @@ describe('the worker\'s count', () => {
     for (const bad of [null, 'caching', { type: 'other', done: 1, failed: 0, of: 2 }, { type: 'caching', done: 1, of: 2 },
       { type: 'caching', done: 2, failed: 1, of: 2 }, { type: 'caching', done: -1, failed: 0, of: 2 }, { type: 'caching', done: 0.5, failed: 0, of: 2 },
       { type: 'caching', done: 0, failed: 0, of: 0 }]) expect(countOf(bad)).toBeNull();
+  });
+});
+
+describe('stuck-update takeover cause and copy', () => {
+  test('a stuck update takes priority over every read-only cause so Take over here is never offered on an out-of-date build', () => {
+    const stuck: Update = { at: 'stuck' };
+    expect(takeoverCause(null, stuck)).toBe('upgradeStuck');
+    for (const why of READ_ONLY_WHYS) {
+      expect(takeoverCause(why, stuck)).toBe('upgradeStuck');
+    }
+    const nonStuck: readonly Update[] = [
+      NO_UPDATE,
+      { at: 'noting', build: BUILD },
+      { at: 'installing', build: BUILD, count: null },
+      { at: 'ready', build: BUILD },
+      { at: 'reloading', build: BUILD },
+    ];
+    for (const u of nonStuck) {
+      expect(takeoverCause(null, u)).toBeNull();
+      for (const why of READ_ONLY_WHYS) expect(takeoverCause(why, u)).toBe(why);
+    }
+  });
+
+  test('stuck-update takeover copy passes Variant 1 warning rules and avoids personification', () => {
+    expect(UPGRADE_TAKEOVER_WORDS.tag).toBe('Update required');
+    expect(UPGRADE_TAKEOVER_WORDS.reload).toBe('Reload app');
+    expect(UPGRADE_TAKEOVER_WORDS.body).toContain(STUCK_TEXT);
+    expect(STUCK_TEXT.toLowerCase()).not.toContain('update itself');
+    expect(STUCK_TEXT).not.toContain('!');
+    expect(warningFaults({
+      tag: UPGRADE_TAKEOVER_WORDS.tag,
+      title: UPGRADE_TAKEOVER_WORDS.heading,
+      body: UPGRADE_TAKEOVER_WORDS.body,
+      actions: [
+        { label: UPGRADE_TAKEOVER_WORDS.reload, primary: true },
+        { label: TAKEOVER_WORDS.exportBackup },
+      ],
+    })).toEqual([]);
   });
 });
