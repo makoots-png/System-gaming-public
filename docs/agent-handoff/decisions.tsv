@@ -780,3 +780,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T12:56Z	arch	deps-gate (pick D6) landed on lead-backlog; deps+lint 139 pass, unit 6902 pass 0 fail on this base
 2026-11-24T13:11Z	ops	PR 106 (deps-gate) merged to main
 2026-11-24T14:06Z	arch	dodge-pick landed on lead-backlog; unit 6922 pass 0 fail, browser 595 + 6 load reruns alone green; shots reviewed
+2026-11-24T15:02Z	ops	PR 107 (dodge-pick) merged to main
+2026-11-24T15:28Z	arch	xp-pacing landed on lead-backlog; clears E 14.3, D 14.8, C 15.2, B 16.1, A 17.0; unit 6912 pass 0 fail, browser 590 + 6 load reruns alone green

@@ -140,13 +140,16 @@ const SPEC = {
   rankColors: { E: '#9fb6c9', D: '#59e6a8', C: '#4dd8ff', B: '#4d8cff', A: '#c79bff', S: '#ffc94d' },
   // A check's DC (easy, medium, hard), a normal monster's XP and the days a gate of the rank stays open. A monster's HP,
   // armor and attacks come from `fight.kinds` and its archetype (src/core/hunter/derive.ts `monsterSheet`).
+  // Monster XP is tuned against the quadratic level curve (`xpPerLevel * level`) and mean world-gate size (5 normals at E,
+  // 7 at D to S) so a party of 4 crosses each rank in 14.3 to 17.0 clears (E 14.3, D 14.8, C 15.2, B 16.1, A 17.0) and
+  // S-rank gates award ~1.6 levels at level 70 instead of jumping 7+ levels per clear.
   rankTable: {
     E: { dc: each([10, 13, 16], DC), xp: of(63, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
-    D: { dc: each([14, 17, 20], DC), xp: of(75, MONSTER_XP), breakDays: of(6, BREAK_DAYS) },
-    C: { dc: each([20, 24, 28], DC), xp: of(250, MONSTER_XP), breakDays: of(5, BREAK_DAYS) },
-    B: { dc: each([27, 31, 35], DC), xp: of(800, MONSTER_XP), breakDays: of(4, BREAK_DAYS) },
-    A: { dc: each([35, 40, 45], DC), xp: of(2500, MONSTER_XP), breakDays: of(3, BREAK_DAYS) },
-    S: { dc: each([45, 50, 55], DC), xp: of(8000, MONSTER_XP), breakDays: of(2, BREAK_DAYS) },
+    D: { dc: each([14, 17, 20], DC), xp: of(140, MONSTER_XP), breakDays: of(6, BREAK_DAYS) },
+    C: { dc: each([20, 24, 28], DC), xp: of(380, MONSTER_XP), breakDays: of(5, BREAK_DAYS) },
+    B: { dc: each([27, 31, 35], DC), xp: of(560, MONSTER_XP), breakDays: of(4, BREAK_DAYS) },
+    A: { dc: each([35, 40, 45], DC), xp: of(1000, MONSTER_XP), breakDays: of(3, BREAK_DAYS) },
+    S: { dc: each([45, 50, 55], DC), xp: of(1600, MONSTER_XP), breakDays: of(2, BREAK_DAYS) },
   },
   fatigue: {
     penaltyAt: whole(50, 0, 1000, 'fatigue level where check penalties start. Values above max fatigue disable the penalty'),

@@ -213,6 +213,8 @@ Status (Nov 22): built in unit rulings-18-19. Dead bodies are left out of `aims`
 
 ## Decisions (Nov 24 onward)
 
+- `2026-11-24-xp-pacing-rank-table`: **Retuned monster XP by rank so every rank transition takes 14.3 to 17.0 world-gate clears.** Moved RULES.rankTable.{D,C,B,A,S}.xp from 75, 250, 800, 2500, 8000 to 140, 380, 560, 1000, 1600 while keeping E at 63, xpPerLevel at 100, rankLevels unchanged, dailyTemplate.rewards.xp at 25, and Gold Table B, revive debt, and S personal gate loot untouched. Previously the 3.2x exponential XP ladder against the quadratic level curve stalled parties in D (27.6 clears, 0.4% 10-session promotion, 16.8x priceBase idle gold) and C (23.1 clears, 6.6% promotion, 17.3x gold), rushed A to S in 6.8 clears (3.4 sessions, faster than A gear plus a Resurrection Crystal), and launched S hunters from level 70 to 161 in 10 sessions. Now mean 4-hunter clears rise smoothly (E 14.3, D 14.8, C 15.2, B 16.1, A 17.0, or 15.7 with Igris), every D-to-S normal, elite, boss, mythic, and named seed lands on an exact integer XP, S gates award about 1.6 levels at level 70 (ending 10 sessions near level 93), and existing saves load with zero rank jumps (a mid-raid B, A, or S gate whose prior fights already paid more than the new gate total clamps xpDue to 0). Undo with: set RULES.rankTable.{D,C,B,A,S}.xp back to 75, 250, 800, 2500, 8000 or name target clears per rank.
+
 ## Neon review (Nov 22)
 
 Reviewer: Gemini Neon. Commit reviewed: 9ab2aa71. The same notes sit under each row above.

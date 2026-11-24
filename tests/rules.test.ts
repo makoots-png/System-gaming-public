@@ -2,7 +2,8 @@
 // in one table and forgotten in another fails, and so does a column that stops rising with rank.
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides } from '../src/core/overrides.ts';
-import { canExtract, rewardJobs, BONUS_HUNDREDTHS, BONUS_KEYS, BONUS_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, tradeRuleSet, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
+import { canExtract, rewardJobs, BONUS_HUNDREDTHS, BONUS_KEYS, BONUS_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, tradeRuleSet, resetTable, saveRuleNumbers, writeTable, xpToNext } from '../src/core/rules.ts';
+import { packRange } from '../src/core/gates/spawn.ts';
 import { RANKS as SAVE_RANKS, RARITIES, SLOTS } from '../src/core/save.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -37,6 +38,32 @@ test('a higher rank has harder checks and more XP, and its gate breaks sooner', 
   for (const x of rows) expect(rising(x.dc)).toBe(true); // easy, medium, hard
   expect(falling(rows.map(x => x.breakDays))).toBe(true);
   expect(rows.at(-1)!.breakDays).toBeGreaterThanOrEqual(1);
+});
+
+test('mean world-gate clears to reach the next rank stay between 12 and 18 and rise gently from E to A, while S gates stay under 2.5 levels at level 70', () => {
+  const meanGateXp = (r: (typeof RANKS)[number]): number => {
+    const [lo, hi] = packRange(RULES, r);
+    return ((lo + hi) / 2 + RULES.fight.kinds.boss.xp) * RULES.rankTable[r].xp;
+  };
+  const xpAcross = (from: (typeof RANKS)[number], to: (typeof RANKS)[number]): number => {
+    let total = 0;
+    for (let lv = RULES.rankLevels[from]; lv < RULES.rankLevels[to]; lv++) total += xpToNext(RULES, lv);
+    return total;
+  };
+  const clears: number[] = [];
+  for (let i = 0; i < RANKS.length - 1; i++) {
+    const from = RANKS[i]!, to = RANKS[i + 1]!;
+    const count = xpAcross(from, to) / meanGateXp(from);
+    expect(count, `${from} to ${to} clears`).toBeGreaterThanOrEqual(12);
+    expect(count, `${from} to ${to} clears`).toBeLessThanOrEqual(18);
+    clears.push(count);
+  }
+  for (let i = 1; i < clears.length; i++) {
+    expect(clears[i]!, `${RANKS[i]} clears >= ${RANKS[i - 1]} clears`).toBeGreaterThanOrEqual(clears[i - 1]!);
+  }
+  const sLevelsPerGate = meanGateXp('S') / xpToNext(RULES, RULES.rankLevels.S);
+  expect(sLevelsPerGate, 'S gate levels at level 70').toBeGreaterThanOrEqual(1);
+  expect(sLevelsPerGate, 'S gate levels at level 70').toBeLessThanOrEqual(2.5);
 });
 
 test('an elite is worth more XP than a normal monster of its rank, a boss more than an elite, as the old factors gave', () => {

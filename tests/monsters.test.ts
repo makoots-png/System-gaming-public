@@ -184,7 +184,7 @@ group('the seeds as plan section 3.2 restates them', () => {
 
   test('Igris may be extracted and gives 1.2 times an A boss\'s XP', () => {
     const ig = seed('igris');
-    expect([ig.extractable, ig.xp]).toEqual([true, Math.round(2500 * 3 * 1.2)]);
+    expect([ig.extractable, ig.xp]).toEqual([true, Math.round(RULES.rankTable.A.xp * RULES.fight.kinds.boss.xp * 1.2)]);
   });
 
   test('Ashen Drake is a plain normal S-rank Dragon brute with full S normal XP', () => {

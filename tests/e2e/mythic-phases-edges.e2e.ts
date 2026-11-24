@@ -2,6 +2,7 @@
 import { mkdir } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { MYTHICS } from '../../src/core/registry/mythics.ts';
+import { RULES } from '../../src/core/rules.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, setupDoc, fightRow, PHONE, type DeviceOptions } from './helpers.ts';
 
 const HUNTER = 'Kai Test';
@@ -157,7 +158,7 @@ test('probe: player who viewed Rules before joining a room with phases off keeps
   await expect(player.locator('#rr-mythic')).toHaveCount(0);
 });
 
-test('probe: at 390px, mythic bestiary XP wraps mid-number ("40,00" / "0")', async ({ device }) => {
+test('probe: at 390px, mythic bestiary XP stays on one line without wrapping mid-number', async ({ device }) => {
   const gm = (await device('gm-layout-xp', { viewport: PHONE })).page;
   await onboardGM(gm);
   await chooseList(gm);
@@ -168,7 +169,8 @@ test('probe: at 390px, mythic bestiary XP wraps mid-number ("40,00" / "0")', asy
     r.selectNodeContents(el);
     return { text: el.textContent, rects: r.getClientRects().length };
   });
-  expect(xpLines, 'XP "40,000" should stay on one line, not break mid-number').toEqual({ text: '40,000', rects: 1 });
+  const mythicXp = Math.round(RULES.rankTable.S.xp * RULES.fight.kinds.mythic.xp).toLocaleString('en-US');
+  expect(xpLines, `XP "${mythicXp}" should stay on one line, not break mid-number`).toEqual({ text: mythicXp, rects: 1 });
 });
 
 test('probe: at 390px, GM switch label touches button with 0px gap and has no pressed styling', async ({ device }) => {

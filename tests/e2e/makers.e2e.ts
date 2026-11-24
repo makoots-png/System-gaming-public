@@ -520,12 +520,13 @@ test('the enemy maker shows the body a rank, an archetype and a kind make, and X
   };
   const xp = d.locator('#enm-xp');
   await d.locator('[data-chips="rank"] [data-chip="C"]').tap();
-  // a normal C monster's XP is the rank table's 250, a boss's three times it (RULES.fight.kinds); left blank, the rule's
+  const cNormalXp = RULES.rankTable.C.xp, cBossXp = Math.round(cNormalXp * RULES.fight.kinds.boss.xp);
+  // a normal C monster's XP is the rank table's, a boss's three times it (RULES.fight.kinds); left blank, the rule's
   await expect(xp).toHaveValue('');
-  await expect(xp).toHaveAttribute('placeholder', 'Default: 250');
+  await expect(xp).toHaveAttribute('placeholder', `Default: ${cNormalXp}`);
   const normal = await body();
   await d.locator('[data-chips="kind"] [data-chip="boss"]').tap();
-  await expect(xp).toHaveAttribute('placeholder', 'Default: 750');
+  await expect(xp).toHaveAttribute('placeholder', `Default: ${cBossXp}`);
   // a boss's HP factor over a normal monster's (RULES.fight.kinds: 2.8 over 0.6 since package A), within rounding
   const boss = await body();
   expect(Math.abs(boss.hp - normal.hp * RULES.fight.kinds.boss.hp / RULES.fight.kinds.normal.hp)).toBeLessThanOrEqual(3);
