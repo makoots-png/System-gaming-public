@@ -196,7 +196,7 @@ export function register(app) {
         ul([`Only a Necromancer or Shadow Monarch (${R.extractJobs.map(esc).join(', ')}) can extract shadows from defeated monsters.`,
           `Extraction rolls d20 + Presence check bonus against DC ${R.shadow.dcBase} + ${R.shadow.dcPerRank} × (monster rank − hunter rank) + ${R.shadow.bossDc} for a boss (minimum 5). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${R.shadow.maxAttempts} attempts per corpse.`,
           'On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster\'s rank and archetype. Its grade sets its monster kind: Normal is normal, Elite and Knight are elite, and Commander and Marshal are boss.',
-          `Army capacity = floor(${F.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${esc(r)} ${esc(R.shadow.summonMp[r])}`).join(', ')}. Unsummoning is free.`]),
+          `Army capacity = floor(${F.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${esc(r)} ${esc(R.shadow.summonMp[r])}`).join(', ')}. Unsummoning is free. Clearing a gate heals resting shadows to full HP.`]),
       ] },
       { id: 'gates', title: 'Gates', body: [
         table(['Type', 'Notes'], [['Normal', 'A standard dungeon. You may leave at any time.'],

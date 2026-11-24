@@ -92,7 +92,7 @@ export function restLines(R: Pick<Rules, 'rest' | 'fatigue' | 'fight'>): string[
     : '';
   return [
     `Resting restores ${pct(R.rest.hp)} of your max HP and ${pct(R.rest.mana)} of your max mana, up to your maximum. It also removes ${pct(R.rest.fatigue)} of your fatigue. Exhausted ends once your remaining fatigue drops below ${R.fatigue.collapseAt}% of your capacity.`,
-    `You get ${n} rest${n === 1 ? '' : 's'} per gate. Clearing a gate restores full HP and mana, clears your fatigue, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests.${afterFight}`,
+    `You get ${n} rest${n === 1 ? '' : 's'} per gate. Clearing a gate restores full HP and mana, clears your fatigue, heals resting shadows to full HP, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests.${afterFight}`,
     `A dead hunter cannot rest and gains nothing from clearing a gate. ${WAYS_BACK} brings you back. You cannot rest during a fight.`,
   ];
 }

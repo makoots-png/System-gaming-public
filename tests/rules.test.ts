@@ -7,7 +7,7 @@ import { packRange } from '../src/core/gates/spawn.ts';
 import { RANKS as SAVE_RANKS, RARITIES, SLOTS } from '../src/core/save.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
-import { SHEET_LABELS } from '../src/core/hunter/derive.ts';
+import { SHEET_LABELS, kitGear, pointsAt, sheetOf, split } from '../src/core/hunter/derive.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 
 const rising = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x > xs[i - 1]!);
@@ -112,8 +112,26 @@ test('fatigue gives its penalty, then disadvantage, then collapse, and a rest fr
   expect(f.collapseAt * (1 - RULES.rest.fatigue)).toBeLessThan(f.collapseAt);
 });
 
-test('a higher-ranked shadow costs more MP to summon', () => {
+test('a higher-ranked shadow costs more mana to summon and fits real Necromancer mana pools at every rank', () => {
   expect(rising(RANKS.map(r => RULES.shadow.summonMp[r]))).toBe(true);
+  expect(RULES.shadow.summonMp).toEqual({ E: 1, D: 2, C: 3, B: 5, A: 7, S: 10 });
+  // Even a 0-Power hunter (manaBase = 10) can summon one shadow of any rank.
+  for (const r of RANKS) expect(RULES.shadow.summonMp[r]).toBeLessThanOrEqual(RULES.fight.manaBase);
+  // A canonical 2:1 Presence/Power S-rank Necromancer (level 70) can field at least two S-rank shadows on a fresh bar.
+  const sLevel = RULES.rankLevels.S;
+  const necStats = split('pre', 'pow', pointsAt(sLevel, RULES), RULES);
+  const necSheet = sheetOf({ stats: necStats, level: sLevel, gear: kitGear('light', RULES), perks: {} }, RULES);
+  expect(2 * RULES.shadow.summonMp.S).toBeLessThanOrEqual(necSheet.manaMax);
+
+  // GM overrides of shadow.summonMp validate per rank (0..1000 whole) and keep other ranks.
+  const partial = parseOverrides({ shadow: { summonMp: { S: 32, E: 0, A: -1, B: 2.5, Z: 9 } } });
+  expect(partial.overrides).toEqual({ shadow: { summonMp: { S: 32, E: 0 } } });
+  expect(partial.refused.map(r => [r.path, r.reason])).toEqual([
+    ['shadow.summonMp.A', 'range'],
+    ['shadow.summonMp.B', 'range'],
+    ['shadow.summonMp.Z', 'unknown'],
+  ]);
+  expect(rulesOf(partial.overrides).shadow.summonMp).toEqual({ ...RULES.shadow.summonMp, E: 0, S: 32 });
 });
 
 test('the jobs the rules list are the jobs a Job Change chain can grant', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SHADOW_CASES, SHADOW_COLUMNS, addShadow, can, extractDc, extractOutcome, healShadow, newShadowOf, noteShadow, renameShadow, risesAs, setShadowHp, shadowCase, shadowColumn, shadowMove, shadowState, stepShadow } from '../src/core/hunter/shadows.ts';
+import { SHADOW_CASES, SHADOW_COLUMNS, addShadow, can, extractDc, extractOutcome, healRestingShadows, healShadow, newShadowOf, noteShadow, renameShadow, risesAs, setShadowHp, shadowCase, shadowColumn, shadowMove, shadowState, stepShadow } from '../src/core/hunter/shadows.ts';
 import type { ShadowEvent, ShadowState } from '../src/core/hunter/shadows.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { ARMY, WALK_EVENTS } from './models/shadow-events.ts';
@@ -88,6 +88,34 @@ describe('a shadow\'s life: resting or summoned with its HP, or released', () =>
   test('Full HP brings a fallen shadow back to the full HP its body gives, summoned or resting as it was', () => {
     expect(ok(healShadow(army({ hp: 0, summoned: true }), 'sh1', RULES)).shadows[0]).toEqual({ ...shade, summoned: true });
     expect(ok(healShadow(army({ hp: 0 }), 'sh1', RULES)).shadows[0]).toEqual(shade);
+  });
+
+  test('healRestingShadows restores damaged and fallen resting shadows to full HP, leaves summoned shadows alone, and is idempotent', () => {
+    const elite = newShadowOf(origin, shid('sh1'), RULES);
+    const marshal = newShadowOf({ rank: 'S', archetype: 'brute', grade: 'Marshal', monster: null, name: 'Igris' }, shid('sh2'), RULES);
+    const scout = newShadowOf({ rank: 'C', archetype: 'skirmisher', grade: 'Normal', monster: null, name: 'Fang' }, shid('sh3'), RULES);
+    const legacyZero = newShadowOf({ rank: 'E', archetype: 'caster', grade: 'Normal', monster: null, name: 'Wisp' }, shid('sh4'), RULES);
+    const h0 = {
+      ...newHunter(RULES),
+      shadows: [
+        { ...elite, hp: 5, summoned: false },
+        { ...marshal, hp: 0, summoned: false },
+        { ...scout, hp: 3, summoned: true },
+        // Pre-rules-10.1 legacy save: summoned at 0 HP must not be treated as resting.
+        { ...legacyZero, hp: 0, summoned: true },
+      ],
+    };
+    const healed = healRestingShadows(h0, RULES);
+    expect(healed.shadows.map(s => [s.id, s.hp, s.summoned])).toEqual([
+      ['sh1', elite.hp, false],
+      ['sh2', marshal.hp, false],
+      ['sh3', 3, true],
+      ['sh4', 0, true],
+    ]);
+    expect(can(healed, 'sh2', SUMMON), 'fallen resting shadow can be summoned again after heal').toBe(true);
+    expect(healRestingShadows(healed, RULES), 'idempotent when nothing needs healing').toBe(healed);
+    const empty = newHunter(RULES);
+    expect(healRestingShadows(empty, RULES)).toBe(empty);
   });
 
   test('a released shadow takes no fight\'s HP and no heal: both are refused and the hunter is left as it was', () => {

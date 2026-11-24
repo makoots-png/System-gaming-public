@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { REST_EVENT_TYPES, REST_STATES, restRefusalWords, restState, restStep } from '../src/core/hunter/rests.ts';
 import type { RestEventType, RestState } from '../src/core/hunter/rests.ts';
 import { sheetEdit } from '../src/core/hunter/grant.ts';
+import { addShadow, newShadowOf, setShadowHp } from '../src/core/hunter/shadows.ts';
 import { hunterSheet, setMaximum } from '../src/core/hunter/sheet.ts';
 import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 import { restLines } from '../src/core/rules-text.ts';
@@ -15,10 +16,14 @@ import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
 import { newRewards } from '../src/core/rewards.ts';
-import { isRefused } from '../src/core/save-step.ts';
+import { newEvent, parseSheetKey } from '../src/core/protocol.ts';
+import type { RoomCode } from '../src/core/protocol.ts';
+import { landAll } from '../src/edge/room-events.ts';
+import type { ApplyDeps } from '../src/edge/room-events.ts';
+import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { den } from './models/gate-events.ts';
-import { day, dev } from './fixtures/ids.ts';
+import { day, dev, shid } from './fixtures/ids.ts';
 
 const AT = '2026-11-22T10:00:00.000Z', DAY = { at: AT, today: day('2026-11-22'), R: RULES };
 /** "They should get 2x per dungeon." */
@@ -85,26 +90,71 @@ describe('a rest', () => {
 });
 
 describe('a gate\'s end', () => {
-  test('a gate\'s Clear fills HP and mana and gives both rests back', () => {
+  test('a gate\'s Clear fills HP and mana, gives both rests back, and heals resting shadows without touching summoned ones', () => {
     const fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') }, { onboarded: true });
-    const h = hunter(10, 0, N, { fatigue: 40, id: fresh.hunters[0]!.id });
+    const restShade = newShadowOf({ rank: 'D', archetype: 'brute', grade: 'Elite', monster: null, name: 'Igris' }, shid('sh1'), RULES);
+    const outShade = newShadowOf({ rank: 'C', archetype: 'skirmisher', grade: 'Normal', monster: null, name: 'Fang' }, shid('sh2'), RULES);
+    const h = hunter(10, 0, N, {
+      fatigue: 40,
+      id: fresh.hunters[0]!.id,
+      shadows: [{ ...restShade, hp: 0, summoned: false }, { ...outShade, hp: 5, summoned: true }],
+    });
     const s: Save = { ...fresh, hunters: [h], gates: [den('detected')] };
     const out = ok(settleClear(s, 'g-den', { due: 0, xp: 0, gold: 0, items: [], payees: [h.name] }, [{ hid: h.id, rewards: newRewards() }], null, DAY));
     const after = out.save.hunters[0]!;
     expect([after.life, after.mana, after.fatigue, after.restsTaken]).toEqual([{ at: 'up', hp: 100 }, 100, 0, 0]);
+    expect(after.shadows.map(x => [x.id, x.hp, x.summoned])).toEqual([['sh1', restShade.hp, false], ['sh2', 5, true]]);
     expect(ok(rest(after)).restsTaken, 'the next gate\'s first rest').toBe(1);
   });
 
-  test('a dead hunter at a gate\'s Clear gets nothing back; its rests start again for the next gate', () => {
-    const dead = hunter(10, 0, N, { life: { at: 'dead' }, fatigue: 40 });
+  test('a dead hunter at a gate\'s Clear gets nothing back (resting shadows stay injured); its rests start again for the next gate', () => {
+    const restShade = newShadowOf({ rank: 'D', archetype: 'brute', grade: 'Elite', monster: null, name: 'Igris' }, shid('sh1'), RULES);
+    const dead = hunter(10, 0, N, { life: { at: 'dead' }, fatigue: 40, shadows: [{ ...restShade, hp: 0, summoned: false }] });
     const after = ok(sheetEdit(dead, { type: 'cleared' }, RULES));
     expect([after.life, after.mana, after.fatigue, after.restsTaken]).toEqual([{ at: 'dead' }, 0, 40, 0]);
+    expect(after.shadows[0]!.hp).toBe(0);
   });
 
-  test('a gate left without its Clear starts the rests again and gives nothing else back', () => {
-    const h = hunter(10, 0, N);
-    const left = ok(sheetEdit(h, { type: 'gateLeft' }, RULES));
-    expect([left.life, left.mana, left.restsTaken]).toEqual([h.life, 0, 0]);
+  test('a gate left without its Clear and a mid-gate rest do not heal resting shadows', () => {
+    const restShade = newShadowOf({ rank: 'D', archetype: 'brute', grade: 'Elite', monster: null, name: 'Igris' }, shid('sh1'), RULES);
+    const h = hunter(10, 0, 0, { shadows: [{ ...restShade, hp: 4, summoned: false }] });
+    expect(ok(rest(h)).shadows[0]!.hp).toBe(4);
+    const left = ok(sheetEdit({ ...h, restsTaken: N }, { type: 'gateLeft' }, RULES));
+    expect([left.life, left.mana, left.restsTaken, left.shadows[0]!.hp]).toEqual([h.life, 0, 0, 4]);
+  });
+
+  test('a remote player receiving a Gate Clear noted event heals resting shadows on their phone and leaves summoned shadows untouched', () => {
+    const pSave0 = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-p1-0123456789', newDeviceId: () => dev('d-p1') }, { onboarded: true });
+    const gSave = { ...freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-gm-0123456789', newDeviceId: () => dev('d-gm') }, { onboarded: true }), gates: [den('detected')] };
+    const s1 = newShadowOf({ rank: 'D', archetype: 'brute', grade: 'Elite', monster: null, name: 'Igris' }, shid('sh1'), RULES);
+    const s2 = newShadowOf({ rank: 'C', archetype: 'skirmisher', grade: 'Normal', monster: null, name: 'Fang' }, shid('sh2'), RULES);
+    let h1 = ok(addShadow(pSave0.hunters[0]!, s1, RULES));
+    h1 = ok(addShadow(h1, { ...s2, summoned: true, hp: 5 }, RULES));
+    h1 = ok(setShadowHp(h1, 'sh1', 0));
+    const pSave: Save = { ...pSave0, hunters: [h1] };
+    const key = parseSheetKey(`${pSave.settings.deviceId}:${h1.id}`)!;
+    const award = newEvent('award', { to: [key], rewards: newRewards() }, { device: 'd-gm', now: 1, rand: 0.2 })!;
+    const cleared = ok(settleClear(gSave, 'g-den', { due: 0, xp: 0, gold: 0, crystal: 0, items: [], payees: [h1.name] }, [], {
+      code: 'ABCD23' as RoomCode,
+      stamp: { device: 'd-gm', now: 2, rand: 0.3 },
+      players: [{ key, rank: h1.rank, pays: award }],
+    }, DAY));
+    const notedEv = (cleared.save.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' && e.letter.event.type === 'noted' ? [e.letter.event] : []))[0]!;
+    const deps: ApplyDeps = {
+      store: { get: () => pSave },
+      once: () => true,
+      rules: () => RULES,
+      now: () => AT,
+      today: () => day('2026-11-22'),
+      toast: () => {},
+      system: () => {},
+      warn: () => {},
+      hunter: { fightOf: () => null, gmHolds: () => refuse(TOLD), granted: () => ({ lines: [], levelup: null, popup: Promise.resolve() }) },
+      stepsDone: () => {},
+      coinRuled: () => {},
+    };
+    const landed = landAll(pSave, [], [notedEv], deps);
+    expect(landed.save.hunters[0]!.shadows.map(x => [x.id, x.hp, x.summoned])).toEqual([['sh1', s1.hp, false], ['sh2', 5, true]]);
   });
 });
 
@@ -112,7 +162,7 @@ describe('the Rules page', () => {
   test('says what a rest gives, how many a gate, what a fight\'s end and a Clear give back, and follows fightRest overrides', () => {
     const [rest, perGate, dead] = restLines(RULES);
     expect(rest).toBe(`Resting restores 25% of your max HP and 25% of your max mana, up to your maximum. It also removes 75% of your fatigue. Exhausted ends once your remaining fatigue drops below ${RULES.fatigue.collapseAt}% of your capacity.`);
-    expect(perGate).toBe(`You get 2 rests per gate. Clearing a gate restores full HP and mana, clears your fatigue, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests. After a fight ends, each living hunter recovers ${RULES.fight.fightRest} fatigue (Exhausted still needs a rest or gate clear).`);
+    expect(perGate).toBe(`You get 2 rests per gate. Clearing a gate restores full HP and mana, clears your fatigue, heals resting shadows to full HP, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests. After a fight ends, each living hunter recovers ${RULES.fight.fightRest} fatigue (Exhausted still needs a rest or gate clear).`);
     expect(dead).toBe(`A dead hunter cannot rest and gains nothing from clearing a gate. ${WAYS_BACK} brings you back. You cannot rest during a fight.`);
     expect(restLines({ ...RULES, fight: { ...RULES.fight, fightRest: 30 } })[1]).toContain('each living hunter recovers 30 fatigue');
     expect(restLines({ ...RULES, fight: { ...RULES.fight, fightRest: 0 } })[1]).not.toContain('After a fight ends');

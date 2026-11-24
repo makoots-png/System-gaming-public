@@ -586,3 +586,62 @@ test('ending a live fight recovers fightRest fatigue on the GM\'s summary and on
   await expect.poll(() => player.evaluate(() => hunterApp.store.active().fatigue), { timeout: 20_000 }).toBe(15);
   await expect(player.locator('#toasts .toast', { hasText: `You recovered ${RULES.fight.fightRest} fatigue.` }).first()).toBeVisible();
 });
+
+test('an S-rank Necromancer summons an S-rank shadow with the new mana cost, GM summonMp overrides sync to the player, and Gate Clear heals resting shadows', async ({ device }) => {
+  const { gm, player } = await room(device);
+  const sCost = RULES.shadow.summonMp.S;
+  // Seed the player as a level 70 S-rank 2:1 Necromancer (26 mana) with an S-rank Marshal at full HP, a fallen resting shadow (0 HP), and a summoned shadow at 5 HP.
+  await player.evaluate(() => {
+    hunterApp.store.update(() => {
+      const h = hunterApp.store.active();
+      h.job = 'Necromancer';
+      h.rank = 'S';
+      h.level = 70;
+      h.peakLevel = 70;
+      h.stats = { str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 156, pow: 83, ctl: 10 };
+      h.mana = 26;
+      h.shadows = [
+        { id: hunterApp.store.id('sh'), name: 'Igris', monster: null, rank: 'S', archetype: 'brute', grade: 'Marshal', hp: 719, summoned: false, notes: '' },
+        { id: hunterApp.store.id('sh'), name: 'Beru', monster: null, rank: 'D', archetype: 'brute', grade: 'Elite', hp: 0, summoned: false, notes: '' },
+        { id: hunterApp.store.id('sh'), name: 'Tank', monster: null, rank: 'C', archetype: 'skirmisher', grade: 'Normal', hp: 5, summoned: true, notes: '' },
+      ];
+    }, 'test-setup');
+  });
+  await go(player, 'shadows');
+  const igris = player.locator('#view-shadows .sh-card', { hasText: 'Igris' });
+  const beru = player.locator('#view-shadows .sh-card', { hasText: 'Beru' });
+
+  await test.step('player summons an S-rank shadow for 10 mana and sees the fallen resting shadow disabled at 0 HP', async () => {
+    await expect(igris).toContainText(`Summon ${sCost} mana`);
+    await expect(beru.locator('[data-act="summon"]')).toBeDisabled();
+    await igris.locator('[data-act="summon"]').tap();
+    await expect(igris.locator('[data-act="summon"]')).toHaveText('Unsummon');
+    expect(await player.evaluate(() => hunterApp.store.active().mana)).toBe(26 - sCost);
+  });
+
+  await test.step('GM clearing Goblin Den for the player heals the fallen resting shadow on the player phone and leaves the summoned shadow at 5 HP', async () => {
+    await go(gm, 'gates');
+    const card = gm.locator('#view-gates .gate', { hasText: 'Goblin Den' });
+    await card.locator('[data-act="clear"]').tap();
+    const form = card.locator('.gt-panel[data-form="clear"]');
+    await expect(form).toBeVisible();
+    const playerBox = form.locator('label', { hasText: HUNTER }).locator('input[type="checkbox"]');
+    if (!(await playerBox.isChecked())) await playerBox.tap();
+    await form.locator('button[type="submit"]').tap();
+    await expect(form).toBeHidden();
+    await dismissAll(gm, 4);
+    await expect.poll(() => player.evaluate(() => {
+      const sh = hunterApp.store.active().shadows;
+      return [sh.find((s: any) => s.name === 'Beru')?.hp, sh.find((s: any) => s.name === 'Tank')?.hp];
+    }), { timeout: 20_000 }).toEqual([109, 5]);
+    await dismissAll(player, 4);
+    await expect(beru.locator('[data-act="summon"]')).toBeEnabled();
+  });
+
+  await test.step('GM override of shadow.summonMp syncs to the player Shadows view through RoomRules', async () => {
+    await gm.evaluate(() => hunterApp.store.update((d: any) => {
+      d.rulesOverrides = { ...(d.rulesOverrides || {}), shadow: { summonMp: { S: 12 } } };
+    }, 'test-setup'));
+    await expect.poll(async () => igris.innerText(), { timeout: 20_000 }).toContain('Summon 12 mana');
+  });
+});

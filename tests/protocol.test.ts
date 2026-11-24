@@ -1364,7 +1364,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'crystal', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'crystal', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
@@ -1383,6 +1383,8 @@ describe('the other room docs', () => {
       expect(read({ solo: { ...doc.solo, lootShare: 3 } })!.solo.lootShare).toBe(domainOf('solo.lootShare')!.most);
       expect(loot('C', { gold: [-5, 2e9] })!.loot.C.gold).toEqual([domainOf('loot.C.gold')!.least, domainOf('loot.C.gold')!.most]);
       expect(loot('E', { weights: { ...doc.loot.E.weights, rare: 5000 } })!.loot.E.weights.rare).toBe(domainOf('loot.E.weights.rare')!.most);
+      expect(read({ shadow: { summonMp: { ...doc.shadow.summonMp, E: -5, S: 5000, C: 3.9 } } })!.shadow.summonMp)
+        .toEqual({ ...doc.shadow.summonMp, E: domainOf('shadow.summonMp.E')!.least, S: domainOf('shadow.summonMp.S')!.most, C: 3 });
     });
 
     test('a doc whose economy is not the rules\' shape is refused whole', () => {

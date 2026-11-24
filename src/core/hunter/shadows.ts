@@ -136,6 +136,22 @@ export function healShadow<H extends Army>(h: H, sid: string, R: RowRules): H | 
   const s = h.shadows.find(x => x.id === sid);
   return s ? stepShadow(h, sid, { kind: 'heal', hpMax: shadowSheet(s, R).hpMax }) : refuse('not-now');
 }
+/**
+ * Heals every resting shadow in `h`'s army (including fallen ones at 0 HP) back to the full HP its body gives,
+ * through `healShadow` and `stepShadow`. Summoned shadows stay at their current HP. Returns `h` unchanged when no
+ * resting shadow needs healing. Called from Gate Clear recovery (grant.ts `sheetEdit`).
+ */
+export function healRestingShadows<H extends Army>(h: H, R: RowRules): H {
+  let out = h;
+  for (const s of h.shadows) {
+    if (shadowState(out, s.id).at !== 'resting') continue;
+    const hpMax = shadowSheet(s, R).hpMax;
+    if (s.hp === hpMax) continue;
+    const next = healShadow(out, s.id, R);
+    if (!isRefused(next)) out = next;
+  }
+  return out;
+}
 /** A new name; a blank one is refused (`blank`). */
 export function renameShadow<H extends Army>(h: H, sid: string, name: string): H | Refused<'no-shadow' | 'blank'> {
   const n = String(name ?? '').trim().slice(0, 60);

@@ -935,6 +935,8 @@ export type RoomRules = {
   mythic: { scripts: boolean };
   /** The GM's keystone switch and thresholds (`RULES.fight.keystone`): a doc without it reads as off with shipped shares and ranks. */
   keystone: { on: boolean; markShare: number; pairShare: number; apexShare: number; markRank: Rank; pairRank: Rank; apexRank: Rank };
+  /** The GM's shadow summon mana costs (`RULES.shadow.summonMp`): a doc without it reads as the shipped table. */
+  shadow: { summonMp: Rules['shadow']['summonMp'] };
   /** The rank whose base price prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
   rarities: RoomRarities;
   priceBase: Rules['priceBase'];
@@ -1377,7 +1379,12 @@ function roomGuilds(v: unknown): Rules['guilds'] {
     archetypes,
   };
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and crystal/guilds (shipped defaults when absent). */
+/** The room's shadow summon mana costs: absent reads as the shipped table. */
+function roomShadow(v: unknown): RoomRules['shadow'] {
+  const sh = obj(opt(v, x => x, {})), mp = obj(opt(own(sh, 'summonMp'), x => x, {}));
+  return { summonMp: eachRank(r => opt(own(mp, r), ruleNumber(`shadow.summonMp.${r}`), RULES.shadow.summonMp[r])) };
+}
+/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and shadow/crystal/guilds (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1389,6 +1396,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },
     mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
     keystone: roomKeystone(own(o, 'keystone')),
+    shadow: roomShadow(own(o, 'shadow')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
     priceBase: eachRank(r => ruleNumber(`priceBase.${r}`)(own(pb, r))),
     gradeStep: rule('gradeStep'),

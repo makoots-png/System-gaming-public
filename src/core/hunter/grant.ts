@@ -41,6 +41,7 @@ import { atOutbox, post } from '../sync/outbox.ts';
 import { giveBoons, giveTitle, holdsTitle, rankStep, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
+import { healRestingShadows } from './shadows.ts';
 import { REVIVE_HP, lifeNews, vitalStep } from './vitals.ts';
 import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
@@ -538,10 +539,11 @@ function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 
     const restsTaken = restStep(h.restsTaken, { type: 'rest' }, R);
     return isRefused(restsTaken) ? restsTaken : { ...x, restsTaken };
   };
-  // a gate's end starts the count again for every hunter it ends for; a Clear gives everything back too, except to the
-  // dead, who get nothing else (vitals.ts `VITAL_TABLE`)
+  // a gate's end starts the count again for every hunter it ends for; a Clear gives everything back (and heals resting
+  // shadows) too, except to the dead, who get nothing else (vitals.ts `VITAL_TABLE`)
   const ended = (ev: 'cleared' | 'gateLeft'): Hunter | Refused<'spent'> => {
-    const x = ev === 'cleared' ? step({ type: 'cleared' }) : h, base = isRefused(x) ? h : x;
+    const x = ev === 'cleared' ? step({ type: 'cleared' }) : h;
+    const base = isRefused(x) ? h : ev === 'cleared' ? healRestingShadows(x, R) : x;
     const restsTaken = restStep(h.restsTaken, { type: ev }, R);
     return isRefused(restsTaken) ? restsTaken : { ...base, restsTaken };
   };

@@ -91,6 +91,7 @@ describe('the room carries the economy', () => {
     ['the party a world gate is made for', { gateParty: 6 }, R => R.gateParty, 6],
     ['a rank\'s loot gold', { loot: { C: { gold: [1000, 3000] } } }, R => R.loot.C.gold, [1000, 3000]],
     ['a rank\'s loot weights', { loot: { E: { weights: { rare: 50 } } } }, R => R.loot.E.weights.rare, 50],
+    ['a rank\'s shadow summon mana cost', { shadow: { summonMp: { S: 15 } } }, R => R.shadow.summonMp.S, 15],
   ];
   for (const [rule, edit, at, want] of EDITS) {
     test(`the GM's edit of ${rule} reaches a player's rules in the room, and leaves them once out of it`, () => {
@@ -105,6 +106,14 @@ describe('the room carries the economy', () => {
     const gm = rulesOf({ rarities: { rare: { rank: 'B', color: '#000000' }, cursed: { color: '#330000', rank: 'S' } } });
     expect(Object.keys(roomRulesOf(gm).rarities).sort()).toEqual([...RARITIES].sort());
     expect(withRoomRules(mine, fromGM(gm)).rarities.rare).toEqual({ color: '#123456', rank: 'B' });
+  });
+
+  test('a room rules doc without shadow defaults summonMp to the shipped table', () => {
+    const legacy = { ...roomRulesOf(RULES) } as Record<string, unknown>;
+    delete legacy.shadow;
+    const parsed = DOCS.rules(legacy);
+    expect(parsed).not.toBeNull();
+    expect(withRoomRules(own, parsed).shadow.summonMp).toEqual(RULES.shadow.summonMp);
   });
 });
 

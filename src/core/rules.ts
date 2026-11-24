@@ -341,7 +341,10 @@ const SPEC = {
     maxAttempts: whole(3, 1, 20, 'shadow extraction attempts allowed per corpse. Must be at least 1'),
     dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'extra extraction DC per rank the monster is above the hunter, from 0 to 20'),
     bossDc: whole(5, 0, 50, 'extra extraction DC for boss monsters, from 0 to 50'), dcMin: of(5, DC),
-    summonMp: { E: of(1, SUMMON_MANA), D: of(2, SUMMON_MANA), C: of(4, SUMMON_MANA), B: of(8, SUMMON_MANA), A: of(16, SUMMON_MANA), S: of(32, SUMMON_MANA) },
+    // Scaled to the real mana curve (manaBase 10 + capped(pow, 30)): a 2:1 Necromancer holds 12 (E) to 26 (S) mana,
+    // and a 0-Power build holds 10, so S matches a major blast (10 mana) and a 2:1 S Necromancer fields two S-rank
+    // shadows on a fresh bar (three on a 1:2 Power split or after one rest).
+    summonMp: { E: of(1, SUMMON_MANA), D: of(2, SUMMON_MANA), C: of(3, SUMMON_MANA), B: of(5, SUMMON_MANA), A: of(7, SUMMON_MANA), S: of(10, SUMMON_MANA) },
   },
   gateSpawn: {
     rank: { E: of(40, WEIGHT), D: of(30, WEIGHT), C: of(15, WEIGHT), B: of(9, WEIGHT), A: of(5, WEIGHT), S: of(1, WEIGHT) },
