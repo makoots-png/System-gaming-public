@@ -1,7 +1,7 @@
 // A reward the app would pay by itself, waiting for the GM (src/core/hunter/pending.ts; World rule 8, the owner, Nov 22:
 // rule d, "Yes"). Every state against every event; where each seat sends the reward; a reward never lost nor paid twice.
 import { describe, expect, test } from 'bun:test';
-import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, PENDING_WORDS, ROUTE, askOf, parsePending, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
+import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, PENDING_WORDS, REWARD_ROUTE, ROUTE, askOf, parsePending, pendingApproveAll, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, routeFor, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
 import type { PendingEvent, PendingReward, PendingState, RewardSeat, SelfReward } from '../src/core/hunter/pending.ts';
 import { gmAward } from '../src/core/award.ts';
 import { freshSave, newHunter, newRewards } from '../src/core/save.ts';
@@ -9,9 +9,11 @@ import type { Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
 import { isRefused, refuse } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
-import { parseEventId, sheetKeyOf } from '../src/core/ids.ts';
+import { approvalIdOf, parseEventId, sheetKeyOf } from '../src/core/ids.ts';
 import type { EventId, SheetKey } from '../src/core/ids.ts';
-import { parseEvent } from '../src/core/protocol.ts';
+import { approvalEvent, newEvent, parseEvent } from '../src/core/protocol.ts';
+import { OUTBOX_MAX, atOutbox, post } from '../src/core/sync/outbox.ts';
+import { memoryStore } from '../server.ts';
 import { day, dev, gmKey, hid, room } from './fixtures/ids.ts';
 
 const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
@@ -199,5 +201,125 @@ describe('a reward waiting for the GM', () => {
     // Manual GM award (from = null) leaves gold untouched, but still cuts XP while in debt
     const manual = gmAward(owing, [{ hid: H1, vitals: 'sheet' }], editedGold, { room: ROOM, events: [], said: [] }, { at: AT, today: day('2026-11-22'), R: RULES });
     expect([manual.save.hunters[0]!.gold, manual.save.hunters[0]!.xp, manual.save.hunters[0]!.debt]).toEqual([220, 10, 200]);
+  });
+
+  test('REWARD_ROUTE and routeFor: clear pays directly on alone and gm; solo, quest, and feat stay on ROUTE', () => {
+    expect(REWARD_ROUTE).toEqual({
+      solo: { alone: 'pay', player: 'ask', gm: 'wait' },
+      quest: { alone: 'pay', player: 'ask', gm: 'wait' },
+      feat: { alone: 'pay', player: 'ask', gm: 'wait' },
+      clear: { alone: 'pay', player: 'ask', gm: 'pay' },
+    });
+    expect(routeFor('gm', 'clear')).toBe('pay');
+    expect(routeFor('alone', 'clear')).toBe('pay');
+    expect(routeFor('player', 'clear')).toBe('ask');
+    expect(routeFor('gm', 'solo')).toBe('wait');
+    expect(routeFor('gm', 'quest')).toBe('wait');
+    expect(routeFor('gm', 'feat')).toBe('wait');
+  });
+
+  test('approvalIdOf and approvalEvent produce deterministic, valid, non-end EventIds including 40-char inputs', () => {
+    const std = eid('d-p1-1abc-wxyz');
+    expect(approvalIdOf(std)).toBe('d-p1-1abc-wxyz-a' as EventId);
+    expect(parseEventId(approvalIdOf(std))).toBe(approvalIdOf(std));
+
+    const max40 = eid('a'.repeat(40));
+    const max40b = eid(`${'a'.repeat(39)}b`);
+    const idA = approvalIdOf(max40);
+    const idB = approvalIdOf(max40b);
+    expect(idA.length).toBeLessThanOrEqual(40);
+    expect(parseEventId(idA)).toBe(idA);
+    expect(idA.endsWith('-a')).toBe(true);
+    expect(idA).not.toBe(idB);
+    expect(approvalIdOf(max40)).toBe(idA);
+
+    const ev = approvalEvent(max40, { to: [PLAYER], rewards: GOLD, earned: { from: 'quest', what: 'Long id' } });
+    expect(ev?.type).toBe('award');
+    expect(ev?.payload.eid).toBe(idA);
+  });
+
+  test('pendingApproveAll approves local and remote waiting rewards in one atomic step, preserves debt rules, and is idempotent on double tap', () => {
+    const dayCtx = { at: AT, today: day('2026-11-22'), R: RULES };
+    const OTHER_ROOM = room('XYZ789');
+    const P2: SheetKey = sheetKeyOf(dev('d-p2'), hid('h2'));
+    let s: Save = { ...save(), hunters: save().hunters.map(h => ({ ...h, gold: 100, xp: 0, debt: 200, reviveLeft: 'none' as const })) };
+    // Local solo reward (splits clear gold 50/25/25 toward debt) + remote quest + remote feat + another room's waiting reward
+    s = pendingHeard(s, { eid: eid('d-me1-s1-aaaa'), by: sheetKeyOf(ME, H1), name: 'Mira', from: 'solo', what: 'Goblin Den', rewards: { ...newRewards(), gold: 60, xp: 40 } }, ROOM, LOG);
+    s = pendingHeard(s, { eid: eid('d-p1-q1-bbbb'), by: PLAYER, name: 'Kai', from: 'quest', what: 'Ten Beasts', rewards: { ...newRewards(), gold: 40 } }, ROOM, LOG);
+    s = pendingHeard(s, { eid: eid('d-p2-f1-cccc'), by: P2, name: 'Sera', from: 'feat', what: 'First Clear', rewards: { ...newRewards(), points: 1 } }, ROOM, LOG);
+    s = pendingHeard(s, { eid: eid('d-p1-o1-dddd'), by: PLAYER, name: 'Kai', from: 'quest', what: 'Other Room', rewards: GOLD }, OTHER_ROOM, LOG);
+
+    const res = ok(pendingApproveAll(s, ROOM, { day: dayCtx }));
+    expect(res.approved.map(r => r.id)).toEqual([eid('d-me1-s1-aaaa'), eid('d-p1-q1-bbbb'), eid('d-p2-f1-cccc')]);
+    expect(res.remaining).toBe(0);
+    expect(waitingIn(res.save, ROOM)).toEqual([]);
+    expect(waitingIn(res.save, OTHER_ROOM)).toHaveLength(1);
+
+    // Local hunter received solo clear with 3-way debt split (60 -> 30 debt, 15 burn, 15 kept) and 25% XP (10 XP)
+    expect([res.save.hunters[0]!.gold, res.save.hunters[0]!.xp, res.save.hunters[0]!.debt]).toEqual([115, 10, 170]);
+    expect(res.granted).toHaveLength(1);
+
+    // Remote hunters each got one deterministic award event in outbox
+    const outbox = (res.save.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' ? e.letter.event : null));
+    expect(outbox.map(e => [e?.type, e?.payload.eid, e?.type === 'award' ? e.payload.to : null, e?.type === 'award' ? e.payload.earned : null])).toEqual([
+      ['award', approvalIdOf(eid('d-p1-q1-bbbb')), [PLAYER], { from: 'quest', what: 'Ten Beasts' }],
+      ['award', approvalIdOf(eid('d-p2-f1-cccc')), [P2], { from: 'feat', what: 'First Clear' }],
+    ]);
+
+    // Double tap is a clean refusal and changes nothing
+    expect(pendingApproveAll(res.save, ROOM, { day: dayCtx })).toEqual({ ok: false, why: 'no-reward' });
+  });
+
+  test('pendingApproveAll across two GM devices produces identical EventIds that the room server deduplicates', async () => {
+    const dayCtx = { at: AT, today: day('2026-11-22'), R: RULES };
+    const GM2 = dev('d-gm2');
+    const recInput = { eid: eid('d-p1-q9-zzzz'), by: PLAYER, name: 'Kai', from: 'quest' as const, what: 'Daily', rewards: GOLD };
+    const gm1Save = pendingHeard(save(), recInput, ROOM, LOG);
+    const gm2Base: Save = { ...freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => GM2 }, { onboarded: true }) };
+    const gm2Save = pendingHeard(gm2Base, recInput, ROOM, LOG);
+
+    const a1 = ok(pendingApproveAll(gm1Save, ROOM, { day: dayCtx }));
+    const a2 = ok(pendingApproveAll(gm2Save, ROOM, { day: dayCtx }));
+    const ev1 = a1.save.settings.sync.outbox![0]!.letter;
+    const ev2 = a2.save.settings.sync.outbox![0]!.letter;
+    expect(ev1.kind === 'event' && ev2.kind === 'event' && ev1.event.payload.eid === ev2.event.payload.eid).toBe(true);
+
+    const st = memoryStore();
+    await st.create(ROOM, gmKey('gm-key-test-0123456789abcdef'), Date.now());
+    const seq1 = await st.addEvent(ROOM, ME, (ev1 as Extract<typeof ev1, { kind: 'event' }>).event, 1000);
+    const seq2 = await st.addEvent(ROOM, GM2, (ev2 as Extract<typeof ev2, { kind: 'event' }>).event, 1005);
+    expect(seq1).toBe(1);
+    expect(seq2).toBe(1);
+    expect((await st.events(ROOM, 0)).events).toHaveLength(1);
+  });
+
+  test('pendingApproveAll respects OUTBOX_MAX without dropping queued letters, refuses outbox-full at 0 free slots, and handles deleted local hunters', () => {
+    const dayCtx = { at: AT, today: day('2026-11-22'), R: RULES };
+    let full = save();
+    for (let i = 0; i < OUTBOX_MAX - 1; i++) {
+      const ev = newEvent('hp', { to: [PLAYER], hp: -1, mana: 0, fatigue: 0, reason: 'q' }, { device: ME, now: 1000, rand: 0.5, seq: i })!;
+      full = atOutbox(b => post(b, ROOM, { kind: 'event', event: ev }).box)(full);
+    }
+    full = pendingHeard(full, ask('d-p1-cap1-aaaa'), ROOM, LOG);
+    full = pendingHeard(full, ask('d-p1-cap2-bbbb'), ROOM, LOG);
+
+    // 1 slot free: approves first remote, leaves second waiting, drops 0 queued messages
+    const partial = ok(pendingApproveAll(full, ROOM, { day: dayCtx }));
+    expect(partial.approved.map(r => r.id)).toEqual([eid('d-p1-cap1-aaaa')]);
+    expect(partial.remaining).toBe(1);
+    expect(waitingIn(partial.save, ROOM).map(r => r.id)).toEqual([eid('d-p1-cap2-bbbb')]);
+    expect(partial.save.settings.sync.outbox).toHaveLength(OUTBOX_MAX);
+    expect(partial.save.settings.sync.outbox![0]!.letter.kind === 'event' && partial.save.settings.sync.outbox![0]!.letter.event.type).toBe('hp');
+
+    // Now 0 slots free: refuses outbox-full atomically without touching the remaining waiting reward
+    expect(pendingApproveAll(partial.save, ROOM, { day: dayCtx })).toEqual({ ok: false, why: 'outbox-full' });
+
+    // Deleted local hunter still marks approved and does not wedge the list
+    const missingKey = sheetKeyOf(ME, hid('h999'));
+    const ghostSave = pendingHeard(save(), { eid: eid('d-me1-ghst-aaaa'), by: missingKey, name: 'Ghost', from: 'quest', what: 'Old', rewards: GOLD }, ROOM, LOG);
+    const clearedGhost = ok(pendingApproveAll(ghostSave, ROOM, { day: dayCtx }));
+    expect(clearedGhost.approved).toHaveLength(1);
+    expect(clearedGhost.granted).toEqual([]);
+    expect(waitingIn(clearedGhost.save, ROOM)).toEqual([]);
   });
 });

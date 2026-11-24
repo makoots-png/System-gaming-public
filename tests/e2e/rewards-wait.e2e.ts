@@ -108,3 +108,52 @@ test('the GM refuses a reward waiting for a player: the player is told, and noth
   await expect(questRows(gm), 'a refused reward does not come back').toHaveCount(0);
   expect(await gold(player)).toBe(before);
 });
+
+test('Approve all pays multiple pending player rewards in one tap and does not double-pay across reloads', async ({ device }) => {
+  const { gm, player } = await countedQuest(device);
+  const before = await gold(player);
+
+  // Issue a second counted rest quest so one rest completes both and creates 2 pending rewards
+  const QUEST_TWO = 'Second breath';
+  const GOLD_TWO = 35;
+  await go(gm, 'gm');
+  const qTog = gm.locator('[data-tog="quest"]');
+  if ((await qTog.getAttribute('aria-expanded')) !== 'true') await qTog.tap();
+  const form = gm.locator('#gm-qf');
+  await form.locator('[name=title]').fill(QUEST_TWO);
+  await form.locator('[name=olabel]').fill('Rests');
+  await form.locator('[data-ocb]').selectOption('system');
+  await form.locator('[data-ocount] [data-ck]').selectOption('rest');
+  await form.locator('#gmq-gold').fill(String(GOLD_TWO));
+  await gm.locator('#gm-q-go').tap();
+  await answerWindow(player, QUEST_TWO);
+  await dismissAll(player, 4);
+
+  // Player rests once -> both quests complete and wait for GM approval
+  await go(player, 'status');
+  await player.locator('#view-status [data-rest]').tap();
+  await answerWindow(player, 'QUEST COMPLETE');
+  await answerWindow(player, 'QUEST COMPLETE');
+  expect(await gold(player)).toBe(before);
+
+  await go(gm, 'gm');
+  const wTog = gm.locator('[data-tog="waiting"]');
+  if ((await wTog.getAttribute('aria-expanded')) !== 'true') await wTog.tap();
+  await expect(gm.locator('#gm-pw [data-pw]')).toHaveCount(2, { timeout: 30_000 });
+  const approveAll = gm.locator('#gm-pw-all');
+  await expect(approveAll).toBeVisible();
+  await expect(approveAll).toHaveText(PENDING_WORDS.approveAllCount(2));
+
+  await approveAll.tap();
+  await expect(gm.locator('#gm-pw [data-pw]')).toHaveCount(0);
+  await expect(gm.locator('#gm-pw-bar')).toBeHidden();
+  await expect(gm.locator('#gm-pw-msg')).toHaveText(PENDING_WORDS.approvedAll(2));
+
+  await expect.poll(() => gold(player), { timeout: 30_000 }).toBe(before + RULE_GOLD + GOLD_TWO);
+  await dismissAll(player, 6);
+
+  await gm.reload();
+  await player.reload();
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.status()), { timeout: 30_000 }).toBe('connected');
+  expect(await gold(player)).toBe(before + RULE_GOLD + GOLD_TWO);
+});

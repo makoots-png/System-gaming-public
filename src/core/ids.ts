@@ -50,6 +50,17 @@ export const parseOfferId = (v: unknown): OfferId | null =>
   (typeof v === 'string' && v.length <= OFFER_ID_MAX && WORD_RE.test(v) && !isEndId(v) ? (v as OfferId) : null);
 /** The one event id every end of offer `o` carries, so the room keeps one end of it (server.ts `addEvent` takes an id once). */
 export const endIdOf = (o: OfferId): EventId => `${o}${END_SUFFIX}` as EventId;
+/**
+ * The deterministic event id for approving waiting reward `id`: identical across GM devices so two GM phones approving
+ * the same reward converge to one server event (`server.ts` `addEvent`) and at-most-once player application. Always at
+ * most 40 characters and never ending in `-e`.
+ */
+export function approvalIdOf(id: EventId): EventId {
+  if (id.length <= OFFER_ID_MAX) return `${id}-a` as EventId;
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return `${id.slice(0, 30)}-${(h >>> 0).toString(36).padStart(7, '0')}-a` as EventId;
+}
 /** A feat's key, as a status has one: a built-in's is reserved; the GM's own is made from its name and kept through renames (hunter/feats.ts). */
 export type FeatKey = Id<'FeatKey'>;
 const FEAT_KEY_RE = /^[a-z0-9-]{1,40}$/;

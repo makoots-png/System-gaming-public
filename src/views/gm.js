@@ -24,7 +24,7 @@ import { tapWords } from '../core/sync/taps.ts';
 import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
 import { BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
-import { PENDING_WORDS, localHunter, pendingApproved, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
+import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
 import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
 import { DIFFICULTY_WORDS, parseDifficultyLevel } from '../core/gates/difficulty.ts';
@@ -185,6 +185,7 @@ export function register(app) {
 .gm-msg.bad{color:#ff8a96}
 .gm-tie{margin:6px 0;padding:6px 8px;border-left:3px solid var(--gold);font-size:13px;overflow-wrap:anywhere}
 .gm-pw{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.gm-pw-bar{margin:4px 0 6px}.gm-pw-bar button{min-height:44px}
 .gm-pw-row{border:1px solid var(--line);border-left:3px solid var(--gold);background:rgba(10,26,46,.45);padding:8px 10px;overflow-wrap:anywhere}
 .gm-pw-what{color:var(--cyan);font-size:13px}
 .gm-pw-lines{font-size:13px;margin:4px 0 6px}
@@ -647,7 +648,38 @@ export function register(app) {
     }).join('')
       : `<li class="empty">${esc(W.none)}</li>`;
     const ul = $('#gm-pw'); if (ul.dataset.sig !== html) { ul.dataset.sig = html; ul.innerHTML = html; }
+    const bar = $('#gm-pw-bar'), allBtn = $('#gm-pw-all');
+    if (bar && allBtn) {
+      bar.hidden = list.length < 2;
+      allBtn.textContent = W.approveAllCount(list.length);
+    }
     $('#gm-hsum-waiting').textContent = W.summary(list.length);
+  }
+  /** Approves all waiting rewards in this room in one atomic core step (hunter/pending.ts `pendingApproveAll`). */
+  function approveAllWaiting() {
+    const code = room(); if (!code) return;
+    const heldLocals = new Set(S().hunters.filter(h => heldRow({ hid: h.id })).map(h => h.id));
+    const heldRemotes = new Set(remotes().filter(r => fightRowOf(r.key) !== null).map(r => r.key));
+    const day = { ...stepTime(S(), new Date()), R: app.rules() };
+    const out = A().hunter.grantWrite('gm-approve-all', sv => {
+      const res = pendingApproveAll(sv, code, { day, heldLocals, heldRemotes });
+      if (isRefused(res)) return res;
+      const remoteHeld = res.remoteStatuses.flatMap(x => playerHeld(remotes(), [x.key], x.statuses));
+      return { ...res, held: [...res.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...remoteHeld] };
+    });
+    if (isRefused(out)) {
+      say('#gm-pw-msg', out.why === 'no-reward' || out.why === 'outbox-full' ? PENDING_WORDS.refusals[out.why] : 'Could not save. Nothing was sent.', true);
+      return;
+    }
+    if (out.posted.length) A().sync.flush();
+    for (const { hid, g, rec } of out.granted) {
+      A().hunter.granted(hid, g, { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(rec.from, rec.what), tag: '! Reward', kind: 'quest' });
+    }
+    const n = out.approved.length;
+    const msg = out.remaining > 0 ? PENDING_WORDS.approvedAllPartial(n, out.remaining)
+      : out.posted.length && !goesNow() ? PENDING_WORDS.approvedAllSaved(n)
+      : PENDING_WORDS.approvedAll(n);
+    say('#gm-pw-msg', msg, out.remaining > 0);
   }
   /**
    * The GM's answer to waiting reward `id`: approved as it stands (Send award's one path, tied to the record), opened in
@@ -886,7 +918,7 @@ export function register(app) {
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
         section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-wtable" id="gm-weight" role="group" aria-label="Fudge on all hunters' rolls"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
-        section('waiting', PENDING_WORDS.title, '<div class="gm-msg" id="gm-pw-msg" role="status"></div><ol class="gm-pw" id="gm-pw"></ol>', false, true),
+        section('waiting', PENDING_WORDS.title, `<div class="gm-row gm-pw-bar" id="gm-pw-bar" hidden><button type="button" class="primary" id="gm-pw-all">${esc(PENDING_WORDS.approveAll)}</button></div><div class="gm-msg" id="gm-pw-msg" role="status"></div><ol class="gm-pw" id="gm-pw"></ol>`, false, true),
         section('words', WORD_WORDS.gm.title, '<div id="gm-words"></div>', false, true),
         section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
@@ -1035,7 +1067,7 @@ export function register(app) {
         if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `${now.name} is back up. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
         if (t.dataset.hp) { const hid = t.closest('[data-hid]').dataset.hid, n = int(t.dataset.hp); ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)); return; }
-        const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,
+        const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-pw-all': approveAllWaiting, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,
           'gm-d1': () => advance(1), 'gm-r-val': liveRules, 'gm-r-save': saveRules, 'gm-r-reset': resetRules,
           'gm-dn': async () => { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days', value: 1, min: 1, max: 365 }); if (n) advance(n); },
           'gm-t-save': () => { const l = lines($('#gm-t-list').value); if (!l.length) return say('#gm-t-msg', 'A table needs at least one line. Tap Reset to defaults to restore the original list.', true); if (!saveList(tbl(), l)) return; $('#gm-t-list').dataset.dirty = ''; say('#gm-t-msg', `Saved ${l.length} entries.`); },

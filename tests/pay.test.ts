@@ -273,27 +273,50 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
     return ok(gatePreset(rec, gid('g-den'), { type: 'setGold', gold: 120 }));
   };
 
-  test('in a room: clears the gate, locks preset paid, stashes unpicked checked items, omits unchecked, and queues pending clear rewards without sending award yet', () => {
+  test('in a room: clears the gate, locks preset paid, stashes unpicked checked items, omits unchecked, and pays local and remote hunters directly via routeFor', () => {
     const s = withPreset({ ...inDen(), fight: null }), h = s.hunters[0]!;
     const payees: Payee[] = [{ kind: 'local', hid: h.id, name: h.name }, { kind: 'remote', key: KAI, name: 'Kai' }];
     const room = { code: ROOM, stamp: { device: 'd-gm', now: 1000, rand: 0.25 }, ranks: new Map([[KAI, 'E' as const]]) };
     const out = ok(settleClearPreset(s, gid('g-den'), xpOf, payees, room, DAY));
 
     expect([out.save.gates[0]!.status, out.save.gates[0]!.preset.at]).toEqual(['cleared', 'paid']);
-    expect(out.granted).toEqual([]);
-    expect([out.save.hunters[0]!.xp, out.save.hunters[0]!.gold], 'nothing granted directly in a room').toEqual([h.xp, h.gold]);
+    expect(out.granted).toHaveLength(1);
+    expect(lifetimeXp(out.save.hunters[0]!)).toBe(lifetimeXp(h) + 220);
+    expect(out.save.hunters[0]!.gold).toBe(h.gold + 120);
     expect(out.save.stash.items.map(i => i.name), 'unpicked checked item went to party stash').toEqual(['Health Potion']);
     expect(out.stashed.map(i => i.name)).toEqual(['Health Potion']);
-
-    const waiting = waitingIn(out.save, ROOM);
-    expect(waiting.map(w => [w.name, w.from, w.what, w.rewards.xp, w.rewards.gold, w.rewards.items.map(i => i.name)])).toEqual([
-      [h.name, 'clear', 'Goblin Den', 220, 120, []],
-      ['Kai', 'clear', 'Goblin Den', 220, 120, ['Iron Blade']],
+    expect(out.pending).toEqual([]);
+    expect(waitingIn(out.save, ROOM)).toEqual([]);
+    expect(out.remotePaid.map(r => [r.name, r.rewards.xp, r.rewards.gold, r.rewards.items.map(i => i.name)])).toEqual([
+      ['Kai', 220, 120, ['Iron Blade']],
     ]);
-    const boxTypes = (out.save.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' ? e.letter.event.type : e.letter.kind));
-    expect(boxTypes, 'only noted is sent before GM approval, never award').toEqual(['noted']);
+
+    const boxEvents = (out.save.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' ? [e.letter.event] : []));
+    expect(boxEvents.map(e => e.type), 'remote award arrives before noted fact').toEqual(['award', 'noted']);
+    expect(boxEvents[0]!.type === 'award' && boxEvents[0]!.payload).toMatchObject({
+      to: [KAI],
+      earned: { from: 'clear', what: 'Goblin Den' },
+      rewards: { xp: 220, gold: 120 },
+    });
+    expect(boxEvents[0]!.type === 'award' && boxEvents[0]!.payload.rewards.items.map(i => i.name)).toEqual(['Iron Blade']);
     // a second clear is refused
     expect(settleClearPreset(out.save, gid('g-den'), xpOf, payees, room, DAY)).toEqual({ ok: false, why: 'no-preset' });
+  });
+
+  test('in a room: optional crystalByPayee pays per-hunter guild crystal shares and skips award on empty remote share while still sending noted', () => {
+    const s0 = { ...inDen(), fight: null }, h = s0.hunters[0]!;
+    const s = ok(gatePreset(s0, gid('g-den'), { type: 'recommend', xp: 100, gold: 50, crystal: 0, items: [] }));
+    const payees: Payee[] = [{ kind: 'local', hid: h.id, name: h.name }, { kind: 'remote', key: KAI, name: 'Kai' }];
+    const room = { code: ROOM, stamp: { device: 'd-gm', now: 2000, rand: 0.25 }, ranks: new Map([[KAI, 'E' as const]]) };
+    const byPayee = new Map<string, number>([[h.id, 24], [KAI, 36]]);
+    const out = ok(settleClearPreset(s, gid('g-den'), xpOf, payees, room, DAY, byPayee));
+    expect(out.save.hunters[0]!.crystal).toBe(h.crystal + 24);
+    expect(out.remotePaid[0]!.rewards.crystal).toBe(36);
+
+    const zero = ok(gatePreset(s0, gid('g-den'), { type: 'recommend', xp: 0, gold: 0, crystal: 0, items: [] }));
+    const zeroOut = ok(settleClearPreset(zero, gid('g-den'), xpOf, [{ kind: 'remote', key: KAI, name: 'Kai' }], room, DAY));
+    const types = (zeroOut.save.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' ? [e.letter.event.type] : []));
+    expect(types, 'empty remote reward skips award and still posts noted').toEqual(['noted']);
   });
 
   test('playing alone: pays exact preset XP, gold, and assigned items immediately and deposits unpicked items in the stash', () => {
@@ -363,10 +386,10 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
     expect(alone.granted[0]!.g.debtPaid).toEqual({ total: 80, paid: 40, burn: 20, kept: 20, left: 160 });
     expect(alone.granted[0]!.g.debtXp).toEqual({ base: 100, xp: 25, rate: 0.25, left: 160 });
 
-    // Preset clear in a room leaves debt and XP untouched while waiting for GM approval
+    // Preset clear in a room pays local hunters directly with the same debt split and XP cut
     const room = { code: ROOM, stamp: { device: 'd-gm', now: 1000, rand: 0.25 }, ranks: new Map() };
     const inRoom = ok(settleClearPreset(presetSave, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], room, DAY));
-    expect([inRoom.save.hunters[0]!.gold, inRoom.save.hunters[0]!.xp, inRoom.save.hunters[0]!.debt]).toEqual([0, 0, 200]);
-    expect(waitingIn(inRoom.save, ROOM)[0]!.from).toBe('clear');
+    expect([inRoom.save.hunters[0]!.gold, inRoom.save.hunters[0]!.xp, inRoom.save.hunters[0]!.debt]).toEqual([20, 25, 160]);
+    expect(waitingIn(inRoom.save, ROOM)).toEqual([]);
   });
 });

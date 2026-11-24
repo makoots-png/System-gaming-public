@@ -3,7 +3,6 @@ import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll
 import { RULES } from '../../src/core/rules.ts';
 import { PRESET_WORDS } from '../../src/core/gates/preset.ts';
 import { shareEach } from '../../src/core/gates/spawn.ts';
-import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
 
 const SHOT_DIR = process.env.CLEAR_PRESET_SHOTS || '';
 async function snap(page: Page, name: string): Promise<void> {
@@ -20,7 +19,7 @@ const lifetimeXp = (page: Page): Promise<Record<string, number>> => page.evaluat
 })), RULES.xpPerLevel);
 const hunterTotalXp = (h: any): number => h.xp + RULES.xpPerLevel * (h.level - 1) * h.level / 2;
 
-test('GM pre-sets a room gate clear, players never see it early, and clearing routes through Waiting for you, Award form, and Party stash', async ({ device }) => {
+test('GM pre-sets a room gate clear, players never see it early, and clearing pays directly through the unified Clear panel and Party stash', async ({ device }) => {
   const gm = (await device('gm')).page;
   const player = (await device('player')).page;
   await onboardGM(gm);
@@ -34,7 +33,7 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   const kaiBefore = await activeHunter(player);
   const kaiKey = await gm.evaluate(() => hunterApp.api.sync.remoteSheets().find((r: any) => r.data?.name === 'Kai Preset')!.key as string);
 
-  // 1. GM opens "What this clear pays"
+  // 1. GM opens Set clear rewards
   await go(gm, 'gates');
   const card = gateCard(gm, gate.id);
   await card.locator('[data-act=preset]').tap();
@@ -108,55 +107,40 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   }, gate.id);
   expect(leaked, 'world doc never exposes preset to players').toBe(false);
 
-  // 4. GM opens Clear panel -> sees preset values and item destinations (nothing rolled)
+  // 4. GM opens unified Clear panel -> sees editable preset values and item rows directly
   await gateCard(gm, gate.id).locator('[data-act=clear]').tap();
   const cform = gateCard(gm, gate.id).locator('form[data-form=clear]');
   await expect(cform).toBeVisible();
   for (const box of await cform.locator('input[name=hid]').all()) if (!(await box.isChecked())) await box.tap();
+  await expect(cform.locator('input[name=xp]')).toHaveValue(String(customXp));
+  await expect(cform.locator('input[name=gold]')).toHaveValue(String(customGold));
   await expect(cform.locator('[data-clearxp]')).toHaveText(customXp.toLocaleString('en-US'));
   await expect(cform.locator('[data-cleargold]')).toHaveText(customGold.toLocaleString('en-US'));
+  await expect(cform.locator('[data-clearitems] [data-prow]')).toHaveCount(3);
   await expect(cform.locator('[data-clearitems]')).toContainText(row1Name);
-  await expect(cform.locator('[data-clearitems]')).toContainText(PRESET_WORDS.itemGoesTo('Kai Preset'));
   await expect(cform.locator('[data-clearitems]')).toContainText('Health Potion (E)');
-  await expect(cform.locator('[data-clearitems]')).toContainText(PRESET_WORDS.itemGoesTo(PRESET_WORDS.stash));
   await cform.scrollIntoViewIfNeeded();
   await snap(gm, 'clear-panel-preset-390.png');
 
-  // 5. Confirm clear -> stash gets Health Potion, Waiting for you holds Kai's clear reward, Kai has NOT received it yet
+  // 5. Confirm clear -> pays Kai and local hunters directly without bouncing to Pending rewards
   await cform.locator('button[type=submit]').tap();
-  const openWait = gm.locator('.sys-overlay.show .sys-actions button', { hasText: PRESET_WORDS.openWaiting });
-  await expect(openWait).toBeVisible();
-  await openWait.tap();
+  await expect(gm.locator('.sys-overlay.show .sys-actions button', { hasText: PRESET_WORDS.openWaiting })).toHaveCount(0);
+  await dismissAll(gm, 6);
 
-  const earnedLabel = PENDING_WORDS.earned('clear', 'Goblin Den');
-  const waitRow = gm.locator('#gm-pw [data-pw]', { hasText: 'Kai Preset' });
-  await expect(waitRow).toBeVisible();
-  await expect(waitRow).toContainText(earnedLabel);
-  await expect(waitRow).toContainText(row1Name);
-
-  // Stash already holds Health Potion (E); Kai has not received XP or gold before GM approves
+  // Pending rewards holds zero clear rows; stash holds Health Potion (E)
+  const pendingClear = await gm.evaluate(() => (hunterApp.store.get().settings.sync.pending || []).filter((p: any) => p.from === 'clear'));
+  expect(pendingClear).toEqual([]);
   const stashNames = await gm.evaluate(() => hunterApp.store.get().stash.items.map((i: any) => i.name));
   expect(stashNames).toContain('Health Potion (E)');
-  const kaiBeforeApprove = await activeHunter(player);
-  expect(hunterTotalXp(kaiBeforeApprove)).toBe(hunterTotalXp(kaiBefore));
-  expect(kaiBeforeApprove.gold).toBe(kaiBefore.gold);
 
-  // 6. GM taps Edit on Kai's waiting reward -> Award form opens tied to it -> screenshot 3 -> Approve
-  await waitRow.locator('[data-pw-edit]').tap();
-  await expect(gm.locator('#gm-award-tie')).toBeVisible();
-  await expect(gm.locator('#gm-award-tie')).toContainText(earnedLabel);
-  await gm.locator('.gm-sec[data-sec=waiting]').scrollIntoViewIfNeeded();
-  await snap(gm, 'gm-waiting-clear-390.png');
-  await gm.locator('#gm-award-go').scrollIntoViewIfNeeded();
-  await gm.locator('#gm-award-go').tap();
-
-  // Player receives exact preset XP, gold, and assigned item
-  await expect.poll(async () => hunterTotalXp(await activeHunter(player)) - hunterTotalXp(kaiBefore)).toBe(customXp);
+  // Player receives exact preset XP, gold, and assigned item directly
+  await expect.poll(async () => hunterTotalXp(await activeHunter(player)) - hunterTotalXp(kaiBefore), { timeout: 30_000 }).toBe(customXp);
+  await dismissAll(player, 6);
   const kaiAfter = await activeHunter(player);
   expect(kaiAfter.gold - kaiBefore.gold).toBe(customGold);
   expect(kaiAfter.items.map((i: any) => i.name)).toContain(row1Name);
 
-  // 7. Paid preset shows read-only on GM's gate card under Finished gates, never editable
+  // 6. Paid preset shows read-only on GM's gate card under Finished gates, never editable
   await go(gm, 'gates');
   const doneDetails = gm.locator('#gt-done');
   if (!(await doneDetails.evaluate((el: any) => el.open))) await doneDetails.locator('summary').tap();
@@ -166,6 +150,53 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   await expect(paidCard.locator('[data-preset-paid]')).toContainText(PRESET_WORDS.itemWentTo('Kai Preset'));
   await expect(paidCard.locator('[data-preset-paid]')).toContainText(PRESET_WORDS.itemWentTo(PRESET_WORDS.stash));
   await expect(paidCard.locator('[data-act=preset]')).toHaveCount(0);
+});
+
+test('non-preset gate opens the unified editable Clear panel with rolled boss loot, cancels cleanly without saving a preset, and pays edits directly', async ({ device }) => {
+  const gm = (await device('gm-unified')).page;
+  const player = (await device('player-unified')).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Sera Unified', code);
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.remoteSheets().some((r: any) => r.data && r.data.name === 'Sera Unified'))).toBe(true);
+  await dismissAll(player, 4);
+
+  const gate = await gateByName(gm, 'Goblin Den');
+  const seraBefore = await activeHunter(player);
+  const seraKey = await gm.evaluate(() => hunterApp.api.sync.remoteSheets().find((r: any) => r.data?.name === 'Sera Unified')!.key as string);
+
+  await go(gm, 'gates');
+  const card = gateCard(gm, gate.id);
+  await card.locator('[data-act=clear]').tap();
+  const cform = card.locator('form[data-form=clear]');
+  await expect(cform).toBeVisible();
+  await expect(cform.locator('[data-clearitems] [data-prow]')).toHaveCount(2);
+
+  // Canceling leaves the gate with no saved preset
+  await cform.locator('[data-act=cancel-panel]').tap();
+  await expect(cform).toHaveCount(0);
+  expect(await gm.evaluate((id: string) => hunterApp.store.get().gates.find((g: any) => g.id === id).preset.at, gate.id)).toBe('none');
+
+  // Reopen unified Clear panel, edit gold directly (without blur before submit), assign first rolled item to Sera, confirm
+  await card.locator('[data-act=clear]').tap();
+  await expect(cform).toBeVisible();
+  for (const box of await cform.locator('input[name=hid]').all()) {
+    const label = (await box.locator('..').textContent()) || '';
+    const want = label.includes('Sera Unified');
+    if ((await box.isChecked()) !== want) await box.tap();
+  }
+  const firstRow = cform.locator('[data-clearitems] [data-prow]').first();
+  const rolledItem = (await firstRow.getAttribute('data-pname'))!;
+  await firstRow.locator('select[data-pto]').selectOption(seraKey);
+  await cform.locator('input[name=gold]').fill('333');
+  await expect(cform.locator('[data-cleargold]')).toHaveText('333');
+  await cform.locator('button[type=submit]').tap();
+  await dismissAll(gm, 6);
+
+  await expect.poll(async () => (await activeHunter(player)).gold - seraBefore.gold, { timeout: 30_000 }).toBe(333);
+  await dismissAll(player, 6);
+  const seraAfter = await activeHunter(player);
+  expect(seraAfter.items.map((i: any) => i.name)).toContain(rolledItem);
 });
 
 test('playing alone: clearing a gate with a preset pays exact amounts immediately and stashes unpicked items', async ({ device }) => {

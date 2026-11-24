@@ -187,7 +187,7 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
     return { share: r.reviveDebtShare, burn: r.reviveDebtBurn, xp: r.reviveDebtXpRate };
   }), { timeout: 15_000 }).toEqual({ share: 0.4, burn: 0.2, xp: 0.5 });
 
-  // GM sets a 400 gold + 40 XP preset on Goblin Den, clears it, sees the 3-way split + XP cut preview, and approves.
+  // GM sets a 400 gold + 40 XP preset on Goblin Den and clears it directly (no Pending rewards bounce).
   const gate = await gateByName(gm, 'Goblin Den');
   await go(gm, 'gates');
   const gcard = gm.locator(`#view-gates .gate[data-id="${gate.id}"]`);
@@ -211,13 +211,6 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   const firstPaid = { total: 400, paid: 160, burn: 80, kept: 160, left: owes - 160 };
   const firstXp = { base: 40, xp: 20, rate: 0.5, left: owes - 160 };
 
-  await go(gm, 'gm');
-  const waitSec = gm.locator('.gm-sec[data-sec=waiting]');
-  if (await waitSec.locator('.gm-body').isHidden()) await waitSec.locator('.gm-tog').tap();
-  const prow = waitSec.locator('.gm-pw-row', { hasText: HUNTER });
-  await expect(prow.locator('[data-pw-debt]')).toHaveText(debtPreviewLine(firstPaid, firstXp)!);
-  await prow.locator('[data-pw-approve]').tap();
-
   const rewardWin = player.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
   await expect(rewardWin).toBeVisible({ timeout: 15_000 });
   await expect(rewardWin).toContainText(debtPaidLine(firstPaid)!);
@@ -225,6 +218,7 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await dismissAll(player);
 
   await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt }; })).toEqual({ gold: 160, xp: 20, debt: owes - 160 });
+  await go(gm, 'gm');
   await expect(card.locator('[data-debt-chip]')).toHaveText(debtChip(owes - 160)!, { timeout: 15_000 });
 
   // GM restores defaults (0.5 share, 0.25 burn, 0.25 XP) and sends a 2,000 gold + 60 XP clear to pay off the remaining debt.
@@ -262,11 +256,6 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   const finalKept = 2000 - rem - finalBurn;
   const finalPaid = { total: 2000, paid: rem, burn: finalBurn, kept: finalKept, left: 0 };
 
-  await go(gm, 'gm');
-  const prow2 = waitSec.locator('.gm-pw-row', { hasText: HUNTER });
-  await expect(prow2.locator('[data-pw-debt]')).toHaveText(debtPreviewLine(finalPaid, null)!);
-  await prow2.locator('[data-pw-approve]').tap();
-
   await expect(rewardWin).toBeVisible({ timeout: 15_000 });
   await expect(rewardWin).toContainText(debtPaidLine(finalPaid)!);
   await expect(rewardWin).toContainText(debtXpClearedLine(60));
@@ -275,6 +264,7 @@ test('gate clear gold splits three ways for System revive debt, XP is cut while 
   await expect.poll(async () => player.evaluate(() => { const h = hunterApp.store.active(); return { gold: h.gold, xp: h.xp, debt: h.debt, reviveLeft: h.reviveLeft }; })).toEqual({ gold: 160 + finalKept, xp: 80, debt: 0, reviveLeft: 'none' });
   await go(player, 'inventory');
   await expect(player.locator('[data-debt]')).toBeHidden();
+  await go(gm, 'gm');
   await expect(card.locator('[data-debt-chip]')).toHaveCount(0, { timeout: 15_000 });
 });
 

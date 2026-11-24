@@ -53,41 +53,50 @@ const fullStash = () => ({
 });
 
 describe('clear-preset adversarial repros', () => {
-  test('F1: settleClearPreset throws (matching noted, never silently skipping a payee) when newEventId returns null', () => {
+  test('F1: settleClearPreset throws (matching noted, never silently skipping a remote payee) when newEventId returns null', () => {
     const s0 = baseSave();
-    const h = s0.hunters[0]!;
     const s1 = ok(gatePreset(s0, gid('g-den'), {
       type: 'recommend', xp: 220, gold: 120,
       items: [{ id: presetLineId(1), item: POTION, checked: true, to: null }],
     }));
-    const payees: Payee[] = [{ kind: 'local', hid: h.id, name: h.name }];
+    const payees: Payee[] = [{ kind: 'remote', key: KAI, name: 'Kai' }];
     // Invalid device char ':' causes newEventId() to return null
-    const badRoom = { code: ROOM, stamp: { device: 'bad:dev', now: 1000, rand: 0.25 }, ranks: new Map() };
+    const badRoom = { code: ROOM, stamp: { device: 'bad:dev', now: 1000, rand: 0.25 }, ranks: new Map([[KAI, 'E' as const]]) };
     expect(() => settleClearPreset(s1, gid('g-den'), xpOf, payees, badRoom, DAY)).toThrow();
     expect(s1.gates[0]!.status).toBe('detected');
     expect(s1.gates[0]!.preset.at).toBe('recommended');
   });
 
-  test('F1b: settleClearPreset must not drop second payee or duplicate first in pending when stamp.now collides', () => {
+  test('F1b: settleClearPreset must not drop second remote payee or collide EventIds when stamp.now is MAX_SAFE_INTEGER', () => {
     const s0 = baseSave();
     const h0 = s0.hunters[0]!, h1 = s0.hunters[1]!;
+    const SERA = parseSheetKey('d-p2:h1')!;
     const s1 = ok(gatePreset(s0, gid('g-den'), {
       type: 'recommend', xp: 220, gold: 120, items: [],
     }));
     const payees: Payee[] = [
       { kind: 'local', hid: h0.id, name: h0.name },
       { kind: 'local', hid: h1.id, name: h1.name },
+      { kind: 'remote', key: KAI, name: 'Kai' },
+      { kind: 'remote', key: SERA, name: 'Sera' },
     ];
-    // Number.MAX_SAFE_INTEGER + 2 === Number.MAX_SAFE_INTEGER + 3 in float64 -> identical eid for both payees
-    const room = { code: ROOM, stamp: { device: 'd-gm', now: Number.MAX_SAFE_INTEGER, rand: 0.25 }, ranks: new Map() };
+    // Number.MAX_SAFE_INTEGER + 2 === Number.MAX_SAFE_INTEGER + 3 in float64 -> seq separates EventIds cleanly
+    const room = { code: ROOM, stamp: { device: 'd-gm', now: Number.MAX_SAFE_INTEGER, rand: 0.25 }, ranks: new Map([[KAI, 'E' as const], [SERA, 'D' as const]]) };
     const res = ok(settleClearPreset(s1, gid('g-den'), xpOf, payees, room, DAY));
 
+    const outboxEvents = (res.save.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' ? [e.letter.event] : []));
     expect({
-      returnedPending: res.pending.map(w => w.name),
-      savedWaiting: waitingIn(res.save, ROOM).map(w => w.name),
+      grantedIds: res.granted.map(g => g.hid),
+      remotePaid: res.remotePaid.map(r => r.name),
+      outboxTypes: outboxEvents.map(e => e.type),
+      distinctEids: new Set(outboxEvents.map(e => e.payload.eid)).size,
+      savedWaiting: waitingIn(res.save, ROOM),
     }).toEqual({
-      returnedPending: [h0.name, h1.name],
-      savedWaiting: [h0.name, h1.name],
+      grantedIds: [h0.id, h1.id],
+      remotePaid: ['Kai', 'Sera'],
+      outboxTypes: ['award', 'noted', 'award', 'noted'],
+      distinctEids: 4,
+      savedWaiting: [],
     });
   });
 

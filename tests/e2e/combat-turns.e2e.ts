@@ -403,7 +403,7 @@ test('a removed defeated monster keeps its XP and a removed live one gives none'
   const promise = panel.locator('[data-clearxp]').first();
   await expect(promise).toBeVisible();
   // The XP still due is shared among the hunters ticked in the panel.
-  const ticked = await panel.locator('input[type=checkbox]:checked').count();
+  const ticked = await panel.locator('input[name=hid]:checked').count();
   expect(ticked).toBeGreaterThan(0);
   await expect.poll(async () => Number(((await promise.innerText()).match(/\d[\d,]*/) ?? ['NaN'])[0].replace(/,/g, ''))).toBe(shareEach(gate.xp - dead.xp, ticked, RULES.gateParty));
 });

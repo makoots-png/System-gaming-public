@@ -13,11 +13,11 @@
 // or refused, both ends. Approve is the one door to the reward: the GM view's Send award writes the record approved in
 // the same write that grants it here or posts the `award` to the player (gm.js, award.ts `gmAward`), so the table
 // refusing a second approve refuses the second payment. A record is kept by its id: a replayed ask makes no second one.
-import { EARNED_WHAT_MAX, REWARD_FROM, newEvent } from '../protocol.ts';
+import { EARNED_WHAT_MAX, REWARD_FROM, approvalEvent, newEvent } from '../protocol.ts';
 import type { AskFrom, EventStamp, RewardFrom, RoomEvent } from '../protocol.ts';
 import { deviceOf, hunterIdOf, parseEventId, parseRoomCode, parseSheetKey, sheetKeyOf } from '../ids.ts';
 import type { EventId, HunterId, RoomCode, SheetKey } from '../ids.ts';
-import { isEmptyReward, parseRewards } from '../rewards.ts';
+import { isEmptyReward, newRewards, parseRewards, rewardLines } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { seatOf } from '../role.ts';
 import type { Seat } from '../role.ts';
@@ -26,11 +26,11 @@ import { atSync, isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import type { Said, Stamp } from '../session-log.ts';
-import { atOutbox, post } from '../sync/outbox.ts';
+import { OUTBOX_MAX, atOutbox, post } from '../sync/outbox.ts';
 import { timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
 import { grant, idShare } from './grant.ts';
-import type { Granted } from './grant.ts';
+import type { Day, Granted } from './grant.ts';
 
 /**
  * Where a reward the app pays by itself goes, by the phone's seat: paid at once (`pay`), asked of the GM's phone
@@ -43,6 +43,19 @@ export const ROUTE: { readonly [S in Seat]: RewardRoute } = {
   player: 'ask',
   gm: 'wait',
 };
+/**
+ * The one routing table for every reward source by seat: player- or app-triggered rewards (`solo`, `quest`, `feat`)
+ * follow `ROUTE` (GM approval stays on in a room), while a GM-confirmed gate clear (`clear`) pays directly in a room
+ * as well as alone because the GM already confirmed the rewards in the Clear panel.
+ */
+export const REWARD_ROUTE: { readonly [F in RewardFrom]: { readonly [S in Seat]: RewardRoute } } = {
+  solo: ROUTE,
+  quest: ROUTE,
+  feat: ROUTE,
+  clear: { alone: 'pay', player: 'ask', gm: 'pay' },
+};
+/** Where a reward of source `from` goes on a phone in seat `seat`. */
+export const routeFor = (seat: Seat, from: RewardFrom): RewardRoute => REWARD_ROUTE[from][seat];
 /** Whether a reward earned on a phone in seat `seat` waits for the GM: the window shows `PENDING_WORDS.waits` in place of its lines. */
 export const rewardWaits = (seat: Seat): boolean => ROUTE[seat] !== 'pay';
 
@@ -145,6 +158,93 @@ export function pendingRefused(s: Save, id: string, c: { readonly stamp: EventSt
 export const localHunter = (s: Pick<Save, 'settings'>, p: Pick<PendingReward, 'to'>): HunterId | null =>
   (deviceOf(p.to) === s.settings.deviceId ? hunterIdOf(p.to) : null);
 
+/** Why `pendingApproveAll` changed nothing: nothing waits in this room, or the outbox has no free room for remote awards. */
+export type ApproveAllRefusal = 'no-reward' | 'outbox-full';
+/** Context for `pendingApproveAll`: the current day/rules, and any local or remote hunters held by this phone's fight. */
+export type ApproveAllCtx = {
+  readonly day: Day;
+  readonly heldLocals?: ReadonlySet<HunterId>;
+  readonly heldRemotes?: ReadonlySet<SheetKey>;
+};
+/** What `pendingApproveAll` wrote in one atomic step. */
+export type ApprovedAll = {
+  readonly save: Save;
+  readonly approved: readonly PendingReward[];
+  readonly granted: readonly { readonly hid: HunterId; readonly g: Granted; readonly rec: PendingReward }[];
+  readonly posted: readonly SheetKey[];
+  readonly remoteStatuses: readonly { readonly key: SheetKey; readonly statuses: Rewards['statuses'] }[];
+  readonly remaining: number;
+};
+/**
+ * Approves waiting rewards in `room` in one atomic step: transitions each approved record to `approved` via
+ * `pendingStep`, grants local hunters with `grant` (preserving `from` for debt and guild rules), posts one
+ * deterministic `approvalEvent` per remote reward without overflowing `OUTBOX_MAX`, and appends session log lines.
+ * Idempotent on a double tap (`no-reward`) and deduplicated across GM devices by `approvalIdOf(rec.id)`.
+ */
+export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx): ApprovedAll | Refused<ApproveAllRefusal> {
+  const waiting = waitingIn(save, room);
+  if (!waiting.length) return refuse('no-reward');
+  const liveOutbox = (save.settings.sync.outbox ?? []).filter(e => e.at !== 'refused').length;
+  const avail = Math.max(0, OUTBOX_MAX - liveOutbox);
+  const logStamp: Stamp = { at: ctx.day.at, cap: ctx.day.R.logCap };
+
+  let next: Save = save;
+  let remotePosted = 0;
+  let remaining = 0;
+  const approved: PendingReward[] = [];
+  const approvedIds = new Set<EventId>();
+  const granted: { hid: HunterId; g: Granted; rec: PendingReward }[] = [];
+  const posted: SheetKey[] = [];
+  const remoteStatuses: { key: SheetKey; statuses: Rewards['statuses'] }[] = [];
+  const events: RoomEvent[] = [];
+  const logLines: Said[] = [];
+
+  for (const rec of waiting) {
+    const step = pendingStep(rec, { type: 'approve' });
+    if (!step) continue;
+    const hid = localHunter(next, rec);
+    const bits = rewardLines(ctx.day.R, rec.rewards).join(', ');
+    if (hid) {
+      const vitals = ctx.heldLocals?.has(hid) ? 'fight' : 'sheet';
+      const g = grant(next, hid, rec.rewards, { ...ctx.day, vitals, from: rec.from });
+      if (!isRefused(g)) {
+        next = g.save;
+        granted.push({ hid, g, rec });
+      }
+      approvedIds.add(rec.id);
+      approved.push(step);
+      logLines.push({ kind: 'award', hunterId: hid, title: 'GM approved', text: `${PENDING_WORDS.earned(rec.from, rec.what)}: ${bits} → ${rec.name}` });
+    } else {
+      const held = !!ctx.heldRemotes?.has(rec.to) && rec.rewards.statuses.length > 0;
+      const { statuses: onRow, ...restFields } = rec.rewards;
+      const wireRewards: Rewards = held ? { ...newRewards(), ...restFields } : rec.rewards;
+      const needsEvent = !isEmptyReward(wireRewards);
+      if (needsEvent) {
+        if (remotePosted >= avail) { remaining++; continue; }
+        const ev = approvalEvent(rec.id, { to: [rec.to], rewards: wireRewards, earned: { from: rec.from, what: rec.what } });
+        if (!ev) { remaining++; continue; }
+        events.push(ev);
+        remotePosted++;
+        posted.push(rec.to);
+      }
+      if (held) remoteStatuses.push({ key: rec.to, statuses: onRow });
+      approvedIds.add(rec.id);
+      approved.push(step);
+      logLines.push({ kind: 'award', hunterId: null, title: 'GM approved', text: `${PENDING_WORDS.earned(rec.from, rec.what)}: ${bits} → ${rec.name}` });
+    }
+  }
+
+  if (!approved.length) return refuse('outbox-full');
+
+  const updated = pendingOf(next).map(p => (approvedIds.has(p.id) ? pendingStep(p, { type: 'approve' }) ?? p : p));
+  next = withPending(next, kept(updated));
+  if (events.length) {
+    next = atOutbox(box => events.reduce((b, ev) => post(b, room, { kind: 'event', event: ev }).box, box))(next);
+  }
+  if (logLines.length) next = told(next, logStamp, ...logLines);
+  return { save: next, approved, granted, posted, remoteStatuses, remaining };
+}
+
 // ── a reward the app pays by itself ──
 /** Where the phone sits for a reward: alone, or in room `room` as a player or as its GM. */
 export type RewardSeat = { readonly seat: 'alone' } | { readonly seat: 'player' | 'gm'; readonly room: RoomCode };
@@ -204,12 +304,17 @@ export const PENDING_WORDS = {
   waits: 'Waiting for GM approval',
   earned: (from: RewardFrom, what: string): string => (what ? `${FROM_WORDS[from]}: ${what}` : FROM_WORDS[from]),
   approve: 'Approve',
+  approveAll: 'Approve all',
+  approveAllCount: (n: number): string => `Approve all (${n})`,
   edit: 'Edit',
   refuse: 'Refuse',
   /** The Award form's line while it holds a waiting reward. */
   tie: (name: string, from: RewardFrom, what: string): string => `For ${name}: ${PENDING_WORDS.earned(from, what)}. Tap Approve to give it to ${name}, or collapse Award to leave it pending.`,
   notify: (name: string): string => `${name} earned a reward that needs your approval.`,
   approved: (name: string): string => `Approved reward for ${name}.`,
+  approvedAll: (n: number): string => `Approved ${n} reward${n === 1 ? '' : 's'}.`,
+  approvedAllSaved: (n: number): string => `Approved ${n} reward${n === 1 ? '' : 's'}. Players will get them once the room server confirms them.`,
+  approvedAllPartial: (done: number, left: number): string => `Approved ${done} reward${done === 1 ? '' : 's'}. ${left} remain pending until your phone sends the queued room messages.`,
   refused: (name: string): string => `Refused reward for ${name}.`,
   logTitle: 'Pending reward',
   refusedLogTitle: 'Reward refused',
@@ -217,7 +322,11 @@ export const PENDING_WORDS = {
   refusedTitle: 'REWARD REFUSED',
   refusedBody: (from: RewardFrom, what: string): string => `${PENDING_WORDS.earned(from, what)}. The GM refused this reward.`,
   approvedBody: (from: RewardFrom, what: string): string => `${PENDING_WORDS.earned(from, what)}. The GM approved your reward.`,
-  refusals: { 'no-reward': 'This reward is no longer pending on this phone.', answered: 'You already approved or refused this reward.' } satisfies { readonly [W in PendingRefusal]: string },
+  refusals: {
+    'no-reward': 'This reward is no longer pending on this phone.',
+    answered: 'You already approved or refused this reward.',
+    'outbox-full': 'Your phone has too many unsent room messages. Reconnect so they can send, then tap Approve all again.',
+  } satisfies { readonly [W in PendingRefusal | ApproveAllRefusal]: string },
 } as const;
 
 // ── the save's reader ──

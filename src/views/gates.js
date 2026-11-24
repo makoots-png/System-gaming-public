@@ -1,18 +1,18 @@
 // gates.js: U08. Gates and dungeons: world day, spawn, break, encounter hand-off, clear + loot.
 // The world day and the gates change only through the steps of src/core/gates/world.ts (a gate's status through `transition`).
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
-import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, partitionPresetItems, refKey } from '../core/gates/preset.ts';
+import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, presetStep, refKey } from '../core/gates/preset.ts';
 import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLevel, parseDifficultyLevel, scaleMonsterForGate, withDifficulty } from '../core/gates/difficulty.ts';
 import { bossDifficultyHtml, difficultySliderHtml, readEditDifficultyEvents, wireDifficultyLive } from './difficulty-control.js';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearCrystalEach, clearCrystalFor, clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
-import { REWARD_BOUNDS, newRewards, parseRewards } from '../core/rewards.ts';
+import { clearCrystalFor, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
+import { REWARD_BOUNDS } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
 import { lootShareOf, placeholderName, recommendPreset, rollGate } from '../core/gates/spawn.ts';
 import { gradeLabel } from '../core/effects.ts';
-import { parsePresetLineId, parseSheetKey } from '../core/ids.ts';
+import { parsePresetLineId, parseSheetKey, presetLineId } from '../core/ids.ts';
 import { lootPool } from '../core/registry/items.ts';
 import { MONSTER_BOUNDS, copiesOf, monsterSheetOf, monsterXp } from '../core/registry/monsters.ts';
 import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate, mergeWorld as mergeDoc, sessionStarted, spawnGate, worldDoc as worldDocOf, worldDocUnmerged, worldEmptyWords } from '../core/gates/world.ts';
@@ -135,39 +135,18 @@ export function register(app) {
   /** The hunters in a fight: local hunter ids and remote keys, the values the clear panel's checkboxes use. */
   const fighterIds = f => new Set(f.rows.flatMap(r => (r.holder && r.holder.kind === 'local' ? [r.holder.hunterId] : r.holder && r.holder.kind === 'remote' ? [r.holder.remote] : [])));
   /**
-   * Gate `id` cleared and its payees paid, in one step (src/core/gates/pay.ts `settleClear`): the gate's XP still due and
-   * the rolled gold shared as the gate's pot by `clearShares`, the items to `toId`, each hunter here given its share, each player's award put
-   * in the outbox. Then the one window. `hids`: local hunter ids and/or remote keys; each is paid once.
+   * Gate `id` cleared and its payees paid directly in one atomic step (`settleClearPreset`): commits any unsaved
+   * unified Clear draft or un-blurred numeric input edits through `gatePreset` before settling, pays local payees
+   * directly, posts `[award, noted]` to remote payees via `routeFor(seat, 'clear')`, deposits stash items, and opens
+   * the completion window. `hids`: local hunter ids and/or remote keys; each is paid once.
    */
-  async function clearGate(id, hids, toId) {
+  async function clearGate(id, hids, clearData) {
     const g = gate(id); if (!g) return false;
     hids = [...new Set(hids)];
     const hunters = hids.map(store.hunter).filter(Boolean), rem = remotes().filter(r => hids.includes(r.key));
     /** @type {import('../core/gates/pay.ts').Payee[]} */
     const payees = [...hunters.map(h => ({ kind: 'local', hid: h.id, name: h.name })), ...rem.map(r => ({ kind: 'remote', key: r.key, name: r.data.name }))];
     const S = api.sync, code = S.room();
-    if (isActivePreset(g.preset)) {
-      const inRoom = code ? { code, stamp: stampNow(), ranks: new Map(rem.map(r => [r.key, r.data.rank ?? null])) } : null;
-      const done = { settled: null };
-      if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClearPreset(s, g.id, xpOf, payees, inRoom, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }), PRESET_WORDS.refusals)) return false;
-      const settled = done.settled;
-      S.flush();
-      const body = PRESET_WORDS.clearedBody(g.rank, g.name);
-      const stashLine = settled.stashed.length ? [PRESET_WORDS.stashedLine(settled.stashed.map(i => i.name))] : [];
-      if (settled.pending.length) {
-        const lines = [PRESET_WORDS.waitingLine(settled.pending.length), ...stashLine];
-        const go = await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body, lines,
-          actions: [{ label: PRESET_WORDS.approveLater, value: null, cancel: true }, { label: PRESET_WORDS.openWaiting, value: 'gm', primary: true }] });
-        if (go === 'gm') app.go('gm');
-        return true;
-      }
-      if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: stashLine }); return true; }
-      const noGrantLines = payees.length
-        ? [PRESET_WORDS.rewardedLine(payees.map(p => p.name)), ...stashLine]
-        : settled.stashed.length ? [PRESET_WORDS.nobodyGotXpGold, ...stashLine] : [PRESET_WORDS.nobodyGotRewards];
-      await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body, lines: noGrantLines });
-      return true;
-    }
     if (g.preset.at === 'paid') {
       const pay = { due: 0, xp: 0, gold: 0, crystal: 0, items: [], payees: [] };
       if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, [], null, dayNow()); return isRefused(r) ? r : r.save; }))) return false;
@@ -175,34 +154,41 @@ export function register(app) {
       await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body: PRESET_WORDS.clearedBody(g.rank, g.name), lines: [PRESET_WORDS.paidClearedLine] });
       return true;
     }
-    const dropped = api.inventory.rollLoot(g.rank, { boss: true }) || [];
-    const gold = dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items = dropped.flatMap(e => (e.kind === 'item' ? [e.item] : []));
-    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty, app.rules(), new Map(rem.map(r => [r.key, r.data]))); if (!plan) return false;
-    const share = plan.shares[0] || { xp: plan.due, gold, crystal: 0, items: [] }, taker = plan.shares.find(x => x.items.length);
-    // the player's device assigns its own item ids
-    const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
-    // each player paid: its award, and its rank as its pushed sheet says, which its gate fact is measured against (pay.ts `settleClear`)
-    const players = plan.shares.flatMap(x => {
-      if (x.payee.kind !== 'remote') return [];
-      const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, crystal: x.crystal, items: bare(x.items) }, earned: { from: 'clear', what: g.name } });
-      return pays ? [{ key, rank: rem.find(r => r.key === key)?.data.rank ?? null, pays }] : [];
-    });
-    const inRoom = code ? { code, stamp: stampNow(), players } : null;
-    const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, crystal: x.crystal, items: x.items }) ?? newRewards() }] : []));
-    const pay = { due: plan.due, xp: share.xp, gold: share.gold, crystal: share.crystal, items: items.map(i => i.name), payees: payees.map(p => p.name) };
+    const inRoom = code ? { code, stamp: stampNow(), ranks: new Map(rem.map(r => [r.key, r.data.rank ?? null])) } : null;
     const done = { settled: null };
-    if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, locals, inRoom, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }))) return false;
+    const applied = store.apply('gate-clear', s => {
+      const cur = s.gates.find(x => x.id === g.id);
+      if (!cur) { const r = settleClearPreset(s, g.id, xpOf, payees, inRoom, dayNow()); return isRefused(r) ? r : r.save; }
+      const prepared = (() => {
+        if (cur.preset.at === 'none') {
+          return gatePreset(s, g.id, { type: 'recommend', xp: clearData.xp, gold: clearData.gold, crystal: clearData.crystal, items: clearData.items });
+        }
+        if (!isActivePreset(cur.preset)) return s;
+        const steps = [
+          clearData.xp !== cur.preset.xp ? { type: /** @type {const} */ ('setXp'), xp: clearData.xp } : null,
+          clearData.gold !== cur.preset.gold ? { type: /** @type {const} */ ('setGold'), gold: clearData.gold } : null,
+          clearData.crystal !== cur.preset.crystal ? { type: /** @type {const} */ ('setCrystal'), crystal: clearData.crystal } : null,
+        ].filter(Boolean);
+        return steps.reduce((acc, ev) => (isRefused(acc) ? acc : gatePreset(acc, g.id, ev)), /** @type {import('../core/save.ts').Save | import('../core/save-step.ts').Refused} */ (s));
+      })();
+      if (isRefused(prepared)) return prepared;
+      const r = settleClearPreset(prepared, g.id, xpOf, payees, inRoom, dayNow(), clearData.crystalByPayee);
+      if (isRefused(r)) return r;
+      done.settled = r;
+      return r.save;
+    });
+    if (!ui.wrote('! Gate', applied, PRESET_WORDS.refusals)) return false;
     const settled = done.settled;
     S.flush();
-    const all = plan.shares.length > 1, rewards = [`${ui.fmt(share.xp)} XP${all ? ' each' : ''}`];
-    if (share.gold) rewards.push(`${ui.fmt(share.gold)} gold${all ? ' each' : ''}`);
-    if (share.crystal) rewards.push(`${ui.fmt(share.crystal)} mana crystal${all ? ' each' : ''}`);
-    for (const it of items) rewards.push(`${it.name} (to ${taker ? taker.payee.name : 'nobody'})`);
     const body = PRESET_WORDS.clearedBody(g.rank, g.name);
-    const rlines = plan.shares.filter(x => x.payee.kind === 'remote').map(x => `${x.payee.name}: ${[x.xp && `+${ui.fmt(x.xp)} XP`, x.gold && `${ui.fmt(x.gold)} gold`, x.crystal && `${ui.fmt(x.crystal)} mana crystal`, ...x.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
-    if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: rlines }); return true; }
-    await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body,
-      lines: payees.length ? [PRESET_WORDS.rewardedLine(payees.map(p => p.name))] : [PRESET_WORDS.nobodyGotRewards], rewards });
+    const stashLine = settled.stashed.length ? [PRESET_WORDS.stashedLine(settled.stashed.map(i => i.name))] : [];
+    const rlines = settled.remotePaid.map(x => `${x.name}: ${[x.rewards.xp && `+${ui.fmt(x.rewards.xp)} XP`, x.rewards.gold && `${ui.fmt(x.rewards.gold)} gold`, x.rewards.crystal && `${ui.fmt(x.rewards.crystal)} mana crystal`, ...x.rewards.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
+    if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: [...rlines, ...stashLine] }); return true; }
+    const noGrantLines = rlines.length
+      ? [...rlines, ...stashLine]
+      : payees.length ? [PRESET_WORDS.rewardedLine(payees.map(p => p.name)), ...stashLine]
+      : settled.stashed.length ? [PRESET_WORDS.nobodyGotXpGold, ...stashLine] : [PRESET_WORDS.nobodyGotRewards];
+    await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body, lines: noGrantLines });
     return true;
   }
 
@@ -487,7 +473,7 @@ export function register(app) {
         <div class="gt-list" id="gt-list"></div>
         <details class="gt-done" id="gt-done"><summary>Finished gates (<span id="gt-done-n">0</span>)</summary><div class="gt-list" id="gt-done-list"></div></details>
       </section>`;
-      const cards = new Map(), openPanel = new Map();
+      const cards = new Map(), openPanel = new Map(), clearDrafts = new Map();
       const q = s => el.querySelector(s);
       app.api.detail.wire(el, () => render());
       wireDifficultyLive(el, () => app.rules());
@@ -567,16 +553,19 @@ export function register(app) {
         if (k === 'T') return api.inventory.itemTemplates()[n] || null;
         return null;
       };
-      function presetPanel(g) {
-        if (!g || !isActivePreset(g.preset)) return '';
-        const p = g.preset;
-        const rows = p.items.length ? p.items.map(line => `<div class="gt-prow" data-prow="${esc(line.id)}" data-pname="${esc(line.item.name)}">
+      const presetItemsBlock = items => {
+        const rows = items.length ? items.map(line => `<div class="gt-prow" data-prow="${esc(line.id)}" data-pname="${esc(line.item.name)}">
           <label class="gt-chk gt-pchk"><input type="checkbox" data-pchk="${esc(line.id)}"${line.checked ? ' checked' : ''}><span>${esc(PRESET_WORDS.payItem(line.item.name))}<small class="gt-prar">${esc(gradeLabel(line.item.rar, line.item.grade ?? 0))}</small></span></label>
           <div class="gt-pdest">${ui.field(PRESET_WORDS.goesTo, `<select data-pto="${esc(line.id)}"><option value="">${esc(PRESET_WORDS.stash)}</option>${hunterOpts(line.to ? refKey(line.to) : '')}</select>`)}
             <button type="button" class="danger gt-prm" data-act="preset-rm" data-pid="${esc(line.id)}" aria-label="${esc(PRESET_WORDS.removeItem)}: ${esc(line.item.name)}">${esc(PRESET_WORDS.removeItem)}</button></div></div>`).join('')
           : `<p class="empty">${esc(PRESET_WORDS.noItems)}</p>`;
-        const add = p.items.length < PRESET_ITEMS_MAX
+        const add = items.length < PRESET_ITEMS_MAX
           ? `<div class="gt-padd">${ui.field(PRESET_WORDS.addItemLabel, `<select data-padd-pick>${presetPickOpts()}</select>`)}<button type="button" data-act="preset-add">${esc(PRESET_WORDS.addItem)}</button></div>` : '';
+        return `<div class="lbl">${esc(PRESET_WORDS.itemsLabel)}</div><div class="gt-pitems" data-clearitems>${rows}</div>${add}`;
+      };
+      function presetPanel(g) {
+        if (!g || !isActivePreset(g.preset)) return '';
+        const p = g.preset;
         const hasGuild = store.get().hunters.some(h => h.guild) || remotes().some(r => r.data.guild);
         return `<form class="gt-panel" data-form="preset" aria-label="${esc(PRESET_WORDS.title)}">
           <div class="lbl">${esc(PRESET_WORDS.title)}</div>
@@ -585,22 +574,10 @@ export function register(app) {
             ${ui.field(PRESET_WORDS.goldLabel, `<input type="number" name="gold" min="0" max="${REWARD_BOUNDS.gold}" step="1" inputmode="numeric" value="${esc(p.gold)}">`)}
             ${ui.field(PRESET_WORDS.crystalLabel, `<input type="number" name="crystal" min="0" max="${REWARD_BOUNDS.crystal}" step="1" inputmode="numeric" value="${esc(p.crystal)}">`)}</div>
           ${hasGuild ? `<div class="gt-notes" data-preset-guild-note>${esc(PRESET_WORDS.mixedGuildNote)}</div>` : ''}
-          <div class="lbl">${esc(PRESET_WORDS.itemsLabel)}</div>
-          <div class="gt-pitems">${rows}</div>
-          ${add}
+          ${presetItemsBlock(p.items)}
           <div class="gt-acts"><button type="button" data-act="preset-reset">${esc(PRESET_WORDS.reset)}</button>
             <button type="button" class="danger" data-act="preset-clear">${esc(PRESET_WORDS.clear)}</button>
             <button type="button" class="primary" data-act="cancel-panel">${esc(PRESET_WORDS.closePanel)}</button></div></form>`;
-      }
-      function presetClearItems(g, selectedIds) {
-        if (!isActivePreset(g.preset)) return '';
-        const list = payees().filter(h => selectedIds.has(h.id));
-        const pPayees = list.map(h => (parseSheetKey(h.id) ? { kind: /** @type {const} */ ('remote'), key: parseSheetKey(h.id) } : { kind: /** @type {const} */ ('local'), hid: h.id }));
-        const part = partitionPresetItems(g.preset, pPayees);
-        const rows = [];
-        for (const h of list) for (const it of part.byPayee.get(h.id) ?? []) rows.push(`<li><span>${esc(it.name)}</span><span class="mx">${esc(PRESET_WORDS.itemGoesTo(h.name))}</span></li>`);
-        for (const it of part.stash) rows.push(`<li><span>${esc(it.name)}</span><span class="mx">${esc(PRESET_WORDS.itemGoesTo(PRESET_WORDS.stash))}</span></li>`);
-        return rows.join('');
       }
       // who fought this gate: the live fight started from it, else its last settled one (the gate's `fought`); none -> the active hunter only
       const fighters = g => {
@@ -608,39 +585,69 @@ export function register(app) {
         if (s.fight && s.fightRefs && s.fightRefs.gate === g.id) return fighterIds(s.fight);
         return g.fought.length ? new Set(g.fought) : new Set([store.active().id]);
       };
-      // the shares that pay (pay.ts `shareEach`, read by `clearShares`): no hunter picked gets nothing
-      const xpEach = (g, n) => ui.fmt(shareEach(dueXp(g), n, app.rules().gateParty));
-      const goldEach = (g, n) => { const e = clearGoldEach(app.rules(), g.rank, n); return e.low === e.high ? ui.fmt(e.low) : `${ui.fmt(e.low)} to ${ui.fmt(e.high)}`; };
-      const crystalEach = (g, ids) => {
-        const picked = [...ids], n = picked.length, R = app.rules();
-        if (!n) return ui.fmt(clearCrystalEach(g, 0, R));
+      /** Per-payee mana crystal breakdown for `selectedIds` on gate `g`: uniform value or mixed guild range. */
+      const crystalInfo = (g, selectedIds) => {
+        const picked = [...selectedIds], n = picked.length, R = app.rules();
+        if (!n) return { uniform: true, value: 0, text: '0', byPayee: new Map() };
         const remMap = new Map(remotes().map(r => [r.key, r.data]));
-        const vals = picked.map(id => clearCrystalFor(g, n, store.hunter(id) || remMap.get(id) || null, R));
-        const lo = Math.min(...vals), hi = Math.max(...vals);
-        return lo === hi ? ui.fmt(lo) : `${ui.fmt(lo)} to ${ui.fmt(hi)}`;
+        const byPayee = new Map(picked.map(id => [id, clearCrystalFor(g, n, store.hunter(id) || remMap.get(id) || null, R)]));
+        const vals = [...byPayee.values()], lo = Math.min(...vals), hi = Math.max(...vals);
+        return { uniform: lo === hi, value: lo, text: lo === hi ? ui.fmt(lo) : `${ui.fmt(lo)} to ${ui.fmt(hi)}`, byPayee };
       };
+      /** Fresh ephemeral clear draft rolled from boss loot when opening Clear on a gate with no saved preset. */
+      const makeClearDraft = (g, selectedIds) => {
+        const dropped = api.inventory.rollLoot(g.rank, { boss: true }) || [];
+        const rolledGold = dropped.reduce((sum, e) => sum + (e.kind === 'gold' ? e.gold : 0), 0);
+        const items = dropped.flatMap(e => (e.kind === 'item' ? [e.item] : [])).slice(0, PRESET_ITEMS_MAX)
+          .map((item, i) => ({ id: presetLineId(i + 1), item: { ...item }, checked: true, to: null }));
+        const n = selectedIds.size, R = app.rules(), c = crystalInfo(g, selectedIds);
+        return {
+          rolled: true, selected: new Set(selectedIds), rolledGold,
+          xpLocked: false, goldLocked: false, crystalLocked: false,
+          xpVal: shareEach(dueXp(g), n, R.gateParty), goldVal: shareEach(rolledGold, n, R.gateParty),
+          crystalVal: c.uniform ? c.value : 0, items,
+        };
+      };
+      /** Applies a PresetEvent to an ephemeral rolled clear draft via core `presetStep`. */
+      const stepDraftItems = (plan, ev) => {
+        const next = presetStep({ at: 'edited', xp: plan.xpVal, gold: plan.goldVal, crystal: plan.crystalVal, items: plan.items }, ev);
+        if (next && isActivePreset(next)) { plan.items = [...next.items]; return true; }
+        return false;
+      };
+      const clampInput = (raw, max) => { const n = Number(raw); return Number.isFinite(n) ? Math.max(0, Math.min(max, Math.trunc(n))) : 0; };
       function clearPanel(g) {
-        const on = fighters(g), list = payees(), n = list.filter(h => on.has(h.id)).length;
-        if (isActivePreset(g.preset)) {
-          const p = g.preset, itemsHtml = presetClearItems(g, on);
-          return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
-            <div class="lbl">Award to</div>
-            <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
-            <div class="gt-notes">${esc(PRESET_WORDS.clearNoteHead)}<span data-clearxp>${ui.fmt(n ? p.xp : 0)}</span>${esc(PRESET_WORDS.clearNoteMid)}<span data-cleargold>${ui.fmt(n ? p.gold : 0)}</span> gold<span data-clearcrystal>${esc(PRESET_WORDS.clearNoteCrystal(n ? p.crystal : 0, ui.fmt))}</span>${esc(PRESET_WORDS.clearNoteTailCrystal(app.seat() === 'gm'))}</div>
-            ${itemsHtml ? `<ul class="gt-mons" data-clearitems aria-label="${esc(PRESET_WORDS.clearItemsLabel)}">${itemsHtml}</ul>` : '<ul class="gt-mons" data-clearitems hidden></ul>'}
-            <div class="gt-acts"><button type="button" data-act="cancel-panel">${esc(PRESET_WORDS.cancelClear)}</button><button type="button" data-act="preset">${esc(PRESET_WORDS.edit)}</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
-        }
         if (g.preset.at === 'paid') {
           return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
             <div class="gt-notes">${esc(PRESET_WORDS.paidClearNote)}</div>
             <div class="gt-acts"><button type="button" data-act="cancel-panel">${esc(PRESET_WORDS.cancelClear)}</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
         }
+        const active = isActivePreset(g.preset), list = payees(), prev = clearDrafts.get(g.id);
+        const on = prev ? new Set([...prev.selected].filter(id => list.some(h => h.id === id))) : fighters(g);
+        const plan = active
+          ? { rolled: false, selected: on }
+          : (prev && prev.rolled ? { ...prev, selected: on } : makeClearDraft(g, on));
+        clearDrafts.set(g.id, plan);
+        const n = list.filter(h => on.has(h.id)).length, R = app.rules();
+        const cInfo = active ? null : crystalInfo(g, on);
+        const xpVal = active ? g.preset.xp : (plan.xpLocked ? plan.xpVal : shareEach(dueXp(g), n, R.gateParty));
+        const goldVal = active ? g.preset.gold : (plan.goldLocked ? plan.goldVal : shareEach(plan.rolledGold, n, R.gateParty));
+        const crystalVal = active ? String(g.preset.crystal) : (plan.crystalLocked ? String(plan.crystalVal) : (cInfo.uniform ? String(cInfo.value) : ''));
+        const crystalPh = !active && !plan.crystalLocked && !cInfo.uniform ? ` placeholder="${esc(PRESET_WORDS.guildAutoPlaceholder(cInfo.text))}"` : '';
+        const xpText = ui.fmt(n ? xpVal : 0);
+        const goldText = ui.fmt(n ? goldVal : 0);
+        const crystalText = n ? (active ? ui.fmt(g.preset.crystal) : (plan.crystalLocked ? ui.fmt(plan.crystalVal) : cInfo.text)) : '0';
+        const items = active ? g.preset.items : plan.items;
+        const noteTail = active ? PRESET_WORDS.clearNoteTailCrystal() : PRESET_WORDS.clearNoteRolledTail(g.xpPaid, ui.fmt);
         return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
           <div class="lbl">Award to</div>
           <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
-          ${ui.field('Loot item goes to', `<select name="to"><option value="">First selected hunter</option>${hunterOpts('')}</select>`)}
-          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP, <span data-cleargold>${goldEach(g, n)}</span> gold, and <span data-clearcrystal>${crystalEach(g, on)}</span> mana crystal. Fewer hunters get a larger share.${g.xpPaid > 0 ? ` Earlier fights in this gate already awarded ${ui.fmt(g.xpPaid)} XP.` : ''} Rolls ${esc(g.rank)}-rank boss loot (two item rolls).</div>
-          <div class="gt-acts"><button type="button" data-act="cancel-panel">Cancel</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
+          <div class="grid2">
+            ${ui.field(PRESET_WORDS.xpLabel, `<input type="number" name="xp" min="0" max="${REWARD_BOUNDS.xp}" step="1" inputmode="numeric" value="${esc(xpVal)}">`)}
+            ${ui.field(PRESET_WORDS.goldLabel, `<input type="number" name="gold" min="0" max="${REWARD_BOUNDS.gold}" step="1" inputmode="numeric" value="${esc(goldVal)}">`)}
+            ${ui.field(PRESET_WORDS.crystalLabel, `<input type="number" name="crystal" min="0" max="${REWARD_BOUNDS.crystal}" step="1" inputmode="numeric" value="${esc(crystalVal)}"${crystalPh}>`)}</div>
+          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpText}</span> XP, <span data-cleargold>${goldText}</span> gold, and <span data-clearcrystal>${crystalText}</span> mana crystal${esc(noteTail)}</div>
+          ${presetItemsBlock(items)}
+          <div class="gt-acts"><button type="button" data-act="cancel-panel">${esc(PRESET_WORDS.cancelClear)}</button><button type="button" data-act="preset-reset">${esc(PRESET_WORDS.reset)}</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
       }
       function editPanel(g) {
         const all = api.bestiary.list();
@@ -742,7 +749,7 @@ export function register(app) {
         // a Clear or Preset panel stays open only while its gate can still be cleared (and preset not paid)
         for (const g of gates) {
           const m = openPanel.get(g.id);
-          if ((m === 'clear' && !can(g, 'clear')) || (m === 'preset' && (!can(g, 'clear') || !isActivePreset(g.preset)))) openPanel.delete(g.id);
+          if ((m === 'clear' && !can(g, 'clear')) || (m === 'preset' && (!can(g, 'clear') || !isActivePreset(g.preset)))) { openPanel.delete(g.id); clearDrafts.delete(g.id); }
         }
         const act = gates.filter(active), fin = gates.filter(g => !active(g));
         const fill = (box, list, emptyMsg) => {
@@ -758,7 +765,7 @@ export function register(app) {
         fill(q('#gt-done-list'), fin, 'Nothing here yet.');
         q('#gt-done-n').textContent = fin.length;
         q('#gt-done').hidden = !fin.length;
-        for (const id of [...cards.keys()]) if (!gates.some(g => g.id === id)) { cards.delete(id); openPanel.delete(id); }
+        for (const id of [...cards.keys()]) if (!gates.some(g => g.id === id)) { cards.delete(id); openPanel.delete(id); clearDrafts.delete(id); }
       }
       const refresh = id => { const g = gate(id); if (!g) return; const n = build(g); cards.set(id, n); reopen(n, id); render(); };
       mounted.render = render;
@@ -788,76 +795,157 @@ export function register(app) {
         else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days to advance (use a negative number to go back)', value: 5, min: -30, max: 365 }); if (n) ui.wrote('Gates', advanceDay(n)); }
         else if (act === 'enter') enter(id);
         else if (act === 'encounter') startEncounter(id);
-        else if (act === 'clear' || act === 'edit') { openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }
+        else if (act === 'clear' || act === 'edit') { if (act === 'clear') clearDrafts.delete(id); openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }
         else if (act === 'preset') {
           const g = gate(id); if (!g || !can(g, 'clear') || g.preset.at === 'paid') return;
           if (g.preset.at === 'none') {
             const rec = recommendPreset(g, partySizeOf(g), xpOf, app.rules(), lootPool(app.rules()), cryptoRandom);
             if (!ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, rec)), PRESET_WORDS.refusals)) return;
           }
+          clearDrafts.delete(id);
           openPanel.set(id, 'preset'); refresh(id); cards.get(id)?.querySelector('.gt-panel input')?.focus();
         }
         else if (act === 'preset-reset') {
           const g = gate(id); if (!g) return;
-          const rec = recommendPreset(g, partySizeOf(g), xpOf, app.rules(), lootPool(app.rules()), cryptoRandom);
-          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, rec)), PRESET_WORDS.refusals)) refresh(id);
+          if (isActivePreset(g.preset)) {
+            const rec = recommendPreset(g, partySizeOf(g), xpOf, app.rules(), lootPool(app.rules()), cryptoRandom);
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, rec)), PRESET_WORDS.refusals)) refresh(id);
+          } else {
+            const f = b.closest('form'), on = f ? new Set([...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value)) : fighters(g);
+            clearDrafts.set(id, makeClearDraft(g, on));
+            refresh(id);
+          }
         }
         else if (act === 'preset-clear') {
           const g = gate(id); if (!g) return;
-          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'clear' })), PRESET_WORDS.refusals)) { openPanel.delete(id); refresh(id); }
+          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'clear' })), PRESET_WORDS.refusals)) { openPanel.delete(id); clearDrafts.delete(id); refresh(id); }
         }
         else if (act === 'preset-rm') {
           const g = gate(id), pid = parsePresetLineId(b.dataset.pid); if (!g || !pid) return;
-          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'removeItem', id: pid })), PRESET_WORDS.refusals)) refresh(id);
+          if (isActivePreset(g.preset)) {
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'removeItem', id: pid })), PRESET_WORDS.refusals)) refresh(id);
+          } else {
+            const d = clearDrafts.get(id);
+            if (d && d.rolled && stepDraftItems(d, { type: 'removeItem', id: pid })) refresh(id);
+          }
         }
         else if (act === 'preset-add') {
           const g = gate(id), pick = b.closest('form')?.querySelector('[data-padd-pick]'); if (!g || !pick) return;
           const v = pick.value; if (!v) return;
           const tpl = v === '__new' ? await api.loot.item({ library: false }) : presetItemTpl(v);
           if (!tpl) return;
-          if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'addItem', item: tpl, to: null })), PRESET_WORDS.refusals)) refresh(id);
+          if (isActivePreset(g.preset)) {
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'addItem', item: tpl, to: null })), PRESET_WORDS.refusals)) refresh(id);
+          } else {
+            const d = clearDrafts.get(id);
+            if (d && d.rolled && stepDraftItems(d, { type: 'addItem', item: tpl, to: null })) refresh(id);
+          }
         }
-        else if (act === 'cancel-panel') { openPanel.delete(id); refresh(id); }
+        else if (act === 'cancel-panel') { openPanel.delete(id); clearDrafts.delete(id); refresh(id); }
         else if (act === 'close') { if (await ui.confirm({ title: 'Close this gate?', body: 'A closed gate can no longer break.', confirmLabel: 'Close gate' })) ui.wrote('! Gate', store.apply('gate-close', s => closeGate(s, id, stamp()))); }
         else if (act === 'delete') { const g = gate(id); if (await ui.confirm({ title: 'Delete this gate?', body: g ? `You cannot undo deleting ${g.name}.` : 'You cannot undo deleting this gate.', danger: true, confirmLabel: 'Delete gate' })) ui.wrote('! Gate', store.apply('gate-delete', s => deleteGate(s, id))); }
         else if (act === 'add-row') { const f = b.closest('form'); f.querySelector('[data-rows]').appendChild(ui.h(f.querySelector('[data-row-tpl]').innerHTML)); }
         else if (act === 'rm-row') b.closest('[data-mrow]').remove();
       });
 
+      const syncClearSummary = (f, g) => {
+        const x = f.querySelector('[data-clearxp]'), gd = f.querySelector('[data-cleargold]'), cr = f.querySelector('[data-clearcrystal]');
+        if (!x || !gd || !cr || !g) return;
+        const pickedIds = new Set([...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value)), n = pickedIds.size;
+        const d = clearDrafts.get(g.id);
+        if (d) d.selected = pickedIds;
+        if (isActivePreset(g.preset)) {
+          const xpVal = clampInput(f.xp?.value ?? g.preset.xp, REWARD_BOUNDS.xp);
+          const goldVal = clampInput(f.gold?.value ?? g.preset.gold, REWARD_BOUNDS.gold);
+          const crVal = clampInput(f.crystal?.value ?? g.preset.crystal, REWARD_BOUNDS.crystal);
+          x.textContent = ui.fmt(n ? xpVal : 0);
+          gd.textContent = ui.fmt(n ? goldVal : 0);
+          cr.textContent = ui.fmt(n ? crVal : 0);
+          return;
+        }
+        if (!d || !d.rolled) return;
+        const R = app.rules(), cInfo = crystalInfo(g, pickedIds);
+        if (!d.xpLocked) { d.xpVal = shareEach(dueXp(g), n, R.gateParty); if (f.xp) f.xp.value = String(d.xpVal); }
+        if (!d.goldLocked) { d.goldVal = shareEach(d.rolledGold, n, R.gateParty); if (f.gold) f.gold.value = String(d.goldVal); }
+        if (!d.crystalLocked) {
+          d.crystalVal = cInfo.uniform ? cInfo.value : 0;
+          if (f.crystal) {
+            f.crystal.value = cInfo.uniform ? String(cInfo.value) : '';
+            f.crystal.placeholder = cInfo.uniform ? '' : PRESET_WORDS.guildAutoPlaceholder(cInfo.text);
+          }
+        }
+        x.textContent = ui.fmt(n ? d.xpVal : 0);
+        gd.textContent = ui.fmt(n ? d.goldVal : 0);
+        cr.textContent = n ? (d.crystalLocked ? ui.fmt(d.crystalVal) : cInfo.text) : '0';
+      };
+      el.addEventListener('input', e => {
+        const f = e.target.closest('form[data-form=clear]');
+        if (!f || !app.isGM()) return;
+        const id = f.closest('.gate').dataset.id, g = gate(id), t = e.target;
+        if (!g || (t.name !== 'xp' && t.name !== 'gold' && t.name !== 'crystal')) return;
+        const d = clearDrafts.get(id);
+        if (d && d.rolled) {
+          if (t.name === 'xp') { d.xpLocked = true; d.xpVal = clampInput(t.value, REWARD_BOUNDS.xp); }
+          else if (t.name === 'gold') { d.goldLocked = true; d.goldVal = clampInput(t.value, REWARD_BOUNDS.gold); }
+          else if (t.name === 'crystal') {
+            if (t.value === '') { d.crystalLocked = false; }
+            else { d.crystalLocked = true; d.crystalVal = clampInput(t.value, REWARD_BOUNDS.crystal); }
+          }
+        }
+        syncClearSummary(f, g);
+      });
       el.addEventListener('change', e => {
         // a refused change draws the select back from the rules (render)
         if (e.target.matches('[data-solohours]') && app.isGM()) { if (!ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { hours: Number(e.target.value) })))) render(); return; }
-        const pf = e.target.closest('form[data-form=preset]');
+        const pf = e.target.closest('form[data-form=preset],form[data-form=clear]');
         if (pf && app.isGM()) {
           const id = pf.closest('.gate').dataset.id, g = gate(id), t = e.target; if (!g) return;
-          const syncSummary = () => { const g2 = gate(id), sEl = cards.get(id)?.querySelector('[data-preset-summary]'); if (g2 && sEl && g2.preset.at !== 'none') sEl.textContent = PRESET_WORDS.summary(g2.preset, g2.preset.at === 'paid', ui.fmt); };
+          const isClear = pf.dataset.form === 'clear';
+          const syncSummary = () => {
+            const g2 = gate(id), sEl = cards.get(id)?.querySelector('[data-preset-summary]');
+            if (g2 && sEl && g2.preset.at !== 'none') sEl.textContent = PRESET_WORDS.summary(g2.preset, g2.preset.at === 'paid', ui.fmt);
+            if (isClear && g2) syncClearSummary(pf, g2);
+          };
+          if (t.name === 'hid' && isClear) { syncClearSummary(pf, g); return; }
           if (t.name === 'xp' || t.name === 'gold' || t.name === 'crystal') {
-            const n = Number(t.value);
-            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, t.name === 'xp' ? { type: 'setXp', xp: n } : t.name === 'gold' ? { type: 'setGold', gold: n } : { type: 'setCrystal', crystal: n })), PRESET_WORDS.refusals)) syncSummary();
+            if (isActivePreset(g.preset)) {
+              const n = Number(t.value);
+              if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, t.name === 'xp' ? { type: 'setXp', xp: n } : t.name === 'gold' ? { type: 'setGold', gold: n } : { type: 'setCrystal', crystal: n })), PRESET_WORDS.refusals)) syncSummary();
+            } else if (isClear) {
+              const d = clearDrafts.get(id);
+              if (d && d.rolled) {
+                if (t.name === 'xp') { d.xpLocked = true; d.xpVal = clampInput(t.value, REWARD_BOUNDS.xp); }
+                else if (t.name === 'gold') { d.goldLocked = true; d.goldVal = clampInput(t.value, REWARD_BOUNDS.gold); }
+                else if (t.name === 'crystal') {
+                  if (t.value === '') { d.crystalLocked = false; }
+                  else { d.crystalLocked = true; d.crystalVal = clampInput(t.value, REWARD_BOUNDS.crystal); }
+                }
+                syncClearSummary(pf, g);
+              }
+            }
             return;
           }
           if (t.dataset.pchk) {
             const pid = parsePresetLineId(t.dataset.pchk); if (!pid) return;
-            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'toggleItem', id: pid, checked: t.checked })), PRESET_WORDS.refusals)) syncSummary();
+            if (isActivePreset(g.preset)) {
+              if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'toggleItem', id: pid, checked: t.checked })), PRESET_WORDS.refusals)) syncSummary();
+            } else {
+              const d = clearDrafts.get(id);
+              if (d && d.rolled) stepDraftItems(d, { type: 'toggleItem', id: pid, checked: t.checked });
+            }
             return;
           }
           if (t.dataset.pto) {
             const pid = parsePresetLineId(t.dataset.pto); if (!pid) return;
-            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'assignItem', id: pid, to: refOf(t.value) })), PRESET_WORDS.refusals)) syncSummary();
+            if (isActivePreset(g.preset)) {
+              if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'assignItem', id: pid, to: refOf(t.value) })), PRESET_WORDS.refusals)) syncSummary();
+            } else {
+              const d = clearDrafts.get(id);
+              if (d && d.rolled) stepDraftItems(d, { type: 'assignItem', id: pid, to: refOf(t.value) });
+            }
             return;
           }
           return;
-        }
-        const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), gd = f && f.querySelector('[data-cleargold]'), cr = f && f.querySelector('[data-clearcrystal]'), g = f && gate(f.closest('.gate').dataset.id);
-        if (x && gd && g) {
-          const pickedIds = new Set([...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value)), n = pickedIds.size;
-          if (isActivePreset(g.preset)) {
-            x.textContent = ui.fmt(n ? g.preset.xp : 0);
-            gd.textContent = ui.fmt(n ? g.preset.gold : 0);
-            if (cr) cr.textContent = PRESET_WORDS.clearNoteCrystal(n ? g.preset.crystal : 0, ui.fmt);
-            const ul = f.querySelector('[data-clearitems]');
-            if (ul) { const html = presetClearItems(g, pickedIds); ul.innerHTML = html; ul.hidden = !html; }
-          } else { x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); if (cr) cr.textContent = crystalEach(g, pickedIds); }
         }
       });
       el.addEventListener('submit', async e => {
@@ -874,11 +962,23 @@ export function register(app) {
         const id = f.closest('.gate').dataset.id, kind = f.dataset.form;
         if (kind === 'clear') {
           const g = gate(id), hids = [...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value);
-          const hasStashItems = g && isActivePreset(g.preset) && g.preset.items.some(i => i.checked);
+          const d = clearDrafts.get(id);
+          const activePreset = g && isActivePreset(g.preset) ? g.preset : null;
+          const items = activePreset ? activePreset.items : (d && d.rolled ? d.items : []);
+          const hasStashItems = g && g.preset.at !== 'paid' && items.some(i => i.checked);
           if (!(g && g.preset.at === 'paid') && !hids.length && !(await ui.confirm(hasStashItems ? PRESET_WORDS.confirmNoHuntersWithStash : PRESET_WORDS.confirmNoHunters))) return;
+          const cInfo = g && !activePreset && d && d.rolled && !d.crystalLocked ? crystalInfo(g, new Set(hids)) : null;
+          const clearData = {
+            xp: clampInput(f.xp?.value ?? (activePreset ? activePreset.xp : 0), REWARD_BOUNDS.xp),
+            gold: clampInput(f.gold?.value ?? (activePreset ? activePreset.gold : 0), REWARD_BOUNDS.gold),
+            crystal: cInfo ? (cInfo.uniform ? cInfo.value : 0) : clampInput(f.crystal?.value ?? (activePreset ? activePreset.crystal : 0), REWARD_BOUNDS.crystal),
+            items,
+            crystalByPayee: cInfo && !cInfo.uniform ? cInfo.byPayee : undefined,
+          };
           // the panel closes before the write, so the redraw the write makes draws no Clear on a cleared gate; a refused Clear opens it again
           openPanel.delete(id);
-          if (!(await clearGate(id, hids, f.to ? f.to.value : ''))) { openPanel.set(id, 'clear'); return; }
+          if (!(await clearGate(id, hids, clearData))) { openPanel.set(id, 'clear'); return; }
+          clearDrafts.delete(id);
         } else if (kind === 'edit') {
           const rows = [...f.querySelectorAll('[data-mrow]')].map(r => ({ monsterId: monsterId(r.querySelector('[name=mid]').value), count: copiesOf(r.querySelector('[name=cnt]').value) })).filter(r => r.monsterId);
           openPanel.delete(id);

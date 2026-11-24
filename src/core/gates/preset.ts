@@ -273,13 +273,15 @@ export const PRESET_WORDS = {
   clearNoteHead: 'Each selected hunter gets ',
   clearNoteMid: ' XP and ',
   clearNoteCrystal: (crystal: number, fmt: (n: number) => string): string => (crystal > 0 ? `, ${fmt(crystal)} mana crystal` : ''),
-  clearNoteTail: (inRoom: boolean): string =>
-    ` gold from the clear rewards you set. No random loot is rolled for this clear.${inRoom ? ' Approve each hunter\'s share in Pending rewards on the GM screen.' : ''}`,
-  clearNoteTailCrystal: (inRoom: boolean): string =>
-    ` from the clear rewards you set. No random loot is rolled for this clear.${inRoom ? ' Approve each hunter\'s share in Pending rewards on the GM screen.' : ''}`,
+  clearNoteCrystalRange: (range: string): string => `, ${range} mana crystal (by guild share)`,
+  clearNoteTail: (): string => ' gold from the clear rewards you set. Clearing pays each selected hunter right away.',
+  clearNoteTailCrystal: (): string => ' from the clear rewards you set. Clearing pays each selected hunter right away.',
+  clearNoteRolledTail: (xpPaid: number, fmt: (n: number) => string): string =>
+    ` from this clear. You can edit these rewards before you confirm.${xpPaid > 0 ? ` Earlier fights in this gate already awarded ${fmt(xpPaid)} XP.` : ''}`,
+  guildAutoPlaceholder: (range: string): string => `Auto (${range})`,
   paidClearNote: 'You already gave this gate\'s clear rewards. Tap Confirm clear to mark the gate cleared without giving rewards again.',
   paidClearedLine: 'You already gave this gate\'s clear rewards, so nobody got rewards again.',
-  mixedGuildNote: 'Clear rewards pay the same mana crystal to every hunter. Use a normal Clear without a preset to pay each hunter\'s guild crystal share automatically, or edit shares in Pending rewards.',
+  mixedGuildNote: 'Set clear rewards pay the same mana crystal to every hunter. Leave Mana crystal blank on a normal clear to pay each hunter\'s guild share automatically.',
   confirmNoHunters: {
     title: 'Clear with no rewards?',
     body: 'You picked no hunters, so nobody gets rewards.',

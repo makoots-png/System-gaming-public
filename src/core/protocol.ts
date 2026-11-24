@@ -54,7 +54,7 @@ import { deviceOf, fightId, hunterIdOf, parseDeviceId, parseEventId, parseGateId
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
 import type { DeviceId, EventId, FightId, ItemId, RoomCode, SheetKey } from './ids.ts';
-import { OFFER_ID_MAX, endIdOf, isEndId, parseOfferId } from './ids.ts';
+import { OFFER_ID_MAX, approvalIdOf, endIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
 import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods, parseStashAsk } from './trade/goods.ts';
 import type { BagPick, Goods, StashAsk } from './trade/goods.ts';
@@ -815,6 +815,13 @@ export function endEvent(type: 'offerEnd', body: EventBody<'offerEnd'>): RoomEve
 export function endEvent(type: 'offerStop', body: EventBody<'offerStop'>): RoomEvent | null;
 export function endEvent(type: 'offerEnd' | 'offerStop', body: EventBody<'offerEnd'> | EventBody<'offerStop'>): RoomEvent | null {
   return parseEvent(type, { ...body, eid: endIdOf(body.offer) });
+}
+/**
+ * Builds an `award` event with the deterministic id `approvalIdOf(recId)` so approving the same pending reward on a
+ * second GM device deduplicates on the server and on the player's phone. Null when the server would refuse the body.
+ */
+export function approvalEvent(recId: EventId, body: EventBody<'award'>): RoomEvent | null {
+  return parseEvent('award', { ...body, eid: approvalIdOf(recId) });
 }
 
 /**

@@ -13,7 +13,7 @@ import type { Ctx, Ended, Fight } from '../combat/fight-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { grant, noteFacts } from '../hunter/grant.ts';
 import type { Day, Granted } from '../hunter/grant.ts';
-import { pendingHeard, pendingOf } from '../hunter/pending.ts';
+import { pendingHeard, pendingOf, routeFor } from '../hunter/pending.ts';
 import type { PendingReward } from '../hunter/pending.ts';
 import { isEmptyReward, newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
@@ -266,19 +266,21 @@ export type ClearPresetRoom = {
   readonly stamp: EventStamp;
   readonly ranks: ReadonlyMap<SheetKey, Rank | null>;
 };
-/** What a preset Clear did: the next save, any local grants paid immediately (alone), any waiting records created (in a room), and items stashed. */
+/** What a preset Clear did: the next save, local grants paid, remote awards posted, any waiting records created, and items stashed. */
 export type SettledPreset = {
   readonly save: Save;
   readonly granted: readonly { readonly hid: string; readonly g: Granted }[];
+  readonly remotePaid: readonly { readonly key: SheetKey; readonly name: string; readonly rewards: Rewards }[];
   readonly pending: readonly PendingReward[];
   readonly stashed: readonly ItemTemplate[];
 };
 /**
  * Gate `gateId` cleared using its active clear preset (`recommended` or `edited`), in one atomic step.
  * Clears the gate, marks the preset `paid`, records every payee's `gate` fact, deposits unpicked checked items into
- * `save.stash` (refusing `stash-full` before writing anything), and routes each payee's exact preset reward by seat:
- * in a room (`room !== null`) every non-empty payee share becomes a `from: 'clear'` record in `settings.sync.pending`
- * for the GM's approval in Waiting for you and the Award form; playing alone (`room === null`) grants local payees right away.
+ * `save.stash` (refusing `stash-full` before writing anything), and routes each payee's reward through `routeFor`
+ * (`src/core/hunter/pending.ts`). For `from: 'clear'` on `alone` and `gm` seats, `routeFor` returns `'pay'`, so local
+ * payees are granted directly and remote payees receive `[award, noted]` in the outbox without bouncing to Pending
+ * rewards. Optional `crystalByPayee` supplies per-hunter guild crystal shares when the GM did not override crystal.
  */
 export function settleClearPreset(
   save: Save,
@@ -287,6 +289,7 @@ export function settleClearPreset(
   payees: readonly Payee[],
   room: ClearPresetRoom | null,
   day: Day,
+  crystalByPayee?: ReadonlyMap<string, number>,
 ): SettledPreset | Refused<'missing' | 'unchanged' | 'no-preset' | 'stash-full'> {
   const g = save.gates.find(x => x.id === gateId);
   if (!g) return refuse('missing');
@@ -294,8 +297,10 @@ export function settleClearPreset(
   const preset = g.preset, stamp = { at: day.at, cap: day.R.logCap };
   const { byPayee, stash } = partitionPresetItems(preset, payees);
   const due = xpDue(g, xpOf);
+  const crystalFor = (p: Payee): number => crystalByPayee?.get(p.kind === 'local' ? p.hid : p.key) ?? preset.crystal;
+  const firstCrystal = payees.length ? crystalFor(payees[0]!) : 0;
   const pay: ClearPay = {
-    due, xp: payees.length ? preset.xp : 0, gold: payees.length ? preset.gold : 0, crystal: payees.length ? preset.crystal : 0,
+    due, xp: payees.length ? preset.xp : 0, gold: payees.length ? preset.gold : 0, crystal: firstCrystal,
     items: preset.items.filter(i => i.checked).map(i => i.item.name),
     payees: payees.map(p => p.name),
   };
@@ -310,8 +315,14 @@ export function settleClearPreset(
   const fact = (rank: Rank | null) => gateFact(g, rank, toBreak);
   const localIds = new Set(payees.flatMap(p => (p.kind === 'local' ? [p.hid] : [])));
   let next: Save = { ...stashedSave, hunters: stashedSave.hunters.map(h => (localIds.has(h.id) ? noteFacts(h, [fact(h.rank)], day.R) : h)) };
+  const what = g.name.slice(0, EARNED_WHAT_MAX);
+  const rewardFor = (p: Payee): Rewards => {
+    const key = p.kind === 'local' ? p.hid : p.key;
+    return { ...newRewards(), xp: preset.xp, gold: preset.gold, crystal: crystalFor(p), items: [...(byPayee.get(key) ?? [])] };
+  };
 
-  if (room) {
+  const route = routeFor(room ? 'gm' : 'alone', 'clear');
+  if (route === 'wait' && room) {
     const notedEvents = payees.flatMap((p, i) => {
       if (p.kind !== 'remote') return [];
       const ev = newEvent('noted', { to: [p.key], facts: [fact(room.ranks.get(p.key) ?? null)] }, { ...room.stamp, seq: i });
@@ -320,11 +331,9 @@ export function settleClearPreset(
     });
     if (notedEvents.length) next = atOutbox(box => notedEvents.reduce((b, ev) => post(b, room.code, { kind: 'event', event: ev }).box, box))(next);
     const created: PendingReward[] = [];
-    const what = g.name.slice(0, EARNED_WHAT_MAX);
     for (let i = 0; i < payees.length; i++) {
       const p = payees[i]!;
-      const key = p.kind === 'local' ? p.hid : p.key;
-      const rw: Rewards = { ...newRewards(), xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: [...(byPayee.get(key) ?? [])] };
+      const rw = rewardFor(p);
       if (isEmptyReward(rw)) continue;
       const to: SheetKey = p.kind === 'local' ? sheetKeyOf(save.settings.deviceId, p.hid as HunterId) : p.key;
       const eid = newEventId({ ...room.stamp, seq: payees.length + i });
@@ -333,12 +342,28 @@ export function settleClearPreset(
       const rec = pendingOf(next).find(r => r.id === eid);
       if (rec) created.push(rec);
     }
-    return { save: next, granted: [], pending: created, stashed: stash };
+    return { save: next, granted: [], remotePaid: [], pending: created, stashed: stash };
   }
 
-  const locals = payees.flatMap(p => (p.kind === 'local'
-    ? [{ hid: p.hid, rewards: { ...newRewards(), xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: [...(byPayee.get(p.hid) ?? [])] } }]
-    : []));
-  const out = payAll(next, locals, { room: null, events: [] }, day, 'clear');
-  return { save: out.save, granted: out.granted, pending: [], stashed: stash };
+  const locals = payees.flatMap(p => (p.kind === 'local' ? [{ hid: p.hid, rewards: rewardFor(p) }] : []));
+  const remotePaid: { key: SheetKey; name: string; rewards: Rewards }[] = [];
+  const events: RoomEvent[] = [];
+  if (room) {
+    for (let i = 0; i < payees.length; i++) {
+      const p = payees[i]!;
+      if (p.kind !== 'remote') continue;
+      const rw = rewardFor(p);
+      if (!isEmptyReward(rw)) {
+        const awardEv = newEvent('award', { to: [p.key], rewards: rw, earned: { from: 'clear', what } }, { ...room.stamp, seq: i * 2 });
+        if (!awardEv) throw new Error('the room would refuse the clear preset award');
+        events.push(awardEv);
+      }
+      const notedEv = newEvent('noted', { to: [p.key], facts: [fact(room.ranks.get(p.key) ?? null)] }, { ...room.stamp, seq: i * 2 + 1 });
+      if (!notedEv) throw new Error('the room would refuse the fact of a gate the save has');
+      events.push(notedEv);
+      remotePaid.push({ key: p.key, name: p.name, rewards: rw });
+    }
+  }
+  const out = payAll(next, locals, { room: room ? room.code : null, events }, day, 'clear');
+  return { save: out.save, granted: out.granted, remotePaid, pending: [], stashed: stash };
 }

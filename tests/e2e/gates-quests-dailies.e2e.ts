@@ -250,8 +250,12 @@ test('the clear panel says the XP and gold each for the hunters ticked, more eac
   await gateCard(page, gate.id).locator('[data-act=clear]').tap();
   const form = await openClearPanel(page, gate.id);
   const gold = form.locator('[data-cleargold]'), boxes = form.locator('input[name=hid]');
+  const [low = 0, high = 0] = RULES.loot.E.gold;
+  const shownGold = async () => Number((await gold.innerText()).replace(/,/g, ''));
   await expect.poll(() => promisedXp(form)).toBe(share(gate.xp, 3));
-  await expect(gold).toHaveText(goldEachE(3));
+  const gold3 = await shownGold();
+  expect(gold3).toBeGreaterThanOrEqual(share(low, 3));
+  expect(gold3).toBeLessThanOrEqual(share(high, 3));
   await test.step('the note fits a 390 px wide phone: nothing runs past the panel or the screen', async () => {
     const note = form.locator('.gt-notes');
     await note.scrollIntoViewIfNeeded();
@@ -262,16 +266,18 @@ test('the clear panel says the XP and gold each for the hunters ticked, more eac
   });
   await boxes.nth(2).tap();
   await expect.poll(() => promisedXp(form)).toBe(share(gate.xp, 2));
-  await expect(gold).toHaveText(goldEachE(2));
+  const gold2 = await shownGold();
+  expect(gold2).toBeGreaterThan(gold3);
+  expect(gold2).toBeGreaterThanOrEqual(share(low, 2));
+  expect(gold2).toBeLessThanOrEqual(share(high, 2));
   await boxes.nth(2).tap();
   await expect.poll(() => promisedXp(form)).toBe(share(gate.xp, 3));
+  await expect.poll(shownGold).toBe(gold3);
   const after = await submitClear(page, form);
   expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => share(gate.xp, 3)));
   const goldGot = (await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.gold)) as number[]).map((g, i) => g - goldBefore[i]!);
-  const [low = 0, high = 0] = RULES.loot.E.gold;
   expect(new Set(goldGot).size, 'each hunter takes the same share of the roll').toBe(1);
-  expect(goldGot[0]!).toBeGreaterThanOrEqual(share(low, 3));
-  expect(goldGot[0]!).toBeLessThanOrEqual(share(high, 3));
+  expect(goldGot[0]!).toBe(gold3);
 });
 
 /** The XP of every monster in the running fight: what Award XP shares among its hunters as the gate's pot. */
@@ -311,7 +317,7 @@ test('a gate cleared with no hunters selected still lets its running fight award
     const form = await openClearPanel(page, gate.id, false);
     for (const box of await form.locator('input[name=hid]').all()) if (await box.isChecked()) await box.tap();
     await form.locator('button[type=submit]').tap();
-    await sys(page, 'Clear without rewards');
+    await sys(page, 'Clear without hunters');
     await expect(form).toBeHidden();
     await dismissAll(page);
     expect(await lifetimeXp(page), 'the clear paid nobody').toEqual(start);

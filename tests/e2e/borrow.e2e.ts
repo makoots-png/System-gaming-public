@@ -131,10 +131,6 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
       }
       await cform.locator('button[type=submit]').tap();
       await dismissAll(gm);
-      await go(gm, 'gm');
-      const waitSec = gm.locator('.gm-sec[data-sec=waiting]');
-      if (await waitSec.locator('.gm-body').isHidden()) await waitSec.locator('.gm-tog').tap();
-      await waitSec.locator('.gm-pw-row', { hasText: HUNTER }).locator('[data-pw-approve]').tap();
     };
 
     // First clear: 100 gold -> 50 to debt (7 left), 25 burned, 25 kept; 40 XP -> 10 XP.
@@ -156,6 +152,7 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
     await dismissAll(player);
     await expect.poll(async () => { const h = await activeHunter(player); return { gold: h.gold, debt: h.debt, xp: h.xp }; }).toEqual({ gold: 114, debt: 0, xp: 50 });
     await expect(player.locator('[data-debt]')).toBeHidden();
+    await go(gm, 'gm');
     await expect(card.locator('[data-debt-chip]')).toHaveCount(0, { timeout: 15_000 });
   });
 });
