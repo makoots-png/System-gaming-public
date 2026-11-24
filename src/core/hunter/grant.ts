@@ -47,8 +47,10 @@ import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { Fact, LifeHow } from './facts.ts';
 import { restStep } from './rests.ts';
-import { canRaise, debtPaidLog, debtStep, paysDebt, raiseOwes, standingStep } from './revive-standing.ts';
+import { canRaise, debtStep, paysDebt, raiseOwes, standingStep } from './revive-standing.ts';
 import type { DebtPaid, DebtXpCut, Raise } from './revive-standing.ts';
+import { guildGoldStep, guildPaidLog, takesGuildCut } from './guild.ts';
+import type { GuildGoldCut } from './guild.ts';
 import { saveId, sheetKeyOf } from '../ids.ts';
 import type { HunterId, IdOf, RoomCode } from '../ids.ts';
 import type { DayKey } from '../day.ts';
@@ -144,6 +146,8 @@ export type Granted = {
   done: StepDone[];
   /** Clear gold split applied under System revive debt in this grant, or null when no gold went to debt or debt costs. */
   debtPaid: DebtPaid | null;
+  /** Guild gold cut applied on a table world-gate clear in this grant, or null when none applied. */
+  guildCut: GuildGoldCut | null;
   /** Earned XP reduced under System revive debt in this grant, or null when XP was not reduced. */
   debtXp: DebtXpCut | null;
 };
@@ -193,11 +197,15 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     if (!isRefused(next)) { h = next; took.push(s); }
   }
 
+  // Order C (`debtFirst`): System debt splits gross clear gold first, then the guild gold cut runs on post-debt kept
+  // gold (only on table world-gate clears, `from === 'clear'`), always leaving at least 1 gold kept.
   const pay = r.gold > 0 && paysDebt(o.from) && h.debt > 0
     ? debtStep(h.debt, { type: 'clearGold', gold: r.gold }, R)
     : { debt: h.debt, paid: 0, burn: 0, kept: r.gold, xp: 0 };
+  const guildCut = pay.kept > 0 && takesGuildCut(o.from) ? guildGoldStep(pay.kept, h, R) : null;
+  const finalKept = guildCut ? guildCut.kept : pay.kept;
   const goldBefore = h.gold;
-  if (pay.kept) h = addGold(h, pay.kept);
+  if (finalKept) h = addGold(h, finalKept);
   const gold = h.gold - goldBefore;
   // Mana crystal never pays System debt automatically; grant applies it directly through crystal.ts.
   const crystalBefore = h.crystal;
@@ -237,7 +245,7 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     h = l.hunter; done = l.done; said = l.said;
   }
 
-  const debtLog = debtPaidLog(h.name, debtPaid, debtXp, debtXpCleared ? xp : 0);
+  const debtLog = guildPaidLog(h.name, debtPaid, guildCut, debtXp, debtXpCleared ? xp : 0);
   const lines = grantLines(
     R,
     { ...r, xp, gold, crystal, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
@@ -245,13 +253,14 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
       build: buildLine,
       level: { from: h0.level, to: h.level },
       ...(debtPaid ? { debt: debtPaid } : {}),
+      ...(guildCut ? { guildCut } : {}),
       ...(debtXp ? { debtXp } : {}),
       ...(debtXpCleared ? { debtXpCleared: true } : {}),
     },
   );
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
-  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, debtXp };
+  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp };
 }
 
 // ── a Job Change chain event ──

@@ -20,6 +20,7 @@ import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hu
 import { RAISE_REFUSED, RAISE_TITLE, canRaise, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
 import { setGold } from '../core/hunter/inventory.ts';
 import { setCrystal } from '../core/hunter/crystal.ts';
+import { GUILD_WORDS, guildSheetLine } from '../core/hunter/guild.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
 import { removeBundle, saveBundle } from '../core/rewards.ts';
@@ -50,6 +51,7 @@ const CSS = `
 .id-who{flex:1;min-width:0}
 .id-name{font-family:var(--font-display);font-weight:600;font-size:calc(20px*var(--ts));color:var(--ice);overflow-wrap:anywhere}
 .id-sub{font-size:calc(13px*var(--ts));color:var(--cyan-dim);overflow-wrap:anywhere}
+.id-guild{font-size:calc(12px*var(--ts));color:var(--cyan-dim);overflow-wrap:anywhere;margin-top:2px}
 .id-read [data-idedit]{min-height:var(--control-h)}
 .id-done{flex:1 1 100%;display:flex;justify-content:flex-end}
 .id-done button{min-height:var(--control-h)}
@@ -485,7 +487,7 @@ export function register(app) {
       el.innerHTML = `
         <div class="id-read" data-idread>
           <button type="button" class="emb-btn" data-emblem aria-label="Emblem and color"><span data-emb></span><span>Emblem</span></button>
-          <div class="id-who"><div class="id-name" data-idname>Hunter</div><div class="id-sub" data-idsub></div></div>
+          <div class="id-who"><div class="id-name" data-idname>Hunter</div><div class="id-sub" data-idsub></div><div class="id-guild" data-guild-line></div></div>
           <button type="button" data-idedit aria-expanded="false">Edit</button>
         </div>
         <div class="id-row" data-idform hidden>
@@ -612,6 +614,7 @@ export function register(app) {
     for (const [f, v] of [['name', h.name], ['job', h.job ?? ''], ['title', t ? t.name : '']]) setVal(q(`[data-f="${f}"]`), v);
     q('[data-idname]').textContent = h.name;
     q('[data-idsub]').textContent = [h.job ?? '', t ? t.name : ''].filter(Boolean).join(' \u00b7 ');
+    q('[data-guild-line]').textContent = guildSheetLine(h, r);
     const sameHunter = shownHunter === h.id, levelled = sameHunter && shownLevel !== null && h.level > shownLevel;
     shownHunter = h.id; shownLevel = h.level;
     q('[data-lv]').textContent = h.level;
@@ -941,7 +944,10 @@ export function register(app) {
         ${RAW.map(([k, l]) => ui.field(l, `<input type="number" step="1" inputmode="numeric" data-raw="${k}">`)).join('')}
         ${STAT_KEYS.map(k => ui.field(`${STAT_SHORT[k]} (base)`, `<input type="number" step="1" min="1" inputmode="numeric" data-rawstat="${k}">`)).join('')}
         ${ui.field('Rank', `<select data-rawrank>${rules().rankLevels ? Object.keys(rules().rankLevels).map(r => `<option value="${r}">${r}</option>`).join('') : ''}</select>`)}
-      </div><p class="dv-note">Changes save immediately. Stat edits lock in right away and cannot be undone with the minus button.</p>`;
+      </div><div class="bar-ctrl"><button type="button" data-raw-guild>${esc(GUILD_WORDS.button)}</button></div><p class="dv-note">Changes save immediately. Stat edits lock in right away and cannot be undone with the minus button.</p>`;
+      el.addEventListener('click', e => {
+        if (e.target.closest('[data-raw-guild]')) void app.api.guild.edit({ kind: 'local', hunterId: store.active().id }, null);
+      });
       el.addEventListener('change', e => {
         const i = e.target, h = store.active(); let v = Math.trunc(Number(i.value));
         // a refused edit is told, and the fields are drawn again from the save

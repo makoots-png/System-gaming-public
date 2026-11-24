@@ -17,6 +17,8 @@ import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
 import { sellPrice, shopOpen } from './hunter/inventory.ts';
 import { clearCrystalEach, gateCrystalPool, personalCrystal } from './hunter/crystal.ts';
+import { GUILD_ARCHETYPES, GUILD_NAMES, GUILD_STANDING_LABELS, GUILD_TABLE_PERKS, allowedStandings, tableCrystalShare, tableGoldCut } from './hunter/guild.ts';
+import type { GuildArchetype, GuildStanding } from './hunter/guild.ts';
 import { borrowCap, debtPayoffClears, debtTermsLine, raiseOwes } from './hunter/revive-standing.ts';
 import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
@@ -224,10 +226,65 @@ export function crystalLines(R: Pick<Rules, 'priceBase' | 'gateParty' | 'crystal
   const C = R.crystal;
   return [
     '1 mana crystal equals 1 gold at Bureau assay. Mana crystal is a currency balance in your bag, separate from Resurrection Crystals.',
-    `Right now, you can only sell mana crystal for gold. Sell at Bureau exchange (${pct(C.rates.bureau)}) when you have no System debt, or at a Stair fence (${pct(C.rates.stair)}) off the record even while you owe System debt. Helix clerks (${pct(C.rates.helix)}) serve guild hunters only and are not open yet.`,
-    `Clearing a world gate yields a mana crystal pool of ${C.poolBase}x the rank's base value (${C.specialMult}x for Red and Double gates). Without a guild contract, your party keeps ${pct(C.unsignedShare)} salvage, split evenly across the party. Clearing a personal gate yields ${pct(C.personalShare)} of the rank's base value in mana crystal to you alone.`,
+    `Right now, you can only sell mana crystal for gold. Helix clerks (${pct(C.rates.helix)}) serve debt-free guild hunters. Bureau exchange (${pct(C.rates.bureau)}) serves debt-free hunters, and Stair fences (${pct(C.rates.stair)}) buy off the record even while you owe System debt.`,
+    `Clearing a world gate yields a mana crystal pool of ${C.poolBase}x the rank's base value (${C.specialMult}x for Red and Double gates). Unsigned parties earn ${pct(C.unsignedShare)} salvage, split evenly across the party. Guild hunters earn their guild's crystal share by standing. Clearing a personal gate yields ${pct(C.personalShare)} of the rank's base value in mana crystal to you alone.`,
     'System debt is gold only. Mana crystal never pays System debt automatically, and you cannot borrow mana crystal.',
   ];
+}
+
+/** Summary row for one guild archetype on the Rules page (compact one-line overview for phones). */
+export interface GuildSummaryRow {
+  readonly archetype: GuildArchetype;
+  readonly name: string;
+  readonly coreCGoldCut: string;
+  readonly crystalShares: string;
+  readonly tablePerks: string;
+}
+
+/** One standing row (offered standings only) across ranks E to S for the active hunter's own guild table. */
+export interface GuildStandingRow {
+  readonly standing: GuildStanding;
+  readonly label: string;
+  readonly goldCuts: Readonly<Record<Rank, string>>;
+  readonly crystalShare: string;
+}
+
+/** Plain-language rules for guilds: gold cuts, crystal shares, Order C debt stacking, Helix access, and GM-run table perks. */
+export function guildLines(R: Pick<Rules, 'crystal' | 'guilds'>): readonly string[] {
+  return [
+    `Joining a guild is optional. Unsigned hunters keep 100% of their clear gold and earn ${pct(R.crystal.unsignedShare)} salvage from world-gate mana crystal pools.`,
+    `Guild hunters pay a cut of System clear gold on table world-gate clears (anchored at ${pct(R.guilds.baseGoldCut)} for an Ironwake E-rank Rookie) and earn a guild share of the gate's mana crystal pool. Higher standing (Rookie, Core, Ace) and higher rank reduce your gold cut, and higher standing raises your crystal share. Ninth Hour recruits Core and Ace hunters only (no Rookie standing).`,
+    'Personal gates, solo runs, quests, feats, stories, manual GM awards, shop sales, and crystal sales take no guild gold cut.',
+    'When you owe System debt on a world-gate clear, the System debt split applies to your clear gold first. Your guild gold cut then applies to the gold you keep, rounded down, so you always keep at least 1 gold.',
+    `Joining a guild unlocks Helix clerks (${pct(R.crystal.rates.helix)}) when you owe no System debt. The GM can set custom gold cut or crystal share rates per hunter. Monthly retainers, signing bonuses, and guild vault Resurrection Crystal cover are GM-run table perks and are not paid automatically by the app.`,
+  ];
+}
+
+/** Compact one-row-per-archetype summary for the Rules page (Core C gold cut, standing crystal shares, and GM-run table perks). */
+export function guildSummaryRows(R: Pick<Rules, 'crystal' | 'guilds'>): readonly GuildSummaryRow[] {
+  return GUILD_ARCHETYPES.map(archetype => {
+    const coreCut = tableGoldCut(archetype, 'core', 'C', R) ?? 0;
+    const shares = allowedStandings(archetype, R)
+      .map(s => `${GUILD_STANDING_LABELS[s][0]} ${pct(tableCrystalShare(archetype, s, R) ?? 0)}`)
+      .join(' / ');
+    return {
+      archetype,
+      name: GUILD_NAMES[archetype],
+      coreCGoldCut: pct(coreCut),
+      crystalShares: shares,
+      tablePerks: GUILD_TABLE_PERKS[archetype].summary,
+    };
+  });
+}
+
+/** Full Standing x Rank rates for one archetype (offered standings only; Ninth Hour omits Rookie). */
+export function guildStandingRows(archetype: GuildArchetype, R: Pick<Rules, 'guilds'>): readonly GuildStandingRow[] {
+  return allowedStandings(archetype, R).map(standing => ({
+    standing,
+    label: GUILD_STANDING_LABELS[standing],
+    goldCuts: Object.fromEntries(RANKS.map(r => [r, pct(tableGoldCut(archetype, standing, r, R) ?? 0)])) as Record<Rank, string>,
+    crystalShare: pct(tableCrystalShare(archetype, standing, R) ?? 0),
+  }));
 }
 
 /** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */

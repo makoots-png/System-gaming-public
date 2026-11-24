@@ -843,6 +843,12 @@ export type ChronicleApi = {
   open(id: string): void;
 };
 
+/** The GM's guild editor for a local hunter or a player's sheet in a room (src/views/guild.js). */
+export type GuildApi = {
+  /** Opens the GM Guild modal for `who` (`sheet` for a remote player hunter; null for a local hunter). */
+  edit(who: HunterRef, sheet: Hunter | null): Promise<void>;
+};
+
 /** Every `app.api` name and the type of what its module registers. */
 export type AppApi = {
   award: AwardApi;
@@ -857,6 +863,7 @@ export type AppApi = {
   effects: EffectsApi;
   forge: ForgeApi;
   gates: GatesApi;
+  guild: GuildApi;
   hunter: HunterApi;
   identity: IdentityApi;
   inventory: InventoryApi;

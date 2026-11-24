@@ -8,7 +8,7 @@ import { itemAbilityId } from '../core/registry/abilities.ts';
 import { itemIcon } from '../core/registry/icon-defaults.ts';
 import { icon, sprite } from './icons.ts';
 import { BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
-import { CRYSTAL_BUYERS, CRYSTAL_WORDS, addCrystal, buyerStatus, defaultBuyer, sellCrystalStep, sellPlan } from '../core/hunter/crystal.ts';
+import { CRYSTAL_BUYERS, CRYSTAL_WORDS, addCrystal, buyerRate, buyerStatus, defaultBuyer, sellCrystalStep, sellPlan } from '../core/hunter/crystal.ts';
 import { stepTime } from '../core/day.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { debtLine } from '../core/hunter/revive-standing.ts';
@@ -292,7 +292,7 @@ export function register(app) {
         const pick = { amount: h.crystal, buyer: defaultBuyer(h) };
         const pct = r => `${Math.round(r * 1000) / 10}%`;
         const buyerRows = CRYSTAL_BUYERS.map(b => {
-          const st = buyerStatus(h, b), rate = R.crystal.rates[b], info = CRYSTAL_WORDS.buyers[b];
+          const st = buyerStatus(h, b), rate = buyerRate(h, b, R), info = CRYSTAL_WORDS.buyers[b];
           const note = st.open === false ? CRYSTAL_WORDS.buyerLocked[st.why] : info.note;
           return `<label class="cx-buyer${st.open ? '' : ' off'}" data-cx-row="${b}">
             <input type="radio" name="cx-buyer" value="${b}"${b === pick.buyer ? ' checked' : ''}${st.open ? '' : ' disabled'}>

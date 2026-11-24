@@ -7,8 +7,10 @@ import { isStatusKey } from './combat/effect-ops.ts';
 import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseStatusDef, statusTooLarge } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
-import { debtPaidLine, debtXpClearedLine, debtXpLine } from './hunter/revive-standing.ts';
+import { debtXpClearedLine, debtXpLine } from './hunter/revive-standing.ts';
 import type { DebtPaid, DebtXpCut } from './hunter/revive-standing.ts';
+import { clearGoldLine } from './hunter/guild.ts';
+import type { GuildGoldCut } from './hunter/guild.ts';
 import { parseItem } from './registry/items.ts';
 import { parsePowers } from './registry/powers.ts';
 import type { Powers } from './registry/powers.ts';
@@ -244,6 +246,7 @@ export type GrantMore = {
   readonly build?: string;
   readonly level?: { readonly from: number; readonly to: number };
   readonly debt?: DebtPaid;
+  readonly guildCut?: GuildGoldCut;
   readonly debtXp?: DebtXpCut;
   readonly debtXpCleared?: boolean;
 };
@@ -262,7 +265,7 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   else if (r.xp) out.push(more.debtXpCleared && r.xp > 0 ? debtXpClearedLine(r.xp) : amount(r.xp, 'XP'));
   const lost = more.level ? more.level.from - more.level.to : 0;
   if (more.level && lost > 0) out.push(`Loses ${lost} level${lost === 1 ? '' : 's'} (now level ${more.level.to})`);
-  const paid = more.debt ? debtPaidLine(more.debt) : null;
+  const paid = clearGoldLine(more.debt ?? null, more.guildCut ?? null);
   if (paid) out.push(paid);
   else if (r.gold) out.push(amount(r.gold, 'gold'));
   if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));

@@ -27,6 +27,7 @@ import { shadowRises } from '../core/hunter/shadows.ts';
 import { record } from '../core/hunter/chronicle.ts';
 import { chapterLanded, whoseLine } from '../core/story/story.ts';
 import { weightHeard } from '../core/table-weight.ts';
+import { GUILD_WORDS, guildStep } from '../core/hunter/guild.ts';
 import type { ChapterGiven } from '../core/story/story.ts';
 import { deviceOf, hunterIdOf } from '../core/protocol.ts';
 import { rewardLines } from '../core/rewards.ts';
@@ -192,6 +193,15 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // a reward this phone's hunter earned by itself, asked of the GM (hunter/pending.ts): the GM's phone keeps it waiting
   // (gm.js); an approved one comes back as an `award`
   rewardAsk: GM_ONLY_READS,
+  // the GM assigned, updated, or removed this phone's hunter's guild membership (hunter/guild.ts `guildStep`)
+  guild: { once: true, land: (p, hids, app) => save => {
+    const stamp = { at: app.now(), cap: app.rules().logCap };
+    return forEach(save, hids, (s, h) => {
+      const r = guildStep(s, h.id, p.guild, stamp);
+      if (isRefused(r)) return { save: s, tell: nothing };
+      return { save: r.save, tell: () => app.toast('! Guild', GUILD_WORDS.playerToast(p.guild), { kind: 'info' }) };
+    });
+  } },
 };
 
 /**

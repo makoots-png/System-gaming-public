@@ -89,6 +89,7 @@ const SHARE_OF_SPAWNS = wholeIn(0, 100, 'percentage chance for personal gate spa
 const COST = wholeIn(10, 1000, 'action time in hundredths of a standard action. Under 10 causes rapid endless turns, and above 1000 makes one turn last ten actions');
 const STAT_CAP = wholeIn(0, 1000, 'maximum bonus from this stat curve. 0 disables this stat bonus');
 const SHARE = realIn(0, 1, 'fraction between 0 (none) and 1 (all)');
+const GUILD_GOLD_CUT = realIn(0, 0.9, 'share of System clear gold collected by a guild, from 0 to 0.9');
 const KIT_WEIGHT = wholeIn(0, 200, 'armor kit weight. 200 is four times the maximum base carry capacity');
 const KIT_GUARD = wholeIn(0, 1000, 'armor or magic resist for this kit. At 1000, attacks still deal about a tenth of their damage');
 const KIND_FACTOR = realIn(0.1, 20, 'multiplier on monster HP or power. Under 0.1 makes it negligible, and above 20 makes it unbeatable');
@@ -250,6 +251,73 @@ const SPEC = {
       helix: of(0.9, SHARE),
       bureau: of(0.85, SHARE),
       stair: of(0.7, SHARE),
+    },
+  },
+  // Guild contracts (unit 4, economy balance arena Finding 5): anchored at baseGoldCut 0.25 (Ironwake E Rookie).
+  // Each archetype stores System clear gold cuts by Standing x Rank (Ninth Hour has Core and Ace only, no Rookie row)
+  // and flat party crystal shares by Standing matching crystal-economy.md sections 4.2 and 4.4. Retainers, signing
+  // bonuses, and vault Resurrection Crystal cover stay GM-run at the table.
+  guilds: {
+    baseGoldCut: of(0.25, GUILD_GOLD_CUT),
+    archetypes: {
+      ironwake: {
+        goldCut: {
+          rookie: { E: of(0.25, GUILD_GOLD_CUT), D: of(0.22, GUILD_GOLD_CUT), C: of(0.19, GUILD_GOLD_CUT), B: of(0.16, GUILD_GOLD_CUT), A: of(0.13, GUILD_GOLD_CUT), S: of(0.1, GUILD_GOLD_CUT) },
+          core: { E: of(0.18, GUILD_GOLD_CUT), D: of(0.16, GUILD_GOLD_CUT), C: of(0.14, GUILD_GOLD_CUT), B: of(0.12, GUILD_GOLD_CUT), A: of(0.1, GUILD_GOLD_CUT), S: of(0.08, GUILD_GOLD_CUT) },
+          ace: { E: of(0.11, GUILD_GOLD_CUT), D: of(0.09, GUILD_GOLD_CUT), C: of(0.08, GUILD_GOLD_CUT), B: of(0.07, GUILD_GOLD_CUT), A: of(0.06, GUILD_GOLD_CUT), S: of(0.05, GUILD_GOLD_CUT) },
+        },
+        crystalShare: {
+          rookie: of(0.12, SHARE),
+          core: of(0.18, SHARE),
+          ace: of(0.25, SHARE),
+        },
+      },
+      lantern: {
+        goldCut: {
+          rookie: { E: of(0.12, GUILD_GOLD_CUT), D: of(0.11, GUILD_GOLD_CUT), C: of(0.1, GUILD_GOLD_CUT), B: of(0.09, GUILD_GOLD_CUT), A: of(0.08, GUILD_GOLD_CUT), S: of(0.07, GUILD_GOLD_CUT) },
+          core: { E: of(0.08, GUILD_GOLD_CUT), D: of(0.07, GUILD_GOLD_CUT), C: of(0.06, GUILD_GOLD_CUT), B: of(0.06, GUILD_GOLD_CUT), A: of(0.05, GUILD_GOLD_CUT), S: of(0.04, GUILD_GOLD_CUT) },
+          ace: { E: of(0.05, GUILD_GOLD_CUT), D: of(0.04, GUILD_GOLD_CUT), C: of(0.04, GUILD_GOLD_CUT), B: of(0.03, GUILD_GOLD_CUT), A: of(0.03, GUILD_GOLD_CUT), S: of(0.02, GUILD_GOLD_CUT) },
+        },
+        crystalShare: {
+          rookie: of(0.25, SHARE),
+          core: of(0.3, SHARE),
+          ace: of(0.35, SHARE),
+        },
+      },
+      aurelian: {
+        goldCut: {
+          rookie: { E: of(0.28, GUILD_GOLD_CUT), D: of(0.25, GUILD_GOLD_CUT), C: of(0.22, GUILD_GOLD_CUT), B: of(0.18, GUILD_GOLD_CUT), A: of(0.14, GUILD_GOLD_CUT), S: of(0.1, GUILD_GOLD_CUT) },
+          core: { E: of(0.2, GUILD_GOLD_CUT), D: of(0.17, GUILD_GOLD_CUT), C: of(0.15, GUILD_GOLD_CUT), B: of(0.12, GUILD_GOLD_CUT), A: of(0.1, GUILD_GOLD_CUT), S: of(0.08, GUILD_GOLD_CUT) },
+          ace: { E: of(0.11, GUILD_GOLD_CUT), D: of(0.09, GUILD_GOLD_CUT), C: of(0.05, GUILD_GOLD_CUT), B: of(0.04, GUILD_GOLD_CUT), A: of(0.04, GUILD_GOLD_CUT), S: of(0.03, GUILD_GOLD_CUT) },
+        },
+        crystalShare: {
+          rookie: of(0.1, SHARE),
+          core: of(0.15, SHARE),
+          ace: of(0.25, SHARE),
+        },
+      },
+      'ninth-hour': {
+        goldCut: {
+          core: { E: of(0.2, GUILD_GOLD_CUT), D: of(0.18, GUILD_GOLD_CUT), C: of(0.16, GUILD_GOLD_CUT), B: of(0.14, GUILD_GOLD_CUT), A: of(0.11, GUILD_GOLD_CUT), S: of(0.08, GUILD_GOLD_CUT) },
+          ace: { E: of(0.14, GUILD_GOLD_CUT), D: of(0.12, GUILD_GOLD_CUT), C: of(0.1, GUILD_GOLD_CUT), B: of(0.08, GUILD_GOLD_CUT), A: of(0.06, GUILD_GOLD_CUT), S: of(0.04, GUILD_GOLD_CUT) },
+        },
+        crystalShare: {
+          core: of(0.2, SHARE),
+          ace: of(0.3, SHARE),
+        },
+      },
+      redline: {
+        goldCut: {
+          rookie: { E: of(0.12, GUILD_GOLD_CUT), D: of(0.11, GUILD_GOLD_CUT), C: of(0.1, GUILD_GOLD_CUT), B: of(0.09, GUILD_GOLD_CUT), A: of(0.08, GUILD_GOLD_CUT), S: of(0.07, GUILD_GOLD_CUT) },
+          core: { E: of(0.09, GUILD_GOLD_CUT), D: of(0.08, GUILD_GOLD_CUT), C: of(0.07, GUILD_GOLD_CUT), B: of(0.06, GUILD_GOLD_CUT), A: of(0.05, GUILD_GOLD_CUT), S: of(0.04, GUILD_GOLD_CUT) },
+          ace: { E: of(0.06, GUILD_GOLD_CUT), D: of(0.05, GUILD_GOLD_CUT), C: of(0.05, GUILD_GOLD_CUT), B: of(0.04, GUILD_GOLD_CUT), A: of(0.03, GUILD_GOLD_CUT), S: of(0.03, GUILD_GOLD_CUT) },
+        },
+        crystalShare: {
+          rookie: of(0.35, SHARE),
+          core: of(0.35, SHARE),
+          ace: of(0.4, SHARE),
+        },
+      },
     },
   },
   // design 2.3: the points an item may spend beyond its slot's free numbers

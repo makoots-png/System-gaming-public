@@ -6,7 +6,7 @@ import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLe
 import { bossDifficultyHtml, difficultySliderHtml, readEditDifficultyEvents, wireDifficultyLive } from './difficulty-control.js';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearCrystalEach, clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
+import { clearCrystalEach, clearCrystalFor, clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
 import { REWARD_BOUNDS, newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -177,7 +177,7 @@ export function register(app) {
     }
     const dropped = api.inventory.rollLoot(g.rank, { boss: true }) || [];
     const gold = dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items = dropped.flatMap(e => (e.kind === 'item' ? [e.item] : []));
-    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty, app.rules()); if (!plan) return false;
+    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty, app.rules(), new Map(rem.map(r => [r.key, r.data]))); if (!plan) return false;
     const share = plan.shares[0] || { xp: plan.due, gold, crystal: 0, items: [] }, taker = plan.shares.find(x => x.items.length);
     // the player's device assigns its own item ids
     const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
@@ -572,12 +572,14 @@ export function register(app) {
           : `<p class="empty">${esc(PRESET_WORDS.noItems)}</p>`;
         const add = p.items.length < PRESET_ITEMS_MAX
           ? `<div class="gt-padd">${ui.field(PRESET_WORDS.addItemLabel, `<select data-padd-pick>${presetPickOpts()}</select>`)}<button type="button" data-act="preset-add">${esc(PRESET_WORDS.addItem)}</button></div>` : '';
+        const hasGuild = store.get().hunters.some(h => h.guild) || remotes().some(r => r.data.guild);
         return `<form class="gt-panel" data-form="preset" aria-label="${esc(PRESET_WORDS.title)}">
           <div class="lbl">${esc(PRESET_WORDS.title)}</div>
           <div class="grid2">
             ${ui.field(PRESET_WORDS.xpLabel, `<input type="number" name="xp" min="0" max="${REWARD_BOUNDS.xp}" step="1" inputmode="numeric" value="${esc(p.xp)}">`)}
             ${ui.field(PRESET_WORDS.goldLabel, `<input type="number" name="gold" min="0" max="${REWARD_BOUNDS.gold}" step="1" inputmode="numeric" value="${esc(p.gold)}">`)}
             ${ui.field(PRESET_WORDS.crystalLabel, `<input type="number" name="crystal" min="0" max="${REWARD_BOUNDS.crystal}" step="1" inputmode="numeric" value="${esc(p.crystal)}">`)}</div>
+          ${hasGuild ? `<div class="gt-notes" data-preset-guild-note>${esc(PRESET_WORDS.mixedGuildNote)}</div>` : ''}
           <div class="lbl">${esc(PRESET_WORDS.itemsLabel)}</div>
           <div class="gt-pitems">${rows}</div>
           ${add}
@@ -604,7 +606,14 @@ export function register(app) {
       // the shares that pay (pay.ts `shareEach`, read by `clearShares`): no hunter picked gets nothing
       const xpEach = (g, n) => ui.fmt(shareEach(dueXp(g), n, app.rules().gateParty));
       const goldEach = (g, n) => { const e = clearGoldEach(app.rules(), g.rank, n); return e.low === e.high ? ui.fmt(e.low) : `${ui.fmt(e.low)} to ${ui.fmt(e.high)}`; };
-      const crystalEach = (g, n) => ui.fmt(clearCrystalEach(g, n, app.rules()));
+      const crystalEach = (g, ids) => {
+        const picked = [...ids], n = picked.length, R = app.rules();
+        if (!n) return ui.fmt(clearCrystalEach(g, 0, R));
+        const remMap = new Map(remotes().map(r => [r.key, r.data]));
+        const vals = picked.map(id => clearCrystalFor(g, n, store.hunter(id) || remMap.get(id) || null, R));
+        const lo = Math.min(...vals), hi = Math.max(...vals);
+        return lo === hi ? ui.fmt(lo) : `${ui.fmt(lo)} to ${ui.fmt(hi)}`;
+      };
       function clearPanel(g) {
         const on = fighters(g), list = payees(), n = list.filter(h => on.has(h.id)).length;
         if (isActivePreset(g.preset)) {
@@ -625,7 +634,7 @@ export function register(app) {
           <div class="lbl">Award to</div>
           <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
           ${ui.field('Loot item goes to', `<select name="to"><option value="">First selected hunter</option>${hunterOpts('')}</select>`)}
-          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP, <span data-cleargold>${goldEach(g, n)}</span> gold, and <span data-clearcrystal>${crystalEach(g, n)}</span> mana crystal. Fewer hunters get a larger share.${g.xpPaid > 0 ? ` Earlier fights in this gate already awarded ${ui.fmt(g.xpPaid)} XP.` : ''} Rolls ${esc(g.rank)}-rank boss loot (two item rolls).</div>
+          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP, <span data-cleargold>${goldEach(g, n)}</span> gold, and <span data-clearcrystal>${crystalEach(g, on)}</span> mana crystal. Fewer hunters get a larger share.${g.xpPaid > 0 ? ` Earlier fights in this gate already awarded ${ui.fmt(g.xpPaid)} XP.` : ''} Rolls ${esc(g.rank)}-rank boss loot (two item rolls).</div>
           <div class="gt-acts"><button type="button" data-act="cancel-panel">Cancel</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
       }
       function editPanel(g) {
@@ -843,7 +852,7 @@ export function register(app) {
             if (cr) cr.textContent = PRESET_WORDS.clearNoteCrystal(n ? g.preset.crystal : 0, ui.fmt);
             const ul = f.querySelector('[data-clearitems]');
             if (ul) { const html = presetClearItems(g, pickedIds); ul.innerHTML = html; ul.hidden = !html; }
-          } else { x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); if (cr) cr.textContent = crystalEach(g, n); }
+          } else { x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); if (cr) cr.textContent = crystalEach(g, pickedIds); }
         }
       });
       el.addEventListener('submit', async e => {

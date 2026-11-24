@@ -3,7 +3,8 @@
 import { RANKS, dueAt as dueIn, parseOverrides, refusalWords } from '../edge/rules.ts';
 import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef, ofLife } from '../core/hunter/chips.ts';
-import { RAISE_CHIPS, debtChip, debtPreviewLine, debtStep, paysDebt } from '../core/hunter/revive-standing.ts';
+import { RAISE_CHIPS, debtChip, debtStep, paysDebt } from '../core/hunter/revive-standing.ts';
+import { GUILD_WORDS, clearPreviewLine, guildChip, guildGoldStep, takesGuildCut } from '../core/hunter/guild.ts';
 import { gmSource } from '../core/effects.ts';
 import { playerHeld } from '../core/combat/fight-save.ts';
 import { parseSheetKey, sheetKeyOf } from '../core/ids.ts';
@@ -255,6 +256,7 @@ export function register(app) {
     // a dead hunter's revive ladder: whether the System can still raise it (the GM applies the hour, world rule 3)
     const ladder = life && life.at === 'dead' && RAISE_CHIPS[h.reviveLeft] ? `<span class="gm-chip" data-raise-chip>${esc(RAISE_CHIPS[h.reviveLeft])}</span>` : '';
     const debtTag = debtChip(h.debt), debt = debtTag ? `<span class="gm-chip pen" data-debt-chip>${esc(debtTag)}</span>` : '';
+    const guildTag = guildChip(h.guild), guild = guildTag ? `<span class="gm-chip" data-guild-chip>${esc(guildTag)}</span>` : '';
     const revive = life && can(life, 'revive') ? `<button type="button" class="primary" data-grevive aria-label="Revive ${esc(h.name)}">Revive</button>` : '';
     const cond = drawn + (Array.isArray(h.conditions) ? h.conditions : []).filter(c => c && typeof c.key === 'string')
       .map(c => remote
@@ -273,13 +275,13 @@ export function register(app) {
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · player phone' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
-      <div class="gm-chips">${ladder}${debt}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
+      <div class="gm-chips">${ladder}${debt}${guild}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <span class="lbl gm-hp-lbl">Quick HP</span>
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>
         <button type="button" data-hp="1" aria-label="Heal 1 to ${esc(h.name)}" title="Heal 1 to ${esc(h.name)}">+1</button><button type="button" data-hp="5" aria-label="Heal 5 to ${esc(h.name)}" title="Heal 5 to ${esc(h.name)}">+5</button>
-        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">+ Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give award…</button></div>
+        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">+ Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-hguild aria-label="Guild for ${esc(h.name)}">${esc(GUILD_WORDS.button)}</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give award…</button></div>
       <div class="hp-amt" role="group" aria-label="Type an HP amount for ${esc(h.name)}">
         <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 (or +5 to heal)" title="Press Enter to deal damage. Type +5 or press Shift+Enter to heal." data-gmamt aria-label="HP amount for ${esc(h.name)}"></label>
         <button type="button" class="danger" data-gmdmg aria-label="Damage ${esc(h.name)}">Damage</button><button type="button" data-gmheal aria-label="Heal ${esc(h.name)}">Heal</button></div>
@@ -620,21 +622,23 @@ export function register(app) {
   /** Draws the list and its head summary ("2 waiting"). */
   function renderWaiting() {
     const list = waitingHere(), R = app.rules(), W = PENDING_WORDS, rs = remotes();
-    const debtOf = w => { const hid = localHunter(S(), w); return hid ? (store.hunter(hid)?.debt ?? 0) : (rs.find(r => r.key === w.to)?.data.debt ?? 0); };
+    const hunterOf = w => { const hid = localHunter(S(), w); return hid ? store.hunter(hid) : (rs.find(r => r.key === w.to)?.data ?? null); };
     const html = list.length ? list.map(w => {
-      const owed = debtOf(w);
+      const targetH = hunterOf(w), owed = targetH?.debt ?? 0;
       const pay = paysDebt(w.from) && w.rewards.gold > 0 && owed > 0
         ? debtStep(owed, { type: 'clearGold', gold: w.rewards.gold }, R)
         : null;
       const paidInfo = pay && (pay.paid > 0 || pay.burn > 0)
         ? { total: w.rewards.gold, paid: pay.paid, burn: pay.burn, kept: pay.kept, left: pay.debt }
         : null;
+      const keptAfterDebt = pay ? pay.kept : w.rewards.gold;
+      const gCut = targetH && takesGuildCut(w.from) && keptAfterDebt > 0 ? guildGoldStep(keptAfterDebt, targetH, R) : null;
       const afterDebt = pay?.debt ?? owed;
       const baseXp = Math.trunc(w.rewards.xp || 0);
       const xpCut = afterDebt > 0 && baseXp > 0 && R.reviveDebtXpRate < 1
         ? { base: baseXp, xp: debtStep(afterDebt, { type: 'xp', xp: baseXp }, R).xp, rate: R.reviveDebtXpRate, left: afterDebt }
         : null;
-      const dline = debtPreviewLine(paidInfo, xpCut);
+      const dline = clearPreviewLine(paidInfo, gCut, xpCut);
       return `<li class="gm-pw-row" data-pw="${esc(w.id)}"><div><b>${esc(w.name)}</b> <span class="gm-pw-what">${esc(W.earned(w.from, w.what))}</span></div>`
         + `<div class="gm-pw-lines">${esc(rewardLines(R, w.rewards).join(', '))}</div>`
         + (dline ? `<div class="gm-pw-lines" data-pw-debt>${esc(dline)}</div>` : '')
@@ -1021,6 +1025,7 @@ export function register(app) {
           sendStatus(key, { remove: sk }, n => `Removed ${c ? condLabel(c) : sk} from ${n}`); return; }
         if (t.dataset.rstatus !== undefined) { addRemoteStatus(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.hbuild !== undefined) { const c = t.closest('[data-hid]'), r = c.classList.contains('remote') && remotes().find(x => x.key === c.dataset.hid); const h = r ? null : store.hunter(c.dataset.hid); if (r) A().build.gmMenu({ kind: 'remote', remote: r.key }, r.data); else if (h) A().build.gmMenu({ kind: 'local', hunterId: h.id }, null); return; }
+        if (t.dataset.hguild !== undefined) { const c = t.closest('[data-hid]'), r = c.classList.contains('remote') && remotes().find(x => x.key === c.dataset.hid); const h = r ? null : store.hunter(c.dataset.hid); if (r) void A().guild.edit({ kind: 'remote', remote: r.key }, r.data); else if (h) void A().guild.edit({ kind: 'local', hunterId: h.id }, null); return; }
         const pw = t.closest('[data-pw]');
         if (pw) { answerWaiting(pw.dataset.pw, t.hasAttribute('data-pw-approve') ? 'approve' : t.hasAttribute('data-pw-edit') ? 'edit' : 'refuse'); return; }
         if (t.dataset.ggive !== undefined) { void giveFrom(t.closest('[data-hid]').dataset.hid); return; }

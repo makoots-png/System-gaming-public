@@ -32,15 +32,16 @@ import type { XpOf } from './gate.ts';
 import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
 import { shareEach } from './spawn.ts';
 import { clearGate, encounterEnded } from './world.ts';
-import { clearCrystalEach } from '../hunter/crystal.ts';
+import { clearCrystalEach, clearCrystalFor } from '../hunter/crystal.ts';
 import type { CrystalDropRules } from '../hunter/crystal.ts';
+import type { GuildMembership } from '../hunter/guild.ts';
 import { rankIdx, RULES } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import type { Fact } from '../hunter/facts.ts';
 import type { Gate } from './gate.ts';
 import type { ClearPay } from './world.ts';
 
-export { clearCrystalEach, shareEach };
+export { clearCrystalEach, clearCrystalFor, shareEach };
 /** What each of `n` payees takes of a Clear's gold roll at rank `rank`: the share of the rank's lowest and highest roll. */
 export function clearGoldEach(R: Pick<Rules, 'loot' | 'gateParty'>, rank: Rank, n: number): { readonly low: number; readonly high: number } {
   const [lo = 0, hi = lo] = (R.loot[rank] ?? R.loot.E).gold;
@@ -184,7 +185,7 @@ export type ClearShare<I> = { readonly payee: Payee; readonly xp: number; readon
  * the payee picked (`taker`), else the first.
  */
 export function clearShares<I>(
-  save: Pick<Save, 'gates'>,
+  save: Pick<Save, 'gates'> & Partial<Pick<Save, 'hunters'>>,
   gateId: string,
   xpOf: XpOf,
   gold: number,
@@ -192,13 +193,32 @@ export function clearShares<I>(
   payees: readonly Payee[],
   taker: string | null,
   party: number,
-  crystalRules?: Pick<CrystalDropRules, 'priceBase' | 'crystal'>,
+  crystalRules?: Pick<CrystalDropRules, 'priceBase' | 'crystal'> & Partial<Pick<Rules, 'guilds'>>,
+  remotes?: ReadonlyMap<SheetKey, { readonly rank: Rank; readonly guild?: GuildMembership | null }>,
 ): { due: number; shares: ClearShare<I>[] } | null {
   const gate = save.gates.find(g => g.id === gateId); if (!gate) return null;
   const due = xpDue(gate, xpOf), n = payees.length;
-  const crystal = clearCrystalEach(gate, n, { gateParty: party, priceBase: crystalRules?.priceBase ?? RULES.priceBase, crystal: crystalRules?.crystal ?? RULES.crystal });
+  const cRules: CrystalDropRules = {
+    gateParty: party,
+    priceBase: crystalRules?.priceBase ?? RULES.priceBase,
+    crystal: crystalRules?.crystal ?? RULES.crystal,
+    guilds: crystalRules?.guilds ?? RULES.guilds,
+  };
+  const hunterFor = (p: Payee): { readonly rank: Rank; readonly guild?: GuildMembership | null } | null => {
+    if (p.kind === 'local') return save.hunters?.find(h => h.id === p.hid) ?? null;
+    return remotes?.get(p.key) ?? null;
+  };
   const idOf = (p: Payee) => (p.kind === 'local' ? p.hid : p.key), first = payees.find(p => idOf(p) === taker) ?? payees[0] ?? null;
-  return { due, shares: payees.map(p => ({ payee: p, xp: shareEach(due, n, party), gold: shareEach(gold, n, party), crystal, items: first && idOf(first) === idOf(p) ? items : [] })) };
+  return {
+    due,
+    shares: payees.map(p => ({
+      payee: p,
+      xp: shareEach(due, n, party),
+      gold: shareEach(gold, n, party),
+      crystal: clearCrystalFor(gate, n, hunterFor(p), cRules),
+      items: first && idOf(first) === idOf(p) ? items : [],
+    })),
+  };
 }
 /**
  * The fact of gate `g` cleared by a hunter of rank `rank`, `toBreak` days before it would have broken (null for a
@@ -220,7 +240,7 @@ export type ClearRoom = { readonly code: RoomCode; readonly stamp: EventStamp; r
  * its share with `parseRewards`) and its `gate` fact, with everything back (`noteFacts`); each player's hunter in `room` its message that pays it,
  * and its `gate` fact in a `noted` after it. A caller cannot pay a hunter without its fact. Refused as `clearGate` is.
  */
-export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], room: ClearRoom | null, day: Day): Settled | Refused<'missing' | 'unchanged'> {
+export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], room: ClearRoom | null, day: Day, from: RewardFrom = 'clear'): Settled | Refused<'missing' | 'unchanged'> {
   const g = save.gates.find(x => x.id === gateId);
   if (!g) return refuse('missing');
   const alreadyPaid = g.preset.at === 'paid';
@@ -237,7 +257,7 @@ export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: r
     if (!noted) throw new Error('the room would refuse the fact of a gate the save has');
     return [p.pays, noted];
   });
-  return payAll(facts, effectiveLocals, { room: room ? room.code : null, events }, day, 'clear');
+  return payAll(facts, effectiveLocals, { room: room ? room.code : null, events }, day, from);
 }
 
 /** Room details for a clear preset settlement: the room code, the event stamp, and each remote payee's rank (for its gate fact). */

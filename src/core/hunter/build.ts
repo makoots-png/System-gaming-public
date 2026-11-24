@@ -146,6 +146,7 @@ export function withRoomRules(R: Rules, room: RoomRules | null): Rules {
     reviveLevelShare: room.reviveLevelShare,
     gateParty: room.gateParty,
     crystal: room.crystal,
+    guilds: room.guilds,
     loot: room.loot,
   };
 }
@@ -180,5 +181,6 @@ export const roomRulesOf = (R: Rules): RoomRules => ({
   reviveLevelShare: R.reviveLevelShare,
   gateParty: R.gateParty,
   crystal: R.crystal,
+  guilds: R.guilds,
   loot: R.loot,
 });

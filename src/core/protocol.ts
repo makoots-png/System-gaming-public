@@ -16,6 +16,8 @@ import type { Life, LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
 import { RAISES } from './hunter/revive-standing.ts';
 import type { Raise } from './hunter/revive-standing.ts';
+import { GUILD_ARCHETYPES, parseGuild } from './hunter/guild.ts';
+import type { GuildMembership } from './hunter/guild.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
 import { RANKS, RULES, SOLO_BOUNDS, domainOf } from './rules.ts';
@@ -435,13 +437,15 @@ export const WORD_MAX = 500;
 export type WordPayload = Base & { by: SheetKey; name: string; text: string };
 /** The GM's answer `text` to word `re`, for the hunter of `to` only. Sealed; landed once, only while that word waits for one. */
 export type WordBackPayload = Base & { to: [SheetKey]; re: EventId; text: string };
+/** The GM assigns, updates, or removes a player hunter's guild membership (sealed to the GM and that hunter's phone). */
+export type GuildPayload = Base & { to: [SheetKey]; guild: GuildMembership | null };
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
-  systemRaise: SystemRaisePayload; rewardAsk: RewardAskPayload;
+  systemRaise: SystemRaisePayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -641,6 +645,12 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), total: int(-WEIGHT_MAX, WEIGHT_MAX)(own(o, 'total')), force: nullOr(forcedFace)(own(o, 'force')) };
   } },
+  guild: { gmOnly: true, ownSheet: false, audience: 'named', standsFor: p => `guild ${p.to[0]}`, read: o => {
+    const to = toList(own(o, 'to')), raw = own(o, 'guild');
+    if (to.length !== 1) return refuse();
+    if (raw === null) return { ...base(o), to: [to[0]!], guild: null };
+    return { ...base(o), to: [to[0]!], guild: need(parseGuild(raw)) };
+  } },
 };
 
 type EventEntry<K extends EventType> = {
@@ -658,7 +668,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
-  systemRaise: entry('systemRaise'), rewardAsk: entry('rewardAsk'),
+  systemRaise: entry('systemRaise'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -867,6 +877,7 @@ export type RoomRules = {
   reviveLevelShare: number;
   gateParty: number;
   crystal: Rules['crystal'];
+  guilds: Rules['guilds'];
   loot: Rules['loot'];
 };
 /** Each rarity an item can carry, with the rank whose Clear prices it. */
@@ -1249,7 +1260,34 @@ function roomCrystal(v: unknown): Rules['crystal'] {
     },
   };
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and crystal (shipped defaults when absent). */
+/** The room's guild contract tables: absent reads as the shipped defaults. */
+function roomGuilds(v: unknown): Rules['guilds'] {
+  const g = obj(opt(v, x => x, {})), d = RULES.guilds;
+  const aRaw = obj(opt(own(g, 'archetypes'), x => x, {}));
+  const readTable = (raw: unknown, prefix: string, def: Record<Rank, number>): Record<Rank, number> => {
+    const o = obj(opt(raw, x => x, {}));
+    return eachRank(r => opt(own(o, r), ruleNumber(`${prefix}.${r}`), def[r]));
+  };
+  const archetypes = Object.fromEntries(GUILD_ARCHETYPES.map(a => {
+    const def = d.archetypes[a] as {
+      readonly goldCut: Record<string, Record<Rank, number>>;
+      readonly crystalShare: Record<string, number>;
+    };
+    const raw = obj(opt(own(aRaw, a), x => x, {}));
+    const gcRaw = obj(opt(own(raw, 'goldCut'), x => x, {}));
+    const csRaw = obj(opt(own(raw, 'crystalShare'), x => x, {}));
+    const standings = Object.keys(def.goldCut);
+    return [a, {
+      goldCut: Object.fromEntries(standings.map(s => [s, readTable(own(gcRaw, s), `guilds.archetypes.${a}.goldCut.${s}`, def.goldCut[s]!)])),
+      crystalShare: Object.fromEntries(standings.map(s => [s, opt(own(csRaw, s), ruleNumber(`guilds.archetypes.${a}.crystalShare.${s}`), def.crystalShare[s]!)])),
+    }];
+  })) as Rules['guilds']['archetypes'];
+  return {
+    baseGoldCut: opt(own(g, 'baseGoldCut'), ruleNumber('guilds.baseGoldCut'), d.baseGoldCut),
+    archetypes,
+  };
+}
+/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and crystal/guilds (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1277,6 +1315,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     reviveLevelShare: rule('reviveLevelShare'),
     gateParty: rule('gateParty'),
     crystal: roomCrystal(own(o, 'crystal')),
+    guilds: roomGuilds(own(o, 'guilds')),
     loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },
   };
 }

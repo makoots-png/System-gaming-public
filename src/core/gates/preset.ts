@@ -279,6 +279,7 @@ export const PRESET_WORDS = {
     ` from the clear rewards you set. No random loot is rolled for this clear.${inRoom ? ' Approve each hunter\'s share in Pending rewards on the GM screen.' : ''}`,
   paidClearNote: 'You already gave this gate\'s clear rewards. Tap Confirm clear to mark the gate cleared without giving rewards again.',
   paidClearedLine: 'You already gave this gate\'s clear rewards, so nobody got rewards again.',
+  mixedGuildNote: 'Clear rewards pay the same mana crystal to every hunter. Use a normal Clear without a preset to pay each hunter\'s guild crystal share automatically, or edit shares in Pending rewards.',
   confirmNoHunters: {
     title: 'Clear with no rewards?',
     body: 'You picked no hunters, so nobody gets rewards.',

@@ -5,19 +5,21 @@
 // assay (no dollars). System debt is gold-only: crystal never pays debt automatically and cannot be borrowed.
 //
 // Three buyers keep every choice meaningful on screen:
-// - Helix clerk (90%): guild hunters only (locked until guilds land in economy unit 4).
+// - Helix clerk (90%): open to debt-free guild hunters.
 // - Bureau exchange (85%): public counter, open to debt-free hunters and refused while you owe System debt.
 // - Stair fence (70%): off-the-record buyer, open to any living hunter outside a fight, even while in System debt.
 import type { GateType } from '../gates/gate.ts';
 import type { HunterId, ItemId } from '../ids.ts';
 import type { Item, Slot } from '../registry/items.ts';
-import { priceBaseOf } from '../rules.ts';
+import { RULES, priceBaseOf } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import type { Said } from '../session-log.ts';
 import type { Save } from '../save.ts';
+import { effectiveCrystalShare } from './guild.ts';
+import type { GuildMembership } from './guild.ts';
 import { addGold, shopOpen } from './inventory.ts';
 import type { Life } from './vitals.ts';
 
@@ -34,9 +36,9 @@ export type BuyerWhy = 'guild-only' | 'in-debt';
 export type SellCrystalRefusal = 'missing' | 'dead' | 'in-fight' | 'bad-amount' | 'not-enough' | 'payout-zero' | BuyerWhy;
 
 /** The rules read by gate crystal drop calculations. */
-export type CrystalDropRules = Pick<Rules, 'priceBase' | 'gateParty' | 'crystal'>;
+export type CrystalDropRules = Pick<Rules, 'priceBase' | 'gateParty' | 'crystal'> & Partial<Pick<Rules, 'guilds'>>;
 /** The rules read by crystal selling calculations. */
-export type CrystalExchangeRules = Pick<Rules, 'crystal'>;
+export type CrystalExchangeRules = Pick<Rules, 'crystal'> & Partial<Pick<Rules, 'guilds'>>;
 
 const fmtNum = (n: number): string => n.toLocaleString('en-US');
 const pctOf = (rate: number): string => `${Math.round(rate * 1000) / 10}%`;
@@ -67,6 +69,21 @@ export function clearCrystalEach(gate: { readonly rank: Rank; readonly type: Gat
   return splitPool(partyPool, n, R.gateParty);
 }
 
+/**
+ * One hunter's mana crystal share from clearing a world gate: uses the hunter's effective guild crystal share
+ * (or `crystal.unsignedShare` when unsigned or unknown), split among `n` payees with `splitPool`.
+ */
+export function clearCrystalFor(
+  gate: { readonly rank: Rank; readonly type: GateType },
+  n: number,
+  h: { readonly rank: Rank; readonly guild?: GuildMembership | null } | null,
+  R: CrystalDropRules,
+): number {
+  const share = h ? effectiveCrystalShare(h, { crystal: R.crystal, guilds: R.guilds ?? RULES.guilds }) : R.crystal.unsignedShare;
+  const partyPool = Math.floor(gateCrystalPool(gate.rank, gate.type, R) * share + 1e-9);
+  return splitPool(partyPool, n, R.gateParty);
+}
+
 /** Solo mana crystal drop from clearing a personal gate: `personalShare * priceBase` (10%), kept in full. */
 export function personalCrystal(rank: Rank, R: Pick<Rules, 'priceBase' | 'crystal'>): number {
   return Math.max(0, Math.floor(priceBaseOf(R, rank) * R.crystal.personalShare + 1e-9));
@@ -79,15 +96,27 @@ export function sellPayout(amount: number, rate: number): number {
   return Math.max(0, Math.floor(n * rate + 1e-9));
 }
 
+/** Effective gold-per-crystal exchange rate for `buyer` under `R`. */
+export const buyerRate = (_h: { readonly guild?: GuildMembership | null }, buyer: CrystalBuyer, R: CrystalExchangeRules): number =>
+  R.crystal.rates[buyer];
+
 /** Whether `buyer` will buy mana crystal from hunter `h`, or why not. */
-export function buyerStatus(h: { readonly debt: number }, buyer: CrystalBuyer): { readonly open: true } | { readonly open: false; readonly why: BuyerWhy } {
-  if (buyer === 'helix') return { open: false, why: 'guild-only' };
+export function buyerStatus(
+  h: { readonly debt: number; readonly guild?: GuildMembership | null },
+  buyer: CrystalBuyer,
+): { readonly open: true } | { readonly open: false; readonly why: BuyerWhy } {
+  if (buyer === 'helix') {
+    if (!h.guild) return { open: false, why: 'guild-only' };
+    if (h.debt > 0) return { open: false, why: 'in-debt' };
+    return { open: true };
+  }
   if (buyer === 'bureau' && h.debt > 0) return { open: false, why: 'in-debt' };
   return { open: true };
 }
 
-/** Default open buyer for hunter `h`: Bureau exchange when debt-free, Stair fence while in System debt. */
-export const defaultBuyer = (h: { readonly debt: number }): CrystalBuyer => (h.debt > 0 ? 'stair' : 'bureau');
+/** Default open buyer for hunter `h`: Helix clerk for debt-free guild hunters, Bureau for debt-free unsigned, Stair while in debt. */
+export const defaultBuyer = (h: { readonly debt: number; readonly guild?: GuildMembership | null }): CrystalBuyer =>
+  (h.debt > 0 ? 'stair' : h.guild ? 'helix' : 'bureau');
 
 /** Planned crystal sale: validated amount, buyer, rate, gold paid, and remaining crystal balance. */
 export type SellCrystalPlan = {
@@ -101,7 +130,7 @@ export type SellCrystalPlan = {
 
 /** Checks whether hunter `h` can sell `amount` mana crystal to `buyer` under `R`. */
 export function sellPlan(
-  h: { readonly crystal: number; readonly debt: number; readonly life: Pick<Life, 'at'> },
+  h: { readonly crystal: number; readonly debt: number; readonly life: Pick<Life, 'at'>; readonly guild?: GuildMembership | null },
   amount: number,
   buyer: CrystalBuyer,
   R: CrystalExchangeRules,
@@ -114,7 +143,7 @@ export function sellPlan(
   const amt = Math.trunc(amount);
   if (!Number.isFinite(amount) || amt <= 0) return refuse('bad-amount');
   if (amt > h.crystal) return refuse('not-enough');
-  const rate = R.crystal.rates[buyer];
+  const rate = buyerRate(h, buyer, R);
   const gold = sellPayout(amt, rate);
   if (gold < 1) return refuse('payout-zero');
   return { ok: true, amount: amt, buyer, rate, gold, crystalAfter: h.crystal - amt };
@@ -139,6 +168,7 @@ type ExchangeHunter = {
   gold: number;
   readonly debt: number;
   readonly life: Pick<Life, 'at'>;
+  readonly guild?: GuildMembership | null;
   items: Item[];
   equipped: Record<Slot, ItemId | null>;
 };
@@ -183,7 +213,7 @@ export function sellCrystalStep(
   hid: string,
   amount: number,
   buyer: CrystalBuyer,
-  ctx: { readonly at: string; readonly R: Pick<Rules, 'crystal' | 'logCap'>; readonly inFight?: boolean },
+  ctx: { readonly at: string; readonly R: Pick<Rules, 'crystal' | 'logCap'> & Partial<Pick<Rules, 'guilds'>>; readonly inFight?: boolean },
 ): { readonly save: Save; readonly sold: SoldCrystal<Save['hunters'][number]> } | Refused<SellCrystalRefusal> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('missing');
@@ -218,7 +248,7 @@ export const CRYSTAL_WORDS = {
   buyers: {
     helix: {
       name: 'Helix clerk',
-      note: 'Open to guild hunters only. Guilds are not open yet.',
+      note: 'Open to debt-free guild hunters.',
     },
     bureau: {
       name: 'Bureau exchange',
@@ -230,7 +260,7 @@ export const CRYSTAL_WORDS = {
     },
   },
   buyerLocked: {
-    'guild-only': 'Open to guild hunters only. Guilds are not open yet.',
+    'guild-only': 'Open to guild hunters only.',
     'in-debt': 'Closed while you owe System debt. Pay off your debt or use a Stair fence.',
   },
   refusals: {
@@ -240,7 +270,7 @@ export const CRYSTAL_WORDS = {
     'bad-amount': 'Enter a whole number greater than 0.',
     'not-enough': 'You do not have that much mana crystal.',
     'payout-zero': 'That amount pays 0 gold at this rate. Sell more mana crystal or pick a higher rate.',
-    'guild-only': 'Helix clerks serve guild hunters only. Guilds are not open yet.',
-    'in-debt': 'You cannot use the Bureau exchange while you owe System debt. Use a Stair fence instead.',
+    'guild-only': 'Helix clerks serve guild hunters only.',
+    'in-debt': 'Closed while you owe System debt. Use a Stair fence instead.',
   } as Readonly<Record<SellCrystalRefusal, string>>,
 } as const;

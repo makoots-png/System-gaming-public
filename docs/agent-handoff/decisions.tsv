@@ -761,3 +761,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T22:40Z	economy	debt-shape landed on lead-backlog: per-rank revive debt E5 D5 C5 B6 A7 S7 x priceBase (Neon's pick); unit 6823 and browser 590 green
 2026-11-23T22:56Z	ops	PR 97 (debt-shape) merged to main
 2026-11-23T23:33Z	sync	vis-fix landed on lead-backlog: every addressed room event sealed to the GM and named phones (EventDef.audience required); unit 6831 and browser 590 green
+2026-11-23T23:57Z	ops	PR 98 (vis-fix) merged to main; main's merge commits merged into lead-backlog first so GitHub could merge (same tree)
+2026-11-24T02:32Z	economy	guild-cuts landed on lead-backlog: arena guild gold-cut table, flat crystal shares, debtFirst stacking, Helix for guild hunters; unit 6850 and browser 581 + 10 load reruns green

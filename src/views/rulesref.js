@@ -3,7 +3,8 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, KEYSTONE_WORDS, armorCutPct, borrowLine, checkExample, crystalLines, crystalRows, deathLine, gatePayLines, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, KEYSTONE_WORDS, armorCutPct, borrowLine, checkExample, crystalLines, crystalRows, deathLine, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { GUILD_TABLE_PERKS, guildDisplayName, guildSheetLine } from '../core/hunter/guild.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -38,6 +39,7 @@ const CSS = `
 .rr-tw th,.rr-tw td{border:1px solid var(--line);padding:5px 8px;text-align:left;white-space:nowrap}
 .rr-tw th{color:var(--cyan-dim);font-weight:600;letter-spacing:.08em;font-size:12px;text-transform:uppercase;background:rgba(10,26,46,.8)}
 .rr-tw td.n{font-family:var(--font-mono)}
+.rr-tw td.w{white-space:normal;min-width:120px}
 .cs{font-size:13px}.cs-fx{color:var(--cyan-dim)}.cs h3{margin:10px 0 4px}.cs-t{border-collapse:collapse;width:100%}.cs-t caption{text-align:left;color:var(--cyan-dim);font-size:12px;letter-spacing:.08em;padding-bottom:4px}.cs-t th,.cs-t td{border:1px solid var(--line);padding:3px 6px;text-align:center}.cs-t thead th{font-size:12px;color:var(--cyan-dim)}.cs-l{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:2px 12px}.cs-l li{overflow-wrap:anywhere}.cs p{margin:0}
 .rr-none{color:var(--muted);font-style:italic}
 @media (pointer:coarse),(max-width:720px){.rr-toc a{min-height:44px}}
@@ -216,6 +218,25 @@ export function register(app) {
         table(['Rank', 'World pool', `Normal (of ${R.gateParty})`, `Red / Double (of ${R.gateParty})`, 'Personal (solo)'],
           crystalRows(R).map(r => [esc(r.rank), fmt(r.pool), fmt(r.normal), fmt(r.special), fmt(r.personal)])),
       ] },
+      { id: 'guilds', title: 'Guilds', body: (() => {
+        const activeH = store.active();
+        const own = activeH && activeH.guild ? activeH.guild : null;
+        const ownBlock = own
+          ? [
+              p(`<b>Your guild:</b> ${esc(guildSheetLine(activeH, R))}. Table perks (GM-run): ${esc(GUILD_TABLE_PERKS[own.archetype].summary)}`),
+              `<h3>${esc(guildDisplayName(own))} rates (gold cut by rank and crystal share)</h3>` + table(['Standing', ...RANKS, 'Crystal'],
+                guildStandingRows(own.archetype, R).map(row => [esc(row.label), ...RANKS.map(rk => esc(row.goldCuts[rk])), esc(row.crystalShare)])),
+            ]
+          : [p(`<b>Your guild:</b> ${esc(guildSheetLine(activeH || { rank: 'E', guild: null }, R))}.`)];
+        const summary = `<div class="rr-tw"><table><thead><tr><th scope="col">Guild</th><th scope="col">Core C cut</th><th scope="col">Crystal (R / C / A)</th><th scope="col">GM-run table perks</th></tr></thead><tbody>${
+          guildSummaryRows(R).map(row => `<tr class="rr"><th scope="row">${esc(row.name)}</th><td class="n">${esc(row.coreCGoldCut)}</td><td class="n">${esc(row.crystalShares)}</td><td class="w">${esc(row.tablePerks)}</td></tr>`).join('')
+        }</tbody></table></div>`;
+        return [
+          ...guildLines(R).map(l => p(esc(l))),
+          ...ownBlock,
+          '<h3>Guild archetypes (Core C gold cut, crystal share, and GM-run perks)</h3>' + summary,
+        ];
+      })() },
       { id: 'gm', title: 'GM cheat-sheet', body: [
         ul([`<b>Setting a DC:</b> use the rank table. E-rank uses Easy ${rt.E.dc[0]}, Standard ${rt.E.dc[1]}, and Hard ${rt.E.dc[2]}. Scale up for the party's rank.`,
           '<b>Monster stats on the fly:</b> tap Generate in the Bestiary to build a monster from a rank, archetype, and kind. The monster maker previews its HP, armor, resist, and speed.',
@@ -267,7 +288,8 @@ export function register(app) {
       });
     },
     update(el) {
-      const sig = JSON.stringify(rules()) + '|' + store.get().settings.dailyResetHour + '|' + app.isGM();
+      const h = store.active();
+      const sig = JSON.stringify(rules()) + '|' + store.get().settings.dailyResetHour + '|' + app.isGM() + '|' + (h ? `${h.rank}:${JSON.stringify(h.guild)}` : '');
       const body = el.querySelector('[data-rr-body]');
       if (body.dataset.sig === sig) return; body.dataset.sig = sig;
       body.innerHTML = render();

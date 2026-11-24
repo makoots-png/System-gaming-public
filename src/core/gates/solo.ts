@@ -383,7 +383,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
         xp = preset.xp;
         const rw: Rewards = { ...newRewards(), xp, gold: preset.gold, crystal: preset.crystal, items: [...(part.byPayee.get(h.id) ?? [])] };
         const pay = { due, xp, gold: preset.gold, crystal: preset.crystal, items: preset.items.filter(i => i.checked).map(i => i.item.name), payees: [h.name] };
-        const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rw }], null, c.day);
+        const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rw }], null, c.day, 'solo');
         if (isRefused(settled)) return settled;
         const paid = payGatePreset(settled.save, g.id, c.day.at, [soloPayee]);
         if (isRefused(paid)) return refuse('unchanged');
@@ -392,7 +392,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
         s = stashed; granted = settled.granted[0]?.g ?? null;
       } else if (g.preset.at === 'paid') {
         const pay = { due: 0, xp: 0, gold: 0, crystal: 0, items: [], payees: [] };
-        const settled = settleClear(s, gate.id, pay, [], null, c.day);
+        const settled = settleClear(s, gate.id, pay, [], null, c.day, 'solo');
         if (isRefused(settled)) return settled;
         s = settled.save; granted = null;
       } else {
@@ -400,7 +400,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
         const crystal = clearCrystalEach(g, 1, R);
         xp = shareEach(due, 1, R.gateParty);
         const pay = { due, xp, gold, crystal, items: loot.items.map(i => i.name), payees: [h.name] };
-        const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp, gold, crystal) }], null, c.day);
+        const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp, gold, crystal) }], null, c.day, 'solo');
         if (isRefused(settled)) return settled;
         s = settled.save; granted = settled.granted[0]?.g ?? null;
       }
