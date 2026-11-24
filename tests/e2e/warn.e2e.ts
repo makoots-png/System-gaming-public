@@ -138,7 +138,7 @@ for (const viewport of [PHONE, SMALL_PHONE]) {
     await dismissAll(page);
     await page.evaluate(() => hunterApp.store.update((s: any) => {
       s.rulesOverrides.solo = { personal: false };
-      s.hunters.push(hunterApp.store.newHunter('Spare Test'));
+      s.hunters.push({ name: 'Spare Test', daily: { lastCheckedKey: s.world.lastDailyKey } });
     }, 'test-setup'));
     await go(page, 'status');
 
