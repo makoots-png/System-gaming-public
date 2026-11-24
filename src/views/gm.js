@@ -231,7 +231,7 @@ export function register(app) {
 @media (min-width:1100px){.gm-cols{display:grid;gap:18px;align-items:start}.gm-cols.gm-c2{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}.gm-col{display:flex;flex-direction:column;gap:18px;min-width:0}.gm-col>.gm-sec{margin:0}.gm-col .gm-cards{grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}}
 @media (min-width:1100px){.gm-sec.gm-wide{margin-top:18px}.gm-wide .rw{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;align-items:end}.gm-wide .rw > :not(.rw-bundle):not(.rw-nums){grid-column:1/-1}.gm-wide .rw-rows{display:block;columns:2;column-gap:18px}.gm-wide .rw-rows > .rw-row{break-inside:avoid;margin-bottom:8px}.gm-wide .gm-targets{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}}
 @media (min-width:1500px){.gm-cols.gm-c3{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr)}.gm-tog .ar,.gm-chip{font-size:13px}}
-@media (pointer:coarse),(max-width:720px){.gm-tog,.gm-hp button{min-height:44px}.gm-sec textarea{font-size:16px}}
+@media (pointer:coarse),(max-width:720px){.gm-tog,.gm-hp button,.gm-x{min-height:44px}.gm-x{min-width:44px}.gm-sec textarea{font-size:16px}}
 @media(max-width:720px){.gm-sec{padding:4px 14px}.gm-sec h2{margin:0;letter-spacing:.2em}.gm-sec>.gm-body{margin:6px 0 10px}.gm-chk{min-height:44px}.gm-cards{grid-template-columns:1fr}}`);
 
   // ── section shell ──

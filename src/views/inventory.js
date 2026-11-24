@@ -164,7 +164,7 @@ export function register(app) {
 .cx-buyer input{margin-top:3px;flex:0 0 auto}
 .cx-buyer .cx-bmain{display:flex;flex-direction:column;gap:2px;min-width:0}
 .cx-buyer .cx-btop{font-weight:600;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.cx-buyer .cx-tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);padding:1px 5px}
+.cx-buyer .cx-tag{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);padding:1px 5px}
 .cx-buyer .cx-bnote{font-size:13px;color:var(--cyan-dim)}
 .cx-preview{margin:0;font-size:14px;color:var(--ice)}
 .cx-preview.bad{color:#ff8a96}

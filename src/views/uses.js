@@ -78,7 +78,7 @@ export function register(app) {
       if (!change && t.kind === 'none') return { ok: true, sent: false };
       const w = store.apply(why, both(change ? atHunter(hid, change) : s => s, toldStep(t, app.rules())));
       if (isRefused(w)) return w;
-      if (t.kind !== 'post') return { ok: true, sent: false };
+      if (t.kind !== 'post' || !u) return { ok: true, sent: false };
       const sy = app.api.sync;
       sy.flush();
       if (sy.status() !== 'connected') ui.toast('Sync', `Saved. The GM will be notified that you used ${u.name} when your phone reconnects to the room server.`, { kind: 'info' });

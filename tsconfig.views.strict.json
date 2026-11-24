@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.views.json",
+  "compilerOptions": {
+    "strictNullChecks": true,
+    "exactOptionalPropertyTypes": true
+  },
+  "files": [
+    "src/views/combat.js",
+    "src/views/map-maker.js",
+    "src/views/mythic-html.js",
+    "src/views/table.js",
+    "src/views/ui.js",
+    "src/views/uses.js"
+  ],
+  "include": ["types/**/*.d.ts"]
+}

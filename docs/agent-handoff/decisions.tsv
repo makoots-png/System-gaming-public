@@ -771,3 +771,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T08:31Z	arch	untrack-docs (from-scratch 2), fightsim-load (fst-2, work-count budgets) and maker-roundtrip (from-scratch 4, 10 round-trip fixes) landed on lead-backlog; unit 6888 pass 0 fail, browser 592 + 5 load reruns green
 2026-11-24T08:45Z	ops	PR 102 (untrack-docs + fightsim-load + maker-roundtrip) merged to main
 2026-11-24T08:46Z	docs	slug-ids landed on lead-backlog: qd rows use date-slug ids, rows 1-87 keep (row N) aliases; qd-rows, ci-plan, lint 151 pass
+2026-11-24T09:00Z	ops	PR 103 (slug-ids) merged to main
+2026-11-24T10:36Z	arch	strict-views (from-scratch 6) and phone-busy (from-scratch 5) landed on lead-backlog; unit 6893 pass 0 fail, browser 595 + 4 load reruns alone green

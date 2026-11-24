@@ -80,7 +80,7 @@ const CSS = `
 .stat .s-roll span{display:block}
 .stat .s-bonus{font-family:var(--font-mono);font-size:14px;color:var(--green);margin-left:4px;font-weight:400}
 .stat .s-bonus:empty{display:none}
-.stat .s-share{display:block;font-size:calc(11px*var(--ts));color:var(--cyan-dim);margin-top:2px;line-height:1.2}
+.stat .s-share{display:block;font-size:calc(12px*var(--ts));color:var(--cyan-dim);margin-top:2px;line-height:1.2}
 .stat .s-share[hidden]{display:none}
 .ap-ks{margin:6px 0 0;font-size:calc(13px*var(--ts));color:var(--gold);overflow-wrap:anywhere}
 .ap-ks[hidden]{display:none}
@@ -114,7 +114,7 @@ button.dv{display:block;width:100%;min-height:var(--control-h);color:inherit;fon
 .t-form{border:1px solid var(--line);padding:10px;margin-top:10px;display:grid;gap:8px}
 .t-form[hidden]{display:none}
 .raw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
-@media (max-width:720px){.row-li .r-acts button{flex:1}}
+@media (max-width:720px){.row-li .r-acts button{flex:1 0 auto}}
 @media (pointer:coarse),(max-width:720px){.chip,.chip button{min-height:44px}.chip button{min-width:44px}}
 `;
 

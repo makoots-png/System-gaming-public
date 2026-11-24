@@ -55,7 +55,7 @@ export function register(app) {
     const M = app.api.maker, R = app.rules(), base = m || { ...openArena(R), name: '' };
     // the form's state: the tiles as characters, zones with their tiles as indices, starts as indices
     const st = mapToForm(base);
-    let brush = 'wall', zoneAt = 0, eff = null, painting = false;
+    let brush = 'wall', zoneAt = 0, eff = /** @type {import('../core/api.ts').MakerEffects | null} */ (null), painting = false;
     return M.open({
       tag: '! Map', title: m ? `Edit ${m.name}` : 'New map', save: 'Save map', cls: 'mpm',
       build(el, shell) {
@@ -68,12 +68,15 @@ export function register(app) {
           <label class="mk-check"><input type="checkbox" data-fog${st.fog ? ' checked' : ''}><span>Fog of war (party only sees within sight range)</span></label>
           <label class="field"><span class="lbl">Sight range (tiles)</span><input type="number" min="${MAP_BOUNDS.sight[0]}" max="${MAP_BOUNDS.sight[1]}" inputmode="numeric" data-sight value="${st.sight}"></label>
           ${m ? '<button type="button" data-asnew>Save as a new map</button>' : ''}`;
-        const $ = s => el.querySelector(s), grid = $('[data-grid]');
+        /** @param {string} s */
+        const $ = s => el.querySelector(s), gridEl = $('[data-grid]');
+        if (!gridEl) return { save: () => undefined };
+        const grid = gridEl;
         const zoneOf = i => st.zones.findIndex(z => z.tiles.has(i));
         const cellAttrs = i => {
-          const t = TERRAINS.find(x => TERRAIN[x].char === st.tiles[i]) || 'floor', z = zoneOf(i);
+          const t = TERRAINS.find(x => TERRAIN[x].char === st.tiles[i]) || 'floor', z = zoneOf(i), zd = z >= 0 ? st.zones[z] : undefined;
           const s = st.starts.party.includes(i) ? 'P' : st.starts.foe.includes(i) ? 'F' : '';
-          return { cls: `mpm-c ${t}${z >= 0 ? ` ${zoneTone(st.zones[z].ops)}` : ''}`, z, s };
+          return { cls: `mpm-c ${t}${zd ? ` ${zoneTone(zd.ops)}` : ''}`, z, s };
         };
         const paintCell = i => {
           const c = grid.children[i]; if (!c) return;
@@ -86,20 +89,25 @@ export function register(app) {
           grid.style.gridTemplateColumns = `repeat(${st.w},${TILE}px)`;
           grid.innerHTML = Array.from({ length: st.w * st.h }, (_, i) => `<div data-i="${i}" role="gridcell" aria-label="Tile ${i % st.w + 1}, ${Math.floor(i / st.w) + 1}"></div>`).join('');
           for (let i = 0; i < st.w * st.h; i++) paintCell(i);
-          $('[data-size="w"]').textContent = String(st.w); $('[data-size="h"]').textContent = String(st.h);
+          const sw = $('[data-size="w"]'), sh = $('[data-size="h"]');
+          if (sw) sw.textContent = String(st.w);
+          if (sh) sh.textContent = String(st.h);
         }
         function drawBrushes() {
           const zs = st.zones.map((z, k) => [`zone:${k}`, z.name || `Field ${k + 1}`]);
           const all = [...TERRAINS.map(t => [t, TERRAIN_WORD[t]]), ...zs, ['party', SIDE_WORD.party], ['foe', SIDE_WORD.foe], ['erase', 'Erase']];
-          $('[data-brushes]').innerHTML = all.map(([v, l]) => `<button type="button" data-brush="${esc(v)}" aria-pressed="${v === brush}">${esc(l)}</button>`).join('')
+          const br = $('[data-brushes]');
+          if (br) br.innerHTML = all.map(([v, l]) => `<button type="button" data-brush="${esc(v)}" aria-pressed="${v === brush}">${esc(l)}</button>`).join('')
             + (st.zones.length < MAX_ZONES ? '<button type="button" class="quiet" data-newzone>New field</button>' : '');
         }
         function drawZone() {
           const box = $('[data-zonebox]'), z = brush.startsWith('zone:') ? st.zones[zoneAt] : null;
+          if (!box) return;
           box.hidden = !z; if (!z) { eff = null; box.innerHTML = ''; return; }
           box.innerHTML = `<div class="mpm-zrow"><label class="field"><span class="lbl">Field name</span><input type="text" maxlength="40" data-zname value="${esc(z.name)}"></label>
             <button type="button" class="danger" data-delzone>Remove field</button></div><div class="lbl">Effects while standing in this field</div><div data-zfx></div>`;
-          eff = M.effects($('[data-zfx]'), { ops: z.ops, kind: 'status' });
+          const zfx = $('[data-zfx]');
+          eff = zfx ? M.effects(zfx, { ops: z.ops, kind: 'status' }) : null;
         }
         function paint(i) {
           if (i < 0 || i >= st.w * st.h) return;
@@ -115,7 +123,7 @@ export function register(app) {
         /** The map at a new size: each tile, zone tile and start keeps its place; what falls off the edge is gone. */
         function resize(w, h) {
           const old = st.w, at = i => ({ x: i % old, y: Math.floor(i / old) }), to = p => (p.x < w && p.y < h ? p.y * w + p.x : -1);
-          const tiles = Array.from({ length: w * h }, (_, i) => { const x = i % w, y = Math.floor(i / w); return x < st.w && y < st.h ? st.tiles[y * st.w + x] : TERRAIN.floor.char; });
+          const tiles = Array.from({ length: w * h }, (_, i) => { const x = i % w, y = Math.floor(i / w); return x < st.w && y < st.h ? st.tiles[y * st.w + x] ?? TERRAIN.floor.char : TERRAIN.floor.char; });
           st.zones.forEach(z => { z.tiles = new Set([...z.tiles].map(i => to(at(i))).filter(i => i >= 0)); });
           st.starts = { party: st.starts.party.map(i => to(at(i))).filter(i => i >= 0), foe: st.starts.foe.map(i => to(at(i))).filter(i => i >= 0) };
           st.tiles = tiles; st.w = w; st.h = h;
@@ -145,16 +153,16 @@ export function register(app) {
           shell.changed();
         });
         el.addEventListener('input', ev => {
-          const t = ev.target;
+          const t = ev.target, z = st.zones[zoneAt];
           if (t.matches('[data-name]')) st.name = t.value;
-          else if (t.matches('[data-zname]') && st.zones[zoneAt]) { st.zones[zoneAt].name = t.value; drawBrushes(); }
+          else if (t.matches('[data-zname]') && z) { z.name = t.value; drawBrushes(); }
           else if (t.matches('[data-sight]')) st.sight = Number(t.value);
-          if (eff && t.closest('[data-zfx]') && st.zones[zoneAt]) st.zones[zoneAt].ops = eff.ops();
+          if (eff && t.closest('[data-zfx]') && z) z.ops = eff.ops();
         });
         el.addEventListener('change', ev => {
-          const t = ev.target;
+          const t = ev.target, z = st.zones[zoneAt];
           if (t.matches('[data-fog]')) st.fog = t.checked;
-          if (eff && t.closest('[data-zfx]') && st.zones[zoneAt]) { st.zones[zoneAt].ops = eff.ops(); for (const i of st.zones[zoneAt].tiles) paintCell(i); }
+          if (eff && t.closest('[data-zfx]') && z) { z.ops = eff.ops(); for (const i of z.tiles) paintCell(i); }
         });
         /** The map the form holds under `id`, as the parser reads it. */
         const raw = id => mapFormRaw(st, id);
@@ -171,12 +179,13 @@ export function register(app) {
         }
         return {
           preview: () => {
-            const n = c => st.tiles.filter(x => x === TERRAIN[c].char).length, read = parseBattleMap({ ...raw(''), name: st.name || 'x' }, app.rules());
+            const n = c => st.tiles.filter(x => x === TERRAIN[c].char).length, read = parseBattleMap({ ...raw(''), name: st.name.trim() || 'x' }, app.rules());
             const ground = TERRAINS.filter(t => t !== 'floor' && n(t)).map(t => `${n(t)} ${TERRAIN_WORD[t].toLowerCase()}`);
+            const party = read ? read.starts.party.length : 0, foe = read ? read.starts.foe.length : 0;
             return [
               `${st.w} by ${st.h} tiles${ground.length ? `: ${ground.join(', ')}` : ', all floor'}`,
               ...st.zones.filter(z => z.tiles.size).map(z => `${z.name || 'Field'}: ${z.tiles.size} tile${z.tiles.size === 1 ? '' : 's'}, ${(app.api.effects.describe({ label: z.name, desc: '', ops: z.ops }) || []).join(', ') || 'does nothing'}`),
-              `Starting spots: ${read.starts.party.length} for party, ${read.starts.foe.length} for foes${read.starts.party.length + read.starts.foe.length ? '' : ' (uses default rows)'}`,
+              `Starting spots: ${party} for party, ${foe} for foes${party + foe ? '' : ' (uses default rows)'}`,
               st.fog ? `Fog of war, sight ${st.sight} tiles` : 'No fog (party sees the whole map)',
             ];
           },

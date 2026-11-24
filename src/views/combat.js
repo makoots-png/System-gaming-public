@@ -112,6 +112,7 @@ export function register(app) {
    * told once or not at all. Answers the reducer's effects. `also`: a step of another module the write carries.
    * @param {Command} cmd @param {import('../core/combat/fight-save.ts').Links | null} [links]
    * @param {import('../core/save-step.ts').Step<import('../core/save.ts').Save> | null} [also]
+   * @param {import('../core/protocol.ts').RoomEvent | null} [risen]
    */
   function send(cmd, links = null, also = null, risen = null) { return sendAll([cmd], links, also, risen); }
   /**
@@ -119,28 +120,35 @@ export function register(app) {
    * refuses one. A grant's statuses and refill on the rows it pays (`held`).
    * @param {readonly Command[]} cmds @param {import('../core/combat/fight-save.ts').Links | null} [links]
    * @param {import('../core/save-step.ts').Step<import('../core/save.ts').Save> | null} [also]
+   * @param {import('../core/protocol.ts').RoomEvent | null} [risen]
    */
   function sendAll(cmds, links = null, also = null, risen = null) {
     const effects = command(cmds, links, also, risen);
     if (!refused(effects)) payOwed();
     return effects;
   }
-  /** `sendAll` without (3): the write, the outbox and the news of its commands. `risen`: a shadow's message to a player (fight-save.ts `Beside`). */
+  /**
+   * `sendAll` without (3): the write, the outbox and the news of its commands. `risen`: a shadow's message to a player (fight-save.ts `Beside`).
+   * @param {readonly Command[]} cmds @param {import('../core/combat/fight-save.ts').Links | null} [links]
+   * @param {import('../core/save-step.ts').Step<import('../core/save.ts').Save> | null} [also]
+   * @param {import('../core/protocol.ts').RoomEvent | null} [risen]
+   */
   function command(cmds, links = null, also = null, risen = null) {
     const c = ctx(), was = fight(), S = A().sync;
     // what the motion compares with: the fight's rows are written into in place (save-step.ts `writeInto`)
     const hpWas = new Map(was ? was.rows.map(r => [r.id, rowHp(r)]) : []), readyWas = new Set(was ? was.rows.filter(r => r.armed && !r.armed.spent).map(r => r.id) : []);
     const r = reduceAll(was, cmds, c), reason = String((r.fight && r.fight.log[0] && r.fight.log[0].text) || 'Fight').slice(0, 120);
     // the fight's totals for a hunter on another phone, its row's life among them: one `vitals` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
-    const totals = r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [S.event('vitals', { to: [fx.remote], fight: r.fight.id, life: { ...fx.life }, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })] : [])).flatMap(ev => (ev ? [ev] : []));
+    const rf = r.fight;
+    const totals = rf ? r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [S.event('vitals', { to: [fx.remote], fight: rf.id, life: { ...fx.life }, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })] : [])).flatMap(ev => (ev ? [ev] : [])) : [];
     // an item's use leaves the bag in the same write (fight-save.ts `itemSpent`): this phone's hunter's, or the player's by
     // `spent`. A use is one `act` sent alone; a batch is the GM's edits of rows (`held`), which spend no item
-    const sp = cmds.length === 1 ? itemSpent(was, cmds[0]) : null, ev = sp && sp.kind === 'remote' ? S.event('spent', { to: [sp.remote], item: sp.item }) : null;
+    const sole = cmds.length === 1 ? cmds[0] : undefined, sp = sole ? itemSpent(was, sole) : null, ev = sp && sp.kind === 'remote' ? S.event('spent', { to: [sp.remote], item: sp.item }) : null;
     const spent = !sp ? null : sp.kind === 'local' ? sp : ev ? { kind: /** @type {const} */ ('remote'), event: ev } : null;
     // the fight ended: what each player's hunter did in it goes to its phone as `noted`, in the same write (feature 1's notes 2.3)
-    const ended = r.fight && r.fight.phase === 'ended' && r.effects.some(fx => fx.type === 'ended');
+    const endedFight = r.fight && r.fight.phase === 'ended' && r.effects.some(fx => fx.type === 'ended') ? r.fight : null;
     const rankOf = key => { const x = remoteList().find(sh => sh.key === key); return x ? x.data.rank : null; };
-    const noted = ended ? remoteFacts(r.fight, rankOf, fightGateName(store.get())).map(n => S.event('noted', { to: [n.to], facts: n.facts })).filter(Boolean) : [];
+    const noted = endedFight ? remoteFacts(endedFight, rankOf, fightGateName(store.get())).flatMap(n => { const e = S.event('noted', { to: [n.to], facts: n.facts }); return e ? [e] : []; }) : [];
     // a command the fight refused writes nothing, and its reason is told below; a write the store refused is told by its kind
     const asked = !refused(r.effects), wrote = asked && ui.wrote(ui.FIGHT_TAG, store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules)), WRITE_WORDS);
     const effects = !asked || wrote ? r.effects : NOT_WRITTEN;
@@ -192,10 +200,10 @@ export function register(app) {
    */
   function showEffects(effects, hpWas, readyWas) {
     afterFrame(() => {
-      if (!root) return;
-      const at = id => root.querySelector(`.cmb-row:has([data-pick="${CSS.escape(id)}"])`);
-      const card = id => root.querySelector(`.cmb-card[data-cid="${CSS.escape(id)}"]`);
-      const tok = id => root.querySelector(`[data-mapbox] [data-tok="${CSS.escape(id)}"]`);
+      const box = root; if (!box) return;
+      const at = id => box.querySelector(`.cmb-row:has([data-pick="${CSS.escape(id)}"])`);
+      const card = id => box.querySelector(`.cmb-card[data-cid="${CSS.escape(id)}"]`);
+      const tok = id => box.querySelector(`[data-mapbox] [data-tok="${CSS.escape(id)}"]`);
       const seen = n => n && n.getClientRects().length > 0 ? n : null;
       for (const fx of effects) {
         // a stacking status's threshold going off: mana motes thrown out, and the count on the card pops
@@ -261,7 +269,7 @@ export function register(app) {
     return (id && store.get().library.maps.find(x => x.id === id)) || openArena(rules());
   }
   /** The side the GM marked surprised before the start (kits design 8.7.5): its first turns come a round later. */
-  let surprised = null;
+  let surprised = /** @type {import('../core/combat/space.ts').Side | null} */ (null);
   /** Every row's opening roll, and the first turn. */
   function start() {
     const f = fight(); if (!f || f.phase !== 'setup') return;
@@ -272,6 +280,7 @@ export function register(app) {
    * Row `r` arms reaction `ability`, or disarms with null (the fight's `arm`): the GM's card and a player's room `arm`
    * alike. A reaction before a turn names a row: `on`, else the one it waits for now, else the first of `waitChoices`
    * (fight-view.ts), which a player's phone offers first too.
+   * @param {Body} r @param {import('../core/combat/ability-types.ts').AbilityId | null} ability @param {import('../core/combat/ability-types.ts').CombatantId | null} [on]
    */
   function armRow(r, ability, on = null) {
     const a = ability && r.abilities.find(x => x.id === ability), f = fight();
@@ -383,22 +392,22 @@ export function register(app) {
   // (`ownSheet`), is the fight's `arm` for that hunter's row
   app.on('sync:event', ({ event }) => {
     if (!event || event.type !== 'arm' || !inRoomAsGM()) return;
-    const f = fight(), p = /** @type {import('../core/protocol.ts').ArmPayload} */ (event.payload);
+    const f = fight(), p = event.payload;
     const r = f && f.phase !== 'ended' ? f.rows.find(x => remoteKeyOf(x) === p.by) : null;
     if (r) armRow(r, p.ability, p.on ?? null);
   });
   app.on('sync:event', ({ event }) => {
     if (!event || (event.type !== 'step' && event.type !== 'cast' && event.type !== 'pass') || !inRoomAsGM()) return;
-    const f = fight(), p0 = /** @type {import('../core/protocol.ts').StepPayload | import('../core/protocol.ts').CastPayload | import('../core/protocol.ts').PassPayload} */ (event.payload);
+    const f = fight(), p0 = event.payload;
     if (!running(f)) return;
     const id = onTurn(f, p0);
     if (!id) { const r = f.rows.find(x => remoteKeyOf(x) === p0.by); if (r) turnDown(r.id, 'notYourTurn'); return; }
     /** @param {readonly Effect[]} fx */
     const told = fx => { const no = fx.find(x => x.type === 'refused'); if (no && no.type === 'refused') turnDown(id, no.reason); };
     if (event.type === 'pass') { told(send({ type: 'endTurn', by: id })); return; }
-    if (event.type === 'step') { const s = /** @type {import('../core/protocol.ts').StepPayload} */ (event.payload); told(send({ type: 'move', by: id, to: place(s.place.x, s.place.y), ...(s.dash ? { dash: true } : {}) })); return; }
-    const p = /** @type {import('../core/protocol.ts').CastPayload} */ (event.payload);
-    const u = rowOf(f, id), a = u && u.abilities.find(x => x.id === p.ability); if (!a) { turnDown(id, 'unknownAbility'); return; }
+    if (event.type === 'step') { const s = event.payload; told(send({ type: 'move', by: id, to: place(s.place.x, s.place.y), ...(s.dash ? { dash: true } : {}) })); return; }
+    const p = event.payload;
+    const u = rowOf(f, id), a = u && u.abilities.find(x => x.id === p.ability); if (!u || !a) { turnDown(id, 'unknownAbility'); return; }
     // a player's tap on the ability their channel holds is its Release (the hotbar's), at the charge it has
     if (u.channel && u.channel.state === 'holding' && u.channel.ability === a.id) { told(releaseOf(u)); return; }
     const aim = typeof p.aim === 'string' ? p.aim : place(p.aim.x, p.aim.y);
@@ -424,7 +433,7 @@ export function register(app) {
     if (!a) { say(H.amountMsg(text)); toast(H.amountMsg(text), 'warning'); return; }
     const heal = forceHeal || a.heal, f0 = fight(), before = f0 ? cardOf(f0, r, rules()).hp : 0;
     if (!adjust(r, { hp: heal ? a.n : -a.n })) return;
-    const f = fight(), x = rowOf(f, r.id), after = x ? cardOf(f, x, rules()).hp : before;
+    const f = fight(), x = rowOf(f, r.id), after = f && x ? cardOf(f, x, rules()).hp : before;
     amounts.delete(r.id); if (inp) { inp.value = ''; inp.focus(); }
     say(`${r.name} ${heal ? 'healed' : 'took'} ${Math.abs(after - before)} HP (entered ${a.n}). Current HP: ${after}.`);
   }
@@ -438,7 +447,7 @@ export function register(app) {
     if (!st || !st.key) return;
     const def = rules().conditions[st.key] || st.def; if (!def) return;
     const tier = st.source && Number.isFinite(st.source.tier) ? st.source.tier : r.tier;
-    send({ type: 'status', id: r.id, add: statusGrant(st.key, /** @type {any} */ (def), st.rounds ?? null, tier, rules()) });
+    send({ type: 'status', id: r.id, add: statusGrant(st.key, def, st.rounds ?? null, tier, rules()) });
   }
 
   // ── the end of a fight ──
@@ -464,7 +473,7 @@ export function register(app) {
     if (plan.covered) lines.push('The gate\'s XP has already been awarded.');
     else if (nPart) lines.push(`Each hunter receives ${ui.fmt(plan.each)} XP${plan.shared ? `, a share of the gate's XP for ${nPart} hunter${nPart === 1 ? '' : 's'}` : ''}.`);
     // what the defeated monsters drop (their bestiary entry's loot): listed here, given by the GM through the Award form
-    const loot = lootOf(plan.dead.flatMap(r => { const m = links.monsters[r.id] ? A().bestiary.get(links.monsters[r.id]) : null; return m ? [m.loot] : []; }));
+    const loot = lootOf(plan.dead.flatMap(r => { const mid = links.monsters[r.id], m = mid ? A().bestiary.get(mid) : null; return m ? [m.loot] : []; }));
     const lootLine = lootText(loot);
     if (lootLine) lines.push(`Loot: ${lootLine}`);
     /** @type {import('./ui.js').SystemAction[]} */
@@ -474,14 +483,17 @@ export function register(app) {
     const body = `${plan.dead.length} defeated in ${plan.rounds} round${plan.rounds === 1 ? '' : 's'}.`;
     const v = await ui.system({ tag: '! Fight', title: 'Fight over', kind: 'quest', body, lines, actions });
     if (v !== 'award' && v !== 'skip') return;
-    if (fight() && fight().phase !== 'ended') send({ type: 'end' });
+    const curFight = fight();
+    if (curFight && curFight.phase !== 'ended') send({ type: 'end' });
     const ended = fight(); if (!ended || ended.phase !== 'ended' || ended.id !== plan.fightId) return;
     // the plan again from the fight as it ended (the end the GM confirmed), then one step
     const done = planEncounter(ended, links.gate, store.get(), R.gateParty, xpOf), S = A().sync;
-    const posts = { room: S.room(), events: encounterAwards(done, v).map(b => S.event('award', b)).filter(Boolean) };
+    const posts = { room: S.room(), events: encounterAwards(done, v).flatMap(b => { const e = S.event('award', b); return e ? [e] : []; }) };
+    /** @type {{ settled: import('../core/gates/pay.ts').Settled | null }} */
     const out = { settled: null };
     if (!ui.wrote('! Fight', store.apply('combat-ended', sv => { const r = settleEncounter(sv, done, v, posts, dayNow(), loot); if (isRefused(r)) return r; out.settled = r; return r.save; }))) return;
     const settled = out.settled;
+    if (!settled) return;
     S.flush();
     sel = null;
     // the rewards window is queued before combat:end, so a gate's "Encounter over" question comes after it
@@ -545,7 +557,7 @@ export function register(app) {
         el.innerHTML = `${o.body ? `<p class="n-body">${esc(o.body)}</p>` : ''}
           <fieldset class="cmb-party"><legend>Party</legend>${hs.length ? hs.map(h => `<label class="cmb-chk"><input type="checkbox" name="hid" value="${esc(h.id)}" checked> <span>${esc(h.name)}</span></label>`).join('') : '<p class="empty">No hunters yet.</p>'}</fieldset>
           <label class="cmb-chk"><input type="checkbox" name="roll" checked> <span>Start the fight now</span></label>`;
-        return { save: () => ({ hids: [...el.querySelectorAll('input[name=hid]:checked')].map(i => i.value), roll: el.querySelector('input[name=roll]').checked }) };
+        return { save: () => ({ hids: [...el.querySelectorAll('input[name=hid]:checked')].map(i => i.value), roll: Boolean(el.querySelector('input[name=roll]')?.checked) }) };
       },
     });
   }
@@ -567,7 +579,7 @@ export function register(app) {
   // ── the fight as the players' table shows it (the room's fight doc, kept by app.api.sync.publish) ──
   A().sync.publish('fight', () => {
     const S = A().sync;
-    const doc = fightDoc(fight(), rules(), { by: /** @type {import('../core/ids.ts').DeviceId} */ (store.get().settings.deviceId), at: new Date().toISOString(), was: S.doc('fight'), keyOf: hid => parseSheetKey(S.myKey(hid)), refused: tableRefusal, burst: lastBurst, hunterOf: holderHunter });
+    const doc = fightDoc(fight(), rules(), { by: store.get().settings.deviceId, at: new Date().toISOString(), was: S.doc('fight'), keyOf: hid => parseSheetKey(S.myKey(hid)), refused: tableRefusal, burst: lastBurst, hunterOf: holderHunter });
     // the room takes the doc in its wire shape (fight-doc.ts `fightWire`), which `DOCS.fight` reads back
     return doc && fightWire(doc);
   });
@@ -575,8 +587,10 @@ export function register(app) {
   A().combat = {
     status: (cid, c) => {
       const r = rowOf(fight(), cid); if (!r) return NO_ROW;
-      return answered(send({ type: 'status', id: r.id, ...(c.remove ? { remove: /** @type {any} */ (c.remove) } : {}),
-        ...(c.add ? { add: statusGrant(c.add.key, /** @type {any} */ (c.add.def), c.add.rounds ?? null, c.add.tier, rules()) } : {}) }));
+      const rk = c.remove ? r.statuses.find(s => s.key === c.remove)?.key : undefined;
+      if (c.remove && !rk && !c.add) return WROTE;
+      return answered(send({ type: 'status', id: r.id, ...(rk ? { remove: rk } : {}),
+        ...(c.add ? { add: statusGrant(c.add.key, c.add.def, c.add.rounds ?? null, c.add.tier, rules()) } : {}) }));
     },
     // a grant's parts this fight holds (grant.ts `Granted.fight`) on their rows, written with the grant's step: all or none
     held: (parts, also) => answered(sendAll(heldCommands(parts, rules()), null, also)),
@@ -723,23 +737,24 @@ export function register(app) {
 }
 `);
 
-  let root = null, sel = null, lastOrder = '', shownLog = null;
+  let root = /** @type {HTMLElement | null} */ (null), sel = /** @type {string | null} */ (null), lastOrder = '', shownLog = /** @type {string[] | null} */ (null);
   /** Under 900 px the map hides the list and the card (the CSS's breakpoint for `.cmb-main.map`). */
   const NARROW = matchMedia('(max-width:899px)');
   /**
    * The map mounted in this screen's fight box, or null while the box shows none: the screen's handle on it, and so the
    * box's state (map-mount.ts `MapSlot`), written only by `slotTo`.
    */
-  let mapView = null;
+  let mapView = /** @type {import('../core/api.ts').MapView | null} */ (null);
   /**
    * Gives the box event `e` (map-mount.ts `mapSlot`: it `shows` the fight on the map in `box`, or `hides` it) and carries
    * out what it answers: a hidden map is destroyed, not left listening (SMX-views-8.1).
+   * @param {'shows' | 'hides'} e @param {HTMLElement | null} [box]
    */
   const slotTo = (e, box = null) => {
     for (const fx of mapSlot(mapView ? 'mounted' : 'empty', e).fx) {
-      if (fx === 'mount') mapView = A().map.mount(box, mapSource);
-      else if (fx === 'draw') mapView.draw();
-      else if (fx === 'destroy') { mapView.destroy(); mapView = null; }
+      if (fx === 'mount' && box) mapView = A().map.mount(box, mapSource);
+      else if (fx === 'draw' && mapView) mapView.draw();
+      else if (fx === 'destroy' && mapView) { mapView.destroy(); mapView = null; }
     }
   };
   /**
@@ -750,7 +765,7 @@ export function register(app) {
    * (`buildWanted`), or the GM's hand for the fight it was moved in. One writer, `drawerTo`.
    * @type {{ at: 'none' } | { at: 'card' } | { at: 'tools'; of: string }}
    */
-  let over = { at: 'none' }, build = /** @type {import('../core/combat/map-mount.ts').BuildDrawer} */ (SCREEN);
+  let over = { at: 'none' }, build = SCREEN;
   const drawerTo = e => { build = buildDrawer(build, e); };
   /** The fight the Build drawer's hand is for: the one on screen, null when none or it has ended. */
   const drawerFight = f => (f && f.phase !== 'ended' ? f.id : null);
@@ -819,7 +834,7 @@ export function register(app) {
     waiting: () => false,
     card: id => { sel = id; overTo({ at: 'card' }); },
   };
-  const focusRow = f => (f ? rowOf(f, sel) || cur() || f.rows[0] || null : null);
+  const focusRow = f => (f ? (sel ? rowOf(f, sel) : null) || cur() || f.rows[0] || null : null);
 
   const share = (cur, max) => (max > 0 ? clamp(cur, 0, max) / max : 0);
   /** A bar and its number, bound to the card's fields `<key>`, `<key>Max` and `<key>F` (patch.ts), shown while `<key>F` is not null. */
@@ -1004,6 +1019,7 @@ export function register(app) {
     };
   }
 
+  /** @param {HTMLElement} el */
   function mount(el) {
     root = el;
     A().detail.wire(el, render);
@@ -1034,8 +1050,10 @@ export function register(app) {
       <div data-odds hidden></div>
       <div class="lbl sec" data-loglbl>Fight log</div><ul class="cmb-log" data-log aria-live="polite"></ul></div>
     </section>`;
+    /** @param {string} s */
     const $q = s => el.querySelector(s);
-    const val = s => $q(s).value;
+    /** @param {string} s */
+    const val = s => $q(s)?.value ?? '';
 
     el.addEventListener('keydown', ev => { // numeric HP entry: Enter = damage (a leading + heals), focus stays in the field
       if (ev.key !== 'Enter' || ev.isComposing || !ev.target.matches('[data-amt]') || !canRun()) return;
@@ -1047,12 +1065,13 @@ export function register(app) {
     el.addEventListener('change', ev => {
       const t = ev.target; if (!canRun()) return;
       if (t.matches('[data-target]')) { const r = focusRow(fight()); if (r) picks.set(r.id, t.value); render(); }
-      if (t.matches('[data-garm-on]')) { const r = focusRow(fight()); if (r && r.armed) armRow(r, r.armed.ability, t.value); }
+      if (t.matches('[data-garm-on]')) { const f = fight(), r = focusRow(f), target = rowOf(f, t.value); if (r && r.armed && target) armRow(r, r.armed.ability, target.id); }
     });
     el.addEventListener('submit', async ev => {
       if (!ev.target.matches('[data-qform]')) return; ev.preventDefault(); if (!canRun()) return;
       if (otherGMLive() && !(await confirmReplace())) return;
-      const inp = $q('[data-qline]'), er = $q('[data-qerr]'), o = parseQuick(inp.value);
+      const inp = $q('[data-qline]'), er = $q('[data-qerr]'); if (!inp || !er) return;
+      const o = parseQuick(inp.value);
       if ('error' in o) { er.textContent = `Cannot read "${o.error}". Write it like this: Goblin x3, C, skirmisher.`; er.hidden = false; return; }
       er.hidden = true; er.textContent = '';
       const m = statBlock(rules(), o.rank, { name: o.name, archetype: o.archetype, kind: o.kind });
@@ -1069,7 +1088,7 @@ export function register(app) {
       if (b.hasAttribute('data-toolsx')) { overTo({ at: 'none' }); return; }
       if (b.dataset.pick) { // A3: under 900 px the order sits above the card, so a pick brings the card into view
         sel = b.dataset.pick; overTo({ at: 'card' });
-        const card = matchMedia('(max-width:899px)').matches && root.querySelector('.cmb-card');
+        const card = matchMedia('(max-width:899px)').matches && el.querySelector('.cmb-card');
         if (card) card.scrollIntoView({ block: 'start' });
         return;
       }
@@ -1083,13 +1102,16 @@ export function register(app) {
       }
       if (b.matches('[data-addh],[data-addparty],[data-addm],[data-adds]') && otherGMLive() && !(await confirmReplace())) return;
       if (b.dataset.fudgeSide !== undefined || b.dataset.fudgeRow !== undefined) {
-        const to = Number(b.dataset.to), id = b.dataset.fudgeRow, side = oneOf(b.dataset.fudgeSide, ['party', 'foe'], null);
-        if (Number.isInteger(to) && (side || rowOf(f, id))) send({ type: 'fudge', set: { kind: 'weight', scope: side ? { kind: 'side', side } : { kind: 'row', id: rowOf(f, id).id }, n: to } });
+        const to = Number(b.dataset.to), id = b.dataset.fudgeRow, side = oneOf(b.dataset.fudgeSide, /** @type {const} */ (['party', 'foe']), null);
+        const target = id ? rowOf(f, id) : null;
+        /** @type {import('../core/combat/fight-types.ts').FudgeScope | null} */
+        const scope = side ? { kind: 'side', side } : target ? { kind: 'row', id: target.id } : null;
+        if (Number.isInteger(to) && scope) send({ type: 'fudge', set: { kind: 'weight', scope, n: to } });
         return;
       }
       if (b.dataset.fudgeForce !== undefined) {
-        const row = rowOf(f, b.dataset.fudgeForce), face = oneOf(b.dataset.face, ['20', '1', ''], '');
-        if (row) send({ type: 'fudge', set: { kind: 'force', id: row.id, face: face === '' ? null : /** @type {20 | 1} */ (Number(face)) } });
+        const row = rowOf(f, b.dataset.fudgeForce), face = oneOf(b.dataset.face, /** @type {const} */ (['20', '1', '']), '');
+        if (row) send({ type: 'fudge', set: { kind: 'force', id: row.id, face: face === '20' ? 20 : face === '1' ? 1 : null } });
         return;
       }
       if (b.hasAttribute('data-mythsw-btn')) { ui.wrote('GM', store.apply('gm-rules', st => mythicSwitched(st, !rules().fight.mythic.scripts))); return; }
@@ -1097,17 +1119,22 @@ export function register(app) {
       if (mrow) {
         if (b.dataset.myland) return landOmenOf(mrow);
         if (b.dataset.mydrop) { send({ type: 'mythic', by: mrow.id, step: 'drop' }); return; }
-        const nx = mythicHand(mythicSeenOf(mrow)).next;
+        const seen = mythicSeenOf(mrow), nx = seen ? mythicHand(seen).next : null;
         if (nx && await ui.confirm({ title: nx.label, body: nx.ask, confirmLabel: nx.yes })) send({ type: 'mythic', by: mrow.id, step: 'next' });
         return;
       }
       if (b.hasAttribute('data-start')) return start();
       if (b.dataset.eyes !== undefined) {
-        const id = oneOf(b.dataset.eyes, mapSource.eyes.choices().map(c => c.id), null);
-        mapSource.eyes.set(id ? { kind: 'row', id } : EVERYTHING); return;
+        const eyes = mapSource.eyes; if (!eyes) return;
+        const id = oneOf(b.dataset.eyes, eyes.choices().map(c => c.id), null);
+        eyes.set(id ? { kind: 'row', id } : EVERYTHING); return;
       }
       if (b.dataset.surp !== undefined) { surprised = b.dataset.surp === 'party' || b.dataset.surp === 'foe' ? b.dataset.surp : null; return render(); }
-      if (b.dataset.garm !== undefined && r) { armRow(r, b.dataset.garm ? /** @type {any} */ (b.dataset.garm) : null); return; }
+      if (b.dataset.garm !== undefined && r) {
+        const picked = b.dataset.garm ? r.abilities.find(x => x.id === b.dataset.garm)?.id ?? null : null;
+        if (!b.dataset.garm || picked) armRow(r, picked);
+        return;
+      }
       if (b.hasAttribute('data-next')) return next();
       if (b.hasAttribute('data-end')) { overTo({ at: 'none' }); return endEncounter(); }
       if (b.hasAttribute('data-clear')) {
@@ -1128,22 +1155,26 @@ export function register(app) {
         return;
       }
       if (b.hasAttribute('data-addm')) {
-        const n = copiesOf(val('[data-mcount]')), cs = A().bestiary.toCombatant(val('[data-msel]'), n); if (!cs.length) return;
-        const o = cs[0].row.origin;
-        if (add(cs)) toast(`${n} × ${o.kind === 'monster' ? o.name : cs[0].row.name} added.`); return;
+        const n = copiesOf(val('[data-mcount]')), cs = A().bestiary.toCombatant(val('[data-msel]'), n), first = cs[0]; if (!first) return;
+        const o = first.row.origin;
+        if (add(cs)) toast(`${n} × ${o.kind === 'monster' ? o.name : first.row.name} added.`); return;
       }
       if (b.hasAttribute('data-adds')) {
         const sid = val('[data-ssel]'), h = store.get().hunters.find(x => x.shadows.some(s => s.id === sid)), s = h && h.shadows.find(x => x.id === sid);
         if (s) add([shadowJoin(s, h.id)]); return;
       }
-      if (!r) return;
+      if (!f || !r) return;
       if (b.hasAttribute('data-dmg') || b.hasAttribute('data-heal')) {
-        const inp = b.closest('.cmb-line') && b.closest('.cmb-line').querySelector('[data-amt]');
+        const line = b.closest('.cmb-line'), inp = line ? line.querySelector('[data-amt]') : null;
         applyAmount(r, inp ? inp.value : amt(), b.hasAttribute('data-heal'), null); return;
       }
       if (b.dataset.q) { adjust(r, { hp: int(b.dataset.q) }); return; }
       if (b.dataset.mana) { const n = int((A().hunter.parseAmount(amt()) || { n: 1 }).n, 1) || 1; adjust(r, { mana: int(b.dataset.mana) * Math.abs(n) }); return; }
-      if (b.dataset.rc) { send({ type: 'status', id: r.id, remove: /** @type {any} */ (b.dataset.rc) }); return; }
+      if (b.dataset.rc) {
+        const key = r.statuses.find(s => s.key === b.dataset.rc)?.key;
+        if (key) send({ type: 'status', id: r.id, remove: key });
+        return;
+      }
       if (b.hasAttribute('data-cforge')) return addStatus(r);
       if (b.hasAttribute('data-defeat')) { adjust(r, { hp: -cardOf(f, r, rules()).hpMax }); return; }
       if (b.hasAttribute('data-revive')) { revive(r); return; }
@@ -1156,13 +1187,13 @@ export function register(app) {
       if (b.hasAttribute('data-extract')) {
         const mid = refs().monsters[r.id], m = mid ? A().bestiary.get(mid) : null;
         const o = r.origin.kind === 'monster' ? r.origin : null;
-        const byRow = rowOf(f, b.getAttribute('data-extract'));
+        const exId = b.getAttribute('data-extract'), byRow = exId ? rowOf(f, exId) : null;
         if (!byRow || !byRow.holder || byRow.holder.kind === 'shadow') return;
         /** @type {import('../core/api.ts').ExtractTarget} */
         const corpse = { id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
           down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, rules().shadow.maxAttempts) };
         const made = await A().shadows.extract(byRow.holder, corpse);
-        if (made) { const c = root.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
+        if (made) { const c = el.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
         if (rowOf(fight(), r.id)) toast(made ? `${r.name} rises as a shadow.` : `Extraction of ${r.name} failed.`);
       }
     });
@@ -1178,7 +1209,8 @@ export function register(app) {
     /** @type {{ names: string[]; count: number; rank: import('../core/rules.ts').Rank; archetype: import('../core/hunter/derive.ts').Archetype; kind: import('../core/hunter/derive.ts').MonsterKind }} */
     const o = { names: [], count: 1, rank: 'E', archetype: 'brute', kind: 'normal' };
     for (let i = 0; i < toks.length; i++) {
-      const t = toks[i], low = t.toLowerCase(); let m;
+      const t = toks[i]; if (t === undefined) continue;
+      const low = t.toLowerCase(); let m;
       if ((m = /^[x×](\d+)$/i.exec(t)) || (m = /^(\d+)[x×]$/i.exec(t))) { o.count = int(m[1], 1); if (o.count < 1 || o.count > MONSTER_BOUNDS.copies) return { error: t }; }
       else if (oneOf(t, RANKS, null)) o.rank = oneOf(t, RANKS, o.rank);
       else if ((m = /^rank[:=]?([SABCDE])?$/i.exec(t)) || (m = /^([SABCDE])-?rank$/i.exec(t))) { const rk = String(m[1] || toks[++i] || '').toUpperCase(); if (!oneOf(rk, RANKS, null)) return { error: rk || t }; o.rank = oneOf(rk, RANKS, o.rank); }
@@ -1239,14 +1271,15 @@ export function register(app) {
    * the one the map shows pressed (`mapSource.eyes`).
    */
   function eyesRow() {
-    const e = mapSource.eyes, now = e.now(), on = id => (now.kind === 'row' ? now.id === id : id === '');
+    const e = mapSource.eyes; if (!e) return '';
+    const now = e.now(), on = id => (now.kind === 'row' ? now.id === id : id === '');
     return [{ id: '', name: 'Everything' }, ...e.choices()].map(c => `<button type="button" data-fk="eyes-${esc(c.id)}" data-eyes="${esc(c.id)}" aria-pressed="${on(c.id)}">${esc(c.name)}</button>`).join('');
   }
 
   /** The bar: what the fight is doing and the order ahead (`head`), then the GM's buttons for its state (`acts`). */
   function barDesc(f, gm, elsewhere, mapMode, tools) {
-    const n = f ? f.rows.length : 0, act = running(f), turn = act ? order(f, 8, rules()) : [];
-    const head = act ? `Round ${turn.length ? turn[0].round : 1}<small>Turn: ${esc(turn.length ? turn[0].row.name : '-')}</small><small data-ahead>Next: ${turn.slice(1).map(t => esc(t.row.name)).join(' → ') || '-'}</small>`
+    const n = f ? f.rows.length : 0, act = running(f), turn = act ? order(f, 8, rules()) : [], firstTurn = turn[0];
+    const head = act ? `Round ${firstTurn ? firstTurn.round : 1}<small>Turn: ${esc(firstTurn ? firstTurn.row.name : '-')}</small><small data-ahead>Next: ${turn.slice(1).map(t => esc(t.row.name)).join(' → ') || '-'}</small>`
       : f && f.phase === 'ended' ? 'Fight over<small>Tap End fight to see the summary</small>'
         : n ? 'Ready to fight<small>Tap Start fight to begin</small>' : 'No fight<small>Add hunters and monsters below</small>';
     if (!gm) return n ? { tools: '', head: `${elsewhere}<div class="cmb-head">${head}<small>View only: the GM runs the fight.</small></div>`, acts: '<button type="button" data-dismiss data-localdismiss>Dismiss this fight</button>' }
@@ -1254,7 +1287,7 @@ export function register(app) {
     const seg = n && f.phase !== 'ended' ? `<div class="seg cmb-view" role="group" aria-label="Fight view">${FIGHT_VIEWS.map(v => `<button type="button" data-fk="fv-${v}" data-fview="${v}" aria-pressed="${fightView() === v}">${v === 'map' ? 'Map' : 'List'}</button>`).join('')}</div>` : '';
     if (mapMode) {
       return {
-        head: `${elsewhere}<div class="cmb-head">Round ${turn.length ? turn[0].round : 1}</div>`,
+        head: `${elsewhere}<div class="cmb-head">Round ${firstTurn ? firstTurn.round : 1}</div>`,
         acts: `${seg}<button type="button" data-fk="tools" data-tools-open aria-expanded="${tools}"${fudgeShown(f) ? ' aria-label="Fight tools, fudge on"' : ''}>Fight tools${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i>' : ''}</button>
         <button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n">Next ▶</button>`,
         tools: `${sizeSteps(f)}<button type="button" data-fk="end" data-end>End fight</button><button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight">Clear fight</button>`,
@@ -1276,9 +1309,9 @@ export function register(app) {
     const R = rules(), now = timeOf(f), state = f.phase === 'running' ? runningState(f) : null;
     if (f.phase === 'setup' && !R.fight.mythic.scripts) return '';
     const canHand = gm && can(f, 'mythic');
-    return f.rows.filter(r => r.mythic && isUp(r)).map(r => {
+    return f.rows.filter(r => r.mythic && isUp(r)).flatMap(r => {
       const m = mythicSeenOf(r);
-      return mythicBox({ id: r.id, strip: mythicStrip(m, now, R), banner: omenBanner(m, f.rows, now, R), you: null, hand: canHand ? mythicHand(m) : null, turn: !!state && state.at === 'landing' && state.id === r.id });
+      return m ? [mythicBox({ id: r.id, strip: mythicStrip(m, now, R), banner: omenBanner(m, f.rows, now, R), you: null, hand: canHand ? mythicHand(m) : null, turn: !!state && state.at === 'landing' && state.id === r.id })] : [];
     }).join('');
   }
   /** What each of `list` does to the omen standing in `f`, by ability id (fight-view.ts `answersBy`). */
@@ -1305,11 +1338,12 @@ export function register(app) {
   /** The log, newest first: a line the fight added goes in at the top, and only a shorter log is drawn again (patch.ts `prepended`). */
   function drawLog(box, lines) {
     // the shown lines are a copy: the fight's log is written into in place (save-step.ts `writeInto`)
-    if (shownLog && lines.length === shownLog.length && lines.every((l, i) => l === shownLog[i])) return;
+    const prev = shownLog;
+    if (prev && lines.length === prev.length && lines.every((l, i) => l === prev[i])) return;
     const li = l => `<li>${esc(l)}</li>`;
-    const k = shownLog && shownLog.length && lines.length ? prepended(shownLog, lines) : null;
+    const k = prev && prev.length && lines.length ? prepended(prev, lines) : null;
     if (k === null) box.innerHTML = lines.length ? lines.map(li).join('') : '<li class="empty">Nothing has happened yet.</li>';
-    else if (k) { box.insertAdjacentHTML('afterbegin', lines.slice(0, k).map(li).join('')); while (box.children.length > lines.length) box.lastElementChild.remove(); }
+    else if (k) { box.insertAdjacentHTML('afterbegin', lines.slice(0, k).map(li).join('')); while (box.children.length > lines.length) box.lastElementChild?.remove(); }
     shownLog = [...lines];
   }
 
@@ -1324,95 +1358,105 @@ export function register(app) {
    * row's card by its key, writing only what changed. When the order changes its rows slide to their new places.
    */
   function render() {
-    if (!root) return;
-    const $q = s => root.querySelector(s), f = fight();
+    const el = root; if (!el) return;
+    /** @param {string} s */
+    const $q = s => el.querySelector(s), f = fight();
     const s = store.get();
-    const gm = canRun(), wrap = $q('[data-buildwrap]');
+    const gm = canRun();
+    const wrap = $q('[data-buildwrap]'), bld = $q('[data-build]'), logLbl = $q('[data-loglbl]'), logBox = $q('[data-log]');
+    const barBox = $q('[data-bar]'), ta = $q('[data-toolacts]'), fz = $q('[data-fudge]'), sw = $q('[data-mythsw]');
+    const my = $q('[data-mythic]'), er = $q('[data-eyesrow]'), es = $q('[data-eyesseg]'), win = $q('.win'), tl = $q('[data-tools]'), main = $q('[data-main]');
+    if (!wrap || !bld || !logLbl || !logBox || !barBox || !ta || !fz || !sw || !my || !er || !es || !win || !tl || !main) return;
     wrap.hidden = !gm; // P01: players never get the encounter builder
-    const bld = $q('[data-build]'), act = running(f), wanted = buildWanted(f);
+    const act = running(f), wanted = buildWanted(f);
     drawerTo({ kind: 'drawn', fight: drawerFight(f) });
     if (build.at === 'screen' && bld.open !== wanted) bld.open = wanted;
     const n = f ? f.rows.length : 0, idle = !gm && !n; // a player with no local fight: the GM's HUD is the table, so no empty tracker body
-    $q('[data-loglbl]').hidden = idle; $q('[data-log]').hidden = idle;
+    logLbl.hidden = idle; logBox.hidden = idle;
     const elsewhere = gm && !n && otherGMLive() ? '<p class="empty" data-elsewhere role="status">Another GM device is running a fight. Adding to a fight here replaces it.</p>' : '';
     // a focused control that a redraw replaced or moved (a part, a row, the card of another row) gets its focus back
-    const ae = document.activeElement, fk = ae && root.contains(ae) ? ae.dataset.fk : null;
-    const caret = fk && ae.selectionStart !== undefined && ae.type !== 'number' ? ae.selectionStart : null;
+    const ae = document.activeElement, fk = ae && el.contains(ae) ? ae.dataset.fk : null;
+    const caret = fk && ae && ae.selectionStart !== undefined && ae.type !== 'number' ? ae.selectionStart : null;
     const mapMode = gm && !!f && running(f) && fightView() === 'map', tools = toolsShown(f, mapMode);
     // the builder's lists, while it shows (in Map view it is in the Fight tools sheet, which draws them when it opens)
     if (gm && (!mapMode || tools)) {
-      fillSelect($q('[data-hsel]'), pickables(s.hunters, remoteList()).map(p => [p.id, p.ref.kind === 'remote' ? `${p.name} (player phone)` : p.name]), 'No hunters');
-      fillSelect($q('[data-msel]'), A().bestiary.list().map(m => [m.id, `${m.name} (${m.rank}${m.kind === 'normal' ? '' : ` ${m.kind}`})`]), 'No monsters');
-      fillSelect($q('[data-ssel]'), s.hunters.flatMap(h => h.shadows.filter(x => x.summoned).map(x => [x.id, `${x.name} (${h.name})`])), 'No summoned shadows');
-      // few jobs hold shadows: their block shows only while there is a summoned one to add
-      $q('[data-ssel]').closest('fieldset').hidden = !$q('[data-ssel]').value;
+      const hsel = $q('[data-hsel]'), msel = $q('[data-msel]'), ssel = $q('[data-ssel]');
+      if (hsel) fillSelect(hsel, pickables(s.hunters, remoteList()).map(p => [p.id, p.ref.kind === 'remote' ? `${p.name} (player phone)` : p.name]), 'No hunters');
+      if (msel) fillSelect(msel, A().bestiary.list().map(m => [m.id, `${m.name} (${m.rank}${m.kind === 'normal' ? '' : ` ${m.kind}`})`]), 'No monsters');
+      if (ssel) {
+        fillSelect(ssel, s.hunters.flatMap(h => h.shadows.filter(x => x.summoned).map(x => [x.id, `${x.name} (${h.name})`])), 'No summoned shadows');
+        // few jobs hold shadows: their block shows only while there is a summoned one to add
+        const sfs = ssel.closest('fieldset'); if (sfs) sfs.hidden = !ssel.value;
+      }
     }
     // an answer for a fight that has changed since is marked stale, a run under way for one is dropped (odds-box.js)
     paintOdds();
     const bd = barDesc(f, gm, elsewhere, mapMode, tools);
-    bind($q('[data-bar]'), { head: bd.head, acts: bd.acts });
-    const ta = $q('[data-toolacts]'); if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
-    const fz = $q('[data-fudge]'), fh = gm ? fudgeBlock(f) : '';
+    bind(barBox, { head: bd.head, acts: bd.acts });
+    if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
+    const fh = gm ? fudgeBlock(f) : '';
     fz.hidden = !fh; if (fz.innerHTML !== fh) fz.innerHTML = fh;
-    const sw = $q('[data-mythsw]'), swh = gm ? mythicSwitchMarkup() : '';
+    const swh = gm ? mythicSwitchMarkup() : '';
     sw.hidden = !swh; if (sw.innerHTML !== swh) sw.innerHTML = swh;
-    const my = $q('[data-mythic]'), mh = mythicMarkup(f, gm);
+    const mh = mythicMarkup(f, gm);
     if (my.dataset.sig !== mh) {
       const omens = (html => [...html.querySelectorAll('[data-omen]')].map(x => x.dataset.omen).join('|'))(ui.h(`<div>${mh}</div>`));
       my.dataset.sig = mh; my.innerHTML = mh;
       if (omens && my.dataset.omens !== omens) { const o = my.querySelector('.myth-omen'); if (o) motion.pop(o); }
       my.dataset.omens = omens;
     }
-    const er = $q('[data-eyesrow]'), eh = mapMode ? eyesRow() : '', es = $q('[data-eyesseg]');
+    const eh = mapMode ? eyesRow() : '';
     er.hidden = !mapMode; if (es.dataset.sig !== eh) { es.dataset.sig = eh; es.innerHTML = eh; }
-    $q('.win').classList.toggle('cmb-mapmode', mapMode);
-    const tl = $q('[data-tools]'); tl.classList.toggle('open', tools); ui.sheet('fightTools', tools, shutOver);
+    win.classList.toggle('cmb-mapmode', mapMode);
+    tl.classList.toggle('open', tools); ui.sheet('fightTools', tools, shutOver);
     if (tools !== tl.hasAttribute('role')) { if (tools) tl.setAttribute('role', 'dialog'); else tl.removeAttribute('role'); }
-    drawLog($q('[data-log]'), f ? f.log.map(l => l.text) : []);
-    const main = $q('[data-main]'), mode = idle ? 'idle' : f && n ? 'fight' : 'empty';
+    drawLog(logBox, f ? f.log.map(l => l.text) : []);
+    const mode = idle ? 'idle' : f && n ? 'fight' : 'empty';
     if (main.dataset.mode !== mode) {
       main.dataset.mode = mode;
       slotTo('hides');
       main.innerHTML = mode === 'fight' ? '<div class="cmb-main"><div data-mapbox></div><ul class="cmb-list" aria-label="Turn order"></ul><div data-cardbox><button type="button" class="quiet cmb-sheetx" data-sheetclose>Close</button></div></div>'
         : mode === 'empty' ? '<p class="empty">Add party hunters, monsters or shadows to begin.</p>' : '';
     }
-    $q('.win').classList.toggle('cmb-ck', mode === 'fight'); // D02: desktop cockpit (CSS applies at >=1100 only)
-    if (mode === 'fight') {
-      const fc = focusRow(f), list = main.querySelector('.cmb-list'), cardBox = main.querySelector('[data-cardbox]');
-      const onMap = gm && fightView() === 'map', box = main.querySelector('[data-mapbox]');
-      main.querySelector('.cmb-main').classList.toggle('map', onMap);
-      cardBox.classList.toggle('sheet', onMap && over.at === 'card');
-      box.hidden = !onMap;
-      slotTo(onMap ? 'shows' : 'hides', box);
-      // on a phone the map hides the list, and the card until a token's is opened: what is hidden is not drawn
-      const narrow = onMap && NARROW.matches, listShown = !narrow, cardShown = !narrow || over.at === 'card';
-      const ordered = listShown ? listOrder(f) : [];
-      const draw = () => {
-        if (listShown) {
-          const rows = keyed(list, ordered.map(r => r.id), id => ui.h(rowTemplate(id)));
-          ordered.forEach((r, i) => bind(rows[i], rowDesc(f, r, i, fc)));
-        }
-        if (!cardShown) return;
-        const [card] = keyed(cardBox, fc ? [gm ? 'card' : 'card:ro'] : [], () => ui.h(cardTemplate(!gm)));
-        if (!card) return;
-        const amt = card.dataset.cid !== fc.id && card.querySelector('[data-amt]');
-        if (amt) amt.value = amounts.get(fc.id) ?? '';
-        const pipsWas = card.dataset.cid === fc.id ? Number(card.dataset.charge || -1) : -1;
-        bind(card, cardDesc(f, fc, !gm));
-        // a stacking status's count counts to its new value from the one shown last
-        for (const n of card.querySelectorAll('[data-stacks]')) void motion.numberTo(/** @type {HTMLElement} */ (n), Number(/** @type {HTMLElement} */ (n).dataset.stacks), String, `stk:${/** @type {HTMLElement} */ (n).dataset.sk}`);
-        const pips = card.querySelector('.cmb-pips'), charge = pips ? Number(/** @type {HTMLElement} */ (pips).dataset.charge) : -1;
-        if (pips && pipsWas >= 0 && charge > pipsWas) { const on = pips.querySelectorAll('i.on'); if (on[charge - 1]) motion.pop(on[charge - 1]); }
-        card.dataset.charge = String(charge);
-      };
-      // when time moves, the rows of the order slide to their new places
-      const ids = act ? ordered.map(r => r.id).join() : '';
-      motion.slideTo(list, () => list.children, el => el.dataset.key, draw, listShown && !!(ids && lastOrder && ids !== lastOrder));
-      lastOrder = ids;
+    win.classList.toggle('cmb-ck', mode === 'fight'); // D02: desktop cockpit (CSS applies at >=1100 only)
+    if (mode === 'fight' && f) {
+      const fc = focusRow(f), list = main.querySelector('.cmb-list'), cardBox = main.querySelector('[data-cardbox]'), mainBox = main.querySelector('.cmb-main'), box = main.querySelector('[data-mapbox]');
+      if (list && cardBox && mainBox && box) {
+        const onMap = gm && fightView() === 'map';
+        mainBox.classList.toggle('map', onMap);
+        cardBox.classList.toggle('sheet', onMap && over.at === 'card');
+        box.hidden = !onMap;
+        slotTo(onMap ? 'shows' : 'hides', box);
+        // on a phone the map hides the list, and the card until a token's is opened: what is hidden is not drawn
+        const narrow = onMap && NARROW.matches, listShown = !narrow, cardShown = !narrow || over.at === 'card';
+        const ordered = listShown ? listOrder(f) : [];
+        const draw = () => {
+          if (listShown) {
+            const rows = keyed(list, ordered.map(r => r.id), id => ui.h(rowTemplate(id)));
+            ordered.forEach((r, i) => { const rowEl = rows[i]; if (rowEl) bind(rowEl, rowDesc(f, r, i, fc)); });
+          }
+          if (!cardShown) return;
+          const [card] = keyed(cardBox, fc ? [gm ? 'card' : 'card:ro'] : [], () => ui.h(cardTemplate(!gm)));
+          if (!card || !fc) return;
+          const amt = card.dataset.cid !== fc.id && card.querySelector('[data-amt]');
+          if (amt) amt.value = amounts.get(fc.id) ?? '';
+          const pipsWas = card.dataset.cid === fc.id ? Number(card.dataset.charge || -1) : -1;
+          bind(card, cardDesc(f, fc, !gm));
+          // a stacking status's count counts to its new value from the one shown last
+          for (const n of card.querySelectorAll('[data-stacks]')) void motion.numberTo(n, Number(n.dataset.stacks), String, `stk:${n.dataset.sk}`);
+          const pips = card.querySelector('.cmb-pips'), charge = pips ? Number(pips.dataset.charge) : -1;
+          if (pips && pipsWas >= 0 && charge > pipsWas) { const on = pips.querySelectorAll('i.on'), pip = on[charge - 1]; if (pip) motion.pop(pip); }
+          card.dataset.charge = String(charge);
+        };
+        // when time moves, the rows of the order slide to their new places
+        const ids = act ? ordered.map(r => r.id).join() : '';
+        motion.slideTo(list, () => list.children, node => node.dataset.key, draw, listShown && !!(ids && lastOrder && ids !== lastOrder));
+        lastOrder = ids;
+      }
     } else lastOrder = '';
     // the card is a sheet over the map where the map hides it (under 900 px); wider it stands beside the map
     ui.sheet('rowCard', mode === 'fight' && gm && fightView() === 'map' && over.at === 'card' && NARROW.matches, shutOver);
-    if (fk && document.activeElement !== ae) { const el = [...root.querySelectorAll('[data-fk]')].find(x => x.dataset.fk === fk); if (el && !el.disabled) { el.focus(); if (caret !== null) el.setSelectionRange(caret, caret); } }
+    if (fk && document.activeElement !== ae) { const node = [...el.querySelectorAll('[data-fk]')].find(x => x.dataset.fk === fk); if (node && !node.disabled) { node.focus(); if (caret !== null) node.setSelectionRange(caret, caret); } }
   }
 
   app.registerView({
@@ -1431,16 +1475,17 @@ export function register(app) {
   // ── D02: combat keys (B5). Registry ignores keys while typing, with a modal open, on repeat, or with Ctrl/Alt/Meta ──
   { // the GM's keyboard shortcuts, their helpers kept in a block of their own
     const G = 'Combat (GM)', inView = () => !!root && canRun();
-    const $r = s => root && root.querySelector(s);
+    /** @param {string} s */
+    const $r = s => (root ? root.querySelector(s) : null);
     const click = s => { const b = $r(s); if (b && !b.disabled) { b.click(); return true; } return false; };
     const moveSel = d => {
       const f = fight(); if (!f || !f.rows.length) return;
-      const list = listOrder(f), r = focusRow(f), i = Math.max(0, list.indexOf(r)), n = list.length;
-      sel = list[(i + d + n) % n].id; render();
+      const list = listOrder(f), r = focusRow(f), i = r ? Math.max(0, list.indexOf(r)) : 0, n = list.length, picked = list[(i + d + n) % n];
+      if (picked) { sel = picked.id; render(); }
     };
     app.keys.add({ key: 'n', label: 'Next turn', group: G, view: 'combat', gmOnly: true, when: () => inView() && running(fight()), run: next });
-    app.keys.add({ key: 'j', label: 'Select next combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!(fight() && fight().rows.length), run: () => moveSel(1) });
-    app.keys.add({ key: 'k', label: 'Select previous combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!(fight() && fight().rows.length), run: () => moveSel(-1) });
+    app.keys.add({ key: 'j', label: 'Select next combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && Boolean(fight()?.rows.length), run: () => moveSel(1) });
+    app.keys.add({ key: 'k', label: 'Select previous combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && Boolean(fight()?.rows.length), run: () => moveSel(-1) });
     app.keys.add({ key: 'd', label: 'Damage / heal: focus HP amount (Enter damages, Shift+Enter heals)', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!$r('[data-amt]'),
       run: () => { const a = $r('[data-amt]'); if (a) { a.focus(); a.select(); } } });
     app.keys.add({ key: 's', label: 'Add status to selected', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!$r('[data-cforge]'), run: () => click('[data-cforge]') });

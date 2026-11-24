@@ -203,6 +203,12 @@ test('a GM whose Save as a new map is refused keeps the map maker open with the 
   await cell(gm, 4, 4).tap();
   await expect(cell(gm, 4, 4)).toHaveClass(/wall/);
 
+  await test.step('with a whitespace-only name, the preview still draws and Save stays disabled', async () => {
+    await maker(gm).locator('[data-name]').fill('   ');
+    await expect(maker(gm).locator('.mk-preview')).toContainText('Starting spots: 0 for party, 0 for foes (uses default rows)');
+    await expect(maker(gm).locator('[data-apply]')).toBeDisabled();
+  });
+
   await test.step('with the name cleared, Save as a new map says to name it, and the maker stays open with the wall', async () => {
     await maker(gm).locator('[data-name]').fill('');
     await maker(gm).locator('[data-asnew]').tap();

@@ -4,8 +4,8 @@
   "scripts": {
     "start": "bun server.ts",
     "build": "bun scripts/build.ts",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.views.json --noEmit",
-    "test": "tsc --noEmit && tsc -p tsconfig.views.json --noEmit && bun test --parallel=4",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.views.json --noEmit && tsc -p tsconfig.views.strict.json --noEmit",
+    "test": "tsc --noEmit && tsc -p tsconfig.views.json --noEmit && tsc -p tsconfig.views.strict.json --noEmit && bun test --parallel=4",
     "e2e": "playwright test",
     "ci": "bun scripts/ci.ts",
     "deps": "bun scripts/deps.ts",

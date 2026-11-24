@@ -61,6 +61,7 @@ const browserFiles = plan.browser === 'all' || plan.browser === 'none' ? [] : pl
 const ALL_STEPS: (Step & { run: boolean })[] = [
   { run: true, name: 'typecheck', cmd: ['bunx', 'tsc', '--noEmit'], retry: ['bunx', 'tsc', '--noEmit'] },
   { run: true, name: 'typecheck of the views', cmd: ['bunx', 'tsc', '-p', 'tsconfig.views.json', '--noEmit'], retry: ['bunx', 'tsc', '-p', 'tsconfig.views.json', '--noEmit'] },
+  { run: true, name: 'strict null check of opted-in views', cmd: ['bunx', 'tsc', '-p', 'tsconfig.views.strict.json', '--noEmit'], retry: ['bunx', 'tsc', '-p', 'tsconfig.views.strict.json', '--noEmit'] },
   { run: plan.unit, name: 'unit tests and lint checks', cmd: UNIT, retry: UNIT },
   { run: plan.browser === 'all' || browserFiles.length > 0, name: plan.browser === 'all' ? 'browser tests' : 'the browser test files this push changes',
     cmd: ['bunx', 'playwright', 'test', ...browserFiles], retry: ['bunx', 'playwright', 'test', ...browserFiles, '--last-failed'], env: { CI: '1', E2E_PORT, E2E_FEEL: 'skip' } },

@@ -2613,3 +2613,74 @@ test('server.ts and src/edge/sync.ts name room API errors only through API_ERROR
     .filter(l => !isComment(l.text) && syncLiteral.test(l.text));
   expect(report(yHits), 'parse room API errors in src/edge/sync.ts with parseApiError(...) and compare against API_ERRORS.*.code').toEqual([]);
 });
+
+test('tsconfig.views.strict.json enables strictNullChecks for its opted-in views, is checked by typecheck, test and CI, and no locked view drops off it', async () => {
+  // Unit 6 (strict-views): views opt into strictNullChecks one file at a time by adding one path to `files` in
+  // tsconfig.views.strict.json. Every view locked into STRICT_VIEWS below stays on the list permanently.
+  const STRICT_VIEWS = [
+    'src/views/combat.js',
+    'src/views/map-maker.js',
+    'src/views/mythic-html.js',
+    'src/views/table.js',
+    'src/views/ui.js',
+    'src/views/uses.js',
+  ] as const;
+  const raw = JSON.parse(await Bun.file(`${ROOT}/tsconfig.views.strict.json`).text()) as {
+    compilerOptions?: { strictNullChecks?: unknown; exactOptionalPropertyTypes?: unknown };
+    files?: unknown;
+  };
+  expect(raw.compilerOptions?.strictNullChecks, 'keep strictNullChecks enabled in tsconfig.views.strict.json').toBe(true);
+  expect(raw.compilerOptions?.exactOptionalPropertyTypes, 'keep exactOptionalPropertyTypes matching tsconfig.json').toBe(true);
+  expect(Array.isArray(raw.files), 'list opted-in views in tsconfig.views.strict.json files').toBe(true);
+  const files = raw.files as string[];
+  expect(files, 'keep tsconfig.views.strict.json files sorted and deduplicated').toEqual([...new Set(files)].sort());
+  for (const f of files) {
+    expect(f === 'src/app.js' || (f.startsWith('src/views/') && f.endsWith('.js')), `strict view entry must be a JS view: ${f}`).toBe(true);
+    expect(await Bun.file(`${ROOT}/${f}`).exists(), `strict view file must exist: ${f}`).toBe(true);
+  }
+  const dropped = STRICT_VIEWS.filter(f => !files.includes(f));
+  expect(dropped, 'a view opted into strictNullChecks cannot drop off tsconfig.views.strict.json').toEqual([]);
+  const pkg = JSON.parse(await Bun.file(`${ROOT}/package.json`).text()) as { scripts?: Record<string, string> };
+  expect(pkg.scripts?.['typecheck'], 'bun run typecheck runs tsconfig.views.strict.json').toContain('tsconfig.views.strict.json');
+  expect(pkg.scripts?.['test'], 'bun run test runs tsconfig.views.strict.json').toContain('tsconfig.views.strict.json');
+  const ci = await Bun.file(`${ROOT}/scripts/ci.ts`).text();
+  expect(ci, 'scripts/ci.ts runs tsconfig.views.strict.json').toContain('tsconfig.views.strict.json');
+});
+
+test('opted-in strict views carry no @ts- suppressions, no @type {any}, and no JSDoc cast over a non-literal expression', async () => {
+  // Unit 6 (strict-views): strictNullChecks only prevents null bugs when opted-in views fix missing values with real
+  // guards instead of casting or suppressing the compiler (past bugs f11e6911, d7f67cf1, 9097c5ca).
+  const suppress = /@ts-(?:ignore|expect-error|nocheck)\b/;
+  const anyType = /\/\*\*\s*@type\s*\{[^}]*\bany\b[^}]*\}\s*\*\//;
+  // Inline JSDoc cast `/** @type {T} */ (expr)` is allowed only for `const` assertions and literal initializers
+  // (`(null)`, `([...])`, `({...})`, `('...')`), never for casting a variable, property access, or call result.
+  const valueCast = /\/\*\*\s*@type\s*\{(?!const\s*\})[^}]+\}\s*\*\/\s*\((?!\s*(?:null\s*\)|\[|\{|'|"))/;
+  const fails = (line: string) => suppress.test(line) || anyType.test(line) || valueCast.test(line);
+  const bad = [
+    '// @ts-ignore',
+    '// @ts-expect-error',
+    'const x = /** @type {any} */ (def);',
+    'show(/** @type {SystemWin} */ (parts.get(fx.id)));',
+    'void motion.numberTo(/** @type {HTMLElement} */ (n), 1);',
+    'const p = /** @type {ArmPayload} */ (event.payload);',
+  ];
+  for (const s of bad) expect(fails(s), `the rule catches: ${s}`).toBe(true);
+  const fine = [
+    'let root = /** @type {HTMLElement | null} */ (null);',
+    "const VIEWS = /** @type {const} */ (['map', 'list']);",
+    "const NOT_WRITTEN = /** @type {readonly Effect[]} */ ([{ type: 'refused', reason: 'notNow' }]);",
+    'eyesMemory.write(/** @type {KeptEyes} */ ({ fight: f.id, as: v }));',
+    '/** @type {import("./api.ts").MapSource} */',
+  ];
+  for (const s of fine) expect(fails(s), `the rule passes: ${s}`).toBe(false);
+
+  const cfg = JSON.parse(await Bun.file(`${ROOT}/tsconfig.views.strict.json`).text()) as { files: string[] };
+  const hits: Line[] = [];
+  for (const file of cfg.files) {
+    const text = await Bun.file(`${ROOT}/${file}`).text();
+    text.split('\n').forEach((line, i) => {
+      if (fails(line)) hits.push({ file, line: i + 1, text: line });
+    });
+  }
+  expect(report(hits), 'fix nulls and boundary values with real guards or lookups instead of casts or @ts- suppressions').toEqual([]);
+});

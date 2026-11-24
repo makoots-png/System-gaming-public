@@ -62,6 +62,9 @@ const CSS = `
   .dx-fab{display:none}
   .dx-sheet{left:0;right:0;width:auto;bottom:calc(var(--nav-h) + var(--sab));max-height:calc(100vh - var(--nav-h) - var(--sab) - var(--sat) - 8px);max-height:calc(100dvh - var(--nav-h) - var(--sab) - var(--sat) - 8px);
     padding:12px calc(12px + var(--sar)) 12px calc(12px + var(--sal));border-width:1px 0 0}
+  /* while top-docked toasts are shown, keep the quick-roll sheet below them so its header and dice row stay clear */
+  html:has(#toasts .toast:not(.m-leaving)) .dx-sheet{max-height:calc(100vh - var(--nav-h) - var(--sab) - var(--sat) - 112px);max-height:calc(100dvh - var(--nav-h) - var(--sab) - var(--sat) - 112px)}
+  html:has(#toasts .toast:not(.m-leaving):nth-of-type(2)) .dx-sheet{max-height:calc(100vh - var(--nav-h) - var(--sab) - var(--sat) - 210px);max-height:calc(100dvh - var(--nav-h) - var(--sab) - var(--sat) - 210px)}
   .dx-sheet header button{min-height:44px;min-width:44px}
 }
 /* landscape phones: the rail's Dice tab opens the sheet at the right */

@@ -158,8 +158,8 @@ export function register(app) {
         + D().panel(list, key, () => ({ kind: 'status', label: name, def, tier: s.source ? s.source.tier : s.tier ?? null, ...(n ? { stacks: n } : {}), left: left ?? null }));
     }).join('')}</div>`;
   }
-  /** Each count on a chip counts to its new value from the one shown last (motion.ts `numberTo`, by the row and the status). */
-  const countStacks = root => { for (const n of root.querySelectorAll('[data-stacks]')) void motion.numberTo(/** @type {HTMLElement} */ (n), Number(n.dataset.stacks), String, `stk:${n.dataset.sk}`); };
+  /** Each count on a chip counts to its new value from the one shown last (motion.ts `numberTo`, by the row and the status). @param {ParentNode} root */
+  const countStacks = root => { for (const n of root.querySelectorAll('[data-stacks]')) void motion.numberTo(n, Number(n.dataset.stacks), String, `stk:${n.dataset.sk}`); };
 
   // ── what the HUD shows, as descriptions (src/views/patch.ts): drawn once, then updated in place ──
   /** A row of the order: its fields are `rowDesc`'s. */
@@ -302,15 +302,17 @@ export function register(app) {
     mount(el) {
       // numeric HP entry on the player's own sheet (never touches the GM's doc): Enter = damage, leading '+' = heal
       const applyAmt = (heal, keep) => {
-        const inp = el.querySelector('[data-tbamt]'), a = app.api.hunter.parseAmount(inp.value), h = meHunter(encounter());
+        const inp = el.querySelector('[data-tbamt]'); if (!inp) return;
+        const a = app.api.hunter.parseAmount(inp.value), h = meHunter(encounter());
         if (!h) return;
         const note = t => { const m = el.querySelector('[data-tbmsg]'); if (m) m.textContent = t; hud.msg = t; };
         if (!a) return note(app.api.hunter.amountMsg(inp.value));
-        const hpNow = () => app.api.hunter.sheet(store.hunter(h.id)).hp;
-        const hl = heal || a.heal, before = hpNow();
+        const hpNow = () => { const cur = store.hunter(h.id); return cur ? app.api.hunter.sheet(cur).hp : null; };
+        const hl = heal || a.heal, before = hpNow(); if (before === null) return;
         if (!ui.wrote('System', hl ? app.api.hunter.heal(h.id, a.n) : app.api.hunter.damage(h.id, a.n))) return;
         const after = hpNow(); inp.value = '';
-        paintHud(el); note(`${hl ? 'Healed' : 'Took'} ${Math.abs(after - before)} HP (entered ${a.n}). Current HP: ${after}.`);
+        paintHud(el);
+        if (after !== null) note(`${hl ? 'Healed' : 'Took'} ${Math.abs(after - before)} HP (entered ${a.n}). Current HP: ${after}.`);
         if (keep) { const i = el.querySelector('[data-tbamt]'); if (i) i.focus(); }
       };
       el.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches('[data-tbamt]')) { ev.preventDefault(); if (app.api.hunter.amountFromKey(ev, ev.target.value)) applyAmt(ev.shiftKey, true); } });
@@ -321,7 +323,7 @@ export function register(app) {
         if (ev.target.closest('[data-tbsheetx]')) { cardId = null; paintHud(el); return; }
         if (ev.target.closest('[data-pass]')) { pass(); return; }
         const ab = ev.target.closest('[data-arm]');
-        if (ab) { const e = encounter(), h = meHunter(e), now = armedOf(e); if (h) armTo(e, h, now && now.ability === ab.dataset.arm ? null : ab.dataset.arm); paintHud(el); return; }
+        if (ab) { const e = encounter(), h = meHunter(e), now = armedOf(e), aid = ab.dataset.arm ?? null; if (h) armTo(e, h, now && now.ability === aid ? null : aid); paintHud(el); return; }
         const kb = ev.target.closest('[data-cast],[data-step],[data-kit-item],[data-kit-d20]');
         if (kb && !kb.disabled) {
           const e = encounter(), h = meHunter(e); if (!h) return;
@@ -361,9 +363,11 @@ export function register(app) {
   /**
    * The row a reaction `a` of row `me` waits for before its turn, picked in a window of `waitChoices` (fight-view.ts);
    * null on Cancel, with no other row, or once the fight is over.
+   * @param {import('../core/protocol.ts').FightDoc} e
    */
   async function waitOn(e, me, a) {
-    const rows = waitChoices(docSpots(/** @type {import('../core/combat/fight-doc.ts').FightDocRow[]} */ (rowsOf(e))), me.id); if (!rows.length) return null;
+    if (e.ended !== false) return null;
+    const rows = waitChoices(docSpots(e.rows), me.id); if (!rows.length) return null;
     const on = await ui.system({ tag: '! Fight', title: WAIT_WORDS.label, kind: 'info', body: WAIT_WORDS.body(a.name), layout: 'list',
       actions: [...rows.map((x, i) => ({ label: x.name, value: x.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
     const now = encounter();
@@ -379,7 +383,7 @@ export function register(app) {
   }
   // ── the map (src/views/map.js) over the room's fight doc ──
   /** The token whose card is open over the map, and the map drawn in the HUD (null while the HUD shows no map). */
-  let cardId = null, mapView = null;
+  let cardId = /** @type {import('../core/combat/ability-types.ts').CombatantId | null} */ (null), mapView = /** @type {import('../core/api.ts').MapView | null} */ (null);
   /** Under 900 px the token's card is a sheet over the map (the CSS's breakpoint for `.tb-sheet`); wider it stands under it. */
   const NARROW = matchMedia('(max-width:899px)');
   /** The card as a sheet over the page is src/core/windows.ts `tokenCard`: Escape on top or a tab takes it down. */
@@ -404,8 +408,8 @@ export function register(app) {
       return ids.flatMap(id => { const r = e.rows.find(x => x.id === id); return r ? [{ id: r.id, name: r.name }] : []; });
     },
     kit: () => {
-      const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !meRow(e)) return null;
-      const ch = meRow(e).channel;
+      const e = encounter(), h = meHunter(e), me = e && !e.ended ? meRow(e) : null; if (!e || e.ended !== false || !h || !me) return null;
+      const ch = me.channel;
       return {
         list: hunterAbilities(h, app.rules()), readyAt: myTurn(e) ? e.ready : {}, now: e.now, costCut: app.api.hunter.sheet(h).sheet.costCut, pinKey: myPinKey(h.id), channel: ch && ch.state === 'holding' ? ch : null,
         armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {}, answers: answersOf(e, hunterAbilities(h, app.rules())),
@@ -498,6 +502,7 @@ export function register(app) {
   /**
    * Draws the HUD in place (src/views/patch.ts): its template once per layout, then only what changed. When time moves the
    * rows of the order slide to their new places; "Your turn" arrives once with a pop, then is still.
+   * @param {HTMLElement} el
    */
   function paintHud(el) {
     turnTitle();
@@ -507,22 +512,28 @@ export function register(app) {
     if (!e) { if (el.dataset.mode) { el.dataset.mode = ''; unmountMap(); el.innerHTML = ''; } hud.on = false; return; }
     if (el.dataset.mode !== mode) {
       el.dataset.mode = mode; unmountMap(); el.innerHTML = onMap ? mapTemplate() : hudTemplate(kit); hud.order = '';
-      if (hud.msg && !onMap) el.querySelector('[data-tbmsg]').textContent = hud.msg;
-      mapView = onMap ? app.api.map.mount(el.querySelector('[data-mapbox]'), mapSource) : null;
+      const msgEl = !onMap ? el.querySelector('[data-tbmsg]') : null;
+      if (hud.msg && msgEl) msgEl.textContent = hud.msg;
+      const mapBox = onMap ? el.querySelector('[data-mapbox]') : null;
+      mapView = mapBox ? app.api.map.mount(mapBox, mapSource) : null;
     }
     hud.on = true;
     if (onMap) {
-      const mineWasOn = !!el.querySelector('.tb-mine'), d = hudDesc(e, h, false);
-      bind(el.firstElementChild, { mine: d.mine, seg: d.seg, mythic: d.mythic, death: d.death, chips: d.chips });
-      countStacks(el.firstElementChild);
-      mapView.draw();
-      drawSheet(el.querySelector('[data-tbsheet]'), e);
+      const mineWasOn = !!el.querySelector('.tb-mine'), d = hudDesc(e, h, false), first = el.firstElementChild;
+      if (first) {
+        bind(first, { mine: d.mine, seg: d.seg, mythic: d.mythic, death: d.death, chips: d.chips });
+        countStacks(first);
+      }
+      if (mapView) mapView.draw();
+      const sheetBox = el.querySelector('[data-tbsheet]');
+      if (sheetBox) drawSheet(sheetBox, e);
       const mineOn = el.querySelector('.tb-mine');
       if (mineOn && !mineWasOn) motion.pop(mineOn);
       playBursts(el);
       return;
     }
     const top = el.firstElementChild, list = el.querySelector('.tb-rows'), rows = rowsOf(e);
+    if (!top || !list) return;
     const mineWas = !!el.querySelector('.tb-mine');
     const draw = () => {
       // a status chip that arrives pops on (the chips are a part, drawn whole); the ones already shown stay still
@@ -532,7 +543,7 @@ export function register(app) {
       if (chipsWas.size || top.dataset.chipsSeen) for (const c of top.querySelectorAll('[data-chip]')) if (!chipsWas.has(c.dataset.chip)) void motion.pop(c);
       top.dataset.chipsSeen = '1';
       const els = keyed(list, rows.map(r => r.id), id => ui.h(rowTemplate(id)));
-      rows.forEach((r, i) => bind(els[i], rowDesc(e, r)));
+      rows.forEach((r, i) => { const rowEl = els[i]; if (rowEl) bind(rowEl, rowDesc(e, r)); });
     };
     const order = rows.map(r => r.id).join();
     motion.slideTo(list, () => list.children, r => r.dataset.key, draw, !!(order && hud.order && order !== hud.order));
@@ -559,7 +570,7 @@ export function register(app) {
       if (el.dataset.t !== t) {
         const was = el.dataset.mine === '1'; el.dataset.t = t; el.dataset.mine = mine ? '1' : '';
         el.innerHTML = `<p class="tb-banner${mine ? ' mine' : ''}" role="status">${esc(t)}</p>`;
-        if (mine && !was) motion.pop(el.firstElementChild);
+        if (mine && !was && el.firstElementChild) motion.pop(el.firstElementChild);
       }
     },
   });
@@ -595,7 +606,7 @@ export function register(app) {
   app.on('roll', ({ roll }) => {
     if (!roll || !inRoomPlayer()) return;
     const entry = store.get().rolls.find(r => r.id === roll.id), h = entry && entry.hid ? store.hunter(entry.hid) : null;
-    if (!h) return;
+    if (!entry || !h) return;
     sync().post(sync().event('roll', { by: sync().myKey(h.id), name: str(h.name, 60), label: str(entry.label, 60), expr: str(roll.expr, 60), total: int(roll.total),
       rolls: (roll.rolls || []).slice(0, 50).map(int), crit: !!roll.crit, fumble: !!roll.fumble }));
   });
@@ -650,7 +661,7 @@ export function register(app) {
     : `${f.name} · Quest "${f.title}"${f.secret ? ` ${SECRET_WORDS.mark}` : ''} ${f.status}${f.obj.length ? ` (${f.obj.join(', ')})` : ''}`;
   // A2: under 1100 px the feed is one line with a count of rows the GM has not seen; a tap opens it. It sticks to the
   // bottom of the screen only while it is shut and has something new. At 1100 px and up it is a column, always open.
-  let feedEl = null, feedSig = '', feedOpen = false;
+  let feedEl = /** @type {HTMLElement | null} */ (null), feedSig = '', feedOpen = false;
   const wide = () => matchMedia('(min-width:1100px)').matches;
   /** The feed's rows are in front of the GM: the combat view is the one shown, the page is, and the feed is open or a column. */
   const feedShown = () => !!feedEl && feedEl.isConnected && !feedEl.closest('[hidden]') && document.visibilityState === 'visible' && (feedOpen || wide());
@@ -659,13 +670,13 @@ export function register(app) {
     const live = app.api.combat.isActive();
     feedEl.toggleAttribute('data-live', live);
     const fresh = feed.filter(f => !f.seen).length;
-    const tog = feedEl.querySelector('[data-tb-open]'), n = feedEl.querySelector('[data-tb-n]');
-    feedEl.querySelector('.tb-fwrap').classList.toggle('open', feedOpen);
+    const tog = feedEl.querySelector('[data-tb-open]'), n = feedEl.querySelector('[data-tb-n]'), wrap = feedEl.querySelector('.tb-fwrap'), list = feedEl.querySelector('[data-tb-list]');
+    if (!tog || !n || !wrap || !list) return;
+    wrap.classList.toggle('open', feedOpen);
     feedEl.toggleAttribute('data-fresh', !feedOpen && fresh > 0);
     tog.setAttribute('aria-expanded', String(feedOpen));
     n.textContent = fresh ? `${fresh} new` : feed.length ? `${feed.length}` : 'Empty';
     n.classList.toggle('new', fresh > 0);
-    const list = feedEl.querySelector('[data-tb-list]');
     const sig = JSON.stringify(feed.map(f => f.id));
     if (sig === feedSig) return; feedSig = sig;
     if (!feed.length) { list.innerHTML = '<p class="empty">Player rolls, ability uses, quest updates, and feats appear here.</p>'; return; }

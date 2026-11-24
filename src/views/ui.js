@@ -2,7 +2,13 @@
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
 /** @type {(html: string) => ViewElement} */
-export const h = html => { const t = document.createElement('template'); t.innerHTML = String(html).trim(); return t.content.firstElementChild; };
+export const h = html => {
+  const t = document.createElement('template');
+  t.innerHTML = String(html).trim();
+  const el = t.content.firstElementChild;
+  if (!el) throw new Error('ui.h: empty markup');
+  return el;
+};
 /** @type {(sel: string, root?: ParentNode) => ViewElement | null} */
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const fmt = n => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : '0');
@@ -31,15 +37,16 @@ const arm = () => {
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, arm, { capture: true, passive: true }));
 function chime(kind) {
   try {
-    if (!actx || actx.state !== 'running' || !sound()) return;
+    const ctx = actx;
+    if (!ctx || ctx.state !== 'running' || !sound()) return;
     const bad = kind === 'warning' || kind === 'penalty';
     const notes = bad ? [330, 247] : kind === 'levelup' ? [523, 659, 784] : [660, 880];
-    const t0 = actx.currentTime;
+    const t0 = ctx.currentTime;
     notes.forEach((f, i) => {
-      const o = actx.createOscillator(), g = actx.createGain(), t = t0 + i * 0.09;
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + i * 0.09;
       o.type = bad ? 'sawtooth' : 'sine'; o.frequency.value = f;
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.25);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.25);
     });
   } catch (e) { reported('ui:sound', e); } // a window opens with or without its chime
 }
@@ -107,14 +114,16 @@ export function toast(tag, msg, opts = {}) {
   const box = toastBox(); const kind = opts.kind || 'info', hold = opts.hold, key = hold ? undefined : opts.key;
   const held = hold ? { key: heldKey(hold.what), act: hold.act } : null;
   const was = held ? [...toasts.values()].find(k => k.held && k.held.key === held.key) : null;
-  const write = hold ? heldStep(was ? was.held.write : NOT_HELD, { type: 'pick', at: Date.now(), ms: hold.ms }) : null;
+  const write = hold ? heldStep(was && was.held ? was.held.write : NOT_HELD, { type: 'pick', at: Date.now(), ms: hold.ms }) : null;
   if (hold && !write) return null;
   if (key) { // e.g. {key:'xp', amount:10, fmt:n=>`+${n} XP acquired.`}
     const prev = [...toasts.keys()].find(t => t.dataset.key === key);
     if (prev && opts.amount !== undefined) {
       const total = Number(prev.dataset.amount) + opts.amount; prev.dataset.amount = String(total);
-      prev.querySelector('.t-msg').textContent = opts.fmt ? opts.fmt(total) : msg;
-      const kept = toasts.get(prev); clearTimeout(kept.timer); kept.timer = setTimeout(() => ended(prev, { type: 'due' }), TOAST_MS); return prev;
+      const msgEl = prev.querySelector('.t-msg'); if (msgEl) msgEl.textContent = opts.fmt ? opts.fmt(total) : msg;
+      const kept = toasts.get(prev);
+      if (kept) { clearTimeout(kept.timer); kept.timer = setTimeout(() => ended(prev, { type: 'due' }), TOAST_MS); }
+      return prev;
     }
   }
   const end = hold ? `<button type="button" class="t-undo">${esc(hold.undo)}</button>` : '<button type="button" class="t-x" aria-label="Dismiss notification">&times;</button>';
@@ -122,12 +131,12 @@ export function toast(tag, msg, opts = {}) {
   if (key) { t.dataset.key = key; t.dataset.amount = String(opts.amount ?? 0); }
   if (hold) t.dataset.held = '';
   // Undo drops the held write; the × of a plain toast only takes it away
-  t.querySelector('.t-x, .t-undo').addEventListener('click', () => { ended(t, { type: 'undo' }); });
+  t.querySelector('.t-x, .t-undo')?.addEventListener('click', () => { ended(t, { type: 'undo' }); });
   box.appendChild(t);
   enter(t, 'toast');
   toasts.set(t, { timer: setTimeout(() => ended(t, { type: 'due' }), hold ? hold.ms : TOAST_MS), held: held && write ? { ...held, write } : null });
   // at most two plain toasts show: a third pushes the oldest off; a held one stays its whole window (SMX-gates-5.1)
-  for (const old of [...toasts.keys()].filter(x => !toasts.get(x).held).slice(0, -2)) off(old);
+  for (const old of [...toasts.keys()].filter(x => !toasts.get(x)?.held).slice(0, -2)) off(old);
   return t;
 }
 /** The tag of the fight's news (`news`): a refused write told under it is said in the fight's news, as the fight's own refusals are. */
@@ -191,6 +200,7 @@ const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),select:not([disa
 export function trapTab(/** @type {KeyboardEvent} */ e, /** @type {HTMLElement} */ win) {
   const f = [...win.querySelectorAll(FOCUSABLE)].filter(x => !x.hidden && x.offsetParent !== null); if (!f.length) return;
   const first = f[0], last = f[f.length - 1];
+  if (!first || !last) return;
   if (!win.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
   else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
@@ -222,22 +232,29 @@ export function formEnter(e, form, save) {
 // test that taps on before the window it expects is on screen fails every time instead of now and then.
 const LATE = Number(globalThis.__e2ePopupDelay) || 0;
 
+/** @param {Win | undefined} w @returns {w is SystemWin} */
+const isSystemWin = w => !!w && w.kind === 'system' && 'o' in w;
+
 /** Moves the windows by `e` and carries out what the machine says: the one place they move. @param {import('../core/windows.ts').WindowEvent} e */
 function move(e) {
   const r = windowStep(windows, e);
   windows = r.windows;
   for (const fx of r.fx) {
-    if (fx.kind === 'draw') show(/** @type {SystemWin} */ (parts.get(fx.id)));
-    else if (fx.kind === 'dismiss') { const w = parts.get(fx.id); void dismiss(w.root, w.win).then(() => move({ kind: 'gone', id: fx.id })); }
+    if (fx.kind === 'draw') { const w = parts.get(fx.id); if (isSystemWin(w)) show(w); }
+    else if (fx.kind === 'dismiss') {
+      const w = parts.get(fx.id);
+      if (w && w.root) void dismiss(w.root, w.win).then(() => move({ kind: 'gone', id: fx.id }));
+      else move({ kind: 'gone', id: fx.id });
+    }
     else if (fx.kind === 'next') setTimeout(() => move({ kind: 'next' }), LATE);
-    else if (fx.kind === 'shut') parts.get(fx.id).shut();
+    else if (fx.kind === 'shut') parts.get(fx.id)?.shut?.();
     else parts.delete(fx.id);
   }
   draw();
 }
 /** Draws what the windows say beyond each one's own moves: the open System window's Confirm all, shown when two or more waiting windows take its one answer too. */
 function draw() {
-  const id = openSystem(windows), top = id === null ? null : /** @type {SystemWin} */ (parts.get(id));
+  const id = openSystem(windows), raw = id === null ? undefined : parts.get(id), top = isSystemWin(raw) ? raw : null;
   if (!top || !top.all) return;
   const n = confirmable().length;
   top.all.hidden = n < 2; top.all.textContent = `Confirm all (${n})`;
@@ -289,9 +306,9 @@ const autoValue = o => {
 };
 /** The waiting System windows that the open one's Confirm all answers with it: none when the open one has no one answer. @returns {SystemWin[]} */
 function confirmable() {
-  const id = openSystem(windows), top = id === null ? null : /** @type {SystemWin} */ (parts.get(id));
+  const id = openSystem(windows), raw = id === null ? undefined : parts.get(id), top = isSystemWin(raw) ? raw : null;
   if (!top || autoValue(top.o) === undefined) return [];
-  return /** @type {SystemWin[]} */ (windows.queued.map(q => parts.get(q))).filter(q => autoValue(q.o) !== undefined);
+  return windows.queued.map(q => parts.get(q)).filter(isSystemWin).filter(q => autoValue(q.o) !== undefined);
 }
 
 /**
@@ -306,7 +323,8 @@ function confirmable() {
 /** A System window; answers the `value` of the action tapped (a form answers what was typed). @param {SystemWindow} [o] @returns {Promise<any>} */
 export function system(o = {}) {
   return new Promise(resolve => {
-    const w = /** @type {SystemWin} */ (Object.assign(newWin('system'), { o, resolve, all: null }));
+    /** @type {SystemWin} */
+    const w = Object.assign(newWin('system'), { o, resolve, all: null });
     move({ kind: 'ask', id: w.id });
     if (LATE) setTimeout(() => move({ kind: 'next' }), LATE); else move({ kind: 'next' });
   });
@@ -339,19 +357,20 @@ function show(/** @type {SystemWin} */ w) {
       <div class="sys-actions${o.layout === 'list' ? ' list' : ''}${o.size === 'form' ? ' dlg-actions' : ''}"></div>
     </div></div>`);
   const win = el.firstElementChild, bar = el.querySelector('.sys-actions'), input = el.querySelector('.sys-input'), err = el.querySelector('.sys-err');
+  if (!win || !bar) return;
   chime(kind);
   const cancelAct = actions.find(a => a.cancel);
   const dismissValue = o.form ? null : cancelAct ? cancelAct.value : null;
   const done = value => { closeWindow(w); if (trigger && trigger.isConnected && trigger.focus) trigger.focus(); resolve(value); };
   const choose = a => {
-    if (o.form && a.primary !== false && !a.cancel) {
+    if (o.form && input && a.primary !== false && !a.cancel) {
       let v = input.value.trim();
-      if (o.form.type === 'text') { if (!v) { err.textContent = 'Enter a value.'; input.focus(); return; } return done(v); }
+      if (o.form.type === 'text') { if (!v) { if (err) err.textContent = 'Enter a value.'; input.focus(); return; } return done(v); }
       const n = Number(v);
-      if (v === '' || !Number.isFinite(n)) { err.textContent = 'Enter a number.'; input.focus(); return; }
+      if (v === '' || !Number.isFinite(n)) { if (err) err.textContent = 'Enter a number.'; input.focus(); return; }
       if ((o.form.min !== undefined && n < o.form.min) || (o.form.max !== undefined && n > o.form.max)) {
         const lo = o.form.min, hi = o.form.max;
-        err.textContent = lo !== undefined && hi !== undefined ? `Enter a value from ${lo} to ${hi}.`
+        if (err) err.textContent = lo !== undefined && hi !== undefined ? `Enter a value from ${lo} to ${hi}.`
           : lo !== undefined ? `Enter a value of at least ${lo}.` : `Enter a value of at most ${hi}.`;
         input.focus(); return;
       }
@@ -363,21 +382,23 @@ function show(/** @type {SystemWin} */ w) {
     const b = h(`<button type="button" class="${a.primary ? 'primary ' : ''}${a.danger ? 'danger ' : ''}">${esc(a.label)}</button>`);
     b.addEventListener('click', () => choose(a)); bar.appendChild(b);
   });
-  if (autoValue(o) !== undefined) {
+  const av = autoValue(o);
+  if (av !== undefined) {
     w.all = h('<button type="button" class="confirm-all" hidden></button>');
     bar.appendChild(w.all);
     w.all.addEventListener('click', () => {
       const rest = confirmable();
       for (const q of rest) move({ kind: 'answered', id: q.id });
-      done(autoValue(o).v); rest.forEach(q => q.resolve(autoValue(q.o).v));
+      done(av.v);
+      rest.forEach(q => { const qv = autoValue(q.o); if (qv !== undefined) q.resolve(qv.v); });
     });
   }
-  w.key = (/** @type {any} */ e) => {
+  w.key = e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(dismissValue); return; }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (o.form || o.size === 'form')) { // B3: Ctrl/Cmd+Enter = primary, even from a textarea
       const p = bar.querySelector('button.primary'); if (p && !p.disabled) { e.preventDefault(); p.click(); return; }
     }
-    if (e.key === 'Enter' && input && e.target === input) { e.preventDefault(); choose(actions.find(a => a.primary) || actions[0]); return; }
+    if (e.key === 'Enter' && input && e.target === input) { e.preventDefault(); const chosen = actions.find(a => a.primary) || actions[0]; if (chosen) choose(chosen); return; }
     if (e.key === 'Tab') trapTab(e, win);
   };
   // a press of its own beside the window dismisses it: `pointerdown`, never the mouse events a phone makes after a tap,
@@ -398,7 +419,7 @@ export const confirm = ({ title = 'Are you sure?', body = '', danger = false, co
 
 /** @type {(o?: { title?: string; label?: string; value?: number; min?: number; max?: number }) => Promise<number | null>} */
 export const promptNum = ({ title = 'Enter a number', label = 'Value', value = 0, min, max } = {}) =>
-  system({ tag: '! Input', title, form: { label, value, min, max, type: 'number' },
+  system({ tag: '! Input', title, form: { label, value, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), type: 'number' },
     actions: [{ label: 'Cancel', value: null, cancel: true }, { label: 'Confirm', primary: true }] }).then(v => (typeof v === 'number' ? v : null));
 
 // addition: text prompt, same contract as promptNum but returns string|null
