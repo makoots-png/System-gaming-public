@@ -1,10 +1,10 @@
 // What a player's phone tells of the GM's fight, once each (src/core/combat/table-news.ts, implicit audit 3, T2): a doc
 // read again tells nothing new, a reload reads the record back, and "Encounter cleared" is told only for a fight seen running.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { NOTHING_TOLD, parseTold, toldAfter } from '../src/core/combat/table-news.ts';
 import type { TableNews, TableTold } from '../src/core/combat/table-news.ts';
 import type { FightDoc } from '../src/core/combat/fight-doc.ts';
-import { fightId } from '../src/core/combat/fight-types.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 

@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../src/core/award.ts';
 import type { AwardDraft, AwardDraftEvent } from '../src/core/award.ts';
 import { dropDealt } from '../src/core/gates/pay.ts';
-import { fightId } from '../src/core/combat/fight-types.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { newRewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -11,7 +10,7 @@ import { freshSave, newHunter } from '../src/core/save.ts';
 import type { ParseEnv, Save } from '../src/core/save.ts';
 import { newEvent } from '../src/core/protocol.ts';
 import { dev, day, hid, room } from './fixtures/ids.ts';
-import { parseEventId } from '../src/core/ids.ts';
+import { fightId, parseEventId } from '../src/core/ids.ts';
 
 const AT = '2026-11-15T10:00:00.000Z', ROOM = room('ABCD23');
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') };

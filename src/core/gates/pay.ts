@@ -9,7 +9,7 @@
 // settle of it is refused (`no-fight`).
 import { reduce } from '../combat/fight.ts';
 import { rankSeen } from '../combat/fight-facts.ts';
-import type { Ctx, Ended, Fight, FightId } from '../combat/fight-types.ts';
+import type { Ctx, Ended, Fight } from '../combat/fight-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { grant, noteFacts } from '../hunter/grant.ts';
 import type { Day, Granted } from '../hunter/grant.ts';
@@ -20,7 +20,7 @@ import type { Rewards } from '../rewards.ts';
 import { EARNED_WHAT_MAX, newEvent, newEventId, parseSheetKey } from '../protocol.ts';
 import type { EventBody, EventStamp, RewardFrom, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
 import { sheetKeyOf } from '../ids.ts';
-import type { GateId, HunterId } from '../ids.ts';
+import type { FightId, GateId, HunterId } from '../ids.ts';
 import type { ItemTemplate } from '../registry/items.ts';
 import type { Dropped, FightLoot, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';

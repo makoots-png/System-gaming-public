@@ -1,11 +1,12 @@
 // Adversarial probes for mythic-phases-on (bb36a784..HEAD).
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import { roomRulesOf, withRoomRules } from '../src/core/hunter/build.ts';
 import { parseSave, newSave } from '../src/core/save.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
-import { reduce, fightId } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import type { RowHunter } from '../src/core/combat/rows.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';

@@ -1,3 +1,4 @@
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -24,7 +25,7 @@ import { channelBreaks, held, landOps } from '../src/core/combat/land.ts';
 import { resolve } from '../src/core/combat/resolve.ts';
 import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
 import { STATUS_WALK, WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { abilityOf, tagsOf } from '../src/core/registry/ability-kinds.ts';
 import type { Ability, CombatantId } from '../src/core/combat/ability-types.ts';

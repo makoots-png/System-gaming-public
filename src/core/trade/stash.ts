@@ -20,13 +20,13 @@ import { parseSaveId, saveId, sheetKeyOf } from '../ids.ts';
 import type { EventId, HunterId, ItemId, RoomCode } from '../ids.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { askAnswered, askDismissed, askPosted, askSent, askedOf, holdsGoods, shownOf } from '../sync/asked.ts';
-import type { Asked, StashAsk } from '../sync/asked.ts';
+import type { Asked } from '../sync/asked.ts';
 import { told } from '../session-log.ts';
 import type { Stamp } from '../session-log.ts';
 import type { Seat } from '../role.ts';
 import type { Save } from '../save.ts';
 import { GOODS_GOLD_MAX, OFFER_REFUSAL_WORDS, goodsWords, noGoods, received, setAside } from './goods.ts';
-import type { BagPick, Goods, Shortfall } from './goods.ts';
+import type { BagPick, Goods, Shortfall, StashAsk } from './goods.ts';
 
 /** The party's stash: gold, and items stacking as a bag's do. On the GM's save; `NO_STASH` in a new one. */
 export type Stash = { readonly gold: number; readonly items: readonly Item[] };

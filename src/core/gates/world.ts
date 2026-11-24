@@ -9,7 +9,11 @@ import type { Gate, GateEvent, GateMonster, GateStatus, GateType, MonsterId } fr
 import { withDifficulty } from './difficulty.ts';
 import type { DifficultyEvent } from './difficulty.ts';
 import { isRefused, refuse } from '../save-step.ts';
-import type { Refused } from '../save-step.ts';
+import type { Refused, Step } from '../save-step.ts';
+import { fought } from '../combat/fight-save.ts';
+import type { Beside } from '../combat/fight-save.ts';
+import type { Result } from '../combat/fight-types.ts';
+import type { Rules } from '../rules.ts';
 import { told } from '../session-log.ts';
 import { compareTimes } from '../day.ts';
 import { WORLD_GATES, WORLD_NAME_MAX } from '../protocol.ts';
@@ -134,6 +138,19 @@ export function gateFightStarted<S extends WorldParts>(save: S, id: string, stam
   if (!g) return refuse('missing');
   const r = onGate(save, id, { type: 'fightStarted' }, stamp, null), next = 'ok' in r ? save : r;
   return told(next, stamp, gateLine('Fight started', `Fighting inside "${g.name}" (${g.rank}-rank).`));
+}
+/** What a fight command writes beside the fight, with the time stamp for a gate's start line (`gateFought`). */
+export type GateBeside = Beside & { readonly stamp: Stamp };
+/**
+ * One fight command written with its gate mark (`fought` in combat/fight-save.ts, then `gateFightStarted` when the
+ * links name a gate, before `b.also`). combat.js `send` is its one caller, through `store.apply`.
+ */
+export function gateFought(save: Save, r: Result, b: GateBeside, R: Rules): Save | Refused {
+  const { stamp, ...beside } = b, gate = beside.links?.gate;
+  const also: Step<Save> | null = gate
+    ? s => { const g = gateFightStarted(s, gate, stamp); const next = isRefused(g) ? s : g; return beside.also ? beside.also(next) : next; }
+    : beside.also ?? null;
+  return fought(save, r, { ...beside, also }, R);
 }
 
 /** The GM closes gate `id`. */

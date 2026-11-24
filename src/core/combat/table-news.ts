@@ -10,8 +10,8 @@ import type { CombatantId } from './ability-types.ts';
 import { tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { FightDoc, TableRefusal } from './fight-doc.ts';
-import { fightId } from './fight-types.ts';
-import type { FightId } from './fight-types.ts';
+import { fightId } from '../ids.ts';
+import type { FightId } from '../ids.ts';
 
 /** What this phone has told: the running fight it saw, the fight whose end it told, and the last turn, refusal, burst and dodge told. */
 export type TableTold = {

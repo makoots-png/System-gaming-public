@@ -2,6 +2,7 @@
 // "The gate, in the one writer of a row's life"). Every expected HP is read from the Angel's own words in
 // registry/mythics.ts: its First Breath begins at 65% of its max HP and its Note at 30%, so in its first phase it is held
 // at 65% (rounded up to a whole HP) and in its second at 30%; its Note is its last phase, which ends at 0 HP.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -10,7 +11,7 @@ import { share } from '../src/core/hunter/derive.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import type { Ability } from '../src/core/combat/ability-types.ts';
 import type { Body } from '../src/core/combat/effect-ops.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { staggerOp } from '../src/core/combat/land.ts';

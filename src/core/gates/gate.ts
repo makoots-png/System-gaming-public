@@ -4,6 +4,7 @@
 import { RANKS } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { Rank } from '../rules.ts';
+import { parseGateId } from '../ids.ts';
 import type { GateId, MapId, MonsterId } from '../ids.ts';
 import { mapId } from '../registry/maps.ts';
 import { NO_PRESET, parseClearPreset } from './preset.ts';
@@ -136,9 +137,7 @@ export const fightAward = (gate: Gate | null, fightXp: number, xpOf: XpOf): numb
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 const id = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 && v.length <= 80 ? v : null);
-// Where a plain string becomes a gate or monster id. Nothing else in core makes one.
-/** A gate id from a stored gate or a fight's link to it; null for an empty or too long one. */
-export const parseGateId = (v: unknown): GateId | null => id(v) as GateId | null;
+// Where a plain string becomes a monster id.
 /** A monster id from a stored gate or the GM's edit form; null for an empty or too long one. */
 export const monsterId = (v: unknown): MonsterId | null => id(v) as MonsterId | null;
 /** A whole number of at least `lo`, or `d` when `v` is not a number. */

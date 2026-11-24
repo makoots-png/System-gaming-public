@@ -3,6 +3,7 @@
 // words in registry/mythics.ts: the Angel's First Breath begins at 65% of its max HP and its Note at 30%; its Trumpet
 // Raised has a clock of 4 rounds and the rotation act, Weighed, act, Stars Fall; Zaratan's Dive is a clock phase of
 // 4 rounds between the Shore and the Island Wakes, which begins at 55%.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -12,7 +13,7 @@ import { combatantId, hunterId } from '../src/core/combat/ability-types.ts';
 import type { CombatantId } from '../src/core/combat/ability-types.ts';
 import type { Body, Status, StatusDef } from '../src/core/combat/effect-ops.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
-import { fightId, reduceAll } from '../src/core/combat/fight.ts';
+import { reduceAll } from '../src/core/combat/fight.ts';
 import type { NewRow, Running } from '../src/core/combat/fight-types.ts';
 import { openGrid, place } from '../src/core/combat/space.ts';
 import type { Place, Side } from '../src/core/combat/space.ts';

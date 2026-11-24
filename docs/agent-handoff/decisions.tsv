@@ -782,3 +782,6 @@ ts	phase	decision	why	evidence	result
 2026-11-24T14:06Z	arch	dodge-pick landed on lead-backlog; unit 6922 pass 0 fail, browser 595 + 6 load reruns alone green; shots reviewed
 2026-11-24T15:02Z	ops	PR 107 (dodge-pick) merged to main
 2026-11-24T15:28Z	arch	xp-pacing landed on lead-backlog; clears E 14.3, D 14.8, C 15.2, B 16.1, A 17.0; unit 6912 pass 0 fail, browser 590 + 6 load reruns alone green
+2026-11-24T15:42Z	ops	PR 108 (xp-pacing) merged to main
+2026-11-24T15:42Z	docs	the owner (t113u): dodge ring question answered, everyone picks freely within the movement bank; marked Answered in for-the-owner.md, dodge v2 queued next
+2026-11-24T15:42Z	arch	peer-cycles (pick D2) landed on lead-backlog; 5 cycles broken, D6 allowlist down 5; unit 6936 pass 0 fail on the dodge base, browser 590 + 6 load reruns alone green

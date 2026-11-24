@@ -10,8 +10,9 @@ import { pickables, pickedRef } from '../core/party.ts';
 import { RANKS, rules } from '../edge/rules.ts';
 import { stepTime } from '../core/day.ts';
 import { isUp, rowHp } from '../core/combat/row-hp.ts';
-import { can, fightId, owed, reduce, reduceAll } from '../core/combat/fight.ts';
-import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
+import { can, owed, reduce, reduceAll } from '../core/combat/fight.ts';
+import { fightGateName, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
+import { gateFought } from '../core/gates/world.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { needs } from '../core/combat/resolve.ts';
@@ -37,7 +38,7 @@ import { cryptoRandom, rollNeeds, rollOpenings, rollSettle } from '../edge/roll.
 import { openingWeights, settleWeights, weightsFor } from '../core/combat/fudge.ts';
 import { weighable } from '../core/combat/odds.ts';
 import { onDodge, onTurn } from '../core/protocol.ts';
-import { parseSheetKey } from '../core/ids.ts';
+import { fightId, parseSheetKey } from '../core/ids.ts';
 import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootMoreLine, lootOffered, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
@@ -150,7 +151,7 @@ export function register(app) {
     const rankOf = key => { const x = remoteList().find(sh => sh.key === key); return x ? x.data.rank : null; };
     const noted = endedFight ? remoteFacts(endedFight, rankOf, fightGateName(store.get())).flatMap(n => { const e = S.event('noted', { to: [n.to], facts: n.facts }); return e ? [e] : []; }) : [];
     // a command the fight refused writes nothing, and its reason is told below; a write the store refused is told by its kind
-    const asked = !refused(r.effects), wrote = asked && ui.wrote(ui.FIGHT_TAG, store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules)), WRITE_WORDS);
+    const asked = !refused(r.effects), wrote = asked && ui.wrote(ui.FIGHT_TAG, store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => gateFought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules)), WRITE_WORDS);
     const effects = !asked || wrote ? r.effects : NOT_WRITTEN;
     if (wrote && (totals.length || ev || risen || noted.length)) S.flush();
     /** @template {Effect['type']} T @param {T} type @returns {Extract<Effect, { type: T }>[]} */

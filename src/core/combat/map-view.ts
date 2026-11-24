@@ -27,14 +27,14 @@ import type { ZoneId, ZoneTone } from './zones.ts';
 import { aims, cardOf, mythicSeenOf, mythicSeenOfDoc, omenMoveOf, onMap, readyIn, spotOf } from './fight-view.ts';
 import type { MythicSeen } from './fight-view.ts';
 import type { Aiming, Spot } from './fight-view.ts';
-import type { Fight, FightId } from './fight-types.ts';
+import type { Fight } from './fight-types.ts';
 import { dodgeAsk } from './fight.ts';
 import { rowIcon } from './row-icon.ts';
 import type { HunterOf } from './row-icon.ts';
 import type { IconKey } from '../registry/icons.ts';
 import { abilityIcon } from '../registry/icon-defaults.ts';
 import type { IconItem } from '../registry/icon-defaults.ts';
-import type { ItemId } from '../ids.ts';
+import type { FightId, ItemId } from '../ids.ts';
 
 // ── what the map is drawn from ──
 

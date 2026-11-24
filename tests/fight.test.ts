@@ -33,7 +33,7 @@ import type { Level } from '../src/core/combat/sight-levels.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../src/core/combat/refusal-words.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
-import { parseSheetKey } from '../src/core/ids.ts';
+import { fightId, parseSheetKey } from '../src/core/ids.ts';
 import type { DeviceId, SheetKey } from '../src/core/ids.ts';
 import { TABLE_REFUSALS, fightDoc } from '../src/core/combat/fight-doc.ts';
 import { tauntOf } from '../src/core/combat/fight-view.ts';
@@ -49,7 +49,7 @@ import { attemptsLeft, extractionStep, UNTRIED } from '../src/core/combat/extrac
 import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
-import { can, dodgeAsk, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
+import { can, dodgeAsk, owed, reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Command, CommandType, Ctx, Effect, Fight, ForcedFace, Fudge, FudgeScope, NewRow, Opening, Result, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';

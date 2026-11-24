@@ -1,7 +1,7 @@
+import type { FightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { BLANK, BUILD_DRAWER_STATES, MAP_MOUNT_EVENTS, MAP_MOUNT_STATES, MAP_SLOT_EVENTS, MAP_SLOT_STATES, SCREEN, buildDrawer, mapMount, mapSlot } from '../src/core/combat/map-mount.ts';
 import type { BuildDrawer, BuildDrawerEvent, MapMount, MapMountEvent, MapSlot, MapSlotFx } from '../src/core/combat/map-mount.ts';
-import type { FightId } from '../src/core/combat/fight-types.ts';
 import { DRAWER_WALK, MOUNT_FIGHTS, MOUNT_WALK } from './models/map-mount-events.ts';
 
 const [F1, F2] = MOUNT_FIGHTS;

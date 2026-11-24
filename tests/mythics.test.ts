@@ -1,6 +1,7 @@
 // The mythics' scripts (src/core/registry/mythics.ts; notes-11-keystones.md, design B.3, B.4 and B.6). Every test here
 // but the per-script ones loops over `MYTHICS`, so a new script is checked with no edit. A new mythic copies one of the
 // per-script tests (at the end) to state its own shape from its own words, played on the reducer.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -20,7 +21,7 @@ import { ANSWERS, answerOutcome } from '../src/core/combat/mythic.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
 import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, Origin, Status } from '../src/core/combat/effect-ops.ts';
-import { fightId, reduce, runningState } from '../src/core/combat/fight.ts';
+import { reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Effect, Fight, NewRow, Running } from '../src/core/combat/fight.ts';
 import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';

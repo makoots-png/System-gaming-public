@@ -2,6 +2,7 @@
 // ring, what a tap does, and the hotbar. Expected tiles come from the design's rules, drawn as rows of characters: the
 // 5-10-5 distance and the stride of 4.6 (a walk of ceil(move / 2) around bodies), the dash of 4.6 (the whole move in the
 // centre line a line ability uses, a half rounding up, with nothing on it), rule 5 (range) and rule 6 (the shape).
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -15,7 +16,7 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { ATTACK_ID, itemAbilityId } from '../src/core/registry/abilities.ts';
 import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, CombatantKind, Origin, Status } from '../src/core/combat/effect-ops.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow } from '../src/core/combat/fight.ts';
 import type { FightDocRow } from '../src/core/combat/fight-doc.ts';
 import { aims } from '../src/core/combat/fight-view.ts';

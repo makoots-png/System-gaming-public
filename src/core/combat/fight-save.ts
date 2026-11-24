@@ -1,10 +1,10 @@
 // fight-save.ts: what one fight command writes to the save, as one step (implicit audit row 13): the fight the reducer
 // answered, what it came from (`fightRefs`), each write-back the reducer asked for on this phone (a hunter's totals
-// through `sheetEdit`, a shadow's HP), each player's totals put in the outbox, and a gate's mark when the command starts
-// that gate's fight (row 85). combat.js `send` is its one caller, through `store.apply`, so a command is written whole
-// or not at all, and a tab that may not write refuses the fight as it refuses the rest. What reaches outside the save
-// comes after the write, from what was written: the outbox's send, the news, and the dice the fight still waits for
-// (`owed` in fight.ts), which a reload reads from the stored fight again.
+// through `sheetEdit`, a shadow's HP), and each player's totals put in the outbox. gates/world.ts `gateFought` wraps
+// `fought` to mark a gate when the command starts that gate's fight (row 85), and combat.js `send` is its one caller,
+// through `store.apply`, so a command is written whole or not at all, and a tab that may not write refuses the fight as
+// it refuses the rest. What reaches outside the save comes after the write, from what was written: the outbox's send,
+// the news, and the dice the fight still waits for (`owed` in fight.ts), which a reload reads from the stored fight again.
 //
 // An item used in the fight leaves its bag in the same write as the use (implicit audit 2, N1, and 3, C1): an `act` of
 // an item's ability by a hunter's row (`itemSpent`) takes one from this phone's hunter, or posts the room's `spent` to
@@ -31,12 +31,10 @@ import { standsFor } from '../protocol.ts';
 import type { RoomCode, RoomEvent } from '../protocol.ts';
 import { gmHolds } from '../sync/fight-heard.ts';
 import type { TableSeen } from '../sync/fight-heard.ts';
-import type { Stamp } from '../session-log.ts';
 import { atHunter, isRefused, refuse } from '../save-step.ts';
 import type { Refused, Step } from '../save-step.ts';
 import { sheetEdit, statusGiven } from '../hunter/grant.ts';
 import { setShadowHp } from '../hunter/shadows.ts';
-import { gateFightStarted } from '../gates/world.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { spendItem } from '../hunter/use.ts';
 import { itemOfAbility } from '../registry/abilities.ts';
@@ -69,11 +67,11 @@ export function itemSpent(f: Fight | null, cmd: Command): ItemSpent | null {
 }
 /**
  * What a command writes beside the fight: its links (null for none), the room the players' totals go to (null when
- * this phone is in none), those totals (one for each `sendRemote` effect), the time of a gate's log line, and `also`, a
- * step of another module the command's write carries (a shadow risen from a corpse joins its army), or none.
+ * this phone is in none), those totals (one for each `sendRemote` effect), and `also`, a step of another module the
+ * command's write carries (a gate's start mark, or a shadow risen from a corpse joining its army), or none.
  */
 export type Beside = {
-  readonly links: Links | null; readonly room: RoomCode | null; readonly totals: readonly Totals[]; readonly stamp: Stamp;
+  readonly links: Links | null; readonly room: RoomCode | null; readonly totals: readonly Totals[];
   readonly also?: Step<Save> | null;
   /** The item the command uses up (`itemSpent`), or none. */
   readonly spent?: Spending | null;
@@ -93,10 +91,10 @@ function wroteBack(save: Save, fx: Effect, R: Rules): Save {
 
 /**
  * The save after the reducer's answer `r` to the save's fight: the fight, its links merged into what it came from (no
- * fight, no links), the write-backs, the item spent, the players' totals posted, the gate marked as fought (its log
- * line with it) when the links name one, the `shadow` message of a shadow risen for a player's hunter, then `also`. A
- * refused command changes nothing (`refused`), and so does a refused `also`, an item this phone's hunter no longer holds
- * (`no-item`), or a risen shadow with no room to send it to (`no-room`); the caller tells the command's reason from `r`.
+ * fight, no links), the write-backs, the item spent, the players' totals posted, the `shadow` message of a shadow risen
+ * for a player's hunter, then `also`. A refused command changes nothing (`refused`), and so does a refused `also`, an
+ * item this phone's hunter no longer holds (`no-item`), or a risen shadow with no room to send it to (`no-room`); the
+ * caller tells the command's reason from `r`.
  */
 export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refused {
   if (r.effects.some(x => x.type === 'refused')) return refuse('refused');
@@ -116,8 +114,6 @@ export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refus
   if (b.risen) { if (!room) return refuse('no-room'); const ev = b.risen; s = atOutbox(box => post(box, room, { kind: 'event', event: ev }).box)(s); }
   if (room && b.noted?.length) { const n = b.noted; s = atOutbox(box => n.reduce((x, ev) => post(x, room, { kind: 'event', event: ev }).box, box))(s); }
   if (room && b.totals.length) s = atOutbox(box => b.totals.reduce((x, t) => post(x, room, { kind: 'event', event: t }, standsFor(t)).box, box))(s);
-  const gate = b.links?.gate;
-  if (gate) { const g = gateFightStarted(s, gate, b.stamp); if (!isRefused(g)) s = g; }
   return b.also ? b.also(s) : s;
 }
 

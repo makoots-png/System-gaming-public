@@ -1,6 +1,7 @@
 // The kits in the makers (docs/agent-handoff/kits/brief-kits-makers.md): a GM builds Glas's and Einar's kit abilities
 // through the status, skill, item and enemy makers on a phone, and the test reads them back from the save, the parsers and
 // the fight. Every value expected comes from the kit's rule as the brief and design 5.1 state it.
+import { fightId } from '../../src/core/ids.ts';
 import type { Locator, Page } from '@playwright/test';
 import { formulaOf as formulaNow } from '../../src/core/registry/ability-kinds.ts';
 import { test, expect, onboardGM, go, answerWindow } from './helpers.ts';
@@ -14,7 +15,7 @@ import { combatantId, hunterId } from '../../src/core/combat/ability-types.ts';
 import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { place } from '../../src/core/combat/space.ts';
 import { diceOf, parseFormula } from '../../src/core/formula.ts';
-import { fightId, reduce } from '../../src/core/combat/fight.ts';
+import { reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
 import { fightDoc } from '../../src/core/combat/fight-doc.ts';
 import { exampleSkills } from '../../src/core/registry/kit-examples.ts';

@@ -4,7 +4,6 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 ## Open
 
-- **Dodge picker, a hunter already in the outer ring (shipped Neon's way, Nov 24, reversible):** Fable said such a hunter should stay put with no pick, as before, because it is a free move monsters never get. Neon (game experience, its call) gave them a pick among reachable ring tiles, including Stay here, since cover inside the ring cuts damage. One line in `dodgeOptions` (`src/core/combat/space.ts`) turns it back.
 
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
@@ -20,6 +19,7 @@ Numbers 1 to 7 are answered and are under Answered (the economy is live, the bal
 
 ## Answered
 
+- Nov 24 (13:27, t113u, answering the dodge picker ring question): Everyone picks freely. A caught hunter can stay put or move to any square they can reach, not only the best-result tiles, and that includes a hunter already in the outer ring. Dodge movement comes out of the hunter's per-turn movement bank (6 movement with 4 used leaves 2 to dodge with, and 0 left means stay). Monsters stay automatic. Built as the dodge picker v2 unit.
 - Nov 24 (09:10, t111u, answering free revive memory loss): The memory loss on a free System revive is roleplay only. It has no mechanical cost: no XP, stat, skill, title or item loss. The GM plays it at the table.
 - Nov 23 (18:16, answering System revive debt shape, qd row 72): the owner handed the debt shape to Neon. Shipped per-rank `reviveDebtPrices = { E: 5, D: 5, C: 5, B: 6, A: 7, S: 7 }` on `RULES.priceBase` (E `500`, D `1,625`, C `6,250`, B `30,000`, A `133,000`, S `525,000` gold; mean `4.71` to `4.98`, median `5`, p10 to p90 `4` to `6` clears at every rank) because flat `6x` penalized early E to C ranks across 83% of campaign playtime (`5.56` to `5.86` clears) while letting A and S off light (`4.16` to `4.37` clears, cheaper than a Resurrection Crystal), and the per-rank map keeps one "about 5 clears" promise everywhere. Legacy scalar overrides like `{"reviveDebtPrices": 6}` expand to every rank. Undo: "switch back to the flat scalar 6".
 - Nov 23 (18:08, answering the from-scratch review disputes, relayed in chat): (1) Slug ids for decision-log rows: build them (sides with Neon), queued as a from-scratch unit after unit 6. (2) Fight-rule lock: don't build it (sides with Fable), so a GM can still edit rules during setup. (3) Generated docs: untrack them in from-scratch unit 2, since he doesn't read them on GitHub. Still not built: a separate sync slot and blanket test ids. The takeover screen (unit 7) waits for his look.

@@ -2,7 +2,7 @@
 // server.ts parses every event, sheet and doc with these before it stores one, and the client parses everything it
 // receives with the same functions. Inside the app a parsed value is trusted: nothing re-checks its fields.
 // A new room message is a member of `Payloads`, an entry in `DEFS` and `EVENTS` and a case in tests/protocol.test.ts.
-import { GATE_STATUSES, GATE_TYPES, monsterId, parseGateId, shownGate } from './gates/gate.ts';
+import { GATE_STATUSES, GATE_TYPES, monsterId, shownGate } from './gates/gate.ts';
 import { isStateChip } from './hunter/chips.ts';
 import type { GateFields, GateId, GateStatus, ShownGate } from './gates/gate.ts';
 import { QUEST_KINDS, QUEST_STATUSES, SHADOW_GRADES, parseSheetHunter } from './hunter/hunter.ts';
@@ -39,8 +39,8 @@ import type { AbilityId, CombatantId } from './combat/ability-types.ts';
 import { statusKey } from './combat/effect-ops.ts';
 import type { SheetStatus, StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseSheetStatus, parseStatusDef } from './combat/fight-parse.ts';
-import { FORCED_FACES, LOG_LINE_MAX, MAX_STATUSES, NAME_MAX, fightId } from './combat/fight-types.ts';
-import type { Fight, FightId, ForcedFace } from './combat/fight-types.ts';
+import { FORCED_FACES, LOG_LINE_MAX, MAX_STATUSES, NAME_MAX } from './combat/fight-types.ts';
+import type { Fight, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
@@ -50,19 +50,17 @@ import { TERRAIN, TERRAINS } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
 import { isMythicScriptId, mythicScriptOf, omensOf } from './registry/mythics.ts';
 import { MAX_ZONES, ZONE_NAME_MAX, zoneId } from './combat/zones.ts';
-import { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
+import { deviceOf, fightId, hunterIdOf, parseDeviceId, parseEventId, parseGateId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
-import type { DeviceId, EventId, ItemId, RoomCode, SheetKey } from './ids.ts';
+import type { DeviceId, EventId, FightId, ItemId, RoomCode, SheetKey } from './ids.ts';
 import { OFFER_ID_MAX, endIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
-import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods } from './trade/goods.ts';
-import type { BagPick, Goods } from './trade/goods.ts';
+import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods, parseStashAsk } from './trade/goods.ts';
+import type { BagPick, Goods, StashAsk } from './trade/goods.ts';
 import type { Seat } from './role.ts';
 import { ITEM_BOUNDS, RARITIES, parseItem } from './registry/items.ts';
 import type { Item, Rarity } from './registry/items.ts';
-import { parseStashAsk } from './sync/asked.ts';
-import type { StashAsk } from './sync/asked.ts';
 import { parseLevel } from './hunter/level.ts';
 import type { ChapterBody } from './story/story.ts';
 import { WEIGHT_MAX } from './table-weight.ts';

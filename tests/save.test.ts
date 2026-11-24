@@ -3,6 +3,7 @@
 // Expected numbers come from the rules by name: a new hunter has `statBase` in each of the eight stats, the creation
 // points free, and the HP, mana and fatigue capacity of base stats at level 1, where every curve term of design 2.2 is 0
 // (`hpBase`, `manaBase`, `fatigueBase`).
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES, TIERS } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -20,7 +21,7 @@ import { hunterRow, monsterRows, shadowRow } from '../src/core/combat/rows.ts';
 import type { RowHunter, RowMonster, RowShadow } from '../src/core/combat/rows.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
 import { MAX_STATUSES } from '../src/core/combat/fight-types.ts';
 import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';

@@ -53,6 +53,7 @@
 // - The party's control (P3): the share of the fight's time the boss's turn was pushed by the tank's stun (a hold of a
 //   round, `abilities().stun`, which adds its length to the boss's next turn: timeline.ts `stunned`), a stagger's push apart. No built-in skill holds, so the stun is the plain one. The tank
 //   uses it whenever it is ready and the boss acts before the tank's next turn (`controlPolicy`), before a taunt.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { recordSteps, simTest, workBudget } from './models/sim-budget.ts';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
@@ -61,7 +62,7 @@ import type { Rank } from '../src/core/rules.ts';
 import { difficultyFactor } from '../src/core/gates/difficulty.ts';
 import type { DifficultyLevel } from '../src/core/gates/difficulty.ts';
 import { place } from '../src/core/combat/space.ts';
-import { reduce, fightId } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';

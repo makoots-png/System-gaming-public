@@ -2,6 +2,7 @@
 // Expected numbers come from the rules: the interval and opening of design 1.2, armor (rule 12), a weak hit's stagger
 // (4.3), rounds left in tenths, the 5-10-5 distance and the walk of 4.6, and the tie rule of 3.1 rule 8a (fewest steps,
 // lowest y, then x). Aims read rules 5 and 6 from resolve.ts, so they are tested only by what they return.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -15,7 +16,7 @@ import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/abili
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, CombatantKind, Op, Origin, Status, StatusDef } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow, Opening, Running } from '../src/core/combat/fight.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { aims, answersBy, cardOf, docSpots, mythicHand, mythicSeenOfDoc, mythicStrip, omenBanner, omenOnYou, order, readyIn, spotOf, statusGrant, stepAway, stepToward, waitChoices } from '../src/core/combat/fight-view.ts';

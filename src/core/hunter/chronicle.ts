@@ -122,6 +122,11 @@ export const pushedChronicle = (c: Chronicle): Chronicle => {
   const earned = Object.entries(c.feats).filter(([, st]) => st.at === 'earned').sort(([, a], [, b]) => ((a as { on: string }).on < (b as { on: string }).on ? -1 : 1)).slice(-PUSHED_FEATS);
   return { inbox: [], facts: c.facts.slice(-PUSHED_FACTS), tally: c.tally, feats: Object.fromEntries(earned) };
 };
+/**
+ * The hunter as the push sends it: its chronicle cut to what the GM's phone reads (`pushedChronicle`: the lifetime
+ * numbers and the last few kept facts), so a long chronicle never takes the room from the rest of a sheet.
+ */
+export const pushedSheet = <H extends { readonly chronicle: Chronicle }>(h: H): H => ({ ...h, chronicle: pushedChronicle(h.chronicle) });
 
 // ── the boundary ──
 type Rec = Record<string, unknown>;

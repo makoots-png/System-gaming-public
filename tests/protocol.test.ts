@@ -39,7 +39,7 @@ import { FORMULA_PARTS, parseFormula, partsOf } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { THING_MAX } from '../src/core/size.ts';
-import { pushedSheet } from '../src/core/sync/push.ts';
+import { pushedSheet } from '../src/core/hunter/chronicle.ts';
 import { REWARD_BOUNDS } from '../src/core/rewards.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';

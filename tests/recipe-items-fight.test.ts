@@ -1,5 +1,6 @@
 // The recipe items in a fight (item-stats units 3 and 10): each worn status or active is put on a row as an item gives it
 // and driven through the fight reducer, as tests/triggers.test.ts does. Each expected number is worked from the item's rule.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -14,7 +15,7 @@ import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, Origin, Status, StatusDef } from '../src/core/combat/effect-ops.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { RECIPE_ITEMS, itemOf } from '../src/core/registry/items.ts';

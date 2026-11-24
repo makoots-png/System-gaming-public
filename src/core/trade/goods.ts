@@ -25,6 +25,11 @@ export type Goods = { readonly gold: number; readonly items: readonly GoodsLine[
 export type PickLine = { readonly id: ItemId; readonly qty: number; readonly name: string };
 /** A choice from a bag by id and count, and gold: what the Give window picked from this hunter, or what an offer asks of the other. */
 export type BagPick = { readonly gold: number; readonly items: readonly PickLine[] };
+/** What a player asks of the party stash: to put goods in (they wait aside in the ask), to take `qty` of a line, or to take gold. */
+export type StashAsk =
+  | { readonly kind: 'put'; readonly goods: Goods }
+  | { readonly kind: 'take'; readonly item: ItemId; readonly qty: number; readonly name: string }
+  | { readonly kind: 'gold'; readonly gold: number };
 
 export const NO_GOODS: Goods = { gold: 0, items: [] };
 export const NO_PICK: BagPick = { gold: 0, items: [] };
@@ -153,6 +158,19 @@ export function parseBagPick(v: unknown): BagPick | null {
   if (!isObj(v)) return null;
   const gold = goldOf(own(v, 'gold')), items = linesOf(own(v, 'items'), pickLine, l => l.id);
   return gold !== null && items ? { gold, items } : null;
+}
+const whole = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi ? v : null);
+/** A stash ask from outside data (a stored ask, a room message): a put's goods by `parseGoods`, a take's line, a gold amount; else null. */
+export function parseStashAsk(v: unknown): StashAsk | null {
+  if (!isObj(v)) return null;
+  const kind = own(v, 'kind');
+  if (kind === 'put') { const goods = parseGoods(own(v, 'goods')); return goods && (goods.gold > 0 || goods.items.length > 0) ? { kind: 'put', goods } : null; }
+  if (kind === 'take') {
+    const item = parseSaveId<'i'>(own(v, 'item')), qty = whole(own(v, 'qty'), 1, ITEM_BOUNDS.qty), name = own(v, 'name');
+    return item && qty !== null && typeof name === 'string' ? { kind: 'take', item, qty, name: name.slice(0, ITEM_BOUNDS.name) } : null;
+  }
+  if (kind === 'gold') { const gold = whole(own(v, 'gold'), 1, GOODS_GOLD_MAX); return gold === null ? null : { kind: 'gold', gold }; }
+  return null;
 }
 
 // ── words ──

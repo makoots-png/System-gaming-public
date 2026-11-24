@@ -11,7 +11,7 @@
 // size (`measure`) only where the answer decides a move, the view answering `sized`.
 // Two tables of the GM's fight screen around its map follow (audit SMX-views-8): its box, which holds a map only while it
 // shows one (`mapSlot`), and who holds the Build drawer, the screen or the GM's hand for one fight (`buildDrawer`).
-import type { FightId } from './fight-types.ts';
+import type { FightId } from '../ids.ts';
 
 /**
  * The map on the page: `blank` (no fight to show: hidden, nothing of a fight kept), `opening` a fight not framed yet (no

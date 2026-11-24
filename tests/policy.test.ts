@@ -4,8 +4,9 @@
 // it by its own machine (`mythicStepped`); what each test expects is the script's words: Stars Fall lands on the tiles
 // within 2 of its aim and its ring a tile past them (3 tiles, a bruiser's stride: one beside its aim steps out), Named in the Book is a sure curse of 1.1 sample hunters cancelled by a hold, and an omen lands
 // on its mythic's next turn.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
-import { fightId, reduce, runningState } from '../src/core/combat/fight.ts';
+import { reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Command, Fight, NewRow, Running } from '../src/core/combat/fight.ts';
 import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
 import { mythicStepped } from '../src/core/combat/mythic.ts';

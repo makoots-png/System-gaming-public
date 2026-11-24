@@ -1,3 +1,4 @@
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RANKS, RULES, rulesOf } from '../src/core/rules.ts';
 import { parseOverrides } from '../src/core/overrides.ts';
@@ -26,7 +27,7 @@ import { iid } from './fixtures/ids.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, itemAbility, itemAbilityId, itemOfAbility, weaponAttack } from '../src/core/registry/abilities.ts';
 import type { BuiltInSkill, SkillRules, Weapon } from '../src/core/registry/abilities.ts';
 import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { newHunter } from '../src/core/save.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';

@@ -1,6 +1,6 @@
 // The events of the battle map's life on the page (src/core/combat/map-mount.ts), over two fights, shared by
 // tests/map-mount.test.ts and the state chart (scripts/charts/map-mount.ts), so both walk the same events.
-import { fightId } from '../../src/core/combat/fight-types.ts';
+import { fightId } from '../../src/core/ids.ts';
 import type { BuildDrawerEvent, MapMountEvent } from '../../src/core/combat/map-mount.ts';
 
 /** Two fights one after the other on the same ground. */

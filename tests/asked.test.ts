@@ -7,6 +7,7 @@ import type { Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { ASKED_EVENTS, ASKED_MAX, ASKED_STATES, askAnswered, askDismissed, askPosted, askTaken, askedGone, askedStep, mayDismiss, parseAsked, shownOf, waitWords, waitingGates } from '../src/core/sync/asked.ts';
 import type { Asked } from '../src/core/sync/asked.ts';
+import { parseStashAsk } from '../src/core/trade/goods.ts';
 import { post, step } from '../src/core/sync/outbox.ts';
 import type { Outbox } from '../src/core/sync/outbox.ts';
 import { newEvent } from '../src/core/protocol.ts';
@@ -119,8 +120,8 @@ describe('the machine', () => {
 
   test('stored runs are read whole or dropped', () => {
     const w = run(runEvent(1));
-    expect(parseAsked([w, { ...w, id: 'has space' }, { ...w, state: 'paid' }, w, 'x'])).toEqual([w]);
-    expect(parseAsked(null)).toEqual([]);
+    expect(parseAsked([w, { ...w, id: 'has space' }, { ...w, state: 'paid' }, w, 'x'], parseStashAsk)).toEqual([w]);
+    expect(parseAsked(null, parseStashAsk)).toEqual([]);
   });
 
   // Random sends, refusals, drops, answers (some twice), rooms gone and dismissals: an answer closes a run at most once,
@@ -174,7 +175,7 @@ describe('a stash ask shares the machine, with the put\'s rule (notes-5-trade.md
 
   test('a stored stash ask reads whole, with whether it was sent', () => {
     const w = stashAsk(1, true);
-    expect(parseAsked([w, { ...w, id: 'd-p1-ask2xyz', ask: { kind: 'put', goods: { gold: 0, items: [] } } }, { ...w, kind: 'loot' }])).toEqual([w]);
-    expect(parseAsked([{ ...w, sent: 'yes' }])).toEqual([{ ...w, sent: false }]);
+    expect(parseAsked([w, { ...w, id: 'd-p1-ask2xyz', ask: { kind: 'put', goods: { gold: 0, items: [] } } }, { ...w, kind: 'loot' }], parseStashAsk)).toEqual([w]);
+    expect(parseAsked([{ ...w, sent: 'yes' }], parseStashAsk)).toEqual([{ ...w, sent: false }]);
   });
 });

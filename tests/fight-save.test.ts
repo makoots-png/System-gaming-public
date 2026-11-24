@@ -2,9 +2,11 @@
 // fight.ts): one step each, so the GM's page reloaded between any two parts of a command loses nothing and does nothing
 // twice. The GM's phone below follows send() in src/views/combat.js step by step: the write, the outbox's send, the
 // news, the dice owed.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { fightHold, fought, heldCommands, itemSpent, playerHeld } from '../src/core/combat/fight-save.ts';
 import type { HeldParts } from '../src/core/combat/fight-save.ts';
+import { gateFought } from '../src/core/gates/world.ts';
 import { gmAward } from '../src/core/award.ts';
 import { gmSource } from '../src/core/effects.ts';
 import { newRewards } from '../src/core/rewards.ts';
@@ -14,7 +16,7 @@ import { zoneId } from '../src/core/combat/zones.ts';
 import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { putItem } from '../src/core/hunter/inventory.ts';
 import type { Beside } from '../src/core/combat/fight-save.ts';
-import { fightId, owed, reduce, reduceAll } from '../src/core/combat/fight.ts';
+import { owed, reduce, reduceAll } from '../src/core/combat/fight.ts';
 import { MAX_STATUSES } from '../src/core/combat/fight-types.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Command, Ctx, Fight, NewRow, Result, Running } from '../src/core/combat/fight-types.ts';
@@ -73,7 +75,7 @@ function write(p: Phone, cmd: Command, links: Beside['links'] = null): Result {
   const r = reduce(p.save.fight, cmd, ctxOf(p.save));
   const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
     ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], fight: r.fight!.id, life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
-  const next = fought(p.save, r, { links, room: ROOM, totals, stamp: STAMP }, RULES);
+  const next = gateFought(p.save, r, { links, room: ROOM, totals, stamp: STAMP }, RULES);
   if (!isRefused(next)) p.save = next;
   return r;
 }
@@ -120,13 +122,19 @@ const settled = (s: Save) => (s.fight as Fight).log.filter(l => l.text.includes(
 const vitalsFor = (s: Save) => (s.settings.sync.outbox ?? []).filter(e => e.key === `vitals ${KAI}`);
 
 describe('one fight command is one write', () => {
-  test('a gate\'s fight starting writes the fight, its links and the gate\'s mark with its log line together', () => {
+  test('a gate\'s fight starting writes the fight, its links and the gate\'s mark with its log line together, before `also`', () => {
     const p: Phone = { save: gmSave(), room: [], events: 0 };
     write(p, { type: 'add', fightId: fightId('f1'), rows: rowsOf(p.save), openings: [] }, { gate: gid('g-den'), monsters: { [cid('c3')]: mid('m-goblin') } });
     expect(p.save.fight?.phase).toBe('setup');
     expect(p.save.fightRefs).toEqual({ gate: gid('g-den'), monsters: { [cid('c3')]: mid('m-goblin') } });
     expect(p.save.gates[0]!.status).toBe('raiding');
     expect(p.save.log.map(l => l.title)).toContain('Fight started');
+    // `also` sees the marked gate and its refusal aborts the whole write
+    const s0 = gmSave(), r = reduce(s0.fight, { type: 'add', fightId: fightId('f2'), rows: rowsOf(s0), openings: [] }, ctxOf(s0));
+    let seenStatus = '';
+    const res = gateFought(s0, r, { links: { gate: gid('g-den') }, room: ROOM, totals: [], stamp: STAMP, also: s => { seenStatus = s.gates[0]!.status; return { ok: false, why: 'blocked' }; } }, RULES);
+    expect(seenStatus).toBe('raiding');
+    expect(res).toEqual({ ok: false, why: 'blocked' });
   });
 
   test('a GM\'s hand edit writes the row, this phone\'s hunter\'s totals, the shadow\'s HP and Kai\'s totals in the outbox, in the same step', () => {
@@ -148,7 +156,7 @@ describe('one fight command is one write', () => {
     const p = bleedingKai(), was = JSON.stringify(p.save);
     const r = reduce(p.save.fight, { type: 'endTurn', by: id('c1') }, ctxOf(p.save));
     expect(r.effects).toEqual([{ type: 'refused', reason: 'notYourTurn' }]);
-    expect(fought(p.save, r, { links: { gate: gid('g-den') }, room: ROOM, totals: [], stamp: STAMP }, RULES)).toEqual({ ok: false, why: 'refused' });
+    expect(gateFought(p.save, r, { links: { gate: gid('g-den') }, room: ROOM, totals: [], stamp: STAMP }, RULES)).toEqual({ ok: false, why: 'refused' });
     expect(JSON.stringify(p.save)).toBe(was);
   });
 
@@ -231,7 +239,7 @@ describe('an item used in the fight leaves its bag in the write that takes the u
     const cmd: Command = { type: 'act', by: id(by), ability: itemAbilityId('i5'), aim: id(by), rolls: { dice: {}, react: {} } };
     const r = reduce(p.save.fight, cmd, ctxOf(p.save)), sp = itemSpent(p.save.fight, cmd);
     const spent = !sp ? null : sp.kind === 'local' ? sp : { kind: 'remote' as const, event: newEvent('spent', { to: [sp.remote], item: sp.item }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })! };
-    const next = fought(p.save, r, { links: null, room: ROOM, totals: [], stamp: STAMP, spent }, RULES);
+    const next = fought(p.save, r, { links: null, room: ROOM, totals: [], spent }, RULES);
     if (!isRefused(next)) p.save = next;
     return next;
   }
@@ -288,9 +296,9 @@ describe('an item used in the fight leaves its bag in the write that takes the u
   test('a shadow risen for a player\'s hunter is posted in the write that keeps the corpse\'s outcome; with no room nothing is written (implicit audit 3, C3)', () => {
     const p = potionFight(), r: Result = { fight: p.save.fight, effects: [] };
     const risen = newEvent('shadow', { to: [KAI], shadow: { rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, name: 'Wolf' } }, { device: 'd-gm', now: 1, rand: 0.5 })!;
-    const next = ok(fought(p.save, r, { links: null, room: ROOM, totals: [], stamp: STAMP, risen }, RULES)), had = (p.save.settings.sync.outbox ?? []).length;
+    const next = ok(fought(p.save, r, { links: null, room: ROOM, totals: [], risen }, RULES)), had = (p.save.settings.sync.outbox ?? []).length;
     expect((next.settings.sync.outbox ?? []).slice(had).map(e => e.letter.kind === 'event' ? [e.letter.event.type, e.key] : null)).toEqual([['shadow', null]]);
-    expect(fought(p.save, r, { links: null, room: null, totals: [], stamp: STAMP, risen }, RULES)).toEqual({ ok: false, why: 'no-room' });
+    expect(fought(p.save, r, { links: null, room: null, totals: [], risen }, RULES)).toEqual({ ok: false, why: 'no-room' });
   });
 
   test('a skill whose id happens to begin "item-" spends no item: an item\'s ability is told by the item it holds, not by its id (implicit audit 2, N16)', () => {
@@ -332,7 +340,7 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
     const r = reduceAll(p.save.fight, heldCommands(parts, RULES), ctxOf(p.save));
     const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
       ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], fight: r.fight!.id, life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
-    const next = fought(p.save, r, { links: null, room: ROOM, totals, stamp: STAMP, also: sv => gmAward(sv, locals, reward, sends, DAY).save }, RULES);
+    const next = fought(p.save, r, { links: null, room: ROOM, totals, also: sv => gmAward(sv, locals, reward, sends, DAY).save }, RULES);
     if (!isRefused(next)) p.save = next;
     if (crash !== 'write') flush(p);
     return next;

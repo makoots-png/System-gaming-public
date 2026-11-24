@@ -2,9 +2,10 @@
 // general policy (policy.ts `sensible`), answered as the party's odds. The expected values come from the rule: a party
 // that cannot lose wins nearly every run, one that cannot win nearly none, a fight nobody can hurt is a stalemate in
 // every run, and the same inputs answer the same odds.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
-import { fightId, reduce, runningState } from '../src/core/combat/fight.ts';
+import { reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow, Running, Setup } from '../src/core/combat/fight.ts';
 import { IDLE, ODDS_EVENTS, ODDS_STATES, TABLE, fudgeOn, oddsDetail, oddsKey, oddsLine, oddsStep, progressOf, readOdds, weighable } from '../src/core/combat/odds.ts';
 import type { Odds, OddsRun, RowEnd, RunEnd } from '../src/core/combat/odds.ts';

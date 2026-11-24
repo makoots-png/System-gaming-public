@@ -26,19 +26,14 @@ const UNUSED: Record<string, string> = {
 const UNRESOLVED: string[] = [];
 /** Mutual value-import cycles between peer directories; fixing one forces removing it here. */
 const PEER_DIR_CYCLES: string[] = [
-  'src/core/combat <-> src/core/gates',
   'src/core/combat <-> src/core/hunter',
   'src/core/combat <-> src/core/registry',
-  'src/core/combat <-> src/core/sync',
   'src/core/gates <-> src/core/hunter',
-  'src/core/gates <-> src/core/sync',
   'src/core/hunter <-> src/core/registry',
-  'src/core/hunter <-> src/core/sync',
-  'src/core/sync <-> src/core/trade',
 ];
 /** Strongly connected groups of two or more peer directories in the value-import graph (catches 3+ directory peer cycles). */
 const PEER_DIR_SCCS: string[][] = [
-  ['src/core/combat', 'src/core/gates', 'src/core/hunter', 'src/core/registry', 'src/core/sync', 'src/core/trade'],
+  ['src/core/combat', 'src/core/gates', 'src/core/hunter', 'src/core/registry', 'src/core/trade'],
 ];
 /** Parent-child value-import tangles (`file <-> childDir`); fixing one forces removing it here. */
 const PARENT_CHILD_TANGLES: string[] = [
@@ -48,7 +43,6 @@ const PARENT_CHILD_TANGLES: string[] = [
   'src/core/protocol.ts <-> src/core/combat',
   'src/core/protocol.ts <-> src/core/gates',
   'src/core/protocol.ts <-> src/core/hunter',
-  'src/core/protocol.ts <-> src/core/sync',
   'src/core/protocol.ts <-> src/core/trade',
   'src/core/rewards.ts <-> src/core/combat',
   'src/core/rewards.ts <-> src/core/hunter',

@@ -1,6 +1,7 @@
 // The makers (src/views/maker.js): the status, item, skill and enemy makers on a phone, driven through the UI, read back
 // from the save and from the game. The steps that put a status on a fight row run on the GM's fight screen of W5
 // (combat.js); they need W5's merge to run.
+import { fightId } from '../../src/core/ids.ts';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
@@ -20,7 +21,7 @@ import { modified, OP_KINDS, statusKey } from '../../src/core/combat/effect-ops.
 import type { Origin, StatusDef } from '../../src/core/combat/effect-ops.ts';
 import { parseOp } from '../../src/core/combat/fight-parse.ts';
 import { formulaOf as formulaNow, abilityOf, defaultTicks, describeAbility, recommended, sampleBody } from '../../src/core/registry/ability-kinds.ts';
-import { fightId, reduce } from '../../src/core/combat/fight.ts';
+import { reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
 import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';

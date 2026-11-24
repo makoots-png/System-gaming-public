@@ -7,17 +7,13 @@ import type { Life } from '../hunter/vitals.ts';
 import type { Grid, Place, Side, Terrain, Tiles } from './space.ts';
 import type { Tick } from './timeline.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
-import type { SheetKey } from '../ids.ts';
+import type { FightId, SheetKey } from '../ids.ts';
 import type { Body, Channel, Due, ShadowId, SheetStatus, Source, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Aim, UseRefusal as UseRefusal, Rolls } from './resolve.ts';
 import type { Zone, ZoneId } from './zones.ts';
 import type { ExtractionOutcome } from './extraction.ts';
-import type { Id } from '../ids.ts';
 import type { Answer, MythicRefusal } from './mythic.ts';
 import type { AnswerOutcome, OmenKey } from './mythic-types.ts';
-
-export type FightId = Id<'FightId'>;
-export const fightId = (s: string): FightId => s as FightId;
 
 // ── the fight ──
 /** The fight's own states. No fight is `null`. */

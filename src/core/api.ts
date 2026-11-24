@@ -30,7 +30,7 @@ import type { StatBlock } from './registry/monsters.ts';
 import type { Gate, GateType } from './gates/gate.ts';
 import type { DifficultyLevel, DifficultyScale } from './gates/difficulty.ts';
 import type { WorldWhy } from './gates/world.ts';
-import type { FightId, NewRow, Running, Setup } from './combat/fight-types.ts';
+import type { NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { SoloFight } from './gates/solo.ts';
 import type { ExtractionOutcome } from './combat/extraction.ts';
@@ -46,7 +46,7 @@ import type { Thing } from './detail.ts';
 import type { DetailEvent } from './detail-open.ts';
 import type { Coin, RollId } from './coin.ts';
 import type { Check, RollKind } from './roll.ts';
-import type { DeviceId, HunterId, HunterRef, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
+import type { DeviceId, FightId, HunterId, HunterRef, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
 
 /** A System window's text (the options `ui.system` takes that a reward window passes on). */
 export type RewardWindow = { tag?: string; title?: string; kind?: string; body?: string | undefined; lines?: string[] | undefined };

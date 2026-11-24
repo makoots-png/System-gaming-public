@@ -3,6 +3,7 @@
 // forced face spent by the one command that read it (fight.ts `reduce`). Each test draws chosen faces from a source and
 // reads what the fight did with them. Every expected face is the rule's: `clamp(face + weight, 1, sides)`, with the
 // weight `fudge(helped) − fudge(hindered)` by section 2's table, and a force read as its row's best (or worst) face.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -17,7 +18,7 @@ import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-typ
 import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/ability-types.ts';
 import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, Status } from '../src/core/combat/effect-ops.ts';
-import { fightId, owed, reduce } from '../src/core/combat/fight.ts';
+import { owed, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Effect, Fight, ForcedFace, FudgeScope, NewRow, Running, Setup } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../src/core/combat/resolve.ts';

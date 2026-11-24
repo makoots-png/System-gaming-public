@@ -20,7 +20,7 @@ import type { Grid, Place, Shape } from './space.ts';
 import { cost, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-types.ts';
-import { parseSaveId, parseSheetKey } from '../ids.ts';
+import { fightId, parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
@@ -39,7 +39,7 @@ import type {
 import type { FoeLife } from './row-life.ts';
 import { ALONE_EVENTS, BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
-import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
+import { FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
 import type { DodgeWait, DueTurn, Fight, Fog, ForcedFace, Fudge, HeldUse, LogLine, Summary } from './fight-types.ts';
 import { NO_FUDGE } from './fudge.ts';
 import type { Extraction } from './extraction.ts';

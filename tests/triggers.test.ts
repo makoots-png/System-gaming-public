@@ -2,6 +2,7 @@
 // table 2.5). Every expected number comes from the design: the order of rule 19b, the depth of 2, the 16 firings a
 // command, the three limits, a refund's limit of once a round, and a trigger's ops at their averages as a hit its bearer
 // deals (rule 12 through `afterDefence`).
+import { fightId } from '../src/core/ids.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
@@ -20,7 +21,7 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { eventsOf, fellLow, READY, tripStep } from '../src/core/combat/triggers.ts';
 import type { Limit, Trigger, Trip } from '../src/core/combat/triggers.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { LIMITS, WALK_EVENTS } from './models/trip-events.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';

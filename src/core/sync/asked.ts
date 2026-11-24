@@ -18,19 +18,10 @@ import type { Save } from '../save.ts';
 import type { Outbox } from './outbox.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
-import { parseEventId, parseRoomCode, parseSaveId } from '../ids.ts';
-import type { EventId, GateId, HunterId, ItemId, RoomCode } from '../ids.ts';
-import { parseGateId } from '../gates/gate.ts';
+import { parseEventId, parseGateId, parseRoomCode, parseSaveId } from '../ids.ts';
+import type { EventId, GateId, HunterId, RoomCode } from '../ids.ts';
 import { timeOf } from '../day.ts';
-import { GOODS_GOLD_MAX, parseGoods } from '../trade/goods.ts';
-import type { Goods } from '../trade/goods.ts';
-import { ITEM_BOUNDS } from '../registry/items.ts';
-
-/** What a player asks of the party stash: to put goods in (they wait aside in the ask), to take `qty` of a line, or to take gold. */
-export type StashAsk =
-  | { readonly kind: 'put'; readonly goods: Goods }
-  | { readonly kind: 'take'; readonly item: ItemId; readonly qty: number; readonly name: string }
-  | { readonly kind: 'gold'; readonly gold: number };
+import type { StashAsk } from '../trade/goods.ts';
 
 /** What is stored of a waiting ask: posted (its letter in the outbox or let go), taken (the room has it), gone (the room is gone). */
 export const ASKED_STORED = ['posted', 'taken', 'gone'] as const;
@@ -179,33 +170,21 @@ export const waitWords = (w: Asked, box: Outbox): string => { const s = shownOf(
 // ── the save's reader ──
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
-const whole = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi ? v : null);
-/** A stash ask from outside data (a stored ask, a room message): a put's goods by `parseGoods`, a take's line, a gold amount; else null. */
-export function parseStashAsk(v: unknown): StashAsk | null {
-  if (!isObj(v)) return null;
-  if (v.kind === 'put') { const goods = parseGoods(v.goods); return goods && (goods.gold > 0 || goods.items.length > 0) ? { kind: 'put', goods } : null; }
-  if (v.kind === 'take') {
-    const item = parseSaveId<'i'>(v.item), qty = whole(v.qty, 1, ITEM_BOUNDS.qty);
-    return item && qty !== null && typeof v.name === 'string' ? { kind: 'take', item, qty, name: v.name.slice(0, ITEM_BOUNDS.name) } : null;
-  }
-  if (v.kind === 'gold') { const gold = whole(v.gold, 1, GOODS_GOLD_MAX); return gold === null ? null : { kind: 'gold', gold }; }
-  return null;
-}
 /** What a stored ask asks, read by its kind; else null. */
-function kindOf(o: Rec): AskedKind | null {
+function kindOf(o: Rec, readStash: (v: unknown) => StashAsk | null): AskedKind | null {
   if (o.kind === 'solo') { const gate = parseGateId(o.gate); return gate ? { kind: 'solo', gate, name: typeof o.name === 'string' ? o.name.slice(0, 60) : '' } : null; }
-  if (o.kind === 'stash') { const ask = parseStashAsk(o.ask); return ask ? { kind: 'stash', ask } : null; }
+  if (o.kind === 'stash') { const ask = readStash(o.ask); return ask ? { kind: 'stash', ask } : null; }
   return null;
 }
 /**
  * The stored asks, each read whole or dropped; one per id. None is dropped for a count: a stash put holds goods aside,
  * and `askPosted` keeps the count.
  */
-export function parseAsked(v: unknown): Asked[] {
+export function parseAsked(v: unknown, readStash: (v: unknown) => StashAsk | null): Asked[] {
   const out: Asked[] = [];
   for (const raw of Array.isArray(v) ? v : []) {
     if (!isObj(raw)) continue;
-    const id = parseEventId(raw.id), room = parseRoomCode(raw.room), hid = parseSaveId<'h'>(raw.hid), at = timeOf(raw.at), kind = kindOf(raw);
+    const id = parseEventId(raw.id), room = parseRoomCode(raw.room), hid = parseSaveId<'h'>(raw.hid), at = timeOf(raw.at), kind = kindOf(raw, readStash);
     const state = ASKED_STORED.find(x => x === raw.state);
     if (!id || !room || !hid || !at || !state || !kind || out.some(w => w.id === id)) continue;
     out.push({ id, room, hid, at, state, sent: raw.sent === true, ...kind });

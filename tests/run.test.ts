@@ -18,7 +18,7 @@ import { newRewards } from '../src/core/rewards.ts';
 import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { dayKey } from '../src/core/day.ts';
-import { seedId } from '../src/core/ids.ts';
+import { fightId, seedId } from '../src/core/ids.ts';
 import type { HunterRef, MonsterId } from '../src/core/ids.ts';
 import { record } from '../src/core/hunter/chronicle.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
@@ -28,7 +28,7 @@ import { rollover } from '../src/core/hunter/quests.ts';
 import { soloTick } from '../src/core/gates/solo.ts';
 import { personalGateId } from '../src/core/gates/personal.ts';
 import { advanceDay, sessionStarted } from '../src/core/gates/world.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import { fought } from '../src/core/combat/fight-save.ts';
 import { hunterRow } from '../src/core/combat/rows.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
@@ -298,7 +298,7 @@ describe('only the GM\'s tap moves a story', () => {
     same(ok(advanceDay(base, 2, { at: AT, cap: RULES.logCap })).save);
 
     let s = base;
-    const run = (cmd: Command) => { const r = reduce(s.fight, cmd, { rules: RULES }); s = ok(fought(s, r, { links: null, room: null, totals: [], stamp: { at: AT, cap: RULES.logCap } }, RULES)); };
+    const run = (cmd: Command) => { const r = reduce(s.fight, cmd, { rules: RULES }); s = ok(fought(s, r, { links: null, room: null, totals: [] }, RULES)); };
     const c1 = combatantId('c1'), c2 = combatantId('c2');
     run({ type: 'add', fightId: fightId('f1'), rows: [hunterRow(base.hunters[1]!, c1, RULES), { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, c2, RULES), kind: 'monster', side: 'foe', holder: null, threat: {}, name: 'Goblin', xp: 60 } as NewRow], openings: [] });
     run({ type: 'start', openings: [{ id: c1, d20: 20, tie: 0 }, { id: c2, d20: 5, tie: 0 }] });

@@ -83,6 +83,8 @@ export type ChainId = Id<'ChainId'>;
 export type MonsterId = Id<'MonsterId'>;
 /** A gate of the world. */
 export type GateId = Id<'GateId'>;
+/** A gate id from a stored gate, a waiting ask, or a fight's link to it; null for an empty or too long one. */
+export const parseGateId = (v: unknown): GateId | null => (typeof v === 'string' && v.length > 0 && v.length <= 80 ? (v as GateId) : null);
 /** One item line inside a gate's clear preset (`pl1`, `pl2`, ...): unique within its preset. */
 export type PresetLineId = Id<'PresetLineId'>;
 const PRESET_LINE_RE = /^pl\d{1,6}$/;
@@ -104,6 +106,9 @@ export type StoryRunId = Id<'StoryRunId'>;
 export type CombatantId = Id<'CombatantId'>;
 /** A stored row id (the fight's own reader's rule: text of 1 to 80 characters), or null. */
 export const parseCombatantId = (v: unknown): CombatantId | null => (typeof v === 'string' && v.length > 0 && v.length <= 80 ? (v as CombatantId) : null);
+/** A fight's id: `f` and the save's seq (`f12`), or any non-empty fight id on the wire. */
+export type FightId = Id<'FightId'>;
+export const fightId = (s: string): FightId => s as FightId;
 /** The id each prefix makes (save.ts's repair and the store's `id`). A prefix not listed makes a plain string. */
 export type SaveIds = {
   h: HunterId; q: QuestId; t: TitleId; sh: ShadowId; i: ItemId; l: LogId; r: RollEntryId; s: SkillId; lo: LoadoutId; bn: BoonId;

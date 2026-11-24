@@ -108,8 +108,11 @@ test('only the combat dispatcher writes the fight, in one step with what the com
   const lines = [...await sourceLines('src/views'), ...await sourceLines('src/edge')];
   const hits = lines.filter(line => !isComment(line.text) && writes.some(re => re.test(line.text)));
   expect(report(hits), 'a fight changes only through send() in src/views/combat.js. Add a command to src/core/combat/fight.ts (see docs/guide/combat.md) and send it.').toEqual([]);
-  const steps = (await sourceLines('src')).filter(line => !isComment(line.text) && /\bfought\(/.test(line.text) && !/^export function fought\(/.test(line.text));
-  expect(steps.map(line => `${line.file}: ${/store\.apply\(/.test(line.text) ? 'in store.apply' : 'outside store.apply'}`), 'send() in combat.js writes the fight with fight-save.ts `fought`, in one store.apply').toEqual(['src/views/combat.js: in store.apply']);
+  const srcLines = await sourceLines('src');
+  const inner = srcLines.filter(line => !isComment(line.text) && /\bfought\(/.test(line.text) && !/^export function fought\(/.test(line.text));
+  expect(inner.map(line => line.file), 'only gates/world.ts `gateFought` wraps fight-save.ts `fought`').toEqual(['src/core/gates/world.ts']);
+  const steps = srcLines.filter(line => !isComment(line.text) && /\bgateFought\(/.test(line.text) && !/^export function gateFought\(/.test(line.text));
+  expect(steps.map(line => `${line.file}: ${/store\.apply\(/.test(line.text) ? 'in store.apply' : 'outside store.apply'}`), 'send() in combat.js writes the fight with gates/world.ts `gateFought`, in one store.apply').toEqual(['src/views/combat.js: in store.apply']);
 });
 
 test('only src/core/gates/gate.ts changes a gate\'s status, cleared day or XP paid', async () => {

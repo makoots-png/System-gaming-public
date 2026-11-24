@@ -3,10 +3,8 @@
 // changes (publish.ts `PUBLISH_FIGHT_MS`), and the fight's `vitals` message for a row of this phone's hunter, posted at
 // once. A death in the fight can land before the doc that holds its row (the System raise was offered in the GM's fight,
 // raise.e2e.ts). So the message is kept, `FightHeard` at `settings.sync.heard`, and `gmHolds` reads it beside the doc.
-import { deviceOf, parseRoomCode, parseSheetKey } from '../ids.ts';
-import type { DeviceId, RoomCode, SheetKey } from '../ids.ts';
-import { fightId } from '../combat/fight-types.ts';
-import type { FightId } from '../combat/fight-types.ts';
+import { deviceOf, fightId, parseRoomCode, parseSheetKey } from '../ids.ts';
+import type { DeviceId, FightId, RoomCode, SheetKey } from '../ids.ts';
 import type { RoomEvent } from '../protocol.ts';
 
 /** The GM's fight's last `vitals` message to a hunter of this phone: the room, the hunter's sheet key, the fight, and when the room stored it (the server's clock). */

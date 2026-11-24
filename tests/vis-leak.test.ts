@@ -1,3 +1,4 @@
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
 import { handler } from '../server.ts';
@@ -10,7 +11,6 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import { openGrid, place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
-import { fightId } from '../src/core/combat/fight-types.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { newHunter } from '../src/core/hunter/hunter.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';

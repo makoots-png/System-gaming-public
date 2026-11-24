@@ -1,11 +1,11 @@
 // fight-heard.ts: on a player's phone, whether the GM's fight holds its hunter, from the room's fight doc and the fight's
 // `vitals` message, whichever reaches the phone first. The rule (notes-9-rulings-1122.md section 21): the System's raise
 // is offered only once no fight holds the hunter; a fight's dead row is the GM's to revive.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { NO_TABLE, fightHeard, gmHolds, parseFightHeard } from '../src/core/sync/fight-heard.ts';
 import type { FightHeard, TableDoc, TableSeen } from '../src/core/sync/fight-heard.ts';
 import { fightHold } from '../src/core/combat/fight-save.ts';
-import { fightId } from '../src/core/combat/fight-types.ts';
 import { newEvent, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
 import { dev } from './fixtures/ids.ts';

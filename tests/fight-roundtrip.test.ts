@@ -1,6 +1,7 @@
 // A hunter added to a fight and removed again (brief-roundtrip step 2): the fight's rows come back as they were, the
 // log keeps a line for each, and the hunter's sheet heard of every HP change while it stood in the fight (the `vitals`
 // effect), so nothing is owed to it when it leaves. Helpers as tests/fight.test.ts's.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -12,7 +13,7 @@ import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-typ
 import { modified } from '../src/core/combat/effect-ops.ts';
 import type { Origin } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Effect, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 

@@ -1,5 +1,6 @@
 // What a fight keeps of each row for its facts (src/core/combat/row-tally.ts) and the facts a hunter row gets at the
 // fight's end (src/core/combat/fight-facts.ts), each from a fight played on the reducer with fixed numbers.
+import { fightId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -13,7 +14,7 @@ import { modified } from '../src/core/combat/effect-ops.ts';
 import type { Body, Origin } from '../src/core/combat/effect-ops.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Ended, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
 import { NO_TALLY, tallied, tallyOf, turnKillsMax } from '../src/core/combat/row-tally.ts';

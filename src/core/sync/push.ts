@@ -3,14 +3,6 @@
 // `linkLive` and `linkLost` (its `push` effects), and its sends carry the link's gen, so a reply from a room this phone
 // has left changes nothing. The push never writes the link: a 403 removed or a 426 is the link's to hear.
 import type { FailKind, Gen, LinkNews } from './link.ts';
-import type { Hunter } from '../save.ts';
-import { pushedChronicle } from '../hunter/chronicle.ts';
-
-/**
- * The hunter as the push sends it: its chronicle cut to what the GM's phone reads (chronicle.ts `pushedChronicle`: the
- * lifetime numbers and the last few kept facts), so a long chronicle never takes the room from the rest of a sheet.
- */
-export const pushedSheet = (h: Hunter): Hunter => ({ ...h, chronicle: pushedChronicle(h.chronicle) });
 
 // ── numbers ──
 /** From a change to its send. Edits inside these 3 s go in the same send, so typing a name is one PUT, not one per key. Today's number. */

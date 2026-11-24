@@ -7,6 +7,7 @@
 //
 // A class is a row of `BUILDS`; a monster archetype's attack is its built-in (`MONSTER_ABILITY`). A policy is a pure function from the
 // fight and its own row to a choice, written as a sensible player plays it, not as an optimizer.
+import { fightId } from '../../src/core/ids.ts';
 import { RANKS, RULES } from '../../src/core/rules.ts';
 import type { BonusKey, Rank, Rules } from '../../src/core/rules.ts';
 import { baseStats } from '../../src/core/stats.ts';
@@ -34,7 +35,7 @@ import type { AbilityInput } from '../../src/core/registry/ability-kinds.ts';
 import { onCooldown, payCost } from '../../src/core/combat/charge.ts';
 import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
-import { fightId, reduce, runningState } from '../../src/core/combat/fight.ts';
+import { reduce, runningState } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, Fight, Fudge, FudgeSet, NewRow, Running } from '../../src/core/combat/fight.ts';
 import { CAP_ROUNDS, playBegin, playOver, playStep } from '../../src/core/combat/play.ts';
 import type { Limits, Play } from '../../src/core/combat/play.ts';

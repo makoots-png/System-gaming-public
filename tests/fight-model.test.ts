@@ -1,6 +1,7 @@
 // A model test of the reworked fight (src/core/combat/fight.ts): 2,500 seeded fights of random legal and illegal commands
 // over a mixed party and pack on a map with walls, with the invariants below checked after every command. A failure
 // prints the seed and the commands up to it. The fights are in tests/models/fight-play.ts, which the charts play too.
+import { fightId } from '../src/core/ids.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
@@ -30,7 +31,6 @@ import { place } from '../src/core/combat/space.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import type { CombatantId } from '../src/core/combat/ability-types.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
-import { fightId } from '../src/core/combat/fight.ts';
 import { GRID, ROSTER, SEEDS, ctx, lengthOf, randomCommand, rng } from './models/fight-play.ts';
 
 const deepFreeze = <T>(v: T): T => {

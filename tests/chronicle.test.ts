@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CHRONICLE_MAX, INBOX_MAX, PUSHED_FACTS, TALLY, newChronicle, parseChronicle, pushedChronicle, record } from '../src/core/hunter/chronicle.ts';
+import { CHRONICLE_MAX, INBOX_MAX, PUSHED_FACTS, TALLY, newChronicle, parseChronicle, pushedChronicle, pushedSheet, record } from '../src/core/hunter/chronicle.ts';
 import { FACT_FIELDS, FACT_KINDS, KEPT, parseFact } from '../src/core/hunter/facts.ts';
 import type { Fact, FactKind } from '../src/core/hunter/facts.ts';
 import { INBOX, noticed, released } from '../src/core/hunter/noticed.ts';
@@ -13,7 +13,6 @@ import { shadowRises } from '../src/core/hunter/shadows.ts';
 import { soloTick } from '../src/core/gates/solo.ts';
 import { chapterLanded } from '../src/core/story/story.ts';
 import { personalGateId } from '../src/core/gates/personal.ts';
-import { pushedSheet } from '../src/core/sync/push.ts';
 import { rolled } from '../src/core/session-log.ts';
 import { dailyQuest, freshSave, newHunter, newRewards, newRollEntry, parseSheetHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';

@@ -1,8 +1,9 @@
 // A run of the odds engine (src/core/combat/odds.ts) on a small fight, and every event of its life, walked by the state
 // chart (scripts/charts/odds.ts); tests/statecharts.test.ts checks the walk reaches every state. tests/odds.test.ts
 // checks the cells and the odds themselves.
+import { fightId } from '../../src/core/ids.ts';
 import { RULES } from '../../src/core/rules.ts';
-import { fightId, reduce } from '../../src/core/combat/fight.ts';
+import { reduce } from '../../src/core/combat/fight.ts';
 import type { Setup } from '../../src/core/combat/fight.ts';
 import { IDLE, oddsKey } from '../../src/core/combat/odds.ts';
 import type { OddsEvent, OddsRun } from '../../src/core/combat/odds.ts';
