@@ -32,7 +32,7 @@
 // same write as what the page's events land on a player's phone and what the page says of offers on every phone (`apply`,
 // `landPage`), so a reload never finds one without the other.
 // The save's `outbox` only here, with a step of src/core/sync/outbox.ts (`boxDo`, and `rebound` at a bind).
-import { addHunter, setActive } from '../core/party.ts';
+import { setActive } from '../core/party.ts';
 import { stepTime } from '../core/day.ts';
 import { BUILD } from './build.ts';
 import { reported } from './report.ts';
@@ -82,6 +82,7 @@ import type { OfferNews } from '../core/trade/offer.ts';
 import { told } from '../core/session-log.ts';
 import { OUTBOX_WORDS, atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
 import type { Call, Entry, EntryEvent, Letter, Outbox } from '../core/sync/outbox.ts';
+import { createHunter } from '../core/save.ts';
 import type { Hunter, LastRoom, Save, SyncSettings } from '../core/save.ts';
 
 /** The body of the one window that tells a player what the room held for its hunters while its phone was out of the room. */
@@ -632,7 +633,7 @@ export function register(app: SyncHost): void {
    */
   function bindJoin(code: RoomCode): void {
     const binds = joinsFor(), join = { room: code, at: srvNow() };
-    if ('make' in binds) { const h = store.newHunter(binds.make.slice(0, 60)); store.apply('sync-join', s => boundTo(addHunter(s, h), h.id, join)); }
+    if ('make' in binds) store.apply('sync-join', s => { const m = createHunter(s, binds.make.slice(0, 60), app.rules(), new Date()); return boundTo(m.save, m.hunter.id, join); });
     else store.apply('sync-join', s => boundTo(s, binds.hunter, join));
     sheetText = '';
   }

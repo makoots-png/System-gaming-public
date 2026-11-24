@@ -108,7 +108,7 @@ export function register(app) {
     const backedUp = store.backupNow('pre-import');
     if (!backedUp && !(await goOnUnbacked('Import'))) return false;
     let report = null;
-    if (!ui.wrote('System', store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return { ...s, library: m.save.library, monsters: m.save.monsters, seq: m.save.seq }; }))) return false;
+    if (!ui.wrote('System', store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return m.save; }))) return false;
     const sum = f => PACK_KINDS.reduce((x, k) => x + report[k][f], 0);
     const added = sum('added'), replaced = sum('replaced');
     ui.toast('System', `Custom content imported: ${added} added${replaced ? `, ${replaced} replaced` : ''}.${backedUp ? ' Previous save kept in backups.' : ''}`);

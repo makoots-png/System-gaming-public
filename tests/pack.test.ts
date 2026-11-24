@@ -6,6 +6,7 @@ import { PACK_CAP, PACK_WORDS, mergePack, packCounts, packOf, parsePack } from '
 import type { MergeTarget, Pack, PackKind, PackRead } from '../src/core/pack.ts';
 import { SCHEMA, newSave } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
+import { writeInto } from '../src/core/save-step.ts';
 import { parseItem } from '../src/core/registry/items.ts';
 import type { Item } from '../src/core/registry/items.ts';
 import { parseMonster } from '../src/core/registry/monsters.ts';
@@ -326,6 +327,23 @@ describe('merging a pack', () => {
     mergePack(target(s), read(packOf(s, AT)).pack, 'add');
     mergePack(target(s), read(packOf(s, AT)).pack, 'replace');
     expect(s).toEqual(before);
+  });
+
+  test('merging into a full save returns the whole save so writeInto keeps every other field intact', () => {
+    const from = gmSave();
+    const live = newSave(dev('d2')) as Save & { futureField?: { keep: boolean } };
+    live.futureField = { keep: true };
+    const beforeKeys = Object.keys(live).sort();
+    const huntersRef = live.hunters;
+    const merged = mergePack(live, read(packOf(from, AT)).pack, 'add');
+    expect(Object.keys(merged.save).sort()).toEqual(beforeKeys);
+    expect(merged.save.futureField).toEqual({ keep: true });
+    writeInto(live, merged.save);
+    expect(Object.keys(live).sort()).toEqual(beforeKeys);
+    expect(live.hunters).toBe(huntersRef);
+    expect(live.futureField).toEqual({ keep: true });
+    expect(live.library.items.map(i => i.name)).toEqual(['Frost Shard']);
+    expect(live.monsters.map(m => m.name)).toEqual(['Ice Warden']);
   });
 });
 

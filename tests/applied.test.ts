@@ -731,3 +731,17 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     expect(after.hunters[0]!.chronicle.tally.gates).toBe(1);
   });
 });
+
+describe('room-events hunter updates via atHunter (D1)', () => {
+  test('keeps quiet behavior for a missing hunter and records a bundle award fact on a present hunter', () => {
+    const p = phone();
+    const before = JSON.stringify(p.deps.store.get());
+    p.receive(1, 'hp', { to: ['d-player1:h999'], hp: -5, mana: 0, fatigue: 0, reason: 'trap' });
+    expect(JSON.stringify(p.deps.store.get())).toBe(before);
+    expect(p.toasts).toEqual([]);
+
+    p.receive(2, 'award', { to: ['d-player1:h1'], rewards: { gold: 15 }, bundle: { key: 'wolf-hunt', name: 'Wolf Hunt' } });
+    expect(p.hunter.gold).toBe(15);
+    expect(p.hunter.chronicle.inbox).toContainEqual({ kind: 'given', key: 'wolf-hunt', name: 'Wolf Hunt' });
+  });
+});

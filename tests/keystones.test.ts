@@ -3,7 +3,7 @@
 // rank B for a stat over 55%. A build is written as the points it put above the base of 10, so each expected keystone
 // is read off its shares by hand.
 import { describe, expect, test } from 'bun:test';
-import { STAT_PAIRS, keystoneBasis, keystoneDiff, keystoneReach, keystonesOf, nearestKeystone, pairOf, statsOfPair } from '../src/core/hunter/keystones.ts';
+import { STAT_PAIRS, keystoneBasis, keystoneConfirmDiff, keystoneDiff, keystoneReach, keystonesOf, nearestKeystone, pairOf, statsOfPair } from '../src/core/hunter/keystones.ts';
 import type { KeystoneBasis, KeystoneHunter, KeystoneKey, StatPair } from '../src/core/hunter/keystones.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { SheetCondition, SheetHunter } from '../src/core/hunter/sheet.ts';
@@ -214,6 +214,17 @@ test('gear and titles never earn a keystone', () => {
 
 test('a point waiting for Confirm counts toward a keystone', () => {
   expect(keys(hunter({ stats: built({ str: 29, agi: 25, vit: 25, ins: 20 }), pending: { str: 1 } }))).toEqual([mark('str')]);
+});
+
+test('keystoneConfirmDiff previews keystones earned and lost by confirming pending points', () => {
+  const earning = hunter({ stats: built({ str: 29, agi: 25, vit: 25, ins: 21 }), pending: { str: 2 }, rank: 'D' });
+  expect(keystoneConfirmDiff(earning, F)).toEqual({ earned: [mark('str')], lost: [] });
+
+  const diluting = hunter({ stats: built({ str: 30, agi: 70 }), pending: { agi: 10 }, rank: 'D' });
+  expect(keystoneConfirmDiff(diluting, F)).toEqual({ earned: [], lost: [mark('str')] });
+
+  const settled = hunter({ stats: built({ str: 30, agi: 70 }), rank: 'D' });
+  expect(keystoneConfirmDiff(settled, F)).toEqual({ earned: [], lost: [] });
 });
 
 test('a fight status never changes one', () => {

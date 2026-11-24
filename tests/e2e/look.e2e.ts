@@ -144,7 +144,7 @@ test('Delete hunter is in the Party panel, asks for the name and takes a backup 
   await dismissAll(player, 4);
   await go(player, 'status');
   // setup: personal gates off, so the spare hunter's first gate window does not stand in front of the delete's
-  await player.evaluate(() => hunterApp.store.update((s: any) => { s.rulesOverrides.solo = { personal: false }; s.hunters.push(hunterApp.store.newHunter('Spare Test')); }, 'test-setup'));
+  await player.evaluate(() => hunterApp.store.update((s: any) => { s.rulesOverrides.solo = { personal: false }; s.hunters.push({ name: 'Spare Test', daily: { lastCheckedKey: s.world.lastDailyKey } }); }, 'test-setup'));
   const row = player.locator('#view-status [data-panel="party"] li', { hasText: 'Spare Test' });
   const backups0 = await player.evaluate(() => hunterApp.store.backups().length);
 
@@ -165,7 +165,7 @@ test('Delete hunter with no room left for its backup says so and deletes only wh
   await dismissAll(player, 4);
   await go(player, 'status');
   // setup: personal gates off, so the spare hunter's first gate window does not stand in front of the delete's
-  await player.evaluate(() => hunterApp.store.update((s: any) => { s.rulesOverrides.solo = { personal: false }; s.hunters.push(hunterApp.store.newHunter('Spare Test')); }, 'test-setup'));
+  await player.evaluate(() => hunterApp.store.update((s: any) => { s.rulesOverrides.solo = { personal: false }; s.hunters.push({ name: 'Spare Test', daily: { lastCheckedKey: s.world.lastDailyKey } }); }, 'test-setup'));
   await player.evaluate(() => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (k: string, v: string) { if (k === 'hunter-system-backups') throw new DOMException('full', 'QuotaExceededError'); set.call(this, k, v); };

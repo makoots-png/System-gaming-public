@@ -34,7 +34,7 @@ import { rewardLines } from '../core/rewards.ts';
 import type { EventId, EventType, PayloadOf, QuestOffer, RoomEvent, SheetKey, SystemKind } from '../core/protocol.ts';
 import type { ToastKind, WarningInput } from '../core/warning.ts';
 import type { Hunter, Rules, Save } from '../core/save.ts';
-import { isRefused, refuse } from '../core/save-step.ts';
+import { atHunter, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import type { Refused, Step } from '../core/save-step.ts';
 import type { store } from './store.ts';
 import type { RoomHunter } from '../core/api.ts';
@@ -84,8 +84,8 @@ const OFFER_FOLD_READS = null;
 
 const money = (n: number): string => (n < 0 ? '-' : '+') + Math.abs(n);
 const nothing = (): void => undefined;
-/** The save with hunter `h` in the place of the hunter of its id. */
-const withHunter = (save: Save, h: Hunter): Save => ({ ...save, hunters: save.hunters.map(x => (x.id === h.id ? h : x)) });
+/** The save with hunter `h` in the place of the hunter of its id, leaving the save as it is when that hunter is missing. */
+const withHunter = (save: Save, h: Hunter): Save => orKeep(atHunter(h.id, () => h))(save);
 /** Runs `each` for every hunter of `hids` the save holds, in turn: one save, and every tell in order. */
 function forEach(save: Save, hids: readonly string[], each: (save: Save, h: Hunter) => Landed): Landed {
   let s = save;
@@ -262,7 +262,7 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
       if (isRefused(g)) continue;
       const off = at?.at === 'row' && (g.fight.statuses.length > 0 || g.fight.refill);
       // a bundle the GM gave by hand is a fact of the hunter's chronicle, in the award's write
-      s = b ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: b.key, name: b.name }) : h)) } : g.save;
+      s = b ? orKeep(atHunter(hid, h => record(h, { kind: 'given', key: b.key, name: b.name })))(g.save) : g.save;
       given.push([hid, off ? { ...g, fight: { statuses: [], refill: false } } : g, off]);
     }
     // one window a hunter, in the bundle's words when it has them, else "REWARD RECEIVED" (saying what earned it when the

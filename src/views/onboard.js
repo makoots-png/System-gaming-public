@@ -271,7 +271,7 @@ export function register(app) {
     const q = s => w.querySelector(s);
     q('[data-starter]').addEventListener('click', () => {
       // a read-only tab's refusal is told by go; any other is the starter pack's own
-      const g = go({ type: 'starter' }, starterStep(store, app));
+      const g = go({ type: 'starter' }, starterStep(app));
       if ('why' in g && g.why !== READ_ONLY) q('[data-msg]').textContent = 'Could not load the starter campaign. Choose Start blank instead.';
     });
     q('[data-blank]').addEventListener('click', () => { go({ type: 'blank' }, both(owned('Hunter'), atSettings(st => chooseMode(st, 'gm')))); });

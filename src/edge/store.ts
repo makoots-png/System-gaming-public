@@ -11,7 +11,7 @@ import { stepTime } from '../core/day.ts';
 import type { Change } from '../core/events.ts';
 import { oneOf } from '../core/one-of.ts';
 import { PINS } from '../core/combat/map-view.ts';
-import { dailyQuest, exportedSave, fileKind, keepPhone, loadSave, newHunter, parseSave, repairSave, rulesOf, freshSave } from '../core/save.ts';
+import { exportedSave, fileKind, keepPhone, loadSave, parseSave, repairSave, rulesOf, freshSave } from '../core/save.ts';
 import type { Hunter, LoadNotice, ParseEnv, Save, StoredKeys } from '../core/save.ts';
 import { isRefused, refuse, writeInto } from '../core/save-step.ts';
 import { READ_ONLY, canTakeOver, dailyBackupDue, mayChange, noticesOf, opened, storeStep } from '../core/store-life.ts';
@@ -370,16 +370,6 @@ export const store = {
   /** The active hunter. A save holds one: the repair gives a save read with none the starter (save.ts). */
   active: (): Hunter => state.hunters.find(h => h.id === state.settings.activeHunterId) ?? state.hunters[0]!,
   hunter: (id: string): Hunter | null => state.hunters.find(h => h.id === id) ?? null,
-  /** A new level 1 hunter with the daily quest. Call it inside `update`: the caller pushes the hunter. */
-  newHunter(name = 'Hunter'): Hunter {
-    const R = rulesOf(state.rulesOverrides), e = env();
-    const h = newHunter(R);
-    h.id = saveId('h', ++state.seq);
-    h.name = String(name).slice(0, 60) || 'Hunter';
-    h.quests = [dailyQuest(saveId('q', ++state.seq), R, e)];
-    h.daily.lastCheckedKey = stepTime(state, e.now).today;
-    return h;
-  },
   backupNow: (reason = 'manual'): boolean => pushBackup(reason, currentText(), backupCap(state)),
   backups: (): { at: string; reason: string }[] => readBackups().map(({ at, reason }) => ({ at: String(at ?? ''), reason: String(reason ?? '') })),
   /** Swaps in backup `i`: `unreadable` when it is gone or not a save. */

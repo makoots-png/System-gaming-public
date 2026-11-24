@@ -1235,7 +1235,7 @@ test('a view reads the answer of every write to the save: a refused write never 
     "src/edge/sync.ts: store.apply('sync-link', s => linkWritten(s, fie": 'BUG-sync-7: a read-only tab\'s link moves on while its save does not',
     "src/edge/sync.ts: store.apply('sync-page', s => { const at = curso": 'BUG-sync-7: a read-only tab\'s poll cursor moves past events it could not land',
     "src/edge/sync.ts: store.apply('sync-applied', appliedOnce(eid, wri": `BUG-sync-7: once, ${ANSWERS}`,
-    "src/edge/sync.ts: store.apply('sync-join', s => boundTo(addHunter(": 'bindJoin: a Join in a read-only tab binds no hunter and says nothing',
+    "src/edge/sync.ts: store.apply('sync-join', s => { const m = create": 'bindJoin: a Join in a read-only tab binds no hunter and says nothing',
     "src/edge/sync.ts: store.apply('sync-join', s => boundTo(s, binds.h": 'bindJoin: a Join in a read-only tab binds no hunter and says nothing',
     "src/edge/sync.ts: store.apply('gmkeys-forget', atSync(s => ringGon": 'forgetKey: a Forget in a read-only tab keeps the key and says nothing',
   };
@@ -2690,6 +2690,103 @@ test('opted-in strict views carry no @ts- suppressions, no @type {any}, and no J
     });
   }
   expect(report(hits), 'fix nulls and boundary values with real guards or lookups instead of casts or @ts- suppressions').toEqual([]);
+});
+
+test('a view returns a core step save whole inside store.apply instead of cherry-picking fields into an inline save spread', async () => {
+  // Unit D1(a): io.js wrapped mergePack with `return { ...s, library: m.save.library, monsters: m.save.monsters, seq: m.save.seq }`
+  // inside a block-bodied store.apply callback, bypassing the arrow-expression spread check and risking silent field drops
+  // whenever mergePack updates another top-level save key.
+  const blockSpread = /store\.apply\([^,]+,\s*\(?(\w+)\)?\s*=>\s*\{[^}]*\breturn\s*\{\s*\.\.\.\1\b/;
+  const bad = [
+    "store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return { ...s, library: m.save.library, monsters: m.save.monsters, seq: m.save.seq }; })",
+    "store.apply('x', save => {\n  const r = step(save);\n  return { ...save, seq: r.seq };\n})",
+  ];
+  for (const s of bad) expect(blockSpread.test(s), `the rule catches: ${s}`).toBe(true);
+  const fine = [
+    "store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return m.save; })",
+  ];
+  for (const s of fine) expect(blockSpread.test(s), `the rule passes: ${s}`).toBe(false);
+  const files = [...await sourceTexts('src/views'), { file: 'src/app.js', text: await Bun.file(`${ROOT}/src/app.js`).text() }];
+  const hits = files.flatMap(({ file, text }) => {
+    const clean = text.split('\n').map(l => (isComment(l) ? '' : l)).join('\n');
+    const m = blockSpread.exec(clean);
+    if (!m) return [];
+    const line = clean.slice(0, m.index).split('\n').length;
+    return [{ file, line, text: m[0].replace(/\s+/g, ' ') }];
+  });
+  expect(report(hits), 'return the whole Save answered by the core step (such as mergePack(s, pack, mode).save) instead of cherry-picking fields into { ...s, ... }').toEqual([]);
+});
+
+test('a view never fabricates a quest completion or status transition by spreading a quest', async () => {
+  // Unit D1(b): quests.js built `{ ...q, status: 'done', objectives: q.objectives.map(...) }` in UI code instead of
+  // reading the completed quest returned by grant.ts `finishQuest`.
+  const questSpread = /\{\s*\.\.\.[^,{}]+,[^{}]*\bstatus\s*:\s*['"](?:active|done|failed)['"]/;
+  const bad = [
+    "const post = progressPost(hid, { ...q, status: 'done', objectives: q.objectives.map(o => ({ ...o, progress: o.target })) }, 'done');",
+    "const failed = { ...quest, status: 'failed' };",
+  ];
+  for (const s of bad) expect(questSpread.test(s), `the rule catches: ${s}`).toBe(true);
+  const fine = [
+    "const post = progressPost(hid, r.quest, r.quest.status);",
+  ];
+  for (const s of fine) expect(questSpread.test(s), `the rule passes: ${s}`).toBe(false);
+  const hits = (await sourceLines('src/views')).filter(l => !isComment(l.text) && questSpread.test(l.text));
+  expect(report(hits), 'read the transitioned quest returned by core (such as finishQuest(s, hid, qid, o).quest) instead of fabricating { ...q, status: ... } in a view').toEqual([]);
+});
+
+test('a view never spreads a hunter to override pending or stats', async () => {
+  // Unit D1(c): hunter.js built `keystoneBasis({ ...h, pending: {} })` in UI code instead of calling
+  // `keystoneConfirmDiff(h, R.fight)` in src/core/hunter/keystones.ts.
+  const hunterSpread = /\{\s*\.\.\.[^,{}]+,[^{}]*\b(?:pending|stats)\s*:/;
+  const bad = [
+    "const ksLine = keystoneConfirmLine(keystoneDiff(keystoneBasis({ ...h, pending: {} }), basis, R.fight), R);",
+    "const preview = hunterSheet({ ...h, stats: nextStats }, R);",
+  ];
+  for (const s of bad) expect(hunterSpread.test(s), `the rule catches: ${s}`).toBe(true);
+  const fine = [
+    "const ksLine = ksOn && pending ? keystoneConfirmLine(keystoneConfirmDiff(h, R.fight), R) : '';",
+  ];
+  for (const s of fine) expect(hunterSpread.test(s), `the rule passes: ${s}`).toBe(false);
+  const hits = (await sourceLines('src/views')).filter(l => !isComment(l.text) && hunterSpread.test(l.text));
+  expect(report(hits), 'export a core projection helper (such as keystoneConfirmDiff in src/core/hunter/keystones.ts) instead of spreading { ...h, pending: ... } or { ...h, stats: ... } in a view').toEqual([]);
+});
+
+test('hunters are created through core steps (createHunter, makeHunter), never by mutating state.seq or Hunter in src/edge/store.ts', async () => {
+  // Unit D1(d): store.newHunter mutated state.seq and Hunter fields in place outside store.apply, leaking seq increments
+  // on refused writes and read-only tabs. Call createHunter (save.ts) inside store.apply or makeHunter inside a core step.
+  const callRe = /\bstore\.newHunter\s*\(/;
+  const defRe = /^\s*newHunter\s*\(|\bh\.(?:id|name|quests|daily)\b[^=]*=(?!=)/;
+  expect(callRe.test("const h = store.newHunter(name);"), 'the rule catches store.newHunter calls').toBe(true);
+  expect(defRe.test("  newHunter(name = 'Hunter'): Hunter {"), 'the rule catches store.newHunter definition').toBe(true);
+  expect(defRe.test("    h.id = saveId('h', ++state.seq);"), 'the rule catches in-place Hunter mutation in store.ts').toBe(true);
+  expect(callRe.test("store.apply('new-hunter', s => createHunter(s, name, rules(), new Date()).save)"), 'the rule passes createHunter').toBe(false);
+  const callHits = (await sourceLines('src')).filter(l => !isComment(l.text) && callRe.test(l.text));
+  expect(report(callHits), 'use createHunter or makeHunter from src/core/save.ts inside store.apply instead of store.newHunter').toEqual([]);
+  const storeLines = (await sourceLines('src/edge')).filter(l => l.file === 'src/edge/store.ts' && !isComment(l.text));
+  expect(report(storeLines.filter(l => defRe.test(l.text))), 'do not construct or mutate Hunter in place in src/edge/store.ts').toEqual([]);
+});
+
+test('views and edge modules update save.hunters through atHunter or a core step, never by spreading hunters on Save', async () => {
+  // Unit D1(e): room-events.ts manually spread `{ ...save, hunters: save.hunters.map(...) }` in withHunter and landAward
+  // instead of routing through atHunter (wrapped in orKeep when a missing hunter leaves the save unchanged).
+  const huntersSpread = /\{\s*\.\.\.[^,{}]+,[^{}]*\bhunters\s*:/;
+  const bad = [
+    "const withHunter = (save: Save, h: Hunter): Save => ({ ...save, hunters: save.hunters.map(x => (x.id === h.id ? h : x)) });",
+    "s = b ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, fact) : h)) } : g.save;",
+  ];
+  for (const s of bad) expect(huntersSpread.test(s), `the rule catches: ${s}`).toBe(true);
+  const fine = [
+    "const withHunter = (save: Save, h: Hunter): Save => orKeep(atHunter(h.id, () => h))(save);",
+    "s = b ? orKeep(atHunter(hid, h => record(h, { kind: 'given', key: b.key, name: b.name })))(g.save) : g.save;",
+  ];
+  for (const s of fine) expect(huntersSpread.test(s), `the rule passes: ${s}`).toBe(false);
+  const lines = [
+    ...await sourceLines('src/views'),
+    ...await sourceLines('src/edge'),
+    ...(await sourceLines('src')).filter(l => l.file === 'src/app.js'),
+  ];
+  const hits = lines.filter(l => !isComment(l.text) && huntersSpread.test(l.text));
+  expect(report(hits), 'update save.hunters via atHunter (with orKeep for a quiet no-op on a missing hunter) or a core step in src/core/').toEqual([]);
 });
 
 test('no view or edge module opens a red System window directly: kind warning and penalty go through ui.warn', async () => {

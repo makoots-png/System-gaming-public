@@ -305,9 +305,11 @@ describe('a quest finished in one step (grant.ts finishQuest)', () => {
   const reward = (q: Quest, o: Partial<Quest['rewards']>): Quest => ({ ...q, rewards: { ...newRewards(), ...o } });
 
   test('the quest done, its XP and gold given and its line logged are one save; the window lists what was given', () => {
-    const q = reward({ ...questIn('active', 'side'), id: qid('q5'), title: 'Wolf Hunt' }, { xp: 50, gold: 10 });
+    const q = reward({ ...questIn('active', 'side'), id: qid('q5'), title: 'Wolf Hunt', objectives: [{ label: 'Wolves', target: 3, progress: 1 }] }, { xp: 50, gold: 10 });
     const s = saveWith([q]), r = ok(finishQuest(s, 'h1', 'q5', DAY)), h = r.save.hunters[0]!;
     expect(h.quests[0]!.status).toBe('done');
+    expect(r.quest).toEqual(h.quests[0]!);
+    expect([r.quest.status, r.quest.doneAt, r.quest.objectives[0]!.progress]).toEqual(['done', AT, 3]);
     expect([h.xp, h.gold - s.hunters[0]!.gold]).toEqual([50, 10]);
     expect(r.save.log.map(l => l.title)).toContain('Quest complete');
     expect(['+50 XP', '+10 gold'].every(l => r.granted.lines.includes(l)), r.granted.lines.join(' | ')).toBe(true);

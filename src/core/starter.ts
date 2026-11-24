@@ -1,9 +1,8 @@
 // starter.ts: what first-run setup does to the save. The seed hunter a new install starts with (`seed: true`, made by
 // `starterHunter` in save.ts) either becomes the player's own (`ownSeed`) or makes way for the starter campaign
 // (`starterCampaign`): three pregens with their job, stats, skills and gear, two gates, a three-session quest arc and
-// the log line, in one step, so `store.apply` writes all of it or none. Pure: the view makes the hunters
-// (`store.newHunter`, which reserves their ids) and rolls the gates (`gates.roll`), and every other id comes from the
-// save's `seq`.
+// the log line, in one step, so `store.apply` writes all of it or none. Pure: the view rolls the gates (`gates.roll`),
+// and the pregens and every other id come from the save's `seq` (`makeHunter` in save.ts).
 import { STARTER_GEAR, parseItem } from './registry/items.ts';
 import type { ItemDef } from './registry/items.ts';
 import { STARTER_SKILLS, skillOf } from './registry/skills.ts';
@@ -24,6 +23,7 @@ import { told } from './session-log.ts';
 import type { Said, Stamp } from './session-log.ts';
 import { isRefused, refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
+import { makeHunter } from './save.ts';
 import type { Hunter, Monster, Rank, Save } from './save.ts';
 import type { Stats } from './stats.ts';
 import type { Rules } from './rules.ts';
@@ -59,10 +59,10 @@ export const ARC: readonly QuestDraft[] = [
   { title: 'Session 3: Double Dungeon', desc: 'The altar opens a hidden second dungeon. Descend, and keep your party alive.', objectives: [{ label: 'Find the hidden entrance', target: 1 }, { label: 'Survive the Double Dungeon', target: 1 }], rewards: { xp: 300, gold: 150, title: { name: 'Survivor', desc: '', bonus: {} } } },
 ].map(q => ({ ...q, kind: 'side', from: 'gm' }));
 
-/** What the view makes before the step: a hunter per pregen (in `PREGENS` order) and a rolled gate per `STARTER_GATES`. */
-export type StarterMade = { hunters: readonly Hunter[]; gates: readonly { gate: Gate; monsters: readonly Monster[] }[] };
+/** What the view makes before the step: a rolled gate per `STARTER_GATES`. */
+export type StarterMade = { gates: readonly { gate: Gate; monsters: readonly Monster[] }[] };
 
-/** Why the starter campaign cannot be written: the view handed in the wrong number of hunters or gates, or a pregen's own data is wrong. */
+/** Why the starter campaign cannot be written: the view handed in the wrong number of gates, or a pregen's own data is wrong. */
 export type StarterRefusal = Refused<'made' | 'pregen'>;
 
 /**
@@ -71,13 +71,16 @@ export type StarterRefusal = Refused<'made' | 'pregen'>;
  * arc's quests, and the log says so. One step: a refusal changes nothing.
  */
 export function starterCampaign(save: Save, made: StarterMade, stamp: Stamp, R: Rules): Save | StarterRefusal {
-  if (made.hunters.length !== PREGENS.length || made.gates.length !== STARTER_GATES.length) return refuse('made');
+  if (made.gates.length !== STARTER_GATES.length) return refuse('made');
   let seq = save.seq;
   const next = <P extends string>(prefix: P): IdOf<P> => saveId(prefix, ++seq);
+  const now = new Date(stamp.at);
   const said: Said[] = [];
   const pregens: Hunter[] = [];
-  for (const [i, p] of PREGENS.entries()) {
-    const jobbed = setJob(made.hunters[i]!, p.job);
+  for (const p of PREGENS) {
+    const created = makeHunter({ seq, settings: save.settings }, p.name, R, now);
+    seq = created.seq;
+    const jobbed = setJob(created.hunter, p.job);
     const item = parseItem(p.item);
     if (isRefused(jobbed) || !item) return refuse('pregen');
     let h = startingStats(jobbed, p.stats);

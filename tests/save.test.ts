@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES, TIERS } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import {
-  RARITIES, SCHEMA, parseSheetHunter, SLOTS, exportedSave, fileKind, freshSave, keepPhone, loadSave, newHunter, newMonster, newRewards, newShadow, newSyncSettings, parseSave, parseSaveValue, repairSave,
+  RARITIES, SCHEMA, createHunter, exportedSave, fileKind, freshSave, keepPhone, loadSave, makeHunter, newHunter, newMonster, newRewards, newShadow, newSyncSettings, parseSave, parseSaveValue, parseSheetHunter, repairSave, SLOTS,
 } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Parsed, Save, StoredKeys, SyncSettings } from '../src/core/save.ts';
 import { KEYS_MAX } from '../src/core/sync/bind.ts';
@@ -1273,5 +1273,28 @@ describe('a hunter\'s job as the save keeps it (H9)', () => {
   test('a job is kept as its name; a blank, a non-string or the old default "None" is read as none (null)', () => {
     const read = (job: unknown) => parseSheetHunter({ ...newHunter(RULES), id: 'h1', job })?.job;
     expect([read('Mage'), read('  Shadow   Monarch '), read(''), read('None'), read(7), read(null)]).toEqual(['Mage', 'Shadow Monarch', null, null, null, null]);
+  });
+});
+
+describe('creating a hunter purely inside a save step (createHunter, makeHunter)', () => {
+  test('createHunter advances seq by 2, assigns hunter and daily quest ids, sets activeHunterId, and does not mutate the input save', () => {
+    const base = freshSave({ now: NOW, newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+    const snapshot = JSON.stringify(base);
+    const { save, hunter } = createHunter(base, 'Aria', RULES, NOW);
+    expect(JSON.stringify(base)).toBe(snapshot);
+    expect(save.seq).toBe(base.seq + 2);
+    expect(hunter.id).toBe(hid(`h${base.seq + 1}`));
+    expect(hunter.name).toBe('Aria');
+    expect(hunter.quests).toHaveLength(1);
+    expect([hunter.quests[0]!.id, hunter.quests[0]!.kind]).toEqual([qid(`q${base.seq + 2}`), 'daily']);
+    expect(hunter.daily.lastCheckedKey).toBe(dayKey(NOW, base.settings.dailyResetHour));
+    expect(save.settings.activeHunterId).toBe(hunter.id);
+    expect(save.hunters.at(-1)).toEqual(hunter);
+  });
+
+  test('makeHunter defaults blank names to Hunter and cuts long names to 60 characters', () => {
+    const base = freshSave({ now: NOW, newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+    expect(makeHunter(base, '', RULES, NOW).hunter.name).toBe('Hunter');
+    expect(makeHunter(base, 'x'.repeat(80), RULES, NOW).hunter.name).toHaveLength(60);
   });
 });

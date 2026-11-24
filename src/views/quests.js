@@ -234,19 +234,20 @@ export function register(app) {
     const h = store.hunter(hid), q = h && h.quests.find(x => x.id === qid);
     if (!q || q.status !== 'active') return false;
     const day = { ...stepTime(store.get(), new Date()), R: app.rules(), vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (app.api.hunter.fightOf({ hid }) ? 'fight' : 'sheet') };
-    const post = progressPost(hid, { ...q, status: 'done', objectives: q.objectives.map(o => ({ ...o, progress: o.target })) }, 'done'), code = app.api.sync.room();
+    const code = app.api.sync.room();
     // one write: the quest, its reward and the GM's post, with what this phone's fight holds (the reward's statuses or a
     // level-up's refill) on the hunter's row (hunter.grantWrite)
     const out = app.api.hunter.grantWrite('quest-done', s => {
       const r = finishQuest(s, hid, qid, { ...day, by: 'hand' });
       if (isRefused(r)) return r;
+      const post = progressPost(hid, r.quest, r.quest.status);
       const fight = r.granted.fight;
-      return { ...r, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
+      return { ...r, post, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
     });
     // the fight's own refusal of a part it holds was told by the fight (combat.js `command`), and answers `TOLD`
     if (isRefused(out)) { ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.` }); return false; }
-    if (post) app.api.sync.flush();
-    app.emit('quest:done', { hunterId: hid, quest: q });
+    if (out.post) app.api.sync.flush();
+    app.emit('quest:done', { hunterId: hid, quest: out.quest });
     const { completed: c, granted: g, job } = out;
     const lines = [...g.lines, ...(job && !g.lines.includes(`Job: ${job}`) ? [`Job: ${job}`] : [])];
     const popup = c.allDaily ? { title: 'DAILY QUEST COMPLETE', body: q.title }

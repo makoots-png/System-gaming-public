@@ -602,10 +602,31 @@ export function repairSave(save: Save, env: ParseEnv, fight: FightRepair = 'read
 }
 
 /** The daily quest of the rules, for a new hunter. */
-export function dailyQuest(id: QuestId, R: Rules, env: ParseEnv): Quest {
+export function dailyQuest(id: QuestId, R: Rules, env: Pick<ParseEnv, 'now'>): Quest {
   const t = R.dailyTemplate;
   const copy: Pick<Quest, 'objectives' | 'rewards'> = JSON.parse(JSON.stringify({ objectives: t.objectives, rewards: t.rewards }));
   return { ...newQuest(), title: t.title, desc: t.desc || '', ...copy, id, kind: 'daily', issuedAt: env.now.toISOString(), from: 'system' };
+}
+/** A new level 1 hunter with the rules' daily quest, taking its hunter and quest ids from `save.seq` without mutating `save`. */
+export function makeHunter(save: Pick<Save, 'seq' | 'settings'>, name: string, R: Rules, now: Date): { hunter: Hunter; seq: number } {
+  const seq = save.seq + 2;
+  const base = newHunter(R);
+  const hunter: Hunter = {
+    ...base,
+    id: saveId('h', save.seq + 1),
+    name: String(name).slice(0, 60) || 'Hunter',
+    quests: [dailyQuest(saveId('q', seq), R, { now })],
+    daily: { ...base.daily, lastCheckedKey: dayKey(now, save.settings.dailyResetHour) },
+  };
+  return { hunter, seq };
+}
+/** Pure step that adds a new level 1 hunter (with its daily quest) to `save`, sets it active, and advances `save.seq`. */
+export function createHunter(save: Save, name: string, R: Rules, now: Date): { save: Save; hunter: Hunter } {
+  const { hunter, seq } = makeHunter(save, name, R, now);
+  return {
+    save: { ...save, seq, hunters: [...save.hunters, hunter], settings: { ...save.settings, activeHunterId: hunter.id } },
+    hunter,
+  };
 }
 /** The built-in skills and items Sung Jin-Woo starts with (src/core/registry/skills.ts and items.ts), by name. */
 const STARTER_SKILL_NAMES: readonly string[] = ['Sprint', 'Bloodlust'];

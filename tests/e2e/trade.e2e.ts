@@ -234,7 +234,7 @@ test('Mira\'s phone offline accepts later and gets it', async ({ device }) => {
 test('Brakk gives Eldrin a potion on the same phone in one tap more', async ({ device }) => {
   const brakk = (await device('brakk')).page;
   await onboardPlayer(brakk, 'Brakk');
-  await brakk.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push(hunterApp.store.newHunter('Eldrin')); }, 'test-setup'));
+  await brakk.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push({ name: 'Eldrin', daily: { lastCheckedKey: d.world.lastDailyKey } }); }, 'test-setup'));
   await dismissAll(brakk, 4);
   await stock(brakk, [{ name: 'Healing Potion', qty: 3 }], 0);
   const panel = await bag(brakk, 'Items');

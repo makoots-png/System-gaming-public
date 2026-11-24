@@ -164,7 +164,7 @@ test('a device with several hunters picks who to play as and joins as a player',
   const gm = (await device('gm', { blockServiceWorker: true })).page, multi = (await device('multi', { blockServiceWorker: true })).page;
   const code = await gmCreatesRoomInView(gm);
   await onboardGM(multi);
-  await multi.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push(hunterApp.store.newHunter('Second One')); }, 'test'));
+  await multi.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push({ name: 'Second One', daily: { lastCheckedKey: d.world.lastDailyKey } }); }, 'test'));
   const secondId = await multi.evaluate(() => hunterApp.store.get().hunters.find((h: any) => h.name === 'Second One').id);
   await openRoomView(multi);
   await multi.locator(V + '[data-code]').fill(code);

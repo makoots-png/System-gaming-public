@@ -6,7 +6,7 @@ import { reported } from './edge/report.ts';
 import { RULES, rules } from './edge/rules.ts';
 import { chooseMode, roleOf, seatOf } from './core/role.ts';
 import { atSettings } from './core/save-step.ts';
-import { addHunter } from './core/party.ts';
+import { createHunter } from './core/save.ts';
 import { panelDraw, panelDrawn } from './core/panel.ts';
 import { isReadOnlyWhy } from './core/store-life.ts';
 import { PANEL_DEFAULTS, VIEW_DEFAULTS } from './views/app.ts';
@@ -244,9 +244,8 @@ $('hunter-sel').addEventListener('change', async e => {
   const sel = e.target;
   if (sel.value === '__new') {
     const name = await ui.promptText({ title: 'New hunter', label: 'Hunter name', value: '' });
-    const h = name ? store.newHunter(name) : null;
     // a hunter not added leaves the select on the active one
-    if (!h || !ui.wrote('System', store.apply('new-hunter', d => addHunter(d, h)))) sel.value = store.active().id;
+    if (!name || !ui.wrote('System', store.apply('new-hunter', d => createHunter(d, name, app.rules(), new Date()).save))) sel.value = store.active().id;
     return;
   }
   // a hunter not switched to (a refusal sync.switchTo told, or a Cancel in a room) leaves the select on the active one

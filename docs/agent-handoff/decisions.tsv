@@ -787,3 +787,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T15:42Z	arch	peer-cycles (pick D2) landed on lead-backlog; 5 cycles broken, D6 allowlist down 5; unit 6936 pass 0 fail on the dodge base, browser 590 + 6 load reruns alone green
 2026-11-24T15:58Z	ops	PR 109 (peer-cycles D2) merged to main
 2026-11-24T15:59Z	arch	warn-v1 (Variant 1 warning sweep) landed on lead-backlog; 5 browser regressions fixed by warn-fix (50b1829c), dodge toast kind fixed at merge
+2026-11-24T16:14Z	ops	PR 110 (warn-v1) merged to main
+2026-11-24T16:52Z	arch	write-leaks (pick D1) landed on lead-backlog; unit 6937 pass, browser 598 + 3 load reruns alone green; lint conflict with warn-v1 resolved (both kept)

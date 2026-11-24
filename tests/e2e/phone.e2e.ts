@@ -598,7 +598,7 @@ async function seedBusy(gm: Page, player: Page): Promise<void> {
           ['Evangeline Frostweaver-Holloway of Ninth Hour', false],
           ['Ferdinand Blackthorn-Carrow, Guild Quartermaster', false],
         ];
-        while (d.hunters.length < 1 + extraNames.length) d.hunters.push(hunterApp.store.newHunter('Extra'));
+        while (d.hunters.length < 1 + extraNames.length) d.hunters.push({ name: 'Extra' });
         extraNames.forEach(([nm, dead], i) => enrichHunter(d.hunters[i + 1], nm, `gx${i}`, { dead }));
 
         // Busy custom monsters including a mythic boss

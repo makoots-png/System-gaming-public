@@ -288,12 +288,12 @@ export function chainStep(save: Save, hid: string, make: (next: <P extends strin
 /** The ability points a day's streak bonus gives (every `R.streakBonusEvery` days of all dailies done). */
 export const STREAK_BONUS_POINTS = 1;
 /**
- * What completing a quest did: the next save, the quest as it was, the completion's facts (`completeQuest`), the reward
- * as given (`grant`), the job the completion gave (a chain's last step, or a Job quest's reward), and the Job Change
- * steps the chain completed with it.
+ * What completing a quest did: the next save, the completed quest (`status: 'done'`, objectives filled), the completion's
+ * facts (`completeQuest`), the reward as given (`grant`), the job the completion gave (a chain's last step, or a Job
+ * quest's reward), and the Job Change steps the chain completed with it.
  */
 export type Finished = {
-  save: Save; quest: Quest; completed: Completed; granted: Granted; job: string | null; done: StepDone[];
+  save: Save; quest: Quest & { status: 'done' }; completed: Completed; granted: Granted; job: string | null; done: StepDone[];
 };
 /**
  * Hunter `hid`'s active quest `qid` completed by `by` (a tap when not given), in one step (implicit audit 3, Q1): the quest done, the penalty and the
@@ -324,12 +324,14 @@ export function questDone(save: Save, hid: string, qid: string, o: Day & { by?: 
   if (!quest) return refuse('missing');
   const c = completeQuest(h, qid, { at: o.at, today: o.today, nextQuestId: ids.next('q'), streakBonusEvery: R.streakBonusEvery, ...(o.by ? { by: o.by } : {}) });
   if (isRefused(c)) return c;
+  const finished = c.hunter.quests.find(q => q.id === qid);
+  if (!finished || finished.status !== 'done') return refuse('not-now');
   const chain = c.effects.filter((fx): fx is Extract<ChainEffect, { type: 'completeQuest' | 'grantJob' }> => fx.type === 'completeQuest' || fx.type === 'grantJob');
   const r = stepsReached(c.hunter, chain, o, ids.next);
   const done = told({ ...save, seq: ids.seq(), hunters: save.hunters.map((x, i) => (i === at ? r.hunter : x)) }, { at: o.at, cap: R.logCap }, ...c.said, ...r.said);
-  const rewards: Rewards = { ...quest.rewards, job: quest.chainId ? null : quest.rewards.job, points: quest.rewards.points + (c.bonus ? STREAK_BONUS_POINTS : 0) };
-  const job: string | null = chain.find(fx => fx.type === 'grantJob')?.job ?? (quest.kind === 'job' ? rewards.job : null);
-  return { save: done, quest, completed: c, rewards, job, done: r.done };
+  const rewards: Rewards = { ...finished.rewards, job: finished.chainId ? null : finished.rewards.job, points: finished.rewards.points + (c.bonus ? STREAK_BONUS_POINTS : 0) };
+  const job: string | null = chain.find(fx => fx.type === 'grantJob')?.job ?? (finished.kind === 'job' ? rewards.job : null);
+  return { save: done, quest: finished, completed: c, rewards, job, done: r.done };
 }
 
 /** What failing a quest did: the next save, the quest as it was, its cost as given (`grant`), and the chain's effects. */

@@ -281,7 +281,7 @@ test('a player whose join as a new hunter fails is left with no trace of that hu
   const { gm, code } = await gmWithRoom(device);
   const player = (await device('player', { blockServiceWorker: true, allowConsole: [/status of 502/] })).page;
   await onboardPlayer(player, 'Kai Test');
-  await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push(hunterApp.store.newHunter('Mia Test')); }, 'test-setup'));
+  await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push({ name: 'Mia Test', daily: { lastCheckedKey: d.world.lastDailyKey } }); }, 'test-setup'));
   await answerWindow(player, 'A GATE HAS APPEARED');
   const party = () => player.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.name as string));
   const kai = await activeHunter(player);
@@ -663,7 +663,7 @@ async function removeKai(gm: Page): Promise<void> {
 async function playerWithTwo(device: (label: string, options?: any) => Promise<any>, code: string, options: any = {}) {
   const player = (await device('player', options)).page as Page;
   await onboardPlayer(player, 'Kai Test');
-  await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push(hunterApp.store.newHunter('Mia Test')); }, 'test-setup'));
+  await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push({ name: 'Mia Test', daily: { lastCheckedKey: d.world.lastDailyKey } }); }, 'test-setup'));
   await answerWindow(player, 'A GATE HAS APPEARED');
   await go(player, 'room');
   await player.locator(`${roomView} input[data-code]`).fill(code);

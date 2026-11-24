@@ -106,7 +106,7 @@ test('a player picks an emblem and color for the hunter and sees the badge on th
   await expect(page.locator(`${status}[data-emb] .hb path`)).toHaveCount(1);
   await expect(page.locator(`${status}[data-emb] .hb`)).toHaveAttribute('style', /#ffc94d/);
 
-  await page.evaluate(() => hunterApp.store.update((d: any) => { const n = hunterApp.store.newHunter('Mira'); n.emblem = 'moon'; n.color = '#c79bff'; d.hunters.push(n); }, 'test-setup'));
+  await page.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push({ name: 'Mira', emblem: 'moon', color: '#c79bff', daily: { lastCheckedKey: d.world.lastDailyKey } }); }, 'test-setup'));
   await expect(page.locator(`${status}[data-plist] .hb`)).toHaveCount(2);
 });
 

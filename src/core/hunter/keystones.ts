@@ -239,3 +239,8 @@ export function keystoneBasis(h: KeystoneHunter): KeystoneBasis {
   const awakened = job !== null && h.jobDone === job;
   return { stats: allocated(h), rank: h.rank, pair: job ? BUILT_IN_JOBS[job].pair : null, awakened };
 }
+/** Keystones gained and lost if `h` confirms its pending stat points (confirmed stats vs allocated stats). */
+export function keystoneConfirmDiff(h: KeystoneHunter, R: KeystoneRules): KeystoneDiff {
+  const after = keystoneBasis(h);
+  return keystoneDiff({ ...after, stats: h.stats }, after, R);
+}

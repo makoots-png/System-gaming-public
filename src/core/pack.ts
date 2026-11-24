@@ -188,7 +188,7 @@ export type MergeMode = 'add' | 'replace';
 /** What a merge did with each kind: entries added (`renamed` of them under a number suffix), replaced, and left out because the list was full. */
 export type KindMerge = { added: number; renamed: number; replaced: number; full: number };
 export type MergeTarget = Pick<Save, 'library' | 'monsters' | 'seq'>;
-export type Merged = { save: { library: Library; monsters: Monster[]; seq: number }; report: Record<PackKind, KindMerge> };
+export type Merged<S extends MergeTarget = Save> = { save: S; report: Record<PackKind, KindMerge> };
 
 /** `name` with the first number suffix from 2 that `taken` does not hold, cut to `max` characters: "Frostbite 2". */
 function suffixed(name: string, max: number, taken: (n: string) => boolean): string {
@@ -274,7 +274,7 @@ function mergeFeats(have: Library, incoming: Record<string, FeatDef>, map: Reado
  * `PACK_CAP` hold: what does not fit is counted in `full`. Replace run twice with the same pack changes nothing the
  * second time. `target` is not changed.
  */
-export function mergePack(target: MergeTarget, pack: Pack, mode: MergeMode): Merged {
+export function mergePack<S extends MergeTarget>(target: S, pack: Pack, mode: MergeMode): Merged<S> {
   const report = each((): KindMerge => ({ added: 0, renamed: 0, replaced: 0, full: 0 }));
   let seq = target.seq;
   const id = (prefix: string) => () => `${prefix}${++seq}`;
@@ -291,5 +291,5 @@ export function mergePack(target: MergeTarget, pack: Pack, mode: MergeMode): Mer
     stories: mergeNamed<Story>(L.stories, p.stories.map(s => rekeyed(R.stories, s, map)), mode, PACK_CAP.stories, STORY_BOUNDS.name, id('st'), report.stories),
   };
   const monsters = mergeNamed<Monster>(copy(target.monsters), p.monsters.map(m => rekeyed(R.monsters, m, map)), mode, PACK_CAP.monsters, 60, id('m'), report.monsters);
-  return { save: { library, monsters, seq }, report };
+  return { save: { ...target, library, monsters, seq }, report };
 }

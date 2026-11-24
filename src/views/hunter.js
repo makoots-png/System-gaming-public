@@ -8,7 +8,7 @@ import { fightHold, heldLines } from '../core/combat/fight-save.ts';
 import { combatantId, hunterId } from '../core/combat/ability-types.ts';
 import { titlePowerLines } from '../core/title-card.ts';
 import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
-import { keystoneBasis, keystoneDiff, keystoneReach, keystonesOf, nearestKeystone } from '../core/hunter/keystones.ts';
+import { keystoneBasis, keystoneConfirmDiff, keystoneReach, keystonesOf, nearestKeystone } from '../core/hunter/keystones.ts';
 import { keystoneOf } from '../core/registry/keystones.ts';
 import {
   KEYSTONE_WORDS, keystoneAwakenedLine, keystoneConfirmLine, keystoneNextLine, keystoneShareAria, keystoneShareText, keystoneTierLabel,
@@ -21,7 +21,7 @@ import { RAISE_REFUSED, RAISE_TITLE, canRaise, debtXpLine, raiseLine, raiseOffer
 import { setGold } from '../core/hunter/inventory.ts';
 import { setCrystal } from '../core/hunter/crystal.ts';
 import { GUILD_WORDS, guildSheetLine } from '../core/hunter/guild.ts';
-import { addHunter, removeHunter } from '../core/party.ts';
+import { removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
 import { removeBundle, saveBundle } from '../core/rewards.ts';
 import { DIED_WORDS, WAYS_BACK, can, fatigueNews, hpOf, lifeNews, manaOf } from '../core/hunter/vitals.ts';
@@ -32,7 +32,7 @@ import { restRefusalWords, restsLeftLine } from '../core/hunter/rests.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
 import { BUNDLE_NAME, REWARD_BOUNDS, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
-import { LIMITS } from '../core/save.ts';
+import { LIMITS, createHunter } from '../core/save.ts';
 import * as motion from './motion.ts';
 import { icon, sprite } from './icons.ts';
 import { statusIcon } from '../core/registry/icon-defaults.ts';
@@ -294,8 +294,11 @@ export function register(app) {
       const last = store.get().hunters.length <= 1;
       const fresh = last ? await ui.promptText({ title: 'Create a new hunter', label: 'New hunter name', value: 'Hunter', maxlength: 60 }) : null;
       if (last && fresh == null) return false;
-      const replacement = last ? store.newHunter(cleanName(fresh) || 'Hunter') : null;
-      if (!ui.wrote('System', store.apply('delete-hunter', s => removeHunter(s, h.id, replacement)))) return false;
+      const name = last ? cleanName(fresh) || 'Hunter' : null;
+      const now = new Date(), R = rules();
+      if (!ui.wrote('System', store.apply('delete-hunter', s => (name !== null && s.hunters.length <= 1
+        ? removeHunter(createHunter(s, name, R, now).save, h.id, null)
+        : removeHunter(s, h.id, null))))) return false;
       app.api.sync.forget(h.id); // the tombstone waits in the outbox until the room takes it
       ui.toast('System', `${h.name} was deleted. A backup was saved (Data → Backups).`, { kind: 'info' });
       return true;
@@ -740,7 +743,7 @@ export function register(app) {
       const pending = hasPending(h);
       el.querySelector('[data-confirm]').hidden = !pending;
       el.querySelector('[data-grant]').hidden = !gm;
-      const ksLine = ksOn && pending ? keystoneConfirmLine(keystoneDiff(keystoneBasis({ ...h, pending: {} }), basis, R.fight), R) : '';
+      const ksLine = ksOn && pending ? keystoneConfirmLine(keystoneConfirmDiff(h, R.fight), R) : '';
       const ksEl = el.querySelector('[data-confirm-ks]');
       ksEl.hidden = !ksLine;
       ksEl.textContent = ksLine;
@@ -913,7 +916,7 @@ export function register(app) {
         const d = b.dataset, hs = store.get().hunters;
         if ('padd' in d) {
           const name = await ui.promptText({ title: 'New hunter', label: 'Hunter name', value: '' });
-          if (name) { const made = store.newHunter(name); ui.wrote('System', store.apply('new-hunter', s => addHunter(s, made))); }
+          if (name) ui.wrote('System', store.apply('new-hunter', s => createHunter(s, name, rules(), new Date()).save));
           return;
         }
         const h = d.pset || d.pren || d.pdel ? store.hunter(d.pset || d.pren || d.pdel) : null; if (!h) return;

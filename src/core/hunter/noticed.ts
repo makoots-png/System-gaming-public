@@ -177,9 +177,9 @@ function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: No
     // a room, and its window says so in place of the reward's lines (quests.js `tellDone`)
     const done = questDone(s, hid, q.id, { at: c.at, today: c.today, R: c.R, by: 'system' });
     if (isRefused(done)) continue;
-    const ended = done.save.hunters.find(x => x.id === hid)?.quests.find(x => x.id === q.id), seat = c.seat ?? ALONE;
-    const withEnd = ROOM_HEARS.counted && seat.seat === 'player' && reportsProgress(q, 'player') && ended?.status === 'done'
-      ? questEnded(done.save, hid, ended, { at: c.at, room: seat.room })
+    const seat = c.seat ?? ALONE;
+    const withEnd = ROOM_HEARS.counted && seat.seat === 'player' && reportsProgress(q, 'player')
+      ? questEnded(done.save, hid, done.quest, { at: c.at, room: seat.room })
       : done.save;
     const paid = selfPaid(withEnd, hid, { from: 'quest', what: q.title, seed: `quest ${hid} ${q.id}`, rewards: done.rewards }, { ...c, seat });
     if (isRefused(paid)) continue;
