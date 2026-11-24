@@ -16,6 +16,7 @@ import { gateFought } from '../core/gates/world.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { needs } from '../core/combat/resolve.ts';
+import { autoMonsterTurn } from '../core/combat/policy.ts';
 import { WAIT_WORDS, aims, answersBy, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { omenMove, omenNeeds } from '../core/combat/fight-turn.ts';
 import { runningState } from '../core/combat/fight.ts';
@@ -246,7 +247,8 @@ export function register(app) {
   const shadowJoin = (s, owner) => ({ row: shadowRow(s, owner, newId(), rules()), monsterId: null });
 
   // S06/F07: another GM device is already running the room's fight; replacing it needs a confirm.
-  const otherGMLive = () => { const d = inRoomAsGM() && !fight() && A().sync.doc('fight'); const me = store.get().settings.deviceId; return !!(d && d.active && !d.ended && d.by && d.by !== me); };
+  const otherGMRunning = () => { const d = inRoomAsGM() && A().sync.doc('fight'); const me = store.get().settings.deviceId; return !!(d && d.active && !d.ended && d.by && d.by !== me); };
+  const otherGMLive = () => !fight() && otherGMRunning();
   const confirmReplace = () => ui.confirm({ title: 'Fight running on another device', body: 'Another GM device is running a fight. Replace it?', danger: true, confirmLabel: 'Replace fight' });
 
   /**
@@ -376,6 +378,32 @@ export function register(app) {
     if (refused(fx)) return fx;
     for (const x of fx) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); }
     return fx;
+  }
+
+  /**
+   * Runs monster `by`'s current turn via `autoMonsterTurn` (`policy.ts`), rolling only the dice it requests through
+   * `drawnFor` so fudge applies identically to hand rolls and dodge prompts pause as usual.
+   * @param {import('../core/combat/ability-types.ts').CombatantId} by
+   * @param {import('../core/combat/timeline.ts').Tick | undefined} at
+   * @param {{ disabled: boolean } | null} [btn]
+   */
+  async function autoTurn(by, at, btn = null) {
+    if (otherGMRunning()) {
+      if (btn) btn.disabled = true;
+      const ok = await confirmReplace();
+      if (btn) btn.disabled = false;
+      if (!ok) return;
+    }
+    const g = fight();
+    const plan = autoMonsterTurn(g, by, rules(), at);
+    if (plan.kind === 'refused') { toast(REFUSAL_WORDS[plan.reason], 'warning'); return; }
+    if (!running(g)) return;
+    const cmd = plan.kind === 'ready' ? plan.command : plan.command(drawnFor(g, plan.by, plan.needs));
+    const fx = send(cmd);
+    if (refused(fx) || fx.some(x => x.type === 'dodgeAsked')) return;
+    const used = fx.filter(x => x.type === 'used');
+    if (used.length) { for (const x of used) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); } }
+    else if (plan.note) { const said = plan.note; afterFrame(() => toast(said)); }
   }
 
   // ── a player's tap from another phone (`step`, `cast`, `pass` and `dodge`) ──
@@ -660,6 +688,8 @@ export function register(app) {
 .cmb-line .field.sm{flex:0 0 80px}.cmb-line .field.sm .lbl{white-space:nowrap}
 .cmb-quick{display:flex;flex-wrap:wrap;gap:6px}
 .cmb-quick button{flex:1 1 44px}
+.cmb-auto{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cmb-auto button{min-height:var(--control-h)}
 .cmb-stats{font-family:var(--font-mono);font-size:13px;color:var(--ice);display:flex;flex-wrap:wrap;gap:4px 14px}
 .cmb-conds{display:flex;flex-wrap:wrap;gap:6px}
 .cmb-fx{list-style:none;margin:4px 0 0;padding:0;font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}
@@ -821,7 +851,10 @@ export function register(app) {
   const mapSource = {
     over: () => {
       const f = fight();
-      return running(f) && f.dodge ? `d:${f.dodge.n}` : '';
+      if (!running(f)) return '';
+      const c = rowOf(f, f.currentId);
+      const auto = c && c.kind === 'monster' && isUp(c) ? 1 : 0;
+      return `${f.dodge ? `d:${f.dodge.n}` : ''}|a:${auto}`;
     },
     input: () => {
       const f = fight(); if (!f || f.phase === 'ended') return null;
@@ -897,6 +930,7 @@ export function register(app) {
       <div class="bar-row"><div class="bar-head"><span class="lbl">HP</span><span class="bar-nums"><span data-num="hp"></span> / <span data-text="hpMax"></span></span></div>
         <div class="cmb-hpwrap"><div class="bar bar-hp" data-fill="hpF">${motion.fillMarkup(0)}</div><div class="bar bar-shield" data-show="shieldF" data-fill="shieldF" aria-hidden="true">${motion.fillMarkup(0)}</div></div></div>
       <div class="bar-row" data-show="staggerF"><div class="bar-head"><span class="lbl">Stagger</span><span class="bar-nums"><b class="cmb-stg" data-show="staggered">Staggered · loses <span data-text="staggeredText"></span></b><span data-num="staggerFill"></span> / <span data-text="staggerMax"></span></span></div><div class="bar bar-stagger" data-fill="staggerF">${motion.fillMarkup(0)}</div></div>
+      ${ro ? '' : '<div class="slot" data-part="turnAct"></div>'}
       <div class="slot" data-part="xtra"></div>
       ${bar('mp', 'Mana', 'mana')}
       ${bar('fat', 'Fatigue', 'fatigue')}
@@ -969,9 +1003,14 @@ export function register(app) {
     // sheet as the room holds it), not the active hunter
     const extractors = k.down && entry && entry.extractable !== false && attemptsLeft(r.extraction ?? UNTRIED, R.shadow.maxAttempts) > 0
       ? f.rows.flatMap(x => { const h = holderHunter(x); return h && A().shadows.canExtract(h) ? [{ row: x, h }] : []; }) : [];
+    const waitDodge = running(f) && !!f.dodge;
+    const turnAct = now && !k.down && r.kind === 'monster' && running(f)
+      ? `<div class="cmb-auto"><button type="button" class="primary" data-fk="auto" data-auto="${esc(r.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button></div>`
+      : '';
     return {
       ...base,
       manaBtns: k.manaMax > 0 ? '<button type="button" data-fk="mam" data-mana="-1">Mana −</button><button type="button" data-fk="map" data-mana="1">Mana +</button>' : '',
+      turnAct,
       actions,
       // a status opens what it does under the chips (app.api.detail); its x takes it off
       conds: k.statuses.map(s => `<span class="chip${s.stacks ? ' stk' : ''}" data-chip="${esc(s.key)}"><button type="button" class="c-info" data-fk="ci-${esc(s.key)}"${A().detail.control('gm-card', `${r.id}|${s.key}`)}><span class="c-ic">${icon(statusIcon(s.key, s.def))}</span>${esc(s.def.label)}${s.stacks ? ` <b class="c-n" data-stacks="${s.stacks}" data-sk="${esc(`${r.id}:${s.key}`)}">${s.stacks}</b>` : ''}${s.def.end && s.rounds != null ? ` · in ${s.rounds} round${s.rounds === 1 ? '' : 's'}` : roundsText(s)}</button><button type="button" data-fk="rc-${esc(s.key)}" data-rc="${esc(s.key)}" aria-label="Remove ${esc(s.def.label)}">✕</button></span>`
@@ -1173,6 +1212,10 @@ export function register(app) {
         return;
       }
       if (b.hasAttribute('data-next')) return next();
+      if (b.dataset.auto) {
+        const rawAt = b.dataset.autoAt !== undefined ? Number(b.dataset.autoAt) : NaN;
+        return autoTurn(combatantId(b.dataset.auto), Number.isFinite(rawAt) ? tick(rawAt) : undefined, b);
+      }
       if (b.hasAttribute('data-end')) { overTo({ at: 'none' }); return endEncounter(); }
       if (b.hasAttribute('data-clear')) {
         if (await ui.confirm({ title: 'Clear the fight?', body: 'Clearing removes every combatant and empties the fight log. Nobody gets XP.', danger: true, confirmLabel: 'Clear fight' })) { send({ type: 'clear' }); sel = null; }
@@ -1345,10 +1388,14 @@ export function register(app) {
       : { tools: '', head: `${elsewhere}<p class="empty" data-idle>The GM is not running a fight.</p>`, acts: '' };
     const seg = n && f.phase !== 'ended' ? `<div class="seg cmb-view" role="group" aria-label="Fight view">${FIGHT_VIEWS.map(v => `<button type="button" data-fk="fv-${v}" data-fview="${v}" aria-pressed="${fightView() === v}">${v === 'map' ? 'Map' : 'List'}</button>`).join('')}</div>` : '';
     if (mapMode) {
+      const c = act ? rowOf(f, f.currentId) : null;
+      const autoBtn = c && c.kind === 'monster' && isUp(c)
+        ? `<button type="button" data-fk="bar-auto" data-auto="${esc(c.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button>`
+        : '';
       return {
         head: `${elsewhere}<div class="cmb-head">Round ${firstTurn ? firstTurn.round : 1}</div>`,
         acts: `${seg}<button type="button" data-fk="tools" data-tools-open aria-expanded="${tools}"${fudgeShown(f) ? ' aria-label="Fight tools, fudge on"' : ''}>Fight tools${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i>' : ''}</button>
-        <button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n"${waitDodge ? ' disabled' : ''}>Next ▶</button>`,
+        ${autoBtn}<button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n"${waitDodge ? ' disabled' : ''}>Next ▶</button>`,
         tools: `${sizeSteps(f)}<button type="button" data-fk="end" data-end>End fight</button><button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight">Clear fight</button>`,
       };
     }

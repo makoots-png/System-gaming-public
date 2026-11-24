@@ -13,19 +13,21 @@
 import type { Rules } from '../rules.ts';
 import { average } from '../formula.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
-import type { Ability } from './ability-types.ts';
+import type { Ability, CombatantId } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
-import type { Running } from './fight-types.ts';
+import { runningState } from './fight.ts';
+import type { Command, Fight, Running } from './fight-types.ts';
 import { counting, hides, warded } from './standing.ts';
 import { perceivedBy } from './sight.ts';
 import { dist, reachable } from './space.ts';
 import type { Place } from './space.ts';
-import { placeOf, usable, whoIsIn } from './resolve.ts';
-import type { Aim } from './resolve.ts';
+import { needs, placeOf, usable, whoIsIn } from './resolve.ts';
+import type { Aim, Needs, Rolls } from './resolve.ts';
+import type { Tick } from './timeline.ts';
 import { spotOf, stepToward, tauntOf } from './fight-view.ts';
 import { threatOf } from './threat.ts';
-import { omenMove } from './fight-turn.ts';
+import { omenMove, omenNeeds } from './fight-turn.ts';
 import { ANSWERS, aimedBody, answerOutcome, scriptOf } from './mythic.ts';
 import type { Answer } from './mythic.ts';
 import type { MythicStanding, Omen } from './mythic-types.ts';
@@ -289,3 +291,87 @@ export const sensible: Policy = (f, me, R) => {
   const uses = me.abilities.filter(playable);
   return me.threat ? monsterChoice(f, me, uses, foes, R) : answerChoice(f, me, R) ?? keptOut(f, me, R, partyChoice(f, me, uses, foes, R));
 };
+
+/** Why `autoMonsterTurn` cannot build a monster's automatic turn right now. */
+export type AutoTurnRefusal = 'notNow' | 'dodging' | 'notYourTurn' | 'unknown' | 'down' | 'notMonster';
+
+/**
+ * What one automatic monster turn asks of the edge: refused (`kind: 'refused'`), a command ready to send
+ * (`kind: 'ready'`, `needs: null`), or the dice (`kind: 'roll'`, `needs`) required to complete `command(rolls)`.
+ * `note` is the fallback line when the fight emits no `used` or `dodgeAsked` effect (moves, waits, channel begin, or a
+ * fizzled omen/release).
+ */
+export type AutoTurn =
+  | { readonly kind: 'refused'; readonly reason: AutoTurnRefusal }
+  | { readonly kind: 'ready'; readonly by: CombatantId; readonly choice: TurnChoice; readonly needs: null; readonly command: Command; readonly note: string }
+  | { readonly kind: 'roll'; readonly by: CombatantId; readonly choice: TurnChoice; readonly needs: Needs; readonly command: (rolls: Rolls) => Command; readonly note: string };
+
+/**
+ * Builds the legal command for monster `by`'s current turn using `sensible`, paired with the dice it asks the edge to
+ * roll (if any). When `at` is provided, rejects stale taps whose turn time has already advanced.
+ */
+export function autoMonsterTurn(f: Fight | null, by: CombatantId, R: Rules, at?: Tick): AutoTurn {
+  if (!f || f.phase !== 'running') return { kind: 'refused', reason: 'notNow' };
+  const state = runningState(f);
+  if (state.at === 'dodging') return { kind: 'refused', reason: 'dodging' };
+  if (state.at === 'owing') return { kind: 'refused', reason: 'notNow' };
+  if (at !== undefined && f.now !== at) return { kind: 'refused', reason: 'notYourTurn' };
+  if (f.currentId !== by) return { kind: 'refused', reason: 'notYourTurn' };
+  const me = f.rows.find(r => r.id === by);
+  if (!me) return { kind: 'refused', reason: 'unknown' };
+  if (!isUp(me)) return { kind: 'refused', reason: 'down' };
+  if (me.kind !== 'monster') return { kind: 'refused', reason: 'notMonster' };
+  const choice = sensible(f, me, R);
+  switch (choice.type) {
+    case 'act': {
+      if (state.at === 'landing' && state.id === me.id) {
+        const n = omenNeeds(f, me, R);
+        if (!n) return { kind: 'refused', reason: 'notNow' };
+        return {
+          kind: 'roll', by: me.id, choice, needs: n,
+          command: rolls => ({ type: 'act', by: me.id, ability: choice.ability.id, aim: choice.aim, rolls }),
+          note: `${choice.ability.name} hits no one.`,
+        };
+      }
+      // Beginning a channel does not roll dice in `actWith`; passing empty rolls avoids spending a forced d20 early.
+      if (choice.ability.channel) {
+        return {
+          kind: 'ready', by: me.id, choice, needs: null,
+          command: { type: 'act', by: me.id, ability: choice.ability.id, aim: choice.aim, rolls: { dice: {}, react: {} } },
+          note: `${me.name} begins to channel ${choice.ability.name}.`,
+        };
+      }
+      const n = needs(choice.ability, me, f.rows, choice.aim, f.grid, f.now, R);
+      return {
+        kind: 'roll', by: me.id, choice, needs: n,
+        command: rolls => ({ type: 'act', by: me.id, ability: choice.ability.id, aim: choice.aim, rolls }),
+        note: `${me.name} uses ${choice.ability.name}.`,
+      };
+    }
+    case 'release': {
+      const c = me.channel, a = c && me.abilities.find(x => x.id === c.ability);
+      if (!c || !a) return { kind: 'ready', by: me.id, choice: PASS, needs: null, command: { type: 'endTurn', by: me.id }, note: `${me.name} waits.` };
+      const n = needs(a, me, f.rows, c.aim, f.grid, f.now, R);
+      return {
+        kind: 'roll', by: me.id, choice, needs: n,
+        command: rolls => ({ type: 'release', by: me.id, rolls }),
+        note: `${me.name}'s ${a.name} is released and hits nothing.`,
+      };
+    }
+    case 'move':
+      return {
+        kind: 'ready', by: me.id, choice, needs: null,
+        command: { type: 'move', by: me.id, to: choice.to, ...(choice.dash ? { dash: true } : {}) },
+        note: choice.dash ? `${me.name} dashes.` : `${me.name} moves.`,
+      };
+    case 'pass': {
+      const max = me.abilities.find(a => a.id === me.channel?.ability)?.channel?.max ?? R.fight.channelMax;
+      const keeps = me.channel?.state === 'holding' && me.channel.charge < max;
+      return {
+        kind: 'ready', by: me.id, choice, needs: null,
+        command: { type: 'endTurn', by: me.id },
+        note: keeps ? `${me.name} keeps channeling.` : `${me.name} waits.`,
+      };
+    }
+  }
+}

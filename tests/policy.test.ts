@@ -9,18 +9,22 @@ import { describe, expect, test } from 'bun:test';
 import { reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Command, Fight, NewRow, Running } from '../src/core/combat/fight.ts';
 import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
+import { weightsFor } from '../src/core/combat/fudge.ts';
+import { drawNeeds, seededSource } from '../src/core/draws.ts';
 import { mythicStepped } from '../src/core/combat/mythic.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
-import { sensible } from '../src/core/combat/policy.ts';
-import { place } from '../src/core/combat/space.ts';
-import type { Place } from '../src/core/combat/space.ts';
-import { combatantId } from '../src/core/combat/ability-types.ts';
-import type { Body } from '../src/core/combat/effect-ops.ts';
+import { autoMonsterTurn, sensible } from '../src/core/combat/policy.ts';
+import { openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
+import type { Place, Terrain } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
+import type { Body, StatusKey } from '../src/core/combat/effect-ops.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { monsterRows } from '../src/core/combat/rows.ts';
-import { seedMonsters } from '../src/core/registry/monsters.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { seedMonsters, statBlock } from '../src/core/registry/monsters.ts';
 import { abilities, hunter, scriptsOn } from './models/fight-sim.ts';
 import type { Archetype } from './models/fight-sim.ts';
 import { atHp } from './fixtures/life.ts';
@@ -122,5 +126,184 @@ describe('the policy answers a mythic\'s omen (design B.4)', () => {
     const hp = rowHp(body(f, 'C')), landed = sent(f, landing(f));
     expect(rowHp(body(landed, 'C')), 'Named in the Book lands on the hunter it named').toBeLessThan(hp);
     expect(body(landed, 'X').mythic?.at).toBe('calm');
+  });
+});
+
+describe('autoMonsterTurn builds a legal command and its dice needs for a monster turn (unit A6)', () => {
+  const M = combatantId('M'), M2 = combatantId('M2'), H = combatantId('H');
+  const brute = (id = M, at = place(5, 5)): NewRow => ({
+    ...monsterRows(statBlock(ON, 'E', { name: 'Goblin', archetype: 'brute', kind: 'normal' }), [id], ON)[0]!,
+    place: at,
+  });
+  const runAuto = (f: Running, by = M, seed = 11, at?: ReturnType<typeof tick>) => {
+    const plan = autoMonsterTurn(f, by, ON, at);
+    if (plan.kind === 'refused') throw new Error(`autoMonsterTurn refused: ${plan.reason}`);
+    const src = seededSource(seed);
+    const cmd = plan.kind === 'ready' ? plan.command : plan.command(drawNeeds(plan.needs, src.random, weightsFor(f, plan.by, plan.needs)));
+    return { plan, cmd, result: reduce(f, cmd, ctx) };
+  };
+
+  test('refuses non-running fights, open dodges, pending settle dice, stale turns, and non-monsters', () => {
+    const setup = reduce(null, { type: 'add', fightId: fightId('f-auto-guard'), rows: [brute(), party('bruiser', 'H', place(5, 6))], openings: [] }, ctx).fight!;
+    expect(autoMonsterTurn(null, M, ON)).toEqual({ kind: 'refused', reason: 'notNow' });
+    expect(autoMonsterTurn(setup, M, ON)).toEqual({ kind: 'refused', reason: 'notNow' });
+
+    const ended = reduce(setup, { type: 'end' }, ctx).fight!;
+    expect(autoMonsterTurn(ended, M, ON)).toEqual({ kind: 'refused', reason: 'notNow' });
+
+    const fHunter = begun('H', brute(), party('bruiser', 'H', place(5, 6)));
+    expect(autoMonsterTurn(fHunter, M, ON)).toEqual({ kind: 'refused', reason: 'notYourTurn' });
+    expect(autoMonsterTurn(fHunter, H, ON)).toEqual({ kind: 'refused', reason: 'notMonster' });
+
+    const fMonster = begun('M', brute(M, place(2, 2)), brute(M2, place(2, 4)), party('bruiser', 'H', place(10, 10)));
+    expect(autoMonsterTurn(fMonster, M, ON, tick(fMonster.now - 1))).toEqual({ kind: 'refused', reason: 'notYourTurn' });
+    expect(autoMonsterTurn(fMonster, M2, ON, fMonster.now)).toEqual({ kind: 'refused', reason: 'notYourTurn' });
+
+    // Pending settle dice put the fight in `owing`, which refuses auto turn until settled.
+    let owing = sent(fMonster, {
+      type: 'status', id: M,
+      add: { key: 'burning' as StatusKey, def: ON.conditions.burning!, duration: null, tier: 0 },
+    });
+    for (let i = 0; i < 6 && runningState(owing).at !== 'owing'; i++) owing = sent(owing, { type: 'endTurn', by: owing.currentId });
+    expect(runningState(owing).at).toBe('owing');
+    expect(autoMonsterTurn(owing, owing.currentId, ON)).toEqual({ kind: 'refused', reason: 'notNow' });
+  });
+
+  test('executes melee attacks with fudge weights and forced d20 parity, and moves when out of range', () => {
+    const fFar = begun('M', brute(M, place(1, 1)), party('bruiser', 'H', place(8, 1)));
+    const moved = runAuto(fFar, M, 3, fFar.now);
+    expect(moved.plan.kind).toBe('ready');
+    expect(moved.cmd.type).toBe('move');
+    expect(moved.result.effects.some(e => e.type === 'refused')).toBe(false);
+    // A stale tap carrying the old tick is rejected even if the same monster still acts next.
+    if (moved.result.fight?.phase === 'running' && moved.result.fight.currentId === M) {
+      expect(autoMonsterTurn(moved.result.fight, M, ON, fFar.now)).toEqual({ kind: 'refused', reason: 'notYourTurn' });
+    }
+
+    // Adjacent melee attack with forced d20 = 20 on the monster (forces target reaction d20 to 1 -> crit).
+    const fClose = sent(
+      begun('M', brute(M, place(5, 5)), party('bruiser', 'H', place(5, 6))),
+      { type: 'fudge', set: { kind: 'force', id: M, face: 20 } },
+    );
+    const hit = runAuto(fClose, M, 42, fClose.now);
+    expect(hit.plan.kind).toBe('roll');
+    expect(hit.cmd.type).toBe('act');
+    expect(hit.result.effects.some(e => e.type === 'refused')).toBe(false);
+    expect(hit.result.effects.some(e => e.type === 'crit' && e.id === H), 'forced 20 on monster forces crit').toBe(true);
+    expect(hit.result.fight?.phase === 'running' ? hit.result.fight.fudge.forced[M] : null, 'forced d20 is spent').toBeUndefined();
+  });
+
+  test('begins a channel without burning a forced d20, waits while charging, and releases at max charge', () => {
+    const chAb = {
+      ...abilityOf('blast', { id: abilityId('chan-blast'), name: 'Charge Blast', range: tiles(8), foesOnly: true }, ON),
+      channel: { max: 2, growth: 'linear' as const },
+    };
+    const m: NewRow = { ...brute(M, place(5, 5)), abilities: [chAb] };
+    const f0 = sent(begun('M', m, party('bruiser', 'H', place(5, 7))), { type: 'fudge', set: { kind: 'force', id: M, face: 20 } });
+
+    const begin = runAuto(f0, M, 5, f0.now);
+    expect(begin.plan.kind).toBe('ready');
+    expect(begin.plan.needs).toBeNull();
+    expect(begin.cmd.type).toBe('act');
+    const f1 = begin.result.fight as Running;
+    expect(body(f1, 'M').channel?.state).toBe('holding');
+    expect(f1.fudge.forced[M], 'channel begin preserves forced d20').toBe(20);
+
+    // Advance to M's next turn at charge 1 (below max 2) -> keeps channeling via endTurn.
+    let atHold = f1;
+    for (let i = 0; i < 6 && atHold.currentId !== M; i++) atHold = sent(atHold, { type: 'endTurn', by: atHold.currentId });
+    expect(body(atHold, 'M').channel?.charge).toBe(1);
+    const keep = runAuto(atHold, M, 6, atHold.now);
+    expect(keep.cmd).toEqual({ type: 'endTurn', by: M });
+    expect(keep.plan.note).toBe('Goblin keeps channeling.');
+
+    // Advance to M's next turn at max charge (2) -> releases with dice needs and spends forced d20.
+    let atMax = keep.result.fight as Running;
+    for (let i = 0; i < 6 && atMax.currentId !== M; i++) atMax = sent(atMax, { type: 'endTurn', by: atMax.currentId });
+    expect(body(atMax, 'M').channel?.charge).toBe(2);
+    const rel = runAuto(atMax, M, 7, atMax.now);
+    expect(rel.plan.kind).toBe('roll');
+    expect(rel.cmd.type).toBe('release');
+    expect(rel.result.effects.some(e => e.type === 'refused')).toBe(false);
+  });
+
+  test('falls back cleanly to endTurn when a monster has no legal move (rooted, boxed in, zero abilities, hidden foes)', () => {
+    // Rooted out of melee range
+    const fRoot = sent(begun('M', brute(M, place(1, 1)), party('bruiser', 'H', place(10, 10))), {
+      type: 'status', id: M, add: { key: 'rooted' as StatusKey, def: { label: 'Rooted', desc: '', ops: [{ op: 'root' }] }, duration: null, tier: 0 },
+    });
+    const rRoot = runAuto(fRoot, M);
+    expect(rRoot.cmd).toEqual({ type: 'endTurn', by: M });
+    expect(rRoot.result.effects.some(e => e.type === 'refused')).toBe(false);
+
+    // Completely surrounded by walls
+    const w = 12, h = 12;
+    const wallTiles: Terrain[] = Array.from({ length: w * h }, () => 'floor');
+    for (const [x, y] of [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]]) wallTiles[y! * w + x!] = 'wall';
+    const setupWall = reduce(null, { type: 'add', fightId: fightId('f-wall'), rows: [brute(M, place(1, 1)), party('bruiser', 'H', place(10, 10))], openings: [], grid: { w, h, tiles: wallTiles } }, ctx).fight!;
+    const fWall = sent(setupWall, { type: 'start', openings: [{ id: M, d20: 20, tie: 2 }, { id: H, d20: 1, tie: 1 }] });
+    expect(runAuto(fWall, M).cmd).toEqual({ type: 'endTurn', by: M });
+
+    // Zero abilities adjacent to hunter
+    const fEmpty = begun('M', { ...brute(M, place(5, 5)), abilities: [] }, party('bruiser', 'H', place(5, 6)));
+    expect(runAuto(fEmpty, M).cmd).toEqual({ type: 'endTurn', by: M });
+
+    // All foes hidden past monster sight
+    const fHid = sent(begun('M', brute(M, place(5, 5)), party('bruiser', 'H', place(5, 6))), {
+      type: 'status', id: H, add: { key: 'deep-hide' as StatusKey, def: { label: 'Deep Hide', desc: '', ops: [{ op: 'hidden', level: 5, start: 'anywhere', ends: { hurt: false, revealed: false, dealt: false } }] }, duration: null, tier: 5 },
+    });
+    expect(runAuto(fHid, M).cmd).toEqual({ type: 'endTurn', by: M });
+  });
+
+  test('pauses for the dodge picker when the monster uses a dodgeable blast and refuses auto turn while dodging', () => {
+    const nova = abilityOf('blast', {
+      id: abilityId('frost-nova'), name: 'Frost Nova', range: tiles(8), foesOnly: true,
+      shape: { kind: 'radius', radius: tiles(1), ring: { outer: tiles(2), share: percent(50) } },
+    }, ON);
+    const m: NewRow = { ...monsterRows(statBlock(ON, 'E', { name: 'Frost Imp', archetype: 'caster', kind: 'normal' }), [M], ON)[0]!, abilities: [nova], place: place(5, 5) };
+    const f = begun('M', m, party('bruiser', 'H', place(5, 8)));
+    const plan = autoMonsterTurn(f, M, ON, f.now);
+    if (plan.kind !== 'roll') throw new Error(`expected roll, got ${plan.kind}`);
+    const highRolls: Rolls = {
+      dice: Object.fromEntries(Object.entries(plan.needs.dice).map(([k, ds]) => [k, ds.map(() => 1)])),
+      react: Object.fromEntries(plan.needs.react.map(id => [id, 20])),
+    };
+    const r = reduce(f, plan.command(highRolls), ctx);
+    expect(r.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
+    const waiting = r.fight as Running;
+    expect(runningState(waiting).at).toBe('dodging');
+    expect(autoMonsterTurn(waiting, M, ON)).toEqual({ kind: 'refused', reason: 'dodging' });
+  });
+
+  test('lands a mythic omen even when taunted by another hunter, handles fizzling omens, and opens dodge for dodgeable omen blasts', () => {
+    const A = combatantId('A'), C = combatantId('C');
+    // Taunted by A while Named in the Book aims at C
+    const fBase = omened(begun('X', mythic('the-fourth-rider', place(5, 5)), party('bruiser', 'A', place(8, 5)), party('cannon', 'C', place(10, 5))), 'named', 'C');
+    const tauntedX: Body = {
+      ...body(fBase, 'X'),
+      statuses: [...body(fBase, 'X').statuses, { key: 'taunted' as StatusKey, def: { label: 'Taunted', desc: '', ops: [{ op: 'taunt' }] }, source: { id: A, tier: 0 }, until: null, since: fBase.now, settledAt: fBase.now }],
+    };
+    const fTaunt: Running = { ...fBase, rows: fBase.rows.map(r => (r.id === X ? tauntedX : r)) };
+    const landed = runAuto(fTaunt, X, 9, fTaunt.now);
+    expect(landed.plan.kind).toBe('roll');
+    expect(landed.result.effects.some(e => e.type === 'refused')).toBe(false);
+    expect(body(landed.result.fight as Running, 'X').mythic?.at).toBe('calm');
+    expect(rowHp(body(landed.result.fight as Running, 'C'))).toBeLessThan(rowHp(body(fTaunt, 'C')));
+
+    // Fizzling omen (aimed target died before landing)
+    const fDead = sent(fBase, { type: 'adjust', id: C, hp: -9999 });
+    const fizz = runAuto(fDead, X, 9, fDead.now);
+    expect(fizz.result.effects.some(e => e.type === 'refused')).toBe(false);
+    expect(body(fizz.result.fight as Running, 'X').mythic?.at).toBe('calm');
+
+    // Dodgeable omen blast (Stars Fall) opens dodge prompt
+    const fStars = omened(begun('X', mythic('angel-of-the-last-trumpet', place(5, 5)), party('bruiser', 'A', place(8, 5)), party('cannon', 'C', place(11, 5))), 'stars', place(8, 5));
+    const planStars = autoMonsterTurn(fStars, X, ON, fStars.now);
+    if (planStars.kind !== 'roll') throw new Error(`expected roll, got ${planStars.kind}`);
+    const rStars = reduce(fStars, planStars.command({
+      dice: Object.fromEntries(Object.entries(planStars.needs.dice).map(([k, ds]) => [k, ds.map(() => 1)])),
+      react: Object.fromEntries(planStars.needs.react.map(id => [id, 20])),
+    }), ctx);
+    expect(rStars.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
   });
 });
