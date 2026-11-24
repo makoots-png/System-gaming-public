@@ -654,6 +654,15 @@ describe('a player\'s own move in a fight', () => {
     expect(paceOf(doc(null), true, 'd-gm')).toBe('fight');
     expect(paceOf(doc('d-other:h1'), false, 'd-player')).toBe('fight');
     expect(paceOf(null, true, 'd-gm')).toBe('table');
+    // GM polls every second while waiting on a remote hunter's dodge, even on a monster's turn
+    const dodging = (whoKey: string | null) => ({
+      ended: false, active: true, currentId: 'm1',
+      rows: [{ id: 'm1', key: null }, { id: 'h1', key: whoKey }],
+      dodge: { n: 1, who: 'h1', by: 'm1', ability: 'Blast', mode: 'out', tiles: '1+2', auto: { x: 1, y: 0 }, hit: '', ring: '' },
+    }) as unknown as FightDoc;
+    expect(paceOf(dodging('d-player:h1'), true, 'd-gm')).toBe('turn');
+    expect(paceOf(dodging('d-gm:h1'), true, 'd-gm')).toBe('fight');
+    expect(paceOf(dodging('d-player:h1'), false, 'd-player')).toBe('fight');
   });
 });
 

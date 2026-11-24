@@ -49,7 +49,7 @@ import { attemptsLeft, extractionStep, UNTRIED } from '../src/core/combat/extrac
 import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
-import { can, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
+import { can, dodgeAsk, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Command, CommandType, Ctx, Effect, Fight, ForcedFace, Fudge, FudgeScope, NewRow, Opening, Result, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
@@ -1183,7 +1183,8 @@ describe('a zone on the ground (4.7)', () => {
     const r = play(add(row('A', 'party', { abilities: [HIT, a] }), row('M', 'foe', { abilities: [boom] })), start(['A', 20], ['M', 10]), cast(a));
     // M's blast at A: A's d20 of 20 takes it out of the blast's reach (rule 8a), and the aura goes with it
     const out = play(add(row('A', 'party', { abilities: [HIT, a] }), row('M', 'foe', { abilities: [boom] })), start(['A', 20], ['M', 10]), cast(a),
-      { type: 'act', by: id('M'), ability: boom.id, aim: place(0, 2), rolls: rolls({ A: 20 }), force: true });
+      { type: 'act', by: id('M'), ability: boom.id, aim: place(0, 2), rolls: rolls({ A: 20 }), force: true },
+      { type: 'dodge', id: null, to: null });
     const to = body(out.fight, 'A').place;
     expect(to).not.toEqual(body(r.fight, 'A').place);
     const z = running(out).zones[0]!;
@@ -2429,24 +2430,32 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
 describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
   const ALL: Record<CommandType, true> = {
     add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
-    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, mythic: true, end: true, clear: true,
+    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, mythic: true, dodge: true, end: true, clear: true,
   };
   const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'fudge', 'end', 'clear'];
-  const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start');
+  const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start' && t !== 'dodge');
   const CHARGE = ability('blast', 'charge', '10 * (1 + charge)', { channel: { growth: 'linear', max: 5 }, range: tiles(20) });
   const owing = play(add(row('A', 'party', { abilities: [HIT, CHARGE], statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]),
     { type: 'act', by: id('A'), ability: CHARGE.id, aim: id('M'), rolls: rolls() }, hit('M', 'A')).fight;
+  const BLAST_DODGE = ability('blast', 'blast', '10', { range: tiles(20), delivery: { kind: 'travel', windup: tick(1000), speed: 'instant' } });
+  const dodging = play(
+    add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST_DODGE] })),
+    start(['A', 1], ['M', 20]),
+    { type: 'act', by: id('M'), ability: BLAST_DODGE.id, aim: place(5, 5), rolls: rolls({ A: 20 }, { A: [] }) },
+  ).fight;
   const states: [string, Fight | null, readonly CommandType[]][] = [
     ['none', null, ['add']],
     ['setup', play(add(row('A', 'party'), row('M', 'foe'))).fight, SETUP],
     ['running, acting', play(...duel()).fight, RUNNING],
     // rules-3.2: a turn is neither taken nor ended (act, move, endTurn) while dice are owed
     ['running, owing', owing, RUNNING.filter(t => t !== 'act' && t !== 'move' && t !== 'endTurn')],
+    ['running, dodging', dodging, ['dodge', 'end', 'clear']],
     ['ended', play(...duel(), { type: 'end' }).fight, ['extract', 'clear']],
   ];
 
   test('each state takes the commands of its row and refuses the rest', () => {
     expect(runningState(running({ fight: states[3]![1] })).at).toBe('owing');
+    expect(runningState(running({ fight: states[4]![1] })).at).toBe('dodging');
     for (const [name, fight, takes] of states) {
       for (const t of Object.keys(ALL) as CommandType[]) expect(can(fight, t), `${name} × ${t}`).toBe(takes.includes(t));
     }
@@ -2778,5 +2787,110 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(rowHp(z)).toBe(rowHp(plainZ));
     expect(z.sheet.hpMax).toBe(rowHp(plainZ));
     expect(z.stagger?.max).toBe(plainZ.stagger?.max);
+  });
+});
+
+describe('dodge-tile picker in the fight reducer', () => {
+  const BLAST = ability('blast', 'fireball', '20', { range: tiles(20), delivery: { kind: 'travel', windup: tick(1000), speed: 'instant' } });
+  const blastAt = (by: string, aim: Place, react: Record<string, number>): Command => ({
+    type: 'act', by: id(by), ability: BLAST.id, aim,
+    rolls: rolls(react, Object.fromEntries(Object.keys(react).map(k => [k, []]))),
+  });
+
+  test('pauses in dodging, refuses other commands with dodging, and lands on the chosen non-default tile', () => {
+    const f0 = running(play(
+      add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] })),
+      start(['A', 1], ['M', 20]),
+    ));
+    const held = reduce(f0, blastAt('M', place(5, 5), { A: 20 }), ctx);
+    const f1 = running(held);
+    expect(runningState(f1).at).toBe('dodging');
+    expect(owed(f1)).toEqual([]);
+    expect(f1.dodges).toBe(1);
+    expect(f1.dodge?.n).toBe(1);
+    expect(held.effects[0]).toMatchObject({ type: 'dodgeAsked', n: 1, who: id('A'), mode: 'out' });
+    const ask = dodgeAsk(f1, RULES)!;
+    expect(ask.tiles.length).toBeGreaterThanOrEqual(2);
+    // other commands refused with 'dodging'
+    expect(reduce(f1, pass('M'), ctx).effects).toEqual([{ type: 'refused', reason: 'dodging' }]);
+    expect(reduce(f1, { type: 'move', by: id('M'), to: place(2, 5) }, ctx).effects).toEqual([{ type: 'refused', reason: 'dodging' }]);
+    // wrong hunter refused with 'noDodge'
+    expect(reduce(f1, { type: 'dodge', id: id('M'), to: ask.tiles[0]! }, ctx).effects).toEqual([{ type: 'refused', reason: 'noDodge' }]);
+    // round-trip through parseFight mid-dodge
+    expect(parseFight(JSON.parse(JSON.stringify(f1)), RULES)).toEqual(f1);
+    // pick a non-default tile
+    const picked = ask.tiles.at(-1)!;
+    const done = reduce(f1, { type: 'dodge', id: id('A'), to: picked }, ctx);
+    const f2 = running(done);
+    expect(f2.dodge).toBeUndefined();
+    expect(f2.dodges).toBe(1);
+    expect(body(f2, 'A').place).toEqual(picked);
+    expect(done.effects.some(e => e.type === 'used' && e.by === id('M'))).toBe(true);
+    // dodge after it finished is refused with 'noDodge'
+    expect(reduce(f2, { type: 'dodge', id: null, to: null }, ctx).effects).toEqual([{ type: 'refused', reason: 'noDodge' }]);
+  });
+
+  test('GM override ({ id: null, to: null }) lands on tiles[0]', () => {
+    const f0 = running(play(
+      add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] })),
+      start(['A', 1], ['M', 20]),
+    ));
+    const f1 = running(reduce(f0, blastAt('M', place(5, 5), { A: 20 }), ctx));
+    const auto = dodgeAsk(f1, RULES)!.tiles[0]!;
+    const f2 = running(reduce(f1, { type: 'dodge', id: null, to: null }, ctx));
+    expect(f2.dodge).toBeUndefined();
+    expect(body(f2, 'A').place).toEqual(auto);
+  });
+
+  test('two hunters caught in one blast pick one at a time with monotonic n and occupied-tile exclusion', () => {
+    const f0 = running(play(
+      add(row('A', 'party', { place: place(5, 5) }), row('B', 'party', { place: place(6, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] })),
+      start(['A', 1], ['B', 1], ['M', 20]),
+    ));
+    const f1 = running(reduce(f0, blastAt('M', place(5, 5), { A: 20, B: 20 }), ctx));
+    const ask1 = dodgeAsk(f1, RULES)!;
+    expect([f1.dodge?.n, ask1.who]).toEqual([1, id('A')]);
+    const pickA = ask1.tiles[0]!;
+    const r2 = reduce(f1, { type: 'dodge', id: id('A'), to: pickA }, ctx);
+    const f2 = running(r2);
+    const ask2 = dodgeAsk(f2, RULES)!;
+    expect([f2.dodge?.n, f2.dodges, ask2.who]).toEqual([2, 2, id('B')]);
+    expect(ask2.tiles.some(p => p.x === pickA.x && p.y === pickA.y)).toBe(false);
+    const pickB = ask2.tiles[0]!;
+    const f3 = running(reduce(f2, { type: 'dodge', id: id('B'), to: pickB }, ctx));
+    expect(f3.dodge).toBeUndefined();
+    expect([body(f3, 'A').place, body(f3, 'B').place]).toEqual([pickA, pickB]);
+  });
+
+  test('picking a hidden foe\'s tile refuses taken, and picking behind a blocked corridor refuses blocked', () => {
+    const hide = st('cloak', null, { op: 'hidden', level: 3, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
+    // Put a wall corridor south of A so hidden foe H at (5, 9) blocks reaching (5, 10), and also test stepping onto H directly
+    const walled = {
+      ...openGrid(20, 14),
+      tiles: Array.from({ length: 20 * 14 }, (_, i) => {
+        const x = i % 20, y = Math.floor(i / 20);
+        return (y === 9 || y === 10) && (x === 4 || x === 6) ? 'wall' as const : 'floor' as const;
+      }),
+    };
+    const f0 = running(play(
+      { type: 'add', fightId: fightId('f-hid'), rows: [row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] }), row('H', 'foe', { place: place(5, 9), statuses: [hide] })], openings: [], grid: walled },
+      start(['A', 1], ['M', 20], ['H', 1]),
+    ));
+    const f1 = running(reduce(f0, blastAt('M', place(5, 5), { A: 20 }), ctx));
+    expect(reduce(f1, { type: 'dodge', id: id('A'), to: place(5, 9) }, ctx).effects).toEqual([{ type: 'refused', reason: 'taken' }]);
+    expect(reduce(f1, { type: 'dodge', id: id('A'), to: place(4, 9) }, ctx).effects).toEqual([{ type: 'refused', reason: 'blocked' }]);
+    expect(reduce(f1, { type: 'dodge', id: id('A'), to: place(-1, 5) }, ctx).effects).toEqual([{ type: 'refused', reason: 'offGrid' }]);
+  });
+
+  test('forced d20 face is spent once when entering dodging, not kept or spent again on dodge', () => {
+    const f0 = running(play(
+      add(row('A', 'party', { place: place(5, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [BLAST] })),
+      start(['A', 1], ['M', 20]),
+      { type: 'fudge', set: { kind: 'force', id: id('A'), face: 20 } },
+    ));
+    const f1 = running(reduce(f0, blastAt('M', place(5, 5), { A: 20 }), ctx));
+    expect(f1.fudge.forced).toEqual({});
+    const f2 = running(reduce(f1, { type: 'dodge', id: null, to: null }, ctx));
+    expect(f2.fudge.forced).toEqual({});
   });
 });

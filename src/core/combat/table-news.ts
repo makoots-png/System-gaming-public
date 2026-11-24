@@ -13,29 +13,31 @@ import type { FightDoc, TableRefusal } from './fight-doc.ts';
 import { fightId } from './fight-types.ts';
 import type { FightId } from './fight-types.ts';
 
-/** What this phone has told: the running fight it saw, the fight whose end it told, and the last turn, refusal and burst told. */
+/** What this phone has told: the running fight it saw, the fight whose end it told, and the last turn, refusal, burst and dodge told. */
 export type TableTold = {
   readonly running: FightId | null;
   readonly ended: FightId | null;
   readonly turn: { readonly fight: FightId; readonly now: Tick; readonly current: CombatantId } | null;
   readonly refused: { readonly fight: FightId; readonly at: Tick; readonly n: number } | null;
   readonly burst: { readonly fight: FightId; readonly n: number } | null;
+  readonly dodge: { readonly fight: FightId; readonly n: number } | null;
 };
-export const NOTHING_TOLD: TableTold = { running: null, ended: null, turn: null, refused: null, burst: null };
+export const NOTHING_TOLD: TableTold = { running: null, ended: null, turn: null, refused: null, burst: null, dodge: null };
 
-/** One piece of news: this player's turn (its hunter on this phone), a refusal of its move, the bearers of a burst, the fight's end. */
+/** One piece of news: this player's turn (its hunter on this phone), a dodge prompt for it, a refusal of its move, the bearers of a burst, the fight's end. */
 export type TableNews =
   | { readonly kind: 'turn'; readonly hid: string }
+  | { readonly kind: 'dodge'; readonly hid: string; readonly mode: 'out' | 'ring'; readonly ability: string | null }
   | { readonly kind: 'refused'; readonly reason: TableRefusal }
   | { readonly kind: 'burst'; readonly ids: readonly CombatantId[] }
   | { readonly kind: 'ended' };
 
 /**
  * The news of `doc` on this phone and the record after it. `mine` says what is this player's: the hunter of the current
- * row when it is one of this phone's, and whether the doc's refusal is of one of its rows. Each news is told once: a doc
- * read again tells nothing new.
+ * row when it is one of this phone's, whether the doc's refusal is of one of its rows, and the hunter asked to dodge
+ * when it is one of this phone's. Each news is told once: a doc read again tells nothing new.
  */
-export function toldAfter(doc: FightDoc, told: TableTold, mine: { readonly turn: string | null; readonly refused: boolean }): { told: TableTold; news: TableNews[] } {
+export function toldAfter(doc: FightDoc, told: TableTold, mine: { readonly turn: string | null; readonly refused: boolean; readonly dodge?: string | null }): { told: TableTold; news: TableNews[] } {
   const news: TableNews[] = [];
   if (doc.ended) {
     if (told.running !== doc.id || told.ended === doc.id) return { told, news };
@@ -52,6 +54,11 @@ export function toldAfter(doc: FightDoc, told: TableTold, mine: { readonly turn:
     next = { ...next, refused: { fight: doc.id, at: no.at, n: no.n } };
     news.push({ kind: 'refused', reason: no.reason });
   }
+  const dg = doc.dodge;
+  if (dg && mine.dodge && !(next.dodge && next.dodge.fight === doc.id && next.dodge.n === dg.n)) {
+    next = { ...next, dodge: { fight: doc.id, n: dg.n } };
+    news.push({ kind: 'dodge', hid: mine.dodge, mode: dg.mode, ability: dg.ability });
+  }
   if (mine.turn !== null && doc.currentId !== null && !(next.turn && next.turn.fight === doc.id && next.turn.now === doc.now && next.turn.current === doc.currentId)) {
     next = { ...next, turn: { fight: doc.id, now: doc.now, current: doc.currentId } };
     news.push({ kind: 'turn', hid: mine.turn });
@@ -65,14 +72,16 @@ export function parseTold(v: unknown): TableTold {
   const o = v as Record<string, unknown>, str = (x: unknown): string | null => (typeof x === 'string' && x.length > 0 && x.length <= 80 ? x : null);
   const num = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null);
   const rec = (x: unknown): Record<string, unknown> | null => (typeof x === 'object' && x !== null ? (x as Record<string, unknown>) : null);
-  const t = rec(o.turn), r = rec(o.refused), b = rec(o.burst), fight = (x: unknown): FightId | null => { const k = str(x); return k === null ? null : fightId(k); };
+  const t = rec(o.turn), r = rec(o.refused), b = rec(o.burst), d = rec(o.dodge), fight = (x: unknown): FightId | null => { const k = str(x); return k === null ? null : fightId(k); };
   const tf = t && fight(t.fight), tn = t && num(t.now), tc = t && str(t.current);
   const rf = r && fight(r.fight), ra = r && num(r.at), rn = r && num(r.n);
   const bf = b && fight(b.fight), bn = b && num(b.n);
+  const df = d && fight(d.fight), dn = d && num(d.n);
   return {
     running: fight(o.running), ended: fight(o.ended),
     turn: tf && tn !== null && tc ? { fight: tf, now: tick(tn), current: combatantId(tc) } : null,
     refused: rf && ra !== null && rn !== null ? { fight: rf, at: tick(ra), n: rn } : null,
     burst: bf && bn !== null ? { fight: bf, n: bn } : null,
+    dodge: df && dn !== null ? { fight: df, n: dn } : null,
   };
 }

@@ -332,17 +332,29 @@ export function walkPath(from: Place, to: Place, grid: Grid, bodies: readonly Pl
 }
 
 /**
+ * Every tile a target at `at` that can move `can` steps may dodge to against a use's cover: every reachable tile outside
+ * `cover` (`avoid: 'out'`), or when none is reachable, every reachable tile in `cover.ring` (`avoid: 'ring'`, starting
+ * with `at` itself when `at` is already in the ring), or null when neither is reachable. Ordered as `reachable` orders
+ * them: fewest steps first, then lowest `y`, then `x`, so `tiles[0]` is what automatic `dodge` takes.
+ */
+export type DodgeOptions = { readonly avoid: 'out' | 'ring'; readonly tiles: readonly Place[] };
+export function dodgeOptions(at: Place, can: Tiles, cover: Cover, grid: Grid, bodies: readonly Place[]): DodgeOptions | null {
+  const hit = new Set(cover.hit.map(p => indexOf(grid, p))), ring = new Set(cover.ring.map(p => indexOf(grid, p)));
+  const where = (p: Place): Dodge => hit.has(indexOf(grid, p)) ? 'caught' : ring.has(indexOf(grid, p)) ? 'ring' : 'out';
+  const options = reachable(at, can, grid, bodies);
+  for (const goal of ['out', 'ring'] as const) {
+    const list = options.filter(o => where(o.place) === goal).map(o => o.place);
+    if (list.length) return { avoid: goal, tiles: list };
+  }
+  return null;
+}
+
+/**
  * Design 3.1 rule 8a: where a target at `at` that can move `can` steps ends against a use's cover. It takes the best tile
  * it reaches that no body or wall fills: out of the cover, else in the ring, on a tie the fewest steps, then the lowest
  * `y`, then `x`. A target that can reach neither is caught and stays where it is.
  */
 export function dodge(at: Place, can: Tiles, cover: Cover, grid: Grid, bodies: readonly Place[]): { avoid: Dodge; to: Place } {
-  const hit = new Set(cover.hit.map(p => indexOf(grid, p))), ring = new Set(cover.ring.map(p => indexOf(grid, p)));
-  const where = (p: Place): Dodge => hit.has(indexOf(grid, p)) ? 'caught' : ring.has(indexOf(grid, p)) ? 'ring' : 'out';
-  const options = reachable(at, can, grid, bodies);
-  for (const goal of ['out', 'ring'] as const) {
-    const best = options.find(o => where(o.place) === goal);
-    if (best) return { avoid: goal, to: best.place };
-  }
-  return { avoid: 'caught', to: at };
+  const o = dodgeOptions(at, can, cover, grid, bodies);
+  return o ? { avoid: o.avoid, to: o.tiles[0]! } : { avoid: 'caught', to: at };
 }

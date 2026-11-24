@@ -27,6 +27,8 @@ import { isUp } from './row-hp.ts';
 import { amountOp, AURA_ON, HIDE_STARTS, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isFormulaKey, isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import { sheetOpCap } from './standing.ts';
+import type { HeldDieId } from './standing.ts';
+import type { Rolls } from './resolve.ts';
 import { asLevel } from './sight-levels.ts';
 import { parseLife } from '../hunter/vitals.ts';
 import { parseLevel } from '../hunter/level.ts';
@@ -38,7 +40,7 @@ import type { FoeLife } from './row-life.ts';
 import { ALONE_EVENTS, BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
 import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
-import type { Fight, Fog, DueTurn, ForcedFace, Fudge, LogLine, Summary } from './fight-types.ts';
+import type { DodgeWait, DueTurn, Fight, Fog, ForcedFace, Fudge, HeldUse, LogLine, Summary } from './fight-types.ts';
 import { NO_FUDGE } from './fudge.ts';
 import type { Extraction } from './extraction.ts';
 import { isMythicScriptId, mythicScriptOf } from '../registry/mythics.ts';
@@ -946,6 +948,76 @@ function fudgeOf(v: unknown, rows: readonly Body[]): Fudge | null {
   return { sides: { party, foe }, rows: own, forced };
 }
 
+const MAX_ROLL_DICE = 20;
+const KEY_MAX = 80;
+/** Bounded rolls of a held use (`Rolls`), keeping optional maps absent when omitted so round-trips stay lossless. */
+function rollsOf(v: unknown): Rolls | null {
+  if (!isObj(v) || !isObj(v.dice) || !isObj(v.react)) return null;
+  const diceEntries = Object.entries(v.dice), reactEntries = Object.entries(v.react);
+  if (diceEntries.length > MAX_ROWS || reactEntries.length > MAX_ROWS) return null;
+  const dice: Record<CombatantId, number[]> = {}, react: Record<CombatantId, number> = {};
+  for (const [k, list] of diceEntries) {
+    const id = idText(k), nums = all(list, MAX_ROLL_DICE, x => whole(x, -BIG, BIG));
+    if (!id || !nums) return null;
+    dice[combatantId(id)] = nums;
+  }
+  for (const [k, n] of reactEntries) {
+    const id = idText(k), d = whole(n, -BIG, BIG);
+    if (!id || d === null) return null;
+    react[combatantId(id)] = d;
+  }
+  const refund = v.refund === undefined ? undefined : whole(v.refund, -BIG, BIG);
+  if (refund === null) return null;
+  let second: Record<CombatantId, number> | undefined;
+  if (v.second !== undefined) {
+    if (!isObj(v.second) || Object.keys(v.second).length > MAX_ROWS) return null;
+    second = {};
+    for (const [k, n] of Object.entries(v.second)) {
+      const id = idText(k), d = whole(n, -BIG, BIG);
+      if (!id || d === null) return null;
+      second[combatantId(id)] = d;
+    }
+  }
+  let boost: Record<HeldDieId, number> | undefined;
+  if (v.boost !== undefined) {
+    if (!isObj(v.boost) || Object.keys(v.boost).length > MAX_ROWS * MAX_STATUSES) return null;
+    boost = {};
+    for (const [k, n] of Object.entries(v.boost)) {
+      const id = text(k, KEY_MAX), d = whole(n, -BIG, BIG);
+      if (!id || d === null) return null;
+      boost[id as HeldDieId] = d;
+    }
+  }
+  return { dice, react, ...(refund !== undefined ? { refund } : {}), ...(second !== undefined ? { second } : {}), ...(boost !== undefined ? { boost } : {}) };
+}
+/** A held `act` or `release` command inside an open `DodgeWait`. */
+function heldUseOf(v: unknown, grid: Grid, ids: ReadonlySet<string>): HeldUse | null {
+  if (!isObj(v)) return null;
+  const by = idText(v.by), rolls = rollsOf(v.rolls);
+  if (!by || !ids.has(by) || !rolls) return null;
+  if (v.type === 'release') return { type: 'release', by: combatantId(by), rolls };
+  if (v.type !== 'act') return null;
+  const ability = idText(v.ability), aim = aimOn(v.aim, grid);
+  if (!ability || !aim || (typeof aim === 'string' && !ids.has(aim))) return null;
+  const force = v.force === undefined ? undefined : bool(v.force);
+  if (force === null) return null;
+  return { type: 'act', by: combatantId(by), ability: abilityId(ability), aim, rolls, ...(force !== undefined ? { force } : {}) };
+}
+/** An open `DodgeWait` on a running fight, or null when malformed. */
+function dodgeOf(v: unknown, grid: Grid, rows: readonly Body[]): DodgeWait | null {
+  if (!isObj(v) || !isObj(v.to)) return null;
+  const ids = new Set<string>(rows.map(r => r.id)), n = whole(v.n, 1, BIG), use = heldUseOf(v.use, grid, ids);
+  const toEntries = Object.entries(v.to);
+  if (n === null || !use || toEntries.length > MAX_ROWS) return null;
+  const to: Record<CombatantId, Place> = {};
+  for (const [k, p] of toEntries) {
+    const at = tileOn(p, grid);
+    if (!ids.has(k) || !at) return null;
+    to[combatantId(k)] = at;
+  }
+  return { n, use, to };
+}
+
 /** A log line: its words and the ids of the rows (at most `MAX_ROWS`) and zones (`MAX_ZONES`) it is about. */
 function logLineOf(v: unknown): LogLine | null {
   if (!isObj(v)) return null;
@@ -982,5 +1054,12 @@ export function parseFight(raw: unknown, R: Rules): Fight | null {
   if (now === null) return null;
   const currentId = idText(raw.currentId), pending = all(raw.pending, MAX_PENDING, x => pendingOf(x, R));
   if (!currentId || !rows.some(r => r.id === currentId) || !pending) return null;
-  return { phase, ...shared, now, currentId: combatantId(currentId), pending, fudge };
+  const dodges = raw.dodges === undefined ? undefined : whole(raw.dodges, 0, BIG);
+  const dodge = raw.dodge === undefined ? undefined : dodgeOf(raw.dodge, grid, rows);
+  if (dodges === null || dodge === null) return null;
+  if (dodge && (pending.length > 0 || (dodges !== undefined && dodges < dodge.n))) return null;
+  return {
+    phase, ...shared, now, currentId: combatantId(currentId), pending, fudge,
+    ...(dodges !== undefined ? { dodges } : {}), ...(dodge ? { dodge } : {}),
+  };
 }

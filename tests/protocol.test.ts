@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
-import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, newEvent, newEventId, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
+import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, newEvent, newEventId, onDodge, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, WORD_MAX, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { EventAudience, PayloadOf, RoomEvent, RoomViewer } from '../src/core/protocol.ts';
@@ -30,7 +30,7 @@ import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import { STAT_PAIRS } from '../src/core/hunter/keystones.ts';
 import type { KeystoneKey } from '../src/core/hunter/keystones.ts';
-import { DOC_AHEAD, DOC_DEFS_MAX, DOC_MYTHICS, DOC_LOG, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, fightWire, packBits } from '../src/core/combat/fight-doc.ts';
+import { DOC_AHEAD, DOC_DEFS_MAX, DOC_DODGE_RUNS, DOC_MYTHICS, DOC_LOG, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, fightWire, packBits } from '../src/core/combat/fight-doc.ts';
 import { MAX_ZONES } from '../src/core/combat/zones.ts';
 import { LOG_LINE_MAX, MAX_STATUSES } from '../src/core/combat/fight-types.ts';
 import type { Fight } from '../src/core/combat/fight-types.ts';
@@ -210,7 +210,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -219,8 +219,8 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -1202,6 +1202,11 @@ describe('the fight doc', () => {
       armed: many(RULES.fight.kit.doArmed, id), spent: many(RULES.fight.kit.doArmed, i => id(i + 12)),
       reacts: Object.fromEntries([...many(RULES.fight.kit.doArmed, id), ...many(RULES.fight.kit.doArmed, i => id(i + 12))].map(r => [r, 'a'.repeat(40)])),
       burst: { n: 999999999, ids: many(RULES.fight.kit.doArmed, id) },
+      dodge: {
+        n: 999999, who: 'm-08', by: 'm-00', ability: 'a'.repeat(NAME_MAX), mode: 'out' as const,
+        tiles: '1599+1,'.repeat(40).slice(0, DOC_DODGE_RUNS - 1) + '1', auto: { x: 39, y: 39 },
+        hit: '1599+1,'.repeat(40).slice(0, DOC_DODGE_RUNS - 1) + '1', ring: '1599+1,'.repeat(40).slice(0, DOC_DODGE_RUNS - 1) + '1',
+      },
     };
   }
   /** The characters of each part of a doc on the wire, and of each part of its first row. */
@@ -1593,6 +1598,23 @@ describe('an armed reaction (kits design 8.4.2)', () => {
   test('an ability id past 40 characters, an empty one or a number is refused, and so is a row that is not an id', () => {
     for (const ability of ['x'.repeat(41), '', 7]) expect(payload('arm', { eid: EID, by: KEY, ability })).toBeNull();
     expect(payload('arm', { eid: EID, by: KEY, ability: 'parry', on: 5 })).toBeNull();
+  });
+});
+
+describe('a dodge event and onDodge', () => {
+  test('parses a player dodge pick and refuses invalid n or place', () => {
+    expect(payload('dodge', { eid: EID, by: KEY, n: 2, place: { x: 4, y: 5 } })).toEqual({ eid: EID, by: KEY, n: 2, place: { x: 4, y: 5 } });
+    expect(payload('dodge', { eid: EID, by: KEY, n: 'two', place: { x: 4, y: 5 } })).toBeNull();
+    expect(payload('dodge', { eid: EID, by: KEY, n: 1, place: 'bad' })).toBeNull();
+    expect([EVENTS.dodge.gmOnly, EVENTS.dodge.ownSheet]).toEqual([false, true]);
+  });
+
+  test('onDodge matches the remote hunter only when fight.dodge.n matches p.n', () => {
+    const f = { phase: 'running', dodge: { n: 3 }, rows: [{ id: 'c-mira', holder: { kind: 'remote', remote: KEY } }] } as unknown as Fight;
+    expect(onDodge(f, { by: sk(KEY), n: 3 })).toBe('c-mira' as never);
+    expect(onDodge(f, { by: sk(KEY), n: 2 })).toBeNull();
+    expect(onDodge(f, { by: sk(OTHER), n: 3 })).toBeNull();
+    expect(onDodge(null, { by: sk(KEY), n: 3 })).toBeNull();
   });
 });
 

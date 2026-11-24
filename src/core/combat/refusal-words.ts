@@ -25,6 +25,7 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   notMythic: 'Only a scripted mythic monster has phases and omens.', noOmen: 'No omen is active.',
   omenStands: 'An omen is already active. Resolve, cancel, or drop it first.', omenDue: 'Its omen is due. Resolve the omen move where it was aimed.',
   lastPhase: 'This is the last phase. It ends when HP reaches 0.', weakened: 'The omen is already weakened.',
+  noDodge: 'No dodge is open.', dodging: 'Finish the dodge first.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */
@@ -36,4 +37,5 @@ export const TABLE_REFUSAL_WORDS: { readonly [R in TableRefusal]: string } = {
   gated: 'That cannot be used now.', noUses: 'No uses left.', hp: 'Not enough HP to pay for it.', stacks: 'Not enough stacks.',
   zone: 'You have no field to end.', extra: 'Only one extra action a round.', seen: 'A foe sees you. You cannot hide.',
   tooLow: 'Your rank is too high for that consumable. Use one of your rank or higher.',
+  noDodge: 'That dodge is already over.', dodging: 'Finish the dodge first.',
 };

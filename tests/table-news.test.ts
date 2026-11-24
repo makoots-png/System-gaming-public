@@ -38,4 +38,18 @@ describe('a player\'s fight news', () => {
   test('a stored record that is not one reads as nothing told', () => {
     expect([parseTold(null), parseTold('x'), parseTold({ turn: { fight: 7 } })]).toEqual([NOTHING_TOLD, NOTHING_TOLD, NOTHING_TOLD]);
   });
+  test('a dodge prompt for this player is told once per prompt n, survives reload, and fires again for n + 1', () => {
+    const dg = (n: number) => ({ n, who: combatantId('c1'), by: combatantId('m1'), ability: 'Fireball', mode: 'out' as const, tiles: '1+2', auto: { x: 1, y: 0 }, hit: '', ring: '' });
+    const mine: { turn: string | null; refused: boolean; dodge?: string | null } = { turn: null, refused: false, dodge: 'h1' };
+    let told: TableTold = NOTHING_TOLD;
+    const step = (doc: FightDoc, m = mine) => {
+      const r = toldAfter(doc, told, m);
+      told = parseTold(JSON.parse(JSON.stringify(r.told)));
+      return r.news;
+    };
+    expect(step(live({ dodge: dg(1) }))).toEqual([{ kind: 'dodge', hid: 'h1', mode: 'out', ability: 'Fireball' }]);
+    expect(step(live({ dodge: dg(1) }))).toEqual([]);
+    expect(step(live({ dodge: dg(2) }))).toEqual([{ kind: 'dodge', hid: 'h1', mode: 'out', ability: 'Fireball' }]);
+    expect(step(live({ dodge: dg(3) }), { turn: null, refused: false, dodge: null })).toEqual([]);
+  });
 });

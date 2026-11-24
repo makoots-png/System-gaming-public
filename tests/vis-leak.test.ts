@@ -4,8 +4,12 @@ import { handler } from '../server.ts';
 import { RULES } from '../src/core/rules.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
-import { reduce } from '../src/core/combat/fight.ts';
-import { combatantId } from '../src/core/combat/ability-types.ts';
+import { dodgeAsk, reduce } from '../src/core/combat/fight.ts';
+import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
+import { openGrid, place, tiles } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
 import { fightId } from '../src/core/combat/fight-types.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { newHunter } from '../src/core/hunter/hunter.ts';
@@ -334,5 +338,61 @@ describe('sealed events and room projections hide GM-only data', () => {
     expect(monsterWire.h).toBeUndefined();
     expect(monsterWire.hm).toBeUndefined();
     expect(wireFight.fudge).toBeUndefined();
+  });
+
+  test('a hidden foe in dodge reach leaves no hole in FightDoc.dodge, a hidden attacker is redacted, and dodge events stay sealed', async () => {
+    const { postPlayer, pollAs } = await setupRoom();
+    // 1. Sealed event check: Mira's dodge event never reaches Kai's phone
+    await postPlayer(MIRA_DEV, 'dodge', { eid: 'd-mira1-dg1', by: MIRA_KEY, n: 1, place: { x: 4, y: 5 } });
+    const kaiPoll = await pollAs(KAI_DEV, 0);
+    expect(kaiPoll.events).toEqual([]);
+
+    // 2. Hidden foe standing on a dodge tile: FightDoc is byte-identical to the same fight without that hidden foe
+    const ctx = { rules: RULES };
+    const blast = { ...abilityOf('blast', { id: abilityId('fireball'), name: 'Fireball' }, RULES), range: tiles(20), delivery: { kind: 'travel' as const, windup: tick(1200), speed: 'instant' as const } };
+    const cloak = statusOn(
+      { label: 'Hidden', desc: '', ops: [{ op: 'hidden', level: 3, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] },
+      { key: statusKey('cloak'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) },
+    );
+    const hero = { ...hunterRow(newHunter(), combatantId('p1'), RULES), place: place(5, 5) };
+    const casterBase = monsterRows(seedMonsters(RULES)[0]!, [combatantId('m1')], RULES)[0]!;
+    const caster = { ...casterBase, place: place(1, 5), abilities: [blast] };
+    const docOpts = { by: parseDeviceId('d-gm')!, at: '2026-11-24T00:00:00.000Z', was: null, keyOf: () => null };
+
+    const makeOpen = (extra: readonly (typeof casterBase)[]) => {
+      const rows = [hero, caster, ...extra];
+      const f0 = reduce(null, { type: 'add', fightId: fightId('f-leak'), rows, openings: [], grid: openGrid(14, 14) }, ctx).fight!;
+      const f1 = reduce(f0, { type: 'start', openings: rows.map(r => ({ id: r.id, d20: r.id === caster.id ? 20 : 1, tie: 0 })) }, ctx).fight!;
+      return reduce(f1, { type: 'act', by: caster.id, ability: blast.id, aim: place(5, 5), rolls: { dice: { p1: [4] } as never, react: { p1: 20 } as never } }, ctx).fight!;
+    };
+
+    const plainFight = makeOpen([]);
+    const askPlain = dodgeAsk(plainFight as Extract<typeof plainFight, { phase: 'running' }>, RULES)!;
+    // Place hidden foe directly on the hunter's nearest auto dodge tile!
+    const sneak = { ...monsterRows(seedMonsters(RULES)[0]!, [combatantId('m-hid')], RULES)[0]!, place: askPlain.tiles[0]!, statuses: [cloak] };
+    const hiddenFight = makeOpen([sneak]);
+    const askHidden = dodgeAsk(hiddenFight as Extract<typeof hiddenFight, { phase: 'running' }>, RULES)!;
+    // Sanity check: the GM's real legal tiles DO exclude sneak's tile, whereas the player doc MUST NOT
+    expect(askHidden.tiles).not.toContainEqual(sneak.place);
+    const plainDoc = fightDoc(plainFight, RULES, docOpts)!;
+    const hiddenDoc = fightDoc(hiddenFight, RULES, docOpts)!;
+    expect(JSON.stringify(fightWire(hiddenDoc).dodge)).toBe(JSON.stringify(fightWire(plainDoc).dodge));
+    expect(hiddenDoc.ended === false && plainDoc.ended === false && hiddenDoc.dodge).toEqual(plainDoc.ended === false ? plainDoc.dodge : undefined);
+
+    // 3. Hidden attacker: by, ability, hit, and ring are all redacted on the player doc
+    const hiddenCaster = { ...caster, statuses: [cloak] };
+    const fH0 = reduce(null, { type: 'add', fightId: fightId('f-ambush'), rows: [hero, hiddenCaster], openings: [], grid: openGrid(14, 14) }, ctx).fight!;
+    const fH1 = reduce(fH0, { type: 'start', openings: [{ id: hero.id, d20: 1, tie: 0 }, { id: hiddenCaster.id, d20: 20, tie: 0 }] }, ctx).fight!;
+    const fH2 = reduce(fH1, { type: 'act', by: hiddenCaster.id, ability: blast.id, aim: place(5, 5), rolls: { dice: { p1: [4] } as never, react: { p1: 20 } as never } }, ctx).fight!;
+    const ambushDoc = fightDoc(fH2, RULES, docOpts)!;
+    expect(ambushDoc.ended).toBe(false);
+    if (!ambushDoc.ended) {
+      expect(ambushDoc.dodge).toBeDefined();
+      expect(ambushDoc.dodge!.by).toBeNull();
+      expect(ambushDoc.dodge!.ability).toBeNull();
+      expect(ambushDoc.dodge!.hit).toBe('');
+      expect(ambushDoc.dodge!.ring).toBe('');
+      expect(ambushDoc.dodge!.tiles.length).toBeGreaterThan(0);
+    }
   });
 });

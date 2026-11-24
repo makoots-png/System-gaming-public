@@ -601,6 +601,10 @@ test('a blast aimed at a place marks who is caught and who is in its ring before
   await expect(token(gm, rats[0]!).locator('.mp-mark')).toHaveText('Outer ring');
   await expect(map(gm).locator('[data-words]')).toHaveText(`Hits ${HUNTER}. In outer ring (reduced damage): ${MONSTER}.`);
   await map(gm).locator('[data-go]').tap();
+  // Kai outran the blast and picks where to dodge on their phone (one tap confirms the nearest safe tile)
+  const dodgeGo = map(player).locator('[data-confirm] [data-go]');
+  await expect(dodgeGo).toHaveText('Dodge here');
+  await dodgeGo.tap();
   await expect.poll(() => fightRow(gm, HUNTER).then(r => r.place.x !== 2 || r.place.y !== 2)).toBe(true);
   const escaped = await fightRow(gm, HUNTER).then(r => [r.place.x, r.place.y]);
   // out of the ring: more than 4 tiles from (2, 3) by 5-10-5

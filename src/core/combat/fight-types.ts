@@ -51,11 +51,24 @@ type Shared = {
 export type Fog = { readonly sight: Tiles; readonly seen: string };
 /** Being built: rows join and stand in their places; nobody has a turn yet (`at` and `tie` are 0 until `start`). */
 export type Setup = Shared & { readonly phase: 'setup'; readonly fudge: Fudge };
+/** A use held while a hunter picks its dodge tile: `act` (a mythic omen landing too) or `release`. */
+export type HeldUse = Extract<Command, { readonly type: 'act' | 'release' }>;
+/**
+ * The fight's open dodge prompt: `n` increments on every ask (unique per prompt, including sequential hunters in one
+ * area), `use` is the held command re-run once every caught hunter has picked, and `to` maps hunters who already picked
+ * in this use to their chosen tiles. Who is asked next and their legal tiles are derived via `dodgeAsk` (fight.ts).
+ */
+export type DodgeWait = { readonly n: number; readonly use: HeldUse; readonly to: Readonly<Record<CombatantId, Place>> };
 /**
  * Under way: `now` is the time of the current turn, `currentId` whose it is. `pending` are the per-round ops due at a
  * turn start whose dice the edge has been asked to roll (a `rollSettle` effect) and that a `settle` command pays.
+ * `dodge`, when present, holds a use waiting for a caught hunter to pick its dodge tile; `dodges` counts prompts opened
+ * so every prompt gets a fresh monotonic `n`.
  */
-export type Running = Shared & { readonly phase: 'running'; readonly now: Tick; readonly currentId: CombatantId; readonly pending: readonly DueTurn[]; readonly fudge: Fudge };
+export type Running = Shared & {
+  readonly phase: 'running'; readonly now: Tick; readonly currentId: CombatantId; readonly pending: readonly DueTurn[]; readonly fudge: Fudge;
+  readonly dodge?: DodgeWait; readonly dodges?: number;
+};
 /**
  * Over: a side had nobody up, or the GM ended it. The rows and the log stay for the summary screen until `clear`. It
  * holds no `fudge`: the GM's weight ends with the fight, and the next one starts at 0.
@@ -217,6 +230,11 @@ export type Command =
    * are the events its turns raise (mythic.ts `MythicEvent`), logged; no time passes.
    */
   | { readonly type: 'mythic'; readonly by: CombatantId; readonly step: 'drop' | 'next' }
+  /**
+   * Answers the fight's open dodge prompt (`Running.dodge`): hunter `id` (or whoever is currently asked when `id` is
+   * null, the GM's override) takes tile `to` (or the automatic nearest tile `tiles[0]` when `to` is null).
+   */
+  | { readonly type: 'dodge'; readonly id: CombatantId | null; readonly to: Place | null }
   /** The GM ends the fight now. */
   | { readonly type: 'end' }
   /** The ended fight's screen is closed: no fight. */
@@ -251,7 +269,11 @@ export type Refusal = UseRefusal
   /** A `mythic` command on a row that plays no script. */
   | 'notMythic'
   /** On a mythic's landing turn, any use but its omen's move at the omen's aim. */
-  | 'omenDue';
+  | 'omenDue'
+  /** A `dodge` command when no dodge is open, for the wrong hunter, or to a tile outside the offered dodge set. */
+  | 'noDodge'
+  /** Any command other than `dodge`, `end`, or `clear` while a dodge prompt waits for a pick. */
+  | 'dodging';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =
@@ -299,6 +321,8 @@ export type Effect =
   | { readonly type: 'omen'; readonly id: CombatantId; readonly omen: OmenKey }
   /** A change met an answer (`how`) to mythic `id`'s omen (`omen`), which it canceled or weakened. */
   | { readonly type: 'omenAnswered'; readonly id: CombatantId; readonly omen: OmenKey; readonly how: Answer; readonly outcome: Exclude<AnswerOutcome, 'none'>; readonly line: string }
+  /** Prompt `n` opened for hunter `who` to pick among `tiles` (`out` clears the attack; `ring` stays in the outer ring). */
+  | { readonly type: 'dodgeAsked'; readonly n: number; readonly who: CombatantId; readonly mode: 'out' | 'ring'; readonly tiles: readonly Place[] }
   | { readonly type: 'ended'; readonly summary: Summary }
   | { readonly type: 'refused'; readonly reason: Refusal };
 export type EffectType = Effect['type'];

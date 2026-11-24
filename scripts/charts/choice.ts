@@ -7,6 +7,7 @@ import { bfs, machine } from '../statecharts.ts';
 
 type Walked = (typeof WALK_EVENTS)[number];
 function label(c: Choice): string {
+  if (c.now.kind === 'dodge') return 'Dodging: offered tiles show';
   if (c.actor === null) return 'Watching (another body\'s turn)';
   switch (c.now.kind) {
     case 'none': return 'Nothing chosen: the movement area shows';
@@ -29,13 +30,13 @@ export const choiceChart = machine<Choice, Walked>({
     hides: 'a double tap, which puts back what its two taps chose and so can lead from any box to any other',
     state: label,
     step: (e, from, to) => {
-      const ev = e.of(from), sent = choose(from, ev).fx.filter(f => f.kind === 'move' || f.kind === 'use' || f.kind === 'pass').map(f => f.kind);
-      if (sent.length) return `${ev.kind === 'pass' ? 'End turn' : ev.kind === 'go' && sent[0] === 'move' ? 'Move' : 'Use'} (${sent.join(', ')})`;
+      const ev = e.of(from), sent = choose(from, ev).fx.filter(f => f.kind === 'move' || f.kind === 'use' || f.kind === 'pass' || f.kind === 'dodge').map(f => f.kind);
+      if (sent.length) return `${ev.kind === 'pass' ? 'End turn' : sent[0] === 'dodge' ? 'Dodge' : ev.kind === 'go' && sent[0] === 'move' ? 'Move' : 'Use'} (${sent.join(', ')})`;
       if (ev.kind === 'double') return null;
       if (ev.kind === 'seen') return e.name;
       if (to.now.kind === 'none') return 'Cancel, a tap off it, or the same ability again';
       if (ev.kind === 'pick') return 'pick an ability';
-      return to.now.kind === 'move' ? 'tap a tile in reach' : 'tap a target';
+      return to.now.kind === 'dodge' ? 'tap offered dodge tile' : to.now.kind === 'move' ? 'tap a tile in reach' : 'tap a target';
     },
   }],
   where: [

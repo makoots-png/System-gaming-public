@@ -112,6 +112,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, at: 2500 },
     { eid: EID, by: KEY, at: 2500 },
   ],
+  dodge: [
+    { eid: EID, by: KEY, n: 1, place: { x: 2, y: 3 } },
+    { eid: EID, by: KEY, n: 1, place: { x: 2, y: 3 } },
+  ],
   coinCall: [
     { eid: EID, by: KEY, roll: 'd-player1:r12', who: 'Kai', what: 'STR check', face: 20, call: 'heads' },
     { eid: EID, by: KEY, roll: 'd-player1:r12', who: 'Kai', what: 'STR check', face: 20, call: 'heads' },

@@ -22,7 +22,7 @@ import { boostsOn, counts, edgeOn, exposedOf, hides, holds, rangeWith, shareOf, 
 import { tick } from '../src/core/combat/timeline.ts';
 import { perceivedBy } from '../src/core/combat/sight.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
-import { MAX_SPREAD, reduce, runningState } from '../src/core/combat/fight.ts';
+import { dodgeAsk, MAX_SPREAD, owed, reduce, runningState } from '../src/core/combat/fight.ts';
 import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
 import { gateOf, scriptOf } from '../src/core/combat/mythic.ts';
 import type { Command, Effect, Fight } from '../src/core/combat/fight.ts';
@@ -101,6 +101,15 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   if (after.id !== mem.fightId) { mem.fightId = after.id; mem.settled.clear(); mem.since.clear(); mem.told.clear(); mem.reacted.clear(); mem.wards.clear(); mem.triggers.clear(); }
   const rose = roseWrong(before, cmd, after, refused);
   if (rose) return rose;
+  if (after.phase === 'running' && after.dodge) {
+    if (runningState(after).at !== 'dodging') return 'fight with open dodge is not in dodging state';
+    if (owed(after).length > 0 || after.pending.length > 0) return 'fight in dodging state still owes dice';
+    if ((after.dodges ?? 0) < after.dodge.n || after.dodge.n < 1) return `dodge counter ${after.dodges} lags behind prompt ${after.dodge.n}`;
+    const ask = dodgeAsk(after, RULES);
+    if (!ask || ask.tiles.length < 2) return 'open dodge wait has fewer than two legal tiles';
+    const who = after.rows.find(r => r.id === ask.who);
+    if (!who || who.kind !== 'hunter' || !isUp(who) || Object.hasOwn(after.dodge.to, ask.who)) return `open dodge asks invalid target ${ask.who}`;
+  }
   const told = toldWrong(after, effects, mem);
   if (told) return told;
   const ids = after.rows.map(r => r.id);
@@ -305,7 +314,7 @@ function mythicWrong(before: Fight | null, cmd: Command, after: Fight, effects: 
   }
   if (after.phase === 'running') {
     const st = runningState(after), cur = after.rows.find(r => r.id === after.currentId);
-    const due = !!cur?.mythic && cur.mythic.at !== 'calm' && st.at !== 'owing';
+    const due = !!cur?.mythic && cur.mythic.at !== 'calm' && st.at !== 'owing' && st.at !== 'dodging';
     if (due !== (st.at === 'landing')) return `the fight is ${st.at} on ${after.currentId}'s turn, whose standing is ${cur?.mythic?.at ?? 'none'}`;
   }
   if (effects.some(e => e.type === 'omenAnswered') && !before?.rows.some(r => r.mythic && r.mythic.at !== 'calm')) return 'an omen was answered while none stood';
@@ -359,7 +368,7 @@ function deadActWrong(before: Fight | null, cmd: Command, after: Fight | null, e
       if (!refused && !fizzle) return `${cmd.by}'s act on dead target ${t.id} was not refused`;
     }
   }
-  if (before && after && before.id === after.id && !refused && (cmd.type === 'act' || cmd.type === 'release')) {
+  if (before && after && before.id === after.id && !refused && (cmd.type === 'act' || cmd.type === 'release' || cmd.type === 'dodge')) {
     for (const was of before.rows) {
       if (isUp(was)) continue;
       const badFx = effects.find(e => 'id' in e && e.id === was.id && (DEAD_TARGET_FX.has(e.type) || (e.type === 'channel' && e.state !== null)));
@@ -681,7 +690,7 @@ describe('the reworked fight under random play', () => {
     }
     expect(failures).toEqual([]);
     // a mythic's phase change and omen (Nov 22: 98 and 38 in the 2,500 seeds; an answer met once and a landing a few times, too rare to count on)
-    for (const seen of ['turnStarted', 'rollSettle', 'vitals', 'sendRemote', 'shadowHp', 'moved', 'channel', 'staggered', 'crit', 'defeated', 'ended', 'refused', 'phased', 'omen',
+    for (const seen of ['turnStarted', 'rollSettle', 'vitals', 'sendRemote', 'shadowHp', 'moved', 'channel', 'staggered', 'crit', 'defeated', 'ended', 'refused', 'phased', 'omen', 'dodgeAsked',
       'none>setup', 'setup>running', 'running>ended', 'ended>none', 'spread', 'triggerParsed', ...KIT_LINES.map(([k]) => k)]) {
       expect(tally.get(seen) ?? 0, `random play reaches ${seen}`).toBeGreaterThan(0);
     }

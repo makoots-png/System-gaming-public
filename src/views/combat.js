@@ -22,7 +22,7 @@ import { mythicScriptOf } from '../core/registry/mythics.ts';
 import { mythicSwitched } from '../core/mythic-switch.ts';
 import { MYTHIC_SWITCH_WORDS } from '../core/rules-text.ts';
 import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
-import { EVERYTHING, eyesChoices, fightBodies, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
+import { EVERYTHING, eyesChoices, fightBodies, fightDodge, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
 import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
@@ -36,7 +36,7 @@ import { place } from '../core/combat/space.ts';
 import { cryptoRandom, rollNeeds, rollOpenings, rollSettle } from '../edge/roll.ts';
 import { openingWeights, settleWeights, weightsFor } from '../core/combat/fudge.ts';
 import { weighable } from '../core/combat/odds.ts';
-import { onTurn } from '../core/protocol.ts';
+import { onDodge, onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
 import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootMoreLine, lootOffered, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
@@ -368,7 +368,15 @@ export function register(app) {
     return running(g) && a ? { type: 'release', by: u.id, rolls: drawnFor(g, u.id, needs(a, u, g.rows, c.aim, g.grid, g.now, rules())) } : null;
   }
 
-  // ── a player's tap from another phone (`step` and `cast`): taken only on that hunter's turn at the fight's time ──
+  /** Picks `to` (or the nearest tile when null) for the hunter currently dodging; `id` is null for the GM's override. */
+  function dodgePick(id, to) {
+    const fx = send({ type: 'dodge', id, to });
+    if (refused(fx)) return fx;
+    for (const x of fx) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); }
+    return fx;
+  }
+
+  // ── a player's tap from another phone (`step`, `cast`, `pass` and `dodge`) ──
   /**
    * The last player's tap this phone turned down, for the fight doc (fight-doc.ts `DocRefusal`): the player's phone shows
    * its reason, with a count raised at each one so each is news once. Its one writer is the handler below.
@@ -395,6 +403,16 @@ export function register(app) {
     const f = fight(), p = event.payload;
     const r = f && f.phase !== 'ended' ? f.rows.find(x => remoteKeyOf(x) === p.by) : null;
     if (r) armRow(r, p.ability, p.on ?? null);
+  });
+  app.on('sync:event', ({ event }) => {
+    if (!event || event.type !== 'dodge' || !inRoomAsGM()) return;
+    const f = fight(), p = event.payload;
+    if (!running(f)) return;
+    const id = onDodge(f, p);
+    if (!id) return;
+    const fx = dodgePick(id, place(p.place.x, p.place.y));
+    const no = fx.find(x => x.type === 'refused');
+    if (no && no.type === 'refused') turnDown(id, no.reason);
   });
   app.on('sync:event', ({ event }) => {
     if (!event || (event.type !== 'step' && event.type !== 'cast' && event.type !== 'pass') || !inRoomAsGM()) return;
@@ -617,6 +635,10 @@ export function register(app) {
   ui.css('mythic', MYTHIC_CSS);
   ui.css('combat', `
 .cmb-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.cmb-dodge{flex:1 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:1px solid var(--gold);background:rgba(48,36,10,.45);padding:8px 12px}
+.cmb-dodge[hidden]{display:none}
+.cmb-dodge p{margin:0;flex:1 1 200px;min-width:0;color:var(--ice);font-size:14px;overflow-wrap:anywhere}
+.cmb-dodge button{min-height:44px}
 .cmb-head{font-family:var(--font-display);font-weight:700;font-size:18px;color:var(--ice);margin-right:auto;min-width:0;overflow-wrap:anywhere}
 .cmb-head small{display:block;font-size:12px;font-weight:400;color:var(--muted);letter-spacing:.08em}
 .cmb-main{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:12px}
@@ -790,11 +812,16 @@ export function register(app) {
    * @type {import('../core/api.ts').MapSource}
    */
   const mapSource = {
+    over: () => {
+      const f = fight();
+      return running(f) && f.dodge ? `d:${f.dodge.n}` : '';
+    },
     input: () => {
       const f = fight(); if (!f || f.phase === 'ended') return null;
-      const R = rules(), c = cur(), actor = c && !isRemote(c) && !cardOf(f, c, R).down ? c.id : null, as = viewAs(f);
+      const R = rules(), c = cur(), dg = running(f) ? fightDodge(f, R) : null;
+      const actor = !dg && c && !isRemote(c) && !cardOf(f, c, R).down ? c.id : null, as = viewAs(f);
       const eyes = as.kind === 'row' ? eyesChoices(f).find(x => x.id === as.id) || null : null;
-      return { fight: f.id, bodies: fightBodies(f, R, () => false, as, holderHunter), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, eyes, ...fightGround(f, R, as) };
+      return { fight: f.id, bodies: fightBodies(f, R, () => false, as, holderHunter), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, dodge: dg, eyes, ...fightGround(f, R, as) };
     },
     eyes: {
       choices: () => { const f = fight(); return f ? eyesChoices(f) : []; },
@@ -803,7 +830,7 @@ export function register(app) {
     },
     order: () => { const f = fight(); return running(f) ? order(f, 6, rules()).map(t => ({ id: t.row.id, name: t.row.name })) : []; },
     kit: () => {
-      const f = fight(), c = cur(); if (!running(f) || !c || isRemote(c)) return null;
+      const f = fight(), c = cur(); if (!running(f) || f.dodge || !c || isRemote(c)) return null;
       const ch = channelView(c, rules());
       return {
         list: shownAbilities(c).map(x => x.a), readyAt: c.readyAt, now: f.now, costCut: c.sheet.costCut, pinKey: pinKeyOf(c), channel: ch && ch.state === 'holding' ? ch : null,
@@ -830,6 +857,7 @@ export function register(app) {
     move: (to, dash) => { const c = cur(); if (c) send({ type: 'move', by: c.id, to, ...(dash ? { dash: true } : {}) }); },
     place: (id, to) => { send({ type: 'place', id, to }); },
     use: (a, aim) => { const c = cur(); if (c) useAt(c, a, aim); },
+    dodge: to => { dodgePick(null, to); },
     offTurn: () => toast('It is not their turn.'),
     waiting: () => false,
     card: id => { sel = id; overTo({ at: 'card' }); },
@@ -1024,7 +1052,7 @@ export function register(app) {
     root = el;
     A().detail.wire(el, render);
     el.innerHTML = `<section class="win" aria-label="Fight tracker"><span class="cb"></span><h2>Fight</h2>
-      <div class="cmb-bar" data-bar><div class="slot" data-part="head"></div><div class="slot" data-part="acts"></div></div>
+      <div class="cmb-bar" data-bar><div class="slot" data-part="head"></div><div class="slot" data-part="acts"></div><div class="cmb-dodge" data-dodge role="status" hidden></div></div>
       <p class="hp-amt-msg" data-amtlive role="status" aria-live="polite"></p>
       <div class="myth" data-mythic aria-label="Mythic"></div>
       <div data-main></div>
@@ -1094,6 +1122,8 @@ export function register(app) {
       }
       if (b.hasAttribute('data-localdismiss')) { if (app.seat() !== 'player') return; send({ type: 'clear' }); sel = null; return render(); } // F02: local only, never published
       if (!canRun()) return; // P01: everything below is GM-only
+      if (b.hasAttribute('data-dodge-auto')) { dodgePick(null, null); return; }
+      if (b.hasAttribute('data-dodge-map')) { store.setPrefs({ fightView: 'map' }); overTo({ at: 'none' }); return; }
       if (b.hasAttribute('data-odds-ask') || b.hasAttribute('data-odds-stop')) return; // the odds box's own (odds-box.js)
       if (b.dataset.resize && f) { // the map's size in a fight under way (design 4.8): the fight refuses to cut anyone off
         const k = b.dataset.resize, d = Number(b.dataset.d), no = send({ type: 'resize', w: f.grid.w + (k === 'w' ? d : 0), h: f.grid.h + (k === 'h' ? d : 0) }).find(x => x.type === 'refused');
@@ -1276,9 +1306,25 @@ export function register(app) {
     return [{ id: '', name: 'Everything' }, ...e.choices()].map(c => `<button type="button" data-fk="eyes-${esc(c.id)}" data-eyes="${esc(c.id)}" aria-pressed="${on(c.id)}">${esc(c.name)}</button>`).join('');
   }
 
+  /** The GM's banner while the fight waits for a hunter to pick a dodge tile. */
+  function dodgeBannerHtml(f, onMap) {
+    if (!running(f) || !f.dodge) return '';
+    const dg = fightDodge(f, rules()), who = dg ? rowOf(f, dg.who) : null;
+    if (!dg || !who) return '';
+    const remote = isRemote(who), ab = dg.ability || 'the blast';
+    const msg = dg.mode === 'ring'
+      ? remote ? `Waiting for ${who.name} to pick an outer-ring tile for ${ab} (no way clear).`
+        : `${who.name} has no way clear of ${ab}. Pick an outer-ring tile on the map.`
+      : remote ? `Waiting for ${who.name} to dodge ${ab}.`
+        : `${who.name} dodges ${ab}. Pick a tile on the map.`;
+    const auto = dg.mode === 'ring' ? 'Use nearest ring tile' : 'Use nearest safe tile';
+    const open = !onMap ? '<button type="button" class="primary" data-fk="dodge-map" data-dodge-map>Open map to dodge</button>' : '';
+    return `<p>${esc(msg)}</p>${open}<button type="button" data-fk="dodge-auto" data-dodge-auto>${auto}</button>`;
+  }
+
   /** The bar: what the fight is doing and the order ahead (`head`), then the GM's buttons for its state (`acts`). */
   function barDesc(f, gm, elsewhere, mapMode, tools) {
-    const n = f ? f.rows.length : 0, act = running(f), turn = act ? order(f, 8, rules()) : [], firstTurn = turn[0];
+    const n = f ? f.rows.length : 0, act = running(f), turn = act ? order(f, 8, rules()) : [], firstTurn = turn[0], waitDodge = act && !!f.dodge;
     const head = act ? `Round ${firstTurn ? firstTurn.round : 1}<small>Turn: ${esc(firstTurn ? firstTurn.row.name : '-')}</small><small data-ahead>Next: ${turn.slice(1).map(t => esc(t.row.name)).join(' → ') || '-'}</small>`
       : f && f.phase === 'ended' ? 'Fight over<small>Tap End fight to see the summary</small>'
         : n ? 'Ready to fight<small>Tap Start fight to begin</small>' : 'No fight<small>Add hunters and monsters below</small>';
@@ -1289,7 +1335,7 @@ export function register(app) {
       return {
         head: `${elsewhere}<div class="cmb-head">Round ${firstTurn ? firstTurn.round : 1}</div>`,
         acts: `${seg}<button type="button" data-fk="tools" data-tools-open aria-expanded="${tools}"${fudgeShown(f) ? ' aria-label="Fight tools, fudge on"' : ''}>Fight tools${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i>' : ''}</button>
-        <button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n">Next ▶</button>`,
+        <button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n"${waitDodge ? ' disabled' : ''}>Next ▶</button>`,
         tools: `${sizeSteps(f)}<button type="button" data-fk="end" data-end>End fight</button><button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight">Clear fight</button>`,
       };
     }
@@ -1297,7 +1343,7 @@ export function register(app) {
       tools: '',
       head: `${elsewhere}<div class="cmb-head">${head}</div>`,
       acts: `${seg}${f && f.phase === 'setup' && n ? `<div class="seg cmb-surp" role="group" aria-label="Surprised">${[['', 'No surprise'], ['party', 'Party surprised'], ['foe', 'Foes surprised']].map(([v, l]) => `<button type="button" data-fk="surp-${v || 'none'}" data-surp="${v}" aria-pressed="${(surprised || '') === v}">${l}</button>`).join('')}</div>` : ''}${f && f.phase === 'setup' ? `<button type="button" class="primary" data-fk="start" data-start${n ? '' : ' disabled'}>Start fight</button>` : ''}
-      ${act ? '<button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n">Next ▶</button>' : ''}
+      ${act ? `<button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n"${waitDodge ? ' disabled' : ''}>Next ▶</button>` : ''}
       <button type="button" data-fk="end" data-end${n ? '' : ' disabled'}>End fight</button>
       <button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight"${f ? '' : ' disabled'}>Clear fight</button>`,
     };
@@ -1393,6 +1439,8 @@ export function register(app) {
     paintOdds();
     const bd = barDesc(f, gm, elsewhere, mapMode, tools);
     bind(barBox, { head: bd.head, acts: bd.acts });
+    const db = $q('[data-dodge]'), dh = gm ? dodgeBannerHtml(f, mapMode) : '';
+    if (db) { db.hidden = !dh; if (db.dataset.sig !== dh) { db.dataset.sig = dh; db.innerHTML = dh; } }
     if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
     const fh = gm ? fudgeBlock(f) : '';
     fz.hidden = !fh; if (fz.innerHTML !== fh) fz.innerHTML = fh;
@@ -1483,13 +1531,13 @@ export function register(app) {
       const list = listOrder(f), r = focusRow(f), i = r ? Math.max(0, list.indexOf(r)) : 0, n = list.length, picked = list[(i + d + n) % n];
       if (picked) { sel = picked.id; render(); }
     };
-    app.keys.add({ key: 'n', label: 'Next turn', group: G, view: 'combat', gmOnly: true, when: () => inView() && running(fight()), run: next });
+    app.keys.add({ key: 'n', label: 'Next turn', group: G, view: 'combat', gmOnly: true, when: () => { const f = fight(); return inView() && running(f) && !f?.dodge; }, run: next });
     app.keys.add({ key: 'j', label: 'Select next combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && Boolean(fight()?.rows.length), run: () => moveSel(1) });
     app.keys.add({ key: 'k', label: 'Select previous combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && Boolean(fight()?.rows.length), run: () => moveSel(-1) });
     app.keys.add({ key: 'd', label: 'Damage / heal: focus HP amount (Enter damages, Shift+Enter heals)', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!$r('[data-amt]'),
       run: () => { const a = $r('[data-amt]'); if (a) { a.focus(); a.select(); } } });
     app.keys.add({ key: 's', label: 'Add status to selected', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!$r('[data-cforge]'), run: () => click('[data-cforge]') });
-    app.keys.add({ key: 'a', label: 'Use the first ability of the current-turn combatant', group: G, view: 'combat', gmOnly: true, when: () => inView() && !!cur(),
+    app.keys.add({ key: 'a', label: 'Use the first ability of the current-turn combatant', group: G, view: 'combat', gmOnly: true, when: () => { const f = fight(); return inView() && running(f) && !f.dodge && !!cur(); },
       run: () => {
         const c = cur(); if (!c) return;
         if (sel !== c.id) { sel = c.id; render(); }

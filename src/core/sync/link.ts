@@ -37,6 +37,10 @@ export const PACE_MS: Record<PollPace, number> = { table: POLL_MS, fight: POLL_F
 /** The pace of a room whose fight doc is `fight`, for this `device`: a GM's phone waits on a player's move while a hunter of another device has the turn. */
 export function paceOf(fight: FightDoc | null, gm: boolean, device: string): PollPace {
   if (!fight || fight.ended || !fight.active) return 'table';
+  if (gm && fight.dodge) {
+    const dodger = fight.rows.find(r => r.id === fight.dodge!.who);
+    if (dodger && dodger.key !== null && deviceOf(dodger.key) !== device) return 'turn';
+  }
   const cur = fight.rows.find(r => r.id === fight.currentId);
   return gm && cur && cur.key !== null && deviceOf(cur.key) !== device ? 'turn' : 'fight';
 }

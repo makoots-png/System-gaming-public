@@ -10,7 +10,7 @@ import { lifeWord } from '../core/combat/row-life.ts';
 import { isUp } from '../core/combat/row-hp.ts';
 import { WAIT_WORDS, aims, answersBy, docSpots, mythicSeenOfDoc, mythicStrip, omenBanner, omenOnYou, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
 import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
-import { docBodies, docGround, myPinKey } from '../core/combat/map-view.ts';
+import { docBodies, docDodge, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
 import { featsSeen } from '../core/hunter/chronicle-view.ts';
 import { SECRET_WORDS } from '../core/hunter/quest-secret.ts';
@@ -91,6 +91,11 @@ export function register(app) {
     .tb-death .lw{font-size:13px}
     .tb-death span{font-size:14px;color:var(--ice)}
     .tb-mine{font-family:var(--font-display);font-weight:700;font-size:calc(22px*var(--ts));letter-spacing:.18em;color:var(--ground);background:var(--cyan);padding:8px 12px;margin:0 0 8px;text-align:center}
+    .tb-dodge{border:1px solid var(--gold);background:rgba(48,36,10,.55);padding:10px 12px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .tb-dodge strong{font-family:var(--font-display);font-size:calc(18px*var(--ts));letter-spacing:.14em;color:var(--gold);flex:1 0 100%}
+    .tb-dodge span{flex:1 1 180px;min-width:0;font-size:14px;color:var(--ice);overflow-wrap:anywhere}
+    .tb-dodge button{min-height:44px}
+    .tb-wait{border:1px solid var(--line-bright);background:rgba(10,26,46,.65);padding:8px 10px;margin:0 0 8px;font-size:14px;color:var(--cyan-dim)}
     .tb-banner.mine{font-family:var(--font-display);font-weight:700;font-size:calc(20px*var(--ts));letter-spacing:.14em;color:var(--ground);background:var(--cyan);padding:8px 12px;text-align:center}
     .tb-feed{list-style:none;margin:0;padding:0;display:grid;gap:6px}
     .tb-feed li{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;overflow-wrap:anywhere}
@@ -220,8 +225,30 @@ export function register(app) {
     for (const m of e.ended ? [] : mythicsOf(e)) for (const a of list) { const w = answersBy(a, m); if (w && !out[a.id]) out[a.id] = w; }
     return out;
   }
-  function hudDesc(e, h, kit) {
-    const out = { mythic: mythicMarkup(e), seg: segHtml(), mine: myTurn(e) ? '<div class="tb-mine" role="status">\u25b6 YOUR TURN</div>' : '', round: `ROUND ${roundIn(e)}`, noMe: !h, death: '', hp: '', hpLabel: '', hpF: 0, mana: '', manaLabel: '', manaF: 0, chips: '' };
+  /** The open dodge prompt for a hunter on this phone, or null. */
+  const myDodge = e => (e && e.ended === false && e.dodge && rowsOf(e).some(r => r.id === e.dodge.who && isMine(r)) ? e.dodge : null);
+  /** The open dodge prompt for another hunter in the room, or null. */
+  const otherDodge = e => (e && e.ended === false && e.dodge && !myDodge(e) ? e.dodge : null);
+  /** The top banner of the player HUD: your dodge prompt, another hunter's dodge wait, or your turn. */
+  function dodgeMineHtml(e, onMap) {
+    const dg = myDodge(e);
+    if (dg) {
+      const head = dg.ability ? `DODGE · ${dg.ability}` : 'DODGE';
+      const prompt = dg.mode === 'ring'
+        ? (onMap ? 'No way clear. Tap an outer-ring tile, or tap Stay here.' : 'No way clear of the blast. Open the map to pick an outer-ring tile.')
+        : (onMap ? 'Tap a highlighted tile, or tap Dodge here.' : 'Open the map to pick where you dodge.');
+      const btn = onMap ? '' : '<button type="button" class="primary" data-dodge-map>Open map to dodge</button>';
+      return `<div class="tb-dodge" role="status"><strong>${esc(head)}</strong><span>${esc(prompt)}</span>${btn}</div>`;
+    }
+    const oth = otherDodge(e);
+    if (oth) {
+      const who = rowsOf(e).find(r => r.id === oth.who);
+      return `<div class="tb-wait" role="status">Waiting for ${esc(who ? who.name : 'a hunter')} to dodge.</div>`;
+    }
+    return myTurn(e) ? '<div class="tb-mine" role="status">\u25b6 YOUR TURN</div>' : '';
+  }
+  function hudDesc(e, h, kit, onMap = false) {
+    const out = { mythic: mythicMarkup(e), seg: segHtml(), mine: dodgeMineHtml(e, onMap), round: `ROUND ${roundIn(e)}`, noMe: !h, death: '', hp: '', hpLabel: '', hpF: 0, mana: '', manaLabel: '', manaF: 0, chips: '' };
     if (h) {
       const s = app.api.hunter.sheet(h), d = { hp: int(s.hp), hpMax: int(s.sheet.hpMax), mana: int(s.mana), manaMax: int(s.sheet.manaMax) };
       Object.assign(out, {
@@ -242,7 +269,7 @@ export function register(app) {
   const myTurn = e => { const r = e && curRow(e); return !!(r && isMine(r)); };
   /** Whether this phone's turn waits on a command it tapped, on any screen (app.api.uses `hold`): its buttons are off. */
   const waitsFor = e => !!e && e.ended === false && app.api.uses.hold().at !== 'free';
-  const canAct = e => myTurn(e) && !waitsFor(e);
+  const canAct = e => myTurn(e) && !waitsFor(e) && !(e && e.ended === false && e.dodge);
   /** The doc's rows as spots, this hunter's row, the map and the nearest foe its first foe ability aims at. */
   function table(e, h) {
     /** @type {(import('../core/protocol.ts').FightDocRow & import('../core/combat/fight-view.ts').Spot)[]} */
@@ -288,9 +315,10 @@ export function register(app) {
   const baseTitle = document.title;
   let titled = false;
   function turnTitle() {
-    const e = encounter(), want = document.hidden && inRoomPlayer() && !!(e && !e.ended && e.active) && myTurn(e);
-    if (want && !titled) { document.title = '▶ Your turn · The Hunter System'; titled = true; }
-    else if (!want && titled) { document.title = baseTitle; titled = false; }
+    const e = encounter(), active = document.hidden && inRoomPlayer() && !!(e && !e.ended && e.active);
+    const label = active && myDodge(e) ? '▶ Dodge · The Hunter System' : active && myTurn(e) ? '▶ Your turn · The Hunter System' : null;
+    if (label) { document.title = label; titled = true; }
+    else if (titled) { document.title = baseTitle; titled = false; }
   }
   document.addEventListener('visibilitychange', turnTitle);
   app.on('sync:docs', turnTitle);
@@ -318,6 +346,7 @@ export function register(app) {
       el.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches('[data-tbamt]')) { ev.preventDefault(); if (app.api.hunter.amountFromKey(ev, ev.target.value)) applyAmt(ev.shiftKey, true); } });
       el.addEventListener('click', ev => {
         if (ev.target.closest('[data-mapbox]')) return;
+        if (ev.target.closest('[data-dodge-map]')) { store.setPrefs({ fightView: 'map' }); cardId = null; paintHud(el); return; }
         const fv = ev.target.closest('[data-fview]');
         if (fv) { store.setPrefs({ fightView: fv.dataset.fview === 'map' ? 'map' : 'list' }); cardId = null; paintHud(el); return; }
         if (ev.target.closest('[data-tbsheetx]')) { cardId = null; paintHud(el); return; }
@@ -394,13 +423,13 @@ export function register(app) {
   const mapSource = {
     over: () => {
       const e = encounter(); if (!e) return '';
-      const d = hudDesc(e, meHunter(e), false);
-      return `${d.mine ? 1 : 0}|${d.death ? 1 : 0}|${d.chips.split('class="chip').length - 1}|${d.mythic.length}`;
+      const d = hudDesc(e, meHunter(e), false, true);
+      return `${d.mine ? d.mine.length : 0}|${myDodge(e) ? 2 : otherDodge(e) ? 1 : 0}|${d.death ? 1 : 0}|${d.chips.split('class="chip').length - 1}|${d.mythic.length}`;
     },
     input: () => {
       const e = encounter(); if (!e || e.ended !== false) return null;
-      const me = meRow(e), ground = docGround(e);
-      return { fight: e.id, bodies: docBodies(e.rows, isMine, ground.grid, e.spent ?? []), grid: ground.grid, zones: ground.zones, sight: ground.sight, currentId: e.currentId, actor: me && canAct(e) && isUp(me) ? me.id : null };
+      const me = meRow(e), ground = docGround(e), dg = myDodge(e) ? docDodge(e) : null;
+      return { fight: e.id, bodies: docBodies(e.rows, isMine, ground.grid, e.spent ?? []), grid: ground.grid, zones: ground.zones, sight: ground.sight, currentId: e.currentId, actor: !e.dodge && me && canAct(e) && isUp(me) ? me.id : null, dodge: dg };
     },
     order: () => {
       const e = encounter(); if (!e || e.ended !== false) return [];
@@ -438,7 +467,17 @@ export function register(app) {
       // The map sends a consumable as a use, held as any use is (the List's goes through the bag: SMX-views-5.1)
       void app.api.uses.cast(h.id, a.id, aim);
     },
-    offTurn: () => ui.news(myTurn(encounter()) ? 'Waiting for the GM to process your last action.' : 'It is not your turn.', 'warning'),
+    dodge: to => {
+      const e = encounter(), h = meHunter(e), dg = myDodge(e); if (!e || e.ended !== false || !h || !dg) return;
+      const S = sync();
+      void app.api.uses.command(() => S.post(S.event('dodge', { by: S.myKey(h.id), n: dg.n, place: { x: to.x, y: to.y } })))
+        .then(r => { if (r && !r.ok) ui.news('Not in a room. Your dodge was not sent.', 'warn'); });
+    },
+    offTurn: () => {
+      const e = encounter(), oth = otherDodge(e);
+      if (oth) { const who = rowsOf(e).find(r => r.id === oth.who); ui.news(`Waiting for ${who ? who.name : 'another hunter'} to dodge.`, 'warning'); return; }
+      ui.news(myTurn(e) ? 'Waiting for the GM to process your last action.' : 'It is not your turn.', 'warning');
+    },
     card: id => { cardId = id; refresh(); },
     waiting: () => waitsFor(encounter()),
   };
@@ -519,7 +558,7 @@ export function register(app) {
     }
     hud.on = true;
     if (onMap) {
-      const mineWasOn = !!el.querySelector('.tb-mine'), d = hudDesc(e, h, false), first = el.firstElementChild;
+      const mineWasOn = !!el.querySelector('.tb-mine,.tb-dodge'), d = hudDesc(e, h, false, true), first = el.firstElementChild;
       if (first) {
         bind(first, { mine: d.mine, seg: d.seg, mythic: d.mythic, death: d.death, chips: d.chips });
         countStacks(first);
@@ -527,7 +566,7 @@ export function register(app) {
       if (mapView) mapView.draw();
       const sheetBox = el.querySelector('[data-tbsheet]');
       if (sheetBox) drawSheet(sheetBox, e);
-      const mineOn = el.querySelector('.tb-mine');
+      const mineOn = el.querySelector('.tb-mine,.tb-dodge');
       if (mineOn && !mineWasOn) motion.pop(mineOn);
       playBursts(el);
       return;
@@ -564,9 +603,12 @@ export function register(app) {
     when: hudOn,
     update(el) {
       const e = encounter(); if (!e || e.ended === true) return;
-      const c = curRow(e), mine = c && isMine(c);
+      const c = curRow(e), dg = myDodge(e), oth = otherDodge(e), mine = !!dg || (!oth && !!(c && isMine(c)));
+      const othWho = oth ? rowsOf(e).find(r => r.id === oth.who) : null;
       // A4: when the turn is the player's, "Your turn" is what the screen says, large, with no window over it.
-      const t = mine ? `▶ Your turn · Round ${roundIn(e)}` : `In a fight · Round ${roundIn(e)}${c ? ` · ${c.name}'s turn` : ''}`;
+      const t = dg ? `▶ Dodge now · Round ${roundIn(e)}`
+        : oth ? `In a fight · Round ${roundIn(e)} · Waiting for ${othWho ? othWho.name : 'a hunter'} to dodge`
+          : mine ? `▶ Your turn · Round ${roundIn(e)}` : `In a fight · Round ${roundIn(e)}${c ? ` · ${c.name}'s turn` : ''}`;
       if (el.dataset.t !== t) {
         const was = el.dataset.mine === '1'; el.dataset.t = t; el.dataset.mine = mine ? '1' : '';
         el.innerHTML = `<p class="tb-banner${mine ? ' mine' : ''}" role="status">${esc(t)}</p>`;
@@ -580,19 +622,22 @@ export function register(app) {
     const e = encounter();
     if (inRoomPlayer() && e) {
       const cur = e.ended === false ? rowsOf(e).find(r => r.id === e.currentId) : null, mine = cur ? myKeys().find(k => k.key === cur.key) : null;
+      const dg = e.ended === false ? myDodge(e) : null, dgRow = dg ? rowsOf(e).find(r => r.id === dg.who) : null;
+      const dgMine = dgRow ? myKeys().find(k => k.key === dgRow.key) : null;
       const no = e.ended === false ? e.refused : null, was = parseTold(cues.read());
-      const r = toldAfter(e, was, { turn: mine ? mine.hid : null, refused: !!no && rowsOf(e).some(x => x.id === no.id && isMine(x)) });
+      const r = toldAfter(e, was, { turn: mine ? mine.hid : null, refused: !!no && rowsOf(e).some(x => x.id === no.id && isMine(x)), dodge: dgMine ? dgMine.hid : null });
       if (r.told !== was) cues.write(r.told); // a failed write is the store's banner
       for (const n of r.news) {
         // a threshold that went off in the GM's last command: each phone shows it once, by its count
         if (n.kind === 'burst') pendingBursts = [...n.ids];
         else if (n.kind === 'refused') ui.news(TABLE_REFUSAL_WORDS[n.reason], 'warning');
+        else if (n.kind === 'dodge') ui.news(n.ability ? `Dodge ${n.ability}. Pick a tile on the map.` : 'Dodge. Pick a tile on the map.', 'good');
         // A4: a toast, not a window: the HUD and the Status banner already say "Your turn" large, and a window would cover them.
         else if (n.kind === 'turn') { ui.news(`Your turn. Round ${roundIn(e)}.`, 'good'); app.emit('combat:turn', { hunterId: n.hid }); }
         else ui.news('The GM cleared the fight.', 'good');
       }
     }
-    const sig = e ? JSON.stringify(e.ended === true ? [e.id, e.active, e.ended] : [e.id, e.active, e.ended, e.now, e.currentId, e.rows, e.ready, e.grid, e.zones, e.armed, e.spent, e.reacts, e.left, e.burst]) + inRoomPlayer() : '';
+    const sig = e ? JSON.stringify(e.ended === true ? [e.id, e.active, e.ended] : [e.id, e.active, e.ended, e.now, e.currentId, e.rows, e.ready, e.grid, e.zones, e.armed, e.spent, e.reacts, e.left, e.burst, e.dodge]) + inRoomPlayer() : '';
     if (sig !== lastDoc) { lastDoc = sig; if (inRoomPlayer() || hud.on) refresh(); }
   }
   let lastDoc = '';

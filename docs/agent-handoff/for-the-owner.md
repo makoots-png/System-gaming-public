@@ -4,6 +4,8 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 ## Open
 
+- **Dodge picker, a hunter already in the outer ring (shipped Neon's way, Nov 24, reversible):** Fable said such a hunter should stay put with no pick, as before, because it is a free move monsters never get. Neon (game experience, its call) gave them a pick among reachable ring tiles, including Stay here, since cover inside the ring cuts damage. One line in `dodgeOptions` (`src/core/combat/space.ts`) turns it back.
+
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
 - **Rank D monster XP after the E fix (optional check):** With E monsters now at 63 XP (your 20:03 ruling), a D monster pays 75, only 1.19x an E monster (it was 3x). Rank D becomes the longest rank: 27.6 clears to reach C, about 33 clears or 17 sessions at 5% death, against 14.3 clears for E, 23.1 for C, 11.3 for B and 6.8 for A. Neon suggests raising D to 120 (17.3 clears to C) or 140 (14.8 clears to C), which keeps E 63 < D < C 250. Nothing changes until you say.

@@ -778,3 +778,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T12:12Z	arch	takeover (from-scratch 7) landed on lead-backlog; unit 6897 pass 0 fail, browser 592 + 4 load reruns alone green; shots at 360/390 reviewed
 2026-11-24T12:28Z	ops	PR 105 (takeover) merged to main
 2026-11-24T12:56Z	arch	deps-gate (pick D6) landed on lead-backlog; deps+lint 139 pass, unit 6902 pass 0 fail on this base
+2026-11-24T13:11Z	ops	PR 106 (deps-gate) merged to main
+2026-11-24T14:06Z	arch	dodge-pick landed on lead-backlog; unit 6922 pass 0 fail, browser 595 + 6 load reruns alone green; shots reviewed

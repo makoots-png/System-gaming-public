@@ -23,7 +23,7 @@ import { withKeystones } from './fixtures/keystone-rules.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, line, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
-import { DOC_MYTHICS, DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
+import { DOC_MYTHICS, DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire, tilesOfRuns } from '../src/core/combat/fight-doc.ts';
 import type { DocContext, FightDoc, FightDocRow } from '../src/core/combat/fight-doc.ts';
 import type { DeviceId, SheetKey } from '../src/core/ids.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
@@ -721,5 +721,39 @@ describe('keystones on the table (notes-11-keystones.md, design A.9 and A.10, un
     const crowdedRead = roundTrip(crowded, RULES);
     expect(rowIn(crowdedRead, 'B').statuses[0]!.def, 'overflowed custom status never borrows the shipped keystone def').toBeUndefined();
     expect(rowIn(crowdedRead, 'B').statuses[0]!.label).toBe('Momentum');
+  });
+});
+
+describe('dodge prompt in the fight doc', () => {
+  const BLAST = abilityOf('blast', { id: abilityId('fireball'), name: 'Fireball' }, RULES);
+  const blast = { ...BLAST, range: tiles(20), delivery: { kind: 'travel' as const, windup: tick(1200), speed: 'instant' as const } };
+
+  test('round-trips through fightWire and DOCS.fight, and shows earlier dodger at its chosen tile for the next hunter', () => {
+    const f0 = play(
+      add(row('A', 'party', { place: place(5, 5) }), row('B', 'party', { place: place(6, 5) }), row('M', 'foe', { place: place(1, 5), abilities: [blast] })),
+      start(['A', 1], ['B', 1], ['M', 20]),
+    );
+    const f1 = reduce(f0, { type: 'act', by: id('M'), ability: blast.id, aim: place(5, 5), rolls: { dice: { A: [4], B: [4] } as never, react: { A: 20, B: 20 } as never } }, ctx).fight!;
+    const d1 = live(fightDoc(f1, RULES, docCtx()));
+    expect(d1.dodge).toBeDefined();
+    expect(d1.dodge!.n).toBe(1);
+    expect(d1.dodge!.who).toBe(id('A'));
+    expect(d1.dodge!.by).toBe(id('M'));
+    expect(d1.dodge!.ability).toBe('Fireball');
+    expect(d1.dodge!.mode).toBe('out');
+    expect(tilesOfRuns(d1.dodge!.tiles, d1.grid.w * d1.grid.h).length).toBeGreaterThanOrEqual(2);
+    const w1 = JSON.parse(JSON.stringify(fightWire(d1)));
+    expect(DOCS.fight(w1)).toEqual(d1);
+
+    // Hunter A picks its auto tile; Hunter B's doc now shows Hunter A at that chosen tile and excludes it from B's tiles
+    const pickA = place(d1.dodge!.auto.x, d1.dodge!.auto.y);
+    const f2 = reduce(f1, { type: 'dodge', id: id('A'), to: pickA }, ctx).fight!;
+    const d2 = live(fightDoc(f2, RULES, docCtx()));
+    expect(d2.dodge!.n).toBe(2);
+    expect(d2.dodge!.who).toBe(id('B'));
+    expect(rowIn(d2, 'A').place).toEqual({ x: pickA.x, y: pickA.y });
+    const bTiles = tilesOfRuns(d2.dodge!.tiles, d2.grid.w * d2.grid.h);
+    expect(bTiles).not.toContain(pickA.y * d2.grid.w + pickA.x);
+    expect(DOCS.fight(JSON.parse(JSON.stringify(fightWire(d2))))).toEqual(d2);
   });
 });

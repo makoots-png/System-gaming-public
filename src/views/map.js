@@ -90,6 +90,9 @@ export function register(app) {
 .mp-sh.reach{fill:color-mix(in srgb,var(--sc) 8%,transparent);stroke:color-mix(in srgb,var(--sc) 34%,transparent);stroke-width:1.5px}
 .mp-sh.ring{fill:color-mix(in srgb,var(--sc) 16%,transparent);stroke:color-mix(in srgb,var(--sc) 55%,transparent);stroke-width:1.5px;stroke-dasharray:5 4}
 .mp-sh.splash{fill:color-mix(in srgb,var(--sc) 34%,transparent);stroke:var(--sc);stroke-width:2px}
+.mp-ddots{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.mp-ddot{fill:var(--cyan);stroke:var(--ground);stroke-width:1.5px;opacity:.9}
+.mp-ddot.on{fill:var(--gold);stroke:var(--ground);stroke-width:2px;opacity:1}
 .mp-tok{position:absolute;left:0;top:0;width:${TILE}px;height:${TILE}px;min-height:0;min-width:0;padding:0;border:none;background:none;display:grid;place-items:center;color:var(--ice)}
 .mp-disc{position:relative;width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:var(--panel,#0a1a2e);font:700 12px/1 var(--font-mono);letter-spacing:.02em}
 .mp-tok.foe .mp-disc{border-radius:7px;color:#ffd6da}
@@ -164,6 +167,7 @@ export function register(app) {
 .mp-confirm button{flex:0 0 auto}
 .mp-confirm [data-go]{max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mp-hot{display:flex;gap:6px;padding:2px 0 4px}
+.mp-hot[hidden],.mp-confirm[hidden],.mp-paint[hidden],.mp-drawer[hidden]{display:none}
 .mp-slots{flex:1 1 0;min-width:0;display:flex;gap:6px;overflow-x:auto;scroll-snap-type:x proximity;overscroll-behavior-x:contain}
 .mp-passbox{display:contents}
 .mp-slots.cut{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
@@ -202,7 +206,7 @@ export function register(app) {
     el.innerHTML = `<div class="mp">
       <ol class="mp-order" aria-label="Turn order"></ol>
       <div class="mp-frame" data-frame>
-        <div class="mp-world" data-world><div class="mp-ground"><div class="mp-floor"></div><div class="mp-layer" data-terrain></div><svg class="mp-walls" data-walls aria-hidden="true"></svg><svg class="mp-zones" data-zones aria-hidden="true"></svg><svg class="mp-fog" data-fog aria-hidden="true"></svg></div><div class="mp-layer" data-zlabels aria-hidden="true"></div><svg class="mp-shades" data-area aria-hidden="true"></svg><svg class="mp-lines" data-lines aria-hidden="true"></svg><div class="mp-layer" data-tokens></div><div class="mp-says" data-says></div><div class="mp-layer" data-fx></div></div>
+        <div class="mp-world" data-world><div class="mp-ground"><div class="mp-floor"></div><div class="mp-layer" data-terrain></div><svg class="mp-walls" data-walls aria-hidden="true"></svg><svg class="mp-zones" data-zones aria-hidden="true"></svg><svg class="mp-fog" data-fog aria-hidden="true"></svg></div><div class="mp-layer" data-zlabels aria-hidden="true"></div><svg class="mp-shades" data-area aria-hidden="true"></svg><svg class="mp-ddots" data-ddots aria-hidden="true"></svg><svg class="mp-lines" data-lines aria-hidden="true"></svg><div class="mp-layer" data-tokens></div><div class="mp-says" data-says></div><div class="mp-layer" data-fx></div></div>
         <p class="mp-news" data-news role="status" aria-live="polite" hidden></p>
         <p class="mp-sending" data-sending hidden></p>
         <p class="mp-seenas" data-seenas hidden></p>
@@ -356,6 +360,7 @@ export function register(app) {
             break;
           }
           case 'pass': if (src.pass) src.pass(); break;
+          case 'dodge': if (src.dodge) src.dodge(fx.to); break;
           case 'along': along = { id: fx.id, tiles: fx.tiles }; break;
           default: break;
         }
@@ -454,7 +459,7 @@ export function register(app) {
       const cb = control ? /** @type {any} */ (/** @type {Element} */ (ev.target).closest('button, [data-mapdt]')) : null, cr = cb ? cb.getBoundingClientRect() : null;
       const press = control
         ? { on: 'control', control, area: { x0: cr.left - box.left, y0: cr.top - box.top, x1: cr.right - box.left, y1: cr.bottom - box.top }, off: !!cb.disabled, hold: control.startsWith('ab:') || control.startsWith('arm:') ? motion.ms('hold') : null }
-        : { on: 'map', mode: brush ? 'paint' : src.place ? 'arrange' : 'look', target: tok ? targetOf(tok) : { tok: null, tile: tileOf(at) } };
+        : { on: 'map', mode: scene && scene.focus.kind === 'dodge' ? 'look' : brush ? 'paint' : src.place ? 'arrange' : 'look', target: tok ? targetOf(tok) : { tok: null, tile: tileOf(at) } };
       feed({ kind: 'down', id: ev.pointerId, t: ev.timeStamp, at, view: { ...view }, press: /** @type {any} */ (press) });
     });
     el.addEventListener('pointermove', ev => { if (g.kind !== 'idle') { const at = ptOf(ev); feed({ kind: 'move', id: ev.pointerId, t: ev.timeStamp, at, tile: tileOf(at) }); } });
@@ -603,8 +608,17 @@ export function register(app) {
         if (node.getAttribute('class') !== c) { node.setAttribute('class', c); node.dataset.shade = x.kind; }
       });
       // the area breathes in when it is a new one (another kind, another ability), not when a tile of it changes
-      const sig = f.kind === 'aim' ? `aim:${f.ability.range}:${f.ability.aim}:${f.ability.shape.kind}` : f.kind;
+      const sig = f.kind === 'aim' ? `aim:${f.ability.range}:${f.ability.aim}:${f.ability.shape.kind}` : f.kind === 'dodge' ? `dodge:${f.n}` : f.kind;
       if (sig !== areaSig) { areaSig = sig; if (scene.shades.length) void motion.enter(/** @type {any} */ (svg), 'fade'); }
+      const dots = /** @type {any} */ (el.querySelector('[data-ddots]'));
+      if (dots.getAttribute('width') !== String(w)) { dots.setAttribute('width', String(w)); dots.setAttribute('height', String(h)); }
+      const dhtml = f.kind === 'dodge'
+        ? f.tiles.map(p => {
+          const on = p.x === f.picked.x && p.y === f.picked.y;
+          return `<circle class="mp-ddot${on ? ' on' : ''}" data-dtile="${p.x},${p.y}" cx="${(p.x + 0.5) * TILE}" cy="${(p.y + 0.5) * TILE}" r="${on ? 6 : 4}"/>`;
+        }).join('')
+        : '';
+      if (dots.dataset.sig !== dhtml) { dots.dataset.sig = dhtml; dots.innerHTML = dhtml; }
     }
     /**
      * Each monster's intent as a line to its target (and its area's outline when known), or its threat's suggestion, quieter.
@@ -719,7 +733,7 @@ export function register(app) {
       });
     }
     function drawConfirm(f) {
-      const box = $('[data-confirm]'), words = $('[data-words]'), goBtn = /** @type {HTMLButtonElement} */ ($('[data-go]'));
+      const box = $('[data-confirm]'), words = $('[data-words]'), cancelBtn = /** @type {HTMLButtonElement} */ ($('[data-cancel]')), goBtn = /** @type {HTMLButtonElement} */ ($('[data-go]'));
       let say = '', label = '', on = false, show = false;
       if (f.kind === 'move' && f.path) { show = true; say = f.path.words; label = f.path.dash ? 'Dash' : 'Move'; on = true; }
       if (f.kind === 'aim') {
@@ -732,7 +746,15 @@ export function register(app) {
           say = !f.aim.ok ? 'Out of reach.' : `${hit.length ? `Hits ${hit.join(', ')}` : 'Hits nobody'}.${ring.length ? ` In outer ring (reduced damage): ${ring.join(', ')}.` : ''}`;
         }
       }
+      if (f.kind === 'dodge') {
+        show = true; on = true;
+        label = f.staying ? 'Stay here' : 'Dodge here';
+        say = f.mode === 'ring'
+          ? (f.staying ? 'No way clear. Stay here or pick another outer-ring tile.' : 'No way clear. Move to this outer-ring tile (reduced damage).')
+          : (f.ability ? `Dodge ${f.ability}. Tap a marked tile.` : 'Dodge an attack. Tap a marked tile.');
+      }
       box.hidden = !show;
+      cancelBtn.hidden = f.kind === 'dodge';
       if (words.textContent !== say) words.textContent = say;
       if (goBtn.textContent !== label) goBtn.textContent = label;
       goBtn.disabled = !on;
@@ -754,7 +776,8 @@ export function register(app) {
       ? hbDesc({ cls: `mp-hb react ${s.react}`, arm: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] })
       : hbDesc({ ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(choice.now.kind === 'aim' && choice.now.ability.id === s.id), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.answers ? `, answers the omen: ${s.answers}` : ''}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s), ...answerDesc(s) });
     function drawHotbar() {
-      const k = src.kit(), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
+      const k = scene && scene.focus.kind === 'dodge' ? null : src.kit(), bar = $('[data-hot]'), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
+      bar.hidden = !k;
       if (!k) { keyed(hot, [], hbTemplate); keyed(passBox, [], hbTemplate); dr.hidden = true; return; }
       const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf, answers: k.answers ?? {} });
       const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}">${icon(s.icon)}<span>${esc(d.name)}</span><small>${esc(d.small)}</small>${d.ans ? `<small class="ans">${esc(d.ans)}</small>` : ''}</button>`; };
@@ -780,11 +803,11 @@ export function register(app) {
     const PAINT_WORD = { wall: 'Wall', floor: 'Floor', cover: 'Cover', rough: 'Rough', pit: 'Pit' };
     /** The paint bar while the GM paints: each terrain, then each zone on the ground to spread. */
     function drawPaint() {
-      const bar = $('[data-paint]'), tog = el.querySelector('[data-painttog]');
-      if (tog) tog.setAttribute('aria-pressed', String(!!brush));
-      frame.classList.toggle('painting', !!brush);
-      bar.hidden = !brush;
-      if (!brush) return;
+      const bar = $('[data-paint]'), tog = el.querySelector('[data-painttog]'), dodging = !!(scene && scene.focus.kind === 'dodge');
+      if (tog) { tog.disabled = dodging; tog.setAttribute('aria-pressed', String(!dodging && !!brush)); }
+      frame.classList.toggle('painting', !dodging && !!brush);
+      bar.hidden = dodging || !brush;
+      if (dodging || !brush) return;
       const zones = scene.zones.filter((z, i, all) => all.findIndex(x => x.name === z.name) === i);
       const on = v => (brush.zone ? `zone:${brush.zone}` === v : `t:${brush.terrain}` === v);
       const html = [...Object.entries(PAINT_WORD).map(([t, l]) => [`t:${t}`, l]), ...zones.map(z => [`zone:${z.id}`, z.name])]
@@ -798,9 +821,10 @@ export function register(app) {
       live({ kind: 'show', fight: input ? input.fight : null });
       el.hidden = !input;
       if (!input) { scene = null; return; }
-      // a new turn, a kit without the aimed ability, or the answer to a sent move (the token then goes along its way)
-      const turned = input.actor !== choice.actor, k = src.kit(), waiting = src.waiting();
-      act({ kind: 'seen', actor: input.actor, kit: k ? k.list : null, waiting });
+      // a new turn, a kit without the aimed ability, an open dodge prompt, or the answer to a sent move
+      if (input.dodge && brush) brush = null;
+      const turned = input.actor !== choice.actor, enteredDodge = !!input.dodge && (choice.now.kind !== 'dodge' || choice.now.n !== input.dodge.n), k = src.kit(), waiting = src.waiting();
+      act({ kind: 'seen', actor: input.actor, kit: k ? k.list : null, waiting, dodge: input.dodge ? { n: input.dodge.n, auto: input.dodge.auto } : null });
       scene = mapScene({ ...input, before: zonesWas, sent: waiting ? choice.sent : null }, choice.now, app.rules());
       act({ kind: 'drawn', scene });
       const f = scene.focus;
@@ -812,8 +836,9 @@ export function register(app) {
       drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting); drawSeenAs();
       const dt = D().openIn(dtList);
       if (dt && !thingOf(dt)) D().move(dtList, { kind: 'drop', key: dt }, drawDetail); else drawDetail();
-      // a turn that comes to a body out of sight frames the map again, so the one acting is on screen
-      const lost = turned && !!scene.actor && seen.fw > 0 && !!scene.anchor && !inSight(scene.anchor);
+      // a turn or dodge that comes to a body or offered dodge tile out of sight frames the map again
+      const lost = seen.fw > 0 && ((turned && !!scene.actor && !!scene.anchor && !inSight(scene.anchor))
+        || (enteredDodge && f.kind === 'dodge' && ((!!scene.anchor && !inSight(scene.anchor)) || f.tiles.some(p => !inSight(p)))));
       live({ kind: 'drawn', tokens: scene.tokens.length > 0, over: src.over ? src.over() : '', lost });
     }
     /**

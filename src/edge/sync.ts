@@ -96,7 +96,7 @@ const ONLINE_MS = 15000;
  * A player's own moves in the GM's fight (protocol.ts `onTurn`), after which the link chases the answer: the fight doc
  * the GM's phone writes after taking it.
  */
-const FIGHT_MOVES: ReadonlySet<string> = new Set(['step', 'cast', 'pass']);
+const FIGHT_MOVES: ReadonlySet<string> = new Set(['step', 'cast', 'pass', 'dodge']);
 /** The docs a GM phone writes (the server writes `kicked`). */
 type PublishedDoc = Exclude<DocName, 'kicked'>;
 /**

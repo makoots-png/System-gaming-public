@@ -9,7 +9,7 @@ import { tallied } from './row-tally.ts';
 import type { Rules } from '../rules.ts';
 import { diceOf } from '../formula.ts';
 import type { Dice } from '../formula.ts';
-import { defaultPlace, dist, GRID_SIDE, openGrid, pathCost, place, straightCost, TERRAIN } from './space.ts';
+import { defaultPlace, dist, dodgeOptions, GRID_SIDE, openGrid, pathCost, place, straightCost, TERRAIN } from './space.ts';
 import type { Place, Shape } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
@@ -19,7 +19,7 @@ import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive, drainWords, putBy, stealthAfter } from './land.ts';
-import type { Resolved } from './resolve.ts';
+import type { DodgeAsked, DodgePick, Resolved } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { hides, hideStarts, holds } from './standing.ts';
 import { watched } from './sight.ts';
@@ -40,7 +40,7 @@ import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from './extraction.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
-import type { Command, CommandType, Ctx, Effect, Fight, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
+import type { Command, CommandType, Ctx, DodgeWait, Effect, Fight, HeldUse, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
 
 export * from './fight-types.ts';
 export { channelCan, channelStep } from './fight-channel.ts';
@@ -196,7 +196,15 @@ function after(before: Running, g: Running, by: string, said: LogLine | null, ct
 /** A row about to act or move: a holding or broken channel ends without going off. */
 const dropChannel = (u: Body): Body => u.channel && channelCan(u.channel, 'drop') ? { ...u, channel: channelStep(u.channel, { type: 'drop' }) } : u;
 
-const act: Step<'running', 'act'> = (f, cmd, ctx) => {
+/** Strips the open dodge wait from `f`, keeping `dodges` so the next prompt's counter stays monotonic. */
+const clearDodge = (f: Running): Running => { const { dodge: _, ...rest } = f; return rest; };
+/** Holds `use` on `f` while hunter `ask.who` picks one of `ask.tiles`, raising `dodges` so every prompt has a fresh `n`. */
+function askDodge(f: Running, use: HeldUse, to: DodgePick, ask: DodgeAsked): Result {
+  const n = (f.dodges ?? 0) + 1;
+  return done({ ...f, dodges: n, dodge: { n, use, to } }, [{ type: 'dodgeAsked', n, who: ask.who, mode: ask.mode, tiles: ask.tiles }]);
+}
+
+function actWith(f: Running, cmd: Extract<Command, { type: 'act' }>, picks: DodgePick, ctx: Ctx): Result {
   const R = ctx.rules, who = actor(f, cmd.by, cmd.force === true);
   if (typeof who === 'string') return refused(f, who);
   const a = who.abilities.find(x => x.id === cmd.ability);
@@ -220,13 +228,15 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
     const begun = logged({ ...withRow(f, c), zones: f.zones.filter(z => !taken.includes(z)) }, line(`${u.name} begins to channel ${a.name}.`, [u.id]), R);
     return after(f, zoneEnds(begun, landingOf(taken, f.now, R), rows, ctx), u.id, null, ctx, []);
   }
-  const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R, f.fog);
+  const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R, f.fog, picks);
+  if ('ask' in resolved) return askDodge(f, cmd, picks, resolved);
   if (resolved.ok === false) return refused(f, resolved.reason);
   // table 2.3: a use that resolved is one more spent of an ability limited a fight or a gate
   const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
   const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
   return landed(f, { a, u, rows, aim: cmd.aim, at, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
-};
+}
+const act: Step<'running', 'act'> = (f, cmd, ctx) => actWith(f, cmd, {}, ctx);
 
 /** The zones a zone price took whose end lands: those a round old or more (table 2.6). */
 const landingOf = (taken: readonly Zone[], now: Tick, R: Rules): Zone[] => taken.filter(z => zoneStep({ at: 'laid' }, { type: 'price', old: oldEnough(z, now, R) }).lands);
@@ -390,7 +400,7 @@ const critsOf = (outcomes: readonly Outcome[]): Fx => outcomes.filter(o => o.cri
  * but its dice. What follows is a use's (`landed`), the same as `act`'s. One that can land nothing (its aim gone, a
  * blink with nowhere to stand) goes off at nothing and ends, so a broken one is never owed for good.
  */
-const release: Step<'running', 'release'> = (f, cmd, ctx) => {
+function releaseWith(f: Running, cmd: Extract<Command, { type: 'release' }>, picks: DodgePick, ctx: Ctx): Result {
   const R = ctx.rules, u = rowOf(f, cmd.by);
   if (!u) return refused(f, 'unknown');
   if (!isUp(u)) return refused(f, 'down');
@@ -407,11 +417,13 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   };
   const at = placeOf(c.aim, f.rows);
   if (!at) return nothing();
-  const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R, f.fog);
+  const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R, f.fog, picks);
+  if ('ask' in r) return askDodge(f, cmd, picks, r);
   if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
   const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: off.channel, ...(turn ? {} : { at: u.at }) };
   return landed(f, { a, u, rows: f.rows, aim: c.aim, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
-};
+}
+const release: Step<'running', 'release'> = (f, cmd, ctx) => releaseWith(f, cmd, {}, ctx);
 
 /**
  * A walk on the turn: at most a stride, around bodies and walls, costing its tiles' share of a standard action. A dash
@@ -615,14 +627,15 @@ const sameAim = (x: Aim, y: Aim): boolean => typeof x === 'string' || typeof y =
  * lands, the turn is spent. A move that lands puts its `self` status on the mythic (a doom's Crescendo), and what follows
  * is any use's (`landed`). A forced act of another row is `act`'s.
  */
-const landOmen: Step<'running', 'act'> = (f, cmd, ctx) => {
+function landOmenWith(f: Running, cmd: Extract<Command, { type: 'act' }>, picks: DodgePick, ctx: Ctx): Result {
   const state = runningState(f);
-  if (state.at !== 'landing' || cmd.by !== state.id) return act(f, cmd, ctx);
+  if (state.at !== 'landing' || cmd.by !== state.id) return actWith(f, cmd, picks, ctx);
   const R = ctx.rules, u = rowOf(f, state.id)!, m = omenMove(u, R);
-  if (!m) return act(f, cmd, ctx);
+  if (!m) return actWith(f, cmd, picks, ctx);
   if (cmd.ability !== m.ability.id || !sameAim(cmd.aim, m.aim)) return refused(f, 'omenDue');
   const free = untaunted(u), rows = f.rows.map(r => r.id === u.id ? free : r);
-  const r = resolve(m.ability, free, rows, m.aim, f.grid, cmd.rolls, f.now, R, f.fog);
+  const r = resolve(m.ability, free, rows, m.aim, f.grid, cmd.rolls, f.now, R, f.fog, picks);
+  if ('ask' in r) return askDodge(f, cmd, picks, r);
   if (r.ok === false && r.reason !== 'noTarget' && r.reason !== 'range') return refused(f, r.reason);
   const used = r.ok ? retaunted(r.bodies.find(b => b.id === u.id)!, u, f.now, R) : u;
   if (!playsScript(used)) return refused(f, 'notMythic');
@@ -636,6 +649,71 @@ const landOmen: Step<'running', 'act'> = (f, cmd, ctx) => {
   const me = self ? withStatuses(stood, applyStatus(stood.statuses, statusOn(self.def, { key: self.key, source: { id: u.id, tier: u.tier }, until: null, since: f.now, settledAt: f.now })), f.now, R) : stood;
   const at = placeOf(m.aim, f.rows)!;
   return landed(f, { a: m.ability, u, rows: f.rows, aim: m.aim, at, r: { ...r, bodies: r.bodies.map(b => b.id === u.id ? me : b) }, taken: [], head: `${u.name} uses ${m.ability.name}`, by: u.id }, ctx);
+}
+const landOmen: Step<'running', 'act'> = (f, cmd, ctx) => landOmenWith(f, cmd, {}, ctx);
+
+/** Re-runs the held use of `Running.dodge` with `picks` once a dodge choice is made. */
+function runHeld(base: Running, use: HeldUse, picks: DodgePick, ctx: Ctx): Result {
+  if (use.type === 'release') return releaseWith(base, use, picks, ctx);
+  return runningState(base).at === 'landing' ? landOmenWith(base, use, picks, ctx) : actWith(base, use, picks, ctx);
+}
+
+/**
+ * Derives who is currently asked to dodge in `f` and their legal tiles by re-running the held use in ask mode.
+ * Never stored on the fight; null when no dodge is open or the held use asks nobody.
+ */
+export function dodgeAsk(f: Running, R: Rules): DodgeAsked | null {
+  const wait = f.dodge;
+  if (!wait) return null;
+  const base = clearDodge(f), use = wait.use, picks = wait.to;
+  if (use.type === 'release') {
+    const u = rowOf(base, use.by), c = u?.channel, a = c && u.abilities.find(x => x.id === c.ability), at = c && placeOf(c.aim, base.rows);
+    if (!u || !isUp(u) || !c || !channelCan(c, 'release') || !released(c, use.by === base.currentId ? 'own' : 'other') || !a || !at) return null;
+    const r = landUse(a, u, { at, paid: u, spent: c.spent }, base.rows, c.aim, base.grid, use.rolls, base.now, R, base.fog, picks);
+    return 'ask' in r ? r : null;
+  }
+  const st = runningState(base);
+  if (st.at === 'landing' && use.by === st.id) {
+    const u = rowOf(base, st.id), m = u && omenMove(u, R);
+    if (u && m && use.ability === m.ability.id && sameAim(use.aim, m.aim)) {
+      const free = untaunted(u), rows = base.rows.map(r => r.id === u.id ? free : r);
+      const r = resolve(m.ability, free, rows, m.aim, base.grid, use.rolls, base.now, R, base.fog, picks);
+      return 'ask' in r ? r : null;
+    }
+  }
+  const who = actor(base, use.by, use.force === true);
+  if (typeof who === 'string') return null;
+  const a = who.abilities.find(x => x.id === use.ability);
+  if (!a || a.channel || aimRefusal(base, use.aim)) return null;
+  const u = { ...dropChannel(who), intent: null }, rows = base.rows.map(r => r.id === u.id ? u : r);
+  const r = resolve(a, u, rows, use.aim, base.grid, use.rolls, base.now, R, base.fog, picks);
+  return 'ask' in r ? r : null;
+}
+
+/**
+ * Answers the fight's open dodge prompt: `id` is the dodging hunter (or null for the GM's override), `to` is the tile
+ * picked (or null for the automatic nearest tile `tiles[0]`). Re-runs the held step with the pick recorded.
+ */
+const pickDodge: Step<'running', 'dodge'> = (f, cmd, ctx) => {
+  const wait = f.dodge;
+  if (!wait) return refused(f, 'noDodge');
+  const ask = dodgeAsk(f, ctx.rules);
+  if (!ask) return runHeld(clearDodge(f), wait.use, wait.to, ctx);
+  if (cmd.id !== null && cmd.id !== ask.who) return refused(f, 'noDodge');
+  let chosen: Place;
+  if (cmd.to === null) {
+    chosen = ask.tiles[0]!;
+  } else if (ask.tiles.some(p => p.x === cmd.to!.x && p.y === cmd.to!.y)) {
+    chosen = cmd.to;
+  } else {
+    if (offGrid(f, cmd.to)) return refused(f, 'offGrid');
+    if (ask.bodies.some(b => b.id !== ask.who && alive(b) && b.place.x === cmd.to!.x && b.place.y === cmd.to!.y)) return refused(f, 'taken');
+    const dodger = ask.bodies.find(b => b.id === ask.who);
+    const open = dodger ? dodgeOptions(dodger.place, ask.reach, { hit: ask.hit, ring: ask.ring }, openGrid(f.grid.w, f.grid.h), []) : null;
+    if (open && open.tiles.some(p => p.x === cmd.to!.x && p.y === cmd.to!.y)) return refused(f, 'blocked');
+    return refused(f, 'noDodge');
+  }
+  return runHeld(clearDodge(f), wait.use, { ...wait.to, [ask.who]: chosen }, ctx);
 };
 
 /**
@@ -749,19 +827,24 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 // ── the table ──
 const ACTING: Row<'running'> = {
   add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, revive, status, settle: settleDue,
-  paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+  paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+};
+const DODGING: Row<'running'> = {
+  add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
+  revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, mythic: null,
+  dodge: pickDodge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, mythic: null, end: null, clear: null,
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, mythic: null, dodge: null, end: null, clear: null,
   },
   setup: {
     add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, revive, status,
     // a mythic's script starts when the fight does, so the GM's hand on it waits for the start
-    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic: null, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
-  // a running fight's three states (`runningState`): its turn's actor acts, the fight owes dice first, or a mythic lands its omen
+  // a running fight's four states (`runningState`): a hunter picks its dodge tile, its turn's actor acts, the fight owes dice first, or a mythic lands its omen
   running: {
     acting: ACTING,
     // rules-3.2: the owed dice are rolled before a turn can end (the owner, Nov 22: "Yes"). Act, move and endTurn each
@@ -769,12 +852,13 @@ const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { read
     owing: { ...ACTING, act: null, move: null, endTurn: null },
     // design B.3: the turn of a mythic whose omen stands is the omen's: it lands (or fizzles), and nothing else ends it
     landing: { ...ACTING, act: landOmen, move: null, endTurn: null, release: null, setIntent: null },
+    dodging: DODGING,
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
   // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, mythic: null, end: null, clear: () => done(null, []),
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, mythic: null, dodge: null, end: null, clear: () => done(null, []),
   },
 };
 
@@ -796,7 +880,7 @@ export type Owed =
  * them at its next look, and a paid entry is gone from the fight and never paid twice.
  */
 export function owed(f: Fight | null): Owed[] {
-  if (f?.phase !== 'running') return [];
+  if (f?.phase !== 'running' || f.dodge) return [];
   return [
     ...f.pending.map((p): Owed => ({ kind: 'settle', id: p.id, key: pendingKey(p), dice: 'due' in p ? diceOf(atTier(p.due.op.amount, p.due.tier)) : p.spread.targets.map(() => D20) })),
     ...f.rows.filter(r => r.channel?.state === 'broken' && isUp(r)).map((r): Owed => ({ kind: 'release', id: r.id })),
@@ -804,14 +888,18 @@ export function owed(f: Fight | null): Owed[] {
 }
 
 /**
- * A running fight's state: `acting`, its turn's actor may act; `owing`, it waits on dice first (`owed`, in the order
- * they are paid); `landing`, its turn's actor is mythic `id`, whose omen stands and lands now (design B.3). Read from the
- * fight as it stands, in that order, so it has no writer of its own: a pending entry paid, a broken channel gone off or
- * an omen landed leaves its state by itself.
+ * A running fight's state: `dodging`, a caught hunter picks its dodge tile; `owing`, it waits on dice first (`owed`, in
+ * the order they are paid); `landing`, its turn's actor is mythic `id`, whose omen stands and lands now (design B.3);
+ * `acting`, its turn's actor may act. Read from the fight as it stands, in that order, so it has no writer of its own.
  */
-export type RunningState = { readonly at: 'acting' } | { readonly at: 'owing'; readonly owed: readonly [Owed, ...Owed[]] } | { readonly at: 'landing'; readonly id: CombatantId };
-export const RUNNING_STATES = ['acting', 'owing', 'landing'] as const satisfies readonly RunningState['at'][];
+export type RunningState =
+  | { readonly at: 'acting' }
+  | { readonly at: 'owing'; readonly owed: readonly [Owed, ...Owed[]] }
+  | { readonly at: 'landing'; readonly id: CombatantId }
+  | { readonly at: 'dodging'; readonly dodge: DodgeWait };
+export const RUNNING_STATES = ['acting', 'owing', 'landing', 'dodging'] as const satisfies readonly RunningState['at'][];
 export function runningState(f: Running): RunningState {
+  if (f.dodge) return { at: 'dodging', dodge: f.dodge };
   const o = owed(f);
   if (o.length) return { at: 'owing', owed: o as [Owed, ...Owed[]] };
   const cur = rowOf(f, f.currentId);
@@ -849,7 +937,7 @@ function spent(f: Fight | null, g: Fight, cmd: Command): Fight {
 export function reduce(f: Fight | null, cmd: Command, ctx: Ctx): Result {
   // The table's type pairs each state with its fight and each key with the step for that command.
   const step = rowFor(f)[cmd.type] as Step<FightState, CommandType> | null;
-  if (!step) return refused(f, 'notNow');
+  if (!step) return refused(f, cmd.type === 'dodge' ? 'noDodge' : f?.phase === 'running' && f.dodge ? 'dodging' : 'notNow');
   const r = step(f as never, cmd as never, ctx);
   if (!r.fight || r.fight === f) return r;
   const g = marked(explored(spent(f, r.fight, cmd)));

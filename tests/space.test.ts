@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { TERRAIN, defaultPlace, dist, dodge, feet, inShape, openGrid, pathCost, percent, place, reachable, sees, seenBy, shovePath, straightCost, straightPath, tiles, tilesOf, walkPath } from '../src/core/combat/space.ts';
+import { TERRAIN, defaultPlace, dist, dodge, dodgeOptions, feet, inShape, openGrid, pathCost, percent, place, reachable, sees, seenBy, shovePath, straightCost, straightPath, tiles, tilesOf, walkPath } from '../src/core/combat/space.ts';
 import type { Cover, Grid, Place, Shape, SpaceRules, Terrain } from '../src/core/combat/space.ts';
 import { rng } from './models/fight-play.ts';
 
@@ -292,6 +292,23 @@ describe('stepping away from a use (rule 8a)', () => {
 
   test('a target already out of the shape stays out where it is', () => {
     expect(dodge(place(8, 8), tiles(3), cover, grid, [])).toEqual({ avoid: 'out', to: place(8, 8) });
+  });
+
+  test('dodgeOptions lists every reachable out tile nearest first, and tiles[0] matches automatic dodge', () => {
+    const out = dodgeOptions(target, tiles(3), cover, grid, [])!;
+    expect(out.avoid).toBe('out');
+    expect(out.tiles.length).toBeGreaterThan(1);
+    expect(out.tiles[0]).toEqual(dodge(target, tiles(3), cover, grid, []).to);
+    expect(dodgeOptions(target, tiles(1), cover, grid, [])).toBeNull();
+  });
+
+  test('dodgeOptions in ring-only mode includes staying put first when already in the outer ring, plus other reachable ring tiles', () => {
+    const inRing = place(2, 6);
+    const opts = dodgeOptions(inRing, tiles(1), cover, grid, [place(1, 5), place(1, 6), place(1, 7), place(2, 7)])!;
+    expect(opts.avoid).toBe('ring');
+    expect(opts.tiles[0]).toEqual(inRing);
+    expect(opts.tiles.length).toBeGreaterThanOrEqual(2);
+    expect(dodge(inRing, tiles(1), cover, grid, [place(1, 5), place(1, 6), place(1, 7), place(2, 7)])).toEqual({ avoid: 'ring', to: inRing });
   });
 });
 

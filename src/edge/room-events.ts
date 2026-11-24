@@ -152,6 +152,7 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   step: GM_ONLY_READS,
   cast: GM_ONLY_READS,
   pass: GM_ONLY_READS,
+  dodge: GM_ONLY_READS,
   // a player's armed reaction (kits design 8.4.2): the GM's fight takes it as its `arm`; a player's phone does nothing
   arm: GM_ONLY_READS,
   // the GM's phone keeps the call and asks the GM (src/views/coin.js)

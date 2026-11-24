@@ -28,6 +28,7 @@ import { aims, cardOf, mythicSeenOf, mythicSeenOfDoc, omenMoveOf, onMap, readyIn
 import type { MythicSeen } from './fight-view.ts';
 import type { Aiming, Spot } from './fight-view.ts';
 import type { Fight, FightId } from './fight-types.ts';
+import { dodgeAsk } from './fight.ts';
 import { rowIcon } from './row-icon.ts';
 import type { HunterOf } from './row-icon.ts';
 import type { IconKey } from '../registry/icons.ts';
@@ -151,12 +152,14 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
   const viewer = viewerOf(f, as), range = rangeOf(f);
   const shown = viewer ? f.rows.filter(b => perceives(eyesOf(viewer), figureOf(b), f.grid, range)) : f.rows;
   const unseen = (b: Body): boolean => !viewer && f.rows.some(o => o.side !== b.side && isUp(o)) && !perceivedBy(otherSide(b.side), b, f);
+  const moved = f.phase === 'running' && f.dodge ? f.dodge.to : null;
   return shown.map(b => {
+    const sp = spotOf(b), atPlace = moved && Object.hasOwn(moved, b.id) ? moved[b.id]! : sp.place;
     const k = cardOf(f, b, R), i = k.intent, to = i ? at(i.target) : k.threat?.suggest ? at(k.threat.suggest) : null;
     const a = i && b.abilities.find(x => x.id === (i.channel ? i.channel.ability : b.intent?.ability));
-    const area = i && to && a && a.shape.kind === 'radius' ? (({ hit, ring }) => [...hit, ...ring])(tilesOf(a.shape, b.place, to, f.grid)) : null;
+    const area = i && to && a && a.shape.kind === 'radius' ? (({ hit, ring }) => [...hit, ...ring])(tilesOf(a.shape, atPlace, to, f.grid)) : null;
     return {
-      ...spotOf(b), name: b.name, ring: ringOf(b.side === 'party', k.hp, k.hpMax), statuses: k.statuses.length > 0, mine: mine(b),
+      id: sp.id, side: sp.side, kind: sp.kind, place: atPlace, down: sp.down, name: b.name, ring: ringOf(b.side === 'party', k.hp, k.hpMax), statuses: k.statuses.length > 0, mine: mine(b),
       stride: b.sheet.stride, dash: tiles(Math.floor(b.sheet.move)),
       bars: { hp: [k.hp, k.hpMax], mana: k.manaMax > 0 ? [k.mana, k.manaMax] : null, fatigue: k.fatigueMax > 0 ? [k.fatigue, k.fatigueMax] : null },
       extras: {
@@ -165,11 +168,35 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
         channel: k.channel && { charge: k.channel.charge, max: k.channel.max, state: k.channel.state }, taunted: k.taunt !== null,
         reacted: b.armed?.spent === true,
       },
-      aim: omenLine(mythicSeenOf(b), b.place, at, f.grid) ?? (to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null),
+      aim: omenLine(mythicSeenOf(b), atPlace, at, f.grid) ?? (to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null),
       summon: b.kind === 'summon' ? { owner: b.owner, left: k.summon } : null,
       unseen: unseen(b), word: lifeWord(b), icon: rowIcon(b, hunterOf ? hunterOf(b) : null),
     };
   });
+}
+
+/** An open dodge prompt for the map (GM's `fightDodge` or player's `docDodge`). */
+export type MapDodge = {
+  readonly n: number; readonly who: CombatantId; readonly ability: string | null; readonly mode: 'out' | 'ring';
+  readonly tiles: readonly Place[]; readonly auto: Place; readonly hit: readonly Place[]; readonly ring: readonly Place[];
+};
+/** The GM's open dodge prompt for fight `f`, or null when no dodge waits. */
+export function fightDodge(f: Fight, R: Rules): MapDodge | null {
+  if (f.phase !== 'running' || !f.dodge) return null;
+  const ask = dodgeAsk(f, R);
+  if (!ask) return null;
+  return { n: f.dodge.n, who: ask.who, ability: ask.ability.name, mode: ask.mode, tiles: ask.tiles, auto: ask.tiles[0]!, hit: ask.hit, ring: ask.ring };
+}
+/** A player's open dodge prompt decoded from the room's fight doc, or null when none is open. */
+export function docDodge(e: Extract<FightDoc, { ended: false }>): MapDodge | null {
+  const d = e.dodge;
+  if (!d) return null;
+  const { w, h } = e.grid, size = w * h, at = (i: number): Place => place(i % w, Math.floor(i / w));
+  return {
+    n: d.n, who: d.who, ability: d.ability, mode: d.mode,
+    tiles: tilesOfRuns(d.tiles, size).map(at), auto: place(d.auto.x, d.auto.y),
+    hit: tilesOfRuns(d.hit, size).map(at), ring: tilesOfRuns(d.ring, size).map(at),
+  };
 }
 
 /**
@@ -212,7 +239,8 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
 export type Selection =
   | { readonly kind: 'none' }
   | { readonly kind: 'move'; readonly to: Place }
-  | { readonly kind: 'aim'; readonly ability: Aiming; readonly at: Place | null };
+  | { readonly kind: 'aim'; readonly ability: Aiming; readonly at: Place | null }
+  | { readonly kind: 'dodge'; readonly to: Place };
 
 // ── the scene ──
 
@@ -258,7 +286,11 @@ export type MapAim = {
 export type MapFocus =
   | { readonly kind: 'none' }
   | { readonly kind: 'move'; readonly stride: readonly Place[]; readonly dash: readonly Place[]; readonly path: MapPath | null }
-  | { readonly kind: 'aim'; readonly ability: Aiming; readonly reach: readonly Place[]; readonly targets: readonly CombatantId[]; readonly aim: MapAim | null };
+  | { readonly kind: 'aim'; readonly ability: Aiming; readonly reach: readonly Place[]; readonly targets: readonly CombatantId[]; readonly aim: MapAim | null }
+  | {
+    readonly kind: 'dodge'; readonly n: number; readonly who: CombatantId; readonly ability: string | null; readonly mode: 'out' | 'ring';
+    readonly tiles: readonly Place[]; readonly hit: readonly Place[]; readonly ring: readonly Place[]; readonly picked: Place; readonly staying: boolean;
+  };
 /** A tile that is not floor, for the drawing (a fight with no map has none). */
 export type MapTerrain = { readonly place: Place; readonly terrain: Terrain };
 
@@ -338,6 +370,8 @@ function shadesOf(f: MapFocus): Shade[] {
       const tone: Tone = f.ability.aim === 'ally' || f.ability.aim === 'self' ? 'helpful' : 'hostile';
       return [...shade('reach', tone, f.reach), ...shade('ring', tone, f.aim ? f.aim.ring : []), ...shade('splash', tone, f.aim ? f.aim.splash : [])];
     }
+    case 'dodge':
+      return [...shade('ring', 'hostile', f.ring), ...shade('splash', 'hostile', f.hit), ...shade('stride', 'move', f.tiles), ...shade('way', 'move', [f.picked])];
     default: return f satisfies never;
   }
 }
@@ -428,6 +462,8 @@ export type MapInput = {
   readonly before?: readonly MapZoneIn[];
   /** A move this phone sent that the GM's phone has not answered: the way it asked for stays drawn until the answer. */
   readonly sent?: { readonly by: CombatantId; readonly way: readonly Place[] } | null;
+  /** An open dodge prompt this viewer can answer (GM, or the dodging hunter's phone); null otherwise. */
+  readonly dodge?: MapDodge | null;
 };
 type MapRules = Pick<Rules, 'fight'>;
 
@@ -567,7 +603,13 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   if (grid.tiles) grid.tiles.forEach((t, i) => { if (t !== 'floor') terrain.push({ place: place(i % grid.w, Math.floor(i / grid.w)), terrain: t }); });
   const sight = input.sight ?? null;
   const user = shown.find(b => b.id === input.actor && !b.down) ?? null;
-  const focus: MapFocus = user ? focusOf(user, shown, grid, sel, R) : { kind: 'none' };
+  const dg = input.dodge ?? null, dodger = dg ? shown.find(b => b.id === dg.who) ?? null : null;
+  const focus: MapFocus = dg && sel.kind === 'dodge'
+    ? (picked => ({
+      kind: 'dodge', n: dg.n, who: dg.who, ability: dg.ability, mode: dg.mode, tiles: dg.tiles, hit: dg.hit, ring: dg.ring,
+      picked, staying: !!dodger && same(picked, dodger.place),
+    }))(has(dg.tiles, sel.to) ? sel.to : dg.auto)
+    : user && sel.kind !== 'dodge' ? focusOf(user, shown, grid, sel, R) : { kind: 'none' };
   const aimedAt = focus.kind === 'aim' && focus.aim ? focus.aim.target : null;
   const plates = platesOf(shown, grid, aimedAt ? [aimedAt] : []);
   const tokens: MapToken[] = shown.map(b => ({
@@ -600,14 +642,16 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
     const a = b.aim!, meet = ends(a.to);
     return { from: b.id, at: b.place, to: a.to, kind: a.kind, revealed: a.revealed, loops: a.area ? outline(a.area) : [], words: a.words, nth: meet.indexOf(b), of: meet.length };
   });
-  const frame = frameOf(grid, tokens.map(t => t.place), [...terrain.map(t => t.place), ...zones.flatMap(z => z.tiles)]);
-  const anchor = (user ?? shown.find(b => b.mine) ?? shown.find(b => b.id === input.currentId) ?? null)?.place ?? null;
+  const framePoints = focus.kind === 'dodge' ? [...(dodger ? [dodger.place] : []), focus.picked, ...focus.hit, ...focus.ring] : tokens.map(t => t.place);
+  const frame = frameOf(grid, framePoints, [...terrain.map(t => t.place), ...zones.flatMap(z => z.tiles)]);
+  const dodgeAnchor = focus.kind === 'dodge' && dodger ? place(Math.round((dodger.place.x + focus.picked.x) / 2), Math.round((dodger.place.y + focus.picked.y) / 2)) : null;
+  const anchor = dodgeAnchor ?? (dodger ?? user ?? shown.find(b => b.mine) ?? shown.find(b => b.id === input.currentId) ?? null)?.place ?? null;
   const walls = outline(terrain.filter(t => t.terrain === 'wall').map(t => t.place));
   const eyes = input.eyes ? { name: input.eyes.name, down: bodies.find(b => b.id === input.eyes!.id)?.down ?? false } : null;
   return { w: grid.w, h: grid.h, terrain, walls, tokens, actor: user ? user.id : null, focus, shades: focus.kind === 'none' && input.sent && input.sent.way.length ? [{ kind: 'way', tone: 'move', loops: outline(input.sent.way) }] : shadesOf(focus), lines, zones, fog, frame, anchor, eyes };
 }
 
-function focusOf(user: MapBody, shown: readonly MapBody[], grid: Grid, sel: Selection, R: MapRules): MapFocus {
+function focusOf(user: MapBody, shown: readonly MapBody[], grid: Grid, sel: Exclude<Selection, { readonly kind: 'dodge' }>, R: MapRules): MapFocus {
   if (sel.kind === 'aim') return aimFocus(user, shown, grid, sel.ability, sel.at);
   const others = shown.filter(b => b.id !== user.id).map(b => b.place);
   const { walks, stride, dash } = area(user, others, grid);
@@ -657,6 +701,7 @@ export type Tap =
   | { readonly kind: 'card'; readonly id: CombatantId }
   | { readonly kind: 'moveTo'; readonly to: Place }
   | { readonly kind: 'aimAt'; readonly at: Place }
+  | { readonly kind: 'dodgeTo'; readonly to: Place }
   | { readonly kind: 'refuse'; readonly reason: 'range' }
   | { readonly kind: 'cancel' }
   /** A tap on a zone and nothing else: the map says its name. */
@@ -678,40 +723,49 @@ export function tapOn(scene: MapScene, p: Place): Tap {
       if (token && f.targets.includes(token.id)) return { kind: 'aimAt', at: p };
       if (token && token.id !== scene.actor && (f.ability.aim === 'ally') === (scene.tokens.find(t => t.id === scene.actor)?.side === token.side)) return { kind: 'refuse', reason: 'range' };
       return { kind: 'cancel' };
+    case 'dodge':
+      if (has(f.tiles, p)) return { kind: 'dodgeTo', to: p };
+      if (token) return { kind: 'card', id: token.id };
+      return { kind: 'nothing' };
     default: return f satisfies never;
   }
 }
 
 // ── the choice: select, pick, aim, confirm (docs/state-machines.md, "What the map has chosen") ──
 
-/** What the viewer has chosen: nothing, a tile to move to, or an ability of its kit with the tile it is aimed at. */
+/** What the viewer has chosen: nothing, a tile to move to, an ability of its kit with the tile it is aimed at, or a dodge tile for prompt `n`. */
 export type Chosen =
   | { readonly kind: 'none' }
   | { readonly kind: 'move'; readonly to: Place }
-  | { readonly kind: 'aim'; readonly ability: Ability; readonly at: Place | null };
-export const CHOSEN_KINDS = ['none', 'move', 'aim'] as const satisfies readonly Chosen['kind'][];
+  | { readonly kind: 'aim'; readonly ability: Ability; readonly at: Place | null }
+  | { readonly kind: 'dodge'; readonly n: number; readonly to: Place };
+export const CHOSEN_KINDS = ['none', 'move', 'aim', 'dodge'] as const satisfies readonly Chosen['kind'][];
 /**
  * The map's choice. `now` is drawn (it is the scene's `Selection`). `taps` is what the last taps changed, oldest first,
  * at most two, so a double tap puts back what its two taps chose. `actor` is whose turn this viewer plays as last
  * drawn: a new one starts with nothing chosen. `drawer`: the hotbar's More is open. `sent`: a move this phone sent
  * that the GM's phone has not answered; its way stays drawn until the answer, and the token then goes along it.
+ * `dodgeSent`: prompt id of a dodge this phone just sent while `waiting` is true, so a redraw before the GM answers
+ * does not reopen it (and a refusal that clears `waiting` reopens it for another pick).
  */
 export type Choice = {
   readonly now: Chosen; readonly taps: readonly Chosen[]; readonly actor: CombatantId | null; readonly drawer: boolean;
   readonly sent: { readonly by: CombatantId; readonly way: readonly Place[] } | null;
+  readonly dodgeSent: number | null;
 };
-export const NO_CHOICE: Choice = { now: { kind: 'none' }, taps: [], actor: null, drawer: false, sent: null };
+export const NO_CHOICE: Choice = { now: { kind: 'none' }, taps: [], actor: null, drawer: false, sent: null, dodgeSent: null };
 
 export const CHOICE_EVENTS = ['seen', 'drawn', 'tap', 'double', 'pick', 'cancel', 'go', 'pass', 'more'] as const;
 export type ChoiceEventKind = (typeof CHOICE_EVENTS)[number];
 /**
- * `seen`: a draw begins, with whose turn this viewer plays, the actor's kit, and whether this phone's last command is
- * still on its way (`MapSource.waiting`). `drawn`: the scene drawn from `now`. `tap`: a tile tapped (a token's is its
- * tile). `double`: a double tap. `pick`: an ability of the kit tapped on the hotbar. `cancel`: Cancel, or Paint turned
- * on or off. `go`: Move, Dash or Use. `pass`: End turn. `more`: the hotbar's More.
+ * `seen`: a draw begins, with whose turn this viewer plays, the actor's kit, whether this phone's last command is
+ * still on its way (`MapSource.waiting`), and the open dodge prompt (`dodge`), if any. `drawn`: the scene drawn from
+ * `now`. `tap`: a tile tapped (a token's is its tile). `double`: a double tap. `pick`: an ability of the kit tapped on
+ * the hotbar. `cancel`: Cancel, or Paint turned on or off. `go`: Move, Dash, Use or Dodge. `pass`: End turn. `more`:
+ * the hotbar's More.
  */
 export type ChoiceEvent =
-  | { readonly kind: 'seen'; readonly actor: CombatantId | null; readonly kit: readonly Ability[] | null; readonly waiting: boolean }
+  | { readonly kind: 'seen'; readonly actor: CombatantId | null; readonly kit: readonly Ability[] | null; readonly waiting: boolean; readonly dodge?: { readonly n: number; readonly auto: Place } | null }
   | { readonly kind: 'drawn'; readonly scene: MapScene }
   | { readonly kind: 'tap'; readonly scene: MapScene; readonly at: Place }
   | { readonly kind: 'double' }
@@ -722,8 +776,8 @@ export type ChoiceEvent =
   | { readonly kind: 'more' };
 /**
  * What the view carries out. `card`, `zone`: open a body's card or a zone's detail. `refuse`: the body tapped is out of
- * the ability's reach. `offTurn`: a turn's control tapped off the turn. `move`, `use`, `pass`: the commands sent.
- * `along`: the answer to a sent move came, and the token goes along the way it asked for.
+ * the ability's reach. `offTurn`: a turn's control tapped off the turn. `move`, `use`, `pass`, `dodge`: the commands
+ * sent. `along`: the answer to a sent move came, and the token goes along the way it asked for.
  */
 export type ChoiceFx =
   | { readonly kind: 'card'; readonly id: CombatantId }
@@ -732,6 +786,7 @@ export type ChoiceFx =
   | { readonly kind: 'offTurn' }
   | { readonly kind: 'move'; readonly to: Place; readonly dash: boolean }
   | { readonly kind: 'use'; readonly ability: Ability; readonly aim: CombatantId | Place; readonly at: Place }
+  | { readonly kind: 'dodge'; readonly to: Place }
   | { readonly kind: 'pass' }
   | { readonly kind: 'along'; readonly id: CombatantId; readonly tiles: readonly Place[] };
 export type Chose = { readonly choice: Choice; readonly fx: readonly ChoiceFx[] };
@@ -744,7 +799,13 @@ const kept = (choice: Choice, ...fx: ChoiceFx[]): Chose => ({ choice, fx });
 const cleared = (c: Choice): Choice => ({ ...c, now: NONE, taps: [] });
 
 const seen: ChoiceStep<'seen'> = (c, e) => {
-  let next = e.actor === c.actor ? c : { ...cleared(c), actor: e.actor, drawer: false };
+  const dodgeSent = !e.waiting || !e.dodge || e.dodge.n !== c.dodgeSent ? null : c.dodgeSent;
+  if (e.dodge) {
+    if (e.waiting && dodgeSent === e.dodge.n) return kept({ ...cleared(c), actor: e.actor, drawer: false, sent: null, dodgeSent });
+    if (c.now.kind === 'dodge' && c.now.n === e.dodge.n) return kept({ ...c, actor: e.actor, drawer: false, sent: null, dodgeSent });
+    return kept({ now: { kind: 'dodge', n: e.dodge.n, to: e.dodge.auto }, taps: [], actor: e.actor, drawer: false, sent: null, dodgeSent });
+  }
+  let next = c.now.kind === 'dodge' || e.actor !== c.actor ? { ...cleared(c), actor: e.actor, drawer: false, dodgeSent } : { ...c, dodgeSent };
   // an aimed ability is the kit's as it is now; one that left the kit is put down
   if (next.now.kind === 'aim') {
     const id = next.now.ability.id, a = (e.kit ?? []).find(x => x.id === id);
@@ -755,16 +816,19 @@ const seen: ChoiceStep<'seen'> = (c, e) => {
 };
 /** A tile to move to that the scene no longer offers (a body stepped on it, the stride shrank) is put down. */
 const drawn: ChoiceStep<'drawn'> = (c, e) => (e.scene.focus.kind === 'move' && e.scene.focus.path ? kept(c) : kept({ ...c, now: NONE }));
+/** A dodge prompt that closed before draw is put down. */
+const drawnDodge: ChoiceStep<'drawn'> = (c, e) => (e.scene.focus.kind === 'dodge' ? kept(c) : kept({ ...c, now: NONE }));
 const tapped: ChoiceStep<'tap'> = (c, e) => {
   const t = tapOn(e.scene, e.at), taps = [...c.taps, c.now].slice(-2), was = { ...c, taps };
   switch (t.kind) {
-    case 'card': return kept(was, { kind: 'card', id: t.id });
+    case 'card': return kept(c.now.kind === 'dodge' ? c : was, { kind: 'card', id: t.id });
     case 'moveTo': return kept({ ...was, now: { kind: 'move', to: t.to } });
     case 'aimAt': return kept(c.now.kind === 'aim' ? { ...was, now: { ...c.now, at: t.at } } : was);
+    case 'dodgeTo': return kept(c.now.kind === 'dodge' ? { ...c, now: { ...c.now, to: t.to }, taps: [] } : c);
     case 'refuse': return kept(was, { kind: 'refuse' });
     case 'cancel': return kept({ ...was, now: NONE });
     case 'zone': return kept(was, { kind: 'zone', id: t.id });
-    case 'nothing': return kept(was);
+    case 'nothing': return kept(c.now.kind === 'dodge' ? c : was);
     default: return t satisfies never;
   }
 };
@@ -776,12 +840,15 @@ const picked: ChoiceStep<'pick'> = (c, e) => {
   return kept({ ...c, now: { kind: 'aim', ability: e.ability, at: null }, taps: [], drawer: false });
 };
 /**
- * Move, Dash or Use sends what the scene offers for what is chosen now, and puts the choice down in the same step, so
- * a second press before the next draw (a stale scene still offers it) sends nothing, and a scene drawn before the last
- * tap or pick sends nothing either.
+ * Move, Dash, Use or Dodge sends what the scene offers for what is chosen now, and puts the choice down in the same
+ * step, so a second press before the next draw (a stale scene still offers it) sends nothing, and a scene drawn before
+ * the last tap or pick sends nothing either.
  */
 const went: ChoiceStep<'go'> = (c, e) => {
   const f = e.scene.focus, by = e.scene.actor, now = c.now;
+  if (f.kind === 'dodge' && now.kind === 'dodge' && f.n === now.n && same(f.picked, now.to)) {
+    return kept({ ...cleared(c), sent: null, dodgeSent: f.n }, { kind: 'dodge', to: f.picked });
+  }
   if (!by) return kept(c);
   if (f.kind === 'move' && f.path && now.kind === 'move' && same(f.path.to, now.to)) {
     return kept({ ...cleared(c), sent: { by, way: f.path.tiles } }, { kind: 'move', to: f.path.to, dash: f.path.dash });
@@ -801,6 +868,7 @@ const CHOICE_TABLE: { readonly [K in Chosen['kind']]: ChoiceRow } = {
   none: { seen, drawn: null, tap: tapped, double: doubled, pick: picked, cancel: cancelled, go: null, pass: passed, more },
   move: { seen, drawn, tap: tapped, double: doubled, pick: picked, cancel: cancelled, go: went, pass: passed, more },
   aim: { seen, drawn: null, tap: tapped, double: doubled, pick: picked, cancel: cancelled, go: went, pass: passed, more },
+  dodge: { seen, drawn: drawnDodge, tap: tapped, double: null, pick: null, cancel: null, go: went, pass: null, more: null },
 };
 /** The choice after `e`, and what the view carries out. The same choice and nothing to do where `e` does not apply. */
 export function choose(c: Choice, e: ChoiceEvent): Chose {

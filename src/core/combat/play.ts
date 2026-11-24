@@ -68,12 +68,20 @@ function rollsFor(f: Running, me: Body, ability: string, aim: Aim, R: Rules, ran
   return drawNeeds(n, random, weightsFor(f, me.id, n));
 }
 
-/** Pays every die `f` waits for (a per-round op, a sickness's pass, a broken channel's release), in `owed`'s order. */
+/** Pays every die and open dodge `f` waits for (open dodges with the automatic nearest tile, then `owed` in order). */
 function paid(f: Running | Ended, R: Rules, random: Random): { fight: Running | Ended; effects: Effect[] } {
   let at: Running | Ended = f;
   const effects: Effect[] = [];
-  for (let o = owed(at)[0]; o && at.phase === 'running'; o = owed(at)[0]) {
+  while (at.phase === 'running') {
     const now: Running = at;
+    if (now.dodge) {
+      const r = sent(now, { type: 'dodge', id: null, to: null }, R);
+      at = r.fight as Running | Ended;
+      effects.push(...r.effects);
+      continue;
+    }
+    const o = owed(now)[0];
+    if (!o) break;
     let cmd: Command;
     if (o.kind === 'settle') cmd = { type: 'settle', id: o.id, key: o.key, dice: drawSettle(o.dice, random, settleWeights(now, o.id, o.key)) };
     else {

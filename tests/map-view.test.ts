@@ -21,14 +21,14 @@ import type { FightDocRow } from '../src/core/combat/fight-doc.ts';
 import { aims } from '../src/core/combat/fight-view.ts';
 import { mythicScriptOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId, OmenKey } from '../src/core/combat/mythic-types.ts';
-import { EVERYTHING, NO_CHOICE, PINS, choose, docBodies, docGround, eyesChoices, fightBodies, fightGround, frameOf, hotbar, labelOf, mapScene, outline, packLetter, shortOf, tapOn, turnWords, viewAsOf } from '../src/core/combat/map-view.ts';
+import { EVERYTHING, NO_CHOICE, PINS, choose, docBodies, docDodge, docGround, eyesChoices, fightBodies, fightDodge, fightGround, frameOf, hotbar, labelOf, mapScene, outline, packLetter, shortOf, tapOn, turnWords, viewAsOf } from '../src/core/combat/map-view.ts';
 import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import type { FightDoc } from '../src/core/combat/fight-doc.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import type { DeviceId } from '../src/core/ids.ts';
 import type { IconKey } from '../src/core/registry/icons.ts';
 import { iid } from './fixtures/ids.ts';
-import type { Choice, ChoiceEvent, ChoiceFx, HotbarKit, MapBody, MapScene, Selection, ViewAs } from '../src/core/combat/map-view.ts';
+import type { Choice, ChoiceEvent, ChoiceFx, HotbarKit, MapBody, MapDodge, MapScene, Selection, ViewAs } from '../src/core/combat/map-view.ts';
 import { rng } from './models/fight-play.ts';
 import { lifeAt } from './fixtures/life.ts';
 
@@ -802,5 +802,100 @@ describe('what the map has chosen (select, pick, aim, confirm)', () => {
         old.push(fresh); if (old.length > 3) old.shift();
       }
     }
+  });
+});
+
+describe('dodge picker on the map', () => {
+  const MAP = draw([
+    '..........',
+    '...@...g..',
+    '..........',
+  ], { stride: 3, dash: 6 });
+  const DODGE: MapDodge = {
+    n: 1, who: id('@'), mode: 'out', ability: 'Blast',
+    tiles: [place(1, 1), place(2, 0), place(2, 2)], auto: place(1, 1),
+    hit: [place(3, 1)], ring: [place(2, 1), place(4, 1)],
+  };
+  const RING_DODGE: MapDodge = {
+    n: 2, who: id('@'), mode: 'ring', ability: 'Blast',
+    tiles: [place(3, 1), place(2, 1)], auto: place(3, 1),
+    hit: [place(4, 1)], ring: [place(3, 1), place(2, 1)],
+  };
+  const dodgeScene = (d: MapDodge, sel: Selection): MapScene => mapScene({ bodies: MAP.bodies, grid: MAP.grid, currentId: id('g'), actor: null, dodge: d }, sel, RULES);
+
+  test('mapScene anchors between the dodger and picked tile, shades blast/ring/offered/picked tiles, and reports staying in ring mode', () => {
+    const s = dodgeScene(DODGE, { kind: 'dodge', to: place(1, 1) });
+    expect(s.anchor).toEqual(place(2, 1));
+    expect(s.focus).toEqual({
+      kind: 'dodge', n: 1, who: id('@'), mode: 'out', ability: 'Blast',
+      tiles: DODGE.tiles, picked: place(1, 1), hit: DODGE.hit, ring: DODGE.ring, staying: false,
+    });
+    expect(s.shades.map(x => x.kind)).toEqual(['ring', 'splash', 'stride', 'way']);
+    const rs = dodgeScene(RING_DODGE, { kind: 'dodge', to: place(3, 1) });
+    expect(rs.focus.kind === 'dodge' && rs.focus.staying).toBe(true);
+    const rsMoved = dodgeScene(RING_DODGE, { kind: 'dodge', to: place(2, 1) });
+    expect(rsMoved.focus.kind === 'dodge' && rsMoved.focus.staying).toBe(false);
+  });
+
+  test('one-tap default confirm and two-tap alternate pick send dodge; off-tile, cancel, double, pick, pass are ignored', () => {
+    const opened = choose(NO_CHOICE, { kind: 'seen', actor: null, kit: null, waiting: false, dodge: { n: 1, auto: place(1, 1) } }).choice;
+    expect(opened.now).toEqual({ kind: 'dodge', n: 1, to: place(1, 1) });
+    // one-tap confirm sends the default nearest tile
+    const s1 = dodgeScene(DODGE, opened.now);
+    const oneTap = choose(opened, { kind: 'go', scene: s1 });
+    expect(oneTap.fx).toEqual([{ kind: 'dodge', to: place(1, 1) }]);
+    expect(oneTap.choice.now).toEqual({ kind: 'none' });
+    expect(oneTap.choice.dodgeSent).toBe(1);
+
+    // tapping an alternate tile updates picked; tapping off offered tiles keeps dodge open; cancel/double/pick/pass do nothing
+    const alt = choose(opened, { kind: 'tap', scene: s1, at: place(2, 2) });
+    expect(alt.choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    const s2 = dodgeScene(DODGE, alt.choice.now);
+    expect(choose(alt.choice, { kind: 'tap', scene: s2, at: place(9, 2) }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    expect(choose(alt.choice, { kind: 'cancel' }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    expect(choose(alt.choice, { kind: 'double' }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    expect(choose(alt.choice, { kind: 'pick', scene: s2, ability: STRIKE }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    expect(choose(alt.choice, { kind: 'pass', scene: s2 }).choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    // tapping a body not on an offered tile opens its card without cancelling dodge
+    const bodyTap = choose(alt.choice, { kind: 'tap', scene: s2, at: place(7, 1) });
+    expect(bodyTap.fx).toEqual([{ kind: 'card', id: id('g') }]);
+    expect(bodyTap.choice.now).toEqual({ kind: 'dodge', n: 1, to: place(2, 2) });
+    // confirm sends the alternate tile
+    expect(choose(alt.choice, { kind: 'go', scene: s2 }).fx).toEqual([{ kind: 'dodge', to: place(2, 2) }]);
+  });
+
+  test('dodgeSent suppresses reopen while waiting and reopens cleanly on refusal', () => {
+    const opened = choose(NO_CHOICE, { kind: 'seen', actor: null, kit: null, waiting: false, dodge: { n: 1, auto: place(1, 1) } }).choice;
+    const sent = choose(opened, { kind: 'go', scene: dodgeScene(DODGE, opened.now) }).choice;
+    // while waiting on the GM, seen keeps choice closed
+    const waiting = choose(sent, { kind: 'seen', actor: null, kit: null, waiting: true, dodge: { n: 1, auto: place(1, 1) } }).choice;
+    expect(waiting.now).toEqual({ kind: 'none' });
+    expect(waiting.dodgeSent).toBe(1);
+    // once waiting clears with the same dodge still open (refusal), picker reopens at auto
+    const reopened = choose(waiting, { kind: 'seen', actor: null, kit: null, waiting: false, dodge: { n: 1, auto: place(1, 1) } }).choice;
+    expect(reopened.now).toEqual({ kind: 'dodge', n: 1, to: place(1, 1) });
+    expect(reopened.dodgeSent).toBeNull();
+  });
+
+  test('docDodge decodes a FightDoc dodge prompt and fightDodge returns null when no dodge is open', () => {
+    const doc = {
+      ended: false, grid: { w: 6, h: 4, tiles: '.'.repeat(24) },
+      dodge: { n: 3, who: id('@'), by: id('g'), ability: 'Blast', mode: 'out', tiles: '0+2', auto: place(0, 0), hit: '7+1', ring: '6+1' },
+    } as unknown as Extract<FightDoc, { ended: false }>;
+    expect(docDodge(doc)).toEqual({
+      n: 3, who: id('@'), ability: 'Blast', mode: 'out',
+      tiles: [place(0, 0), place(1, 0)], auto: place(0, 0), hit: [place(1, 1)], ring: [place(0, 1)],
+    });
+    expect(docDodge({ ended: false, grid: { w: 6, h: 4, tiles: '.'.repeat(24) } } as unknown as Extract<FightDoc, { ended: false }>)).toBeNull();
+    const origin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
+    const hpMax = modified(origin, [], RULES).sheet.hpMax;
+    const row = (rId: string, name: string, side: Side, at: Place): NewRow => ({
+      id: id(rId), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', hpMax), origin, tier: 0, place: at, mana: 0, fatigue: 0, shield: null, stagger: null,
+      channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,
+      holder: side === 'party' ? { kind: 'local', hunterId: hunterId(rId) } : null, xp: 0, mythic: null,
+    } as NewRow);
+    const f0 = reduce(null, { type: 'add', fightId: fightId('f1'), rows: [row('h1', 'A', 'party', place(1, 1)), row('m1', 'G', 'foe', place(3, 1))], openings: [] }, { rules: RULES }).fight!;
+    const f1 = reduce(f0, { type: 'start', openings: [{ id: id('h1'), d20: 10, tie: 1 }, { id: id('m1'), d20: 5, tie: 2 }] }, { rules: RULES }).fight!;
+    expect(fightDodge(f1, RULES)).toBeNull();
   });
 });

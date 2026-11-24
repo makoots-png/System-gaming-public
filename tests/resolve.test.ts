@@ -5,8 +5,8 @@ import type { StatKey, Stats } from '../src/core/stats.ts';
 import { kitGear, NO_TWEAK, share } from '../src/core/hunter/derive.ts';
 import type { Archetype, Kit, MonsterKind, Sheet } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
-import { openGrid, place, tiles } from '../src/core/combat/space.ts';
-import type { Place, Side } from '../src/core/combat/space.ts';
+import { openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
+import type { Grid, Place, Side } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import type { Ability, AbilityKind, Outcome } from '../src/core/combat/ability-types.ts';
@@ -915,5 +915,92 @@ describe('heal and shield power, and damage to shield (item-stats 2)', () => {
   test('the fight\'s line says what came back: "drains 4", "stores 6", "drains 4 and stores 6", nothing for none', () => {
     expect([drainWords({ healed: 4, stored: 0 }), drainWords({ healed: 0, stored: 6 }), drainWords({ healed: 4, stored: 6 }), drainWords({ healed: 0, stored: 0 })])
       .toEqual(['drains 4', 'stores 6', 'drains 4 and stores 6', null]);
+  });
+});
+
+describe('dodge-tile ask mode in resolve', () => {
+  const blast = ability('blast', {
+    range: tiles(12),
+    shape: { kind: 'radius', radius: tiles(1), ring: { outer: tiles(2), share: percent(50) } },
+    delivery: { kind: 'travel', windup: tick(1000), speed: 'instant' },
+  }, '20');
+  const caster = body('m', monsterOrigin('caster'), place(1, 5), 'foe');
+
+  test('asks a hunter with two or more dodge tiles, and resolves monsters automatically', () => {
+    const h = body('h', hunterOrigin('speed'), place(5, 5), 'party');
+    const mob = body('f', monsterOrigin('skirmisher'), place(5, 5), 'party');
+    const asked = resolve(blast, caster, [caster, h], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, {});
+    expect('ask' in asked && asked.ask).toBe(true);
+    if ('ask' in asked) {
+      expect(asked.who).toBe(h.id);
+      expect(asked.mode).toBe('out');
+      expect(asked.tiles.length).toBeGreaterThanOrEqual(2);
+      const picked = asked.tiles.at(-1)!;
+      const done = resolve(blast, caster, [caster, h], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: picked });
+      expect('ok' in done && done.ok).toBe(true);
+      if ('ok' in done && done.ok) {
+        expect(find(done.bodies, 'h').place).toEqual(picked);
+        expect(done.outcomes[0]!.avoid).toBe('out');
+      }
+    }
+    const autoMob = resolve(blast, caster, [caster, mob], place(5, 5), GRID, rolls({ f: [] }, { f: 20 }), NOW, RULES, null, {});
+    expect('ok' in autoMob && autoMob.ok).toBe(true);
+  });
+
+  test('sequential two-hunter blast blocks the first hunter\'s chosen tile for the second hunter', () => {
+    const h1 = body('h1', hunterOrigin('speed'), place(5, 5), 'party');
+    const h2 = body('h2', hunterOrigin('speed'), place(6, 5), 'party');
+    const r = rolls({ h1: [], h2: [] }, { h1: 20, h2: 20 });
+    const ask1 = resolve(blast, caster, [caster, h1, h2], place(5, 5), GRID, r, NOW, RULES, null, {});
+    expect('ask' in ask1).toBe(true);
+    if (!('ask' in ask1)) return;
+    expect(ask1.who).toBe(h1.id);
+    const chosen1 = ask1.tiles[0]!;
+    const ask2 = resolve(blast, caster, [caster, h1, h2], place(5, 5), GRID, r, NOW, RULES, null, { [h1.id]: chosen1 });
+    expect('ask' in ask2).toBe(true);
+    if (!('ask' in ask2)) return;
+    expect(ask2.who).toBe(h2.id);
+    expect(ask2.tiles.some(p => p.x === chosen1.x && p.y === chosen1.y)).toBe(false);
+    const chosen2 = ask2.tiles[0]!;
+    const done = resolve(blast, caster, [caster, h1, h2], place(5, 5), GRID, r, NOW, RULES, null, { [h1.id]: chosen1, [h2.id]: chosen2 });
+    expect('ok' in done && done.ok).toBe(true);
+    if ('ok' in done && done.ok) {
+      expect(find(done.bodies, 'h1').place).toEqual(chosen1);
+      expect(find(done.bodies, 'h2').place).toEqual(chosen2);
+    }
+  });
+
+  test('a hunter already in the outer ring with no way clear can step onto cover inside the ring for coverShare reduction', () => {
+    const gridTiles = Array.from({ length: 7 * 7 }, () => 'floor' as const);
+    const walled: Grid = {
+      w: 7, h: 7,
+      tiles: gridTiles.map((_, i) => {
+        const x = i % 7, y = Math.floor(i / 7);
+        if (x === 2 && y === 5) return 'cover';
+        if (x === 0 || y === 0 || x === 6 || y === 6 || (x === 1 && y === 1) || (x === 5 && y === 1) || (x === 1 && y === 5) || (x === 5 && y === 5)) return 'wall';
+        return 'floor';
+      }),
+    };
+    const m = body('m', monsterOrigin('caster'), place(3, 1), 'foe');
+    const h = body('h', hunterOrigin('tank'), place(3, 5), 'party', {}, { move: tiles(2), armor: 0, resist: 0 });
+    const slowBlast = ability('blast', {
+      range: tiles(12),
+      foesOnly: true,
+      shape: { kind: 'radius', radius: tiles(1), ring: { outer: tiles(2), share: percent(50) } },
+      delivery: { kind: 'travel', windup: tick(1200), speed: 'instant' },
+    }, '40');
+    const ask = resolve(slowBlast, m, [m, h], place(3, 3), walled, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, {});
+    expect('ask' in ask).toBe(true);
+    if (!('ask' in ask)) return;
+    expect(ask.mode).toBe('ring');
+    expect(ask.tiles[0]).toEqual(h.place);
+    expect(ask.tiles).toContainEqual(place(2, 5));
+    const stayed = resolve(slowBlast, m, [m, h], place(3, 3), walled, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: h.place });
+    const covered = resolve(slowBlast, m, [m, h], place(3, 3), walled, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, { [h.id]: place(2, 5) });
+    if ('ok' in stayed && stayed.ok && 'ok' in covered && covered.ok) {
+      expect(stayed.outcomes[0]!.to).toBeNull();
+      expect(covered.outcomes[0]!.to).toEqual(place(2, 5));
+      expect(covered.outcomes[0]!.dealt).toBeLessThan(stayed.outcomes[0]!.dealt);
+    }
   });
 });

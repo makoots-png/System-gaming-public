@@ -770,6 +770,8 @@ export type MapSource = {
   card(id: CombatantId): void;
   /** The actor's row arms one of its reactions, or disarms with null (kits design 8.4.2): at any time, not only its turn. */
   arm(ability: AbilityId | null): void;
+  /** Sends a chosen dodge tile for the open dodge prompt. */
+  dodge: ((to: Place) => void) | null;
   /**
    * Whose eyes the map shows (map-view.ts `ViewAs`; kits design 8.7, feature 7): the foe rows the GM may take, the choice
    * as it reads for the fight now, and the GM's pick, kept on this phone until the GM picks again. Null on a player's phone.

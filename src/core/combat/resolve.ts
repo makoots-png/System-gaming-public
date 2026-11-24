@@ -11,8 +11,8 @@ import type { Dice, Env, Formula, KitScope, Scope } from '../formula.ts';
 import { formulaOf, tagsOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
 import type { Rules } from '../rules.ts';
-import { dist, dodge, inShape, sees, shovePath, terrain, TERRAIN, tiles, tilesOf } from './space.ts';
-import type { Grid, Place, Side } from './space.ts';
+import { dist, dodge, dodgeOptions, inShape, sees, shovePath, terrain, TERRAIN, tiles, tilesOf } from './space.ts';
+import type { Grid, Place, Side, Tiles } from './space.ts';
 import { acted, delayed, extraNow, extraStep, interval, notBefore, refunded, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
@@ -81,6 +81,18 @@ export type Resolved =
     /** The shield the user's damage to shield added to what it held (land.ts `drained`), 0 for none. */
     readonly stored: number;
   };
+/** Caller-supplied dodge choices (by row id) for a use being resolved in ask mode. */
+export type DodgePick = Readonly<Record<CombatantId, Place>>;
+/**
+ * The first hunter caught in a use who has two or more tiles to dodge to, before damage or statuses land. `bodies` holds
+ * the rows with any earlier target's dodge already applied and no damage taken yet.
+ */
+export type DodgeAsked = {
+  readonly ask: true; readonly who: CombatantId; readonly by: CombatantId; readonly ability: Ability;
+  readonly mode: 'out' | 'ring'; readonly reach: Tiles; readonly tiles: readonly Place[];
+  readonly hit: readonly Place[]; readonly ring: readonly Place[]; readonly bodies: readonly Body[];
+};
+export type ResolvedOrAsk = Resolved | DodgeAsked;
 export type ResolveRules = OpRules & Pick<Rules, 'dice'>;
 
 const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
@@ -141,15 +153,32 @@ const edge = (mine: number, theirs: number, R: ResolveRules): number =>
  */
 export const resists = (d20: number, will: number, aim: number, R: ResolveRules): boolean => d20 === 20 || d20 + edge(will, aim, R) >= R.fight.resistDc;
 
-// Rule 8a and 8b: where the target ends. A self, ally or sure use is caught.
-function whereItEnds(a: Ability, user: Body, target: Body, bodies: readonly Body[], at: Place, grid: Grid, d20: number | undefined, R: ResolveRules): { avoid: Avoid; to: Place | null } {
+// Rule 8a and 8b: where the target ends. A self, ally or sure use is caught. With `picks` given, a hunter with two or
+// more tiles to dodge to (and no pick yet) answers a `DodgeAsked` so the fight can ask its player where to go.
+function whereItEnds(
+  a: Ability, user: Body, fromPlace: Place, target: Body, bodies: readonly Body[], at: Place, grid: Grid, d20: number | undefined, R: ResolveRules, picks?: DodgePick,
+): { avoid: Avoid; to: Place | null } | DodgeAsked {
   if (!rollsReaction(a) || d20 === undefined) return { avoid: 'caught', to: null };
   if (a.delivery.kind === 'direct') return { avoid: resists(d20, target.sheet.will, user.sheet.aim, R) ? 'resisted' : 'caught', to: null };
   const land = landTime(a, user, target, R) ?? 0;
   const share = clamp((d20 + edge(target.sheet.react, user.sheet.aim, R)) / 20, 0, 1);
   const can = tiles(Math.floor(target.sheet.move * land * share));
   const others = bodies.filter(b => b.id !== target.id && alive(b)).map(b => b.place);
-  const end = dodge(target.place, can, tilesOf(a.shape, user.place, at, grid), grid, others);
+  const cover = tilesOf(a.shape, fromPlace, at, grid);
+  if (picks && target.kind === 'hunter') {
+    const opts = dodgeOptions(target.place, can, cover, grid, others);
+    if (!opts) return { avoid: 'caught', to: null };
+    if (Object.hasOwn(picks, target.id)) {
+      const want = picks[target.id]!, chosen = opts.tiles.some(p => samePlace(p, want)) ? want : opts.tiles[0]!;
+      return { avoid: opts.avoid, to: !samePlace(chosen, target.place) ? chosen : null };
+    }
+    if (opts.tiles.length >= 2) {
+      return { ask: true, who: target.id, by: user.id, ability: a, mode: opts.avoid, reach: can, tiles: opts.tiles, hit: cover.hit, ring: cover.ring, bodies };
+    }
+    const only = opts.tiles[0]!;
+    return { avoid: opts.avoid, to: !samePlace(only, target.place) ? only : null };
+  }
+  const end = dodge(target.place, can, cover, grid, others);
   return { avoid: end.avoid, to: end.avoid !== 'caught' && !samePlace(end.to, target.place) ? end.to : null };
 }
 
@@ -519,16 +548,22 @@ export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim
  * fight, the user among them, and `fog` its fog; the result holds them all, changed where the use changed them. Rule 1
  * (whose turn it is) and rule 20 (the log) are the reducer's.
  */
-export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null): Resolved {
+export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog?: Fog | null): Resolved;
+export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null, picks: DodgePick): ResolvedOrAsk;
+export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null, picks?: DodgePick): ResolvedOrAsk {
   const r = ready(a, user, bodies, aim, grid, now, R, fog);
-  return typeof r === 'string' ? { ok: false, reason: r } : landUse(a, user, r, bodies, aim, grid, rolls, now, R, fog);
+  if (typeof r === 'string') return { ok: false, reason: r };
+  return picks ? landUse(a, user, r, bodies, aim, grid, rolls, now, R, fog, picks) : landUse(a, user, r, bodies, aim, grid, rolls, now, R, fog);
 }
 /**
  * Rules 5b to 19: a use that `ready` let through lands. A channel's release lands this way with what its begin paid, so
  * nothing is asked or paid twice; it can still be refused for a missing roll, a blink with nowhere to stand, or no body
- * in its shape for an ally ability or an aimed body.
+ * in its shape for an ally ability or an aimed body. With `picks` given, a hunter with two or more dodge tiles pauses
+ * before damage or statuses land (`DodgeAsked`).
  */
-export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null): Resolved {
+export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog?: Fog | null): Resolved;
+export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null, picks: DodgePick): ResolvedOrAsk;
+export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null, picks?: DodgePick): ResolvedOrAsk {
   const { at } = ok, hiding = hides(a);
   const f = field(a, user, ok.paid, bodies, at, grid, now, R);
   if (typeof f === 'string') return { ok: false, reason: f };
@@ -542,16 +577,26 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
   if (missing) return { ok: false, reason: 'needsRoll' };
 
   const rows = new Map(f.bodies.map(b => [b.id, b] as const));
-  const snap = snapshot(from, [...rows.values()], hit.length + ring.length, ok.spent, now, R);
+  const targets = [...hit, ...ring];
+  const d20s = new Map<CombatantId, number | undefined>(), ends = new Map<CombatantId, { avoid: Avoid; to: Place | null }>();
+  // Pass 1: every target dodges in order before any damage or status lands, so a hunter's pick never leaks an earlier target's fate.
+  for (const first of targets) {
+    const u = rows.get(user.id)!, t = rows.get(first.id)!;
+    const d20 = rollsReaction(a) ? keptFace(a, u, t, rolls) : rolls.react[t.id];
+    d20s.set(t.id, d20);
+    const end = whereItEnds(a, u, from.place, t, [...rows.values()], at, grid, d20, R, answers.negate?.has(t.id) ? undefined : picks);
+    if ('ask' in end) return end;
+    ends.set(t.id, end);
+    if (end.to) rows.set(t.id, { ...t, place: end.to });
+  }
+  const snap = snapshot(rows.get(user.id)!, [...rows.values()], targets.length, ok.spent, now, R);
   const outcomes: Outcome[] = [], bursts: Burst[] = [];
   // the HP the use took from bodies other than its user, its hit's and its ops' as they land: what its lifesteal reads
   let lost = 0;
-  for (const first of [...hit, ...ring]) {
+  for (const first of targets) {
     const u = rows.get(user.id)!;
     let t = rows.get(first.id)!;
-    const d20 = rollsReaction(a) ? keptFace(a, u, t, rolls) : rolls.react[t.id], dice = rolls.dice[t.id] ?? [];
-    const end = whereItEnds(a, u, t, [...rows.values()], at, grid, d20, R);
-    if (end.to) t = { ...t, place: end.to };
+    const d20 = d20s.get(t.id), dice = rolls.dice[t.id] ?? [], end = ends.get(t.id)!;
     const type = a.effect?.type ?? null;
     // rule 7c: a negate leaves the use nothing more to do to the one it protects (kits design 8.4.5)
     if (end.avoid === 'out' || answers.negate?.has(t.id)) { rows.set(t.id, t); outcomes.push(outcome(t.id, 'out', end.to, type)); continue; }

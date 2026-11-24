@@ -44,8 +44,8 @@ import type { Fight, FightId, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
-import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, keystoneStatusDef, unpackBits } from './combat/fight-doc.ts';
-import type { Band, DocBurst, DocChannel, DocGrid, DocIntent, DocStanding, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
+import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_DODGE_RUNS, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, keystoneStatusDef, unpackBits } from './combat/fight-doc.ts';
+import type { Band, DocBurst, DocChannel, DocDodge, DocGrid, DocIntent, DocStanding, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
 import { TERRAIN, TERRAINS } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
 import { isMythicScriptId, mythicScriptOf, omensOf } from './registry/mythics.ts';
@@ -421,6 +421,8 @@ export type PassPayload = Base & { by: SheetKey; at: Tick };
  * any time, since it changes nothing but its own row: the GM's phone turns it into the fight's `arm`.
  */
 export type ArmPayload = Base & { by: SheetKey; ability: AbilityId | null; on: CombatantId | null };
+/** A player's chosen dodge tile `place` for the GM's open dodge prompt `n` (matched by `onDodge`). Sealed to GM and sender. */
+export type DodgePayload = Base & { by: SheetKey; n: number; place: { x: number; y: number } };
 /**
  * The GM's Job Change chain on a player's phone (src/core/hunter/job-chain.ts): `issue` starts one for `job`; `reissue`
  * and `abandon` act on the hunter's failed chain (`job` is the chain's, for the words).
@@ -517,7 +519,7 @@ export type GuildPayload = Base & { to: [SheetKey]; guild: GuildMembership | nul
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
-  roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
+  roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; dodge: DodgePayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
@@ -672,6 +674,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     };
   } },
   pass: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), at: time0(own(o, 'at')) }) },
+  dodge: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), n: int(1, MAX_TOTAL)(own(o, 'n')), place: tile(own(o, 'place')) }) },
   arm: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
     const ability = own(o, 'ability'), on = own(o, 'on');
     const id = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max ? v : refuse();
@@ -739,7 +742,7 @@ type EventEntry<K extends EventType> = {
 export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'), stashAsk: entry('stashAsk'), stashAnswer: entry('stashAnswer'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
-  revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
+  revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'), dodge: entry('dodge'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
@@ -842,9 +845,19 @@ export function onTurn(f: Fight | null, p: Pick<StepPayload | CastPayload | Pass
   return row && who?.holder?.kind === 'remote' && parseSheetKey(who.holder.remote) === p.by ? row.id : null;
 }
 
+/**
+ * The row a player's `dodge` answers in the GM's fight: the remote hunter row of `p.by` when the fight holds an open
+ * dodge prompt matching `p.n`. Else null (stale `n` or no matching remote hunter), and the GM's phone ignores it.
+ */
+export function onDodge(f: Fight | null, p: Pick<DodgePayload, 'by' | 'n'>): CombatantId | null {
+  if (f?.phase !== 'running' || !f.dodge || f.dodge.n !== p.n) return null;
+  const row = f.rows.find(r => r.holder?.kind === 'remote' && parseSheetKey(r.holder.remote) === p.by);
+  return row ? row.id : null;
+}
+
 // ── room documents: the latest state the GM publishes (stored as sheet rows whose key starts with '_') ──
 export { BANDS };
-export type { Band, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './combat/fight-doc.ts';
+export type { Band, DocDodge, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './combat/fight-doc.ts';
 /**
  * The longest room doc the server stores, in characters of its JSON. The fight doc is the longest. Its worst-case row is
  * a monster with a 60-character name, the six longest built-in statuses, a shield with its rounds left, a stagger bar with
@@ -1162,16 +1175,31 @@ function withinMythics(rows: FightDocRow[]): FightDocRow[] {
 function fightDocOf(o: Rec): FightDoc {
   const docId = fightId(id(own(o, 'id'))), at = text(40)(own(o, 'at'));
   if (own(o, 'ended') === true) return { ended: true, active: false, id: docId, at };
-  const defs = docDefs(own(o, 'defs'));
+  const defs = docDefs(own(o, 'defs')), grid = docGrid(own(o, 'grid'));
   return {
     ended: false, active: bool(own(o, 'active')), by: deviceId(own(o, 'by')), id: docId, at, now: time0(own(o, 'now')),
-    currentId: nullOr(rowId)(own(o, 'currentId')), ahead: listOf(own(o, 'ahead'), DOC_AHEAD, rowId), grid: docGrid(own(o, 'grid')),
+    currentId: nullOr(rowId)(own(o, 'currentId')), ahead: listOf(own(o, 'ahead'), DOC_AHEAD, rowId), grid,
     zones: opt(own(o, 'zones'), v => listOf(v, MAX_ZONES, docZone), []),
     rows: withinMythics(listOf(own(o, 'rows'), DOC_ROWS, v => fightRow(v, defs))), log: listOf(own(o, 'log'), DOC_LOG, text(LOG_LINE_MAX)),
     refused: attempt(() => opt(own(o, 'refused'), nullOr(docRefusal), null)),
     ready: docReady(own(o, 'ready')), ...docLeft(own(o, 'left')), ...docIds('armed', own(o, 'armed')), ...docIds('spent', own(o, 'spent')), ...docReacts(own(o, 'reacts')),
-    ...docBurst(own(o, 'burst')),
+    ...docBurst(own(o, 'burst')), ...docDodge(own(o, 'dodge'), grid),
   };
+}
+/** An open dodge prompt on the wire (fight-doc.ts `dodgeWire`), bounded to `DOC_DODGE_RUNS` per run string; malformed reads as absent. */
+function docDodge(v: unknown, grid: DocGrid): { dodge?: DocDodge } {
+  if (!isObj(v)) return {};
+  const d = attempt((): DocDodge => {
+    const n = int(1, MAX_TOTAL)(own(v, 'n')), who = rowId(own(v, 'w'));
+    const by = opt(own(v, 'b'), rowId, null), ability = opt(own(v, 'a'), text(NAME_MAX), null);
+    const mv = own(v, 'v'), mode = mv === 0 ? 'out' : mv === 1 ? 'ring' : refuse();
+    const runs = (raw: unknown): string => { const s = text(DOC_DODGE_RUNS)(raw); return /^[0-9+,]*$/.test(s) ? s : refuse(); };
+    const tiles = runs(own(v, 't')), auto = wirePlace(own(v, 'p'));
+    if (auto.x >= grid.w || auto.y >= grid.h) return refuse();
+    const hit = opt(own(v, 'h'), runs, ''), ring = opt(own(v, 'r'), runs, '');
+    return { n, who, by, ability, mode, tiles, auto, hit, ring };
+  });
+  return d ? { dodge: d } : {};
 }
 /** At most `kit.doArmed` row ids; a bad one is dropped. */
 const rowIds = (v: unknown): CombatantId[] =>
