@@ -767,3 +767,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T04:24Z	economy	balance-fixes landed on lead-backlog: E xp 63, debt billed at post-raise rank, Ashen Drake S seed, Stair price doc-only; unit 6860 and browser 586 + 6 load reruns green
 2026-11-24T04:50Z	ops	PR 100 (balance-fixes) merged to main
 2026-11-24T06:06Z	arch	wire-codes (from-scratch 1) and fight-invariants (from-scratch 3) landed on lead-backlog; unit 6876 green, browser 588 + 5 load reruns green
+2026-11-24T06:26Z	ops	PR 101 (wire-codes + fight-invariants) merged to main
+2026-11-24T08:31Z	arch	untrack-docs (from-scratch 2), fightsim-load (fst-2, work-count budgets) and maker-roundtrip (from-scratch 4, 10 round-trip fixes) landed on lead-backlog; unit 6888 pass 0 fail, browser 592 + 5 load reruns green

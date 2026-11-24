@@ -13,6 +13,7 @@ import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { record } from './chronicle.ts';
 import type { Chronicle } from './chronicle.ts';
+import { REWARD_BOUNDS } from '../rewards.ts';
 
 type Named = { name: string; job: string | null; rank: Rank; rankBy: RankBy; level: number };
 type Titled = { titles: Title[]; titleId: string | null };
@@ -139,7 +140,7 @@ export function giveTitle<H extends Titled & Chronicled>(h: H, spec: TitleSpec, 
   const old = written?.replaces ? titleNamed(h, written.replaces, seeds) : undefined;
   // a written title's powers (powers.ts: its worn status and its active) go with it, also in another's place (the old
   // one's go with the old title)
-  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}), ...(src.band ? { band: src.band } : {}), ...(written?.worn ? { worn: written.worn } : {}), ...(written?.active ? { active: written.active } : {}) });
+  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, REWARD_BOUNDS.titleDesc), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}), ...(src.band ? { band: src.band } : {}), ...(written?.worn ? { worn: written.worn } : {}), ...(written?.active ? { active: written.active } : {}) });
   return record({ ...h, titles: old ? h.titles.map(t => (t === old ? made(old.id) : t)) : [...h.titles, made(id)] }, { kind: 'title', name });
 }
 /** Set active, or unset when it is the active one. A title the hunter does not hold is refused (`no-title`). */
@@ -154,7 +155,7 @@ export function removeTitle<H extends Titled>(h: H, id: string): H | Refused<'no
 }
 /** The GM's title form: a new title under `id`, or the words and bonus of the title `id` names. A blank name is refused. */
 export function writeTitle<H extends Titled>(h: H, id: string, fields: { name: string; desc: string; bonus: Title['bonus'] }): H | Refused<'blank'> {
-  const name = cleanName(fields.name), desc = String(fields.desc ?? '').slice(0, 200);
+  const name = cleanName(fields.name), desc = String(fields.desc ?? '').slice(0, REWARD_BOUNDS.titleDesc);
   if (!name) return refuse('blank');
   const have = h.titles.some(t => t.id === id);
   const titles = have ? h.titles.map(t => (t.id === id ? { ...t, name, desc, bonus: { ...fields.bonus } } : t)) : [...h.titles, { id, name, desc, bonus: { ...fields.bonus } }];

@@ -54,6 +54,8 @@ export function questFields(app, box, o) {
   app.ui.css('count-fields', COUNT_CSS);
   /** Each counted objective's controls, by its row (count-fields.js). */
   const counts = new WeakMap();
+  /** The initial due time ISO and its `datetime-local` string, so saving unchanged preserves seconds and milliseconds. */
+  const dueWas = { iso: null, local: '' };
 
   /** An objective's row: its label, its target and Remove, then who counts it (the GM's form): the hunter by taps, or the System by a count. */
   function addObjRow(ob = { label: '', target: 1, progress: 0 }) {
@@ -90,7 +92,12 @@ export function questFields(app, box, o) {
     if ('onFail' in d && onFail) onFail.set(d.onFail || newRewards());
     if ('penaltyText' in d && $('[name=penaltyText]')) $('[name=penaltyText]').value = d.penaltyText || '';
     if ('dueHours' in d && $('[name=dueHours]')) $('[name=dueHours]').value = d.dueHours ? String(d.dueHours) : '';
-    if ('dueAt' in d && $('[name=dueAt]')) $('[name=dueAt]').value = d.dueAt ? toLocalInput(d.dueAt) : '';
+    if ('dueAt' in d && $('[name=dueAt]')) {
+      const local = d.dueAt ? toLocalInput(d.dueAt) : '';
+      dueWas.iso = d.dueAt || null;
+      dueWas.local = local;
+      $('[name=dueAt]').value = local;
+    }
   }
   function value() {
     const kind = kindSel.value, hrs = $('[name=dueHours]') ? Number($('[name=dueHours]').value) : 0, at = $('[name=dueAt]');
@@ -100,7 +107,7 @@ export function questFields(app, box, o) {
       rewards: rewards ? rewards.value() : newRewards(), onFail: onFail ? onFail.value() : newRewards(),
       penaltyText: $('[name=penaltyText]') ? $('[name=penaltyText]').value.trim() : '',
       dueHours: Number.isFinite(hrs) && hrs > 0 ? hrs : null,
-      dueAt: at && kind === 'urgent' && at.value ? new Date(at.value).toISOString() : null,
+      dueAt: at && kind === 'urgent' && at.value ? (dueWas.iso && at.value === dueWas.local ? dueWas.iso : new Date(at.value).toISOString()) : null,
     };
   }
   /** The first thing that stops a save, in words, with the cursor put there; '' when nothing does. */

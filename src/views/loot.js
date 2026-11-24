@@ -169,7 +169,8 @@ export function register(app) {
         };
         /** The ability the form holds, named for the item; a support on the user reaches only the user. Null while its formula does not read. */
         const activeOf = name => {
-          const k = activeKind(), v = activeForm.value(ownId, name || 'Item');
+          const k = activeKind(), label = wasActive && was && name === was.name ? wasActive.name : name || 'Item';
+          const v = activeForm.value(ownId, label);
           if (!v) return null;
           const d = kindDefaults(k, rules());
           const reach = k === 'support' && M.picked(el, 'aaim') === 'self' ? { aim: 'self', shape: { kind: 'self' }, range: tiles(0) } : { aim: d.aim, foesOnly: d.foesOnly };
@@ -199,7 +200,10 @@ export function register(app) {
           // only a GM makes an item revive or rank-capped; a player's edit of one keeps it
           if (type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive)) out.revive = true;
           if (type === 'consumable' && (gm ? $('#lf-rank-cap').checked : was && was.rankCap)) out.rankCap = true;
-          if (worn && wornOn()) out.worn = { label: out.name || 'Item', desc: wasWorn ? wasWorn.desc : '', ops: wornFx.ops(), ...(wasWorn && wasWorn.color ? { color: wasWorn.color } : {}), ...wornKit.fields() };
+          if (worn && wornOn()) {
+            const label = wasWorn && was && out.name === was.name ? wasWorn.label : out.name || 'Item';
+            out.worn = { label, desc: wasWorn ? wasWorn.desc : '', ops: wornFx.ops(), ...(wasWorn && wasWorn.color ? { color: wasWorn.color } : {}), ...(wasWorn && wasWorn.icon ? { icon: wasWorn.icon } : {}), ...wornKit.fields() };
+          }
           else if (!worn && was && was.worn && same) out.worn = was.worn;
           if (worn && activeOn()) { const a = activeOf(out.name); if (a) out.active = a; }
           else if (!worn && wasActive && same) out.active = wasActive;

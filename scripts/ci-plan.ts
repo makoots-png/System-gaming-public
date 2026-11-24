@@ -21,13 +21,13 @@ export const FULL: CiPlan = { unit: true, browser: 'all', lag: true, why: '' };
  */
 const isNotes = (f: string): boolean => f.startsWith('docs/agent-handoff/') && f !== 'docs/agent-handoff/questionable-decisions.md';
 /**
- * Files only the typecheck and the unit tests read: a unit test and its models, the charts' scripts and the two docs a
- * unit test compares against them, the guide, and the CI's own scripts. No browser test imports any of them (the
+ * Files only the typecheck and the unit tests read: a unit test and its models, the charts and dependency-map scripts,
+ * the guide, and the CI's own scripts. No browser test imports any of them (the
  * browser tests import `src/` and `tests/e2e/helpers.ts`, and read `tests/fixtures/`, which is not in this list).
  */
 const isUnitOnly = (f: string): boolean =>
   /^tests\/[^/]+\.test\.ts$/.test(f) || f.startsWith('tests/models/') || f.startsWith('scripts/charts/')
-  || ['scripts/statecharts.ts', 'scripts/deps.ts', 'scripts/ci.ts', 'scripts/ci-plan.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'docs/agent-handoff/questionable-decisions.md', 'AGENTS.md', 'README.md'].includes(f)
+  || ['scripts/statecharts.ts', 'scripts/deps.ts', 'scripts/ci.ts', 'scripts/ci-plan.ts', 'docs/agent-handoff/questionable-decisions.md', 'AGENTS.md', 'README.md'].includes(f)
   || f.startsWith('.githooks/')
   // the guide's area files: read by coding agents and by the lint that checks AGENTS.md names them, never served or read by a browser test
   || f.startsWith('docs/guide/')

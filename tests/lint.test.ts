@@ -5,7 +5,10 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { GATE_STATUSES } from '../src/core/gates/gate.ts';
+import { PACK_KINDS } from '../src/core/pack.ts';
 import { domainOf, inDomain } from '../src/core/rules.ts';
+import { E2E_MAKER_IDS, MAKER_OPEN_EXEMPTIONS, ROUNDTRIP_REGISTRY, UNIT_MAKER_IDS } from './fixtures/maker-registry.ts';
+import type { MakerRegistryEntry } from './fixtures/maker-registry.ts';
 import { ruleNumbers } from './fixtures/rule-numbers.ts';
 
 const ROOT = import.meta.dir + '/..';
@@ -2403,21 +2406,147 @@ test('no UI element or object is personified in a player- or GM-facing string (v
   expect(said(hits), 'rewrite so a person, the GM, the player, or "you" acts (docs/guide/voice.md)').toEqual([]);
 });
 
-test('every test in tests/fight-sim.test.ts uses simTest with a CPU budget and wide wall hang guard', async () => {
-  const text = await Bun.file(`${ROOT}/tests/fight-sim.test.ts`).text();
-  const cpuMatch = /const CPU_BUDGET_MS\s*=\s*([0-9_]+)\s*;/.exec(text);
-  expect(cpuMatch, 'define const CPU_BUDGET_MS in tests/fight-sim.test.ts').not.toBeNull();
-  const cpuMs = Number(cpuMatch![1]!.replace(/_/g, ''));
-  expect(cpuMs, 'keep CPU_BUDGET_MS at least 60_000 ms (over 4x the slowest row CPU)').toBeGreaterThanOrEqual(60_000);
-  const wallMatch = /const WALL_TIMEOUT_MS\s*=\s*([0-9_]+)\s*;/.exec(text);
-  expect(wallMatch, 'define const WALL_TIMEOUT_MS in tests/fight-sim.test.ts').not.toBeNull();
+test('every test in tests/fight-sim.test.ts uses simTest with deterministic work budget and wide wall hang guard', async () => {
+  // Wall time, process.cpuUsage(), and calling-thread user CPU (even with a Worker canary) all inflate
+  // unpredictably on shared hosts under concurrent load (up to 19x). sim-budget.ts enforces deterministic
+  // work counts (fights, steps, maxFightSteps) that cannot false-fail from the host, while keeping
+  // WALL_TIMEOUT_MS >= 600_000 as a hang guard for true infinite loops.
+  const usesProcessWide = (src: string) => /\bprocess\.cpuUsage\s*\(/.test(src);
+  const usesWorkerCanary = (src: string) => /\bnode:worker_threads\b|\bnew\s+Worker\s*\(/.test(src);
+  const assertsClock = (src: string) => /\bexpect\s*\([^)]*(?:wallMs|threadUserMs|threadSystemMs|effectiveUserMs|cpuMs)\b/.test(src);
+  expect(usesProcessWide('const cpu = process.cpuUsage(cpu0);'), 'the rule catches process-wide cpuUsage').toBe(true);
+  expect(usesWorkerCanary("import { Worker } from 'node:worker_threads';"), 'the rule catches re-introducing a Worker canary').toBe(true);
+  expect(assertsClock('expect(t.threadUserMs).toBeLessThanOrEqual(cpuBudgetMs);'), 'the rule catches clock-based budget assertions').toBe(true);
+
+  const budgetSrc = await Bun.file(`${ROOT}/tests/models/sim-budget.ts`).text();
+  const wallMatch = /export const WALL_TIMEOUT_MS\s*=\s*([0-9_]+)\s*;/.exec(budgetSrc);
+  expect(wallMatch, 'define export const WALL_TIMEOUT_MS in tests/models/sim-budget.ts').not.toBeNull();
   const wallMs = Number(wallMatch![1]!.replace(/_/g, ''));
   expect(wallMs, 'keep WALL_TIMEOUT_MS at least 600_000 ms so host pauses do not abort healthy rows').toBeGreaterThanOrEqual(600_000);
-  expect(text, 'measure row work with process.cpuUsage() inside simTest so host pauses do not trigger false timeouts').toContain('process.cpuUsage(');
-  const rawTests = text.split('\n')
+  expect(budgetSrc, 'define DEFAULT_WORK_BUDGET in tests/models/sim-budget.ts').toContain('export const DEFAULT_WORK_BUDGET');
+  expect(budgetSrc, 'assert fights, steps, and maxFightSteps in tests/models/sim-budget.ts').toContain('expect(work.maxFightSteps');
+  const budgetCode = budgetSrc.split('\n').filter(l => !isComment(l)).join('\n');
+  expect(usesProcessWide(budgetCode), 'never call process.cpuUsage() in tests/models/sim-budget.ts').toBe(false);
+  expect(usesWorkerCanary(budgetCode), 'do not spin up a Worker canary in tests/models/sim-budget.ts').toBe(false);
+  expect(assertsClock(budgetCode), 'never fail a row on wall or CPU clock time in tests/models/sim-budget.ts').toBe(false);
+
+  const modelSrc = await Bun.file(`${ROOT}/tests/models/fight-sim.ts`).text();
+  expect(modelSrc, 'report each fight to sim-budget.ts from playFight').toContain('beginFight(');
+  expect(modelSrc, 'report each playStep to sim-budget.ts from playFight').toContain('recordFightStep(');
+
+  const simSrc = await Bun.file(`${ROOT}/tests/fight-sim.test.ts`).text();
+  expect(simSrc, 'import simTest from ./models/sim-budget.ts in tests/fight-sim.test.ts').toMatch(/from\s+['"]\.\/models\/sim-budget\.ts['"]/);
+  const simCode = simSrc.split('\n').filter(l => !isComment(l)).join('\n');
+  expect(usesProcessWide(simCode), 'do not call process.cpuUsage() in tests/fight-sim.test.ts; use simTest from sim-budget.ts').toBe(false);
+  expect(assertsClock(simCode), 'do not assert clock times in tests/fight-sim.test.ts; use simTest work budgets').toBe(false);
+  const rawTests = simSrc.split('\n')
     .map((line, idx) => ({ line: idx + 1, text: line }))
-    .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/WALL_TIMEOUT_MS/.test(line) && !/^\s*test\(name,\s*\(\)\s*=>\s*\{/.test(line) && !/^\s*\/\//.test(line));
-  expect(rawTests, 'call simTest(...) instead of test(...) in tests/fight-sim.test.ts so every test uses the CPU budget and wall guard').toEqual([]);
+    .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/^\s*\/\//.test(line));
+  expect(rawTests, 'call simTest(...) instead of test(...) in tests/fight-sim.test.ts so every test uses the deterministic work guard and wall timeout').toEqual([]);
+});
+
+/** Pure check backing the maker round-trip registry lint so a self-test can prove it fails on unregistered makers. */
+function unregisteredMakers(
+  viewFiles: ReadonlyArray<{ readonly file: string; readonly text: string }>,
+  packKinds: readonly string[],
+  registry: readonly MakerRegistryEntry[],
+  exemptions: Readonly<Record<string, string>>,
+): string[] {
+  const issues: string[] = [];
+  const byFile = new Map<string, MakerRegistryEntry[]>();
+  for (const e of registry) {
+    const list = byFile.get(e.viewFile) ?? [];
+    list.push(e);
+    byFile.set(e.viewFile, list);
+  }
+  for (const kind of packKinds) {
+    if (!registry.some(e => e.packKind === kind)) issues.push(`PACK_KINDS entry "${kind}" has no row in ROUNDTRIP_REGISTRY`);
+  }
+  const makerFileRe = /^src\/views\/.+-(?:maker|editor)\.(?:js|ts)$/;
+  const makerOpenRe = /\b(?:maker|M)\.open\s*\(/;
+  const editStepRe = /\b(?:editQuest|editGate|gatePreset|writeTitle|guildStep|withBadge|saveRuleNumbers|writeTable)\s*\(/;
+  for (const { file, text } of viewFiles) {
+    const rows = byFile.get(file) ?? [];
+    if (makerFileRe.test(file) && !rows.length) {
+      issues.push(`maker/editor file ${file} has no row in ROUNDTRIP_REGISTRY`);
+    }
+    if (file !== 'src/views/maker.js' && makerOpenRe.test(text) && !(file in exemptions)) {
+      if (!rows.some(r => r.opensMaker)) {
+        issues.push(`maker.open( caller ${file} has no opensMaker row in ROUNDTRIP_REGISTRY (or MAKER_OPEN_EXEMPTIONS)`);
+      }
+    }
+    if (editStepRe.test(text) && !rows.length) {
+      issues.push(`saved-entity edit-step caller ${file} has no row in ROUNDTRIP_REGISTRY`);
+    }
+  }
+  for (const file of Object.keys(exemptions)) {
+    const found = viewFiles.find(v => v.file === file);
+    if (!found || !makerOpenRe.test(found.text)) {
+      issues.push(`stale MAKER_OPEN_EXEMPTIONS entry ${file}`);
+    }
+  }
+  return issues;
+}
+
+test('every maker, editor, PACK_KINDS entry, and maker.open( caller has a row in ROUNDTRIP_REGISTRY and round-trip test coverage', async () => {
+  const names = (await readdir(`${ROOT}/src/views`)).filter(n => /\.(js|ts)$/.test(n)).sort();
+  const views = await Promise.all(names.map(async n => ({
+    file: `src/views/${n}`,
+    text: await Bun.file(`${ROOT}/src/views/${n}`).text(),
+  })));
+
+  // Self-test: prove the lint rejects a new unregistered *-maker.js file, a new unregistered maker.open( site,
+  // a new unregistered M.open( site, and a new PACK_KINDS entry.
+  const synthMakerFile = unregisteredMakers(
+    [...views, { file: 'src/views/relic-maker.js', text: 'export function relicMaker() {}' }],
+    PACK_KINDS,
+    ROUNDTRIP_REGISTRY,
+    MAKER_OPEN_EXEMPTIONS,
+  );
+  expect(synthMakerFile.some(m => m.includes('src/views/relic-maker.js')), 'lint catches a new *-maker.js file without a registry row').toBe(true);
+
+  const synthMakerOpen = unregisteredMakers(
+    [...views, { file: 'src/views/enchant.js', text: 'export function open(app) { return app.api.maker.open({ title: "New" }); }' }],
+    PACK_KINDS,
+    ROUNDTRIP_REGISTRY,
+    MAKER_OPEN_EXEMPTIONS,
+  );
+  expect(synthMakerOpen.some(m => m.includes('src/views/enchant.js')), 'lint catches a new maker.open( caller without a registry row').toBe(true);
+
+  const synthAliasOpen = unregisteredMakers(
+    [...views, { file: 'src/views/runes.js', text: 'export function open(app) { const M = app.api.maker; return M.open({ title: "New" }); }' }],
+    PACK_KINDS,
+    ROUNDTRIP_REGISTRY,
+    MAKER_OPEN_EXEMPTIONS,
+  );
+  expect(synthAliasOpen.some(m => m.includes('src/views/runes.js')), 'lint catches a new M.open( caller without a registry row').toBe(true);
+
+  const synthPackKind = unregisteredMakers(
+    views,
+    [...PACK_KINDS, 'relics'],
+    ROUNDTRIP_REGISTRY,
+    MAKER_OPEN_EXEMPTIONS,
+  );
+  expect(synthPackKind.some(m => m.includes('relics')), 'lint catches a new PACK_KINDS entry without a registry row').toBe(true);
+
+  // Real codebase check: zero unregistered makers or stale exemptions.
+  expect(
+    unregisteredMakers(views, PACK_KINDS, ROUNDTRIP_REGISTRY, MAKER_OPEN_EXEMPTIONS),
+    'add the new maker or editor to tests/fixtures/maker-registry.ts and cover it in tests/maker-roundtrip.test.ts and/or tests/e2e/maker-roundtrip.e2e.ts',
+  ).toEqual([]);
+
+  // Every registered view file exists, ids are unique, and both test suites reference their registered ids.
+  const ids = ROUNDTRIP_REGISTRY.map(e => e.id);
+  expect(new Set(ids).size, 'ROUNDTRIP_REGISTRY ids are unique').toBe(ids.length);
+  const viewSet = new Set(views.map(v => v.file));
+  expect(ROUNDTRIP_REGISTRY.filter(e => !viewSet.has(e.viewFile)).map(e => e.viewFile), 'every registered viewFile exists').toEqual([]);
+
+  const unitSrc = await Bun.file(`${ROOT}/tests/maker-roundtrip.test.ts`).text();
+  const e2eSrc = await Bun.file(`${ROOT}/tests/e2e/maker-roundtrip.e2e.ts`).text();
+  expect(unitSrc, 'unit round-trip suite checks UNIT_MAKER_IDS').toContain('UNIT_MAKER_IDS');
+  expect(e2eSrc, 'browser round-trip suite checks E2E_MAKER_IDS').toContain('E2E_MAKER_IDS');
+  for (const id of UNIT_MAKER_IDS) expect(unitSrc, `unit suite covers ${id}`).toContain(id);
+  for (const id of E2E_MAKER_IDS) expect(e2eSrc, `e2e suite covers ${id}`).toContain(`'${id}'`);
 });
 
 test('no view or edge module tests a pattern against log text or .text', async () => {

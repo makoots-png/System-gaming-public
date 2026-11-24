@@ -304,6 +304,7 @@ export function register(app) {
           // a blank XP is the rule's for its rank, kind and traits (left out: monsterXp), so a change of the XP table reaches it
           ...($('#enm-xp').value.trim() === '' ? {} : { xp: int($('#enm-xp').value, 0, B.xp, 0) }), extractable: /** @type {string[]} */ (M.picked(el, 'flags')).includes('extractable'), desc: $('#enm-desc').value.slice(0, B.desc),
           statuses: statuses.map(st => ({ ...st })), loot: { gold: int($('#enm-gold').value, 0, B.gold, 0), items: items.map(i => ({ ...i })) },
+          ...(kind === 'mythic' ? { script: start.script || 'plain' } : {}),
         });
         /** The body the rank, archetype, kind, HP factor and traits make, shown as the GM picks them; and the rule's XP a blank field takes. */
         const derived = () => {

@@ -37,7 +37,7 @@ import type {
 import type { FoeLife } from './row-life.ts';
 import { ALONE_EVENTS, BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
-import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES } from './fight-types.ts';
+import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
 import type { Fight, Fog, DueTurn, ForcedFace, Fudge, LogLine, Summary } from './fight-types.ts';
 import { NO_FUDGE } from './fudge.ts';
 import type { Extraction } from './extraction.ts';
@@ -367,7 +367,7 @@ const oldPenRead = (v: unknown): unknown => (Array.isArray(v)
   : v);
 function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
   if (!isObj(v)) return null;
-  const label = text(v.label, NAME_MAX), desc = text(v.desc, 500), ops = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
+  const label = text(v.label, NAME_MAX), desc = text(v.desc, STATUS_DESC_MAX), ops = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
   if (v.color !== undefined && !(typeof v.color === 'string' && COLOR_RE.test(v.color))) return null;
   if (label === null || desc === null || !ops) return null;
   const K = R.fight.kit;

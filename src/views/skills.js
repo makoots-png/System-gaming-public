@@ -101,10 +101,10 @@ export function register(app) {
       build(el, shell) {
         const R = rules();
         el.innerHTML = `<div class="skm-cols"><div class="skm-col">
-          ${ui.field('Name', `<input type="text" id="skm-name" maxlength="60" autocomplete="off" placeholder="e.g. Frost Lance" value="${esc(name0)}">`)}
+          ${ui.field('Name', `<input type="text" id="skm-name" maxlength="${SKILL_BOUNDS.name}" autocomplete="off" placeholder="e.g. Frost Lance" value="${esc(name0)}">`)}
           <div class="lbl">Type</div>
           ${M.chips('type', [['active', 'Active'], ['passive', 'Passive']], type, { label: 'Type' })}
-          ${ui.field('Description', `<textarea id="skm-desc" maxlength="500">${esc(was ? was.desc : '')}</textarea>`)}
+          ${ui.field('Description', `<textarea id="skm-desc" maxlength="${SKILL_BOUNDS.desc}">${esc(was ? was.desc : '')}</textarea>`)}
           ${ui.field('Custom label', `<input type="text" id="skm-label" maxlength="${SKILL_BOUNDS.label}" autocomplete="off" placeholder="Default: level (Lv.${was ? was.level : 1})" value="${esc(was && was.label ? was.label : '')}">`)}
           <div data-active>
             <div class="lbl">Ability type</div>
@@ -135,7 +135,11 @@ export function register(app) {
           wornKit = M.statusBlocks($('[data-worn-kit]'), wasWorn, 'skw');
         };
         /** The status a passive wears into a fight: named after the skill, its ops and its kits groups; null when not ticked. */
-        const wornOf = name => ($('[data-worn]').checked ? { label: name.slice(0, 60), desc: wasWorn ? wasWorn.desc : '', ops: wornFx.ops(), ...(wasWorn && wasWorn.color ? { color: wasWorn.color } : {}), ...wornKit.fields() } : null);
+        const wornOf = name => {
+          if (!$('[data-worn]').checked) return null;
+          const label = wasWorn && name === name0 ? wasWorn.label : name.slice(0, SKILL_BOUNDS.name);
+          return { label, desc: wasWorn ? wasWorn.desc : '', ops: wornFx.ops(), ...(wasWorn && wasWorn.color ? { color: wasWorn.color } : {}), ...(wasWorn && wasWorn.icon ? { icon: wasWorn.icon } : {}), ...wornKit.fields() };
+        };
         /**
          * The ability the form holds: its kind's fields as the ability form has them, and its effects. A support on the
          * user reaches only the user. Null while the formula does not read.
@@ -151,14 +155,14 @@ export function register(app) {
           return { ...v, ...reach, ops: /** @type {import('../core/combat/effect-ops.ts').UseOp[]} */ (fx.ops()) };
         };
         /**
-         * The skill the form holds, every number inside the parser's bounds. A passive skill's bonus keeps the Skills form's -20 to 50.
+         * The skill the form holds, every number inside `SKILL_BOUNDS`.
          * @returns {import('../core/registry/skills.ts').SkillTemplate}
          */
         const formSkill = () => {
-          const name = $('#skm-name').value.trim().slice(0, 60), base = { name, level: was ? was.level : 1, label: $('#skm-label').value.trim().slice(0, SKILL_BOUNDS.label) || null, desc: $('#skm-desc').value.slice(0, 500) };
+          const name = $('#skm-name').value.trim().slice(0, SKILL_BOUNDS.name), base = { name, level: was ? was.level : 1, label: $('#skm-label').value.trim().slice(0, SKILL_BOUNDS.label) || null, desc: $('#skm-desc').value.slice(0, SKILL_BOUNDS.desc) };
           if (type === 'active') return { ...base, type: 'active', ability: formAbility(name) };
           const bonus = {};
-          for (const [k, v] of Object.entries(M.readBonus(el))) bonus[k] = Math.min(50, Math.max(-20, v));
+          for (const [k, v] of Object.entries(M.readBonus(el))) bonus[k] = Math.min(SKILL_BOUNDS.bonus, Math.max(-SKILL_BOUNDS.bonus, v));
           const worn = wornOf(name || 'Passive');
           return worn ? { ...base, type: 'passive', bonus, worn } : { ...base, type: 'passive', bonus };
         };

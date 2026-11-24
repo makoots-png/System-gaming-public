@@ -7,7 +7,7 @@
 // fight on it. Exposes app.api.maps.
 import { TERRAIN, TERRAINS } from '../core/combat/space.ts';
 import { zoneTone } from '../core/combat/zones.ts';
-import { MAP_BOUNDS, openArena, parseBattleMap } from '../core/registry/maps.ts';
+import { MAP_BOUNDS, mapFormRaw, mapFromForm, mapToForm, openArena, parseBattleMap } from '../core/registry/maps.ts';
 import { MAX_ZONES } from '../core/combat/zones.ts';
 import { oneOf } from '../core/one-of.ts';
 import { atLibrary } from '../core/save-step.ts';
@@ -54,11 +54,7 @@ export function register(app) {
   function make(m) {
     const M = app.api.maker, R = app.rules(), base = m || { ...openArena(R), name: '' };
     // the form's state: the tiles as characters, zones with their tiles as indices, starts as indices
-    const st = {
-      name: base.name, w: base.w, h: base.h, tiles: [...base.tiles], fog: base.fog, sight: base.sight,
-      zones: base.zones.map(z => ({ id: String(z.id), name: z.name, ops: z.ops, tiles: new Set(z.ground.tiles.map(p => p.y * base.w + p.x)) })),
-      starts: { party: base.starts.party.map(p => p.y * base.w + p.x), foe: base.starts.foe.map(p => p.y * base.w + p.x) },
-    };
+    const st = mapToForm(base);
     let brush = 'wall', zoneAt = 0, eff = null, painting = false;
     return M.open({
       tag: '! Map', title: m ? `Edit ${m.name}` : 'New map', save: 'Save map', cls: 'mpm',
@@ -161,17 +157,13 @@ export function register(app) {
           if (eff && t.closest('[data-zfx]') && st.zones[zoneAt]) { st.zones[zoneAt].ops = eff.ops(); for (const i of st.zones[zoneAt].tiles) paintCell(i); }
         });
         /** The map the form holds under `id`, as the parser reads it. */
-        const raw = id => ({
-          id, name: st.name, w: st.w, h: st.h, tiles: st.tiles.join(''), fog: st.fog, sight: st.sight,
-          zones: st.zones.filter(z => z.tiles.size).map(z => ({ id: z.id, name: z.name.trim() || 'Field', ops: z.ops, ground: { kind: 'tiles', tiles: [...z.tiles].sort((a, b) => a - b).map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })) } })),
-          starts: { party: st.starts.party.map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })), foe: st.starts.foe.map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })) },
-        });
+        const raw = id => mapFormRaw(st, id);
         /**
          * Saves the form as map `id` (the map being edited, or a new one): answers the map saved, or undefined when it was
          * refused, which the window says and stays open for.
          */
         function saveAs(id) {
-          const map = parseBattleMap(raw(id), app.rules());
+          const map = mapFromForm(st, id, app.rules());
           if (!map) { shell.error('Enter a name for the map.'); return undefined; }
           // a write refused (the library full, another tab took over, a newer save) saved nothing: the maker stays open and says so
           if (!ui.wrote('Workshop', store.apply('library-map', atLibrary(l => saveById(l, 'maps', map))), savedWords('map', map.name))) return undefined;

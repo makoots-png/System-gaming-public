@@ -1,4 +1,4 @@
-// The dependency map (scripts/deps.ts, docs/dependency-map.md) is current, and the invisible links it shows hold:
+// The dependency map (scripts/deps.ts) builds and renders cleanly from the live source, and the invisible links hold:
 // every event heard is emitted, every event emitted is heard, every entry of AppEvents is used, every app.api member
 // used is registered, every one declared in AppApi (src/core/api.ts) is registered and the reverse, every one
 // registered is used, nothing new is unresolved, every import keeps its layer's rule (a type import too), and no
@@ -7,7 +7,7 @@
 // AppApi is the compiler's check (tsconfig.json and tsconfig.views.json), not this file's.
 
 import { expect, test } from 'bun:test';
-import { assemble, buildMap, layerBreaks, mapIsCurrent, readTypeTable, scanFile, valueCycles, type DepsMap, type Scan, type Unresolved } from '../scripts/deps.ts';
+import { assemble, buildMap, checkMap, layerBreaks, readTypeTable, renderMap, scanFile, valueCycles, type DepsMap, type Scan, type Unresolved } from '../scripts/deps.ts';
 
 const map: DepsMap = await buildMap();
 const TESTS_ONLY = 'used only by browser tests, for setup or to read state';
@@ -27,9 +27,15 @@ const UNRESOLVED: string[] = [];
 const sorted = (xs: Iterable<string>): string[] => [...xs].sort();
 const events = [...map.events.values()];
 
-test('the committed dependency map is what bun run deps -- --write writes', async () => {
-  const { current } = await mapIsCurrent();
-  expect(current, 'docs/dependency-map.md is out of date. Run bun run deps -- --write and commit it.').toBe(true);
+test('the dependency map generator renders every section and every module from the live source', () => {
+  const rendered = renderMap(map);
+  expect(map.modules.size).toBeGreaterThan(0);
+  expect(rendered.startsWith('# Dependency map\n')).toBe(true);
+  for (const heading of ['## Layers', '## Cycles of value imports', '## Modules', '## The app.api names', '## Events', '## Views and panels', '## Unresolved']) {
+    expect(rendered).toContain(`\n${heading}\n`);
+  }
+  for (const file of map.modules.keys()) expect(rendered).toContain(`### \`${file}\``);
+  expect(checkMap(map)).toEqual([]);
 });
 
 test('every event a module hears is emitted by some module', () => {
@@ -82,7 +88,7 @@ test('nothing new is unresolved in the dependency map', () => {
 });
 
 test('every import keeps its layer\'s rule: core imports only core, edge never a view, the server no browser module', () => {
-  expect(layerBreaks(map), 'move the file, or the type both sides need, to the layer it belongs to. The Layers table of docs/dependency-map.md says what each layer may import; a type import counts too.').toEqual([]);
+  expect(layerBreaks(map), 'move the file, or the type both sides need, to the layer it belongs to. IMPORT_RULE in scripts/deps.ts (or bun run deps) says what each layer may import; a type import counts too.').toEqual([]);
 });
 
 test('the layer check sees an edge module that imports a view, though the import is only a type', () => {

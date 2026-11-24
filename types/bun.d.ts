@@ -79,6 +79,8 @@ declare const process: {
   kill(pid: number, signal?: 'SIGTERM' | 'SIGKILL'): true;
   /** User and system CPU time of this process in microseconds, or the delta since `previousValue`. */
   cpuUsage(previousValue?: { readonly user: number; readonly system: number }): { readonly user: number; readonly system: number };
+  /** User and system CPU time of the calling thread in microseconds, or the delta since `previousValue`. */
+  threadCpuUsage(previousValue?: { readonly user: number; readonly system: number }): { readonly user: number; readonly system: number };
 };
 
 declare module 'bun:test' {

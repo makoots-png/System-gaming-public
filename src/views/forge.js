@@ -10,6 +10,7 @@ import { atLibrary } from '../core/save-step.ts';
 import { saveStatus, savedWords } from '../core/library.ts';
 import { defWorth } from '../core/registry/worth.ts';
 import { tooLarge } from '../core/size.ts';
+import { NAME_MAX, STATUS_DESC_MAX } from '../core/combat/fight-types.ts';
 import { iconField } from './maker.js';
 
 const SWATCHES = [['#4dd8ff', 'Cyan'], ['#ff4d5e', 'Red'], ['#ffc94d', 'Gold'], ['#a064ff', 'Purple'], ['#4dffa0', 'Green']];
@@ -46,7 +47,7 @@ function openForge(opts) {
   const chipKeys = apply ? [...lib, ...builtin] : [];
   const touch = matchMedia('(pointer: coarse)').matches;
   const rank = apply && RANKS.includes(opts.rank) ? opts.rank : null;
-  let color = (editDef && editDef.color) || SWATCHES[0][0], infinite = false;
+  let color = (editDef && editDef.color) || null, infinite = false;
   const title = apply ? opts.title : editKey ? `Edit ${editDef.label}` : 'New status';
 
   return M.open({
@@ -61,8 +62,8 @@ function openForge(opts) {
         ${chipKeys.length ? `<div class="lbl">Apply existing status</div><div class="fg-chips" data-existing><div class="mk-chips" role="group" aria-label="Apply existing status">${chipKeys.map(k => `<button type="button" class="mk-chip${lib.includes(k) ? ' lib' : ''}" data-chip="${esc(k)}" title="${esc(String((rulesNow[k] && rulesNow[k].desc) || ''))}">${esc(String((rulesNow[k] && rulesNow[k].label) || k))}</button>`).join('')}</div></div>` : ''}
         </div>` : ''}<div class="fg-col" data-newcol>
         <div class="fg-a1"><div class="lbl fg-new">${editKey ? 'Edit status' : 'New status'}</div>
-        <label class="field"><span class="lbl">Name</span><input type="text" data-name maxlength="40" autocomplete="off" spellcheck="false" placeholder="e.g. Ember Mark"></label>
-        <label class="field"><span class="lbl">Description</span><input type="text" data-desc maxlength="200" autocomplete="off" placeholder="Short description shown to players"></label>
+        <label class="field"><span class="lbl">Name</span><input type="text" data-name maxlength="${NAME_MAX}" autocomplete="off" spellcheck="false" placeholder="e.g. Ember Mark"></label>
+        <label class="field"><span class="lbl">Description</span><input type="text" data-desc maxlength="${STATUS_DESC_MAX}" autocomplete="off" placeholder="Short description shown to players"></label>
         <div data-icon></div></div>
         <div class="fg-b" data-later><div class="lbl">Effects</div>
         <div class="fg-fx" data-fx></div>
@@ -87,7 +88,7 @@ function openForge(opts) {
       };
       const roundsVal = () => { if (infinite) return null; const n = Math.trunc(Number(q('[data-rounds]') ? q('[data-rounds]').value : 3)); return Number.isFinite(n) && n >= 1 ? Math.min(n, 999) : 3; };
       const source = () => (rank ? gmSource(oneOf(M.picked(el, 'strength'), RANKS, rank)) : null);
-      const formDef = () => ({ label: name.value.replace(/\s+/g, ' ').trim().slice(0, 40), desc: desc.value.replace(/\s+/g, ' ').trim().slice(0, 200), color, ops: fx.ops(), ...kit.fields() });
+      const formDef = () => ({ label: name.value.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX), desc: desc.value.replace(/\s+/g, ' ').trim().slice(0, STATUS_DESC_MAX), ...(color ? { color } : {}), ops: fx.ops(), ...kit.fields() });
       const withSource = v => { const src = source(); return src ? { ...v, source: src } : v; };
       /** The key the status is saved under: its own when edited, else the one its name makes (a built-in's key is never made). */
       const keyOf = label => editKey || E.slug(label, library());
@@ -117,7 +118,7 @@ function openForge(opts) {
         save() {
           const pick = iconRow.pick(), form = { ...formDef(), ...(pick ? { icon: pick } : {}) };
           if (!form.label) { shell.error('Give the status a name.'); name.focus(); return undefined; }
-          const known = editKey || form.ops.length || form.stack || form.triggers || form.end || form.icon ? null : knownKey(A.rules().conditions, form.label); // a typed name with no mechanics and no icon picked is that status
+          const known = editKey || form.ops.length || form.stack || form.triggers || form.end || form.icon || form.color ? null : knownKey(A.rules().conditions, form.label); // a typed name with no mechanics and no icon picked is that status
           if (known) return existing(known);
           const big = tooLarge('status', form);
           if (big) { shell.error(big); return undefined; }

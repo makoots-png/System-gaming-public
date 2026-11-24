@@ -54,6 +54,7 @@
 //   round, `abilities().stun`, which adds its length to the boss's next turn: timeline.ts `stunned`), a stagger's push apart. No built-in skill holds, so the stun is the plain one. The tank
 //   uses it whenever it is ready and the boss acts before the tank's next turn (`controlPolicy`), before a taunt.
 import { describe, expect, test } from 'bun:test';
+import { recordSteps, simTest, workBudget } from './models/sim-budget.ts';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
@@ -191,6 +192,7 @@ function bestUse(rank: Rank, uses: number, builds: readonly Archetype[] = PLAIN_
         const dice = diceOf(formulaOf(ability, RULES)!).map(d => Array.from({ length: d.count }, () => g.int(1, d.sides)).reduce((x, y) => x + y, 0));
         const aim = ability.aim === 'place' ? running.rows[1]!.place : running.rows[1]!.id;
         const r = reduce(running, { type: 'act', by: running.rows[0]!.id, ability: ability.id, aim, rolls: { dice: { [running.rows[1]!.id]: dice }, react: { [running.rows[1]!.id]: g.int(1, 20) } }, force: true }, ctx);
+        recordSteps(1);
         if (r.effects.some(e => e.type === 'refused')) throw new Error(`${a} ${ability.id} refused at ${rank}`);
         const after = r.fight!.rows.find(x => x.id === running.rows[1]!.id)!;
         lost.push((rowHp(running.rows[1]!) - rowHp(after)) / running.rows[1]!.sheet.hpMax);
@@ -636,46 +638,12 @@ const OPEN: Readonly<Record<string, string>> = {
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──
 const inside = (r: Row, m: Measure): boolean => m.value >= r.low && m.value <= r.high;
 const edge = (r: Row, m: Measure): string => inside(r, m) && Math.min(m.value - r.low, r.high - m.value) < m.se ? ' near' : '';
-/**
- * Compute budget for one row, judged on process CPU time rather than wall time.
- * On this 8-CPU box, a host pause stalled one 3.2 s row for 176.5 s of wall time while CPU time stays steady.
- * Measured Nov 23 after hoisting setup rows: the slowest row in `ROWS` (`B1 Zaratan`) uses 12.6 s CPU (10.8 s wall alone,
- * 12.7 s wall under `--parallel=4`), and `W3 Worldbreaker` uses 10.5 s CPU.
- * `CPU_BUDGET_MS` is 60 s (over 4.7x the slowest row's CPU), so real hot-loop regressions fail while host pauses pass.
- * `WALL_TIMEOUT_MS` is Bun's 10-minute wall-clock hang guard so multi-minute host pauses do not abort a healthy row
- * before `simTest` checks its CPU time. Every test in this file runs through `simTest` (`tests/lint.test.ts` enforces this).
- */
-const CPU_BUDGET_MS = 60_000;
-/** CPU budget for the 6-step GM fudge table (3,600 mythic fights, measured 31.6 s CPU and 34.3 s wall alone). */
-const FUDGE_CPU_BUDGET_MS = 3 * CPU_BUDGET_MS;
-/** Bun wall-clock hang guard, wide enough to ride out multi-minute cloud-box pauses without masking CPU regressions. */
-const WALL_TIMEOUT_MS = 600_000;
-/** Wall minus CPU gap above which `simTest` logs a host-pause or deschedule notice. */
-const PAUSE_NOTE_MS = 10_000;
-/** CPU threshold above which `simTest` logs CPU and wall time beside the row output. */
-const CPU_LOG_MS = 5_000;
-const simTest = (name: string, fn: () => void, cpuBudgetMs: number = CPU_BUDGET_MS): void => {
-  test(name, () => {
-    const cpu0 = process.cpuUsage();
-    const wall0 = performance.now();
-    fn();
-    const wallMs = performance.now() - wall0;
-    const cpu = process.cpuUsage(cpu0);
-    const cpuMs = (cpu.user + cpu.system) / 1000;
-    const stalledMs = wallMs - cpuMs;
-    if (stalledMs >= PAUSE_NOTE_MS) {
-      console.log(`  [host pause] ${name}: wall ${(wallMs / 1000).toFixed(1)} s, cpu ${(cpuMs / 1000).toFixed(1)} s, stalled ${(stalledMs / 1000).toFixed(1)} s (cpu budget ${(cpuBudgetMs / 1000).toFixed(0)} s)`);
-    } else if (cpuMs >= CPU_LOG_MS) {
-      console.log(`  [cpu] ${name}: cpu ${Math.round(cpuMs)} ms, wall ${Math.round(wallMs)} ms (cpu budget ${cpuBudgetMs} ms)`);
-    }
-    expect(cpuMs, `${name} used ${Math.round(cpuMs)} ms CPU (wall ${Math.round(wallMs)} ms), past its ${cpuBudgetMs} ms CPU budget`).toBeLessThanOrEqual(cpuBudgetMs);
-  }, WALL_TIMEOUT_MS);
-};
-
+// Every row in this file runs through `simTest` from `tests/models/sim-budget.ts` (deterministic work
+// counts + wall hang guard `WALL_TIMEOUT_MS = 600_000`), enforced by `tests/lint.test.ts`.
 describe('the reworked fight holds the bounds of design section 6', () => {
   simTest('every open row names a row of the table', () => {
     expect(Object.keys(OPEN).filter(name => !ROWS.some(r => r.name === name))).toEqual([]);
-  });
+  }, workBudget(0));
   for (const row of ROWS) {
     const open = OPEN[row.name];
     if (open) { test.todo(`${row.name} (${open})`); continue; }
@@ -696,14 +664,14 @@ describe('every build and monster plays a fight to its end', () => {
         const r = playFight({ rows: [hunter(a, rank), monster(rank, 'brute', 'elite', 'elite')], tallyDamage: false }, 1);
         expect(r.capped).toBe(false);
         expect(r.winner).not.toBeNull();
-      });
+      }, workBudget(1));
     }
     for (const m of Object.keys(MONSTER_ABILITY) as (keyof typeof MONSTER_ABILITY)[]) {
       simTest(`a normal ${m} at ${rank} fights a same-rank bruiser until one side is down`, () => {
         const r = playFight({ rows: [hunter('bruiser', rank), monster(rank, m, 'normal', m)], tallyDamage: false }, 2);
         expect(r.capped).toBe(false);
         expect(r.winner).not.toBeNull();
-      });
+      }, workBudget(1));
     }
   }
 });
@@ -722,7 +690,7 @@ describe('a mythic\'s script stays out of the fights it is not in (design B.8)',
     };
     const yes = m1(true), no = m1(false);
     for (let seed = 1; seed <= 40; seed++) expect(yes(seed), `seed ${seed}`).toEqual(no(seed));
-  });
+  }, workBudget(80));
 });
 
 // ── what the GM's fudge does to a mythic (notes-8-fudge.md section 4) ──
@@ -747,5 +715,5 @@ describe('the GM\'s fudge on a party of 3 against a mythic', () => {
     expect(rates[0]!.m.value).toBeGreaterThanOrEqual(0.05);
     expect(rates[0]!.m.value).toBeLessThanOrEqual(0.1);
     for (let i = 1; i < rates.length; i++) expect(rates[i]!.m.value, `+${rates[i]!.n} against +${rates[i - 1]!.n}`).toBeGreaterThanOrEqual(rates[i - 1]!.m.value);
-  }, FUDGE_CPU_BUDGET_MS);
+  }, workBudget(FUDGE_STEPS.length * RUNS.mythic));
 });

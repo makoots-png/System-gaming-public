@@ -48,6 +48,7 @@ import type { RowMonster } from '../../src/core/combat/rows.ts';
 import { seedMonsters } from '../../src/core/registry/monsters.ts';
 import type { MythicScriptId } from '../../src/core/registry/mythics.ts';
 import { rng } from './fight-play.ts';
+import { beginFight, recordFightStep } from './sim-budget.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
 
 export { rng };
@@ -734,11 +735,13 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   // a summon plays as a monster does (kits design 1.9: its owner's phone commands it)
   const policyOf = (me: Body): TurnPolicy => (f, m, rules) => (policies.get(me.id) ?? monsterPolicy)(f, m, plan, rules);
   let p: Play = begun.play;
+  beginFight();
   while (!playOver(p)) {
     const running = p as Play & { readonly fight: Running }, landing = runningState(running.fight);
     if (landing.at === 'landing' && !capped(running, limits, R) && trace && landing.id === mid && doom(running.fight.rows.find(r => r.id === mid)!.mythic!, running.fight.now, R)) trace.dooms++;
     const s = playStep(running, policyOf, limits, R), f = s.before, me = s.me, choice = s.choice;
     p = s.play;
+    recordFightStep();
     if (me && choice) {
       const t = tally[me.id] ??= emptyTally(me);
       if (choice.type === 'act') {

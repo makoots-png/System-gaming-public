@@ -1,13 +1,4 @@
 #!/bin/sh
-# After a merge, rewrites the generated docs and says when one changed. Two branches that each regenerate
-# docs/dependency-map.md or docs/state-machines.md merge without a conflict into a file neither wrote.
-# (Nov 22: public run for fa3ff675 was red in the unit job on a stale dependency map after two such merges.)
-root=$(git rev-parse --show-toplevel)
-cd "$root" || exit 0
-bun run deps -- --write >/dev/null 2>&1
-bun run charts >/dev/null 2>&1
-changed=$(git status --porcelain docs/dependency-map.md docs/state-machines.md)
-[ -z "$changed" ] && exit 0
-echo "post-merge: the merge left a generated doc stale; it is rewritten, commit it before anything is sent to a run:" >&2
-echo "$changed" >&2
-echo "  git commit -m 'generated docs after the merge' docs/dependency-map.md docs/state-machines.md" >&2
+# No-op. docs/dependency-map.md and docs/state-machines.md are untracked and ignored by git,
+# so merges cannot leave them stale. tests/deps.test.ts and tests/statecharts.test.ts check the live source directly.
+exit 0

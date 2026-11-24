@@ -17,8 +17,8 @@ describe('which passes a push needs', () => {
       expect([f, planOf([f, 'docs/agent-handoff/handoff.md']).unit]).toEqual([f, true]);
     }
   });
-  test('a unit test, a model, a chart script, a generated doc, the guide or the CI\'s own scripts run no browser test', () => {
-    for (const f of ['tests/solo.test.ts', 'tests/models/room-world.ts', 'scripts/charts/solo.ts', 'scripts/statecharts.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'docs/agent-handoff/questionable-decisions.md', 'AGENTS.md', 'docs/guide/combat.md', 'docs/audit/2026-11-19-neon-audit.md', '.githooks/pre-push', 'scripts/ci.ts', 'scripts/ci-plan.ts', '.claude/settings.json', '.claude/agents/writer.md', '.github/workflows/ci.yml', 'scripts/ci-public.sh', 'scripts/publish-clean.ts', '.private/scrub-terms.tsv']) {
+  test('a unit test, a model, a generator script, the guide or the CI\'s own scripts run no browser test', () => {
+    for (const f of ['tests/solo.test.ts', 'tests/models/room-world.ts', 'scripts/charts/solo.ts', 'scripts/statecharts.ts', 'scripts/deps.ts', 'docs/agent-handoff/questionable-decisions.md', 'AGENTS.md', 'docs/guide/combat.md', 'docs/audit/2026-11-19-neon-audit.md', '.githooks/pre-push', 'scripts/ci.ts', 'scripts/ci-plan.ts', '.claude/settings.json', '.claude/agents/writer.md', '.github/workflows/ci.yml', 'scripts/ci-public.sh', 'scripts/publish-clean.ts', '.private/scrub-terms.tsv']) {
       const p = planOf([f, 'docs/agent-handoff/handoff.md']);
       expect([f, p.unit, p.browser, p.lag]).toEqual([f, true, 'none', false]);
     }

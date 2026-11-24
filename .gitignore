@@ -3,3 +3,5 @@ dist/
 test-results/
 playwright-report/
 .claude/worktrees/
+docs/dependency-map.md
+docs/state-machines.md

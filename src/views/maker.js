@@ -852,7 +852,7 @@ function buildAbility(box, o) {
       <div data-zone-f>${chips('zwhere', WHERE_LABEL, a.zone && a.zone.around !== null ? 'user' : 'lands', { label: 'Where it lies' })}
         <div data-zaround-f>${fieldNum('Radius (tiles)', `data-a="zradius" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.around !== null ? a.zone.around : R.fight.auraRadius)}</div>
         <label class="field"><span class="lbl">Field name</span><input type="text" maxlength="40" data-a="zname" value="${esc(a.zone ? a.zone.name : 'Burning ground')}"></label>
-        ${fieldNum('Duration (rounds)', 'data-a="zrounds" min="1" max="99"', a.zone && a.zone.duration !== null ? roundsOf(a.zone.duration, R, 'near') : 2, { placeholder: 'Until removed' })}
+        ${fieldNum('Duration (rounds)', 'data-a="zrounds" min="1" max="99"', a.zone ? (a.zone.duration !== null ? roundsOf(a.zone.duration, R, 'near') : '') : 2, { placeholder: 'Until removed' })}
         <label class="mk-check"><input type="checkbox" data-a="zowner"${a.zone && a.zone.endsWithOwner ? ' checked' : ''}><span>Ends when its user is defeated</span></label>
         <label class="mk-check"><input type="checkbox" data-a="zgrow"${a.zone && a.zone.grow ? ' checked' : ''}><span>Grows each round</span></label>
         <div class="mk-two" data-zgrow-f>${fieldNum('Grows by (tiles per round)', `data-a="zstep" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.grow ? a.zone.grow.step : R.fight.fieldGrow)}${fieldNum('Max radius (tiles)', `data-a="zcap" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.grow ? a.zone.grow.cap : R.fight.fieldRadiusMax)}</div>

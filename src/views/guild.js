@@ -7,7 +7,9 @@ import {
   GUILD_STANDINGS,
   GUILD_STANDING_LABELS,
   GUILD_WORDS,
+  guildFromForm,
   guildStep,
+  guildToForm,
   isStandingAllowed,
   tableCrystalShare,
   tableGoldCut,
@@ -25,8 +27,6 @@ const CSS = `
 .gd-preview.bad{color:#ff8a96}
 `;
 
-const pctInputVal = rate => (rate === undefined ? '' : String(Math.round(rate * 1000) / 10));
-
 /** @param {import('./app.ts').App} app */
 export function register(app) {
   const { store, ui } = app;
@@ -41,18 +41,19 @@ export function register(app) {
     if (!h) return;
     const R = app.rules();
     const cur = h.guild;
+    const init = guildToForm(cur);
     const archOpts = `<option value="">${esc(GUILD_WORDS.unsignedOption)}</option>`
-      + GUILD_ARCHETYPES.map(a => `<option value="${esc(a)}"${cur && cur.archetype === a ? ' selected' : ''}>${esc(GUILD_NAMES[a])}</option>`).join('');
-    const standOpts = GUILD_STANDINGS.map(s => `<option value="${esc(s)}"${(cur ? cur.standing : 'core') === s ? ' selected' : ''}>${esc(GUILD_STANDING_LABELS[s])}</option>`).join('');
+      + GUILD_ARCHETYPES.map(a => `<option value="${esc(a)}"${init.archetype === a ? ' selected' : ''}>${esc(GUILD_NAMES[a])}</option>`).join('');
+    const standOpts = GUILD_STANDINGS.map(s => `<option value="${esc(s)}"${init.standing === s ? ' selected' : ''}>${esc(GUILD_STANDING_LABELS[s])}</option>`).join('');
     const html = `<div class="gd-form">
       <div class="gd-grid">
         ${ui.field(GUILD_WORDS.archetypeLabel, `<select data-gd-arch>${archOpts}</select>`)}
         <span data-gd-signed>${ui.field(GUILD_WORDS.standingLabel, `<select data-gd-stand>${standOpts}</select>`)}</span>
       </div>
-      <div data-gd-signed>${ui.field(GUILD_WORDS.customNameLabel, `<input type="text" data-gd-name maxlength="${GUILD_NAME_MAX}" autocomplete="off" value="${esc(cur?.name ?? '')}">`)}</div>
+      <div data-gd-signed>${ui.field(GUILD_WORDS.customNameLabel, `<input type="text" data-gd-name maxlength="${GUILD_NAME_MAX}" autocomplete="off" value="${esc(init.name)}">`)}</div>
       <div class="gd-grid" data-gd-signed>
-        ${ui.field(GUILD_WORDS.goldCutLabel, `<input type="number" data-gd-gold min="0" max="${Math.round(GUILD_GOLD_CUT_MAX * 100)}" step="0.5" inputmode="decimal" value="${esc(pctInputVal(cur?.goldCut))}">`)}
-        ${ui.field(GUILD_WORDS.crystalShareLabel, `<input type="number" data-gd-crys min="0" max="100" step="0.5" inputmode="decimal" value="${esc(pctInputVal(cur?.crystalShare))}">`)}
+        ${ui.field(GUILD_WORDS.goldCutLabel, `<input type="number" data-gd-gold min="0" max="${Math.round(GUILD_GOLD_CUT_MAX * 100)}" step="any" inputmode="decimal" value="${esc(init.goldCut)}">`)}
+        ${ui.field(GUILD_WORDS.crystalShareLabel, `<input type="number" data-gd-crys min="0" max="100" step="any" inputmode="decimal" value="${esc(init.crystalShare)}">`)}
       </div>
       <p class="gd-preview" data-gd-preview aria-live="polite"></p>
     </div>`;
@@ -82,17 +83,16 @@ export function register(app) {
         const okBtn = win.querySelector('.sys-actions button.primary');
         const signedEls = win.querySelectorAll('[data-gd-signed]');
 
-        const parsePct = (raw, maxPct) => {
-          const s = raw.trim();
-          if (!s) return { ok: true, value: undefined };
-          const n = Number(s);
-          if (!Number.isFinite(n) || n < 0 || n > maxPct) return { ok: false, value: undefined };
-          return { ok: true, value: Math.round(n * 100) / 10000 };
-        };
-
         const sync = () => {
           const arch = oneOf(archEl.value, GUILD_ARCHETYPES, null);
           signedEls.forEach(n => { n.hidden = !arch; });
+          const res = guildFromForm({
+            archetype: archEl.value,
+            standing: standEl.value,
+            name: nameEl.value,
+            goldCut: goldEl.value,
+            crystalShare: crysEl.value,
+          }, R);
           if (!arch) {
             pick.guild = null;
             pick.valid = true;
@@ -116,33 +116,16 @@ export function register(app) {
           const defCrystal = tableCrystalShare(arch, standing, R) ?? R.crystal.unsignedShare;
           goldEl.setAttribute('placeholder', GUILD_WORDS.tableDefaultPlaceholder(defGold));
           crysEl.setAttribute('placeholder', GUILD_WORDS.tableDefaultPlaceholder(defCrystal));
-          const gc = parsePct(goldEl.value, Math.round(GUILD_GOLD_CUT_MAX * 100));
-          const cs = parsePct(crysEl.value, 100);
-          if (!gc.ok) {
+          if ('why' in res) {
             pick.valid = false;
-            prevEl.textContent = GUILD_WORDS.badGoldCut;
+            prevEl.textContent = res.why === 'bad-gold-cut' ? GUILD_WORDS.badGoldCut : GUILD_WORDS.badCrystalShare;
             prevEl.classList.add('bad');
             okBtn.disabled = true;
             return;
           }
-          if (!cs.ok) {
-            pick.valid = false;
-            prevEl.textContent = GUILD_WORDS.badCrystalShare;
-            prevEl.classList.add('bad');
-            okBtn.disabled = true;
-            return;
-          }
-          const customName = nameEl.value.replace(/\s+/g, ' ').trim().slice(0, GUILD_NAME_MAX);
-          const next = {
-            archetype: arch,
-            standing,
-            ...(customName ? { name: customName } : {}),
-            ...(gc.value !== undefined ? { goldCut: gc.value } : {}),
-            ...(cs.value !== undefined ? { crystalShare: cs.value } : {}),
-          };
-          pick.guild = next;
+          pick.guild = res.guild;
           pick.valid = true;
-          prevEl.textContent = GUILD_WORDS.previewSigned(next, h.rank, R);
+          prevEl.textContent = GUILD_WORDS.previewSigned(res.guild, h.rank, R);
           prevEl.classList.remove('bad');
           okBtn.disabled = false;
         };

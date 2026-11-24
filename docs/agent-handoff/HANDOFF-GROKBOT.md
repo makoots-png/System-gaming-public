@@ -101,9 +101,9 @@ Start a unit only when no running unit changes the same files.
 
 1. The writer works on a branch of its own, made from `lead-backlog`, commits each step and pushes the branch.
 2. You read the diff and, for a screen, look at it at 390 px wide yourself.
-3. `git checkout lead-backlog`, `git merge --no-ff <branch>` in the foreground; read its last lines before anything
-   else. Then `bun run deps -- --write` and `bun run charts` (a merge can leave the generated docs stale; a conflict in
-   `docs/dependency-map.md` alone is fixed by regenerating it).
+3. `git checkout lead-backlog`, `git merge --no-ff <branch>` in the foreground. Read its last lines before anything
+   else (`docs/dependency-map.md` and `docs/state-machines.md` are untracked and ignored by git, so merges do not need
+   regeneration, and `bun run test` checks both generators directly).
 4. Add the unit's row to `docs/agent-handoff/landed.md` and a trail row with
    `sh scripts/trail.sh <ops|features> "<text>"` (it stamps the machine's time). Commit, and
    `git push --no-verify origin lead-backlog`.
@@ -141,7 +141,7 @@ Start a unit only when no running unit changes the same files.
 ## 7. What is enforced, and what is not for you
 
 - **Enforced for any agent**: the lint tests (`tests/lint.test.ts`: each test's name is a rule and its message says
-  what to do instead), the push hook (`.githooks/pre-push`), the commit-message hook, the post-merge hook, the public
+  what to do instead), the push hook (`.githooks/pre-push`), the commit-message hook, the public
   run.
 - **Not enforced outside Claude Code** (they are hooks of that tool, in `.claude/hooks/`), so they are written rules
   for you: a brief names the files other writers hold and lets the writer change any other file the unit needs; a

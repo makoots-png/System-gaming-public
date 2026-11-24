@@ -1,6 +1,6 @@
 // The lag test: what a GM and a player do most, on a 390 px phone, never runs one task on the page's main thread longer
 // than its case's bound in TASK_MS, never holds a frame past FRAMES and never leaves a tap without a frame past TAP_MS.
-// Animations stay on (the app's own, device() does not turn them off), so a move that runs layout or blocks input fails here.
+// Animations stay on (this file opts back into motion via contextOptions.reducedMotion = 'no-preference'), so a move that runs layout or blocks input fails here.
 //
 // What is measured and why (the experiment, its table and its limits: docs/agent-handoff/audit/notes-lag-measure.md):
 // - The first check is the longest task on the measured page's main thread in CPU time: each task's thread time in a
@@ -29,7 +29,8 @@ import { framesOf, profilerSamplesOf, round1, verdictOf, type CanarySample, type
 
 // No Playwright trace: it takes a snapshot of the page at each action, a task of the harness's own inside the window this
 // file measures (35 to 110 ms tasks at 4x, docs/agent-handoff/final/notes-final.md). The Chrome trace below records only.
-test.use({ trace: 'off' });
+// Opt back into live motion because this file measures animation frame gaps and main-thread work while animations run.
+test.use({ trace: 'off', contextOptions: { reducedMotion: 'no-preference' } });
 
 /**
  * The longest task each case may run on the page's main thread, in ms of CPU on the box that runs the test.

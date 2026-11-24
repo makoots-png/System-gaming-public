@@ -6,7 +6,8 @@
 // starts); a fight with no map named is made from `openArena`, on the same path. A gate names a map by its id (`GateFields.mapId`).
 import type { Rules } from '../rules.ts';
 import { GRID_SIDE, place, terrainOfChar, tiles, TERRAIN } from '../combat/space.ts';
-import type { Grid, Place, Terrain } from '../combat/space.ts';
+import type { Grid, Place, Side, Terrain } from '../combat/space.ts';
+import type { Op } from '../combat/effect-ops.ts';
 import { parseZone } from '../combat/fight-parse.ts';
 import { MAX_ZONES, zoneId } from '../combat/zones.ts';
 import type { Ground, Zone } from '../combat/zones.ts';
@@ -106,4 +107,89 @@ export function fightMapOf(m: BattleMap): { grid: Grid; zones: readonly Zone[]; 
     grid: gridOfMap(m), zones: m.zones.map(z => ({ ...z, id: zoneId(`m-${z.id}`.slice(0, 40)) })),
     fog: m.fog ? { sight: tiles(m.sight), seen: '0'.repeat(m.w * m.h) } : null, starts: m.starts,
   };
+}
+
+// ── the map maker's form projection ──
+/** One lasting field as the map maker holds it: its tiles as grid indices, keeping every other `MapZone` field unchanged. */
+export type MapFormZone = {
+  id: string;
+  name: string;
+  ops: readonly Op[];
+  tiles: Set<number>;
+  readonly spares?: Side | null;
+  readonly tier?: number;
+  readonly upkeep?: Zone['upkeep'];
+  readonly end?: Zone['end'];
+  readonly triggers?: Zone['triggers'];
+  readonly laid?: Zone['laid'];
+  readonly paid?: Zone['paid'];
+};
+/** The map maker's form state: tiles as single-character cells, zones and starts as tile indices. */
+export type MapForm = {
+  name: string;
+  w: number;
+  h: number;
+  tiles: string[];
+  fog: boolean;
+  sight: number;
+  zones: MapFormZone[];
+  starts: { party: number[]; foe: number[] };
+};
+
+/** Opens a saved `BattleMap` into the map maker's form state without dropping any optional `MapZone` field. */
+export function mapToForm(m: BattleMap): MapForm {
+  return {
+    name: m.name,
+    w: m.w,
+    h: m.h,
+    tiles: [...m.tiles],
+    fog: m.fog,
+    sight: m.sight,
+    zones: m.zones.map(z => {
+      const { id, name, ops, ground, owner: _owner, until: _until, endsWithOwner: _ends, ...keep } = z;
+      return {
+        ...keep,
+        id: String(id),
+        name,
+        ops: [...ops],
+        tiles: new Set(ground.tiles.map(p => p.y * m.w + p.x)),
+      };
+    }),
+    starts: {
+      party: m.starts.party.map(p => p.y * m.w + p.x),
+      foe: m.starts.foe.map(p => p.y * m.w + p.x),
+    },
+  };
+}
+
+/** Writes the map maker's form state under `id` as the raw object `parseBattleMap` reads. */
+export function mapFormRaw(st: MapForm, id: string): Record<string, unknown> {
+  return {
+    id,
+    name: st.name,
+    w: st.w,
+    h: st.h,
+    tiles: st.tiles.join(''),
+    fog: st.fog,
+    sight: st.sight,
+    zones: st.zones.filter(z => z.tiles.size).map(z => {
+      const { id: zid, name, ops, tiles: tileSet, ...keep } = z;
+      return {
+        ...keep,
+        id: zid,
+        name: name.trim() || 'Field',
+        ops,
+        ground: { kind: 'tiles', tiles: [...tileSet].sort((a, b) => a - b).map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })) },
+      };
+    }),
+    starts: {
+      party: st.starts.party.map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })),
+      foe: st.starts.foe.map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })),
+    },
+  };
+}
+
+/** Parses the map maker's form state back into a `BattleMap` under `id`, or null when it has no name. */
+export function mapFromForm(st: MapForm, id: string, R: Rules): BattleMap | null {
+  return parseBattleMap(mapFormRaw(st, id), R);
 }

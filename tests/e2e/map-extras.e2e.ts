@@ -221,25 +221,30 @@ async function mark(gm: Page, rat: string) {
   await map(gm).locator('[data-go]').tap();
 }
 
-test('a player sees a stack count on the rat rise, then go off in a burst at its threshold', async ({ device }) => {
-  const { gm, player, ids } = await kitsFight(device);
-  await lowestDice(gm);
-  await mark(gm, ids.rat);
-  await token(player, ids.rat).tap();
-  const chip = combat(player).locator('[data-tbsheet] [data-chip="pain"]');
-  await expect(chip.locator('.c-n')).toHaveText('1');
-  // the GM's own status is not in the player's rules: the doc carries its def, so its detail says its cap and threshold
-  await test.step('a tap on the chip opens its detail with its count of its cap and what it does at 2', async () => {
-    await chip.locator('[data-dt-key]').tap();
-    await expect(combat(player).locator('[data-tbsheet] .dt')).toContainText('1 of 5 stack.');
-    await expect(combat(player).locator('[data-tbsheet] .dt')).toContainText('At 2 stacks');
+test.describe('stack threshold particle burst with motion enabled', () => {
+  // motion.burst skips drawing .m-bit particles under reduced motion (src/views/motion.ts); this test verifies the burst.
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } });
+
+  test('a player sees a stack count on the rat rise, then go off in a burst at its threshold', async ({ device }) => {
+    const { gm, player, ids } = await kitsFight(device);
+    await lowestDice(gm);
+    await mark(gm, ids.rat);
+    await token(player, ids.rat).tap();
+    const chip = combat(player).locator('[data-tbsheet] [data-chip="pain"]');
+    await expect(chip.locator('.c-n')).toHaveText('1');
+    // the GM's own status is not in the player's rules: the doc carries its def, so its detail says its cap and threshold
+    await test.step('a tap on the chip opens its detail with its count of its cap and what it does at 2', async () => {
+      await chip.locator('[data-dt-key]').tap();
+      await expect(combat(player).locator('[data-tbsheet] .dt')).toContainText('1 of 5 stack.');
+      await expect(combat(player).locator('[data-tbsheet] .dt')).toContainText('At 2 stacks');
+    });
+    const before = await bits(player);
+    await turnOf(gm, ids.brakk);
+    await mark(gm, ids.rat);
+    await expect.poll(() => playerDoc(player).then(d => d.burst && d.burst.ids)).toEqual([ids.rat]);
+    await expect.poll(() => bits(player)).toBeGreaterThan(before);
+    await expect(chip).toHaveCount(0);
   });
-  const before = await bits(player);
-  await turnOf(gm, ids.brakk);
-  await mark(gm, ids.rat);
-  await expect.poll(() => playerDoc(player).then(d => d.burst && d.burst.ids)).toEqual([ids.rat]);
-  await expect.poll(() => bits(player)).toBeGreaterThan(before);
-  await expect(chip).toHaveCount(0);
 });
 
 test('the GM makes a status of their own on the rat\'s card, and the player opens it on the rat\'s token and reads what it does', async ({ device }) => {

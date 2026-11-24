@@ -31,7 +31,7 @@ import { PUT_WORDS } from '../core/hunter/conditions.ts';
 import { restRefusalWords, restsLeftLine } from '../core/hunter/rests.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
-import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
+import { BUNDLE_NAME, REWARD_BOUNDS, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import * as motion from './motion.ts';
 import { icon, sprite } from './icons.ts';
@@ -824,8 +824,8 @@ export function register(app) {
         <div data-seedwrap><div class="lbl dv-sub">Available titles</div><ul class="plain" data-tseed></ul></div>
         <div class="bar-ctrl" data-tgm hidden><button type="button" data-tadd>Add title</button></div>
         <form class="t-form" data-tform hidden>
-          ${ui.field('Title name', '<input type="text" name="tname" maxlength="60" autocomplete="off" required>')}
-          ${ui.field('Description', '<input type="text" name="tdesc" maxlength="200" autocomplete="off">')}
+          ${ui.field('Title name', `<input type="text" name="tname" maxlength="${REWARD_BOUNDS.title}" autocomplete="off" required>`)}
+          ${ui.field('Description', `<input type="text" name="tdesc" maxlength="${REWARD_BOUNDS.titleDesc}" autocomplete="off">`)}
           <div data-tbonus></div>
           <div class="bar-ctrl"><button type="button" data-tcancel>Cancel</button><button type="submit" class="primary">Save title</button></div>
         </form>`;
@@ -861,7 +861,7 @@ export function register(app) {
       });
       form.addEventListener('submit', e => {
         e.preventDefault(); if (!app.isGM()) return;
-        const h = store.active(), name = form.tname.value.replace(/\s+/g, ' ').trim().slice(0, 60); if (!name) return;
+        const h = store.active(), name = form.tname.value.replace(/\s+/g, ' ').trim().slice(0, REWARD_BOUNDS.title); if (!name) return;
         const bonus = app.api.maker.readBonus(form);
         const tid = editingTitle === 'new' ? store.id('t') : editingTitle;
         // a refused title keeps the form open with what was typed

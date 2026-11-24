@@ -77,6 +77,8 @@ const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !
 const inList = <T extends string>(list: readonly T[], v: unknown): T | null =>
   ((list as readonly unknown[]).includes(v) ? (v as T) : null);
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
+/** Rounds a guild rate to 0.01% precision (four decimal places) so parser and dialog agree. */
+const roundRate = (n: number): number => Math.round(n * 10000) / 10000;
 const fmtNum = (n: number): string => n.toLocaleString('en-US');
 const pct = (rate: number): string => `${Math.round(rate * 1000) / 10}%`;
 const tablesOf = (archetype: GuildArchetype, R: Pick<Rules, 'guilds'>): ArchetypeTables =>
@@ -151,8 +153,8 @@ export function parseGuild(v: unknown, R: Pick<Rules, 'guilds'> = RULES): GuildM
   const standing = inList(GUILD_STANDINGS, v.standing);
   if (!archetype || !standing || !isStandingAllowed(archetype, standing, R)) return null;
   const rawName = typeof v.name === 'string' ? v.name.replace(/\s+/g, ' ').trim().slice(0, GUILD_NAME_MAX) : '';
-  const goldCut = typeof v.goldCut === 'number' && Number.isFinite(v.goldCut) ? clamp(v.goldCut, 0, GUILD_GOLD_CUT_MAX) : undefined;
-  const crystalShare = typeof v.crystalShare === 'number' && Number.isFinite(v.crystalShare) ? clamp(v.crystalShare, 0, 1) : undefined;
+  const goldCut = typeof v.goldCut === 'number' && Number.isFinite(v.goldCut) ? roundRate(clamp(v.goldCut, 0, GUILD_GOLD_CUT_MAX)) : undefined;
+  const crystalShare = typeof v.crystalShare === 'number' && Number.isFinite(v.crystalShare) ? roundRate(clamp(v.crystalShare, 0, 1)) : undefined;
   return {
     archetype,
     standing,
@@ -255,6 +257,66 @@ export function guildStep(
 /** Compact GM party-board chip for a hunter's guild, or null when unsigned. */
 export const guildChip = (g: GuildMembership | null | undefined): string | null =>
   (g ? `${guildDisplayName(g)} · ${GUILD_STANDING_LABELS[g.standing]}` : null);
+
+// ── the guild dialog's form projection ──
+/** The guild dialog's five form inputs as text. */
+export type GuildForm = {
+  readonly archetype: string;
+  readonly standing: string;
+  readonly name: string;
+  readonly goldCut: string;
+  readonly crystalShare: string;
+};
+/** Result of reading the guild dialog's form fields. */
+export type GuildFormResult =
+  | { readonly ok: true; readonly guild: GuildMembership | null }
+  | { readonly ok: false; readonly why: 'standing-unavailable' | 'bad-gold-cut' | 'bad-crystal-share'; readonly archetype: GuildArchetype; readonly standing: GuildStanding };
+
+/** Formats a stored fraction (0..1) as percentage text to 0.01% precision, matching `guildFromForm`. */
+export const formatGuildPct = (rate: number | undefined): string =>
+  (rate === undefined ? '' : String(Math.round(rate * 10000) / 100));
+
+/** Opens a saved guild membership (or null for unsigned) into the guild dialog's form fields. */
+export function guildToForm(g: GuildMembership | null): GuildForm {
+  return {
+    archetype: g ? g.archetype : '',
+    standing: g ? g.standing : 'core',
+    name: g?.name ?? '',
+    goldCut: formatGuildPct(g?.goldCut),
+    crystalShare: formatGuildPct(g?.crystalShare),
+  };
+}
+
+function parseGuildPct(raw: string, maxPct: number): { readonly ok: true; readonly value: number | undefined } | { readonly ok: false } {
+  const s = raw.trim();
+  if (!s) return { ok: true, value: undefined };
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0 || n > maxPct) return { ok: false };
+  return { ok: true, value: roundRate(n / 100) };
+}
+
+/** Reads the guild dialog's form fields into a `GuildMembership | null`, or the validation failure. */
+export function guildFromForm(form: GuildForm, R: Pick<Rules, 'guilds'> = RULES): GuildFormResult {
+  const archetype = inList(GUILD_ARCHETYPES, form.archetype);
+  if (!archetype) return { ok: true, guild: null };
+  const standing = inList(GUILD_STANDINGS, form.standing) ?? 'core';
+  if (!isStandingAllowed(archetype, standing, R)) return { ok: false, why: 'standing-unavailable', archetype, standing };
+  const gc = parseGuildPct(form.goldCut, Math.round(GUILD_GOLD_CUT_MAX * 100));
+  if (!gc.ok) return { ok: false, why: 'bad-gold-cut', archetype, standing };
+  const cs = parseGuildPct(form.crystalShare, 100);
+  if (!cs.ok) return { ok: false, why: 'bad-crystal-share', archetype, standing };
+  const name = form.name.replace(/\s+/g, ' ').trim().slice(0, GUILD_NAME_MAX);
+  return {
+    ok: true,
+    guild: {
+      archetype,
+      standing,
+      ...(name ? { name } : {}),
+      ...(gc.value !== undefined ? { goldCut: gc.value } : {}),
+      ...(cs.value !== undefined ? { crystalShare: cs.value } : {}),
+    },
+  };
+}
 
 /** Read-only guild summary line shown on the hunter's Status Window sheet. */
 export function guildSheetLine(h: { readonly rank: Rank; readonly guild?: GuildMembership | null }, R: Pick<Rules, 'crystal' | 'guilds'>): string {

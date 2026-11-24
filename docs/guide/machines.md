@@ -2,7 +2,7 @@
 
 ## Machines and their charts
 
-`docs/state-machines.md` charts every explicit machine, one line each here, by area. `bun run charts` walks the real reducers with the event lists in `tests/models/` or the chart's own (the fight has no end of states, so its chart replays the random play of `tests/models/fight-play.ts`), and `tests/statecharts.test.ts` fails when the file is stale or a state has no box. Read a machine's chart before you change it. A new machine gets a view in `scripts/charts/` and an entry in `MACHINES` in `scripts/statecharts.ts`, and a line here.
+`bun run charts` walks the real reducers with the event lists in `tests/models/` or each chart's own (the fight has no end of states, so its chart replays the random play of `tests/models/fight-play.ts`) and writes a local, gitignored `docs/state-machines.md` on demand. `tests/statecharts.test.ts` walks every machine directly from the source and fails when rendering breaks, a union state has no box, or a box cannot be reached. Read a machine's chart before you change it. A new machine gets a view in `scripts/charts/`, an entry in `MACHINES` in `scripts/statecharts.ts`, and a line here.
 
 The fight:
 

@@ -44,7 +44,7 @@ export function triggerList(host, triggers, M, name, who) {
   const numIn = (attr, label, value) => `<label class="field"><span class="lbl">${esc(label)}</span><input type="number" inputmode="numeric" step="1" ${attr} value="${esc(value)}"></label>`;
   host.innerHTML = `<div class="mk-trigs" data-trigs></div><button type="button" class="mk-add" data-add-trig>Add a trigger</button>`;
   const raise = () => host.dispatchEvent(new Event('input', { bubbles: true }));
-  /** @type {{ el: HTMLElement; fx: any; id: string; need: any; event: string }[]} */
+  /** @type {{ el: HTMLElement; fx: any; id: string; need: any; wasTo: any; event: string }[]} */
   const trigs = [];
   let made = 0;
   function addTrig(t) {
@@ -64,7 +64,7 @@ export function triggerList(host, triggers, M, name, who) {
       <p class="mk-fx-err" data-terr role="alert"></p>`;
     host.querySelector('[data-trigs]').appendChild(el);
     const fx = M.effects(el.querySelector('[data-tfx]'), { ops: t ? t.ops : [], kind: 'land', event: t ? t.on : 'hitDealt' });
-    trigs.push({ event: t ? t.on : 'hitDealt', el, fx, id, need: t && t.need ? t.need : null });
+    trigs.push({ event: t ? t.on : 'hitDealt', el, fx, id, need: t && t.need ? t.need : null, wasTo: t ? t.to : null });
   }
   triggers.forEach(addTrig);
   /** A trigger as its box holds it, or the words of what is wrong. */
@@ -83,7 +83,9 @@ export function triggerList(host, triggers, M, name, who) {
     if (!ops.length) return { err: 'Add at least one effect.' };
     if (ops.length > K.triggerOps) return { err: `A trigger can have at most ${K.triggerOps} effects.` };
     const limit = lk === 'fight' ? { kind: 'fight', n } : { kind: lk === 'round' ? 'round' : 'each' };
-    const to = toK === 'area' ? { kind: 'area', radius, on: M.picked(t.el, `${t.id}-on`) || 'foes' } : toK;
+    const areaOn = M.picked(t.el, `${t.id}-on`) || 'foes';
+    const keepMost = toK === 'area' && t.wasTo && typeof t.wasTo === 'object' && t.wasTo.kind === 'most' && t.wasTo.radius === radius && t.wasTo.on === areaOn;
+    const to = toK === 'area' ? (keepMost ? t.wasTo : { kind: 'area', radius, on: areaOn }) : toK;
     const base = { on: ev, to, limit, ops, ...(t.need ? { need: t.need } : {}) };
     if (party) return { trigger: { ...base, tag: tag || null } };
     if (ev === 'statusGained' || ev === 'statusEnded') { const key = q('[data-tk="key"]').value; return key ? { trigger: { ...base, key } } : { err: 'Pick a status.' }; }
@@ -158,7 +160,7 @@ export function statusBlocks(box, def, M, name) {
           <div class="lbl">Trigger at</div>${M.chips(c('at'), AT_LABEL, th && th.at.kind === 'formula' ? 'formula' : 'count', { label: 'Trigger at' })}
           <div data-at="count">${numIn('data-k="thN" min="1" aria-label="Trigger stack count"', 'Stack count', th && th.at.kind === 'count' ? th.at.n : st ? st.cap : 5)}</div>
           <label class="field" data-at="formula"><span class="lbl">Stack count formula</span><input type="text" autocomplete="off" spellcheck="false" data-k="thF" aria-label="Stack count formula" placeholder="vit" value="${esc(th && th.at.kind === 'formula' ? printFormula(th.at.formula) : 'vit')}"></label>
-          <div class="lbl">Applies to</div>${M.chips(c('th-to'), REACH_LABEL, th && th.to.kind === 'area' ? 'area' : 'bearer', { label: 'Applies to' })}
+          <div class="lbl">Applies to</div>${M.chips(c('th-to'), REACH_LABEL, th && th.to.kind !== 'bearer' ? 'area' : 'bearer', { label: 'Applies to' })}
           ${area('th', th && th.to)}
           <div class="lbl">Effects to apply</div><div data-th-fx></div>
           <div class="lbl">After triggering, stacks are</div>${M.chips(c('then'), THEN_LABEL, th ? th.then : 'spend', { label: 'After triggering' })}
@@ -205,7 +207,9 @@ export function statusBlocks(box, def, M, name) {
         if (thFx.blocked()) errs.stack = errs.stack || 'Fix the effect above.';
         else if (!ops.length) errs.stack = errs.stack || 'Add at least one effect for the stack trigger.';
         else if (ops.length > K.triggerOps) errs.stack = errs.stack || `A threshold can have at most ${K.triggerOps} effects.`;
-        const to = toK === 'area' ? { kind: 'area', radius, on: M.picked(box, c('th-on')) || 'foes' } : { kind: 'bearer' };
+        const thOnSide = M.picked(box, c('th-on')) || 'foes';
+        const keepMost = toK === 'area' && th && th.to.kind === 'most' && th.to.radius === radius && th.to.on === thOnSide;
+        const to = toK === 'area' ? (keepMost ? th.to : { kind: 'area', radius, on: thOnSide }) : { kind: 'bearer' };
         if (at) threshold = { at, to, ops, then: M.picked(box, c('then')) === 'keep' ? 'keep' : 'spend' };
       }
       out.stack = { cap, leave, keep: M.picked(box, c('keep')) === 'sheet' ? 'sheet' : 'fight', threshold };

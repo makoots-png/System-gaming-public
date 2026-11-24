@@ -23,6 +23,8 @@ export default defineConfig({
     // A tap blocked by a window fails in 15 s and names what is in the way, rather than hanging until the test timeout.
     actionTimeout: 15_000,
     trace: 'retain-on-failure',
+    // Reduce motion by default so layout checks never measure a control mid-animation. Tests that verify motion opt back in.
+    contextOptions: { reducedMotion: 'reduce' },
     // A machine with its own Chromium (a cloud box) names it here. Without it Playwright uses the one it installed.
     launchOptions: process.env.E2E_CHROMIUM ? { executablePath: process.env.E2E_CHROMIUM } : {},
   },
