@@ -44,8 +44,9 @@ export type Sheet = {
   readonly resistPen: number;
   readonly armorPenFlat: number;
   readonly resistPenFlat: number;
-  /** Physical, arcane and support power: what a damage, heal or shield formula reads. */
+  /** Physical, finesse, arcane and support power: what a damage, heal or shield formula reads. */
   readonly phys: number;
+  readonly finesse: number;
   readonly mag: number;
   readonly sup: number;
   /** The target's side of the reaction roll. */
@@ -111,7 +112,7 @@ export type SheetNumber = keyof Sheet;
 export const SHEET_LABELS: { readonly [K in SheetNumber]: string } = {
   hpMax: 'Max HP', manaMax: 'Max mana', fatigueMax: 'Fatigue capacity', carry: 'Carry capacity', weight: 'Gear weight',
   speed: 'Speed', move: 'Move (tiles per round)', stride: 'Stride (tiles per turn)', armor: 'Armor', resist: 'Resist',
-  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', phys: 'Physical power', mag: 'Arcane power', sup: 'Support power', react: 'Reaction',
+  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', phys: 'Physical power', finesse: 'Finesse power', mag: 'Arcane power', sup: 'Support power', react: 'Reaction',
   aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit multiplier', opening: 'Opening bonus',
   tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel break threshold (% of max HP)',
   costCut: 'Ability cost reduction', drain: 'Lifesteal', haste: 'Ability haste',
@@ -228,6 +229,8 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
   const load = 1 - Math.max(bulk, F.loadSlow * clamp((weight / carry - F.freeLoad) / (1 - F.freeLoad), 0, 1));
   const speed = Math.round(clamp(((F.speedBase + c('agi', F.speedCap)) * load + b('speed')) * (1 + speedPct / 100), F.speedMin, F.speedMax));
   const move = F.moveBase * speed / 100 + b('move');
+  const phys = f.power * F.powerK * e('str') + b('phys');
+  const finesse = Math.max(phys, f.power * F.powerK * (F.statBase + F.finesseAgi * x('agi'))) + b('finesse');
   return {
     hpMax: Math.max(1, Math.round(f.hp * (1 + (level - 1) / F.growthDiv) * F.hpBase * (1 + c('vit', F.hpVitCap)) + b('hpMax'))),
     manaMax: Math.max(0, Math.round(F.manaBase + c('pow', F.manaCap) + b('manaMax'))),
@@ -243,7 +246,8 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
     resistPen: Math.min(F.penMax, c('ctl', F.penCap) + b('resistPen')),
     armorPenFlat: b('armorPenFlat'),
     resistPenFlat: b('resistPenFlat'),
-    phys: f.power * F.powerK * e('str') + b('phys'),
+    phys,
+    finesse,
     mag: f.power * F.powerK * e('pow') + b('mag'),
     sup: f.power * F.powerK * e('pre') + b('sup'),
     react: F.statBase + x('ins') + F.reactAgi * x('agi') + b('react'),

@@ -54,6 +54,8 @@ type Differs = {
   readonly cooldown?: number;
   /** A touch's reach, in feet as the old text gives it. */
   readonly feet?: number;
+  /** Uses finesse power (`max(phys, agi finesse)`) instead of physical power alone. */
+  readonly finesse?: boolean;
 };
 /** Fields an ability sets past its kind's, as `abilityOf` takes them. */
 type Fields = Pick<AbilityInput, 'aim' | 'shape' | 'range' | 'effect' | 'ops' | 'zone'>;
@@ -70,6 +72,24 @@ function withDice(f: Formula, dice: Formula): Formula {
   }
 }
 
+/** `f` with the user's `phys` replaced by `finesse` (for bows, light melee weapons, and finesse skills). */
+function withFinesse(f: Formula): Formula {
+  switch (f.kind) {
+    case 'sheet': return f.whose === 'user' && f.key === 'phys' ? { ...f, key: 'finesse' } : f;
+    case 'number': case 'dice': case 'stat': case 'charge': case 'stacks': case 'field': case 'missing': case 'held': case 'count': return f;
+    case 'negate': return { kind: 'negate', arg: withFinesse(f.arg) };
+    case 'fn': return { ...f, arg: withFinesse(f.arg) };
+    case 'binary': case 'min': case 'max': return { ...f, left: withFinesse(f.left), right: withFinesse(f.right) };
+    default: return f satisfies never;
+  }
+}
+
+/** Whether `dice` is a single light die (`1d4` to `1d6`, matching `weaponWeight === 1` in items.ts). */
+function isLightDice(dice: string, R: KindRules): boolean {
+  const parsed = parseFormula(dice, R);
+  return parsed.ok && parsed.formula.kind === 'dice' && parsed.formula.count === 1 && parsed.formula.sides <= 6;
+}
+
 /**
  * A built-in of `kind`: the kind's ability with the differences given. The formula is the kind's recommended one with
  * these dice (a text the rules' dice limits refuse keeps the kind's dice), times the pace's share over the kind's. It is
@@ -81,8 +101,9 @@ function built(kind: AbilityKind, id: string, name: string, d: Differs, R: KindR
   const own = recommended(kind, ticks, R).formula;
   const parsed = d.dice === undefined ? null : parseFormula(d.dice, R);
   const dice = parsed?.ok ? withDice(own, parsed.formula) : own;
+  const scaled = d.finesse ? withFinesse(dice) : dice;
   const share = R.fight.cost[pace] / R.fight.cost[KINDS[kind].pace];
-  const formula: Formula = share === 1 ? dice : { kind: 'binary', op: '*', left: { kind: 'number', value: share }, right: dice };
+  const formula: Formula = share === 1 ? scaled : { kind: 'binary', op: '*', left: { kind: 'number', value: share }, right: scaled };
   const reach = d.feet === undefined ? null : tiles(Math.floor(d.feet / R.fight.tileFeet));
   return abilityOf(kind, {
     id: abilityId(id), name, ticks,
@@ -107,12 +128,14 @@ export const ARCHETYPE_ATTACKS: { readonly [A in Archetype]: (R: KindRules) => A
 };
 
 /**
- * A hunter's default attack with this weapon: its kind's recommended formula with the weapon's dice, `<dice> + phys` for
- * a strike and the quick share of it for a shot (plan 3.3). With no weapon, or dice the rules refuse, it is the strike
- * kind's own, `1d8 + phys`, the default attack of the design's builds.
+ * A hunter's default attack with this weapon: its kind's recommended formula with the weapon's dice. Bows (`shot`) and
+ * light melee weapons (`1d4` to `1d6`, weight 1) scale with `finesse` so Agility builds deal growing weapon damage;
+ * heavier melee weapons and unarmed strikes (`1d8 + phys`) scale with `phys`.
  */
 export function weaponAttack(item: Weapon | null, R: KindRules): Ability {
-  return item === null ? built('strike', ATTACK_ID, 'Strike', {}, R) : built(item.attack, ATTACK_ID, item.name, { dice: item.dice }, R);
+  if (item === null) return built('strike', ATTACK_ID, 'Strike', {}, R);
+  const finesse = item.attack === 'shot' || isLightDice(item.dice, R);
+  return built(item.attack, ATTACK_ID, item.name, { dice: item.dice, ...(finesse ? { finesse: true } : {}) }, R);
 }
 
 /**
@@ -121,7 +144,7 @@ export function weaponAttack(item: Weapon | null, R: KindRules): Ability {
  * they have no ability.
  */
 const SKILLS = {
-  'Dagger Rush': R => built('strike', 'dagger-rush', 'Dagger Rush', { dice: '2d4', pace: 'quick', cooldown: 2 }, R),
+  'Dagger Rush': R => built('strike', 'dagger-rush', 'Dagger Rush', { dice: '2d4', pace: 'quick', cooldown: 2, finesse: true }, R),
   Mutilation: R => built('strike', 'mutilation', 'Mutilation', { dice: '2d6', cooldown: 3 }, R),
   Sprint: R => onSelf('sprint', 'Sprint', 'hasted', 1, { pace: 'quick', cooldown: 3 }, R),
   Stealth: R => onSelf('stealth', 'Stealth', 'stealth', null, { cooldown: 4 }, R),
@@ -130,7 +153,7 @@ const SKILLS = {
   'Shadow Exchange': () => null,
   Arise: () => null,
   'Shield Wall': R => built('support', 'shield-wall', 'Shield Wall', { cooldown: 3 }, R),
-  'Marked Shot': R => built('shot', 'marked-shot', 'Marked Shot', { dice: '1d6', cooldown: 2 }, R),
+  'Marked Shot': R => built('shot', 'marked-shot', 'Marked Shot', { dice: '1d6', cooldown: 2, finesse: true }, R),
   'Arc Bolt': R => built('curse', 'arc-bolt', 'Arc Bolt', { dice: '2d6' }, R),
   // An aura around its user (design 4.8): Regenerating's heal a round, at the user's rank, for 3 rounds, to the user and
   // every ally within the rules' aura radius; it moves with the user and ends when the user goes down.

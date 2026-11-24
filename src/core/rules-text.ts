@@ -427,7 +427,7 @@ export function keystoneTierLabel(key: KeystoneKey): string {
 /** Plain description of a confluence's awakened powers, or null when a keystone has none. */
 export function keystoneAwakenedLine(k: Keystone): string | null {
   if (!k.awakened) return null;
-  return k.awakened.worn?.desc || k.awakened.active?.name || null;
+  return k.awakenedLine || k.awakened.worn?.desc || k.awakened.active?.name || null;
 }
 
 /** Confirm bar preview line naming keystones gained or lost by pending points; empty when unchanged or off. */

@@ -9,7 +9,7 @@ import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
   str: 'Physical power, carry, tenacity (with Discipline)',
-  agi: 'Speed, Reaction (dodging attacks)',
+  agi: 'Speed, Reaction (dodging attacks), finesse power (bows and light melee weapons)',
   vit: 'Max HP, fatigue capacity, a little armor',
   ins: 'Reaction, the opening roll, crits',
   dis: 'Will (resisting curses), resist, tenacity (with Strength), holding a channel',

@@ -75,7 +75,7 @@ test('a bonus adds to a stat or to a sheet number derive adds it to, never to we
   const sheetKeys = Object.keys(SHEET_LABELS);
   expect(BONUS_KEYS.slice(0, STAT_KEYS.length)).toEqual([...STAT_KEYS]);
   expect(BONUS_KEYS.slice(STAT_KEYS.length).filter(k => !sheetKeys.includes(k))).toEqual([]);
-  expect(sheetKeys.filter(k => !(BONUS_KEYS as readonly string[]).includes(k)).sort()).toEqual(['armor', 'mag', 'phys', 'resist', 'shadows', 'sight', 'stride', 'sup', 'weight']);
+  expect(sheetKeys.filter(k => !(BONUS_KEYS as readonly string[]).includes(k)).sort()).toEqual(['armor', 'finesse', 'mag', 'phys', 'resist', 'shadows', 'sight', 'stride', 'sup', 'weight']);
   expect(Object.keys(BONUS_LABELS).sort()).toEqual([...BONUS_KEYS].sort());
   expect([BONUS_LABELS.armorPenFlat, BONUS_LABELS.resistPenFlat]).toEqual(['Flat armor penetration', 'Flat magic penetration']);
   expect([BONUS_LABELS.healPower, BONUS_LABELS.shieldDrain]).toEqual(['% Heal and shield power', '% Damage to shield']);

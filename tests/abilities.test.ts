@@ -177,9 +177,9 @@ describe('the single-hit bound of design section 6', () => {
 describe('each entry as plan section 3.5 and 3.3 restate it', () => {
   const round = R.fight.round;
 
-  test('Dagger Rush is a quick strike of 2d4 at the quick share, ready again 2 rounds later', () => {
+  test('Dagger Rush is a quick finesse strike of 2d4 at the quick share, ready again 2 rounds later', () => {
     const a = skill('Dagger Rush');
-    expect([a.kind, a.cost.time, text(a), a.cost.cooldown]).toEqual(['strike', R.fight.cost.quick, '0.7 * (2d4 + phys)', 2 * round]);
+    expect([a.kind, a.cost.time, text(a), a.cost.cooldown]).toEqual(['strike', R.fight.cost.quick, '0.7 * (2d4 + finesse)', 2 * round]);
   });
 
   test('Mutilation is a standard strike of 2d6, ready again 3 rounds later', () => {
@@ -213,10 +213,10 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
     expect([SKILL_ABILITIES.Arise(R), SKILL_ABILITIES['Shadow Exchange'](R)]).toEqual([null, null]);
   });
 
-  test('Shield Wall is a support with the kind\'s shield; Marked Shot a shot of 1d6; Arc Bolt a curse of 2d6', () => {
+  test('Shield Wall is a support with the kind\'s shield; Marked Shot a finesse shot of 1d6; Arc Bolt a curse of 2d6', () => {
     const [wall, mark, bolt] = [skill('Shield Wall'), skill('Marked Shot'), skill('Arc Bolt')];
     expect([wall.kind, wall.effect?.type, text(wall), (wall.effect?.by === 'hand')]).toEqual(['support', 'shield', '1.5 * sup', false]);
-    expect([mark.kind, text(mark), mark.cost.cooldown]).toEqual(['shot', '0.7 * (1d6 + phys)', 2 * round]);
+    expect([mark.kind, text(mark), mark.cost.cooldown]).toEqual(['shot', '0.7 * (1d6 + finesse)', 2 * round]);
     expect([bolt.kind, text(bolt), bolt.cost.cooldown]).toEqual(['curse', '2d6 + mag', 0]);
   });
 
@@ -227,18 +227,23 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
     ]);
   });
 
-  test('a weapon attacks with its dice plus physical power; a bow shoots at the quick share; no weapon strikes with 1d8', () => {
+  test('bows and light melee weapons (1d4 to 1d6) scale with finesse; heavier melee weapons and unarmed strikes scale with phys', () => {
     const of = (name: string): Ability => weaponAttack(WEAPONS.find(w => w.name === name)!, R);
-    const dagger = of('Iron Dagger'), bow = of('Hunting Bow'), sword = of('Steel Longsword'), fist = weaponAttack(null, R);
-    expect([dagger.name, dagger.kind, text(dagger), (dagger.effect?.by === 'hand')]).toEqual(['Iron Dagger', 'strike', '1d4 + phys', true]);
-    expect([bow.kind, text(bow)]).toEqual(['shot', '0.7 * (1d8 + phys)']);
+    const dagger = of('Iron Dagger'), fang = of("Kasaka's Venom Fang"), shortbow = of('Goblin Shortbow'), bow = of('Hunting Bow');
+    const sword = of('Steel Longsword'), spellblade = of('Spellblade'), killer = of('Knight Killer'), fist = weaponAttack(null, R);
+    expect([dagger.name, dagger.kind, text(dagger), (dagger.effect?.by === 'hand')]).toEqual(['Iron Dagger', 'strike', '1d4 + finesse', true]);
+    expect([fang.kind, text(fang)]).toEqual(['strike', '1d6 + finesse']);
+    expect([shortbow.kind, text(shortbow)]).toEqual(['shot', '0.7 * (1d6 + finesse)']);
+    expect([bow.kind, text(bow)]).toEqual(['shot', '0.7 * (1d8 + finesse)']);
     expect([sword.kind, text(sword), (sword.effect?.by === 'hand')]).toEqual(['strike', '1d8 + phys', false]);
+    expect([spellblade.kind, text(spellblade)]).toEqual(['strike', '1d8 + phys']);
+    expect([killer.kind, text(killer)]).toEqual(['strike', '1d10 + phys']);
     expect([fist.name, fist.kind, text(fist)]).toEqual(['Strike', 'strike', '1d8 + phys']);
   });
 
   test('a weapon whose dice the rules refuse attacks with its kind\'s dice', () => {
     expect(text(weaponAttack({ name: 'Odd', dice: '', attack: 'strike' }, R))).toBe('1d8 + phys');
-    expect(text(weaponAttack({ name: 'Huge', dice: '2d5000', attack: 'shot' }, R))).toBe('0.7 * (1d8 + phys)');
+    expect(text(weaponAttack({ name: 'Huge', dice: '2d5000', attack: 'shot' }, R))).toBe('0.7 * (1d8 + finesse)');
   });
 
   test('a GM\'s override of a kind\'s numbers reaches the built-in abilities', () => {

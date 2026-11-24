@@ -39,11 +39,11 @@ export function ownSeed(save: Save, name: string, job = ''): Save {
   return seed ? { ...save, hunters: save.hunters.map(h => (h === seed ? neutralSeed(h, name || 'Hunter', job) : h)) } : save;
 }
 
-// Each pregen spends its 12 creation points 2:1 on the design's build for its job (m2-plan section 3.6): Brakk the tank
-// (Vitality 18, Strength 14), Mira the speed build (Agility 18, Strength 14), Eldrin the cannon (Power 18, Control 14).
+// Each pregen spends its 12 creation points 2:1 on its job's stats: Brakk the Tanker (Vitality 18, Strength 14),
+// Mira the Ranger (Agility 18, Control 14), Eldrin the Mage (Power 18, Control 14).
 export const PREGENS: readonly { name: string; job: string; stats: Partial<Stats>; skills: readonly SkillDef[]; item: ItemDef }[] = [
   { name: 'Brakk Ironhide', job: 'Tanker', stats: { vit: 18, str: 14 }, skills: [STARTER_SKILLS.shieldWall, STARTER_SKILLS.ironSkin], item: STARTER_GEAR.towerShield },
-  { name: 'Mira Vale', job: 'Ranger', stats: { agi: 18, str: 14 }, skills: [STARTER_SKILLS.markedShot, STARTER_SKILLS.trailsense], item: STARTER_GEAR.huntingBow },
+  { name: 'Mira Vale', job: 'Ranger', stats: { agi: 18, ctl: 14 }, skills: [STARTER_SKILLS.markedShot, STARTER_SKILLS.trailsense], item: STARTER_GEAR.huntingBow },
   { name: 'Eldrin Voss', job: 'Mage', stats: { pow: 18, ctl: 14 }, skills: [STARTER_SKILLS.arcBolt, STARTER_SKILLS.manaSense], item: STARTER_GEAR.manaPotion },
 ];
 

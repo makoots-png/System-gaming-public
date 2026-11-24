@@ -18,6 +18,7 @@ import type { Bonus } from '../hunter/derive.ts';
 import { parseFormula } from '../formula.ts';
 import type { Formula } from '../formula.ts';
 import { abilityId } from '../combat/ability-types.ts';
+import type { Ability } from '../combat/ability-types.ts';
 import { statusKey } from '../combat/effect-ops.ts';
 import type { LandOp, Op, Reach, StackRule, StatusDef } from '../combat/effect-ops.ts';
 import type { Limit, Trigger } from '../combat/triggers.ts';
@@ -40,6 +41,8 @@ export type Keystone = Powers & {
   readonly bonus: Bonus;
   /** A confluence only: powers added when the hunter's job names this pair and its Job Change chain is done (A.5); null for none. */
   readonly awakened: Powers | null;
+  /** Optional plain description of an awakened confluence's powers when its awakened power is an active ability. */
+  readonly awakenedLine?: string;
 };
 /** One keystone, made under the rules it is read with. */
 export type KeystoneMaker = (R: KeystoneRegistryRules) => Keystone;
@@ -199,7 +202,8 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
 
 // ── Confluences (rank C, the two highest stats at 25% each) ──
 /** A confluence with the powers its job's Job Change adds. */
-const awake = (k: Keystone, awakened: Powers): Keystone => ({ ...k, awakened });
+const awake = (k: Keystone, awakened: Powers, awakenedLine?: string): Keystone =>
+  ({ ...k, awakened, ...(awakenedLine ? { awakenedLine } : {}) });
 const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   'str+agi': () => {
     const line = 'Each move gives you 1 Momentum (up to 3). Your next hit deals 10% more damage per stack, then all stacks are spent.';
@@ -270,12 +274,12 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'agi+ins': R => {
-    const line = 'When a foe\'s attack misses you, you strike back for 40% of your physical power (once a round).';
-    const cut = 'Your crits strike again for 4 times your physical power.';
+    const line = 'When a foe\'s attack misses you, you strike back for 40% of your finesse power (once a round).';
+    const cut = 'Your crits strike again for 4 times your finesse power.';
     return awake(plain('Riposte', line, { worn: worn('Riposte', line, [], [
-      { on: 'avoided', tag: null, to: 'other', limit: ROUND, ops: [{ op: 'damage', type: 'physical', amount: formula('0.4 * phys', R) }] },
+      { on: 'avoided', tag: null, to: 'other', limit: ROUND, ops: [{ op: 'damage', type: 'physical', amount: formula('0.4 * finesse', R) }] },
     ]) }), { worn: worn('Riposte, awakened', cut, [], [
-      { on: 'critDealt', tag: null, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'physical', amount: formula('4 * phys', R) }] },
+      { on: 'critDealt', tag: null, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'physical', amount: formula('4 * finesse', R) }] },
     ]) });
   },
   'agi+dis': () => {
@@ -390,13 +394,21 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'pre+pow': R => {
-    const line = 'Your heals and shields are 20% stronger, and each support ability you use gives you 10 mana.';
-    const drink = 'When you defeat a foe, allies within 3 tiles heal 14% of your max HP.';
-    return awake(plain('Conduit', line, { worn: worn('Conduit', line, [], [
-      { on: 'used', tag: SUPPORT, to: 'self', limit: EACH, ops: [{ op: 'mana', amount: formula('10', R) }] },
-    ]) }, { healPower: 20 }), { worn: worn('Conduit, awakened', drink, [], [
-      { on: 'kill', tag: null, to: area(3, 'allies'), limit: EACH, ops: [{ op: 'heal', amount: formula('0.14 * hpmax', R) }] },
-    ]) });
+    const line = 'You can lead 1 more shadow and gain 5 max mana. When you defeat a foe, you recover 4 mana (once a round).';
+    const summonRounds = R.fight.kit.summonRounds;
+    const callLine = `Once a fight, you can use Call Shadow to summon a same-rank Shadow Soldier for ${summonRounds} round${summonRounds === 1 ? '' : 's'}.`;
+    const callBase = abilityOf('support', {
+      id: abilityId('keystone-call-shadow'), name: 'Call Shadow', aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
+    }, R);
+    const callShadow: Ability = {
+      ...callBase,
+      cost: { ...callBase.cost, mana: 0 },
+      gates: [{ kind: 'uses', per: 'fight', n: 1 }],
+      summon: { name: 'Shadow Soldier', archetype: 'brute', rounds: summonRounds, statuses: [] },
+    };
+    return awake(plain('Shadowbound', line, { worn: worn('Shadowbound', line, [], [
+      { on: 'kill', tag: null, to: 'self', limit: ROUND, ops: [{ op: 'mana', amount: formula('4', R) }] },
+    ]) }, { shadows: 1, manaMax: 5 }), { active: callShadow }, callLine);
   },
   'pre+ctl': R => {
     const line = 'A foe you put a harmful status on takes 10% more damage from everyone for a round.';

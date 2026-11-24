@@ -47,25 +47,25 @@ const KEYS = Object.keys(SHEET_LABELS) as SheetNumber[];
 // no table's either: bonuses alone give them, 0 on a plain build (balance plan section 10, item-stats 2). The last, the sight level, is no table's: every body sees at the rules' `fight.stealth.sightBase`, 0, until a status raises it (notes-7-stealth.md).
 const TABLE_2_3: Record<Shown, Record<BuildId, readonly number[]>> = {
   E: {
-    speed: [45, 10, 100, 24, 8, 114, 6.84, 4, 10, 15, 0, 0, 0, 0, 7.85, 6, 6, 17.41, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    tank: [51, 10, 108, 24, 32, 65, 3.90, 2, 65, 20, 0, 0, 0, 0, 7.85, 6, 6, 10, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    cannon: [45, 15, 100, 20, 8, 100, 6, 3, 10, 15, 2.87, 2.87, 0, 0, 6, 10.45, 6, 10, 13.09, 10, 1, 1.54, 0, 0, 3.58, 1, 0.15, 0.02, 0, 0, 0, 0, 2, 0],
-    bruiser: [48, 10, 104, 28, 18, 90, 5.40, 3, 32, 5, 0, 0, 0, 0, 10.45, 6, 6, 10, 10, 10, 1, 1.50, 0, 4.44, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    support: [45, 10, 100, 20, 8, 100, 6, 3, 10, 18, 0, 0, 0, 0, 6, 6, 10.45, 10, 10, 13.09, 1, 1.50, 0, 2.09, 0, 1.16, 0.17, 0, 0, 0, 0, 0, 3, 0],
+    speed: [45, 10, 100, 24, 8, 114, 6.84, 4, 10, 15, 0, 0, 0, 0, 7.85, 8.09, 6, 6, 17.41, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    tank: [51, 10, 108, 24, 32, 65, 3.90, 2, 65, 20, 0, 0, 0, 0, 7.85, 7.85, 6, 6, 10, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    cannon: [45, 15, 100, 20, 8, 100, 6, 3, 10, 15, 2.87, 2.87, 0, 0, 6, 6, 10.45, 6, 10, 13.09, 10, 1, 1.54, 0, 0, 3.58, 1, 0.15, 0.02, 0, 0, 0, 0, 2, 0],
+    bruiser: [48, 10, 104, 28, 18, 90, 5.40, 3, 32, 5, 0, 0, 0, 0, 10.45, 10.45, 6, 6, 10, 10, 10, 1, 1.50, 0, 4.44, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    support: [45, 10, 100, 20, 8, 100, 6, 3, 10, 18, 0, 0, 0, 0, 6, 6, 6, 10.45, 10, 10, 13.09, 1, 1.50, 0, 2.09, 0, 1.16, 0.17, 0, 0, 0, 0, 0, 3, 0],
   },
   C: {
-    speed: [81, 10, 100, 34, 8, 141, 8.46, 5, 10, 15, 0, 0, 0, 0, 15.59, 6, 6, 43.60, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    tank: [114, 10, 123, 34, 32, 70, 4.20, 3, 74, 20, 0, 0, 0, 0, 15.59, 6, 6, 10, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    cannon: [81, 24, 100, 20, 8, 100, 6, 3, 10, 15, 11.42, 11.42, 0, 0, 6, 26.16, 6, 10, 25.99, 10, 1, 1.64, 0, 0, 14.28, 1, 0.15, 0.07, 0, 0, 0, 0, 2, 0],
-    bruiser: [101, 10, 114, 43, 18, 100, 6, 3, 39, 5, 0, 0, 0, 0, 26.16, 6, 6, 10, 10, 10, 1, 1.50, 0, 12.83, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    support: [81, 10, 100, 20, 8, 100, 6, 3, 10, 26, 0, 0, 0, 0, 6, 6, 26.16, 10, 10, 25.99, 1, 1.50, 0, 7.96, 0, 1.46, 0.22, 0, 0, 0, 0, 0, 8, 0],
+    speed: [81, 10, 100, 34, 8, 141, 8.46, 5, 10, 15, 0, 0, 0, 0, 15.59, 15.59, 6, 6, 43.60, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    tank: [114, 10, 123, 34, 32, 70, 4.20, 3, 74, 20, 0, 0, 0, 0, 15.59, 15.59, 6, 6, 10, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    cannon: [81, 24, 100, 20, 8, 100, 6, 3, 10, 15, 11.42, 11.42, 0, 0, 6, 6, 26.16, 6, 10, 25.99, 10, 1, 1.64, 0, 0, 14.28, 1, 0.15, 0.07, 0, 0, 0, 0, 2, 0],
+    bruiser: [101, 10, 114, 43, 18, 100, 6, 3, 39, 5, 0, 0, 0, 0, 26.16, 26.16, 6, 6, 10, 10, 10, 1, 1.50, 0, 12.83, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    support: [81, 10, 100, 20, 8, 100, 6, 3, 10, 26, 0, 0, 0, 0, 6, 6, 6, 26.16, 10, 10, 25.99, 1, 1.50, 0, 7.96, 0, 1.46, 0.22, 0, 0, 0, 0, 0, 8, 0],
   },
   S: {
-    speed: [174, 10, 100, 46, 8, 162, 9.72, 5, 10, 15, 0, 0, 0, 0, 32.61, 6, 6, 98.27, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    tank: [282, 10, 134, 46, 32, 70, 4.2, 3, 81, 20, 0, 0, 0, 0, 32.61, 6, 6, 10, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    cannon: [174, 31, 100, 20, 8, 100, 6, 3, 10, 15, 21.03, 21.03, 0, 0, 6, 58.96, 6, 10, 54.36, 10, 1, 1.76, 0, 0, 26.29, 1, 0.15, 0.13, 0, 0, 0, 0, 2, 0],
-    bruiser: [257, 10, 126, 54, 18, 100, 6, 3, 46, 5, 0, 0, 0, 0, 58.96, 6, 6, 10, 10, 10, 1, 1.50, 0, 20.88, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
-    support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 0, 0, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 14.98, 0, 1.69, 0.28, 0, 0, 0, 0, 0, 19, 0],
+    speed: [174, 10, 100, 46, 8, 162, 9.72, 5, 10, 15, 0, 0, 0, 0, 32.61, 32.61, 6, 6, 98.27, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    tank: [282, 10, 134, 46, 32, 70, 4.2, 3, 81, 20, 0, 0, 0, 0, 32.61, 32.61, 6, 6, 10, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    cannon: [174, 31, 100, 20, 8, 100, 6, 3, 10, 15, 21.03, 21.03, 0, 0, 6, 6, 58.96, 6, 10, 54.36, 10, 1, 1.76, 0, 0, 26.29, 1, 0.15, 0.13, 0, 0, 0, 0, 2, 0],
+    bruiser: [257, 10, 126, 54, 18, 100, 6, 3, 46, 5, 0, 0, 0, 0, 58.96, 58.96, 6, 6, 10, 10, 10, 1, 1.50, 0, 20.88, 0, 1, 0.15, 0, 0, 0, 0, 0, 2, 0],
+    support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 0, 0, 6, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 14.98, 0, 1.69, 0.28, 0, 0, 0, 0, 0, 19, 0],
   },
 };
 // Table 2.6 with the body of balance plan section 1: a monster wears its archetype's kit (`kitGear`; a rarer piece holds
@@ -114,10 +114,28 @@ describe('the five builds (tables 2.3.E, 2.3.C and 2.3.S)', () => {
     });
   }
 
-  test('the sheet has the 27 numbers the tables print, the penetration as four, in their order, lifesteal, ability haste, heal and shield power and damage to shield, and the sight level after them', () => {
-    expect(KEYS).toHaveLength(34);
+  test('the sheet has the 27 numbers the tables print, finesse power, the penetration as four, in their order, lifesteal, ability haste, heal and shield power and damage to shield, and the sight level after them', () => {
+    expect(KEYS).toHaveLength(35);
     expect(KEYS.at(-1)).toBe('sight');
     expect(Object.keys(sheetOf(build('tank', 'C'), RULES))).toEqual(KEYS);
+  });
+
+  test('finesse power scales off Agility for Assassin and Ranger builds without overtaking Strength, and follows GM overrides', () => {
+    const assassinC = sheetOf({ stats: stats({ agi: 63, ins: 33 }), level: 20, gear: [LIGHT], perks: {} }, RULES);
+    const assassinS = sheetOf({ stats: stats({ agi: 174, ins: 83 }), level: 70, gear: [LIGHT], perks: {} }, RULES);
+    const bruiserC = sheetOf(build('bruiser', 'C'), RULES);
+    expect(assassinC.phys).toBeCloseTo(6, 2);
+    expect(assassinC.finesse).toBeCloseTo(15.47, 2);
+    expect(assassinS.finesse).toBeCloseTo(30.89, 2);
+    expect(bruiserC.finesse).toBe(bruiserC.phys);
+    expect(bruiserC.phys).toBeGreaterThan(assassinC.finesse);
+    // Debuffed Agility stays finite and never falls under Strength's phys
+    const debuffed = sheetOf({ stats: stats({ agi: 10 }), level: 1, gear: [], perks: {} }, RULES, [{ op: 'stat', key: 'agi', amount: -20 }]);
+    expect(Number.isFinite(debuffed.finesse)).toBe(true);
+    expect(debuffed.finesse).toBe(debuffed.phys);
+    // GM override on fight.finesseAgi reaches finesse
+    const off = sheetOf({ stats: stats({ agi: 63, ins: 33 }), level: 20, gear: [LIGHT], perks: {} }, { ...RULES, fight: { ...RULES.fight, finesseAgi: 0 } });
+    expect(off.finesse).toBe(off.phys);
   });
 
   test('the speed build at C acts 1.41 times as often as the bruiser, with 60% of its physical power (design 2.2)', () => {
@@ -144,7 +162,7 @@ describe('monsters (table 2.6)', () => {
 
   test('a kind scales max HP, power, armor and resist and nothing else', () => {
     const normal = monsterSheet('C', 'caster', 'normal', RULES), boss = monsterSheet('C', 'caster', 'boss', RULES);
-    const scaled: SheetNumber[] = ['hpMax', 'phys', 'mag', 'sup', 'armor', 'resist'];
+    const scaled: SheetNumber[] = ['hpMax', 'phys', 'finesse', 'mag', 'sup', 'armor', 'resist'];
     expect(KEYS.filter(k => !scaled.includes(k) && boss[k] !== normal[k])).toEqual([]);
     expect(boss.mag / normal.mag).toBeCloseTo(1.2 / 0.7, 10);
   });
@@ -152,7 +170,7 @@ describe('monsters (table 2.6)', () => {
   test('an archetype scales max HP and power and nothing else: a C caster has 1.8 times the HP and 0.75 times the power of its bare body', () => {
     const bare = { ...RULES, fight: { ...RULES.fight, archetypes: { ...RULES.fight.archetypes, caster: { hp: 1, power: 1 } } } };
     const plain = monsterSheet('C', 'caster', 'normal', bare), m = monsterSheet('C', 'caster', 'normal', RULES);
-    const scaled: SheetNumber[] = ['hpMax', 'phys', 'mag', 'sup'];
+    const scaled: SheetNumber[] = ['hpMax', 'phys', 'finesse', 'mag', 'sup'];
     expect(KEYS.filter(k => !scaled.includes(k) && m[k] !== plain[k])).toEqual([]);
     expect(m.mag / plain.mag).toBeCloseTo(0.75, 10);
     expect(Math.abs(m.hpMax - 1.8 * plain.hpMax)).toBeLessThanOrEqual(1);

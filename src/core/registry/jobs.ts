@@ -36,7 +36,7 @@ const STANDARD: JobDef['steps'] = [
 const JOBS = {
   // the army and the mana to raise it: Presence holds shadows, Power is mana
   Necromancer: { steps: STANDARD, pair: 'pre+pow', alloc: { pre: 2, pow: 1 } },
-  // the first and the most turns: Agility is speed, Instinct the opening, Reaction and crit faces
+  // the first and the most turns: Agility is speed and finesse power, Instinct the opening, Reaction and crit faces
   Assassin: { steps: STANDARD, pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
   // the spell and its aim: Power is arcane power and mana, Control accuracy, penetration and the cost cut
   Mage: { steps: STANDARD, pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 } },
@@ -46,7 +46,7 @@ const JOBS = {
   Healer: { steps: STANDARD, pair: 'dis+pre', alloc: { pre: 2, dis: 1 } },
   // the blow and the body to stand in reach: Strength is physical power, Vitality HP and armor
   Fighter: { steps: STANDARD, pair: 'str+vit', alloc: { str: 2, vit: 1 } },
-  // range kept and the shot that lands: Agility is speed and move, Control accuracy and crit size
+  // range kept and the shot that lands: Agility is speed, move and finesse power, Control accuracy and crit size
   Ranger: { steps: STANDARD, pair: 'agi+ctl', alloc: { agi: 2, ctl: 1 } },
 } satisfies Record<string, JobDef>;
 

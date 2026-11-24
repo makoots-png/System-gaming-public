@@ -12,9 +12,16 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { stepQuest } from '../src/core/hunter/job-chain.ts';
 import { chained, deleteQuest } from '../src/core/hunter/quests.ts';
 import { isRefused } from '../src/core/save-step.ts';
-import { newHunter } from '../src/core/save.ts';
+import { freshSave, newHunter, parseSave } from '../src/core/save.ts';
+import { parseFight } from '../src/core/combat/fight-parse.ts';
+import { hunterRow } from '../src/core/combat/rows.ts';
+import { reduce } from '../src/core/combat/fight.ts';
+import { combatantId } from '../src/core/combat/ability-types.ts';
+import { fightId } from '../src/core/ids.ts';
+import { keystoneAwakenedLine } from '../src/core/rules-text.ts';
+import { printFormula } from '../src/core/formula.ts';
 import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
-import { BONUS_KEYS, RULES } from '../src/core/rules.ts';
+import { BONUS_KEYS, RULES, rulesOf } from '../src/core/rules.ts';
 import type { BonusKey, Rank } from '../src/core/rules.ts';
 import { KEYSTONES, keystoneOf } from '../src/core/registry/keystones.ts';
 import type { Keystone } from '../src/core/registry/keystones.ts';
@@ -25,7 +32,7 @@ import type { Rarity } from '../src/core/registry/items.ts';
 import type { Bonus } from '../src/core/hunter/derive.ts';
 import { STAT_KEYS, statsBy } from '../src/core/stats.ts';
 import type { StatKey, Stats } from '../src/core/stats.ts';
-import { jcid, qid } from './fixtures/ids.ts';
+import { dev, jcid, qid } from './fixtures/ids.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 
 const F = KEYSTONES_ON.fight;
@@ -322,5 +329,75 @@ describe('the registry of keystones (design A.6)', () => {
     expect(spend.unweighed).toEqual([]);
     expect(spend.points).toBeGreaterThanOrEqual(F.keystone.budget.apex * (1 - BAND));
     expect(spend.points).toBeLessThanOrEqual(F.keystone.budget.apex * (1 + BAND));
+  });
+
+  test('Riposte scales off finesse power in both base and awakened triggers', () => {
+    const r = keystoneOf(confluence('agi', 'ins'), RULES);
+    expect(r.name).toBe('Riposte');
+    const baseOp = r.worn?.triggers?.[0]?.ops[0];
+    const awakeOp = r.awakened?.worn?.triggers?.[0]?.ops[0];
+    expect(baseOp?.op === 'damage' ? printFormula(baseOp.amount as Exclude<typeof baseOp.amount, readonly unknown[]>) : '').toBe('0.4 * finesse');
+    expect(awakeOp?.op === 'damage' ? printFormula(awakeOp.amount as Exclude<typeof awakeOp.amount, readonly unknown[]>) : '').toBe('4 * finesse');
+    const baseSpend = spendOf(r, r.bonus, F.keystone.pairRank);
+    const awakeSpend = spendOf(r.awakened!, {}, F.keystone.pairRank);
+    expect(baseSpend.unweighed).toEqual([]);
+    expect(awakeSpend.unweighed).toEqual([]);
+    expect(baseSpend.points).toBeGreaterThanOrEqual(F.keystone.budget.confluence * (1 - BAND));
+    expect(baseSpend.points).toBeLessThanOrEqual(F.keystone.budget.confluence * (1 + BAND));
+    expect(awakeSpend.points).toBeGreaterThanOrEqual(F.keystone.budget.confluence * (1 - BAND));
+    expect(awakeSpend.points).toBeLessThanOrEqual(F.keystone.budget.confluence * (1 + BAND));
+  });
+
+  test('Shadowbound replaces Conduit for pre+pow Necromancers with shadow capacity, mana harvest, and awakened Call Shadow', () => {
+    const sb = keystoneOf(confluence('pre', 'pow'), RULES);
+    expect(sb.name).toBe('Shadowbound');
+    expect(sb.bonus).toEqual({ shadows: 1, manaMax: 5 });
+    expect(sb.worn?.triggers?.[0]).toMatchObject({ on: 'kill', to: 'self', limit: { kind: 'round' } });
+    expect(sb.awakened?.active?.name).toBe('Call Shadow');
+    expect(sb.awakened?.active?.cost.mana).toBe(0);
+    expect(sb.awakened?.active?.gates).toEqual([{ kind: 'uses', per: 'fight', n: 1 }]);
+    expect(sb.awakened?.active?.summon).toEqual({ name: 'Shadow Soldier', archetype: 'brute', rounds: RULES.fight.kit.summonRounds, statuses: [] });
+    expect(keystoneAwakenedLine(sb)).toBe(`Once a fight, you can use Call Shadow to summon a same-rank Shadow Soldier for ${RULES.fight.kit.summonRounds} rounds.`);
+    // Follows GM override on fight.kit.summonRounds
+    const longer = keystoneOf(confluence('pre', 'pow'), rulesOf({ fight: { kit: { summonRounds: 5 } } }));
+    expect(longer.awakened?.active?.summon?.rounds).toBe(5);
+    expect(keystoneAwakenedLine(longer)).toContain('for 5 rounds.');
+  });
+
+  test('an old save with an active fight holding legacy Conduit worn statuses loads cleanly and fresh fights use Shadowbound', () => {
+    const env = { now: new Date(AT), newDeviceToken: () => 'tok-0123456789abcdef0123456789ab', newDeviceId: () => dev('d-old') };
+    const base = freshSave(env, { onboarded: true });
+    const necro = {
+      ...base.hunters[0]!, name: 'Sung', rank: 'C' as const, level: 20, job: 'Necromancer', jobDone: 'Necromancer',
+      stats: built({ pre: 46, pow: 23 }),
+    };
+    // Build a row holding legacy Conduit worn statuses as an older version would have serialized into Save.fight
+    const freshRow = hunterRow(necro, combatantId('h1'), KEYSTONES_ON);
+    expect(freshRow.statuses.some(s => s.def.label === 'Shadowbound')).toBe(true);
+    expect(freshRow.abilities.some(a => a.name === 'Call Shadow')).toBe(true);
+    const legacyRow = {
+      ...freshRow,
+      statuses: [
+        ...freshRow.statuses.filter(s => s.def.label !== 'Shadowbound'),
+        { key: statusKey('conduit'), source: { id: combatantId('h1'), tier: 2 }, until: null, since: tick(0), settledAt: tick(0), worn: true as const,
+          def: { label: 'Conduit', desc: 'Legacy healer confluence.', ops: [] } },
+        { key: statusKey('conduit-awakened'), source: { id: combatantId('h1'), tier: 2 }, until: null, since: tick(0), settledAt: tick(0), worn: true as const,
+          def: { label: 'Conduit, awakened', desc: 'Legacy awakened confluence.', ops: [] } },
+      ],
+    };
+    const fight = reduce(null, { type: 'add', fightId: fightId('f-old'), rows: [legacyRow], openings: [] }, { rules: KEYSTONES_ON }).fight!;
+    const raw = JSON.stringify({ ...base, hunters: [necro], fight, rulesOverrides: { fight: { keystone: { on: true } } } });
+    const loaded = parseSave(raw, env);
+    expect(loaded.kind).toBe('save');
+    if (loaded.kind !== 'save') throw new Error('expected save to parse');
+    const loadedFight = parseFight(loaded.save.fight, KEYSTONES_ON);
+    expect(loadedFight?.rows[0]?.statuses.some(s => s.def.label === 'Conduit')).toBe(true);
+    expect(loadedFight?.rows[0]?.statuses.some(s => s.def.label === 'Conduit, awakened')).toBe(true);
+    // Outside the legacy fight, the sheet and next fight use Shadowbound (+1 shadow, +5 max mana)
+    const sheet = hunterSheet(loaded.save.hunters[0]!, KEYSTONES_ON).sheet;
+    const withoutKs = hunterSheet(loaded.save.hunters[0]!, RULES).sheet;
+    expect(sheet.shadows).toBe(withoutKs.shadows + 1);
+    expect(sheet.manaMax).toBe(withoutKs.manaMax + 5);
+    expect(Number(sheet.healPower)).toBe(0);
   });
 });

@@ -453,6 +453,7 @@ const SPEC = {
     penCap: of(40, STAT_CAP),
     penMax: whole(60, 0, 100, 'maximum percentage of armor or magic resist that penetration can ignore, from 0 to 100'),
     powerK: real(0.6, 0.01, 10, 'power gained per effective point in a power stat, from 0.01 to 10'), // phys, mag and sup are 0.6 * eff of their stat: uncapped, so damage keeps growing with rank
+    finesseAgi: real(0.47, 0, 1, 'share of effective Agility above base that feeds finesse power, from 0 to 1'), // finesse = max(phys, powerK * (statBase + finesseAgi * above(agi))): lets agi+ins Assassins and agi+ctl Rangers scale bows and light melee without overtaking Strength or breaking the speed triangle
     critFacesCap: whole(5, 0, 10, 'maximum extra critical-hit faces added to the d20 by stats, from 0 to 10'), // a crit is 5% to 30% of uses, never the 1 in 3 where it becomes the expected hit
     critSizeBase: real(1.5, 1, 5, 'base critical-hit damage multiplier. Must be at least 1'), critSizeCap: real(0.5, 0, 5, 'maximum extra critical-hit damage multiplier from stats, from 0 to 5'), // a crit is 1.5 to 2 times: felt, and never more than today's double dice
     openK: real(0.25, 0, 2, 'opening roll bonus per point of Instinct, from 0 to 2'), openCap: whole(6, 0, 20, 'maximum opening roll bonus from Instinct, from 0 to 20'), // Instinct's opening bonus on the d20, capped at 6 so the die still decides 70% of the opening
@@ -781,7 +782,7 @@ const SPEC = {
       // a stat point's worth, a rank gives 30). A keystone is what a build earns for specialising, so it is set from what
       // design A.6's keystones of the tier weigh as written, not from a title's 2 to 4 points (at 4 Worldbreaker kept 3%
       // of a strike): the marks Follow Through 10.2, Rally 8.7 and Lockdown 11.6 sit about 10; the confluences
-      // Executioner 17.8, Vanguard and Conduit 16.7, Riposte 12.8 and Endless Stride 12.4 about 15; the apexes Undying 24.3
+      // Executioner 17.8, Vanguard 16.7, Riposte 12.8 and Endless Stride 12.4 about 15; the apexes Undying 24.3
       // and Cataclysm 29.9 about 25. An apex is two and a half marks, as A.8 asks (a mark's gain 3 to 8 points of win
       // share, an apex's 8 to 15). A keystone far from its tier moves, not this (notes-11-keystones-build.md, K2).
       budget: {

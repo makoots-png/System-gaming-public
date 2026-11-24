@@ -150,6 +150,13 @@ describe('an override of a list rule', () => {
     ]);
   });
 
+  test('fight.finesseAgi accepts shares from 0 to 1 and refuses values outside that range', () => {
+    expect(parseOverrides({ fight: { finesseAgi: 0.5 } })).toEqual({ overrides: { fight: { finesseAgi: 0.5 } }, refused: [] });
+    expect(rulesOf(parseOverrides({ fight: { finesseAgi: 0 } }).overrides).fight.finesseAgi).toBe(0);
+    expect(parseOverrides({ fight: { finesseAgi: -0.1 } }).refused.map(r => [r.path, r.reason])).toEqual([['fight.finesseAgi', 'range']]);
+    expect(parseOverrides({ fight: { finesseAgi: 1.5 } }).refused.map(r => [r.path, r.reason])).toEqual([['fight.finesseAgi', 'range']]);
+  });
+
   test('reviveDebtShare and reviveDebtBurn together must be at most 1, and reviveDebtXpRate stays in 0 to 1', () => {
     expect(parseOverrides({ reviveDebtShare: 0.75, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.5 })).toEqual({
       overrides: { reviveDebtShare: 0.75, reviveDebtBurn: 0.25, reviveDebtXpRate: 0.5 },

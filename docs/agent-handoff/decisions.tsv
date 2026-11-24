@@ -802,3 +802,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T21:37Z	arch	clear-presets (V3) landed on lead-backlog; clears route to pay, one Clear panel, Approve all; unit 6951, browser 610 (3 selector fixes, 3 load reruns); merged with A2, cross-check 8 browser tests green
 2026-11-24T22:09Z	arch	stuck-takeover (warn sweep PR 2) landed on lead-backlog; stuck update opens the takeover window, export strips secrets; unit 6958, browser 618 (2 load reruns)
 2026-11-24T22:17Z	ops	PR 116 (A2 shadow summon costs + Gate Clear heal, V3 GM clears pay directly + Approve all) merged to main
+2026-11-24T22:33Z	ops	PR 117 (warn sweep PR 2, stuck update takeover) merged to main
+2026-11-24T22:33Z	arch	job-scaling (A1) landed on lead-backlog; finesse power, Riposte, Shadowbound; 2 E fight-sim rows moved in bounds; unit 6973 on merged tree, browser 614 (raise rerun)
