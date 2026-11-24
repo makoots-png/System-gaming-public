@@ -17,7 +17,7 @@
 // it in death", then "Whole shop should be closed in death." A crystal still reaches a dead hunter from the GM (an award)
 // or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`): the owner,
 // Nov 22, a crystal handed over after the death counts as bought before it.
-import { SLOTS, valueOf } from '../registry/items.ts';
+import { SLOTS, WEAR_LIMIT, valueOf } from '../registry/items.ts';
 import type { Item, ItemTemplate, PriceRules, Priced, Slot } from '../registry/items.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -47,7 +47,7 @@ const DISTINGUISHES: Record<keyof Item, boolean> = {
   // them would lose one pick (loot's `lootOf` already compares every field but the count).
   // Waits on the owner's ruling SMX-rules-5.3 ("items that differ in description or attack do not stack"): as the app
   // behaves today, they do not. The ruling is this row.
-  desc: true, attack: true,
+  desc: true, attack: true, twoHanded: true,
 };
 const DISTINGUISHING = (Object.keys(DISTINGUISHES) as (keyof Item)[]).filter(k => DISTINGUISHES[k]);
 /** What makes two unworn things one stack: every field that `DISTINGUISHES`, and nothing else. */
@@ -95,8 +95,15 @@ export const WEAR_EVENTS = ['equip', 'unequip', 'edit', 'reslot', 'remove'] as c
 export type WearEvent = (typeof WEAR_EVENTS)[number];
 /** Why a change to what is worn is refused: the item is not held, it is not worn, or the hunter is in a fight. */
 export type WearWhy = 'no-item' | 'not-worn' | 'in-fight';
-/** What a refused change says (`ui.wrote`'s words). `no-item` and `not-worn` are changes the screen never offers. */
-export const GEAR_WORDS: Readonly<Partial<Record<WearWhy, string>>> = { 'in-fight': 'Gear cannot change during a fight.' };
+/** Why equipping an item may be refused: any `WearWhy`, an item without a gear slot, or already wearing `WEAR_LIMIT` items. */
+export type PlanWhy = WearWhy | 'not-gear' | 'wear-limit';
+/** What a refused change says (`ui.wrote`'s words). `no-item`, `not-worn` and `not-gear` are changes the screen never offers. */
+export const GEAR_WORDS: Readonly<Partial<Record<PlanWhy, string>>> = {
+  'in-fight': 'Gear cannot change during a fight.',
+  'wear-limit': `You are already wearing ${WEAR_LIMIT} of ${WEAR_LIMIT} items. Unequip an item first.`,
+};
+/** An allowed equip: the slot the item takes and every item id it replaces (for the view's Equip vs Swap label). */
+export type WearPlan = { readonly ok: true; readonly slot: Slot; readonly replaces: readonly ItemId[] };
 
 type Cell = WearState | { readonly no: WearWhy };
 const NO_ITEM: Cell = { no: 'no-item' }, NOT_WORN: Cell = { no: 'not-worn' }, IN_FIGHT: Cell = { no: 'in-fight' };
@@ -136,34 +143,110 @@ const editOf = (h: Carrying, itemId: string, it: ItemTemplate): WearEvent => {
   return slot === null || wearable(it, slot) ? 'edit' : 'reslot';
 };
 
+/** How many gear slots `h` currently wears (derived from `equipped`, at most `WEAR_LIMIT`). */
+export const wornCount = (h: Carrying): number => Object.values(h.equipped).filter(Boolean).length;
+/** The two-handed weapon locking `h`'s off hand, or null when off hand is free to use. */
+export const handLockedBy = (h: Carrying): Item | null => {
+  const id = h.equipped.weapon;
+  const it = id ? h.items.find(i => i.id === id) : undefined;
+  return it?.twoHanded ? it : null;
+};
+
 /**
- * What a hunter wears, read from a save or a sheet: slot by slot, the item `named` gives it, kept when it is wearable
- * there and worn in no slot before; else the slot is empty. So one item in two slots stays in the first, and a stack or
- * an item that does not fit its slot goes back to the bag (SMX-rules-5.1).
+ * What a hunter wears, read from a save, a sheet, or a wear step: the single statement of the worn invariant.
+ * Walks `SLOTS` in order, keeping an item when it is wearable in that slot, not already worn in an earlier slot, not
+ * in `offhand` while a two-handed weapon sits in `weapon`, and within `WEAR_LIMIT` (6). Everything else stays in the bag.
  */
 export function parseWorn(named: (slot: Slot) => Item | undefined): Record<Slot, ItemId | null> {
   const out = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
+  let kept = 0, twoHanded = false;
   for (const slot of SLOTS) {
+    if (kept >= WEAR_LIMIT) break;
+    if (slot === 'offhand' && twoHanded) continue;
     const it = named(slot);
-    if (it && wearable(it, slot) && !Object.values(out).includes(it.id)) out[slot] = it.id;
+    if (!it || !wearable(it, slot) || Object.values(out).includes(it.id)) continue;
+    out[slot] = it.id;
+    kept++;
+    if (slot === 'weapon' && it.twoHanded) twoHanded = true;
   }
   return out;
 }
 
-/**
- * Item `itemId`, held and fitting `slot`, worn there: out of any other slot, swapping out what was there. From a stack
- * one is split off under `splitId` and worn. The one write of a slot besides emptying one; `equip` and a loadout's swap
- * (loadouts.ts) call it.
- */
-export function wearIn<H extends Carrying>(h: H, itemId: string, slot: Slot, splitId: ItemId): H {
-  const it = h.items.find(i => i.id === itemId);
-  if (!it || !fits(it, slot)) return h;
-  const split = it.qty > 1, wornId = split ? splitId : it.id;
-  const items = split ? [...h.items.map(i => (i === it ? { ...i, qty: i.qty - 1 } : i)), { ...it, id: splitId, qty: 1 }] : h.items;
-  return { ...h, items, equipped: { ...unwear(h.equipped, wornId), [slot]: wornId } };
+/** Candidate slots for equipping `it`: empty ring slots first, then `it.slot`, then the other ring slot. */
+function ringCandidates(h: Carrying, own: Slot): readonly Slot[] {
+  const other: Slot = own === 'ring1' ? 'ring2' : 'ring1';
+  const empty: Slot[] = (['ring1', 'ring2'] as const).filter(s => !h.equipped[s]);
+  return [...new Set<Slot>([...empty, own, other])];
 }
+/**
+ * Whether item `itemId` can be worn on `h`, which slot it takes, and which worn item ids it replaces. Checks `TABLE`
+ * first (`in-fight`, `no-item`), then `not-gear`, then `WEAR_LIMIT` (counting a two-handed weapon as 1 worn item that
+ * also replaces `offhand`, and an off-hand item as replacing a worn two-handed weapon).
+ */
+export function wearPlan(h: Carrying, itemId: string, inFight: boolean): WearPlan | Refused<PlanWhy> {
+  const to = wearMove(h, itemId, 'equip', inFight), it = h.items.find(i => i.id === itemId);
+  if (isRefused(to) || !it) return isRefused(to) ? to : refuse('no-item');
+  if (!it.slot) return refuse('not-gear');
+  const current = slotOf(h, itemId);
+  if (current !== null) return { ok: true, slot: current, replaces: [] };
+  const candidates: readonly Slot[] = it.slot.startsWith('ring') ? ringCandidates(h, it.slot) : [it.slot];
+  const base = wornCount(h);
+  for (const slot of candidates) {
+    const raw: (ItemId | null)[] = [h.equipped[slot]];
+    if (slot === 'weapon' && it.twoHanded) raw.push(h.equipped.offhand);
+    if (slot === 'offhand' && handLockedBy(h)) raw.push(h.equipped.weapon);
+    const replaces = [...new Set(raw.filter((id): id is ItemId => id !== null))];
+    if (base - replaces.length + 1 <= WEAR_LIMIT) return { ok: true, slot, replaces };
+  }
+  return refuse('wear-limit');
+}
+
 /** Slot `slot` emptied. */
-export const emptySlot = <H extends Carrying>(h: H, slot: Slot): H => ({ ...h, equipped: { ...h.equipped, [slot]: null } });
+const emptySlot = <H extends Carrying>(h: H, slot: Slot): H => ({ ...h, equipped: { ...h.equipped, [slot]: null } });
+
+/**
+ * A saved loadout's slot map applied atomically in one step. Refused in a fight. Listed items that exist and fit are
+ * split off a stack if needed (`nextId`) and proposed; absent slots are cleared; missing or unfit entries are named in
+ * `skipped` and leave their current slot as a candidate. Finally `parseWorn` enforces uniqueness, two-handed lock, and
+ * `WEAR_LIMIT`, and any candidate item that did not fit is named in `left`.
+ */
+export function wearSet<H extends Carrying>(
+  h: H, want: Partial<Record<Slot, ItemId>>, nextId: () => ItemId, inFight: boolean,
+): { readonly h: H; readonly slots: Partial<Record<Slot, ItemId>>; readonly skipped: string[]; readonly left: string[] } | Refused<'in-fight'> {
+  if (inFight) return refuse('in-fight');
+  let items = h.items;
+  const slots: Partial<Record<Slot, ItemId>> = { ...want };
+  const skipped: string[] = [];
+  const desired: Partial<Record<Slot, ItemId | null>> = {};
+  for (const slot of SLOTS) {
+    const id = want[slot] || null;
+    if (!id) { desired[slot] = null; continue; }
+    const it = items.find(i => i.id === id);
+    if (!it || !fits(it, slot) || !(it.qty >= 1)) {
+      skipped.push(it ? it.name : slot);
+      desired[slot] = h.equipped[slot];
+      continue;
+    }
+    if (it.qty > 1) {
+      const splitId = nextId();
+      items = [...items.map(i => (i === it ? { ...i, qty: i.qty - 1 } : i)), { ...it, id: splitId, qty: 1 }];
+      slots[slot] = splitId;
+      desired[slot] = splitId;
+    } else {
+      desired[slot] = it.id;
+    }
+  }
+  const equipped = parseWorn(s => { const id = desired[s]; return id ? items.find(i => i.id === id) : undefined; });
+  const wornIds = new Set(Object.values(equipped).filter((id): id is ItemId => id !== null));
+  const left: string[] = [];
+  for (const slot of SLOTS) {
+    const id = desired[slot];
+    if (!id || wornIds.has(id)) continue;
+    const it = items.find(i => i.id === id);
+    if (it && !left.includes(it.name)) left.push(it.name);
+  }
+  return { h: { ...h, items, equipped }, slots, skipped, left };
+}
 
 /** The save with the GM's shop list `shop` (a copy), or with none: the default shop of the rules is shown (`defaultShop`). */
 export const withShop = <S extends { shop: ItemTemplate[] | null }>(save: S, shop: readonly ItemTemplate[] | null): S => ({ ...save, shop: shop === null ? null : [...shop] });
@@ -192,13 +275,15 @@ export function takeItems<H extends Carrying>(h: H, itemId: string, n = 1): H | 
 }
 /**
  * The item maker's edit of a held item: its fields replaced, its id kept. A worn item that the edit leaves unwearable
- * in its slot (another slot, none, or a stack) is taken off (`reslot`, SMX-rules-5.2); by `TABLE`.
+ * in its slot (another slot, none, or a stack) is taken off (`reslot`, SMX-rules-5.2), and `parseWorn` re-checks the
+ * worn invariant (for instance, editing a worn weapon to two-handed clears `offhand`).
  */
 export function editItem<H extends Carrying>(h: H, itemId: string, it: ItemTemplate, inFight: boolean): H | Refused<WearWhy> {
   const to = wearMove(h, itemId, editOf(h, itemId, it), inFight);
   if (isRefused(to)) return to;
   const items = h.items.map(i => (i.id === itemId ? { ...it, id: i.id } : i));
-  return { ...h, items, equipped: to === 'bag' ? unwear(h.equipped, itemId) : h.equipped };
+  const base = to === 'bag' ? unwear(h.equipped, itemId) : h.equipped;
+  return { ...h, items, equipped: parseWorn(s => items.find(i => i.id === base[s])) };
 }
 
 /** Gold added, or taken with a number below 0; never below 0. */
@@ -207,18 +292,22 @@ export const addGold = <H extends Carrying>(h: H, n: number): H => ({ ...h, gold
 export const setGold = <H extends Carrying>(h: H, n: number): H => ({ ...h, gold: Math.max(0, Math.trunc(n) || 0) });
 
 /**
- * An item put on, by `TABLE`: in its slot, swapping out whatever was there; a ring in the first free ring slot. From a
- * stack of more than one, one is split off under `splitId` and worn (`wearIn`). An item already worn stays where it is.
- * Refused also when it has no slot (`not-gear`). `inFight` is false by default for a new hunter's starter gear
- * (starter.ts); every tap passes it.
+ * An item put on, by `wearPlan` and `parseWorn`: in its planned slot, replacing any conflicting items (including
+ * off-hand under a two-handed weapon, or a two-handed weapon under an off-hand). From a stack of more than one, one is
+ * split off under `splitId` and worn. An item already worn stays where it is. Refused when in a fight (`in-fight`),
+ * when it has no slot (`not-gear`), or when equipping it would exceed `WEAR_LIMIT` (`wear-limit`).
  */
-export function equip<H extends Carrying>(h: H, itemId: string, splitId: ItemId, inFight = false): H | Refused<WearWhy | 'not-gear'> {
-  const to = wearMove(h, itemId, 'equip', inFight), it = h.items.find(i => i.id === itemId);
-  if (isRefused(to) || !it) return isRefused(to) ? to : refuse('no-item');
-  if (!it.slot) return refuse('not-gear');
+export function equip<H extends Carrying>(h: H, itemId: string, splitId: ItemId, inFight = false): H | Refused<PlanWhy> {
+  const plan = wearPlan(h, itemId, inFight);
+  if (isRefused(plan)) return plan;
   if (wearOf(h, itemId) === 'worn') return h;
-  const slot: Slot = it.slot.startsWith('ring') ? (!h.equipped.ring1 ? 'ring1' : !h.equipped.ring2 ? 'ring2' : it.slot) : it.slot;
-  return wearIn(h, itemId, slot, splitId);
+  const it = h.items.find(i => i.id === itemId)!;
+  const split = it.qty > 1, wornId = split ? splitId : it.id;
+  const items = split ? [...h.items.map(i => (i === it ? { ...i, qty: i.qty - 1 } : i)), { ...it, id: splitId, qty: 1 }] : h.items;
+  let next = unwear(h.equipped, wornId);
+  for (const oldId of plan.replaces) next = unwear(next, oldId);
+  next = { ...next, [plan.slot]: wornId };
+  return { ...h, items, equipped: parseWorn(s => items.find(i => i.id === next[s])) };
 }
 /** Slot `slot` emptied, by `TABLE` for the item in it. A word that is not a slot is refused (`no-slot`), an empty slot (`not-worn`). */
 export function unequip<H extends Carrying>(h: H, slot: string, inFight: boolean): H | Refused<WearWhy | 'no-slot'> {

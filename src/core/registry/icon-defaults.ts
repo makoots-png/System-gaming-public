@@ -40,8 +40,8 @@ export function monsterIcon(m: { readonly type?: string; readonly archetype: Arc
 const ATTACK_ICON: { readonly [A in Attack]: IconKey } = { strike: 'sword', shot: 'bow' };
 /** Armour's and an accessory's picture by the slot it takes (a weapon's is its attack's; the offhand's is the emblem shield). */
 const SLOT_ICON: { readonly [S in Slot]: IconKey } = {
-  weapon: 'sword', offhand: 'shield', head: 'helm', chest: 'chestplate', hands: 'gauntlet', legs: 'greaves', feet: 'boots',
-  neck: 'amulet', ring1: 'ring', ring2: 'ring',
+  weapon: 'sword', offhand: 'shield', head: 'helm', chest: 'chestplate', neck: 'amulet', legs: 'greaves', feet: 'boots',
+  orb: 'orb', ring1: 'ring', ring2: 'ring',
 };
 /** An item's picture by its type, when nothing more particular answers: a weapon with no attack, armour or an accessory with no slot, a consumable that does not revive. */
 const ITEM_TYPE_ICON: { readonly [T in ItemType]: IconKey } = {

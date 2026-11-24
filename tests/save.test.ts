@@ -1066,8 +1066,7 @@ describe('the Hunter type', () => {
 });
 
 describe('the lists save.ts repeats from rules.ts', () => {
-  test('equipment slots and rarities match the rules', () => {
-    expect([...SLOTS]).toEqual(RULES.slots);
+  test('rarities match the rules', () => {
     expect([...RARITIES]).toEqual(TIERS);
   });
 });

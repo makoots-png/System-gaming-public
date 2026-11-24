@@ -14,7 +14,7 @@ import { REVIVE_TEXT, effectsOf, gradeLabel } from '../core/effects.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import { wornWorth } from '../core/registry/worth.ts';
 import { itemSpend, spendLine } from '../core/registry/item-budget.ts';
-import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
+import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, SLOTS, SLOT_LABELS, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
 import { tooLarge } from '../core/size.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
 import { kindDefaults } from '../core/registry/ability-kinds.ts';
@@ -25,7 +25,6 @@ const TYPE_LABEL = { weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', c
 const AUTO_SLOT = { weapon: 'weapon', armor: 'chest', accessory: 'ring1' };
 /** The types a hunter wears: only these show the slot, the gear numbers and the bonus. */
 const WORN = Object.keys(AUTO_SLOT);
-const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
 /** The kinds of ability an item's wearer may be given (the skill maker's), and what each is called. */
 const ACTIVE_KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
 const ACTIVE_LABEL = { strike: 'Strike (melee)', shot: 'Shot (ranged)', blast: 'Blast (area)', curse: 'Curse (spell)', support: 'Support (heal or shield)' };
@@ -93,9 +92,10 @@ export function register(app) {
             ${ui.field('Damage dice', `<input type="text" id="lf-dice" maxlength="30" placeholder="1d8" autocomplete="off" value="${esc(was ? was.dice : '')}">`)}
             <div class="lbl">Attacks with</div>
             ${M.chips('attack', ATTACKS.map(a => [a, ATTACK_LABEL[a]]), was && was.attack ? was.attack : 'strike', { label: 'Attacks with' })}
+            <label class="lf-chk" data-twohanded-w><input type="checkbox" id="lf-twohanded"${was && was.twoHanded ? ' checked' : ''}><span>Two-handed (uses both hands)</span></label>
           </div>
           <div class="lf-worn" data-worn>
-            ${ui.field('Slot', `<select id="lf-slot"><option value="">None</option>${rules().slots.map(s => `<option value="${s}">${SLOT_LABEL[s] || s}</option>`).join('')}</select>`)}
+            ${ui.field('Slot', `<select id="lf-slot"><option value="">None</option>${SLOTS.map(s => `<option value="${s}">${SLOT_LABELS[s] || s}</option>`).join('')}</select>`)}
             <div data-kit-w><div class="lbl">Fill with standard gear stats</div><div class="mk-chips" role="group" aria-label="Fill with standard gear stats">${KITS.map(([k, l]) => `<button type="button" class="mk-chip" data-kit="${k}">${esc(l)}</button>`).join('')}</div></div>
             <div class="lf-gear">${GEAR.map(([k, l]) => ui.field(l, `<input type="number" inputmode="numeric" min="0" data-gear="${k}" value="${esc(was ? (was[k] ?? '') : k === 'weight' ? '' : 0)}">`)).join('')}</div>
             <div class="lbl">Stat bonuses while equipped</div>
@@ -194,6 +194,7 @@ export function register(app) {
           if (grade()) out.grade = grade();
           if (weight !== undefined) out.weight = weight;
           if (weapon) out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike');
+          if (weapon && out.slot === 'weapon' && $('#lf-twohanded').checked) out.twoHanded = true;
           const effects = fx.ops(); if (effects.length) out.effects = effects;
           if (effectsOf(out).length && M.picked(el, 'target') === 'other') out.target = 'other';
           if (gm ? $('#lf-tell').checked : was && was.tell) out.tell = true;
@@ -230,6 +231,7 @@ export function register(app) {
             $('[data-rank-cap-w]').hidden = type !== 'consumable';
           }
           if (!slotDirty) slotSel.value = AUTO_SLOT[type] || '';
+          $('[data-twohanded-w]').hidden = !(type === 'weapon' && slotSel.value === 'weapon');
           $('[data-kit-w]').hidden = !Object.hasOwn(KIT_SHARE, slotSel.value);
           for (const b of el.querySelectorAll('[data-chips="grade"] [data-chip]')) b.textContent = gradeLabel(rarity(), oneOf(Number(b.dataset.chip), GRADES, 0));
           const revivesOn = type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive);
@@ -258,7 +260,7 @@ export function register(app) {
             drawWorth(it.worn && worn ? wornWorth(it.worn, rules()) : null);
             drawSpend(it);
             return [
-              it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}` : '',
+              it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}${it.twoHanded ? ' (two-handed)' : ''}` : it.twoHanded ? 'Two-handed' : '',
               worn ? `Weight ${weightOf(it)} · Armor ${it.armor} · Resist ${it.resist}` : '',
               worn ? (sp => `Sample ${SAMPLE_WEARER.rank}-rank hunter in ${SAMPLE_WEARER.kit} gear: speed ${sp.bare} normally, ${sp.worn} with this equipped`)(wornSpeed({ ...it, weight: weightOf(it) }, rules())) : '',
               bonusText(it.bonus) && `Equipped: ${bonusText(it.bonus)}`, ...lines(it),

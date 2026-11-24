@@ -1,19 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { BORROW_WORDS, BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, WEAR_EVENTS, WEAR_STATES, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, putItem, removeItem, removeShopItem, sell, sellPrice, sellable, setGold, shopCreditLine, shopOpen, takeItems, unequip, wearMove, wearOf, withShop, writeShopItem } from '../src/core/hunter/inventory.ts';
+import { BORROW_WORDS, BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, WEAR_EVENTS, WEAR_STATES, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, handLockedBy, parseWorn, putItem, removeItem, removeShopItem, sell, sellPrice, sellable, setGold, shopCreditLine, shopOpen, takeItems, unequip, wearMove, wearOf, wearPlan, wearSet, withShop, wornCount, writeShopItem } from '../src/core/hunter/inventory.ts';
 import type { WearEvent, WearState, WearWhy } from '../src/core/hunter/inventory.ts';
+import { LOADOUT_WORDS, saveLoadout, swapLoadout } from '../src/core/hunter/loadouts.ts';
 import { borrowCap } from '../src/core/hunter/revive-standing.ts';
 import { parseSheetHunter } from '../src/core/hunter/hunter.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import { GEAR, IN_BAG, wearBy } from './models/gear-events.ts';
-import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, priceOf } from '../src/core/registry/items.ts';
-import type { ItemTemplate } from '../src/core/registry/items.ts';
+import { heldPowers, hunterAbilities, hunterRow } from '../src/core/combat/rows.ts';
+import { GEAR, IN_BAG, reparsedWorn, wearBy } from './models/gear-events.ts';
+import { SHOP_ITEMS, SLOTS, STARTER_GEAR, WEAR_LIMIT, itemOf, parseItem, priceOf } from '../src/core/registry/items.ts';
+import type { ItemTemplate, Slot } from '../src/core/registry/items.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
-import { newHunter } from '../src/core/save.ts';
+import { newHunter, newSave, parseSave } from '../src/core/save.ts';
 import type { Hunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
-import { iid } from './fixtures/ids.ts';
+import { cid, dev, iid, loid } from './fixtures/ids.ts';
 import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 
 const ok = <T extends object>(v: T): Exclude<T, Refused> => { if (isRefused(v)) throw new Error(`refused: ${v.why}`); return v as Exclude<T, Refused>; };
@@ -193,6 +195,197 @@ describe('what one item is: in the bag, worn or gone (SMX-rules-5)', () => {
     expect(editItem(worn, GEAR, { ...shield, desc: 'Notched.' }, true)).toEqual({ ok: false, why: 'in-fight' });
     expect(ok(sell(worn, 'i2', 1, R, true)).items.map(i => i.id)).toEqual([GEAR]);
     expect(GEAR_WORDS['in-fight']).toBe('Gear cannot change during a fight.');
+  });
+});
+
+describe('10 gear slots, 6 active worn limit, and two-handed weapons (V2)', () => {
+  const gear = (name: string, slot: Slot, extra: Partial<ItemTemplate> = {}): ItemTemplate =>
+    parseItem({
+      name,
+      rar: 'rare',
+      type: slot === 'weapon' ? 'weapon' : slot === 'neck' || slot === 'orb' || slot.startsWith('ring') ? 'accessory' : 'armor',
+      slot,
+      ...(slot === 'weapon' ? { dice: '1d8', attack: 'strike' } : {}),
+      bonus: { str: 1 },
+      ...extra,
+    })!;
+  const bow2h = (name = 'Longbow'): ItemTemplate => gear(name, 'weapon', { dice: '1d8', attack: 'shot', twoHanded: true });
+
+  const sixWorn = (): Hunter => {
+    let h = hunter();
+    const picks: [string, Slot][] = [['Sword', 'weapon'], ['Shield', 'offhand'], ['Helm', 'head'], ['Mail', 'chest'], ['Charm', 'neck'], ['Greaves', 'legs']];
+    picks.forEach(([nm, sl], idx) => {
+      const id = iid(`i${idx + 1}`);
+      h = ok(equip(putItem(h, gear(nm, sl), id), id, iid('i999'), false));
+    });
+    return h;
+  };
+
+  test('wearing 6 items blocks a 7th empty slot with wear-limit, while swapping an occupied slot still works', () => {
+    let h = putItem(putItem(sixWorn(), gear('Boots', 'feet'), iid('i7')), gear('Crown', 'head'), iid('i8'));
+    expect(wornCount(h)).toBe(WEAR_LIMIT);
+    expect(wearPlan(h, 'i7', false)).toEqual({ ok: false, why: 'wear-limit' });
+    expect(equip(h, 'i7', iid('i999'), false)).toEqual({ ok: false, why: 'wear-limit' });
+    expect(GEAR_WORDS['wear-limit']).toBe('You are already wearing 6 of 6 items. Unequip an item first.');
+    expect(wearPlan(h, 'i8', false)).toEqual({ ok: true, slot: 'head', replaces: [iid('i3')] });
+    h = ok(equip(h, 'i8', iid('i999'), false));
+    expect(h.equipped.head).toBe(iid('i8'));
+    expect(wornCount(h)).toBe(WEAR_LIMIT);
+    expect(h.equipped).toEqual(reparsedWorn(h));
+  });
+
+  test('in-fight wins over wear-limit when trying to equip a 7th item during a fight', () => {
+    const h = putItem(sixWorn(), gear('Boots', 'feet'), iid('i7'));
+    expect(wearPlan(h, 'i7', true)).toEqual({ ok: false, why: 'in-fight' });
+    expect(equip(h, 'i7', iid('i999'), true)).toEqual({ ok: false, why: 'in-fight' });
+  });
+
+  test('ring at the cap: empty ring slots refuse at 6/6, one worn ring swaps that ring slot, two worn rings swap its own slot', () => {
+    let h = putItem(sixWorn(), ring('A'), iid('r1'));
+    expect(wearPlan(h, 'r1', false), 'neither ring worn at 6/6 refuses').toEqual({ ok: false, why: 'wear-limit' });
+    h = ok(unequip(h, 'legs', false));
+    h = ok(equip(h, 'r1', iid('i999'), false)); // now 6/6 with r1 in ring1, ring2 empty
+    expect(h.equipped.ring1).toBe(iid('r1'));
+    expect(h.equipped.ring2).toBeNull();
+    h = putItem(h, { ...ring('B'), slot: 'ring2' }, iid('r2'));
+    // ring2 is empty (would be 7th), so wearPlan falls through to occupied ring1 and swaps it
+    expect(wearPlan(h, 'r2', false)).toEqual({ ok: true, slot: 'ring1', replaces: [iid('r1')] });
+    h = ok(equip(h, 'r2', iid('i999'), false));
+    expect([h.equipped.ring1, h.equipped.ring2, wornCount(h)]).toEqual([iid('r2'), null, WEAR_LIMIT]);
+    // with both ring slots worn at 6/6, a ring marked ring2 swaps ring2
+    h = ok(unequip(h, 'neck', false));
+    h = ok(equip(putItem(h, ring('C'), iid('r3')), 'r3', iid('i999'), false)); // r2 in ring1, r3 in ring2, total 6
+    h = putItem(h, { ...ring('D'), slot: 'ring2' }, iid('r4'));
+    expect(wearPlan(h, 'r4', false)).toEqual({ ok: true, slot: 'ring2', replaces: [iid('r3')] });
+  });
+
+  test('two-handed weapon counts as 1 of 6, locks offhand, swaps out both hands atomically, and yields to an offhand equip', () => {
+    let h = putItem(sixWorn(), bow2h('Frost Bow'), iid('b1'));
+    expect(wearPlan(h, 'b1', false)).toEqual({ ok: true, slot: 'weapon', replaces: [iid('i1'), iid('i2')] });
+    h = ok(equip(h, 'b1', iid('i999'), false));
+    expect([h.equipped.weapon, h.equipped.offhand, wornCount(h)]).toEqual([iid('b1'), null, 5]);
+    expect(handLockedBy(h)?.id).toBe(iid('b1'));
+    // now equip a 6th item in orb -> 6 of 6 while wearing a 2H weapon
+    h = ok(equip(putItem(h, gear('Relic Orb', 'orb'), iid('o1')), 'o1', iid('i999'), false));
+    expect(wornCount(h)).toBe(WEAR_LIMIT);
+    // equipping offhand at 6/6 swaps out the 2H weapon (net 0 -> allowed)
+    expect(wearPlan(h, 'i2', false)).toEqual({ ok: true, slot: 'offhand', replaces: [iid('b1')] });
+    h = ok(equip(h, 'i2', iid('i999'), false));
+    expect([h.equipped.weapon, h.equipped.offhand, wornCount(h), handLockedBy(h)]).toEqual([null, iid('i2'), WEAR_LIMIT, null]);
+    expect(h.equipped).toEqual(reparsedWorn(h));
+  });
+
+  test('editing a worn one-handed weapon to two-handed clears offhand via parseWorn', () => {
+    let h = ok(equip(putItem(hunter(), gear('Sword', 'weapon'), iid('w1')), 'w1', iid('i999'), false));
+    h = ok(equip(putItem(h, gear('Shield', 'offhand'), iid('s1')), 's1', iid('i999'), false));
+    const edited = ok(editItem(h, 'w1', bow2h('Greatsword'), false));
+    expect([edited.equipped.weapon, edited.equipped.offhand]).toEqual([iid('w1'), null]);
+    expect(edited.equipped).toEqual(reparsedWorn(edited));
+  });
+
+  test('parseWorn trims >6 worn items in SLOTS order, skips offhand under a 2H weapon, and drops unknown old hands slot to bag', () => {
+    const allItems = SLOTS.map((sl, idx) => ({ ...gear(`Item ${sl}`, sl, sl === 'weapon' ? { twoHanded: true } : {}), id: iid(`i${idx + 1}`) }));
+    const oldHands = { ...parseItem({ name: 'Old Gloves', type: 'armor', slot: 'hands' })!, id: iid('i99') };
+    expect(oldHands.slot).toBeNull();
+    const rawEquipped = Object.fromEntries(SLOTS.map((sl, idx) => [sl, iid(`i${idx + 1}`)]));
+    const parsed = parseSheetHunter(JSON.parse(JSON.stringify({ ...hunter(0), items: [...allItems, oldHands], equipped: rawEquipped })))!;
+    // weapon (2H) kept, offhand skipped, then head, chest, neck, legs, feet kept = 6; orb, ring1, ring2 in bag
+    expect(Object.entries(parsed.equipped).filter(([, v]) => v !== null).map(([k]) => k)).toEqual(['weapon', 'head', 'chest', 'neck', 'legs', 'feet']);
+    expect(wornCount(parsed)).toBe(WEAR_LIMIT);
+    expect(parsed.equipped).toEqual(reparsedWorn(parsed));
+  });
+
+  test('SLOTS order drives heldPowers order and a running fight keeps its row sheet on load while hunterAbilities reflects trimmed gear', () => {
+    const withPower = (name: string, slot: Slot): ItemTemplate => gear(name, slot, {
+      worn: { label: `${name} Aura`, desc: '', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 1 } }] },
+    });
+    const slots = SLOTS.slice(0, 8);
+    const items = slots.map((sl, idx) => ({ ...withPower(`P-${sl}`, sl), id: iid(`i${idx + 1}`) }));
+    const rawEq = Object.fromEntries(slots.map((sl, idx) => [sl, iid(`i${idx + 1}`)]));
+    const base = newSave(dev('d-00000001'));
+    const h: Hunter = { ...newHunter(RULES), items, equipped: { ...newHunter(RULES).equipped, ...rawEq } };
+    // row snapshotted before load (e.g. mid-session reload with running fight)
+    const beforeRow = hunterRow(h, cid('c1'), RULES);
+    const parsed = parseSave(JSON.stringify({ ...base, hunters: [h] }), { now: new Date(1), newDeviceId: () => dev('d-00000001'), newDeviceToken: () => 't'.repeat(32) });
+    if (parsed.kind !== 'save') throw new Error('expected save');
+    const afterH = parsed.save.hunters[0]!;
+    expect(wornCount(afterH)).toBe(WEAR_LIMIT);
+    expect(heldPowers(afterH, RULES).map(p => p.powers.worn?.label)).toEqual(SLOTS.slice(0, 6).map(sl => `P-${sl} Aura`));
+    expect(beforeRow.statuses.length, 'snapshot row held pre-trim statuses').toBe(8);
+    expect(hunterAbilities(afterH, RULES).length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('wearSet and swapLoadout enforce in-fight, 2H offhand clearance even on skipped slots, and WEAR_LIMIT, naming left items', () => {
+    let h = sixWorn();
+    h = putItem(putItem(h, bow2h('Greatbow'), iid('b1')), gear('Boots', 'feet'), iid('f1'));
+    const s = { ...newSave(dev('d-00000001')), hunters: [{ ...h, loadouts: [
+      { id: loid('lo1'), name: 'BowSet', slots: { weapon: iid('b1'), offhand: iid('i999'), head: iid('i3'), chest: iid('i4'), neck: iid('i5'), legs: iid('i6'), feet: iid('f1') } },
+    ] }] };
+    expect(swapLoadout(s, h.id, 'lo1', RULES, true)).toEqual({ ok: false, why: 'in-fight' });
+    expect(LOADOUT_WORDS['in-fight']).toBe('You cannot change gear during a fight.');
+    const swapped = ok(swapLoadout(s, h.id, 'lo1', RULES, false));
+    const after = swapped.save.hunters[0]!;
+    expect(swapped.skipped).toEqual(['offhand']);
+    expect(after.equipped.weapon).toBe(iid('b1'));
+    expect(after.equipped.offhand).toBeNull();
+    expect(wornCount(after)).toBe(WEAR_LIMIT);
+    expect(swapped.left).toContain('Shield');
+    expect(after.equipped).toEqual(reparsedWorn(after));
+    // saving a loadout captures only the 6 worn slots
+    const saved = ok(saveLoadout(after, loid('lo2'), 'Clean', RULES));
+    expect(Object.keys(saved.loadouts.at(-1)!.slots).length).toBe(WEAR_LIMIT);
+  });
+
+  test('property: every wear step answer is a fixed point of parseWorn', () => {
+    let h = hunter();
+    const ids: ReturnType<typeof iid>[] = [];
+    const defs: ItemTemplate[] = [
+      gear('Dagger', 'weapon'),
+      bow2h('Greatbow'),
+      gear('Shield', 'offhand'),
+      gear('Helm', 'head'),
+      gear('Plate', 'chest'),
+      gear('Amulet', 'neck'),
+      gear('Greaves', 'legs'),
+      gear('Boots', 'feet'),
+      gear('Orb', 'orb'),
+      ring('Band 1'),
+      { ...ring('Band 2'), slot: 'ring2' },
+    ];
+    defs.forEach((d, idx) => { const id = iid(`i${idx + 1}`); ids.push(id); h = putItem(h, d, id); });
+    const check = (next: Hunter | Refused<string>): Hunter => {
+      if (isRefused(next)) return h;
+      expect(next.equipped).toEqual(reparsedWorn(next));
+      expect(wornCount(next)).toBeLessThanOrEqual(WEAR_LIMIT);
+      if (handLockedBy(next)) expect(next.equipped.offhand).toBeNull();
+      return next;
+    };
+    let seq = 500;
+    const ops: (() => Hunter | Refused<string>)[] = [
+      () => equip(h, ids[0]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[2]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[3]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[4]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[5]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[6]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[7]!, iid(`i${++seq}`), false), // refused wear-limit
+      () => equip(h, ids[1]!, iid(`i${++seq}`), false), // 2H swaps out weapon + offhand
+      () => equip(h, ids[8]!, iid(`i${++seq}`), false), // orb fills 6th
+      () => equip(h, ids[9]!, iid(`i${++seq}`), false), // ring refused at 6/6
+      () => equip(h, ids[2]!, iid(`i${++seq}`), false), // offhand swaps out 2H at 6/6
+      () => unequip(h, 'legs', false),
+      () => equip(h, ids[9]!, iid(`i${++seq}`), false),
+      () => equip(h, ids[10]!, iid(`i${++seq}`), false), // ring2 swaps ring1 at 6/6
+      () => editItem(h, ids[0]!, bow2h('Edited 2H'), false),
+      () => equip(h, ids[0]!, iid(`i${++seq}`), false),
+      () => {
+        const r = wearSet(h, { weapon: ids[1]!, offhand: ids[2]!, head: ids[3]!, chest: ids[4]!, neck: ids[5]!, legs: ids[6]!, feet: ids[7]!, orb: ids[8]! }, () => iid(`i${++seq}`), false);
+        return isRefused(r) ? r : r.h;
+      },
+      () => removeItem(h, ids[1]!, false),
+      () => sell(h, ids[3]!, 1, RULES, false),
+    ];
+    for (const op of ops) h = check(op());
   });
 });
 

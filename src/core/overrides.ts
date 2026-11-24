@@ -153,7 +153,6 @@ export const READERS: Readonly<Record<string, Reader>> = {
   jobs: entries(text),
   extractJobs: entries(text),
   titles: entries(title),
-  slots: entries(text),
   'loot.*.gold': lowToHigh,
   'gateSpawn.regulars.*': lowToHigh,
   gateNames: entries(text),

@@ -1,6 +1,6 @@
 // A hunter with one shield in the bag, and the events of what the shield's wear goes through. Shared by
 // tests/inventory.test.ts and the state chart (scripts/charts/gear.ts), so both walk the same events.
-import { WEAR_EVENTS, editItem, equip, putItem, removeItem, slotOf, unequip } from '../../src/core/hunter/inventory.ts';
+import { WEAR_EVENTS, editItem, equip, parseWorn, putItem, removeItem, slotOf, unequip } from '../../src/core/hunter/inventory.ts';
 import type { WearEvent } from '../../src/core/hunter/inventory.ts';
 import { STARTER_GEAR, itemOf } from '../../src/core/registry/items.ts';
 import { RULES } from '../../src/core/rules.ts';
@@ -34,3 +34,11 @@ export function wearBy(h: Hunter, e: WearEvent, inFight: boolean): Hunter | Refu
 
 /** The walk's events: every event of the shield's wear, and the hunter's fight starting and ending. */
 export const WALK_EVENTS: readonly (WearEvent | 'fight starts' | 'fight ends')[] = [...WEAR_EVENTS, 'fight starts', 'fight ends'];
+
+/**
+ * The worn invariant as a fixed-point check: re-reading `h.equipped` through `parseWorn` yields the exact same map.
+ * Every step that changes what a hunter wears (`equip`, `unequip`, `editItem`, `removeItem`, `sell`, `wearSet`,
+ * `swapLoadout`, and `parseSheetHunter`) must answer a hunter for which `reparsedWorn(h)` equals `h.equipped`.
+ */
+export const reparsedWorn = (h: Pick<Hunter, 'items' | 'equipped'>): Hunter['equipped'] =>
+  parseWorn(s => { const id = h.equipped[s]; return id ? h.items.find(i => i.id === id) : undefined; });

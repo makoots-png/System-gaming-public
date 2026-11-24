@@ -161,11 +161,12 @@ describe('loadouts', () => {
     expect(h.loadouts[0]!.slots.weapon).toBe(iid('i41'));
     expect(r.save.seq).toBe(41);
   });
-  test('an item gone is skipped and its slot left as it is; in a fight the swap is refused', () => {
-    const saved = ok(saveLoadout(armed(), loid('lo1'), 'Day', R)), sold = { ...saved, items: [ring('i2')] };
+  test('an item gone is skipped and its slot keeps what is validly worn there; in a fight the swap is refused', () => {
+    const saved = ok(saveLoadout(armed(), loid('lo1'), 'Day', R));
+    const sold = { ...saved, items: [sword('i3'), ring('i2')], equipped: { ...saved.equipped, weapon: iid('i3') } };
     const r = ok(swapLoadout<Save>({ ...newSave(dev('d')), hunters: [sold] }, sold.id, 'lo1', R, false));
     expect(r.skipped).toEqual(['weapon']);
-    expect(r.save.hunters[0]!.equipped.weapon).toBe(iid('i1'));
+    expect(r.save.hunters[0]!.equipped.weapon).toBe(iid('i3'));
     expect(swapLoadout<Save>({ ...newSave(dev('d')), hunters: [saved] }, saved.id, 'lo1', R, true)).toEqual({ ok: false, why: 'in-fight' });
   });
 });

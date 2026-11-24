@@ -57,7 +57,7 @@ export const gear = machine<Walked, Event>({
   }],
   where: [
     ['The union', '`WearState`, `WearEvent`, `WEAR_STATES` and `WEAR_EVENTS` in `src/core/hunter/inventory.ts`'],
-    ['What changes it', '`TABLE` and `wearMove` in `src/core/hunter/inventory.ts`, asked by `equip`, `unequip`, `editItem`, `removeItem` and `sell`; `wearIn` and `emptySlot` are the writes of a slot (`swapLoadout` in loadouts.ts too); `parseWorn` reads a save'],
+    ['What changes it', '`TABLE` and `wearMove` in `src/core/hunter/inventory.ts`, asked by `wearPlan`, `equip`, `unequip`, `editItem`, `removeItem` and `sell`; `wearSet` handles loadouts; `parseWorn` is the single statement of the worn invariant'],
     ['Who calls it', '`src/views/inventory.js` (Equip, Unequip, Edit, Sell, Remove; `wearRefused` before a confirm), `src/views/custom.js` (a loadout\'s swap)'],
     ['The test to copy', '`tests/inventory.test.ts`, "what one item is"; the walk\'s events are in `tests/models/gear-events.ts`'],
     ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],

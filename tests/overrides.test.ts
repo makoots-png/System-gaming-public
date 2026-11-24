@@ -52,14 +52,15 @@ describe('an override of a list rule', () => {
     expect(refused).toEqual([{ path: 'dailyTemplate.objectives.1', reason: 'entry' }, { path: 'dailyTemplate.objectives.2', reason: 'entry' }]);
   });
 
-  test('legacy build and paths overrides are refused as unknown while valid sibling overrides are kept', () => {
+  test('legacy build, paths and slots overrides are refused as unknown while valid sibling overrides are kept', () => {
     const { overrides, refused } = parseOverrides({
       logCap: 75,
       build: { enabled: false, playerPick: false },
       paths: { vanguard: { tiers: [[{ str: 3 }, { hpMax: 25 }]] } },
+      slots: ['weapon', 'tail'],
     });
     expect(overrides).toEqual({ logCap: 75 });
-    expect(refused).toEqual([{ path: 'build', reason: 'unknown' }, { path: 'paths', reason: 'unknown' }]);
+    expect(refused).toEqual([{ path: 'build', reason: 'unknown' }, { path: 'paths', reason: 'unknown' }, { path: 'slots', reason: 'unknown' }]);
   });
 
   test('the daily reward\'s items, skills and title are read as a reward\'s are', () => {
@@ -70,7 +71,7 @@ describe('an override of a list rule', () => {
     expect(parseOverrides({ dailyTemplate: { rewards: { title: 5, job: null } } }).refused).toEqual([{ path: 'dailyTemplate.rewards.title', reason: 'entry' }]);
   });
 
-  test('jobs, gate names and slots are text: an entry that is not is refused by its index', () => {
+  test('jobs and gate names are text: an entry that is not is refused by its index', () => {
     const { overrides, refused } = parseOverrides({ jobs: ['Fighter', 3, ''], gateNames: ['Hollow Keep'] });
     expect(overrides).toEqual({ jobs: ['Fighter'], gateNames: ['Hollow Keep'] });
     expect(refused).toEqual([{ path: 'jobs.1', reason: 'entry' }, { path: 'jobs.2', reason: 'entry' }]);

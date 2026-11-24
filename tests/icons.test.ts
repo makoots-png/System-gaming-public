@@ -202,10 +202,10 @@ describe('an item\'s default icon', () => {
 
   test('is armour\'s or an accessory\'s slot, and its type\'s when it has none', () => {
     const bySlot: Readonly<Record<Exclude<Slot, 'weapon'>, IconKey>> = {
-      offhand: 'shield', head: 'helm', chest: 'chestplate', hands: 'gauntlet', legs: 'greaves', feet: 'boots', neck: 'amulet', ring1: 'ring', ring2: 'ring',
+      offhand: 'shield', head: 'helm', chest: 'chestplate', neck: 'amulet', legs: 'greaves', feet: 'boots', orb: 'orb', ring1: 'ring', ring2: 'ring',
     };
     for (const [slot, icon] of Object.entries(bySlot)) {
-      const type = slot === 'neck' || slot.startsWith('ring') ? 'accessory' : 'armor';
+      const type = slot === 'neck' || slot === 'orb' || slot.startsWith('ring') ? 'accessory' : 'armor';
       expect(itemIcon(item(type, slot as Slot)), slot).toBe(icon);
     }
     expect(itemIcon(item('armor', null))).toBe('chestplate');

@@ -356,9 +356,9 @@ test('only src/core/hunter/job-chain.ts changes a hunter\'s Job Change chain, an
 
 test('only src/core/hunter/inventory.ts changes what a hunter wears', async () => {
   // What one item is to a hunter (in the bag, worn, gone) is one machine, the wear's `TABLE` and `wearMove` in
-  // inventory.ts, and `equipped` is its stored half: `wearIn`, `emptySlot` and `unwear` there are its writes, and the
-  // save's repair (`fixRefs` in hunter.ts) reads a stored one through `parseWorn`. A second writer could wear an item
-  // in a slot it does not fit, wear one item twice, or change gear in a fight. Loadouts and the views go through them.
+  // inventory.ts, and `equipped` is its stored half: `parseWorn`, `equip`, `unequip`, `editItem`, `wearSet`, and `unwear`
+  // there are its writes, and the save's repair (`fixRefs` in hunter.ts) reads a stored one through `parseWorn`. A second
+  // writer could wear an item in a slot it does not fit, wear one item twice, break the 6-item cap, or change gear in a fight. Loadouts and the views go through them.
   const owners = ['src/core/hunter/inventory.ts', 'src/core/hunter/hunter.ts'];
   // Not a change of wear: a seed made neutral has no items, so nothing worn; hunters added from a file keep what they
   // wear under the ids they are given.
@@ -369,7 +369,7 @@ test('only src/core/hunter/inventory.ts changes what a hunter wears', async () =
   const all = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
   const permitted = (line: Line) => notWear[line.file] !== undefined && line.text.includes(notWear[line.file]!);
   expect(Object.keys(notWear).filter(f => !all.some(l => l.file === f && permitted(l))), 'a permit that permits nothing leaves the list').toEqual([]);
-  expect(report(all.filter(line => !permitted(line))), 'what a hunter wears changes only through src/core/hunter/inventory.ts (equip, unequip, editItem, removeItem, sell; wearIn and emptySlot for a loadout), each asking the wear\'s TABLE first. Assign what it answers.').toEqual([]);
+  expect(report(all.filter(line => !permitted(line))), 'what a hunter wears changes only through src/core/hunter/inventory.ts (equip, unequip, editItem, removeItem, sell, wearSet), each enforcing TABLE and parseWorn. Assign what it answers.').toEqual([]);
 });
 
 test('only src/core/hunter/shadows.ts changes a shadow\'s summoned and HP, through stepShadow', async () => {

@@ -32,13 +32,20 @@ import type { Powers } from './powers.ts';
 // The item enums live here, beside the one parser that reads them; save.ts re-exports them.
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
 export const ITEM_TYPES = ['weapon', 'armor', 'accessory', 'consumable', 'material', 'key', 'misc'] as const;
-export const SLOTS = ['weapon', 'offhand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2'] as const;
+export const SLOTS = ['weapon', 'offhand', 'head', 'chest', 'neck', 'legs', 'feet', 'orb', 'ring1', 'ring2'] as const;
+/** How many gear slots a hunter may wear at one time out of the ten (`SLOTS`). */
+export const WEAR_LIMIT = 6;
 /** How a weapon attacks (src/core/registry/abilities.ts `weaponAttack`): a bow shoots, anything else strikes. */
 export const ATTACKS = ['strike', 'shot'] as const;
 export type Rarity = (typeof RARITIES)[number];
 export type ItemType = (typeof ITEM_TYPES)[number];
 export type Slot = (typeof SLOTS)[number];
 export type Attack = (typeof ATTACKS)[number];
+/** Player-facing label for each gear slot, in the order the sheet shows them. */
+export const SLOT_LABELS: Readonly<Record<Slot, string>> = {
+  weapon: 'Main hand', offhand: 'Off hand', head: 'Helm', chest: 'Armor', neck: 'Neck',
+  legs: 'Pants', feet: 'Boots', orb: 'Orb', ring1: 'Ring 1', ring2: 'Ring 2',
+};
 /**
  * Where an item sits inside its tier (economy design 2.1, the owner's ruling 1): minus -1, middle 0, plus 1, shown as
  * Epic−, Epic, Epic+ (`gradeLabel` in effects.ts). A number because the price reads it as an exponent of `gradeStep`;
@@ -68,7 +75,10 @@ export type Item = {
   /** Its weight as typed; absent, the rule's (`weightOf`: a weapon's by its dice), so a change of the dice reaches it. */
   weight?: number;
   desc: string; armor: number; resist: number;
-  attack?: Attack; effects?: Op[];
+  attack?: Attack;
+  /** Takes both hand slots (main hand and off hand); kept only on a weapon in the main-hand slot. */
+  twoHanded?: true;
+  effects?: Op[];
   /** All of its use effects go to another the user picks. Without it they go to the user. */
   target?: 'other';
   /** The GM is told when a player uses it (the room's `used` message, and the session log). */
@@ -91,22 +101,22 @@ export type Item = {
 /** The types a hunter wears (`parseItem` keeps powers on these alone): a consumable is used, and the rest are carried. */
 const WORN_TYPES: readonly ItemType[] = ['weapon', 'armor', 'accessory'];
 
-/** The slots a piece of armour may take, each with its share of a kit in hundredths (design table 2.5); they sum to 100. */
-export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 10, hands: 10, feet: 10 } as const;
+/** The five slots a piece of armor may take, each with its share of a kit in hundredths; they sum to 100. */
+export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 15, feet: 15 } as const;
 export type ArmorSlot = keyof typeof KIT_SHARE;
 const ARMOR_SLOTS = Object.keys(KIT_SHARE) as ArmorSlot[];
 
 /** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. Without `grade`, the middle. */
 type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
 /**
- * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks; armour has a slot and the
- * kit it is a piece of (`piece` works out its weight, armor and resist); an accessory a ring or neck slot and a bonus; a
- * consumable the ops it does when used. The rest is a thing to carry and sell.
+ * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks (and may be two-handed);
+ * armor has a slot and the kit it is a piece of (`piece` works out its weight, armor and resist); an accessory a neck,
+ * orb or ring slot and a bonus; a consumable the ops it does when used. The rest is a thing to carry and sell.
  */
 export type ItemDef =
-  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; bonus?: ItemBonus }
+  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; twoHanded?: true; bonus?: ItemBonus }
   | Common & Powers & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
-  | Common & Powers & { type: 'accessory'; slot: 'neck' | 'ring1' | 'ring2'; bonus: ItemBonus }
+  | Common & Powers & { type: 'accessory'; slot: 'neck' | 'orb' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; rankCap?: true; tell?: true }
   | Common & { type: 'material' | 'key' | 'misc' };
 
@@ -252,28 +262,28 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
 // map as dex Agility, con Vitality, int Power, wis Instinct, cha Presence; old max MP is a fifth as max mana.
 /** The items a gate's loot roll picks from by rarity (with the shop's stock). Priced by the rule unless they say otherwise. */
 export const LOOT_ITEMS: readonly ItemDef[] = [
-  { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'shot', desc: 'Dropped by a gate goblin.' },
+  { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
   { name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
   { name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
   { name: 'Worn Hunter Boots', rar: 'common', grade: 1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
   { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 1 }, desc: 'A heavy cleaver that adds 1 Strength.' },
   { name: 'Reinforced Hunter Vest', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
-  { name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'hands', kit: 'light', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
+  { name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'light', icon: 'gauntlet', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
   { name: 'Mana Talisman', rar: 'uncommon', grade: 1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
   { name: 'Swift Runner Greaves', rar: 'uncommon', grade: -1, type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
   { name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'strike', bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
   { name: "Ice Elf's Cloak", rar: 'rare', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
   { name: 'Mage Circlet', rar: 'rare', grade: 1, type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
   { name: "Baruka's Mana Ring", rar: 'rare', grade: 1, type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
-  { name: 'Frost Giant Hammer', rar: 'epic', grade: -1, type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', bonus: { str: 3 }, desc: 'A hammer with a head of ice. Adds 3 Strength.' },
+  { name: 'Frost Giant Hammer', rar: 'epic', grade: -1, type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', twoHanded: true, bonus: { str: 3 }, desc: 'A hammer with a head of ice. Adds 3 Strength.' },
   { name: "Knight's Aegis", rar: 'epic', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
   { name: 'Cloak of the Shadow Hunter', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
   { name: 'Helm of the Iron Knight', rar: 'epic', grade: -1, type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
-  { name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
+  { name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', twoHanded: true, bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
   { name: 'Armor of the Black Knight', rar: 'legendary', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 3 }, desc: 'Heavy chest armor that adds 3 Vitality.' },
-  { name: 'Orb of Avarice', rar: 'legendary', grade: 1, type: 'accessory', slot: 'neck', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb worn at the neck that adds 4 Power and 6 max mana.' },
+  { name: 'Orb of Avarice', rar: 'legendary', grade: 1, type: 'accessory', slot: 'orb', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb that adds 4 Power and 6 max mana.' },
   { name: 'Boots of Shadow Step', rar: 'legendary', grade: -1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 4 }, desc: 'Light boots that add 4 Agility.' },
-  { name: "Monarch's Scepter", rar: 'mythic', grade: 1, type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
+  { name: "Monarch's Scepter", rar: 'mythic', grade: 1, type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', twoHanded: true, bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
   { name: 'Crown of the Shadow Sovereign', rar: 'mythic', grade: -1, type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
   { name: 'Armor of the Absolute Being', rar: 'mythic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
   { name: "Ring of the Monarch's Will", rar: 'mythic', grade: 1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
@@ -284,7 +294,7 @@ export const LOOT_ITEMS: readonly ItemDef[] = [
 export const STARTER_GEAR = {
   // A tower shield is not light, whatever its old AC of 1 said: a heavy kit's offhand.
   towerShield: { name: 'Dented Tower Shield', rar: 'common', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', desc: 'A dented, heavy tower shield.' },
-  huntingBow: { name: 'Hunting Bow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', desc: 'A worn hunting bow.' },
+  huntingBow: { name: 'Hunting Bow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'A worn hunting bow.' },
   manaPotion: { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(2)], desc: 'Restores 2 mana.' },
 } as const satisfies Record<string, ItemDef>;
 
@@ -399,7 +409,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
-      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus }, ...powersOf(def) };
+      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def) };
     case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def) };
     case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.rankCap ? { rankCap: true } : {}), ...(def.tell ? { tell: true } : {}) };
@@ -452,6 +462,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (isIconKey(v.icon)) out.icon = v.icon;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
+  if (v.twoHanded === true && out.type === 'weapon' && out.slot === 'weapon') out.twoHanded = true;
   const effects = (Array.isArray(v.effects) ? v.effects : [])
     .flatMap(o => { const p = parseOp(o, RULES); return p && !(p.op === 'damage' && p.type === 'true') ? [p] : []; })
     .slice(0, B.effects);

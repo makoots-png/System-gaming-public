@@ -277,34 +277,34 @@ test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wea
   const d = itemMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'item').locator('[data-new]').tap();
-  await d.locator('#lf-name').fill('Rime Grips');
+  await d.locator('#lf-name').fill('Rime Helm');
   await d.locator('[data-chips="type"] [data-chip="armor"]').tap();
   await d.locator('#lf-rar').selectOption('epic');
-  await d.getByLabel('Slot').selectOption('hands');
+  await d.getByLabel('Slot').selectOption('head');
   await d.locator('[data-kit="heavy"]').tap();
-  // the heavy kit is weight 32, armor 60, resist 60 (RULES.fight.kits) and hands are a tenth of it (KIT_SHARE): 3.2, 6, 6.
-  // The weight's two points the rounding leaves go to the offhand (4.8) and the legs (6.4), so the hands keep 3; an epic
+  // the heavy kit is weight 32, armor 60, resist 60 (RULES.fight.kits) and head is 15% of it (KIT_SHARE): 4.8, 9, 9.
+  // Largest-remainder rounding gives the three 15% slots (offhand, head, feet) the three extra weight points, so head gets 5; an epic
   // piece holds what a common one does
-  await expect(d.locator('[data-gear="weight"]')).toHaveValue('3');
-  await expect(d.locator('[data-gear="armor"]')).toHaveValue('6');
-  await expect(d.locator('[data-gear="resist"]')).toHaveValue('6');
+  await expect(d.locator('[data-gear="weight"]')).toHaveValue('5');
+  await expect(d.locator('[data-gear="armor"]')).toHaveValue('9');
+  await expect(d.locator('[data-gear="resist"]')).toHaveValue('9');
   await d.locator('[data-bonus="str"]').fill('2');
-  await expect(d.locator('.mk-preview')).toContainText('Weight 3 · Armor 6 · Resist 6');
+  await expect(d.locator('.mk-preview')).toContainText('Weight 5 · Armor 9 · Resist 9');
   await expect(d.locator('.mk-preview')).toContainText('Equipped: +2 STR');
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
 
-  const grips = await libraryItem(page, 'Rime Grips');
-  expect(grips).toMatchObject({ type: 'armor', rar: 'epic', slot: 'hands', weight: 3, armor: 6, resist: 6, bonus: { str: 2 } });
+  const helm = await libraryItem(page, 'Rime Helm');
+  expect(helm).toMatchObject({ type: 'armor', rar: 'epic', slot: 'head', weight: 5, armor: 9, resist: 9, bonus: { str: 2 } });
 
   const sheet = () => page.evaluate(() => { const x = hunterApp.api.hunter.sheet(hunterApp.store.active()); return { armor: x.sheet.armor as number, str: x.stats.str as number }; });
-  await page.evaluate(it => hunterApp.api.inventory.addItem(hunterApp.store.active().id, it), grips);
+  await page.evaluate(it => hunterApp.api.inventory.addItem(hunterApp.store.active().id, it), helm);
   const before = await sheet();
   await go(page, 'status');
-  const equip = page.locator('[data-panel="inventory"] [aria-label="Equip Rime Grips"]');
+  const equip = page.locator('[data-panel="inventory"] [aria-label="Equip Rime Helm"]');
   await equip.evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
   await equip.tap();
-  await expect.poll(sheet).toEqual({ armor: before.armor + 6, str: before.str + 2 });
+  await expect.poll(sheet).toEqual({ armor: before.armor + 9, str: before.str + 2 });
 });
 
 test('in the item maker a consumable shows no slot, no gear numbers and no bonus while worn; a weapon shows them and how it attacks', async ({ device }) => {

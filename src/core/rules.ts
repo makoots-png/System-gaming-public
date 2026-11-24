@@ -199,7 +199,6 @@ const SPEC = {
     common: rarity('#9fb6c9', 'E'), uncommon: rarity('#59e6a8', 'D'), rare: rarity('#4dd8ff', 'C'),
     epic: rarity('#c79bff', 'B'), legendary: rarity('#ffc94d', 'A'), mythic: rarity('#ff6b3d', 'S'),
   },
-  slots: ['weapon', 'offhand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2'],
   // Frozen base item price by rank (today's pre-table-B clear midpoints). Item prices, Resurrection Crystals,
   // System revive debt, and shop borrow limits read this table so raising gate clear gold does not raise prices.
   priceBase: {

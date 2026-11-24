@@ -3,7 +3,7 @@
 // tiered crystal, sessions to afford, and the pace of ranks by party size. Run: bun docs/agent-handoff/features/economy/measure.ts
 import { RANKS, RULES, clearOf, priceBaseOf } from '../../../../src/core/rules.ts';
 import type { Rank } from '../../../../src/core/rules.ts';
-import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, isFullHealItem, itemOf } from '../../../../src/core/registry/items.ts';
+import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, SLOTS, STARTER_GEAR, isFullHealItem, itemOf } from '../../../../src/core/registry/items.ts';
 import type { ItemDef, Rarity } from '../../../../src/core/registry/items.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../../../../src/core/hunter/derive.ts';
 import { referenceBody } from '../../../../src/core/registry/worth.ts';
@@ -34,7 +34,7 @@ function spend(d: ItemDef): { pts: number; unweighed: string[] } {
   return { pts: sp?.points ?? 0, unweighed: [...(sp?.unweighed ?? [])] };
 }
 /** Each tier's middle budget: `itemShare` of the points a hunter of its rank has at the rank's first level, over the slots. */
-const budget = (r: Rank): number => RULES.itemBudget.share * pointsAt(RULES.rankLevels[r], RULES) / RULES.slots.length;
+const budget = (r: Rank): number => RULES.itemBudget.share * pointsAt(RULES.rankLevels[r], RULES) / SLOTS.length;
 /** Each tier's span on a log scale (halfway to its neighbours; E and S mirrored), cut in three: [lo, edge1, edge2, hi]. */
 function span(r: Rank): [number, number, number, number] {
   const i = RANKS.indexOf(r), B = budget(r), prev = i > 0 ? budget(RANKS[i - 1]!) : B * B / budget(RANKS[1]!), next = i < 5 ? budget(RANKS[i + 1]!) : B * B / budget(RANKS[4]!);

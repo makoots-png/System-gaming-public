@@ -9,7 +9,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { RANK_CAP_TEXT, describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
-import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SHOP_ITEMS, STARTER_GEAR, isFullHealItem, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
+import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SHOP_ITEMS, SLOTS, STARTER_GEAR, isFullHealItem, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
@@ -49,7 +49,7 @@ for (const [list, defs] of LISTS) {
       });
 
       test('worn gear names a slot the equipment screen has', () => {
-        if (def.type === 'weapon' || def.type === 'armor' || def.type === 'accessory') expect(RULES.slots).toContain(def.slot);
+        if (def.type === 'weapon' || def.type === 'armor' || def.type === 'accessory') expect(SLOTS).toContain(def.slot);
         else expect(item.slot).toBeNull();
       });
 
@@ -276,21 +276,21 @@ test('every rarity a rank\'s loot roll can land on has an item in the pool the r
   for (const rank of RANKS) for (const rar of Object.keys(RULES.loot[rank].weights)) expect([rank, have.has(rar as ItemDef['rar'])]).toEqual([rank, true]);
 });
 
-test('the six armour slots\' shares sum to the whole kit, so a full set of one kit is that kit', () => {
+test('the five armor slots\' shares sum to the whole kit, so a full set of one kit is that kit', () => {
   expect(Object.values(KIT_SHARE).reduce((s, v) => s + v, 0)).toBe(100);
 });
 
 group('the items as plan section 3.3 restates them', () => {
-  test('Hunter\'s Leather, a common light chest, weighs 3 with armor 4 and resist 5: 35% of 8, 10 and 15', () => {
-    expect(of("Hunter's Leather")).toMatchObject({ weight: 3, armor: 4, resist: 5 });
+  test('Hunter\'s Leather, a common light chest, weighs 3 with armor 4 and resist 6: 35% of 8, 10 and 15 (taking the rounding remainder)', () => {
+    expect(of("Hunter's Leather")).toMatchObject({ weight: 3, armor: 4, resist: 6 });
   });
 
   test('the Reinforced Hunter Vest, an uncommon medium chest, weighs 6 with armor 11 and resist 2: 35% of 18, 30 and 5 (6.3, 10.5, 1.75), the chest taking the points the rounding leaves', () => {
     expect(of('Reinforced Hunter Vest')).toMatchObject({ weight: 6, armor: 11, resist: 2 });
   });
 
-  test('Ironhide Gauntlets weigh 1 with armor 1, resist 2 and Strength 1: a tenth of the light kit\'s 8, 10 and 15 (0.8, 1, 1.5)', () => {
-    expect(of('Ironhide Gauntlets')).toMatchObject({ weight: 1, armor: 1, resist: 2, bonus: { str: 1 } });
+  test('Ironhide Gauntlets sit in the armor slot with a gauntlet icon and light chest stats plus Strength 1', () => {
+    expect(of('Ironhide Gauntlets')).toMatchObject({ slot: 'chest', icon: 'gauntlet', weight: 3, armor: 4, resist: 6, bonus: { str: 1 } });
   });
 
   test('the Ring of Vitality weighs nothing and gives Vitality 5', () => {
@@ -619,5 +619,23 @@ group('the recipe items: each is read back whole and spends inside its grade', (
     expect(p.worn!.ops).toEqual([{ op: 'sheet', key: 'armor', amount: formulaOf('0.015 * hpmax') }]);
     expect([p.armor, p.resist]).toEqual([piece('heavy', 'chest', RULES).armor, piece('heavy', 'chest', RULES).resist]);
     expect(spendOf("Warden's Plate").unweighed).toEqual([]);
+  });
+});
+
+group('two-handed weapons and the orb slot (V2)', () => {
+  test('parseItem keeps twoHanded only when true on a weapon in the main-hand slot', () => {
+    expect(parseItem({ name: 'Halberd', type: 'weapon', slot: 'weapon', dice: '2d6', twoHanded: true })!.twoHanded).toBe(true);
+    expect(parseItem({ name: 'Buckler', type: 'weapon', slot: 'offhand', dice: '1d4', twoHanded: true })).not.toHaveProperty('twoHanded');
+    expect(parseItem({ name: 'Plate', type: 'armor', slot: 'weapon', twoHanded: true })).not.toHaveProperty('twoHanded');
+    expect(parseItem({ name: 'Orb', type: 'accessory', slot: 'orb', twoHanded: true })).not.toHaveProperty('twoHanded');
+    expect(parseItem({ name: 'Sword', type: 'weapon', slot: 'weapon', twoHanded: 'yes' })).not.toHaveProperty('twoHanded');
+  });
+
+  test('itemOf copies twoHanded onto built-in two-handed weapons and Orb of Avarice sits in the orb slot', () => {
+    for (const name of ['Hunting Bow', 'Goblin Shortbow', 'Frost Giant Hammer', "Kamish's Wrath", "Monarch's Scepter"]) {
+      expect(of(name).twoHanded, name).toBe(true);
+    }
+    expect(of("Kasaka's Venom Fang")).not.toHaveProperty('twoHanded');
+    expect(of('Orb of Avarice').slot).toBe('orb');
   });
 });

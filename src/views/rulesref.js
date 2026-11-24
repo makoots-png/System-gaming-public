@@ -2,6 +2,7 @@
 // the eight stats, their curves, Armor and Resist and the turn order by speed from the numbers of `RULES.fight`.
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
+import { SLOTS, SLOT_LABELS, WEAR_LIMIT } from '../core/registry/items.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
 import { ICON_CREDIT, KEYSTONE_WORDS, borrowLine, checkExample, crystalLines, crystalRows, deathLine, defenceLines, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { GUILD_TABLE_PERKS, guildDisplayName, guildSheetLine } from '../core/hunter/guild.ts';
@@ -208,7 +209,7 @@ export function register(app) {
       ] },
       { id: 'loot', title: 'Loot and rarity', body: [
         table(['Rarity', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, fmt(r.price), fmt(r.sell)])),
-        p(`Prices are in gold. ${esc(saleLine(R))} Gear slots: ${R.slots.map(esc).join(', ')}.`),
+        p(`Prices are in gold. ${esc(saleLine(R))} Gear slots (${WEAR_LIMIT} worn at once): ${SLOTS.map(s => esc(SLOT_LABELS[s])).join(', ')}.`),
         p(esc(borrowLine(R))),
         p(`Clearing a gate awards gold plus one weighted item roll, and a boss adds one extra item roll. Gold is rolled once per clear and split using the Gates rules, so each hunter in a party of ${esc(R.gateParty)} gets the full rolled amount.`),
         table(['Rank', 'Gold', 'Item odds'], lootRows),

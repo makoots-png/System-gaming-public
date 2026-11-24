@@ -2,6 +2,7 @@
 // store.setPrefs), hunter identity (emblem + color on the sheet, hunter/identity.ts), equipment loadouts
 // (hunter/loadouts.ts), and GM room-rule switches (hunter/build.ts). This file draws and taps.
 import { iconDef, iconsOf, isIconKey } from '../core/registry/icons.ts';
+import { SLOTS, SLOT_LABELS } from '../core/registry/items.ts';
 import { HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS } from '../edge/rules.ts';
 import * as ui from './ui.js';
 import { oneOf } from '../core/one-of.ts';
@@ -160,7 +161,7 @@ export function register(app) {
   // ── loadouts ─────────────────────────────────────────────────────────────
   // new saves only: a lowered cap (even 0 or negative) never hides or deletes saved sets; never above the store's structural limit
   const loCap = () => loadoutCap(rules());
-  const sameSet = (h, l) => rules().slots.every(s => (l.slots[s] || null) === (h.equipped[s] || null));
+  const sameSet = (h, l) => SLOTS.every(s => (l.slots[s] || null) === (h.equipped[s] || null));
   // a fight holds hunter hid (core/combat/fight-save.ts `fightHold`, through the hunter api): its gear and build wait
   const inFight = hid => A().hunter.fightOf({ hid }) !== null;
   const LO = A().loadouts = {
@@ -169,27 +170,27 @@ export function register(app) {
     overwrite: (hid, id) => store.apply('loadout-save', atHunter(hid, h => overwriteLoadout(h, id, rules()))),
     rename: (hid, id, name) => store.apply('loadout-rename', atHunter(hid, h => renameLoadout(h, id, String(name || '')))),
     remove: (hid, id) => store.apply('loadout-del', atHunter(hid, h => removeLoadout(h, id))),
-    // one action. Listed slot + item exists + fits -> equipped; slot absent from the set -> emptied; item gone/unfit -> slot left as is and reported.
-    // Refused in a fight: the fight's row holds the sheet it started with (m2-plan section 4.4, W4); `kept` lists every slot then.
+    // one action. Core (`wearSet` via `swapLoadout`) enforces in-fight refusal, two-handed lock, and the 6-item cap.
     swap(hid, id) {
       const h = store.hunter(hid), l = h && h.loadouts.find(x => x.id === id); if (!l) return null;
-      const skipped = [], kept = [];
-      if (LO.inFight(hid)) {
-        ui.toast('Loadout', 'You cannot change gear during a fight.', { kind: 'warning' });
-        return { skipped, kept: [...rules().slots] };
-      }
-      if (!ui.wrote('Loadout', store.apply('loadout-swap', s => { const r = swapLoadout(s, hid, id, rules(), false); if ('save' in r) { skipped.push(...r.skipped); return r.save; } return r; }))) return null;
+      const skipped = [], left = [];
+      if (!ui.wrote('Loadout', store.apply('loadout-swap', s => {
+        const r = swapLoadout(s, hid, id, rules(), LO.inFight(hid));
+        if ('save' in r) { skipped.push(...r.skipped); left.push(...r.left); return r.save; }
+        return r;
+      }), LOADOUT_WORDS)) return { skipped, kept: [...SLOTS] };
       const msg = [`${l.name} equipped.`];
       if (skipped.length) msg.push(`No longer in the bag: ${skipped.join(', ')}.`);
-      ui.toast('Loadout', msg.join(' '), { kind: skipped.length ? 'warning' : 'info' });
-      return { skipped, kept };
+      if (left.length) msg.push(`Left in your bag: ${left.join(', ')}.`);
+      ui.toast('Loadout', msg.join(' '), { kind: skipped.length || left.length ? 'warning' : 'info' });
+      return { skipped, kept: [] };
     },
   };
   async function manageLoadout(hid, id) {
     const h = store.hunter(hid), l = h && h.loadouts.find(x => x.id === id); if (!l) return;
-    const rows = rules().slots.map(s => {
+    const rows = SLOTS.map(s => {
       const want = l.slots[s], it = want && h.items.find(i => i.id === want);
-      return `<li><span>${esc(s)}</span><span class="${want && !fits(it, s) ? 'bad' : ''}">${it ? esc(it.name) + (fits(it, s) ? '' : ' (cannot equip)') : '<i>empty</i>'}</span></li>`;
+      return `<li><span>${esc(SLOT_LABELS[s] || s)}</span><span class="${want && !fits(it, s) ? 'bad' : ''}">${it ? esc(it.name) + (fits(it, s) ? '' : ' (cannot equip)') : '<i>empty</i>'}</span></li>`;
     }).join('');
     const v = await ui.system({ tag: '! Loadout', title: l.name, kind: 'info', layout: 'list', html: `<ul class="lo-pv">${rows}</ul>`,
       actions: [{ label: 'Equip', value: 'swap', primary: true }, { label: 'Rename', value: 'ren' }, { label: 'Overwrite with current gear', value: 'ow' },

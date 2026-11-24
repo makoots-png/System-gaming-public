@@ -205,10 +205,10 @@ describe('monsters (table 2.6)', () => {
   });
 });
 
-describe('a kit\'s six pieces (design 2.3)', () => {
+describe('a kit\'s five pieces (design 2.3)', () => {
   const sum = (gear: readonly GearPiece[]): GearPiece => gear.reduce((t, g) => ({ weight: t.weight + g.weight, armor: t.armor + g.armor, resist: t.resist + g.resist }), { weight: 0, armor: 0, resist: 0 });
   const SLOTS = Object.keys(KIT_SHARE) as (keyof typeof KIT_SHARE)[];
-  test('the six pieces of each kit add up to the kit exactly, and none is off its share by a whole point or more', () => {
+  test('the five pieces of each kit add up to the kit exactly, and none is off its share by a whole point or more', () => {
     for (const kit of ['light', 'medium', 'heavy'] as const) {
       const k = RULES.fight.kits[kit];
       expect(sum(SLOTS.map(slot => piece(kit, slot, RULES))), kit).toEqual({ weight: k.weight, armor: k.armor, resist: k.resist });
@@ -218,11 +218,11 @@ describe('a kit\'s six pieces (design 2.3)', () => {
     }
   });
 
-  test('a point the rounding leaves goes to the piece that lost the most to it: the light kit\'s armor 10 is chest 4 (3.5), legs 2, then 1 a piece', () => {
-    // 3.5, 2, 1.5, 1, 1, 1 round down to 3, 2, 1, 1, 1, 1 (9); the point left goes to the larger of the two halves, the chest
-    expect(SLOTS.map(slot => piece('light', slot, RULES).armor)).toEqual([4, 2, 1, 1, 1, 1]);
-    // 1.75, 1, 0.75, 0.5, 0.5, 0.5 round down to 1, 1, 0, 0, 0, 0 (2); the three left go to the chest, the offhand and the head
-    expect(SLOTS.map(slot => piece('medium', slot, RULES).resist)).toEqual([2, 1, 1, 1, 0, 0]);
+  test('a point the rounding leaves goes to the piece that lost the most to it: the light kit\'s armor 10 is chest 4 (3.5), legs 2, offhand 2, then 1 a piece', () => {
+    // 3.5, 2, 1.5, 1.5, 1.5 round down to 3, 2, 1, 1, 1 (8); the two left go to chest (largest share) and offhand (first 15%)
+    expect(SLOTS.map(slot => piece('light', slot, RULES).armor)).toEqual([4, 2, 2, 1, 1]);
+    // 1.75, 1, 0.75, 0.75, 0.75 round down to 1, 1, 0, 0, 0 (2); the three left go to chest, offhand, and head
+    expect(SLOTS.map(slot => piece('medium', slot, RULES).resist)).toEqual([2, 1, 1, 1, 0]);
   });
 
   test('a monster wears its archetype\'s kit at every rank: an S skirmisher\'s armor and resist are the light kit\'s', () => {

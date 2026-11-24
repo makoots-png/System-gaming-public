@@ -14,10 +14,9 @@ const rising = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x > xs[i
 const falling = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x < xs[i - 1]!);
 const keys = (o: object): string[] => Object.keys(o).sort();
 
-test('the rules and the save name the same ranks, rarities and slots, in the same order', () => {
+test('the rules and the save name the same ranks and rarities, in the same order', () => {
   expect([...RANKS]).toEqual([...SAVE_RANKS]);
   expect(TIERS).toEqual([...RARITIES]);
-  expect([...RULES.slots]).toEqual([...SLOTS]);
 });
 
 test('every table by rank has a row for every rank', () => {

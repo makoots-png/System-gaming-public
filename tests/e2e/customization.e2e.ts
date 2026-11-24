@@ -349,3 +349,54 @@ test('alone, a player switches to GM mode and back from the header pill, adds a 
     await expect.poll(async () => (await activeHunter(page)).id).toBe(first);
   });
 });
+
+test('10 gear slots allow 6 active at once, show Swap on occupied slots, and lock Off hand under a two-handed weapon', async ({ device }) => {
+  const page = (await device('phone')).page;
+  await onboardPlayer(page, 'Kai Gear');
+  await dismissAll(page);
+  const hid = await page.evaluate(() => hunterApp.store.active().id as string);
+  const ids = await page.evaluate(id => {
+    const add = (it: any) => hunterApp.api.inventory.addItem(id, { rar: 'rare', qty: 1, ...it }).id as string;
+    const out = {
+      bow: add({ name: 'Frost Longbow', type: 'weapon', slot: 'weapon', attack: 'shot', dice: '1d8', twoHanded: true, bonus: { agi: 2 } }),
+      helm: add({ name: 'Steel Helm', type: 'armor', slot: 'head', armor: 4 }),
+      armor: add({ name: 'Shadow Plate', type: 'armor', slot: 'chest', armor: 10 }),
+      neck: add({ name: 'Mana Charm', type: 'accessory', slot: 'neck', bonus: { manaMax: 2 } }),
+      pants: add({ name: 'Wind Greaves', type: 'armor', slot: 'legs', armor: 4 }),
+      orb: add({ name: 'Avarice Orb', type: 'accessory', slot: 'orb', bonus: { pow: 3 } }),
+      boots: add({ name: 'Swift Boots', type: 'armor', slot: 'feet', armor: 2 }),
+      crown: add({ name: 'Iron Crown', type: 'armor', slot: 'head', armor: 5 }),
+    };
+    for (const k of ['bow', 'helm', 'armor', 'neck', 'pants', 'orb'] as const) hunterApp.api.inventory.equip(id, out[k]);
+    return out;
+  }, hid);
+
+  await go(page, 'status');
+  const eq = page.locator(`${status}[data-panel=equipment]`);
+  await eq.scrollIntoViewIfNeeded();
+  await expect(eq.locator('[data-eqcap]')).toHaveText('Equipped: 6 of 6');
+  await expect(eq.locator('[data-slot]')).toHaveCount(10);
+  await expect(eq.locator('[data-slot="offhand"]')).toContainText('Held by Frost Longbow (2H)');
+  await expect(eq.locator('[data-slot="feet"]')).toContainText('Full (6 of 6)');
+
+  // 7th empty slot is refused with plain words
+  const inv = page.locator(`${status}[data-panel=inventory]`);
+  const equipBoots = inv.locator(`[data-equip="${ids.boots}"]`);
+  await equipBoots.scrollIntoViewIfNeeded();
+  await expect(equipBoots).toHaveText('Equip');
+  await equipBoots.tap();
+  await expect(toasts(page).filter({ hasText: 'You are already wearing 6 of 6 items. Unequip an item first.' })).toHaveCount(1);
+
+  // Occupied slot shows Swap and replaces cleanly at 6 of 6
+  const swapCrown = inv.locator(`[data-equip="${ids.crown}"]`);
+  await expect(swapCrown).toHaveText('Swap');
+  await swapCrown.tap();
+  await expect.poll(async () => (await activeHunter(page)).equipped.head).toBe(ids.crown);
+
+  // Tapping Unequip on the locked Off hand row unequips the two-handed weapon
+  const offUnequip = eq.locator('[data-slot="offhand"] [data-unequip="weapon"]');
+  await offUnequip.scrollIntoViewIfNeeded();
+  await offUnequip.tap();
+  await expect(eq.locator('[data-eqcap]')).toHaveText('Equipped: 5 of 6');
+  await expect.poll(async () => (await activeHunter(page)).equipped.weapon).toBeNull();
+});

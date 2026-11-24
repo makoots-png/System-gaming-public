@@ -123,6 +123,7 @@ export const WORST_ITEM_WORN: Item = {
     value: 4250,
     dice: '2d8',
     attack: 'shot',
+    twoHanded: true,
     weight: 7,
     armor: 4,
     resist: 6,

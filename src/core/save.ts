@@ -22,7 +22,7 @@ import type { BindJoin } from './sync/bind.ts';
 import type { RoomPlaces } from './sync/seen.ts';
 import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
-import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, itemOf, parseItem } from './registry/items.ts';
+import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, SLOT_LABELS, WEAR_LIMIT, itemOf, parseItem } from './registry/items.ts';
 import { parseMonster } from './registry/monsters.ts';
 import { isIconKey } from './registry/icons.ts';
 import type { IconKey } from './registry/icons.ts';
@@ -97,7 +97,7 @@ export const MODES = ['player', 'gm'] as const;
 export { SKILL_TYPES };
 export type { SkillType };
 /** The item enums and the one item parser: src/core/registry/items.ts. */
-export { ITEM_TYPES, RARITIES, SLOTS };
+export { ITEM_TYPES, RARITIES, SLOTS, SLOT_LABELS, WEAR_LIMIT };
 export type { ItemTemplate, ItemType, Rarity, Slot };
 /** A skill, an item and a monster live in the registry that owns each (src/core/registry/). */
 export type { Item, Loot, Monster, Skill, StartStatus };

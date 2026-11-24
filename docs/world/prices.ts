@@ -6,6 +6,7 @@
 // When the anchor moves (RULES.loot, or a number of WORLD), rerun with --write and read the prose beside each table.
 import { RANKS, RULES } from '../../src/core/rules.ts';
 import type { Rank } from '../../src/core/rules.ts';
+import { SLOTS } from '../../src/core/registry/items.ts';
 
 // ── the game's numbers ──
 /** One Clear: the mean gold one hunter of a party of four takes from a world gate of the rank (design.md section 0). */
@@ -208,7 +209,7 @@ block('enhancement', table(['Tier (rank)', 'A stone', 'Chance it works', 'Expect
 
 // ── 7. gear ──
 block('gear', table(['Tier (rank)', 'Minus', 'Middle', 'Plus', 'The Shop buys at', 'A fence pays', 'Used, at a stall', 'A set of ten, middle', 'Median months for the set'],
-  RANKS.map(r => { const c = clear(r); return [`${RARITY_OF[r]} (${r})`, whole(c / DESIGN.gradeStep), whole(c), whole(c * DESIGN.gradeStep), whole(Math.floor(c * DESIGN.saleShare)), whole(c * WORLD.fencePays), whole(c * WORLD.usedSells), whole(c * RULES.slots.length), (c * RULES.slots.length / MEDIAN).toFixed(1)]; })));
+  RANKS.map(r => { const c = clear(r); return [`${RARITY_OF[r]} (${r})`, whole(c / DESIGN.gradeStep), whole(c), whole(c * DESIGN.gradeStep), whole(Math.floor(c * DESIGN.saleShare)), whole(c * WORLD.fencePays), whole(c * WORLD.usedSells), whole(c * SLOTS.length), (c * SLOTS.length / MEDIAN).toFixed(1)]; })));
 
 // ── 8. gates ──
 const harvest = (r: Rank): number => pot(r) * WORLD.harvestOfPot;
@@ -301,7 +302,7 @@ const GOALS: [string, number][] = [
   ['A crafted plus item', DESIGN.gradeStep * WORLD.craftSells],
   ['An escape stone (one hunter\'s quarter share)', WORLD.lasts.run / DESIGN.goldParty],
   ['A Resurrection Crystal (party of 4 pooling one)', DESIGN.reviveClears / DESIGN.goldParty],
-  ['A full set of ten middle items', RULES.slots.length],
+  ['A full set of ten middle items', SLOTS.length],
   ['A skill book (solo)', WORLD.lasts.forever],
   ['A Resurrection Crystal (solo)', DESIGN.reviveClears],
 ];
@@ -350,7 +351,7 @@ const sinkFood = WORLD.craftCatalyst * sum(r => gatesOf(r) * WORLD.foodPerGate *
 const sinkEscape = sum(r => gatesOf(r) * WORLD.escapePerGate * clear(r) * WORLD.lasts.run);
 const sinkConsumables = sinkStaplesTonics + sinkFood + sinkEscape;
 const weightedGearSets = (regulars * WORLD.gearSetsAYear.regular + nonRegulars * WORLD.gearSetsAYear.occasional) / HUNTERS;
-const sinkGear = shopDestroys * sum(r => huntersOf(r) * weightedGearSets * clear(r) * RULES.slots.length / 12);
+const sinkGear = shopDestroys * sum(r => huntersOf(r) * weightedGearSets * clear(r) * SLOTS.length / 12);
 const sinkStones = shopDestroys * (regulars / HUNTERS) * sum(r => huntersOf(r) * WORLD.stonesAYear * clear(r) * WORLD.stoneClears / 12);
 const sinkProgression = shopDestroys * (regulars / HUNTERS) * sum(r => huntersOf(r) * (WORLD.seedsAYear * WORLD.seedClears + WORLD.booksAYear * WORLD.lasts.forever) * clear(r) / 12);
 
@@ -419,7 +420,7 @@ const runners = sinkResidents * WORLD.runnerMarkup / (W * WORLD.workDaysAMonth);
 const fuelShare = HARVEST_TOTAL / (HOMES * WORLD.powerBillOfWage * W * (1 + WORLD.industryPower));
 // Boss cores used by crafting: only epic, legendary and mythic crafted gear require a boss core (proposed, needs the owner).
 const highRanks: Rank[] = ['B', 'A', 'S'];
-const craftedHighGearAMonth = highRanks.reduce((n, r) => n + WORLD.craftedShare * huntersOf(r) * weightedGearSets * RULES.slots.length / 12, 0);
+const craftedHighGearAMonth = highRanks.reduce((n, r) => n + WORLD.craftedShare * huntersOf(r) * weightedGearSets * SLOTS.length / 12, 0);
 const highRankCoresAMonth = highRanks.reduce((n, r) => n + gatesOf(r), 0);
 const bossCoreCraftShare = craftedHighGearAMonth / WORLD.worldGatesAMonth;
 

@@ -19,7 +19,7 @@ import type { Op, SheetOpKey } from '../combat/effect-ops.ts';
 import { average, NO_KIT, parseFormula } from '../formula.ts';
 import type { Formula, Scope } from '../formula.ts';
 import { gradeLabel } from '../effects.ts';
-import { GRADES, KIT_SHARE, SAMPLE_WEARER, piece, weightOf } from './items.ts';
+import { GRADES, KIT_SHARE, SAMPLE_WEARER, SLOTS, piece, weightOf } from './items.ts';
 import type { ArmorSlot, Grade, Item, Rarity } from './items.ts';
 import { KINDS } from './ability-kinds.ts';
 import { abilityWorth, bestScope, BUILD_OF, hpRate, referenceBody, usesPerRound, wornWorth } from './worth.ts';
@@ -27,13 +27,13 @@ import type { WorthRules } from './worth.ts';
 import type { Powers } from './powers.ts';
 import { bandOf } from '../rewards.ts';
 
-/** The rule numbers the budget reads: the body and the fight's yardstick (worth.ts), each rarity's rank, the budget's share and the slots. */
-export type BudgetRules = WorthRules & Pick<Rules, 'rarities' | 'itemBudget' | 'slots'>;
+/** The rule numbers the budget reads: the body and the fight's yardstick (worth.ts), each rarity's rank, and the budget's share. */
+export type BudgetRules = WorthRules & Pick<Rules, 'rarities' | 'itemBudget'>;
 
 // ── the budget of a tier and a grade (design 2.4) ──
-/** A rank's middle budget: `itemBudget.share` of the points a hunter of the rank has at its first level, over the slots. */
+/** A rank's middle budget: `itemBudget.share` of the points a hunter of the rank has at its first level, over `SLOTS.length`. */
 export const middleBudget = (R: BudgetRules, rank: Rank): number =>
-  R.itemBudget.share * pointsAt(R.rankLevels[rank], R) / R.slots.length;
+  R.itemBudget.share * pointsAt(R.rankLevels[rank], R) / SLOTS.length;
 
 /** A tier's span of points: its low edge, and the top of each grade (the plus's is the tier's top). */
 export type Span = { readonly low: number; readonly tops: { readonly [G in Grade]: number } };

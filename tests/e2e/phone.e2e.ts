@@ -576,7 +576,7 @@ async function seedBusy(gm: Page, player: Page): Promise<void> {
         h.titleId = `${prefix}t1`;
         h.boons = [{ id: `${prefix}bn1`, name: 'Association High-Council Emergency Extraction Writ', text: 'Once per arc, summon an S-rank strike team to hold a gate break.', at: now }];
         h.items = makeItems(`${prefix}i`);
-        h.equipped = { weapon: `${prefix}i1`, offhand: null, head: null, chest: `${prefix}i2`, hands: null, legs: null, feet: null, neck: null, ring1: null, ring2: null };
+        h.equipped = { weapon: `${prefix}i1`, offhand: null, head: null, chest: `${prefix}i2`, neck: null, legs: null, feet: null, orb: null, ring1: null, ring2: null };
         h.conditions = opts.dead ? [] : makeConditions();
         h.quests = makeQuests(`${prefix}q`);
         h.shadows = makeShadows(`${prefix}sh`);

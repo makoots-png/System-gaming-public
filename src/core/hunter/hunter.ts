@@ -154,7 +154,7 @@ export type Hunter = Progress & Vitals & {
 // ── defaults. Each factory is typed by its entity, so a field added to a type without a default does not compile. ──
 export const newStats = (R: Rules = BASE_RULES): Stats => ({ ...baseStats(R.fight) });
 export const newEquipped = (): Record<Slot, ItemId | null> => ({
-  weapon: null, offhand: null, head: null, chest: null, hands: null, legs: null, feet: null, neck: null, ring1: null, ring2: null,
+  weapon: null, offhand: null, head: null, chest: null, neck: null, legs: null, feet: null, orb: null, ring1: null, ring2: null,
 });
 export const newQuest = (): Quest => ({
   id: saveId('q', 0), kind: 'side', title: '', desc: '', objectives: [], rewards: newRewards(), status: 'active', issuedAt: '', doneAt: null,

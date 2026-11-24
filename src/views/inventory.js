@@ -3,11 +3,11 @@ import { BONUS_KEYS, BONUS_LABELS, RANKS, TIERS, rules } from '../edge/rules.ts'
 import { ITEM_TYPES, SLOTS } from '../core/save.ts';
 import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
-import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } from '../core/registry/items.ts';
+import { builtInItems, defaultShop, lootPool, parseItem, SLOT_LABELS, valueOf, WEAR_LIMIT, weightOf } from '../core/registry/items.ts';
 import { itemAbilityId } from '../core/registry/abilities.ts';
 import { itemIcon } from '../core/registry/icon-defaults.ts';
 import { icon, sprite } from './icons.ts';
-import { BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
+import { BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, handLockedBy, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, wearPlan, withShop, wornCount, writeShopItem } from '../core/hunter/inventory.ts';
 import { CRYSTAL_BUYERS, CRYSTAL_WORDS, addCrystal, buyerRate, buyerStatus, defaultBuyer, sellCrystalStep, sellPlan } from '../core/hunter/crystal.ts';
 import { stepTime } from '../core/day.ts';
 import { fitted } from '../core/hunter/sheet.ts';
@@ -20,7 +20,6 @@ import { postNews, reportWords } from '../core/sync/connection.ts';
 
 /** The Bag's tabs: its items, the offers to and from its hunter and the party stash (both trade.js), the shop. */
 const BAG_TABS = ['items', 'offers', 'stash', 'shop'];
-const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
 
@@ -178,12 +177,16 @@ export function register(app) {
 .inv-card .meta{font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}
 .inv-slots{display:flex;flex-direction:column;gap:8px}
 .inv-card .acts{display:flex;gap:6px;flex-wrap:wrap}
+.inv-card .acts button.eq-blocked{opacity:.65}
 .inv-card.eq{border-color:var(--line-bright)}
 .inv-qty{font-family:var(--font-mono);font-size:13px;color:var(--ice)}
 /* at 360 a row's five controls (Use or Equip, Edit, Sell, Give and the remove mark) keep one line */
 @media (max-width:400px){.inv-card{padding:9px 10px}.inv-card .acts{gap:4px}.inv-card .acts button{padding:4px 8px;letter-spacing:.02em}}
+.eq-cap{margin:0 0 8px;font-family:var(--font-mono);font-size:13px;letter-spacing:.06em;color:var(--cyan-dim)}
+.eq-cap.full{color:var(--gold)}
 .eq-slot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 12px}
-.eq-slot .sl{flex:0 0 74px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan-dim)}
+.eq-slot.locked{border-style:dashed;opacity:.85}
+.eq-slot .sl{flex:0 0 82px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan-dim)}
 .eq-slot .nm{flex:1 1 130px;min-width:0;overflow-wrap:anywhere}
 .eq-slot .nm.none{color:var(--muted);font-style:italic}
 `);
@@ -191,7 +194,7 @@ export function register(app) {
   const chip = r => `<span class="rar rar-${esc(r)}">${esc(r)}</span>`;
   /** An item's picture (icon-defaults.ts `itemIcon`) in its rarity's colour, at the start of its line. */
   const pic = i => icon(itemIcon(i), `inv-ic rar-${esc(i.rar)}`);
-  const metaLine = i => [i.type, i.slot ? `slot: ${SLOT_LABEL[i.slot] || i.slot}` : '', i.dice ? `${i.dice}${i.attack ? ` ${i.attack}` : ''}` : '', bonusText(i.bonus),
+  const metaLine = i => [i.type, i.slot ? `slot: ${SLOT_LABELS[i.slot] || i.slot}` : '', i.twoHanded ? 'two-handed' : '', i.dice ? `${i.dice}${i.attack ? ` ${i.attack}` : ''}` : '', bonusText(i.bonus),
     weightOf(i) ? `weight ${weightOf(i)}` : '', i.armor ? `armor ${i.armor}` : '', i.resist ? `resist ${i.resist}` : ''].filter(Boolean).map(esc).join(' · ');
   /** An item's name, which opens what it does and its description (app.api.detail) under its line. */
   const nameBtn = (list, key, i) => `<button type="button" class="i-name"${app.api.detail.control(list, key)}>${esc(i.name)}</button>`;
@@ -202,18 +205,26 @@ export function register(app) {
   app.registerPanel({
     view: 'status', id: 'equipment', order: 45, title: 'Gear', jump: 'Gear',
     mount(el) {
-      el.innerHTML = '<div class="inv-slots" data-slots></div><p class="empty" data-eqsum></p>';
+      el.innerHTML = '<p class="eq-cap" data-eqcap></p><div class="inv-slots" data-slots></div><p class="empty" data-eqsum></p>';
       el.addEventListener('click', e => {
         const b = e.target.closest('[data-unequip]'); if (b) api.unequip(store.active().id, oneOf(b.dataset.unequip, SLOTS, null));
       });
     },
     update(el) {
-      const h = store.active();
-      el.querySelector('[data-slots]').innerHTML = rules().slots.map(s => {
+      const h = store.active(), count = wornCount(h), full = count >= WEAR_LIMIT, blocker = handLockedBy(h);
+      const capEl = el.querySelector('[data-eqcap]');
+      capEl.textContent = `Equipped: ${count} of ${WEAR_LIMIT}`;
+      capEl.classList.toggle('full', full);
+      el.querySelector('[data-slots]').innerHTML = SLOTS.map(s => {
         const it = h.items.find(i => i.id === h.equipped[s]);
-        return `<div class="eq-slot" data-slot="${esc(s)}"><span class="sl">${esc(SLOT_LABEL[s] || s)}</span>
-          ${it ? `<span class="nm">${esc(it.name)}<br><span class="meta note">${metaLine(it)}</span></span>${chip(it.rar)}
-            <button type="button" data-unequip="${esc(s)}" aria-label="Unequip ${esc(it.name)}">Unequip</button>` : '<span class="nm none">empty</span>'}</div>`;
+        if (!it && s === 'offhand' && blocker) {
+          return `<div class="eq-slot locked" data-slot="offhand"><span class="sl">${esc(SLOT_LABELS[s])}</span>
+            <span class="nm none">Held by ${esc(blocker.name)} (2H)</span>
+            <button type="button" data-unequip="weapon" aria-label="Unequip ${esc(blocker.name)}">Unequip</button></div>`;
+        }
+        return `<div class="eq-slot" data-slot="${esc(s)}"><span class="sl">${esc(SLOT_LABELS[s] || s)}</span>
+          ${it ? `<span class="nm">${esc(it.name)}<br><span class="meta note">${metaLine(it)}</span></span>${it.twoHanded ? '<span class="inv-qty">2H</span>' : ''}${chip(it.rar)}
+            <button type="button" data-unequip="${esc(s)}" aria-label="Unequip ${esc(it.name)}">Unequip</button>` : `<span class="nm none">${full ? `Full (${WEAR_LIMIT} of ${WEAR_LIMIT})` : 'Empty'}</span>`}</div>`;
       }).join('');
       const { sheet } = app.api.hunter.sheet(h);
       el.querySelector('[data-eqsum]').textContent = `Gear weight ${fmt(sheet.weight)} of ${fmt(sheet.carry)} carry · Armor ${fmt(sheet.armor)} · Resist ${fmt(sheet.resist)}`;
@@ -431,11 +442,14 @@ export function register(app) {
         const list = h.items.filter(i => filter === 'all' || i.type === filter);
         el.querySelector('[data-list]').innerHTML = list.length ? list.map(i => {
           const eq = equippedIds.has(i.id);
-          return `<li class="inv-card${eq ? ' eq' : ''}" data-item="${esc(i.id)}"><div class="top">${pic(i)}${nameBtn('inv-items', i.id, i)}${chip(i.rar)}${i.qty > 1 ? `<span class="inv-qty">×${esc(i.qty)}</span>` : ''}${eq ? '<span class="inv-qty">equipped</span>' : ''}</div>
+          const plan = i.slot && !eq ? wearPlan(h, i.id, false) : null;
+          const swap = !!(plan && !isRefused(plan) && plan.replaces.length > 0);
+          const blocked = !!(plan && isRefused(plan));
+          return `<li class="inv-card${eq ? ' eq' : ''}" data-item="${esc(i.id)}"><div class="top">${pic(i)}${nameBtn('inv-items', i.id, i)}${i.twoHanded ? '<span class="inv-qty">2H</span>' : ''}${chip(i.rar)}${i.qty > 1 ? `<span class="inv-qty">×${esc(i.qty)}</span>` : ''}${eq ? '<span class="inv-qty">equipped</span>' : ''}</div>
             ${itemDetail('inv-items', i.id, i, h)}${metaLine(i) ? `<div class="meta">${metaLine(i)}</div>` : ''}
             <div class="acts">
               ${i.type === 'consumable' ? `<button type="button" data-use="${esc(i.id)}" aria-label="Use ${esc(i.name)}">Use</button>` : ''}
-              ${i.slot ? (eq ? `<button type="button" data-unequip-item="${esc(i.id)}" aria-label="Unequip ${esc(i.name)}">Unequip</button>` : `<button type="button" data-equip="${esc(i.id)}" aria-label="Equip ${esc(i.name)}">Equip</button>`) : ''}
+              ${i.slot ? (eq ? `<button type="button" data-unequip-item="${esc(i.id)}" aria-label="Unequip ${esc(i.name)}">Unequip</button>` : `<button type="button"${blocked ? ' class="eq-blocked"' : ''} data-equip="${esc(i.id)}" aria-label="${swap ? 'Swap' : 'Equip'} ${esc(i.name)}">${swap ? 'Swap' : 'Equip'}</button>`) : ''}
               <button type="button" data-edit-item="${esc(i.id)}" aria-label="Edit ${esc(i.name)}">Edit</button>
               ${sellable(i) && open ? `<button type="button" data-sell="${esc(i.id)}" aria-label="Sell ${esc(i.name)}">Sell ${fmt(sellPrice(i))}g</button>` : ''}
               ${eq ? '' : `<button type="button" data-give="${esc(i.id)}" aria-label="Give ${esc(i.name)}">Give</button>`}
