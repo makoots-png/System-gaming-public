@@ -776,3 +776,5 @@ ts	phase	decision	why	evidence	result
 2026-11-24T10:51Z	ops	PR 104 (strict-views + phone-busy) merged to main
 2026-11-24T11:12Z	docs	the owner (t111u): free revive memory loss is roleplay only, no mechanical cost; marked Answered in for-the-owner.md
 2026-11-24T12:12Z	arch	takeover (from-scratch 7) landed on lead-backlog; unit 6897 pass 0 fail, browser 592 + 4 load reruns alone green; shots at 360/390 reviewed
+2026-11-24T12:28Z	ops	PR 105 (takeover) merged to main
+2026-11-24T12:56Z	arch	deps-gate (pick D6) landed on lead-backlog; deps+lint 139 pass, unit 6902 pass 0 fail on this base

@@ -182,12 +182,15 @@ export function scanFile(file: string, text: string): Scan {
   };
   const inCode = (offset: number): boolean => skel[offset] !== ' '; // not inside a string, a template's text or a regex
 
-  // imports, static and dynamic, relative only. `import type` and `export type` are erased when built; any other
-  // import loads its module, `import { type A }` too (tsconfig.json has verbatimModuleSyntax, which keeps it).
+  // imports, static and dynamic, relative only. `import type`, `export type`, and TS `import('./x').Type` queries are
+  // erased when built; any other import loads its module, `import { type A }` too (tsconfig.json has verbatimModuleSyntax, which keeps it).
   const dir = file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '';
   for (const m of code.matchAll(/\b(?:import|export)\s+(type\s+(?!from\b))?(?:[^'";]*?\bfrom\s*)?['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    if (!inCode(m.index!)) continue;
     const path = m[2] ?? m[3]!;
-    if (path.startsWith('.')) (m[1] ? out.typeImports : out.imports).push(normalize(`${dir}/${path}`));
+    if (!path.startsWith('.')) continue;
+    const typeQuery = m[3] !== undefined && /^\s*\.\s*(?!(?:then|catch|finally)\b)[A-Za-z_$]/.test(code.slice(m.index! + m[0].length));
+    (m[1] || typeQuery ? out.typeImports : out.imports).push(normalize(`${dir}/${path}`));
   }
 
   // aliases: `X = app.api`, `X = () => app.api.sync`, `X = Y()`, `X = A().sync || {}`, `X = app.api.hunter!`, and so on, to a fixed point.
@@ -442,6 +445,100 @@ export function valueCycles(map: DepsMap): string[][] {
   };
   for (const file of map.modules.keys()) if (!index.has(file)) visit(file);
   return out.sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+}
+
+const dirOf = (file: string): string => (file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '.');
+const isAncestorDir = (parent: string, child: string): boolean => (parent === '.' ? child !== '.' : child.startsWith(`${parent}/`));
+const childSubdir = (parentDir: string, file: string): string | null => {
+  const fd = dirOf(file);
+  if (!isAncestorDir(parentDir, fd)) return null;
+  if (parentDir === '.') return fd.split('/')[0]!;
+  return `${parentDir}/${fd.slice(parentDir.length + 1).split('/')[0]!}`;
+};
+
+function peerDirGraph(map: DepsMap): Map<string, Set<string>> {
+  const edges = new Map<string, Set<string>>();
+  for (const m of map.modules.values()) {
+    const d = dirOf(m.file);
+    let out = edges.get(d);
+    if (!out) edges.set(d, out = new Set());
+    for (const t of m.imports) {
+      if (!map.modules.has(t)) continue;
+      const td = dirOf(t);
+      if (td !== d && !isAncestorDir(d, td) && !isAncestorDir(td, d)) out.add(td);
+    }
+  }
+  return edges;
+}
+
+/**
+ * Each mutual pair of peer directories that import runtime values from one another (`dirA <-> dirB`, sorted, neither
+ * an ancestor of the other). Types do not count.
+ */
+export function peerDirCycles(map: DepsMap): string[] {
+  const edges = peerDirGraph(map), out: string[] = [];
+  for (const a of [...edges.keys()].sort()) {
+    for (const b of [...edges.get(a)!].sort()) {
+      if (a < b && edges.get(b)?.has(a)) out.push(`${a} <-> ${b}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Each strongly connected group of two or more peer directories in the runtime value-import graph (catches 3+ directory
+ * peer cycles with no mutual pair). Types and parent-child edges do not count.
+ */
+export function peerDirSccs(map: DepsMap): string[][] {
+  const edges = peerDirGraph(map);
+  const index = new Map<string, number>(), low = new Map<string, number>(), stack: string[] = [], on = new Set<string>();
+  const out: string[][] = [];
+  const visit = (dir: string): void => {
+    index.set(dir, index.size); low.set(dir, index.get(dir)!); stack.push(dir); on.add(dir);
+    for (const next of [...(edges.get(dir) ?? [])].sort()) {
+      if (!index.has(next)) { visit(next); low.set(dir, Math.min(low.get(dir)!, low.get(next)!)); }
+      else if (on.has(next)) low.set(dir, Math.min(low.get(dir)!, index.get(next)!));
+    }
+    if (low.get(dir) !== index.get(dir)) return;
+    const group: string[] = [];
+    for (let d = stack.pop()!; ; d = stack.pop()!) { on.delete(d); group.push(d); if (d === dir) break; }
+    if (group.length > 1) out.push(group.sort());
+  };
+  for (const dir of [...edges.keys()].sort()) if (!index.has(dir)) visit(dir);
+  return out.sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+}
+
+/**
+ * Each parent-child value-import tangle: a file in directory P that imports a value from a child subtree C under P,
+ * while a module inside C imports a value back from that file (`file <-> childDir`). Types do not count.
+ */
+export function parentChildTangles(map: DepsMap): string[] {
+  const importers = new Map<string, string[]>();
+  for (const m of map.modules.values()) {
+    for (const t of m.imports) {
+      if (!map.modules.has(t)) continue;
+      let list = importers.get(t);
+      if (!list) importers.set(t, list = []);
+      list.push(m.file);
+    }
+  }
+  const out: string[] = [];
+  for (const m of map.modules.values()) {
+    const pd = dirOf(m.file), down = new Set<string>();
+    for (const t of m.imports) {
+      if (!map.modules.has(t)) continue;
+      const cd = childSubdir(pd, t);
+      if (cd) down.add(cd);
+    }
+    if (!down.size) continue;
+    const tangled = new Set<string>();
+    for (const f of importers.get(m.file) ?? []) {
+      const cd = childSubdir(pd, f);
+      if (cd && down.has(cd)) tangled.add(cd);
+    }
+    for (const cd of [...tangled].sort()) out.push(`${m.file} <-> ${cd}`);
+  }
+  return out.sort();
 }
 
 export function renderMap(map: DepsMap): string {

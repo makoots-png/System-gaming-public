@@ -1,13 +1,14 @@
 // The dependency map (scripts/deps.ts) builds and renders cleanly from the live source, and the invisible links hold:
 // every event heard is emitted, every event emitted is heard, every entry of AppEvents is used, every app.api member
 // used is registered, every one declared in AppApi (src/core/api.ts) is registered and the reverse, every one
-// registered is used, nothing new is unresolved, every import keeps its layer's rule (a type import too), and no
-// modules load one another (value imports; a type import is erased). Each allow list names what is wrong today; an
-// entry that is fixed must leave its list, and a new problem fails the test. The layers and the cycles have no list. That an event name is an entry of AppEvents and that a member used is declared in
-// AppApi is the compiler's check (tsconfig.json and tsconfig.views.json), not this file's.
+// registered is used, nothing new is unresolved, every import keeps its layer's rule (a type import too), no modules
+// load one another (value imports; a type import is erased), and no new peer directory value cycles or parent-child
+// value tangles appear. Each allow list names what is wrong today; an entry that is fixed must leave its list, and a
+// new problem fails the test. The layers and file cycles have no list. That an event name is an entry of AppEvents and
+// that a member used is declared in AppApi is the compiler's check (tsconfig.json and tsconfig.views.json), not this file's.
 
 import { expect, test } from 'bun:test';
-import { assemble, buildMap, checkMap, layerBreaks, readTypeTable, renderMap, scanFile, valueCycles, type DepsMap, type Scan, type Unresolved } from '../scripts/deps.ts';
+import { assemble, buildMap, checkMap, layerBreaks, parentChildTangles, peerDirCycles, peerDirSccs, readTypeTable, renderMap, scanFile, valueCycles, type DepsMap, type Scan, type Unresolved } from '../scripts/deps.ts';
 
 const map: DepsMap = await buildMap();
 const TESTS_ONLY = 'used only by browser tests, for setup or to read state';
@@ -23,6 +24,41 @@ const UNUSED: Record<string, string> = {
 };
 /** Unresolved entries, without their line (a line moves with every edit above it). */
 const UNRESOLVED: string[] = [];
+/** Mutual value-import cycles between peer directories; fixing one forces removing it here. */
+const PEER_DIR_CYCLES: string[] = [
+  'src/core/combat <-> src/core/gates',
+  'src/core/combat <-> src/core/hunter',
+  'src/core/combat <-> src/core/registry',
+  'src/core/combat <-> src/core/sync',
+  'src/core/gates <-> src/core/hunter',
+  'src/core/gates <-> src/core/sync',
+  'src/core/hunter <-> src/core/registry',
+  'src/core/hunter <-> src/core/sync',
+  'src/core/sync <-> src/core/trade',
+];
+/** Strongly connected groups of two or more peer directories in the value-import graph (catches 3+ directory peer cycles). */
+const PEER_DIR_SCCS: string[][] = [
+  ['src/core/combat', 'src/core/gates', 'src/core/hunter', 'src/core/registry', 'src/core/sync', 'src/core/trade'],
+];
+/** Parent-child value-import tangles (`file <-> childDir`); fixing one forces removing it here. */
+const PARENT_CHILD_TANGLES: string[] = [
+  'src/core/draws.ts <-> src/core/combat',
+  'src/core/effects.ts <-> src/core/combat',
+  'src/core/effects.ts <-> src/core/hunter',
+  'src/core/protocol.ts <-> src/core/combat',
+  'src/core/protocol.ts <-> src/core/gates',
+  'src/core/protocol.ts <-> src/core/hunter',
+  'src/core/protocol.ts <-> src/core/sync',
+  'src/core/protocol.ts <-> src/core/trade',
+  'src/core/rewards.ts <-> src/core/combat',
+  'src/core/rewards.ts <-> src/core/hunter',
+  'src/core/rewards.ts <-> src/core/registry',
+  'src/core/rules.ts <-> src/core/combat',
+  'src/core/rules.ts <-> src/core/hunter',
+  'src/core/rules.ts <-> src/core/registry',
+  'src/core/save.ts <-> src/core/hunter',
+  'src/core/session-log.ts <-> src/core/hunter',
+];
 
 const sorted = (xs: Iterable<string>): string[] => [...xs].sort();
 const events = [...map.events.values()];
@@ -104,6 +140,27 @@ test('no modules load one another: each module has loaded everything it imports 
   expect(valueCycles(map), 'in a cycle one module runs before another has loaded, and a value it reads at its top is not there yet. Move what both sides need into a module that imports neither, or import only its type.').toEqual([]);
 });
 
+test('no new mutual value-import cycles between peer directories', () => {
+  expect(
+    peerDirCycles(map),
+    'break the new peer directory value cycle (move shared code lower or import types only). A fixed cycle must leave PEER_DIR_CYCLES.',
+  ).toEqual(PEER_DIR_CYCLES);
+});
+
+test('no new peer directory strongly connected value-import cycles', () => {
+  expect(
+    peerDirSccs(map),
+    'do not pull a directory into a peer value-import cycle (including 3+ directory cycles). A directory that leaves a cycle must leave PEER_DIR_SCCS.',
+  ).toEqual(PEER_DIR_SCCS);
+});
+
+test('no new parent-child value-import tangles', () => {
+  expect(
+    parentChildTangles(map),
+    'do not make a parent file both import values from and be value-imported by the same child directory. A fixed tangle must leave PARENT_CHILD_TANGLES.',
+  ).toEqual(PARENT_CHILD_TANGLES);
+});
+
 test('the map tells an import of types, which the build erases, from an import that loads its module', () => {
   const s = scanFile('src/core/x.ts', [
     "import type { A } from './a.ts';",
@@ -113,9 +170,12 @@ test('the map tells an import of types, which the build erases, from an import t
     "export * from './e.ts';",
     "import './f.ts';",
     "const g = () => import('./g.ts');",
+    "type H = import('./h.ts').Hold;",
+    "const i = import('./i.ts').then(m => m);",
+    'const fake = "import \'./j.ts\'";',
   ].join('\n'));
-  expect(s.typeImports).toEqual(['src/core/a.ts', 'src/core/b.ts']);
-  expect(s.imports).toEqual(['src/core/c.ts', 'src/core/d.ts', 'src/core/e.ts', 'src/core/f.ts', 'src/core/g.ts']);
+  expect(s.typeImports).toEqual(['src/core/a.ts', 'src/core/b.ts', 'src/core/h.ts']);
+  expect(s.imports).toEqual(['src/core/c.ts', 'src/core/d.ts', 'src/core/e.ts', 'src/core/f.ts', 'src/core/g.ts', 'src/core/i.ts']);
 });
 
 test('the cycle check finds modules that load one another, and not a loop closed by a type import', () => {
@@ -126,6 +186,74 @@ test('the cycle check finds modules that load one another, and not a loop closed
     ['src/core/d.ts', scanFile('src/core/d.ts', "import type { C } from './c.ts';\nexport const d = 1;\n")],
   ]);
   expect(valueCycles(assemble(scans))).toEqual([['src/core/a.ts imports src/core/b.ts', 'src/core/b.ts imports src/core/c.ts', 'src/core/c.ts imports src/core/a.ts']]);
+});
+
+test('the peer directory cycle checks catch 2-dir and 3-dir cycles with no file cycles, and ignore type-only loops and parent-child edges', () => {
+  const scans = new Map<string, Scan>([
+    // 2-dir peer cycle (a <-> b) with zero file cycles
+    ['src/core/a/a1.ts', scanFile('src/core/a/a1.ts', "import { b1 } from '../b/b1.ts';\nexport const a1 = b1;\n")],
+    ['src/core/a/a2.ts', scanFile('src/core/a/a2.ts', 'export const a2 = 1;\n')],
+    ['src/core/b/b1.ts', scanFile('src/core/b/b1.ts', 'export const b1 = 1;\n')],
+    ['src/core/b/b2.ts', scanFile('src/core/b/b2.ts', "import { a2 } from '../a/a2.ts';\nexport const b2 = a2;\n")],
+    // 3-dir peer cycle (p -> q -> r -> p) with zero file cycles and zero 2-dir pairs
+    ['src/core/p/p1.ts', scanFile('src/core/p/p1.ts', "import { q1 } from '../q/q1.ts';\nexport const p1 = q1;\n")],
+    ['src/core/p/p2.ts', scanFile('src/core/p/p2.ts', 'export const p2 = 1;\n')],
+    ['src/core/q/q1.ts', scanFile('src/core/q/q1.ts', 'export const q1 = 1;\n')],
+    ['src/core/q/q2.ts', scanFile('src/core/q/q2.ts', "import { r1 } from '../r/r1.ts';\nexport const q2 = r1;\n")],
+    ['src/core/r/r1.ts', scanFile('src/core/r/r1.ts', 'export const r1 = 1;\n')],
+    ['src/core/r/r2.ts', scanFile('src/core/r/r2.ts', "import { p2 } from '../p/p2.ts';\nexport const r2 = p2;\n")],
+    // Type-only peer loop (t1 <-> t2) via import type, export type, and import().Type: must not fire
+    ['src/core/t1/x.ts', scanFile('src/core/t1/x.ts', "import { y } from '../t2/y.ts';\nexport const x = y;\n")],
+    ['src/core/t2/y.ts', scanFile('src/core/t2/y.ts', "import type { X } from '../t1/z.ts';\nexport type { X2 } from '../t1/z.ts';\nexport type Q = import('../t1/z.ts').X;\nexport const y = 1;\n")],
+    ['src/core/t1/z.ts', scanFile('src/core/t1/z.ts', 'export type X = number;\nexport type X2 = string;\n')],
+    // Parent-child two-way edges: must not appear in peer checks
+    ['src/core/parent.ts', scanFile('src/core/parent.ts', "import { a2 } from './a/a2.ts';\nexport const p = a2;\n")],
+    ['src/core/a/a3.ts', scanFile('src/core/a/a3.ts', "import { p } from '../parent.ts';\nexport const a3 = p;\n")],
+  ]);
+  const g = assemble(scans);
+  expect(valueCycles(g)).toEqual([]);
+  expect(peerDirCycles(g)).toEqual(['src/core/a <-> src/core/b']);
+  expect(peerDirSccs(g)).toEqual([
+    ['src/core/a', 'src/core/b'],
+    ['src/core/p', 'src/core/q', 'src/core/r'],
+  ]);
+
+  // Breaking the a <-> b return edge drops it from both checks, so a stale allowlist no longer matches
+  const fixed = new Map(scans);
+  fixed.set('src/core/b/b2.ts', scanFile('src/core/b/b2.ts', 'export const b2 = 1;\n'));
+  const gFixed = assemble(fixed);
+  expect(peerDirCycles(gFixed)).toEqual([]);
+  expect(peerDirSccs(gFixed)).toEqual([['src/core/p', 'src/core/q', 'src/core/r']]);
+});
+
+test('the parent-child tangle check catches two-way file-to-subdir value tangles with no file cycles, and ignores type-only and one-way edges', () => {
+  const scans = new Map<string, Scan>([
+    // Direct child tangle (parent.ts <-> sub) with zero file cycles
+    ['src/core/parent.ts', scanFile('src/core/parent.ts', "import { c1 } from './sub/c1.ts';\nexport const p = c1;\n")],
+    ['src/core/sub/c1.ts', scanFile('src/core/sub/c1.ts', 'export const c1 = 1;\n')],
+    ['src/core/sub/c2.ts', scanFile('src/core/sub/c2.ts', "import { p } from '../parent.ts';\nexport const c2 = p;\n")],
+    // Nested descendant tangle (nested.ts -> deep/a.ts and deep/inner/b.ts -> nested.ts)
+    ['src/core/nested.ts', scanFile('src/core/nested.ts', "import { a } from './deep/a.ts';\nexport const n = a;\n")],
+    ['src/core/deep/a.ts', scanFile('src/core/deep/a.ts', 'export const a = 1;\n')],
+    ['src/core/deep/inner/b.ts', scanFile('src/core/deep/inner/b.ts', "import { n } from '../../nested.ts';\nexport const b = n;\n")],
+    // Type-only return edge (typed.ts -> clean/x.ts, clean/y.ts import type typed.ts): must not fire
+    ['src/core/typed.ts', scanFile('src/core/typed.ts', "import { x } from './clean/x.ts';\nexport type T = number;\nexport const t = x;\n")],
+    ['src/core/clean/x.ts', scanFile('src/core/clean/x.ts', 'export const x = 1;\n')],
+    ['src/core/clean/y.ts', scanFile('src/core/clean/y.ts', "import type { T } from '../typed.ts';\nexport type Y = import('../typed.ts').T;\nexport const y = 1;\n")],
+    // One-way parent -> child only: must not fire
+    ['src/core/oneway.ts', scanFile('src/core/oneway.ts', "import { x } from './clean/x.ts';\nexport const o = x;\n")],
+  ]);
+  const g = assemble(scans);
+  expect(valueCycles(g)).toEqual([]);
+  expect(parentChildTangles(g)).toEqual([
+    'src/core/nested.ts <-> src/core/deep',
+    'src/core/parent.ts <-> src/core/sub',
+  ]);
+
+  // Breaking parent.ts <-> sub drops it from the output, forcing removal from an exact allowlist
+  const fixed = new Map(scans);
+  fixed.set('src/core/sub/c2.ts', scanFile('src/core/sub/c2.ts', "import type { p } from '../parent.ts';\nexport const c2 = 1;\n"));
+  expect(parentChildTangles(assemble(fixed))).toEqual(['src/core/nested.ts <-> src/core/deep']);
 });
 
 test('the map follows an alias of app.api into a call, and reads each member of a registration', () => {
