@@ -295,7 +295,7 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
 
     await expect(gm.locator('#gm-hsum-classes')).toHaveText('1 of 18 held');
     await expect(hemoRow).toContainText('Held by Mira Unique (Player phone)');
-    await expect(hemoRow).toContainText(CLASS_UI_WORDS.noKitBadge);
+    await expect(hemoRow.locator('[data-cg-nokit]'), 'Hemomancer has its kit since PR 2').toHaveCount(0);
     await expect(hemoRow.locator('[data-cg-grant]')).toHaveCount(0);
     await expect(hemoRow.locator('[data-cg-sync="synced"]')).toHaveText(CLASS_UI_WORDS.syncedBadge, { timeout: 15_000 });
 
