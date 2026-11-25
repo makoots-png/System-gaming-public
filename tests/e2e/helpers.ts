@@ -46,6 +46,14 @@ export function noonZone(at: Date): string {
   return ahead === 0 ? 'UTC' : `Etc/GMT${ahead > 0 ? '-' : '+'}${Math.abs(ahead)}`;
 }
 
+/**
+ * A local Date whose calendar date matches the UTC date `noonZone` gives Chromium, so `freshSave({ now: noonDate() })`
+ * writes the same `lastDailyKey` and `lastCheckedKey` the browser sees regardless of Node's local time zone.
+ */
+export function noonDate(at: Date = new Date()): Date {
+  return new Date(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate(), 12);
+}
+
 type Fixtures = { device: (label: string, options?: DeviceOptions) => Promise<Device> };
 
 /**

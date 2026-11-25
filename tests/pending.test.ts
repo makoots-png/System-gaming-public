@@ -1,7 +1,7 @@
 // A reward the app would pay by itself, waiting for the GM (src/core/hunter/pending.ts; World rule 8, the owner, Nov 22:
 // rule d, "Yes"). Every state against every event; where each seat sends the reward; a reward never lost nor paid twice.
 import { describe, expect, test } from 'bun:test';
-import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, PENDING_WORDS, REWARD_ROUTE, ROUTE, askOf, parsePending, pendingApproveAll, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, routeFor, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
+import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, PENDING_WORDS, REWARD_ROUTE, ROUTE, askOf, parsePending, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, routeFor, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
 import type { PendingEvent, PendingReward, PendingState, RewardSeat, SelfReward } from '../src/core/hunter/pending.ts';
 import { gmAward } from '../src/core/award.ts';
 import { freshSave, newHunter, newRewards } from '../src/core/save.ts';
@@ -290,6 +290,36 @@ describe('a reward waiting for the GM', () => {
     const seq2 = await st.addEvent(ROOM, GM2, (ev2 as Extract<typeof ev2, { kind: 'event' }>).event, 1005);
     expect(seq1).toBe(1);
     expect(seq2).toBe(1);
+    expect((await st.events(ROOM, 0)).events).toHaveLength(1);
+  });
+
+  test('single-row approve and approve-all of the same record produce the same EventId and deduplicate on the server', async () => {
+    const dayCtx = { at: AT, today: day('2026-11-22'), R: RULES };
+    const GM2 = dev('d-gm2');
+    const recInput = { eid: eid('d-p1-r1-same'), by: PLAYER, name: 'Mira', from: 'quest' as const, what: 'Ten Beasts', rewards: GOLD };
+    const gm1Save = pendingHeard(save(), recInput, ROOM, LOG);
+    const gm2Save = pendingHeard({ ...freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => GM2 }, { onboarded: true }) }, recInput, ROOM, LOG);
+
+    const rec = waitingIn(gm1Save, ROOM)[0]!;
+    const singleEv = pendingAwardEvent(rec, rec.rewards)!;
+    const allRes = ok(pendingApproveAll(gm2Save, ROOM, { day: dayCtx }));
+    const allLetter = allRes.save.settings.sync.outbox![0]!.letter;
+    expect(allLetter.kind).toBe('event');
+    const allEv = (allLetter as Extract<typeof allLetter, { kind: 'event' }>).event;
+
+    expect(singleEv.payload.eid).toBe(approvalIdOf(rec.id));
+    expect(singleEv.payload.eid).toBe(allEv.payload.eid);
+    expect(singleEv).toEqual(allEv);
+
+    const st = memoryStore();
+    await st.create(ROOM, gmKey('gm-key-test-0123456789abcdef'), Date.now());
+    expect(await st.addEvent(ROOM, ME, singleEv, 1000)).toBe(1);
+    expect(await st.addEvent(ROOM, GM2, allEv, 1005)).toBe(1);
+    expect((await st.events(ROOM, 0)).events).toHaveLength(1);
+
+    const editedEv = pendingAwardEvent(rec, EDITED)!;
+    expect(editedEv.payload.eid).toBe(allEv.payload.eid);
+    expect(await st.addEvent(ROOM, GM2, editedEv, 1010)).toBe('idTaken');
     expect((await st.events(ROOM, 0)).events).toHaveLength(1);
   });
 

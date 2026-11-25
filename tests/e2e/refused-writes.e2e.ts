@@ -5,13 +5,13 @@
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
 import { NOT_SAVED, TAKEOVER_WORDS } from '../../src/core/store-life.ts';
-import { test, expect, openApp, onboardPlayer, dismissAll, go, save, type Page } from './helpers.ts';
+import { test, expect, openApp, onboardPlayer, dismissAll, go, save, noonDate, type Page } from './helpers.ts';
 
 const V4 = 'hunter-system-v4';
-const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+const seedEnv = () => ({ now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' });
 
 function newerSave(o: { gm?: boolean; calls?: unknown[]; items?: unknown[]; personal?: boolean; edit?: (s: any) => void } = {}): string {
-  const s: any = freshSave(env, { onboarded: true });
+  const s: any = freshSave(seedEnv(), { onboarded: true });
   s.rulesOverrides = { solo: { personal: !!o.personal }, feats: { on: false } };
   if (o.gm) s.settings.mode = 'gm';
   if (o.calls) s.calls = o.calls;

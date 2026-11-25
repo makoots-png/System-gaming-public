@@ -809,3 +809,6 @@ ts	phase	decision	why	evidence	result
 2026-11-25T00:09Z	ops	PR 119 (V2 part 1: 10 gear slots, wear 6, two-handed weapons) merged to main
 2026-11-25T00:36Z	arch	role-skills (A4) landed on lead-backlog; Taunt, Stun, Shield Wall 25% max HP, Marked Shot mark, Ruler's shove, Shadow Exchange swap; sim-budget flake fixed; unit 6998, merged tree 7009, browser 614 + reruns
 2026-11-25T00:47Z	arch	point-respec landed on lead-backlog; staged take-backs paid at Confirm, free until first fight; unit 6995, merged tree 7031, browser 614 + reruns
+2026-11-25T00:52Z	arch	small-fixes landed on lead-backlog; single Approve uses approvalIdOf, e2e seeds on browser UTC date; 150 unit, 58 browser in the 22:00 window
+2026-11-25T01:08Z	ops	PR 120 (A4 role skills: Taunt, Stun, Shield Wall, Marked Shot, Ruler's shove, Shadow Exchange) merged to main
+2026-11-25T01:08Z	ops	PR 121 (point respec, staged take-backs paid at Confirm) merged to main

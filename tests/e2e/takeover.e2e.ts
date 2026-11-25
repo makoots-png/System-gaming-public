@@ -5,13 +5,13 @@ import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
 import { TAKEOVER_WORDS, canTakeOver } from '../../src/core/store-life.ts';
 import type { ReadOnlyWhy } from '../../src/core/store-life.ts';
-import { test, expect, openApp, editIdentity, go, save, PHONE, type Page } from './helpers.ts';
+import { test, expect, openApp, editIdentity, go, save, noonDate, PHONE, type Page } from './helpers.ts';
 
 const V4 = 'hunter-system-v4', BACKUPS = 'hunter-system-backups';
-const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-takeover')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+const seedEnv = () => ({ now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-takeover')!, newDeviceToken: () => 'test-device-token-0123456789abcd' });
 
 function playerSave(name = 'Mira Fixture'): string {
-  const s: any = freshSave(env, { onboarded: true });
+  const s: any = freshSave(seedEnv(), { onboarded: true });
   s.hunters[0].name = name;
   s.rulesOverrides = { solo: { personal: false }, feats: { on: false } };
   return JSON.stringify(s);

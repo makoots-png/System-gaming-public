@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
-import { test, expect, openApp, onboardPlayer, dismissAll, editIdentity, go, save, answerWindow, type Page } from './helpers.ts';
+import { test, expect, openApp, onboardPlayer, dismissAll, editIdentity, go, save, answerWindow, noonDate, type Page } from './helpers.ts';
 
 const V1 = 'hunter-system-v1', V2 = 'hunter-system-v2', V3 = 'hunter-system-v3', V4 = 'hunter-system-v4', BACKUPS = 'hunter-system-backups';
 /** The reason the backups give an old save's text, and the words of the banner and of a refused import. */
@@ -196,7 +196,7 @@ test('a current save of the wrong shape warns the player and keeps the old text 
 });
 
 test('a save whose running fight is damaged opens without the fight, says so, and keeps the save as it was in the backups', async ({ device }) => {
-  const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+  const env = { now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   const base = freshSave(env, { onboarded: true });
   const text = JSON.stringify({ ...base, hunters: [{ ...base.hunters[0]!, name: 'Kept Hunter' }], fight: { phase: 'running', rows: 'not rows' } });
   const { page } = await device('phone', { seed: { [V4]: text } });
@@ -210,7 +210,7 @@ test('a save whose running fight is damaged opens without the fight, says so, an
 });
 
 test('a player who opens the app days after their last daily meets the PENALTY window as the app opens', async ({ device }) => {
-  const env = { now: new Date(Date.now() - 3 * 86_400_000), newDeviceId: () => parseDeviceId('d-e2e-late')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+  const env = { now: noonDate(new Date(Date.now() - 3 * 86_400_000)), newDeviceId: () => parseDeviceId('d-e2e-late')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   const { page } = await device('phone', { seed: { [V4]: JSON.stringify(freshSave(env, { onboarded: true })) } });
   await openApp(page);
   await expect(page.locator('.sys-overlay.show')).toContainText('Penalty Zone');
@@ -440,7 +440,7 @@ test('a save the app cannot open, when storage is too full to back it up, is nev
 
 test('a save that opens whole but for its damaged fight, when storage is too full to back it up, says the fight could not be read, not that the save could not be opened', async ({ device }) => {
   // SMX-sync-9.2: the banner said "Your save could not be opened" over a hunter and campaign that had opened
-  const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+  const env = { now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   const base = freshSave(env, { onboarded: true });
   const text = JSON.stringify({ ...base, hunters: [{ ...base.hunters[0]!, name: 'Intact Hero' }], fight: { phase: 'running', rows: 'not rows' } });
   const { page, ctx } = await device('phone', { seed: { [V4]: text } });

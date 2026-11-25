@@ -176,6 +176,13 @@ export type ApprovedAll = {
   readonly remaining: number;
 };
 /**
+ * Builds the deterministic `award` event for approving waiting reward `rec` with `rewards` (as asked or as edited).
+ * Shared by single-row Approve (`gm.js`) and `pendingApproveAll` so concurrent GM approvals converge on `approvalIdOf(rec.id)`.
+ */
+export function pendingAwardEvent(rec: Pick<PendingReward, 'id' | 'to' | 'from' | 'what'>, rewards: Rewards): RoomEvent | null {
+  return approvalEvent(rec.id, { to: [rec.to], rewards, earned: { from: rec.from, what: rec.what } });
+}
+/**
  * Approves waiting rewards in `room` in one atomic step: transitions each approved record to `approved` via
  * `pendingStep`, grants local hunters with `grant` (preserving `from` for debt and guild rules), posts one
  * deterministic `approvalEvent` per remote reward without overflowing `OUTBOX_MAX`, and appends session log lines.
@@ -221,7 +228,7 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
       const needsEvent = !isEmptyReward(wireRewards);
       if (needsEvent) {
         if (remotePosted >= avail) { remaining++; continue; }
-        const ev = approvalEvent(rec.id, { to: [rec.to], rewards: wireRewards, earned: { from: rec.from, what: rec.what } });
+        const ev = pendingAwardEvent(rec, wireRewards);
         if (!ev) { remaining++; continue; }
         events.push(ev);
         remotePosted++;

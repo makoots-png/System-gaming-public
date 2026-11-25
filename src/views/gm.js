@@ -24,7 +24,7 @@ import { tapWords } from '../core/sync/taps.ts';
 import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
 import { BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
-import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
+import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
 import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
 import { DIFFICULTY_WORDS, parseDifficultyLevel } from '../core/gates/difficulty.ts';
@@ -135,8 +135,10 @@ export function register(app) {
     return true;
   }
   const addLog = (kind, title, text, hunterId = null) => gmWrite('gm-log', null, [], [line(kind, title, text, hunterId)]);
+  /** A built room event this phone may post: the event, or why not (no room; a body the room would refuse). */
+  const postableEvent = ev => (app.seat() === 'alone' ? { why: 'noRoom' } : ev ? { ev } : { why: 'notEvent' });
   /** A room event of `type` this phone may post: the event, or why not (no room; a body the room would refuse). */
-  const postable = (type, body) => { const ev = A().sync.event(type, body); return app.seat() === 'alone' ? { why: 'noRoom' } : ev ? { ev } : { why: 'notEvent' }; };
+  const postable = (type, body) => postableEvent(A().sync.event(type, body));
   const room = () => A().sync.room();
   const remotes = () => A().sync.remoteSheets();
   const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -549,7 +551,7 @@ export function register(app) {
     const held = remote.length && rw.statuses.length ? remote.filter(k => fightRowOf(k) !== null) : [], free = remote.filter(k => !held.includes(k));
     const { statuses: _onRow, ...kept } = rw, rest = { ...newRewards(), ...kept };
     const awards = [{ to: free, rewards: rw }, { to: held, rewards: rest }].filter(a => a.to.length && (bundle || !isEmptyReward(a.rewards)))
-      .map(a => ({ to: a.to, p: postable('award', { ...a, ...(bundle ? { bundle } : {}), ...(earned ? { earned } : {}) }) }));
+      .map(a => ({ to: a.to, p: w ? postableEvent(pendingAwardEvent(w, a.rewards)) : postable('award', { ...a, ...(bundle ? { bundle } : {}) }) }));
     const lost = remote.filter(k => awards.some(a => !a.p.ev && a.to.includes(k))), posted = remote.filter(k => !lost.includes(k));
     const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room. Create or reopen one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}. The room server rejected this award.`;
     const deal = sendDeals(form, lost.length);

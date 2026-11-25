@@ -1,8 +1,9 @@
 // Rewards the app pays by itself wait for the GM (World rule 8; the owner, Nov 22, rule d; src/core/hunter/pending.ts):
 // a player's counted quest completes on the player's phone, its reward waits in the GM's "Waiting for you" list, and the
 // GM edits and approves it, or refuses it. The player gets the approved reward once, across reloads of both phones.
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, waitingRow, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, waitingRow, gmRoomHeaders, type Page } from './helpers.ts';
 import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
+import { approvalIdOf, parseEventId } from '../../src/core/ids.ts';
 
 const HUNTER = 'Mira Test';
 const QUEST = 'Catch your breath';
@@ -155,5 +156,63 @@ test('Approve all pays multiple pending player rewards in one tap and does not d
   await gm.reload();
   await player.reload();
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.status()), { timeout: 30_000 }).toBe('connected');
+  expect(await gold(player)).toBe(before + RULE_GOLD + GOLD_TWO);
+});
+
+test('single-row Approve on one GM phone racing Approve all on a second GM phone pays the player once', async ({ device }) => {
+  const { gm, player } = await countedQuest(device);
+  const code = await gm.evaluate(() => hunterApp.api.sync.room() as string);
+  const gmKey = await gm.evaluate(c => hunterApp.store.get().settings.sync.gmKeys[c] as string, code);
+  const before = await gold(player);
+
+  const gm2 = (await device('gm2')).page;
+  await onboardGM(gm2);
+  await gm2.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; }, 'test-setup'));
+  await gm2.evaluate(({ c, k }) => hunterApp.api.sync.rejoinGM(c, k), { c: code, k: gmKey });
+  await expect.poll(() => gm2.evaluate(() => hunterApp.api.sync.room()), { timeout: 30_000 }).toBe(code);
+  await go(gm2, 'gm');
+  await expect(gm2.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1, { timeout: 30_000 });
+
+  const QUEST_TWO = 'Second breath';
+  const GOLD_TWO = 35;
+  await go(gm, 'gm');
+  const qTog = gm.locator('[data-tog="quest"]');
+  if ((await qTog.getAttribute('aria-expanded')) !== 'true') await qTog.tap();
+  const form = gm.locator('#gm-qf');
+  await form.locator('[name=title]').fill(QUEST_TWO);
+  await form.locator('[name=olabel]').fill('Rests');
+  await form.locator('[data-ocb]').selectOption('system');
+  await form.locator('[data-ocount] [data-ck]').selectOption('rest');
+  await form.locator('#gmq-gold').fill(String(GOLD_TWO));
+  await gm.locator('#gm-q-go').tap();
+  await answerWindow(player, QUEST_TWO);
+  await dismissAll(player, 4);
+
+  await go(player, 'status');
+  await player.locator('#view-status [data-rest]').tap();
+  await answerWindow(player, 'QUEST COMPLETE');
+  await answerWindow(player, 'QUEST COMPLETE');
+  expect(await gold(player)).toBe(before);
+
+  const row1 = await waitingRow(gm, QUEST);
+  const rec1Id = parseEventId(await row1.getAttribute('data-pw'))!;
+  await waitingRow(gm2, QUEST);
+  await expect(gm2.locator('#gm-pw [data-pw]')).toHaveCount(2, { timeout: 30_000 });
+
+  await row1.locator('[data-pw-approve]').tap();
+  await expect(questRows(gm)).toHaveCount(0);
+  await gm2.locator('#gm-pw-all').tap();
+  await expect(gm2.locator('#gm-pw [data-pw]')).toHaveCount(0);
+
+  await expect.poll(() => gm.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).length), { timeout: 30_000 }).toBe(0);
+  await expect.poll(() => gm2.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).length), { timeout: 30_000 }).toBe(0);
+  await expect.poll(() => gold(player), { timeout: 30_000 }).toBe(before + RULE_GOLD + GOLD_TWO);
+  await dismissAll(player, 6);
+
+  const res = await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) });
+  const body = await res.json();
+  const awards = body.events.filter((e: any) => e.type === 'award');
+  expect(awards).toHaveLength(2);
+  expect(awards.map((e: any) => e.payload.eid)).toContain(approvalIdOf(rec1Id));
   expect(await gold(player)).toBe(before + RULE_GOLD + GOLD_TWO);
 });

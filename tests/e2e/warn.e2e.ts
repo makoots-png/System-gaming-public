@@ -4,7 +4,7 @@
 import { mkdir } from 'node:fs/promises';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
-import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, PHONE, SMALL_PHONE, type Page } from './helpers.ts';
+import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, noonDate, PHONE, SMALL_PHONE, type Page } from './helpers.ts';
 
 const V4 = 'hunter-system-v4';
 const SHOT_DIR = process.env.E2E_SHOT_DIR || '';
@@ -185,7 +185,7 @@ for (const viewport of [PHONE, SMALL_PHONE]) {
 test('penalty window, quest failed without Rewards heading, and GM EMERGENCY QUEST broadcast control at 390px and 360px', async ({ device }) => {
   // 1. Penalty window on missed daily (both 390 px and 360 px)
   for (const viewport of [PHONE, SMALL_PHONE]) {
-    const env = { now: new Date(Date.now() - 3 * 86_400_000), newDeviceId: () => parseDeviceId('d-e2e-pen')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+    const env = { now: noonDate(new Date(Date.now() - 3 * 86_400_000)), newDeviceId: () => parseDeviceId('d-e2e-pen')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
     const { page } = await device(`penalty-${viewport.width}`, { viewport, seed: { [V4]: JSON.stringify(freshSave(env, { onboarded: true })) } });
     await openApp(page);
     await expectVariant1(page, viewport.width);

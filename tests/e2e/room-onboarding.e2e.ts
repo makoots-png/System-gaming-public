@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, ROOM_CODE } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, noonDate, ROOM_CODE } from './helpers.ts';
 import { ABOUT, ROOM_IS, ROOM_PATH, TIPS } from '../../src/core/first-run.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
@@ -11,7 +11,7 @@ const NO_ROOM = /no room/i;
 
 /** A new install's save as a newer app wrote it: this app opens it read-only, and setup has not run. */
 function newerFreshSave(): string {
-  const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+  const env = { now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   return JSON.stringify({ ...freshSave(env, { onboarded: false }), schema: 99 });
 }
 
