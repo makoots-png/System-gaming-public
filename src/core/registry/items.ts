@@ -404,11 +404,24 @@ export function weaponWeight(dice: string): number {
 /** The powers a built-in def holds, copied as they are (a def without any gives `{}`). */
 const powersOf = (def: Powers): Powers => ({ ...(def.worn ? { worn: def.worn } : {}), ...(def.active ? { active: def.active } : {}) });
 
+/** Builds Thornmail's Grievous Wounds op from `R.conditions.grievous` so new copies follow the GM's status rule. */
+function withThornmailGrievous(def: ItemDef, R: Rules): ItemDef {
+  if (def.name !== 'Thornmail' || def.type !== 'armor' || !def.worn?.triggers) return def;
+  const live = R.conditions.grievous;
+  if (!live || live === BUILT_IN_STATUSES.grievous) return def;
+  const triggers = def.worn.triggers.map(t => ({
+    ...t,
+    ops: t.ops.map(o => (o.op === 'applyStatus' && o.key === statusKey('grievous') ? { ...o, def: live } : o)),
+  }));
+  return { ...def, worn: { ...def.worn, triggers } };
+}
+
 /**
  * A built-in item as an item a hunter can hold (no id yet): a price only when it sets one (else the rule's, `valueOf`),
  * a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it).
  */
-export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
+export function itemOf(R: Rules, rawDef: ItemDef): ItemTemplate {
+  const def = withThornmailGrievous(rawDef, R);
   const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), ...(def.icon ? { icon: def.icon } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
   switch (def.type) {
     case 'weapon':

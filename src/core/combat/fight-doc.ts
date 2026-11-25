@@ -19,6 +19,7 @@ import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
 import { stacked } from './op-amount.ts';
+import { grievousCutOf, hasTieredGrievousCut, withGrievousCut } from './grievous.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { freeStatusKey } from './effect-ops.ts';
 import type { Body, CombatantKind, LandOp, StatusDef, StatusKey } from './effect-ops.ts';
@@ -604,8 +605,21 @@ function knownDef(s: DocStatus, defs: Readonly<Record<string, StatusDef>>): bool
   if (Object.hasOwn(defs, s.key)) return canonicalJson(defs[s.key]) === canonicalJson(s.def);
   return isShippedKeystoneDef(s.key, s.def);
 }
+/**
+ * When `s.def` differs from the base def under `s.key` (`defs[s.key]` or shipped keystone) only in its flat Grievous
+ * Wounds healing-cut percentage, returns that cut so `statusWire` can send compact `h: cut` instead of dropping the def.
+ */
+function grievousVariant(s: DocStatus, defs: Readonly<Record<string, StatusDef>>): number | null {
+  if (!s.def || hasTieredGrievousCut(s.def)) return null;
+  const base = Object.hasOwn(defs, s.key) ? defs[s.key]! : keystoneStatusDef(s.key);
+  if (!base || hasTieredGrievousCut(base)) return null;
+  const cut = grievousCutOf(s.def);
+  if (cut === null || !Number.isInteger(cut)) return null;
+  return canonicalJson(withGrievousCut(base, cut)) === canonicalJson(s.def) ? cut : null;
+}
 function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<string, unknown> {
-  return { k: s.key, ...(knownDef(s, defs) ? {} : { b: s.label }), ...unlessNull('l', s.left), ...(s.stacks !== undefined ? { n: s.stacks } : {}), ...(s.tier ? { t: s.tier } : {}) };
+  const known = knownDef(s, defs), cut = known ? null : grievousVariant(s, defs);
+  return { k: s.key, ...(known ? {} : cut !== null ? { h: cut } : { b: s.label }), ...unlessNull('l', s.left), ...(s.stacks !== undefined ? { n: s.stacks } : {}), ...(s.tier ? { t: s.tier } : {}) };
 }
 /**
  * A row on the wire. Its names: i id, n name, s side, k sheet key, p place, a at, v speed, b band, st statuses, sh shield,

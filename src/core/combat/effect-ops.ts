@@ -23,6 +23,7 @@ import type { MythicStanding } from './mythic-types.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
+import { grievousCapPct, grievousCutAt } from './grievous.ts';
 import { counting, given, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
 import { asLevel } from './sight-levels.ts';
 import type { Level } from './sight-levels.ts';
@@ -592,19 +593,31 @@ export const stackOf = (s: Status | undefined): Stack => (s !== undefined && sta
 
 /**
  * A status put on a list at its `since` (every land puts one on from the fight's now): a key the list lacks is added at
- * the end. A key it holds stays one instance in its place: the source with the higher tier wins (a tie goes to the new
- * one, with its def), it lasts the later of the two ends, and it keeps the time its per-round ops are paid to, so no
- * span is paid twice. A stacking status adds the incoming stacks to the ones it holds, to its cap (stacks.ts `apply`); a
- * threshold is not read here (resolve.ts reads it for a use). Its life is the land's (standing.ts `statusStep`): active
- * while its end is ahead, owed when even the later end is behind it.
+ * the end. A key it holds stays one instance in its place: for non-stacking statuses where either side carries a
+ * healing cut (Grievous Wounds), the strictly stronger active cut wins regardless of tier (no healing cut counts as 0,
+ * an expired owed instance yields to a different active cut, and equal cuts fall back to the tier rule); otherwise the
+ * source with the higher tier wins (a tie goes to the new one, with its def). It lasts the later of the two ends,
+ * except when the healing-cut rule decides the winner and one side is until-removed (`until: null`), in which case the
+ * winner keeps its own end so a short strong cut does not become permanent. It keeps the time its per-round ops are
+ * paid to, so no span is paid twice. A stacking status adds the incoming stacks to the ones it holds, to its cap
+ * (stacks.ts `apply`); a threshold is not read here (resolve.ts reads it for a use). Its life is the land's
+ * (standing.ts `statusStep`): active while its end is ahead, owed when even the later end is behind it.
  */
 export function applyStatus(list: readonly Status[], incoming: Status): Status[] {
   const at = list.findIndex(s => s.key === incoming.key), old = at < 0 ? undefined : list[at]!;
-  const until = old ? later(old.until, incoming.until) : incoming.until, now = incoming.since;
-  const life = statusStep(old ? statusLife(old) : 'gone', { type: 'land', runs: until === null || until > now });
+  const now = incoming.since;
+  if (!old) {
+    const until = incoming.until;
+    const life = statusStep('gone', { type: 'land', runs: until === null || until > now });
+    const time: StatusTime = life === 'owed' && until !== null ? { until, owed: true } : { until };
+    return [...list, incoming.owed === time.owed ? incoming : statusOn(incoming.def, fieldsOf(incoming, time), countOn(incoming))];
+  }
+  const kept = oneInstance(old, stackOf(old), incoming, countOn(incoming), !old.owed);
+  const until = kept.byCut && (old.until === null || incoming.until === null)
+    ? (kept.picked === 'old' ? old.until : incoming.until)
+    : later(old.until, incoming.until);
+  const life = statusStep(statusLife(old), { type: 'land', runs: until === null || until > now });
   const time: StatusTime = life === 'owed' && until !== null ? { until, owed: true } : { until };
-  if (!old) return [...list, incoming.owed === time.owed ? incoming : statusOn(incoming.def, fieldsOf(incoming, time), countOn(incoming))];
-  const kept = oneInstance(old, stackOf(old), incoming, countOn(incoming));
   const fields: StatusFields = { ...time, key: incoming.key, source: kept.source, since: old.since, settledAt: old.settledAt, ...(old.worn ? { worn: old.worn } : {}) };
   return list.map((s, i) => i === at ? statusOn(kept.def, fields, kept.stacks) : s);
 }
@@ -614,15 +627,32 @@ const fieldsOf = (s: Omit<StatusCommon, keyof StatusTime>, time: StatusTime): St
 /** Status `s` marked owed (standing.ts `statusLife`): its time ran out at `until` while its settle still owes its bearer. */
 export const owedOf = (s: Status & { readonly until: Tick }): Status => statusOn(s.def, fieldsOf(s, { until: s.until, owed: true }), countOn(s));
 /**
- * The one instance a key keeps when a second is put on, on a body (`applyStatus`) or a sheet (`addSheetStatus`): the
- * source with the higher tier wins (a tie goes to the new one, with its def); a stacking one adds `k` to the count it
- * held (`before`) through the stack machine (stacks.ts `apply`), to its cap; a plain one counts 1.
+ * The one instance a key keeps when a second is put on, on a body (`applyStatus`) or a sheet (`addSheetStatus`): for
+ * non-stacking statuses where either side carries a healing cut (Grievous Wounds), the strictly stronger active cut
+ * wins regardless of tier (no healing cut counts as 0, an expired owed instance yields to a different active cut, and
+ * equal cuts fall back to the tier rule); otherwise the source with the higher tier wins (a tie goes to the new one,
+ * with its def). A stacking one adds `k` to the count it held (`before`) through the stack machine (stacks.ts `apply`),
+ * to its cap; a plain one counts 1.
  */
-function oneInstance(old: { readonly def: StatusDef; readonly source: Source }, before: Stack, incoming: { readonly def: StatusDef; readonly source: Source }, k: number): { def: StatusDef; source: Source; stacks: number } {
-  const win = incoming.source.tier >= old.source.tier ? incoming : old;
-  if (!isStacking(win.def)) return { def: win.def, source: win.source, stacks: 1 };
+function oneInstance(
+  old: { readonly def: StatusDef; readonly source: Source },
+  before: Stack,
+  incoming: { readonly def: StatusDef; readonly source: Source },
+  k: number,
+  oldActive: boolean,
+): { def: StatusDef; source: Source; stacks: number; picked: 'old' | 'incoming'; byCut: boolean } {
+  const plain = !isStacking(old.def) && !isStacking(incoming.def);
+  const oldCut = plain ? grievousCutAt(old.def, old.source.tier) : null;
+  const newCut = plain ? grievousCutAt(incoming.def, incoming.source.tier) : null;
+  const oc = oldCut ?? 0, nc = newCut ?? 0;
+  const byCut = (oldCut !== null || newCut !== null) && oc !== nc;
+  const picked: 'old' | 'incoming' = byCut
+    ? (!oldActive ? 'incoming' : nc > oc ? 'incoming' : 'old')
+    : incoming.source.tier >= old.source.tier ? 'incoming' : 'old';
+  const win = picked === 'old' ? old : incoming;
+  if (!isStacking(win.def)) return { def: win.def, source: win.source, stacks: 1, picked, byCut };
   const step = stackStep(before, { type: 'apply', k }, { rule: win.def.stack, at: null });
-  return { def: win.def, source: win.source, stacks: step.stack.at === 'held' ? step.stack.n : 1 };
+  return { def: win.def, source: win.source, stacks: step.stack.at === 'held' ? step.stack.n : 1, picked, byCut };
 }
 
 export const removeStatus = (list: readonly Status[], key: StatusKey): Status[] => list.filter(s => s.key !== key);
@@ -659,8 +689,11 @@ export type SheetStatus = { readonly key: StatusKey; readonly def: StatusDef; re
 export function addSheetStatus(list: readonly SheetStatus[], incoming: SheetStatus): SheetStatus[] {
   const at = list.findIndex(s => s.key === incoming.key);
   if (at < 0) return [...list, incoming];
-  const old = list[at]!, kept = oneInstance(old, old.stacks === undefined ? { at: 'absent' } : { at: 'held', n: old.stacks }, incoming, incoming.stacks ?? 1);
-  const merged: SheetStatus = { key: incoming.key, def: kept.def, source: kept.source, rounds: later(old.rounds, incoming.rounds) };
+  const old = list[at]!, kept = oneInstance(old, old.stacks === undefined ? { at: 'absent' } : { at: 'held', n: old.stacks }, incoming, incoming.stacks ?? 1, true);
+  const rounds = kept.byCut && (old.rounds === null || incoming.rounds === null)
+    ? (kept.picked === 'old' ? old.rounds : incoming.rounds)
+    : later(old.rounds, incoming.rounds);
+  const merged: SheetStatus = { key: incoming.key, def: kept.def, source: kept.source, rounds };
   return list.map((s, i) => i === at ? (isStacking(kept.def) ? { ...merged, stacks: kept.stacks } : merged) : s);
 }
 /**
@@ -863,8 +896,8 @@ export function statusShield(def: StatusDef, bearer: Pick<Body, 'shield' | 'stat
 
 // ── what a status or an item's ops do, in words ──
 
-/** What the words read: a round's length, to show a duration in rounds, and the statuses a `cureStatus` names. */
-export type DescribeRules = { readonly fight: { readonly round: number; readonly kit: { readonly lowHpAt: number } }; readonly conditions: Readonly<Record<string, StatusDef>> };
+/** What the words read: a round's length, `lowHpAt`, `shareCap` (to keep displayed healing cuts honest), and `conditions`. */
+export type DescribeRules = { readonly fight: { readonly round: number; readonly kit: { readonly lowHpAt: number; readonly shareCap: number } }; readonly conditions: Readonly<Record<string, StatusDef>> };
 
 const BY_RANK = ', by rank E to S';
 const signed = (n: number): string => `${n < 0 ? '−' : '+'}${Math.abs(n)}`;
@@ -943,7 +976,11 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
       if (isLevelKey(o.key)) { const n = num(o.amount, a => `${asLevel(a)}`); return `${SHEET_LEVEL_TEXT[o.key]} ${n.text} or under${rank(n)}`; }
       const n = num(o.amount, signed); return `${SHEET_ADD_TEXT[o.key]} ${n.text}${rank(n)}`;
     }
-    case 'share': { const p = num(o.pct, n => `${signed(n)}%`); return `${SHARE_TEXT[o.on]} ${p.text}${rank(p)}`; }
+    case 'share': {
+      const cap = grievousCapPct(R);
+      const p = num(o.pct, n => `${signed(o.on === 'healed' && n < 0 ? Math.max(-cap, n) : n)}%`);
+      return `${SHARE_TEXT[o.on]} ${p.text}${rank(p)}`;
+    }
     case 'untargetable': return 'Foes cannot target it or hit it with area abilities for 1 round, once per fight. Acting against a foe ends it';
     case 'invulnerable': return 'Damage cannot drop HP below 1 for 1 round, once per fight';
     case 'safeguard': return 'Blocks harmful statuses from foes for 1 round';

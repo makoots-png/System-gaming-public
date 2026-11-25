@@ -23,6 +23,7 @@ import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { damageTypeSet, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
 import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, DAMAGE_WORD, damageTypeOf, isDamage } from '../core/combat/damage-type.ts';
+import { DEFAULT_GRIEVOUS_PCT, GRIEVOUS_MIN, grievousCapPct, grievousCutOf, hasTieredGrievousCut, parseGrievousCut, withGrievousCut } from '../core/combat/grievous.ts';
 import { BUILT_IN_ABILITY_DAMAGE_ROWS, DAMAGING_STATUS_KEYS, DEFAULT_ATTACK_ROWS, KEYSTONE_DAMAGE_ROWS, isShippedStatusDef, statusDamageTypeOf, statusWithDamageType } from '../core/registry/damage-catalog.ts';
 import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { removeStatus, saveStatus } from '../core/library.ts';
@@ -185,6 +186,8 @@ export function register(app) {
 .gm-dt-fold>summary{cursor:pointer;min-height:var(--control-h);display:flex;align-items:center;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-dim)}
 .gm-dt-fold[open]>summary{margin-bottom:8px}
 .gm-dt-q{margin-bottom:8px}
+.gm-gw-ctrl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.gm-gw-ctrl input{width:92px;min-height:var(--control-h)}.gm-gw-ctrl button{min-height:var(--control-h)}
+.gm-gw-note{font-size:12px;color:var(--cyan-dim)}
 .gm-chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .gm-chip{font-size:12px;padding:1px 7px;border:1px solid var(--line);color:var(--ice)}
 .gm-chip.pen{border-color:var(--red);color:#ff8a96}
@@ -917,6 +920,47 @@ export function register(app) {
       say('#gm-r-msg', `${label} now deals ${DAMAGE_WORD[val].toLowerCase()}.`);
     }
   }
+  /** Draws the GM's Grievous Wounds healing-cut control in the Rules editor. */
+  function renderGrievousCuts(force = false) {
+    const box = $('#gm-gw-list');
+    if (!box) return;
+    const R = app.rules(), cap = grievousCapPct(R);
+    const gwDef = R.conditions.grievous || BUILT_IN_STATUSES.grievous;
+    const tiered = hasTieredGrievousCut(gwDef);
+    const flatCut = tiered ? null : grievousCutOf(gwDef);
+    const editable = flatCut !== null;
+    const shown = editable ? Math.min(flatCut, cap) : null;
+    const resetTarget = Math.min(DEFAULT_GRIEVOUS_PCT, cap);
+    const label = gwDef.label || 'Grievous Wounds';
+    const note = editable ? `Healing received −${shown}%` : tiered ? 'Varies by rank (edit in Status Maker)' : 'No flat healing cut (edit in Status Maker)';
+    const html = `<div class="gm-dt-row" data-gw-row="grievous">
+      <span class="gm-dt-lbl" id="gm-gw-l-grievous">${esc(label)}<span class="gm-dt-sub">Default for new sources</span></span>
+      <span class="gm-gw-note">${esc(note)}</span>
+      <div class="gm-gw-ctrl">
+        <input type="number" min="${GRIEVOUS_MIN}" max="${cap}" step="1" inputmode="numeric" data-gw-input="grievous" data-gw-label="${esc(label)}" aria-labelledby="gm-gw-l-grievous" aria-label="${esc(label)} healing cut (%)" value="${shown === null ? '' : shown}"${editable ? '' : ' disabled'}>
+        <button type="button" data-gw-apply data-gw-key="grievous" data-gw-label="${esc(label)}"${editable ? '' : ' disabled'}>Apply</button>
+        <button type="button" data-gw-reset data-gw-key="grievous" data-gw-label="${esc(label)}"${!editable || flatCut === resetTarget ? ' disabled' : ''}>Reset</button>
+      </div>
+    </div>`;
+    const typing = document.activeElement instanceof HTMLInputElement && box.contains(document.activeElement);
+    if (force || (box.dataset.sig !== html && !typing)) { box.dataset.sig = html; box.innerHTML = html; }
+  }
+  /** Applies a GM Grievous Wounds healing-cut edit to built-in `library.statuses.grievous` (bounded by `kit.shareCap`). */
+  function setGrievousCut(rawVal, label) {
+    const cap = grievousCapPct(app.rules()), pct = parseGrievousCut(Number(String(rawVal).trim()));
+    if (pct === null || pct > cap) { say('#gm-r-msg', `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${cap} (the share cap).`, true); return; }
+    const cur = app.rules().conditions.grievous || BUILT_IN_STATUSES.grievous;
+    if (hasTieredGrievousCut(cur) || grievousCutOf(cur) === null) return;
+    const next = withGrievousCut(cur, pct);
+    if (grievousCutOf(next) === grievousCutOf(cur)) return;
+    const step = isShippedStatusDef('grievous', next)
+      ? atLibrary(l => (Object.hasOwn(l.statuses, 'grievous') ? removeStatus(l, 'grievous') : l))
+      : atLibrary(l => saveStatus(l, 'grievous', next));
+    if (gmWrite('gm-grievous-cut', step, [], [line('system', 'Grievous Wounds updated', `${label}: Healing received −${pct}%.`)])) {
+      renderGrievousCuts(true);
+      say('#gm-r-msg', `${label}: Healing received −${pct}%.`);
+    }
+  }
   async function resetRules() {
     if (!await ui.confirm({ title: 'Reset rules?', body: 'Every rule number goes back to its default. Your roll tables and everything in the Workshop stay.', danger: true, confirmLabel: 'Reset rules' })) return;
     // the GM's statuses live in the library, which a reset of the rule numbers keeps
@@ -1055,6 +1099,11 @@ export function register(app) {
               <div class="gm-dt-list" id="gm-dt-abilities"></div></details>
             <p class="empty">To change a weapon's damage type, edit the weapon in the Workshop or in a hunter's bag.</p>
           </div>
+          <div class="gm-dt" id="gm-gw">
+            <span class="lbl">Grievous Wounds</span>
+            <p class="empty">Default healing cut (%) for built-in Grievous Wounds and new sources (such as newly created Thornmails and monster start statuses). Saved items and skills keep their current cut. When several sources hit one target, the strongest cut wins.</p>
+            <div class="gm-dt-list" id="gm-gw-list"></div>
+          </div>
           <p class="empty">Enter JSON overrides for the default rules, such as {"pointsPerLevel":5}. Unknown rules and invalid values are rejected.</p>
           ${ui.field('Rules overrides (JSON)', '<textarea id="gm-r-text" rows="9" spellcheck="false" autocomplete="off"></textarea>')}
           <div class="gm-msg" id="gm-r-msg" role="status"></div>
@@ -1108,7 +1157,10 @@ export function register(app) {
         else if (ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n))) say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} by ${a.n}.`);
         if (keepFocus) { const c2 = [...$('#gm-board').querySelectorAll('[data-hid]')].find(c => c.dataset.hid === hid), i2 = c2 && c2.querySelector('[data-gmamt]'); if (i2) i2.focus(); }
       }
-      el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-gmamt]')) { e.preventDefault(); if (A().hunter.amountFromKey(e, e.target.value)) typedHp(e.target.closest('[data-hid]'), e.shiftKey, true); } });
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-gmamt]')) { e.preventDefault(); if (A().hunter.amountFromKey(e, e.target.value)) typedHp(e.target.closest('[data-hid]'), e.shiftKey, true); }
+        if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-gw-input]')) { e.preventDefault(); const inp = e.target; setGrievousCut(inp.value, inp.dataset.gwLabel || 'Grievous Wounds'); }
+      });
       el.addEventListener('click', e => {
         const t = e.target.closest('button'); if (!t) return;
         if (t.hasAttribute('data-gminvite')) { app.go('room'); return; }
@@ -1154,6 +1206,8 @@ export function register(app) {
         if (t.dataset.gchron !== undefined) { A().chronicle.open(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
         if (t.dataset.dtKind) { setDamageType(t.dataset.dtKind, t.dataset.dtKey, t.dataset.dtVal, t.dataset.dtLabel || t.dataset.dtKey, t.dataset.dtShipped); return; }
+        if (t.hasAttribute('data-gw-apply')) { const inp = t.closest('[data-gw-row]')?.querySelector('[data-gw-input]'); setGrievousCut(inp ? inp.value : '', t.dataset.gwLabel || 'Grievous Wounds'); return; }
+        if (t.hasAttribute('data-gw-reset')) { setGrievousCut(Math.min(DEFAULT_GRIEVOUS_PCT, grievousCapPct(app.rules())), t.dataset.gwLabel || 'Grievous Wounds'); return; }
         if (t.dataset.grevive !== undefined && t.closest('.gm-card.remote')) { sendRevive(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `${now.name} is back up. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
@@ -1203,7 +1257,7 @@ export function register(app) {
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
       editor.refresh();
       $('#gm-day').textContent = `Day ${S().world.day}`;
-      syncTableUi(); renderLog(); renderNotify(); renderUses(); renderDamageTypes();
+      syncTableUi(); renderLog(); renderNotify(); renderUses(); renderDamageTypes(); renderGrievousCuts();
       root.querySelectorAll('[data-feats]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.feats === 'on') === app.rules().feats.on)));
       const ta = $('#gm-r-text');
       if (document.activeElement !== ta && !ta.dataset.dirty && ta.value !== rulesJson()) { ta.value = rulesJson(); liveRules(); }

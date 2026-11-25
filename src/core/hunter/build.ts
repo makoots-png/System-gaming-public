@@ -18,10 +18,11 @@ export function keystoneSwitched<S extends Pick<Save, 'rulesOverrides'>>(save: S
   return { ...save, rulesOverrides: { ...ov, fight: { ...fight, keystone: { ...ks, on } } } };
 }
 
-/** The fight rules a room carries over the phone's own: mythic scripts, keystone earning rules, and GM damage-type overrides. */
+/** The fight rules a room carries over the phone's own: mythic scripts, keystone earning rules, share cap, and GM damage-type overrides. */
 const fightOver = (R: Rules, room: RoomRules) => ({
   mythic: { ...R.fight.mythic, ...room.mythic },
   keystone: { ...R.fight.keystone, ...room.keystone },
+  kit: { ...R.fight.kit, shareCap: room.shareCap },
   damageTypes: room.damageTypes,
 });
 
@@ -37,10 +38,10 @@ function overriddenBuiltInStatuses(R: Rules): Record<string, StatusDef> {
 
 /**
  * The rules a player's phone plays by while in a room: its own, with the room's (the GM's `rules` doc, `RoomRules`) over
- * them: personal gates' switch, hours and loot share, feats', trading's, mythic, keystone, damage-type overrides,
- * GM-edited built-in statuses, and the economy, so a price and damage type are the GM's on every phone. A rarity takes
- * the room's rank and keeps the phone's color. Nothing is copied into the player's save, so the player's own rules are
- * theirs again once the room is left.
+ * them: personal gates' switch, hours and loot share, feats', trading's, mythic, keystone, shareCap, damage-type
+ * overrides, GM-edited built-in statuses, and the economy, so a price, healing cut, and damage type are the GM's on
+ * every phone. A rarity takes the room's rank and keeps the phone's color. Nothing is copied into the player's save,
+ * so the player's own rules are theirs again once the room is left.
  */
 export function withRoomRules(R: Rules, room: RoomRules | null): Rules {
   if (!room) return R;
@@ -89,6 +90,7 @@ export const roomRulesOf = (R: Rules): RoomRules => ({
     apexRank: R.fight.keystone.apexRank,
   },
   damageTypes: R.fight.damageTypes,
+  shareCap: R.fight.kit.shareCap,
   statuses: overriddenBuiltInStatuses(R),
   shadow: { summonMp: R.shadow.summonMp },
   rarities: eachRarity(r => ({ rank: R.rarities[r].rank })),

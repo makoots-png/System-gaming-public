@@ -5,6 +5,7 @@ import type { Formula } from '../formula.ts';
 import type { StatusDef, Tiers } from '../combat/effect-ops.ts';
 import type { StateChip } from '../hunter/chips.ts';
 import { WAYS_BACK } from '../hunter/vitals.ts';
+import { DEFAULT_GRIEVOUS_PCT } from '../combat/grievous.ts';
 
 // The old statuses restated by docs/agent-handoff/rw/m2-plan.md section 3.1. A list of six is the number at each tier of
 // the source, E D C B A S. The old d20 modifier of N, the source's rank bonus (2 3 4 5 6 8), becomes 4N points on the
@@ -68,7 +69,7 @@ const STATUSES = {
   ] },
   taunted: { label: 'Taunted', desc: 'Must target the taunter while they are up and in reach.', ops: [{ op: 'taunt' }] },
   marked: { label: 'Marked', desc: 'Takes 15% more damage from all attacks.', ops: [{ op: 'share', on: 'taken', pct: 15 }] },
-  grievous: { label: 'Grievous Wounds', desc: 'Receives 40% less healing.', ops: [{ op: 'share', on: 'healed', pct: -40 }] },
+  grievous: { label: 'Grievous Wounds', desc: 'Receives less healing.', ops: [{ op: 'share', on: 'healed', pct: -DEFAULT_GRIEVOUS_PCT }] },
 } satisfies Record<string, StatusDef>;
 
 /** The key of a built-in status. A status key of any status, the GM's too, is `StatusKey` (src/core/combat/effect-ops.ts). */

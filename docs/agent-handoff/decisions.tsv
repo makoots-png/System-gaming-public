@@ -822,3 +822,4 @@ ts	phase	decision	why	evidence	result
 2026-11-25T06:22Z	arch	landed balance pass step 4 (bal-stars): stars-fall sure; Angel B5 step 0.760->0.735; unit 7064 pass merged
 2026-11-25T06:31Z	arch	landed balance pass step 3 (bal-bulk): bulkFull 52, bulkExp 0.15; 0 existing sim rows moved; medium+2-dice weapon 95->77 speed flagged for the owner; unit 7077 pass merged
 2026-11-25T06:40Z	arch	landed balance pass step 5 (bal-worth): computed true-damage worth, Grievous Wounds + antiHealWorth 0.04, hp shorthand, recipe retune, GW1 row; Ruinblade skipped (B1); unit 7090 pass merged
+2026-11-25T13:09Z	ops	PR 126 (step 4, CI 45614024560), PR 127 (step 3, CI 45616294678), PR 128 (step 5, CI 45618579256) merged to main; balance pass complete

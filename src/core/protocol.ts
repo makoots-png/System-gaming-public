@@ -36,6 +36,7 @@ import type { IconKey } from './registry/icons.ts';
 import type { JobName } from './registry/jobs.ts';
 import { parseDamageTypes } from './combat/damage-type.ts';
 import type { DamageTypeMap } from './combat/damage-type.ts';
+import { grievousCutOf, hasTieredGrievousCut, parseGrievousCut, withGrievousCut } from './combat/grievous.ts';
 import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { abilityId, combatantId } from './combat/ability-types.ts';
 import type { AbilityId, CombatantId } from './combat/ability-types.ts';
@@ -915,7 +916,8 @@ export type { Band, DocDodge, DocRefusal, FightDoc, FightDocRow, TableRefusal } 
  * hunter keystones). With 4 awakened hunters holding 5 keystones each, 4 hunter-like enemy rows holding 4 keystones
  * each, and 22 monsters (4 mythics), the worst case is 47,103 (built-in defs) and 53,976 (full defs table), leaving
  * 1,135 to spare under 55,111. Even 30 keystone-holding enemy rows fit under `DOC_MAX` at 51,308 (built-in) and 58,181
- * (full defs table).
+ * (full defs table). Variable Grievous Wounds uses a compact `h` cut field (`"h":100`, 7 characters) instead of inline
+ * `b` (up to 51 characters) when a row's cut differs from `defs[k]`, so the full-defs-table worst case is unchanged.
  */
 export const DOC_MAX = 62000;
 /**
@@ -956,6 +958,8 @@ export type RoomRules = {
   keystone: { on: boolean; markShare: number; pairShare: number; apexShare: number; markRank: Rank; pairRank: Rank; apexRank: Rank };
   /** The GM's sparse ability/reserved damage-type overrides (`RULES.fight.damageTypes`): absent reads as empty. */
   damageTypes: DamageTypeMap;
+  /** The GM's share cap (`RULES.fight.kit.shareCap`): absent reads as the shipped default so card text matches combat. */
+  shareCap: number;
   /** The GM's overridden built-in status defs (`library.statuses` entries matching `BUILT_IN_STATUSES`, at most 16): absent reads as empty. */
   statuses: Record<string, StatusDef>;
   /** The GM's shadow summon mana costs (`RULES.shadow.summonMp`): a doc without it reads as the shipped table. */
@@ -1050,11 +1054,15 @@ function docDefs(v: unknown): Record<string, StatusDef> {
 }
 /**
  * A status on the wire: k key, b label (only when its def is neither in the doc's `defs` table nor a shipped keystone
- * def matching `RULES`), l rounds left, n stacks, t its source's tier.
+ * def matching `RULES`), h Grievous Wounds healing-cut override (1..100 when this row's def differs from `defs[k]` only
+ * in its healing cut), l rounds left, n stacks, t its source's tier.
  */
 function docStatus(v: unknown, defs: Record<string, StatusDef>): DocStatus {
-  const o = obj(v), key = keyOf(own(o, 'k')), named = own(o, 'b'), stacks = own(o, 'n');
-  const def = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : keystoneStatusDef(key) ?? refuse()) : undefined;
+  const o = obj(v), key = keyOf(own(o, 'k')), named = own(o, 'b'), cutRaw = own(o, 'h'), stacks = own(o, 'n');
+  const baseDef = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : keystoneStatusDef(key) ?? refuse()) : undefined;
+  if (cutRaw !== undefined && (named !== undefined || !baseDef || hasTieredGrievousCut(baseDef) || grievousCutOf(baseDef) === null)) return refuse();
+  const cut = cutRaw === undefined ? null : (parseGrievousCut(cutRaw) ?? refuse());
+  const def = baseDef ? (cut === null ? baseDef : withGrievousCut(baseDef, cut)) : undefined;
   const out = {
     key, label: def ? def.label : filled(NAME_MAX)(named), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null),
     tier: opt(own(o, 't'), int(0, RANKS.length - 1), 0), ...(def ? { def } : {}),
@@ -1440,6 +1448,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
     keystone: roomKeystone(own(o, 'keystone')),
     damageTypes: roomDamageTypes(own(o, 'damageTypes')),
+    shareCap: opt(own(o, 'shareCap'), ruleNumber('fight.kit.shareCap'), RULES.fight.kit.shareCap),
     statuses: roomStatuses(own(o, 'statuses')),
     shadow: roomShadow(own(o, 'shadow')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),

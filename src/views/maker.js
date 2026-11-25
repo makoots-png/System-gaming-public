@@ -28,6 +28,7 @@ import { abilityOf, averages, checkGap, defaultTicks, gapOf, paceOf, paceTime, p
 import { FAMILY, nameOf } from '../core/registry/scalers.ts';
 import { worthLine } from '../core/registry/worth.ts';
 import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, DAMAGE_WORD, defenceOf, isDamage } from '../core/combat/damage-type.ts';
+import { GRIEVOUS_MIN, grievousCapPct, grievousCutOf, hasTieredGrievousCut, withGrievousCut } from '../core/combat/grievous.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
 import { percent, tiles } from '../core/combat/space.ts';
 import { roundsOf, tick } from '../core/combat/timeline.ts';
@@ -242,7 +243,7 @@ const typed = (kind, v) => String(NUMBERS[kind].rounds ? roundsOf(v, rules(), 'n
 /** A row of the editor from an op. An op of a kind the editor has no row for is a row that keeps the op as it is. */
 function rowOf(o) {
   const r = {
-    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
+    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, gwCut: '', text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
     addStacks: o.stacks === undefined ? '' : String(o.stacks), sheetKey: o.op === 'sheet' ? o.key : 'armor', shareOn: o.op === 'share' ? o.on : 'taken', side: o.side || 'attack',
     edgeKeep: o.op === 'edge' ? o.keep : 'better', tag: o.op === 'edge' && o.tag ? o.tag : '', spend: o.op === 'edge' ? !!o.spend : true, dieMode: o.op === 'boost' ? o.die.kind : 'die',
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
@@ -261,6 +262,10 @@ function rowOf(o) {
   } else if (o.op === 'applyStatus') {
     const rounds = d => (d ? String(roundsOf(d, rules(), 'near')) : '');
     r.status = o.key || ''; r.def = o.def || null;
+    const cond = r.status && Object.hasOwn(rules().conditions, r.status) ? rules().conditions[r.status] : null;
+    const defCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+    const condCut = cond && !hasTieredGrievousCut(cond) ? grievousCutOf(cond) : null;
+    r.gwCut = defCut !== null && defCut !== condCut ? String(defCut) : '';
     if (isTiers(o.duration)) { r.mode = 'rank'; r.tiers = o.duration.map(rounds); r.rounds = r.tiers[0]; } else r.rounds = rounds(o.duration);
   } else if (o.op === 'cureStatus') r.status = o.key || '';
   else if (o.op === 'note') r.text = o.text || '';
@@ -402,8 +407,24 @@ function checkRow(r, item) {
   if (stacks === null) return fail(`Stacks go from 1 to ${K.stackAdd}. Leave it empty for ${r.kind === 'cureStatus' ? 'all of them' : 'one'}.`);
   const more = stacks === undefined ? {} : { stacks };
   if (r.kind === 'cureStatus') return ok({ op: 'cureStatus', key: r.status, ...more });
-  const def = r.def || (Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null);
-  if (!def) return fail('Pick a status.');
+  const baseDef = r.def || (Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null);
+  if (!baseDef) return fail('Pick a status.');
+  const canCut = !hasTieredGrievousCut(baseDef) && grievousCutOf(baseDef) !== null;
+  const baseCut = canCut ? grievousCutOf(baseDef) : null;
+  const gwCap = grievousCapPct(R), gwHi = baseCut !== null ? Math.max(gwCap, Math.floor(baseCut)) : gwCap;
+  const rawCut = String(r.gwCut).trim();
+  const keptCut = canCut && rawCut !== '' && baseCut !== null && rawCut === String(baseCut);
+  const cut = canCut && rawCut !== '' && !keptCut ? wholeIn(rawCut, GRIEVOUS_MIN, gwHi) : null;
+  if (canCut && rawCut !== '' && !keptCut && cut === null) {
+    return fail(gwHi > gwCap
+      ? `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap), or no higher than its current ${gwHi}%.`
+      : `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap).`);
+  }
+  const condDef = Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null;
+  const condCut = condDef && !hasTieredGrievousCut(condDef) ? grievousCutOf(condDef) : null;
+  const def = !canCut || keptCut ? baseDef
+    : cut !== null ? (cut === baseCut ? baseDef : withGrievousCut(baseDef, cut))
+    : condCut !== null && condCut !== baseCut ? withGrievousCut(baseDef, condCut) : baseDef;
   if (r.mode === 'rank') {
     const all = r.tiers.map(x => { const t = String(x).trim(), n = Number(t); return t !== '' && Number.isInteger(n) && n >= 1 && n <= 999 ? n * R.fight.round : null; });
     const bad = all.flatMap((n, i) => (n === null ? [i] : []));
@@ -458,6 +479,16 @@ function effects(box, o) {
     const group = (label, inner) => `<div class="field"><span class="lbl">${esc(label)}</span>${inner}</div>`;
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
       ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks added' : 'Stacks removed', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
+    const gwDef = r.kind === 'applyStatus' ? (r.def || defOf(r.status)) : null;
+    const gwBaseCut = gwDef && !hasTieredGrievousCut(gwDef) ? grievousCutOf(gwDef) : null;
+    const gwCond = r.kind === 'applyStatus' ? defOf(r.status) : null;
+    const gwCondCut = gwCond && !hasTieredGrievousCut(gwCond) ? grievousCutOf(gwCond) : null;
+    const gwCap = grievousCapPct(rules());
+    const gwHi = gwBaseCut !== null ? Math.max(gwCap, Math.floor(gwBaseCut)) : gwCap;
+    const gwPlaceholder = gwBaseCut !== null ? Math.min(gwCondCut ?? gwBaseCut, gwCap) : null;
+    const gwIn = gwBaseCut !== null
+      ? `<label class="field"><span class="lbl">Healing cut (%)</span><input type="number" inputmode="numeric" step="1" min="${GRIEVOUS_MIN}" max="${gwHi}" data-f="gwCut" aria-label="Healing cut of effect ${i + 1}" value="${esc(r.gwCut)}" placeholder="${esc(gwPlaceholder)}"></label>`
+      : '';
     let body = '';
     if (formula || number) {
       if (r.mode === 'rank' && !one) body = `<div class="mk-tiers">${tierLabels.map(([short, full], t) => `<label class="mk-tier"><span>${esc(short)}</span>${input(`data-t="${t}"`, `${what} at ${full}`, r.tiers[t])}</label>`).join('')}</div>`;
@@ -505,7 +536,7 @@ function effects(box, o) {
       ${r.kind === 'share' ? segF('shareOn', `What effect ${i + 1} changes`, SHARE_LABEL, r.shareOn) : ''}
       ${FORMULA_KINDS.includes(r.kind) && o.kind === 'status' ? seg('data-when', `When effect ${i + 1} acts`, WHEN_LABEL, r.when || 'turn') : ''}
       ${modes.length ? seg('data-mode', `Amount of effect ${i + 1}`, modes, r.mode) : ''}
-      ${body}${stacksIn}
+      ${body}${gwIn}${stacksIn}
       <p class="mk-fx-err" data-err role="alert"></p></div>`;
   }
   /** Shows a row's error and marks the values that are wrong; a formula's average at E, C and S on a sample bearer. */
@@ -515,7 +546,7 @@ function effects(box, o) {
     el.querySelector('[data-err]').textContent = c.err;
     el.classList.toggle('bad', !!c.err);
     el.querySelectorAll('[data-t]').forEach(inp => inp.setAttribute('aria-invalid', String(c.bad.includes(Number(inp.dataset.t)))));
-    el.querySelectorAll('[data-f=q],[data-f=text],[data-f=status],[data-f=rounds],[data-f=chance],[data-f=tag],[data-f=addStacks]').forEach(inp => inp.setAttribute('aria-invalid', String(!!c.err && !c.bad.length)));
+    el.querySelectorAll('[data-f=q],[data-f=text],[data-f=status],[data-f=rounds],[data-f=chance],[data-f=tag],[data-f=addStacks],[data-f=gwCut]').forEach(inp => inp.setAttribute('aria-invalid', String(!!c.err && !c.bad.length)));
     const words = el.querySelector('[data-words]');
     if (words) words.textContent = !c.op || !c.op.amount || isTiers(c.op.amount) ? '' : amountLine(c.op.amount);
     const avg = el.querySelector('[data-avg]');
@@ -607,9 +638,14 @@ function effects(box, o) {
     if (t.dataset.f === 'moveKey' || t.dataset.f === 'as') { r[t.dataset.f] = t.value; mark(i); return; }
     if (t.dataset.f === 'spend') { r.spend = t.checked; mark(i); return; }
     if (t.dataset.f === 'status') {
-      if (t.value !== NEW_STATUS) { r.status = t.value; r.def = null; render(); raise(); return; }
+      if (t.value !== NEW_STATUS) {
+        r.status = t.value; r.def = null; r.gwCut = '';
+        render(); raise(); return;
+      }
       const made = o.newStatus ? await o.newStatus() : null;
-      if (made && made.key) { r.status = made.key; r.def = made.def || null; }
+      if (made && made.key) {
+        r.status = made.key; r.def = made.def || null; r.gwCut = '';
+      }
       render(); raise();
     }
   });
@@ -621,7 +657,7 @@ function effects(box, o) {
     else if (t.dataset.f === 'rounds') r.rounds = t.value;
     else if (t.dataset.f === 'text') r.text = t.value;
     else if (t.dataset.f === 'chance') r.chance = t.value;
-    else if (t.dataset.f === 'tag' || t.dataset.f === 'addStacks') r[t.dataset.f] = t.value;
+    else if (t.dataset.f === 'tag' || t.dataset.f === 'addStacks' || t.dataset.f === 'gwCut') r[t.dataset.f] = t.value;
     mark(i);
   });
   render();

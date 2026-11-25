@@ -367,11 +367,14 @@ const asPercent = (a: unknown): unknown => (typeof a === 'number' ? Math.round(a
 const oldPenRead = (v: unknown): unknown => (Array.isArray(v)
   ? v.flatMap(o => (isObj(o) && o.op === 'sheet' && o.key === 'pen' ? (['armorPen', 'resistPen'] as const).map(key => ({ ...o, key, amount: asPercent(o.amount) })) : [o]))
   : v);
+/** Legacy pre-variable Grievous Wounds prose replaced on parse so saved items/skills match the number-free def. */
+const LEGACY_GRIEVOUS_DESC = 'Receives 40% less healing.';
 function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
   if (!isObj(v)) return null;
-  const label = text(v.label, NAME_MAX), desc = text(v.desc, STATUS_DESC_MAX), ops = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
+  const label = text(v.label, NAME_MAX), rawDesc = text(v.desc, STATUS_DESC_MAX), ops = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
   if (v.color !== undefined && !(typeof v.color === 'string' && COLOR_RE.test(v.color))) return null;
-  if (label === null || desc === null || !ops) return null;
+  if (label === null || rawDesc === null || !ops) return null;
+  const desc = label === 'Grievous Wounds' && rawDesc === LEGACY_GRIEVOUS_DESC ? 'Receives less healing.' : rawDesc;
   const K = R.fight.kit;
   const triggers = v.triggers === undefined ? undefined : all(Array.isArray(v.triggers) ? v.triggers.slice(0, K.triggers) : null, K.triggers, x => triggerOf(x, R, depth));
   const end = v.end === undefined ? undefined : endOf(v.end, R, depth);

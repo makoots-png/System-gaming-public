@@ -1364,7 +1364,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'solo', 'statuses', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'statuses', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {

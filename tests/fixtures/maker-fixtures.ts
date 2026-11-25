@@ -4,6 +4,8 @@ import { RULES } from '../../src/core/rules.ts';
 import { parseFormula } from '../../src/core/formula.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { statusKey } from '../../src/core/combat/effect-ops.ts';
+import { withGrievousCut } from '../../src/core/combat/grievous.ts';
+import { BUILT_IN_STATUSES } from '../../src/core/registry/statuses.ts';
 import { parseStatusDef } from '../../src/core/combat/fight-parse.ts';
 import { percent, tiles } from '../../src/core/combat/space.ts';
 import { cost, tick } from '../../src/core/combat/timeline.ts';
@@ -240,6 +242,21 @@ export const WORST_SKILL_TRUE: Skill = {
     }, RULES),
   }), 'WORST_SKILL_TRUE'),
   id: saveId('s', 914),
+};
+
+export const WORST_SKILL_GRIEVOUS: Skill = {
+  ...must(parseSkill({
+    name: 'Wither Rend',
+    level: 2,
+    label: 'Cursed',
+    desc: 'Applies Grievous Wounds with a custom 25% healing cut.',
+    type: 'active',
+    ability: {
+      ...abilityOf('curse', { id: abilityId('ab-wither-rend'), name: 'Wither Rend' }, RULES),
+      ops: [{ op: 'applyStatus', key: statusKey('grievous'), def: withGrievousCut(BUILT_IN_STATUSES.grievous, 25), duration: tick(2 * ROUND) }],
+    },
+  }), 'WORST_SKILL_GRIEVOUS'),
+  id: saveId('s', 915),
 };
 
 export const WORST_SKILL_ACTIVE: Skill = {

@@ -20,7 +20,7 @@ import { describeAbility, formulaOf, KINDS } from './registry/ability-kinds.ts';
 import type { KindRules } from './registry/ability-kinds.ts';
 import { weaponAttack } from './registry/abilities.ts';
 import type { Attack } from './registry/items.ts';
-import { describeItem } from './effects.ts';
+import { describeItem, itemSource } from './effects.ts';
 import type { ItemEffects } from './effects.ts';
 import { SHEET_LABELS } from './hunter/derive.ts';
 import type { SheetNumber } from './hunter/derive.ts';
@@ -36,7 +36,7 @@ export type Thing =
   | { readonly kind: 'status'; readonly label: string; readonly def: StatusDef | null; readonly tier: number | null; readonly stacks?: number; readonly left?: number | null }
   | { readonly kind: 'ability'; readonly ability: Ability }
   /** An item, and the hunter who holds it when it is in a bag: its amounts then say what they come to on that hunter. */
-  | { readonly kind: 'item'; readonly item: ItemEffects & { readonly name: string; readonly desc?: string; readonly type?: string; readonly dice?: string; readonly attack?: Attack; readonly finesse?: true; readonly twoHanded?: true; readonly effects?: readonly Op[] }; readonly hunter?: SheetHunter }
+  | { readonly kind: 'item'; readonly item: ItemEffects & { readonly name: string; readonly desc?: string; readonly type?: string; readonly dice?: string; readonly attack?: Attack; readonly finesse?: true; readonly twoHanded?: true; readonly effects?: readonly Op[]; readonly worn?: StatusDef }; readonly hunter?: SheetHunter }
   | { readonly kind: 'zone'; readonly name: string; readonly tone: ZoneTone; readonly left: number | null; readonly ops: readonly Op[] | null; readonly tier: number }
   | { readonly kind: 'number'; readonly key: SheetNumber; readonly hunter: SheetHunter }
   | { readonly kind: 'odds'; readonly odds: OddsRead; readonly voice: OddsVoice };
@@ -96,7 +96,11 @@ export function detailOf(t: Thing, R: Rules): Detail {
     }
     case 'item': {
       const i = t.item;
-      return { title: i.name, about: i.desc ?? '', lines: [...weaponLines(i, R), ...describeItem(R, i, i.effects ?? [], t.hunter ? hunterSheet(t.hunter, R) : null)] };
+      return {
+        title: i.name,
+        about: i.desc ?? '',
+        lines: [...weaponLines(i, R), ...describeItem(R, i, i.effects ?? [], t.hunter ? hunterSheet(t.hunter, R) : null), ...(i.worn ? describeStatus(i.worn, itemSource(i).tier, R).map(l => `In a fight: ${l}`) : [])],
+      };
     }
     case 'zone':
       return { title: t.name, about: ZONE_WORD[t.tone], lines: [...(t.left === null ? [] : [`${rounds(t.left)} left.`]), ...(t.ops ? opLines(t.ops, t.tier, R) : [])] };

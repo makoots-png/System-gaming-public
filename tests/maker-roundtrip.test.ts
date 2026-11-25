@@ -40,6 +40,7 @@ import {
   WORST_QUEST_SELF,
   WORST_REWARDS,
   WORST_ROLL_TABLES,
+  WORST_SKILL_GRIEVOUS,
   WORST_SKILL_TRUE,
   WORST_STORY,
   worstGate,
@@ -272,6 +273,14 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     const back = parseSkill(JSON.parse(JSON.stringify(tpl)));
     expect(back).toEqual(tpl);
     expect(back?.type === 'active' && back.ability?.effect?.type).toBe('true');
+  },
+
+  'grievous-cut'() {
+    const { id: _id, ...tpl } = WORST_SKILL_GRIEVOUS;
+    const back = parseSkill(JSON.parse(JSON.stringify(tpl)));
+    expect(back).toEqual(tpl);
+    const op = back?.type === 'active' ? back.ability?.ops[0] : null;
+    expect(op?.op === 'applyStatus' ? op.def.ops : null).toEqual([{ op: 'share', on: 'healed', pct: -25 }]);
   },
 };
 

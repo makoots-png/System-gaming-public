@@ -27,6 +27,7 @@ import {
   WORST_REWARDS,
   WORST_ROLL_TABLES,
   WORST_SKILL_ACTIVE,
+  WORST_SKILL_GRIEVOUS,
   WORST_SKILL_PASSIVE,
   WORST_SKILL_REACTION,
   WORST_SKILL_SWAP,
@@ -41,7 +42,7 @@ import {
 const COVERED_E2E_IDS: readonly MakerId[] = [
   'status', 'item', 'skill', 'skill-swap', 'monster', 'rewards', 'bundle', 'map', 'feat', 'story',
   'quest', 'gate', 'preset', 'title', 'guild', 'identity', 'rules-overrides', 'roll-tables',
-  'typed-weapon', 'true-ability',
+  'typed-weapon', 'true-ability', 'grievous-cut',
 ];
 
 test('registry check: every e2e-registered maker and editor is exercised by this suite', () => {
@@ -56,7 +57,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
     d.library.items.push(f.bulwark, f.worn, f.finesse, f.consumable, f.typedWeapon);
-    d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue);
+    d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.rewards.push(f.bundle);
     d.library.maps.push(f.map);
@@ -76,6 +77,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     skillPassive: WORST_SKILL_PASSIVE,
     skillSwap: WORST_SKILL_SWAP,
     skillTrue: WORST_SKILL_TRUE,
+    skillGrievous: WORST_SKILL_GRIEVOUS,
     monsterMythic: WORST_MONSTER_MYTHIC,
     monsterBoss: WORST_MONSTER_BOSS,
     bundle: WORST_BUNDLE,
@@ -107,6 +109,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     { label: 'skill (passive large bonus + worn icon/label)', ws: 'skill', id: WORST_SKILL_PASSIVE.id, overlay: '.skm-overlay', expected: WORST_SKILL_PASSIVE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_PASSIVE.id) },
     { label: 'skill (shadow swap movement, kit-parts)', ws: 'skill', id: WORST_SKILL_SWAP.id, overlay: '.skm-overlay', expected: WORST_SKILL_SWAP, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_SWAP.id) },
     { label: 'true-ability (active skill dealing true damage)', ws: 'skill', id: WORST_SKILL_TRUE.id, overlay: '.skm-overlay', expected: WORST_SKILL_TRUE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_TRUE.id) },
+    { label: 'grievous-cut (active skill applying Grievous Wounds at 25%)', ws: 'skill', id: WORST_SKILL_GRIEVOUS.id, overlay: '.skm-overlay', expected: WORST_SKILL_GRIEVOUS, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_GRIEVOUS.id) },
     { label: 'monster (mythic script)', ws: 'monster', id: WORST_MONSTER_MYTHIC.id, overlay: '.enm-overlay', expected: WORST_MONSTER_MYTHIC, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_MYTHIC.id) },
     { label: 'monster (extractable boss)', ws: 'monster', id: WORST_MONSTER_BOSS.id, overlay: '.enm-overlay', expected: WORST_MONSTER_BOSS, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_BOSS.id) },
     { label: 'bundle + reward editor (9e57d384)', ws: 'bundle', id: WORST_BUNDLE.id, overlay: '.rwm-overlay', expected: WORST_BUNDLE, read: () => page.evaluate(id => hunterApp.store.get().library.rewards.find((x: any) => x.id === id), WORST_BUNDLE.id) },
