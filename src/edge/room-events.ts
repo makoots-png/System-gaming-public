@@ -199,6 +199,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // a player's report of the System's raise of their hunter, written on their own phone (grant.ts `systemRaise`): the GM's
   // phone logs it (hunter.js)
   systemRaise: GM_ONLY_READS,
+  // a player's report of a confirmed point respec, written on their own phone (respec.ts `confirmPoints`): the GM's
+  // phone logs it (hunter.js)
+  respec: GM_ONLY_READS,
   // a reward this phone's hunter earned by itself, asked of the GM (hunter/pending.ts): the GM's phone keeps it waiting
   // (gm.js); an approved one comes back as an `award`
   rewardAsk: GM_ONLY_READS,

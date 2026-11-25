@@ -5,6 +5,7 @@ import type { ParseEnv, Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
 import { dayKey } from '../src/core/day.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { available } from '../src/core/hunter/progress.ts';
 import { hpOf } from '../src/core/hunter/vitals.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { den, gid, mid } from './models/gate-events.ts';
@@ -48,11 +49,13 @@ describe('the starter campaign, one step', () => {
     expect(s.settings.activeHunterId).toBe(s.hunters[0]!.id);
     expect(s.settings.mode).toBe('gm');
   });
-  test('each pregen has its job, its creation stats, its two skills, its gear worn and full HP and mana', () => {
+  test('each pregen spends its creation points into its job stats, holds its two skills, wears its gear and has full HP and mana', () => {
     for (const [i, p] of PREGENS.entries()) {
       const h = s.hunters[i]!, sheet = hunterSheet(h, RULES).sheet;
       expect(h.job).toBe(p.job);
-      for (const [k, v] of Object.entries(p.stats)) expect(h.stats[k as keyof typeof h.stats]).toBe(v);
+      for (const [k, v] of Object.entries(p.stats)) expect(h.stats[k as keyof typeof h.stats]).toBe(RULES.fight.statBase + v);
+      expect(h.spent).toEqual(p.stats);
+      expect(available(h, RULES)).toBe(0);
       expect(h.skills.map(k => k.name)).toEqual(p.skills.map(k => k.name));
       expect(h.items.map(x => x.name)).toEqual([p.item.name]);
       if (h.items[0]!.slot) expect(h.equipped[h.items[0]!.slot]).toBe(h.items[0]!.id);

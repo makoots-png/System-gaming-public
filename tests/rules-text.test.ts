@@ -84,20 +84,25 @@ describe('the natural 20 and 1', () => {
 describe('the points line', () => {
   const R: Rules = { ...RULES, xpPerLevel: 100, pointsPerLevel: 3 };
   const fresh = (): Allocating => ({ ...newProgress(), level: 3, peakLevel: 3, stats: { ...BASE } });
-  test('a raised point comes back with minus before Confirm, and is refused to a player after it', () => {
+  test('a raised point comes back with minus before Confirm, and a confirmed point stages a take-back until none are left', () => {
     const raised = raise(fresh(), 'str', 'player', R);
     if (isRefused(raised)) throw new Error('refused');
     const back = lower(raised, 'str', 'player');
     if (isRefused(back)) throw new Error('refused');
     expect(allocated(back).str).toBe(10);
     const done = confirm(raised);
-    expect(lower(done, 'str', 'player')).toEqual({ ok: false, why: 'confirmed' });
+    const staged = lower(done, 'str', 'player');
+    if (isRefused(staged)) throw new Error('refused');
+    expect(staged.pending).toEqual({ str: -1 });
+    expect(lower(staged, 'str', 'player')).toEqual({ ok: false, why: 'nothing-spent' });
   });
-  test('the sentence names Confirm as the lock and leaving the view as no lock', () => {
+  test('the sentence names Confirm as the lock, leaving the view as no lock, and states respec prices by rank', () => {
     const line = pointsLine();
     expect(line).toContain('Tap Confirm allocation to lock');
     expect(line).toContain('even if you leave the Status view');
     expect(line).not.toMatch(/leave the Status view,? to lock/);
+    expect(line).toContain('E 50, D 163, C 625, B 2,500, A 9,500, S 37,500 gold');
+    expect(pointsLine({ ...RULES, respecPrices: 0 })).toContain('free under current rules');
   });
 });
 

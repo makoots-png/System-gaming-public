@@ -429,7 +429,7 @@ describe('a damaged or hostile save', () => {
     const base = newHunter();
     const h = onlyHunter(parseRaw(withHunter({ level: 'NaN', xp: 'Infinity', gold: '-5', mana: 'NaN', bonusPoints: '1e9', spent: 'NaN', peakLevel: 'Infinity',
       fatigue: '-Infinity', hpAdj: '7', manaAdj: 'x', stats: { ...BASE_STATS, str: 'NaN' } })));
-    expect(h).toMatchObject({ level: 1, xp: 0, gold: 0, life: base.life, mana: base.mana, bonusPoints: 0, spent: 0, peakLevel: 1, fatigue: 0, hpAdj: 0, manaAdj: 0 });
+    expect(h).toMatchObject({ level: 1, xp: 0, gold: 0, life: base.life, mana: base.mana, bonusPoints: 0, spent: {}, peakLevel: 1, fatigue: 0, hpAdj: 0, manaAdj: 0 });
     expect(h.stats.str).toBe(RULES.fight.statBase);
   });
 
@@ -437,7 +437,7 @@ describe('a damaged or hostile save', () => {
     const text = JSON.stringify(withHunter({ level: -3, xp: -10, gold: -1, mana: -4, fatigue: -2, spent: -4, stats: { ...BASE_STATS, agi: 14.6, vit: -3 } }))
       .replace('"gold":-1', '"gold":1e999');
     const h = onlyHunter(saved(parseSave(text, env())));
-    expect(h).toMatchObject({ level: 1, xp: 0, gold: 0, mana: 0, fatigue: 0, spent: 0 });
+    expect(h).toMatchObject({ level: 1, xp: 0, gold: 0, mana: 0, fatigue: 0, spent: {} });
     expect(h.stats).toMatchObject({ agi: 15, vit: 0 });
   });
 
@@ -577,9 +577,9 @@ describe('what a repair fixes', () => {
     expect(onlyHunter(parseRaw({ schema: SCHEMA, hunters: [before] })).reviveLeft).toBe('free');
   });
 
-  test('the peak level is never below the level, and spent points never below 0', () => {
+  test('the peak level is never below the level, and non-object spent reads as empty', () => {
     const h = onlyHunter(parseRaw(withHunter({ level: 5, peakLevel: 2, spent: -4, bonusPoints: -2 })));
-    expect(h).toMatchObject({ level: 5, peakLevel: 5, spent: 0, bonusPoints: -2 });
+    expect(h).toMatchObject({ level: 5, peakLevel: 5, spent: {}, bonusPoints: -2 });
   });
 
   test('the count of sessions the GM started is kept, and a save without one starts at none', () => {
@@ -629,19 +629,16 @@ describe('what a repair fixes', () => {
     expect(h.titles.map(t => t.seedKey)).toEqual(['wolf-slayer', undefined]);
   });
 
-  test('a pending count is a whole number of 1 or more on a stat that exists, anything else is nothing pending', () => {
-    const h = onlyHunter(parseRaw(withHunter({ pending: { str: 2, agi: 0, vit: -3, pow: 'x', luck: 4, ctl: 1.6 } })));
-    expect(h.pending).toEqual({ str: 2, ctl: 2 });
-  });
-
-  test('a hunter stored with locked stats keeps its unconfirmed points as pending, and they leave what was spent', () => {
-    // Stored: Strength 14 with 12 confirmed (2 unconfirmed), Agility 12 with 11 confirmed (1), a missing locked stat and
-    // one above its stat confirm nothing; 5 spent counted the 3 unconfirmed points, so 2 stay spent.
-    const h = onlyHunter(parseRaw(withHunter({ stats: { ...BASE_STATS, str: 14, agi: 12 }, statsLocked: { str: 12, agi: 11, vit: 99 }, spent: 5 })));
-    expect(h.stats).toEqual({ ...BASE_STATS, str: 12, agi: 11 });
-    expect(h.pending).toEqual({ str: 2, agi: 1 });
-    expect(h.spent).toBe(2);
-    expect('statsLocked' in h).toBe(false);
+  test('spent keeps whole positive counts on stats that exist and reads a non-object as empty; signed pending clamps negative take-backs to -undoableOn', () => {
+    const h = onlyHunter(parseRaw(withHunter({
+      stats: { ...BASE_STATS, str: 14, vit: 3 },
+      spent: { str: 4, vit: 5, agi: 0, ins: -2, pow: 'x', luck: 3, ctl: 1.6 },
+      pending: { str: -10, vit: -10, agi: 2, dis: -3, pow: 'x', luck: 4, ctl: 1.6 },
+    })));
+    expect(h.spent).toEqual({ str: 4, vit: 5, ctl: 2 });
+    // str undoableOn = min(4, 14 - 1) = 4; vit undoableOn = min(5, 3 - 1) = 2; dis spent 0 so -3 clamps to 0.
+    expect(h.pending).toEqual({ str: -4, vit: -2, agi: 2, ctl: 2 });
+    expect(onlyHunter(parseRaw(withHunter({ spent: 12 }))).spent).toEqual({});
   });
 
   test('a pre-R1 hunter with a stored build field loads cleanly, keeps the unknown build field on round-trip, and gets no path bonuses', () => {

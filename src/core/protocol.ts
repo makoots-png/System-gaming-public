@@ -385,6 +385,12 @@ export type SystemRaisePayload = Base & { by: SheetKey; name: string; raise: Rai
 /** The most gold a System raise reports owed: past any rank's ten Clears of the shipped table. */
 export const RAISE_OWES_MAX = 1e9;
 /**
+ * A player's report that they confirmed a point respec on hunter `name` (respec.ts `confirmPoints`): how many
+ * confirmed points were taken back (`count`) and the gold paid (`cost`, 0 when free). Posted in the confirm's own
+ * write; the GM's phone logs it. A report: it changes nothing on any phone.
+ */
+export type RespecPayload = Base & { by: SheetKey; name: string; count: number; cost: number };
+/**
  * A player's step in the GM's fight: the hunter of `by` moves to `place` on its turn (`to` names whom a message is
  * for), a dash when `dash` (the move command's). `at` is the fight's `now` the player's phone drew, so the GM's phone
  * takes it only on that turn (`onTurn`): a replay or a stale tap changes nothing.
@@ -508,7 +514,7 @@ type Payloads = {
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; dodge: DodgePayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
-  systemRaise: SystemRaisePayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
+  systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -650,6 +656,9 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   systemRaise: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: filled(60)(own(o, 'name')), raise: choiceOf(RAISES)(own(o, 'raise')), owes: int(0, RAISE_OWES_MAX)(own(o, 'owes')),
   }) },
+  respec: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
+    ...base(o), by: sheetKey(own(o, 'by')), name: filled(NAME_MAX)(own(o, 'name')), count: int(1, 1e6)(own(o, 'count')), cost: int(0, RAISE_OWES_MAX)(own(o, 'cost')),
+  }) },
   step: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), place: tile(own(o, 'place')), at: time0(own(o, 'at')), dash: opt(own(o, 'dash'), bool, false) }) },
   cast: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
     const ability = own(o, 'ability');
@@ -732,7 +741,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
-  systemRaise: entry('systemRaise'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
+  systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -952,6 +961,7 @@ export type RoomRules = {
   usedUpShare: number;
   elixirPrices: number;
   revivePrices: number;
+  respecPrices: number;
   reviveDebtPrices: Rules['reviveDebtPrices'];
   reviveDebtShare: number;
   reviveDebtBurn: number;
@@ -1411,6 +1421,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     usedUpShare: rule('usedUpShare'),
     elixirPrices: rule('elixirPrices'),
     revivePrices: rule('revivePrices'),
+    respecPrices: opt(own(o, 'respecPrices'), ruleNumber('respecPrices'), RULES.respecPrices),
     reviveDebtPrices: eachRank(r => ruleNumber(`reviveDebtPrices.${r}`)(own(rdp, r))),
     reviveDebtShare,
     reviveDebtBurn,

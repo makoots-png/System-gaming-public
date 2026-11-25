@@ -1,7 +1,7 @@
 // rules-text.ts: the lines of the Rules page that state a rule the game plays elsewhere, worked out from the functions
 // that play it, so the page cannot drift from the game (tests/rules-text.test.ts pins each one). Pure. The page itself
 // is src/views/rulesref.js, which keeps its layout and calls these.
-import { RANKS } from './rules.ts';
+import { RANKS, RULES } from './rules.ts';
 import type { Rank, Rules } from './rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT, above } from './stats.ts';
 import type { StatKey } from './stats.ts';
@@ -25,6 +25,8 @@ import type { PriceRules, Rarity } from './registry/items.ts';
 import { shareEach } from './gates/pay.ts';
 import { REVIVE_HP, WAYS_BACK } from './hunter/vitals.ts';
 import { levelAfterRaising } from './hunter/progress.ts';
+import { newTally } from './hunter/chronicle.ts';
+import { respecCost } from './hunter/respec.ts';
 import { ambushShare } from './combat/standing.ts';
 import { LEVELS, asLevel } from './combat/sight-levels.ts';
 import type { Level } from './combat/sight-levels.ts';
@@ -73,9 +75,15 @@ export function naturalLines(): readonly string[] {
   ];
 }
 
-/** How a stat's points are spent and locked in. */
-export function pointsLine(): string {
-  return 'Tap + on a stat to spend a point. Tap − to take back an unconfirmed point. Tap Confirm allocation to lock your points in. Until you confirm, they stay unconfirmed even if you leave the Status view. The GM can edit any stat, and those edits lock in right away.';
+const FOUGHT_CHRONICLE = { tally: { ...newTally(), fights: 1 } } as const;
+
+/** How a stat's points are spent, locked in, and taken back. */
+export function pointsLine(R: Pick<Rules, 'priceBase' | 'respecPrices'> = RULES): string {
+  const lead = 'Tap + on a stat to spend a point. Tap − to take a point back, or tap Take all back to stage a full reset. Tap Confirm allocation to lock your points in. Until you confirm, they stay unconfirmed even if you leave the Status view.';
+  const respec = R.respecPrices <= 0
+    ? ' Taking back confirmed points is free under current rules. You cannot respec during a fight or while dead.'
+    : ` Taking back confirmed points is free before your first fight, solo run, or gate clear. After that, a full reset costs gold by rank (${goldByRank(rank => respecCost({ rank, chronicle: FOUGHT_CHRONICLE }, 20, 'player', R).cost)}), a tenth per point, capped at the full reset, paid from carried gold. You cannot respec during a fight or while dead.`;
+  return `${lead}${respec} The GM can edit any stat, and those edits lock in right away.`;
 }
 
 /** The level of the death line's worked example of a raising: one where the share of the shipped rule takes two levels. */

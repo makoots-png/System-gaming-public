@@ -142,7 +142,7 @@ export function register(app) {
         ul([`Level 1 → 2: ${fmt(xpToNext(1))} XP`, `Level 2 → 3: ${fmt(xpToNext(2))} XP`, `Level 9 → 10: ${fmt(xpToNext(9))} XP`, `Level 19 → 20: ${fmt(xpToNext(19))} XP`]),
         ul([`Each level above 1 gives <b>${R.pointsPerLevel}</b> ability points. ${dailyPointsLine(R)}`,
           'Losing a level removes its ability points. Points you already spent stay in your stats, so you do not gain new points until your level catches back up.',
-          esc(pointsLine()),
+          esc(pointsLine(R)),
           R.levelUpRestore ? 'Reaching a level for the first time fully restores HP and mana. Regaining a lost level does not.' : 'Leveling up does not restore HP and mana.']),
       ] },
       { id: 'ranks', title: 'Ranks and re-evaluation', body: [

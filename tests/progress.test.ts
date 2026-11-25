@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { STAT_MIN, addXp, allocated, allocationOf, atLevel, available, confirm, gainXp, grantPoints, hasPending, levelPoints, lower, newProgress, pendingTotal, progressStep, raise, raiseMany, setLevel, setPoints, setStat, startingStats } from '../src/core/hunter/progress.ts';
+import { STAT_MIN, addXp, allocated, allocationOf, atLevel, available, confirm, gainXp, grantPoints, hasPending, levelPoints, lower, newProgress, placed, progressStep, raise, raiseMany, setLevel, setPoints, setStat, spentTotal, takeAll, takenBack, undoableOn } from '../src/core/hunter/progress.ts';
 import { MAX_LEVEL } from '../src/core/hunter/level.ts';
 import type { Allocating, Pending, Progress, ProgressAllocation, ProgressEvent } from '../src/core/hunter/progress.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -31,7 +31,7 @@ const put = (p: Progress, n: number, rules: Rules = R): Progress | null => {
 
 describe('XP and levels', () => {
   test('a new hunter is level 1 with no XP and no points', () => {
-    expect(newProgress()).toEqual({ level: 1, xp: 0, peakLevel: 1, bonusPoints: 0, spent: 0, pending: {} });
+    expect(newProgress()).toEqual({ level: 1, xp: 0, peakLevel: 1, bonusPoints: 0, spent: {}, pending: {} });
     expect(available(newProgress(), R)).toBe(0);
   });
 
@@ -39,7 +39,7 @@ describe('XP and levels', () => {
     // 500 - 100 (1 to 2) = 400; 400 - 200 (2 to 3) = 200; 200 is short of the 300 that 3 to 4 costs.
     // Levels 2 and 3 hold 3 points each: 6.
     const r = gainXp(newProgress(), 500, R);
-    expect(r.progress).toEqual({ level: 3, xp: 200, peakLevel: 3, bonusPoints: 0, spent: 0, pending: {} });
+    expect(r.progress).toEqual({ level: 3, xp: 200, peakLevel: 3, bonusPoints: 0, spent: {}, pending: {} });
     expect(r).toMatchObject({ from: 1, to: 3, points: 6, refill: true });
     expect(available(r.progress, R)).toBe(6);
   });
@@ -57,7 +57,7 @@ describe('XP and levels', () => {
   test('-500 XP at level 3 with 200 XP goes back to level 1 with 0 XP and keeps the peak', () => {
     // 200 - 500 = -300; level 2 gives back its 200: -100; level 1 gives back its 100: 0.
     const r = gainXp(at({ level: 3, xp: 200, peakLevel: 3 }), -500, R);
-    expect(r.progress).toEqual({ level: 1, xp: 0, peakLevel: 3, bonusPoints: 0, spent: 0, pending: {} });
+    expect(r.progress).toEqual({ level: 1, xp: 0, peakLevel: 3, bonusPoints: 0, spent: {}, pending: {} });
     expect(r).toMatchObject({ from: 3, to: 1, points: -6, refill: false });
   });
 
@@ -78,7 +78,7 @@ describe('XP and levels', () => {
   });
 
   test('the input is never changed', () => {
-    const p = at({ level: 3, xp: 200, peakLevel: 3, bonusPoints: 2, spent: 4 }), before = copy(p);
+    const p = at({ level: 3, xp: 200, peakLevel: 3, bonusPoints: 2, spent: { str: 4 } }), before = copy(p);
     gainXp(p, 900, R); gainXp(p, -900, R); grantPoints(p, 3, R); setPoints(p, 9, R); setLevel(p, 7, 0, R);
     expect(p).toEqual(before);
   });
@@ -133,7 +133,7 @@ describe('ability points', () => {
 
   test('an overspent hunter gets points again once the levels held pass what was spent', () => {
     // Level 1, peak 3, 6 spent: level 3 holds 6 (0 free), level 4 holds 9 (3 free).
-    const lost = at({ level: 1, peakLevel: 3, spent: 6 });
+    const lost = at({ level: 1, peakLevel: 3, spent: { str: 6 } });
     const r = gainXp(lost, 600, R);
     expect(r.progress.level).toBe(4);
     expect(available(r.progress, R)).toBe(3);
@@ -146,15 +146,15 @@ describe('ability points', () => {
 
   test('bonus points add to the points of the levels held', () => {
     // Level 2 holds 3, plus 2 from quests, less 1 spent: 4.
-    expect(available(at({ level: 2, peakLevel: 2, bonusPoints: 2, spent: 1 }), R)).toBe(4);
+    expect(available(at({ level: 2, peakLevel: 2, bonusPoints: 2, spent: { str: 1 } }), R)).toBe(4);
   });
 
   test('spending takes points while there are enough, and is refused otherwise', () => {
     const p = at({ level: 2, peakLevel: 2 });
-    expect(put(p, 2)).toMatchObject({ spent: 2 });
+    expect(put(p, 2)).toMatchObject({ spent: { str: 2 } });
     expect(put(p, 4)).toBeNull();
     expect(put(p, 0)).toBeNull();
-    expect(put(at({ level: 1, peakLevel: 3, spent: 6 }), 1)).toBeNull();
+    expect(put(at({ level: 1, peakLevel: 3, spent: { str: 6 } }), 1)).toBeNull();
   });
 
   test('a reward of points adds them; a deduction takes at most what is free', () => {
@@ -164,18 +164,18 @@ describe('ability points', () => {
     const one = at({ bonusPoints: 1 });
     expect(grantPoints(one, -3, R)).toMatchObject({ bonusPoints: 0 });
     // Overspent by 6: a deduction finds nothing free and changes nothing.
-    const over = at({ level: 1, peakLevel: 3, spent: 6 });
+    const over = at({ level: 1, peakLevel: 3, spent: { str: 6 } });
     expect(grantPoints(over, -3, R)).toEqual(over);
   });
 
   test('a reward of points to an overspent hunter goes to the debt first', () => {
     // Level 1, 6 spent, +2: 0 + 2 - 6 = -4, shown as 0.
-    expect(available(grantPoints(at({ level: 1, peakLevel: 3, spent: 6 }), 2, R), R)).toBe(0);
+    expect(available(grantPoints(at({ level: 1, peakLevel: 3, spent: { str: 6 } }), 2, R), R)).toBe(0);
   });
 
   test('the GM sets the points shown to any number of 0 or more', () => {
-    expect(available(ok(setPoints(at({ level: 3, peakLevel: 3, spent: 2 }), 7, R)), R)).toBe(7);
-    expect(available(ok(setPoints(at({ level: 1, peakLevel: 3, spent: 6 }), 1, R)), R)).toBe(1);
+    expect(available(ok(setPoints(at({ level: 3, peakLevel: 3, spent: { str: 2 } }), 7, R)), R)).toBe(7);
+    expect(available(ok(setPoints(at({ level: 1, peakLevel: 3, spent: { str: 6 } }), 1, R)), R)).toBe(1);
     expect(available(ok(setPoints(at({ level: 3, peakLevel: 3 }), -4, R)), R)).toBe(0);
   });
 });
@@ -205,7 +205,7 @@ describe('the GM sets a level and XP', () => {
   test('a higher level brings the points of that level and moves the peak, as XP would', () => {
     // Level 5 holds 4 x 3 = 12 points.
     const r = setLevel(at({ level: 3, xp: 200, peakLevel: 3 }), 5, 50, R);
-    expect(r.progress).toEqual({ level: 5, xp: 50, peakLevel: 5, bonusPoints: 0, spent: 0, pending: {} });
+    expect(r.progress).toEqual({ level: 5, xp: 50, peakLevel: 5, bonusPoints: 0, spent: {}, pending: {} });
     expect(r).toMatchObject({ from: 3, to: 5, points: 6 });
   });
 
@@ -277,7 +277,7 @@ describe('every short sequence keeps the rules', () => {
         const want = r.progress.level > peak;
         peak = Math.max(peak, r.progress.level);
         p = r.progress;
-        const free = Math.max(0, 3 * (p.level - 1) - p.spent);
+        const free = Math.max(0, 3 * (p.level - 1) - spentTotal(p));
         const ok = p.xp >= 0 && p.xp < 100 * p.level && p.peakLevel === peak && r.refill === want && available(p, R) === free;
         if (!ok) { bad.push(`${walk.map(s => s.label).join(', ')}: ${JSON.stringify(p)} refill ${r.refill}`); break; }
       }
@@ -296,7 +296,7 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
     expect(allocated(h).str).toBe(11);
     expect(h.stats.str).toBe(10);
     expect(available(h, R)).toBe(5);
-    expect(h.spent).toBe(0);
+    expect(h.spent).toEqual({});
   });
 
   test('the owner\'s bug: + then − before Confirm gives the point back, on a player\'s phone and on the GM\'s', () => {
@@ -313,28 +313,37 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
     const done = confirm(h);
     expect(done.stats).toMatchObject({ str: 12, vit: 11 });
     expect(done.pending).toEqual({});
-    expect(done.spent).toBe(3);
+    expect(done.spent).toEqual({ str: 2, vit: 1 });
     expect(available(done, R)).toBe(available(h, R));
     expect(hasPending(h)).toBe(true);
     expect(hasPending(done)).toBe(false);
   });
 
-  test('after Confirm a player\'s − is refused on every stat; with no point free a player\'s + is refused', () => {
+  test('after Confirm a player\'s − stages taking back confirmed points down to the floor, and refuses at the floor; with no point free + cancels a staged take-back or refuses', () => {
     const done = confirm(ok(raise(fresh(), 'str', 'player', R)));
-    for (const k of STAT_KEYS) expect(lower(done, k, 'player')).toEqual({ ok: false, why: 'confirmed' });
-    const broke = ok(raiseMany(fresh(), { pow: 6 }, R));
+    const staged = ok(lower(done, 'str', 'player'));
+    expect(staged.pending).toEqual({ str: -1 });
+    expect(takenBack(staged)).toBe(1);
+    expect(available(staged, R), 'taken-back points are not free until Confirm').toBe(available(done, R));
+    expect(lower(staged, 'str', 'player')).toEqual({ ok: false, why: 'nothing-spent' });
+    for (const k of STAT_KEYS.filter(x => x !== 'str')) expect(lower(done, k, 'player')).toEqual({ ok: false, why: 'nothing-spent' });
+    const broke = confirm(ok(raiseMany(fresh(), { pow: 6 }, R)));
     expect(raise(broke, 'str', 'player', R)).toEqual({ ok: false, why: 'no-points' });
+    const back = ok(lower(broke, 'pow', 'player'));
+    expect(ok(raise(back, 'pow', 'player', R)), '+ cancels a staged take-back even at 0 available').toEqual(broke);
   });
 
-  test('the GM with no point free edits the stat itself: + and − change the stat and confirm it, and no point is made or lost', () => {
+  test('the GM with no point free edits the stat itself: + confirms it and − stages taking back spent points before editing', () => {
     const broke = ok(raiseMany(fresh(), { str: 2, pow: 4 }, R));
     const up = ok(raise(broke, 'str', 'gm', R));
     expect(allocated(up).str).toBe(13);
     expect(up.pending).toEqual({ pow: 4 });
     expect(up.stats.str).toBe(13);
+    expect(up.spent).toEqual({ str: 2 });
     expect(available(up, R)).toBe(0);
     const down = ok(lower(up, 'str', 'gm'));
     expect(allocated(down)).toEqual(allocated(broke));
+    expect(down.pending).toEqual({ pow: 4, str: -1 });
     expect(available(down, R)).toBe(0);
   });
 
@@ -345,7 +354,7 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
     expect(setStat(fresh(), 'str', -4).stats.str).toBe(STAT_MIN);
     const pendingOnStr = ok(raiseMany(fresh(), { str: 2 }, R));
     const edited = setStat(pendingOnStr, 'str', 15);
-    expect(edited).toMatchObject({ stats: { str: 15 }, pending: {}, spent: 2 });
+    expect(edited).toMatchObject({ stats: { str: 15 }, pending: {}, spent: { str: 2 } });
     expect(available(edited, R)).toBe(available(pendingOnStr, R));
   });
 
@@ -355,11 +364,24 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
     expect(raiseMany(fresh(), {}, R)).toEqual({ ok: false, why: 'no-points' });
   });
 
-  test('starting stats are set and confirmed, the points untouched', () => {
-    const h = startingStats(ok(raise(fresh(), 'str', 'player', R)), { vit: 18, str: 14 });
-    expect(h.stats).toMatchObject({ vit: 18, str: 14, agi: 10 });
-    expect(h.pending).toEqual({});
-    expect(available(h, R)).toBe(6);
+  test('takeAll stages taking back every undoable confirmed point, bounded by STAT_MIN, and refuses when none are spent', () => {
+    expect(takeAll(fresh())).toEqual({ ok: false, why: 'nothing-spent' });
+    const built = confirm(ok(raiseMany(fresh(), { str: 4, vit: 2 }, R)));
+    const staged = ok(takeAll(built));
+    expect(staged.pending).toEqual({ str: -4, vit: -2 });
+    expect(takenBack(staged)).toBe(6);
+    expect(available(staged, R)).toBe(0);
+    const done = confirm(staged);
+    expect(done.stats).toEqual(BASE);
+    expect(done.spent).toEqual({});
+    expect(available(done, R)).toBe(6);
+    // GM lowers str to 3 after 4 spent: undoableOn is 2, not 4, so takeAll never mints points.
+    const lowered = setStat(built, 'str', 3);
+    expect(undoableOn(lowered, 'str')).toBe(2);
+    const clamped = confirm(ok(takeAll(lowered)));
+    expect(clamped.stats.str).toBe(STAT_MIN);
+    expect(clamped.spent).toEqual({ str: 2 });
+    expect(available(clamped, R)).toBe(4);
   });
 
   test('the points held count what is pending: the GM\'s set points and a deduction see the pending points', () => {
@@ -368,7 +390,7 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
     expect(available(grantPoints(h, -10, R), R)).toBe(0);
   });
 
-  test('a random walk of +, −, Auto and Confirm on either phone keeps every rule of the allocation', () => {
+  test('a random walk of +, −, takeAll, Auto and Confirm on either phone keeps every rule of the allocation', () => {
     // Deterministic: a fixed seed, so a failure names a walk that can be replayed.
     let seed = 7;
     const rand = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
@@ -379,24 +401,23 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
       const held = levelPoints(R, h.level) + h.bonusPoints;
       const trail: string[] = [];
       for (let i = 0; i < 40; i++) {
-        const k = STAT_KEYS[rand(STAT_KEYS.length)]!, move = rand(4);
+        const k = STAT_KEYS[rand(STAT_KEYS.length)]!, move = rand(5);
         const before = h;
-        const next = move === 0 ? raise(h, k, role, R) : move === 1 ? lower(h, k, role) : move === 2 ? confirm(h) : raiseMany(h, { [k]: 1 + rand(2) }, R);
-        trail.push(`${['+', '-', 'confirm', 'auto'][move]}${move === 2 ? '' : ' ' + k}`);
+        const next = move === 0 ? raise(h, k, role, R) : move === 1 ? lower(h, k, role) : move === 2 ? confirm(h) : move === 3 ? raiseMany(h, { [k]: 1 + rand(2) }, R) : takeAll(h);
+        trail.push(`${['+', '-', 'confirm', 'auto', 'takeAll'][move]}${move === 2 || move === 4 ? '' : ' ' + k}`);
         if (!isRefused(next)) h = next;
         const fail = (why: string) => bad.push(`${role} walk ${walk} (${trail.join(', ')}): ${why}`);
-        if (available(h, R) + h.spent + pendingTotal(h) !== held) { fail('points held changed'); break; }
-        if (Object.values(h.pending).some(n => !Number.isInteger(n) || n! < 1)) { fail(`pending ${JSON.stringify(h.pending)}`); break; }
+        if (available(h, R) + spentTotal(h) + placed(h) !== held) { fail('points held changed'); break; }
+        if (STAT_KEYS.some(s => { const n = h.pending[s]; return n !== undefined && (!Number.isInteger(n) || n === 0 || n < -undoableOn(h, s)); })) { fail(`pending ${JSON.stringify(h.pending)}`); break; }
         if (role === 'player' && move !== 2 && STAT_KEYS.some(s => h.stats[s] !== before.stats[s])) { fail('a player changed a confirmed stat without Confirm'); break; }
         if (STAT_KEYS.some(s => allocated(h)[s] < Math.min(STAT_MIN, BASE[s]))) { fail('a stat under the lowest'); break; }
         const up = raise(h, k, role, R);
         if (!isRefused(up)) {
           const back = lower(up, k, role);
-          const exact = role === 'player' || available(h, R) >= 1;
+          const exact = role === 'player' || (h.pending[k] ?? 0) < 0 || available(h, R) >= 1;
           if (isRefused(back)) { fail('− refused right after +'); break; }
           if (exact ? JSON.stringify(back) !== JSON.stringify(h) : JSON.stringify(allocated(back)) !== JSON.stringify(allocated(h)) || available(back, R) !== available(h, R)) { fail('+ then − did not give back the hunter'); break; }
         }
-        if (role === 'player' && STAT_KEYS.some(s => !isRefused(lower(confirm(h), s, role)))) { fail('− after Confirm changed something'); break; }
       }
     }
     expect(bad).toEqual([]);
@@ -404,20 +425,20 @@ describe('the allocation: points put on stats, pending until Confirm', () => {
 
   test('the allocation functions never change their input', () => {
     const h = ok(raiseMany(fresh(), { str: 1 }, R)), before = copy(h);
-    raise(h, 'str', 'player', R); raise(h, 'agi', 'gm', R); lower(h, 'str', 'player'); lower(h, 'agi', 'gm'); confirm(h); setStat(h, 'str', 3); raiseMany(h, { vit: 2 }, R); startingStats(h, { str: 1 });
+    raise(h, 'str', 'player', R); raise(h, 'agi', 'gm', R); lower(h, 'str', 'player'); lower(h, 'agi', 'gm'); takeAll(h); confirm(h); setStat(h, 'str', 3); raiseMany(h, { vit: 2 }, R);
     expect(h).toEqual(before);
   });
 });
 
 describe('the GM\'s give and take back of XP, points and levels', () => {
   test('round trip: XP given then taken back gives back the level and the XP; the peak stays, so the level is not paid twice', () => {
-    const p = at({ level: 2, peakLevel: 2, xp: 50, bonusPoints: 1, spent: 2 });
+    const p = at({ level: 2, peakLevel: 2, xp: 50, bonusPoints: 1, spent: { str: 2 } });
     const back = addXp(addXp(p, 400, R), -400, R);
     expect({ ...back, peakLevel: p.peakLevel }).toEqual(p);
     expect(back.peakLevel).toBe(gainXp(p, 400, R).to);
   });
   test('round trip: points given then taken back is where it started, while the points free cover the deduction', () => {
-    const p = at({ level: 3, peakLevel: 3, bonusPoints: 1, spent: 2 });
+    const p = at({ level: 3, peakLevel: 3, bonusPoints: 1, spent: { str: 2 } });
     expect(grantPoints(grantPoints(p, 4, R), -4, R)).toEqual(p);
     expect(setPoints(ok(setPoints(p, 9, R)), available(p, R), R)).toEqual(p);
   });
@@ -433,8 +454,9 @@ describe('the allocation, a machine: settled, or allocating with points pending 
   // Under `R` a level 3 hunter with 0 XP holds 6 points (3 a level above 1), every stat 10. Settled: none pending, 6
   // free. Allocating: 2 pending on Strength, 4 free. "Broke" spends the rest, so no point is free.
   const settled = (): Allocating => ({ ...at({ level: 3, peakLevel: 3 }), stats: { ...BASE } });
+  const spentTwo = (): Allocating => confirm(ok(raiseMany(settled(), { str: 2 }, R)));
   const allocating = (pending: Pending = { str: 2 }): Allocating => ({ ...settled(), pending });
-  const broke = (h: Allocating): Allocating => ({ ...h, spent: 6 - pendingTotal(h) });
+  const broke = (h: Allocating): Allocating => ({ ...h, spent: { pow: 6 - placed(h) } });
   /** What a row expects: the state after and the numbers the sheet shows, or the refusal. */
   type After = { at: ProgressAllocation['at']; pending: Pending; free: number; spent?: number; stats?: Partial<Record<StatKey, number>>; level?: number };
   type Row = [name: string, from: () => Allocating, event: ProgressEvent, after: After | Refused];
@@ -447,14 +469,16 @@ describe('the allocation, a machine: settled, or allocating with points pending 
     ['settled × + (GM, a point free): the point goes on, pending', settled, raiseE('str', 'gm'), { at: 'allocating', pending: { str: 1 }, free: 5, spent: 0 }],
     ['settled × + (player, none free): refused', () => broke(settled()), raiseE('str', 'player'), no('no-points')],
     ['settled × + (GM, none free): the stat is edited one up, confirmed', () => broke(settled()), raiseE('str', 'gm'), { at: 'settled', pending: {}, free: 0, spent: 6, stats: { str: 11 } }],
-    ['settled × − (player): refused, nothing is pending', settled, lowerE('str', 'player'), no('confirmed')],
-    ['settled × − (GM): the stat is edited one down', settled, lowerE('str', 'gm'), { at: 'settled', pending: {}, free: 6, stats: { str: 9 } }],
+    ['settled × − (player, nothing spent): refused', settled, lowerE('str', 'player'), no('nothing-spent')],
+    ['settled × − (player, spent on stat): stages take-back', spentTwo, lowerE('str', 'player'), { at: 'allocating', pending: { str: -1 }, free: 4, spent: 2 }],
+    ['settled × − (GM, nothing spent): the stat is edited one down', settled, lowerE('str', 'gm'), { at: 'settled', pending: {}, free: 6, stats: { str: 9 } }],
     ['settled × − (GM, at the lowest): refused', () => ({ ...settled(), stats: { ...BASE, str: STAT_MIN } }), lowerE('str', 'gm'), no('at-min')],
+    ['settled × takeAll (nothing spent): refused', settled, { type: 'takeAll' }, no('nothing-spent')],
+    ['settled × takeAll (spent points): stages full take-back', spentTwo, { type: 'takeAll' }, { at: 'allocating', pending: { str: -2 }, free: 4, spent: 2 }],
     ['settled × Confirm: nothing to confirm, nothing changes', settled, { type: 'confirm' }, { at: 'settled', pending: {}, free: 6, spent: 0, stats: BASE }],
     ['settled × Auto: the plan goes on, pending', settled, { type: 'auto', plan: { str: 2, vit: 1 } }, { at: 'allocating', pending: { str: 2, vit: 1 }, free: 3 }],
     ['settled × Auto (more than free): refused', settled, { type: 'auto', plan: { str: 7 } }, no('no-points')],
     ['settled × the GM\'s stat edit: set and confirmed', settled, { type: 'setStat', stat: 'str', value: 15 }, { at: 'settled', pending: {}, free: 6, stats: { str: 15 } }],
-    ['settled × starting stats: set and confirmed', settled, { type: 'start', stats: { str: 14 } }, { at: 'settled', pending: {}, free: 6, stats: { str: 14 } }],
     ['settled × +300 XP: level 4, 3 more points free', settled, { type: 'xp', amount: 300 }, { at: 'settled', pending: {}, free: 9, level: 4 }],
     ['settled × the GM\'s level 1: the points of levels 2 and 3 go', settled, { type: 'level', level: 1, xp: 0 }, { at: 'settled', pending: {}, free: 0, level: 1 }],
     ['settled × −3 points: 3 of the 6 free taken', settled, { type: 'points', n: -3 }, { at: 'settled', pending: {}, free: 3 }],
@@ -467,14 +491,14 @@ describe('the allocation, a machine: settled, or allocating with points pending 
     ['allocating × + (GM, none free): the stat is edited, the pending points stay', () => broke(allocating()), raiseE('agi', 'gm'), { at: 'allocating', pending: { str: 2 }, free: 0, stats: { agi: 11 } }],
     ['allocating × − (player) on the pending stat: the point is free again', allocating, lowerE('str', 'player'), { at: 'allocating', pending: { str: 1 }, free: 5 }],
     ['allocating × − (player) on the last pending point: settled', () => allocating({ str: 1 }), lowerE('str', 'player'), { at: 'settled', pending: {}, free: 6 }],
-    ['allocating × − (player) on a stat with none pending: refused', allocating, lowerE('agi', 'player'), no('confirmed')],
-    ['allocating × − (GM) on a stat with none pending: the stat is edited one down', allocating, lowerE('agi', 'gm'), { at: 'allocating', pending: { str: 2 }, free: 4, stats: { agi: 9 } }],
+    ['allocating × − (player) on a stat with none pending or spent: refused', allocating, lowerE('agi', 'player'), no('nothing-spent')],
+    ['allocating × − (GM) on a stat with none pending or spent: the stat is edited one down', allocating, lowerE('agi', 'gm'), { at: 'allocating', pending: { str: 2 }, free: 4, stats: { agi: 9 } }],
+    ['allocating × takeAll (with spent points): replaces pending with full take-back', () => ok(raise(spentTwo(), 'agi', 'player', R)), { type: 'takeAll' }, { at: 'allocating', pending: { str: -2 }, free: 4, spent: 2 }],
     ['allocating × Confirm: into the stats and spent, settled', allocating, { type: 'confirm' }, { at: 'settled', pending: {}, free: 4, spent: 2, stats: { str: 12 } }],
     ['allocating × Auto: the plan goes on beside', allocating, { type: 'auto', plan: { agi: 1 } }, { at: 'allocating', pending: { str: 2, agi: 1 }, free: 3 }],
     ['allocating × Auto (more than free): refused', allocating, { type: 'auto', plan: { agi: 5 } }, no('no-points')],
     ['allocating × the GM\'s edit of the pending stat: confirmed, settled', allocating, { type: 'setStat', stat: 'str', value: 15 }, { at: 'settled', pending: {}, free: 4, spent: 2, stats: { str: 15 } }],
     ['allocating × the GM\'s edit of another stat: the pending points stay', allocating, { type: 'setStat', stat: 'agi', value: 15 }, { at: 'allocating', pending: { str: 2 }, free: 4, stats: { agi: 15 } }],
-    ['allocating × starting stats: the pending points are dropped, free again', allocating, { type: 'start', stats: { vit: 14 } }, { at: 'settled', pending: {}, free: 6, stats: { str: 10, vit: 14 } }],
     // SMX-rules-7.1: the points pending are handed back when the level drops; level 2 holds 3 points, level 1 none
     ['allocating × −200 XP (level 3 to 2): the pending points are handed back, settled with level 2\'s 3 free (SMX-rules-7.1)', allocating, { type: 'xp', amount: -200 }, { at: 'settled', pending: {}, free: 3, level: 2 }],
     ['allocating × the GM\'s level 1: the pending points are handed back, none free (SMX-rules-7.1)', allocating, { type: 'level', level: 1, xp: 0 }, { at: 'settled', pending: {}, free: 0, level: 1 }],
@@ -502,7 +526,7 @@ describe('the allocation, a machine: settled, or allocating with points pending 
       expect(allocationOf(next).at).toBe(after.at);
       expect(next.pending).toEqual(after.pending);
       expect(available(next, R)).toBe(after.free);
-      if (after.spent !== undefined) expect(next.spent).toBe(after.spent);
+      if (after.spent !== undefined) expect(spentTotal(next)).toBe(after.spent);
       if (after.stats) expect(next.stats).toMatchObject(after.stats);
       expect(next.level).toBe(after.level ?? h.level);
     });
@@ -510,7 +534,7 @@ describe('the allocation, a machine: settled, or allocating with points pending 
 
   test('the table has a row for every state against every event', () => {
     const seen = new Set(ROWS.map(([, from, e]) => `${allocationOf(from()).at} ${e.type}`));
-    const types: ProgressEvent['type'][] = ['raise', 'lower', 'confirm', 'auto', 'setStat', 'start', 'xp', 'level', 'points', 'setPoints', 'revived'];
+    const types: ProgressEvent['type'][] = ['raise', 'lower', 'takeAll', 'confirm', 'auto', 'setStat', 'xp', 'level', 'points', 'setPoints', 'revived'];
     expect(types.flatMap(t => (['settled', 'allocating'] as const).map(s => `${s} ${t}`)).filter(k => !seen.has(k))).toEqual([]);
   });
 
@@ -519,7 +543,7 @@ describe('the allocation, a machine: settled, or allocating with points pending 
     const h: Allocating = { ...at({ level: 2, peakLevel: 2 }), stats: { ...BASE }, pending: { str: 3 } };
     const dropped = atLevel(h, 1, 0, R);
     expect([dropped.pending, available(dropped, R), allocated(dropped).str]).toEqual([{}, 0, BASE.str]);
-    expect(lower(dropped, 'str', 'player')).toEqual({ ok: false, why: 'confirmed' });
+    expect(lower(dropped, 'str', 'player')).toEqual({ ok: false, why: 'nothing-spent' });
   });
 });
 

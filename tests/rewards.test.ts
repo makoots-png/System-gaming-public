@@ -15,7 +15,7 @@ import { questIn } from './models/quest-events.ts';
 import { den } from './models/gate-events.ts';
 import type { Granted } from '../src/core/hunter/grant.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import { available, levelPoints, pendingTotal } from '../src/core/hunter/progress.ts';
+import { available, levelPoints, placed, spentTotal } from '../src/core/hunter/progress.ts';
 import { freshSave } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -333,7 +333,7 @@ describe('a cost a reward takes away (a story\'s chapter, stories ruling 2)', ()
   /** The first hunter at `level` with `xp` inside it, `gold`, and `points` free to spend. */
   const holding = (o: { level: number; xp: number; gold: number; points: number }): Save => {
     const save = fresh(), h = save.hunters[0]!;
-    const bonusPoints = o.points - levelPoints(RULES, o.level) + h.spent + pendingTotal(h);
+    const bonusPoints = o.points - levelPoints(RULES, o.level) + spentTotal(h) + placed(h);
     return { ...save, hunters: [{ ...h, level: o.level, peakLevel: o.level, xp: o.xp, gold: o.gold, bonusPoints }] };
   };
   const cost = { ...newRewards(), xp: -50, gold: -40, points: -1 };

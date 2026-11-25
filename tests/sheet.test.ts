@@ -162,7 +162,7 @@ describe('checksOf', () => {
 describe('autoSpend', () => {
   // Free points are what the levels give plus bonus points less what was spent, so spending the level's points leaves
   // exactly the bonus points free.
-  const free = (n: number): Progress => ({ level: 1, xp: 0, peakLevel: 1, bonusPoints: n, spent: levelPoints(RULES, 1), pending: {} });
+  const free = (n: number): Progress => ({ level: 1, xp: 0, peakLevel: 1, bonusPoints: n, spent: { str: levelPoints(RULES, 1) }, pending: {} });
 
   test('places every free point by stat weights, favoring the higher-weighted stat on a tie', () => {
     const weights = { agi: 2, str: 1 };

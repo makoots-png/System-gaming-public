@@ -106,6 +106,9 @@ const TALLY_MAX = 1e9;
 export const newTally = (): Tally => Object.fromEntries(TALLY_KEYS.map(k => [k, 0])) as { [K in TallyKey]: number };
 export const newChronicle = (): Chronicle => ({ inbox: [], facts: [], tally: newTally(), feats: {} });
 
+/** Whether a hunter has ever finished a fight, solo run, or gate clear (ends the free respec window). */
+export const hasFought = (t: Tally): boolean => t.fights + t.soloWon + t.soloLost + t.retreats + t.gates > 0;
+
 /** The one writer of the inbox: `facts` appended, the oldest dropped past `INBOX_MAX`. */
 export const record = <H extends { readonly chronicle: Chronicle }>(h: H, ...facts: readonly Fact[]): H =>
   (facts.length ? { ...h, chronicle: { ...h.chronicle, inbox: [...h.chronicle.inbox, ...facts].slice(-INBOX_MAX) } } : h);

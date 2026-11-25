@@ -780,7 +780,7 @@ export function register(app: SyncHost): void {
     used: 'a use report', roll: 'a roll', questUpdate: 'quest progress', coinCall: 'a coin call', coinLand: 'a coin ruling',
     step: 'a step', cast: 'an ability use', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash request', stashAnswer: 'a stash reply',
-    word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward request',
+    word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward request', respec: 'a point respec report',
   };
   /** A hunter deleted on this phone leaves the GM's board: its sheet is replaced by a tombstone, through the outbox. */
   const forget = (hid: HunterId): void => { if (playerRoom()) postLetter({ kind: 'tomb', hid }, null); };

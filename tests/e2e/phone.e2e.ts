@@ -567,7 +567,7 @@ async function seedBusy(gm: Page, player: Page): Promise<void> {
         h.guild = guild;
         h.emblem = 'crown';
         h.stats = { str: 48, agi: 42, vit: 44, ins: 36, dis: 38, pre: 46, pow: 50, ctl: 40 };
-        h.spent = Object.values(h.stats as Record<string, number>).reduce((n, v) => n + Math.max(0, v - 10), 0);
+        h.spent = Object.fromEntries(Object.entries(h.stats as Record<string, number>).filter(([, v]) => v > 10).map(([k, v]) => [k, v - 10]));
         h.daily = { streak: 27, lastCompleteKey: today, lastCheckedKey: today };
         h.titles = [
           { id: `${prefix}t1`, name: 'Sovereign of the Endless Midnight Labyrinth and Seventh Gate', desc: 'Earned by clearing three red gates without a retreat.', bonus: { str: 4, pow: 4, armor: 10 } },

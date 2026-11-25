@@ -1,7 +1,7 @@
 // The charts of a hunter's progress and rank: the allocation of points (src/core/hunter/progress.ts `progressStep`,
 // `PROGRESS_TABLE`), walked from a new hunter with every event on one stat; and where the rank stands against the level
 // (src/core/hunter/record.ts `rankStep`, `RANK_TABLE`, `rankStanding`), walked over two levels and two ranks.
-import { allocationOf, available, progressStep } from '../../src/core/hunter/progress.ts';
+import { allocationOf, available, progressStep, undoableOn } from '../../src/core/hunter/progress.ts';
 import type { ProgressAllocation, ProgressEvent } from '../../src/core/hunter/progress.ts';
 import { rankStanding, rankStep } from '../../src/core/hunter/record.ts';
 import type { ProgressRank } from '../../src/core/hunter/record.ts';
@@ -20,6 +20,7 @@ function progressEvents(h: Hunter): ProgressEvent[] {
   return [
     { type: 'raise', stat: 'str', role: 'player' }, { type: 'raise', stat: 'str', role: 'gm' },
     { type: 'lower', stat: 'str', role: 'player' }, { type: 'lower', stat: 'str', role: 'gm' },
+    { type: 'takeAll' },
     { type: 'confirm' },
     { type: 'auto', plan: { str: available(h, R) } },
     { type: 'setStat', stat: 'str', value: h.stats.str + 1 },
@@ -41,12 +42,12 @@ function progressWords(h: Hunter): string {
 }
 function progressArrow(e: ProgressEvent, from: Hunter): string {
   switch (e.type) {
-    case 'raise': return available(from, R) > 0 ? '+ on a stat' : 'the GM\'s + with no point free (edits the stat)';
-    case 'lower': return (from.pending[e.stat] ?? 0) > 0 ? '− on a point pending' : 'the GM\'s − on a confirmed stat (edits it)';
+    case 'raise': return (from.pending[e.stat] ?? 0) < 0 ? '+ cancels a staged take-back' : available(from, R) > 0 ? '+ on a stat' : 'the GM\'s + with no point free (edits the stat)';
+    case 'lower': return (from.pending[e.stat] ?? 0) > -undoableOn(from, e.stat) ? '− takes a point back (staged)' : 'the GM\'s − at the floor (edits the stat)';
+    case 'takeAll': return 'Take all back (stages full reset)';
     case 'confirm': return 'Confirm';
     case 'auto': return 'Auto';
     case 'setStat': return 'the GM edits the stat';
-    case 'start': return 'starting stats';
     case 'xp': return 'XP given or taken';
     case 'level': return e.level < from.level && allocationOf(from).at === 'allocating' ? 'the level falls (XP, or the GM): the points pending handed back' : 'the level moves (XP, or the GM)';
     case 'points': return e.n >= 0 ? 'points given' : 'points taken (a quest\'s cost)';
@@ -57,21 +58,21 @@ function progressArrow(e: ProgressEvent, from: Hunter): string {
 
 export const progress = machine<Hunter, ProgressEvent>({
   name: 'A hunter\'s points and their allocation',
-  walked: 'Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Confirm, Auto with every point free, the GM\'s stat edit, a level up and down, a point given and taken, a raising from death), breadth first.',
+  walked: 'Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Take all back, Confirm, Auto with every point free, the GM\'s stat edit, a level up and down, a point given and taken, a raising from death), breadth first.',
   walk: () => bfs([newHunter(R)], progressMoves, fieldsKey, 4),
   kinds: PROGRESS_KINDS,
   kindsOf: h => [allocationOf(h).at],
   views: [{
     title: 'Points free, pending and confirmed',
-    note: 'A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player\'s − takes back only a pending point (with none, it is refused); the GM\'s − with nothing pending, and the GM\'s + with no point free, edit the stat. The GM\'s edit of a stat confirms what was pending on it. A level lost, by the GM, by XP or by a raising from death, hands the points pending back (SMX-rules-7.1, the owner, Nov 22), so a hunter never owes a point it had not confirmed; a deduction takes only the points free (unruled). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM\'s points shown, which act as the GM\'s edits.',
+    note: 'Pending points are signed per stat: positive counts are points placed and negative counts are confirmed points staged to take back (down to `-undoableOn`). Placing leaves points free while pending; taken-back points become free only on Confirm (paid through `respec.ts confirmPoints`). At the floor, a player\'s − is refused (`nothing-spent`) while the GM\'s − edits the stat. The GM\'s edit of a stat confirms what was pending on it. A level lost, by the GM, by XP or by a raising from death, hands the points pending back (SMX-rules-7.1, the owner, Nov 22), so a hunter never owes a point it had not confirmed; a deduction takes only the points free (unruled). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the GM\'s points shown, which acts as the GM\'s edit.',
     hides: '',
     state: progressWords,
     step: progressArrow,
   }],
   where: [
     ['The union', '`ProgressAllocation`, `ProgressEvent` and `ProgressRefusal` in `src/core/hunter/progress.ts`'],
-    ['What changes it', '`progressStep(h, event, R)` and its `PROGRESS_TABLE`, named by `raise`, `lower`, `confirm`, `raiseMany`, `setStat`, `startingStats`, `addXp`, `atLevel`, `grantPoints`, `setPoints` and `raisedLevels`'],
-    ['Who calls it', '`src/core/hunter/grant.ts` (rewards, `levelEdit`, a raising in `sheetEdit`), `src/views/hunter.js` (+, −, Confirm, Auto, the GM\'s edits) in `store.apply`'],
+    ['What changes it', '`progressStep(h, event, R)` and its `PROGRESS_TABLE`, named by `raise`, `lower`, `takeAll`, `confirm`, `raiseMany`, `setStat`, `addXp`, `atLevel`, `grantPoints`, `setPoints` and `raisedLevels`'],
+    ['Who calls it', '`src/core/hunter/grant.ts` (rewards, `levelEdit`, a raising in `sheetEdit`), `src/core/hunter/respec.ts` (`confirmPoints`), `src/views/hunter.js` (+, −, Take all back, Confirm, Auto, the GM\'s edits) in `store.apply`'],
     ['The test to copy', '`tests/progress.test.ts`, "the allocation"'],
     ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],

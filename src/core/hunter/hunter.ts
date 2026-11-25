@@ -27,9 +27,9 @@ import { isIconKey } from '../registry/icons.ts';
 import type { Perk, Rank, Rules } from '../rules.ts';
 import { REWARD_BOUNDS, newRewards, parseBand, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
-import { newProgress, pendingTotal } from './progress.ts';
+import { newProgress, undoableOn } from './progress.ts';
 import { levelOf } from './level.ts';
-import type { Pending, Progress } from './progress.ts';
+import type { Pending, Progress, StatPoints } from './progress.ts';
 import { newVitals, parseLife, parseUsed } from './vitals.ts';
 import { parseWorn } from './inventory.ts';
 import type { Vitals } from './vitals.ts';
@@ -225,25 +225,27 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold); h.crystal = int(h.crystal, 0, 0, CRYSTAL_MAX);
   h.guild = parseGuild(h.guild);
   h.peakLevel = Math.max(h.level, levelOf(h.peakLevel));
-  h.bonusPoints = int(h.bonusPoints, 0, -POINTS_MAX, POINTS_MAX); h.spent = int(h.spent, 0, 0, POINTS_MAX);
+  h.bonusPoints = int(h.bonusPoints, 0, -POINTS_MAX, POINTS_MAX);
   h.hpAdj = int(h.hpAdj, 0, -VITAL_MAX, VITAL_MAX); h.manaAdj = int(h.manaAdj, 0, -VITAL_MAX, VITAL_MAX);
-  // A missing stat takes the rules' base. A pending count is a whole number of 1 or more, else none is pending.
-  // One way: a hunter stored with `statsLocked` (the confirmed stats, beside stats that held the pending points too, and
-  // `spent` that counted them) keeps its unconfirmed points as pending, and they leave `spent` (progress.ts header).
-  const old = h as Hunter & { statsLocked?: unknown };
-  const locked: Rec | null = isObj(old.statsLocked) ? old.statsLocked : null;
-  delete old.statsLocked;
+  // A missing stat takes the rules' base. `spent` is a sparse per-stat map (non-object reads as `{}`).
+  // `pending` is signed per stat: positive placements up to POINTS_MAX, negative take-backs clamped to `-undoableOn`.
+  const raw: Rec = isObj(h.stats) ? h.stats : {}, read = statsBy(k => int(raw[k], R.fight.statBase, 0, POINTS_MAX));
+  h.stats = { ...raw, ...read }; // keys the types do not know are kept, as everywhere in the repair
+  const rawSpent: Rec = isObj(h.spent) ? h.spent : {};
+  const spent: StatPoints = {};
+  for (const k of STAT_KEYS) {
+    const n = int(rawSpent[k], 0, 0, POINTS_MAX);
+    if (n >= 1) spent[k] = n;
+  }
+  h.spent = spent;
   const stored: Rec = isObj(h.pending) ? h.pending : {};
   const pending: Pending = {};
-  const raw: Rec = isObj(h.stats) ? h.stats : {}, read = statsBy(k => int(raw[k], R.fight.statBase, 0, POINTS_MAX));
   for (const k of STAT_KEYS) {
-    const was = locked ? locked[k] : undefined;
-    const n = locked ? (isNum(was) ? read[k] - Math.max(0, Math.round(was)) : 0) : int(stored[k], 0, 0, POINTS_MAX);
-    if (n >= 1) pending[k] = n;
+    const floor = -undoableOn(h, k);
+    const n = int(stored[k], 0, floor, POINTS_MAX);
+    if (n !== 0) pending[k] = n;
   }
-  h.stats = { ...raw, ...(locked ? statsBy(k => read[k] - (pending[k] ?? 0)) : read) }; // keys the types do not know are kept, as everywhere in the repair
   h.pending = pending;
-  if (locked) h.spent = Math.max(0, h.spent - pendingTotal(h));
   h.conditions = conditions(R, h.conditions);
   h.titles = list(run, h.titles, 't', newTitle, t => {
     t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey;

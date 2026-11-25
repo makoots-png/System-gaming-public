@@ -1,17 +1,17 @@
 // progress.ts: a hunter's level, XP and ability points, and the stats those points are put into. Pure.
 // Points are not a counter: the points free are what the levels held give, plus bonus points, less what was spent,
-// less what is pending.
+// less what is pending to be placed.
 //
-// The allocation. `stats` are the confirmed stats; `pending` holds, per stat, the points put on it and not yet
-// confirmed. What the sheet is built from is the two added (`allocated`). A pending point is not spent: it leaves the
-// points free while it is pending, and `confirm` moves it into the stat and into `spent`. So the state cannot say a
-// stat is unconfirmed while the points disagree, and no stored pair of lists can grant a refund that was never paid
-// (the old `statsLocked` was a second full list a view compared, with three writers and a GM branch: ab79803).
-// The allocation is settled or allocating (`ProgressAllocation`), and every change to these fields is an event of
-// `progressStep` through `PROGRESS_TABLE`: `raise`, `lower`, `confirm`, `raiseMany` (Auto), the GM's `setStat`, XP,
-// the GM's level, points, the GM's points and a raising from death (`revived`) are its named events.
+// The allocation. `stats` are the confirmed stats; `spent` records, per stat, the confirmed ability points put on it;
+// `pending` is signed per stat: positive counts are points placed and not yet confirmed, negative counts are confirmed
+// points staged to take back (down to `-undoableOn(h, k)`). What the sheet is built from is `stats` plus `pending`
+// (`allocated`). Placed points leave the points free while pending; taken-back points become free only on Confirm
+// (`balance` subtracts only `placed`), so a hunter cannot stage a swap and fight with it without paying. Every change
+// to these fields is an event of `progressStep` through `PROGRESS_TABLE`: `raise`, `lower`, `takeAll`, `confirm`,
+// `raiseMany` (Auto), the GM's `setStat`, XP, the GM's level, points, the GM's points and a raising from death
+// (`revived`) are its named events.
 //
-// A view changes these fields only through a function here, in `store.apply` (src/core/save-step.ts).
+// A view changes these fields only through a function here (or respec.ts `confirmPoints`), in `store.apply` (src/core/save-step.ts).
 // The save repair reads a stored hunter's fields in src/core/save.ts.
 import { xpToNext } from '../rules.ts';
 import type { Rules } from '../rules.ts';
@@ -23,7 +23,9 @@ import type { StatKey } from '../stats.ts';
 import { pointsAt } from './derive.ts';
 import { MAX_LEVEL, MIN_LEVEL, levelOf } from './level.ts';
 
-/** Points put on a stat and not yet confirmed, by stat. A stat with none is absent; a present one is 1 or more. */
+/** Confirmed ability points spent on each stat. A stat with none is absent; a present one is 1 or more. */
+export type StatPoints = Partial<Record<StatKey, number>>;
+/** Signed unconfirmed point changes by stat: positive is placed (1 or more), negative is staged take-back (-1 or less). */
 export type Pending = Partial<Record<StatKey, number>>;
 
 /** What a hunter stores of its progress. The points free are not stored: `available` derives them. */
@@ -36,23 +38,29 @@ export type Progress = {
   peakLevel: number;
   /** Points from quests, dailies and the GM, less the points the GM took back. May be below 0. */
   bonusPoints: number;
-  /** Points put into stats and confirmed, 0 or more. */
-  spent: number;
-  /** Points put on stats and not yet confirmed (the header). */
+  /** Ability points confirmed on each stat, sparse positive map. */
+  spent: StatPoints;
+  /** Signed points staged on stats and not yet confirmed (the header). */
   pending: Pending;
 };
 
-export const newProgress = (): Progress => ({ level: MIN_LEVEL, xp: 0, peakLevel: MIN_LEVEL, bonusPoints: 0, spent: 0, pending: {} });
+export const newProgress = (): Progress => ({ level: MIN_LEVEL, xp: 0, peakLevel: MIN_LEVEL, bonusPoints: 0, spent: {}, pending: {} });
 
 /** Only the progress fields: a hunter passed in keeps its other fields out of the answer. */
 const fieldsOf = (p: Progress): Progress => ({ level: p.level, xp: p.xp, peakLevel: p.peakLevel, bonusPoints: p.bonusPoints, spent: p.spent, pending: p.pending });
-/** All the points pending. */
+/** Total confirmed ability points spent across all stats. */
+export const spentTotal = (p: Pick<Progress, 'spent'>): number => STAT_KEYS.reduce((n, k) => n + (p.spent[k] ?? 0), 0);
+/** Positive pending points placed on stats and not yet confirmed. */
+export const placed = (p: Pick<Progress, 'pending'>): number => STAT_KEYS.reduce((n, k) => n + Math.max(0, p.pending[k] ?? 0), 0);
+/** Confirmed points staged to take back (magnitude of negative pending entries). */
+export const takenBack = (p: Pick<Progress, 'pending'>): number => STAT_KEYS.reduce((n, k) => n + Math.max(0, -(p.pending[k] ?? 0)), 0);
+/** Signed sum of all pending point changes. */
 export const pendingTotal = (p: Pick<Progress, 'pending'>): number => STAT_KEYS.reduce((n, k) => n + (p.pending[k] ?? 0), 0);
 
 /** The points a level holds: the creation points of level 1, then `pointsPerLevel` for each level above 1 (derive.ts `pointsAt`). */
 export const levelPoints = (R: Rules, level: number): number => pointsAt(level, R);
-/** Points free, below 0 when the hunter has spent more than it holds (after losing levels). */
-const balance = (p: Progress, R: Rules): number => levelPoints(R, p.level) + p.bonusPoints - p.spent - pendingTotal(p);
+/** Points free, below 0 when the hunter has spent more than it holds (after losing levels). Subtracts only placed points, not taken-back ones. */
+const balance = (p: Progress, R: Rules): number => levelPoints(R, p.level) + p.bonusPoints - spentTotal(p) - placed(p);
 /** The points free to spend, as the sheet shows them: never below 0. */
 export const available = (p: Progress, R: Rules): number => Math.max(0, balance(p, R));
 
@@ -109,14 +117,25 @@ export type Allocating = Progress & { stats: Stats };
 /** The lowest a stat may be edited to by the GM. */
 export const STAT_MIN = 1;
 
-/** The stats the sheet is built from: the confirmed stats and the points pending on them. */
+/** Confirmed points on `k` that can still be taken back without dropping the stat below `STAT_MIN`. */
+export const undoableOn = (h: Pick<Allocating, 'stats' | 'spent'>, k: StatKey): number =>
+  Math.min(h.spent[k] ?? 0, Math.max(0, h.stats[k] - STAT_MIN));
+/** Total confirmed points across all stats that can be taken back. */
+export const undoableTotal = (h: Pick<Allocating, 'stats' | 'spent'>): number =>
+  STAT_KEYS.reduce((n, k) => n + undoableOn(h, k), 0);
+
+/** The stats the sheet is built from: the confirmed stats and the signed points pending on them. */
 export const allocated = (h: { stats: Stats; pending?: Pending }): Stats =>
   Object.fromEntries(STAT_KEYS.map(k => [k, h.stats[k] + (h.pending?.[k] ?? 0)])) as Stats;
-/** Whether any point waits for Confirm. */
-export const hasPending = (p: Pick<Progress, 'pending'>): boolean => pendingTotal(p) > 0;
+/** Whether any point change (placed or staged take-back) waits for Confirm. */
+export const hasPending = (p: Pick<Progress, 'pending'>): boolean => STAT_KEYS.some(k => (p.pending[k] ?? 0) !== 0);
 
 const withPending = (pending: Pending, k: StatKey, n: number): Pending => {
-  const { [k]: _gone, ...rest } = pending;
+  const next = { ...pending, [k]: n };
+  return Object.fromEntries(STAT_KEYS.flatMap(s => (next[s] ? [[s, next[s]]] : []))) as Pending;
+};
+const withSpent = (spent: StatPoints, k: StatKey, n: number): StatPoints => {
+  const { [k]: _gone, ...rest } = spent;
   return n > 0 ? { ...rest, [k]: n } : rest;
 };
 
@@ -125,12 +144,12 @@ const whole = (v: number | undefined): number => (Number.isFinite(v) ? Math.max(
 
 // ── the machine: every change to the progress and the allocation is an event through `PROGRESS_TABLE` ──
 //
-//   settled    --+ or Auto [a point free]----------------------------------------> allocating
-//   settled    --+ [none free] (GM: the stat edited), the GM's stat edit, starting stats, XP, level, points, Confirm
+//   settled    --+ or Auto [a point free], − [a spent point on stat], takeAll [any spent point]--> allocating
+//   settled    --+ [none free] (GM: the stat edited), − [at floor] (GM: edited), the GM's stat edit, XP, level, points, Confirm
 //                  (nothing to confirm)----------------------------------------------> settled
-//   settled    --− (player)----------------------------------------------------------> refused `confirmed`
-//   allocating --+ or Auto [a point free], − [more pending], the GM's edit of another stat--> allocating
-//   allocating --Confirm, starting stats, − [the last pending], the GM's edit of the last pending stat--> settled
+//   settled    --− (player, at floor), takeAll (none spent)-------------------------> refused `nothing-spent`
+//   allocating --+ [a point free or staged take-back], Auto, − [above floor], takeAll, the GM's edit of another stat--> allocating
+//   allocating --Confirm, − [last pending returns to 0], + [last take-back returns to 0], the GM's edit of the last pending stat--> settled
 //   allocating --XP or level, the level kept or gained--------> allocating, the pending kept
 //   allocating --XP, level or a raising that loses a level-----> settled, the pending handed back (SMX-rules-7.1)
 //   allocating --a deduction of points------------------------> only the points free taken (unruled: SMX-rules-7.1)
@@ -142,17 +161,17 @@ export const allocationOf = (p: Pick<Progress, 'pending'>): ProgressAllocation =
   (hasPending(p) ? { at: 'allocating', pending: p.pending } : { at: 'settled' });
 
 /**
- * What can happen to a hunter's progress: + and − on a stat (by role), Confirm, Auto's plan, the GM's edit of a stat,
- * a hunter's starting stats, XP given or taken, the GM's level and XP, points given or taken, the GM's points shown,
- * and a raising from death, which costs levels (`levelAfterRaising`; the life machine's `revive`, grant.ts `sheetEdit`).
+ * What can happen to a hunter's progress: + and − on a stat (by role), Take all back, Confirm, Auto's plan, the GM's
+ * edit of a stat, XP given or taken, the GM's level and XP, points given or taken, the GM's points shown, and a
+ * raising from death, which costs levels (`levelAfterRaising`; the life machine's `revive`, grant.ts `sheetEdit`).
  */
 export type ProgressEvent =
   | { readonly type: 'raise'; readonly stat: StatKey; readonly role: Role }
   | { readonly type: 'lower'; readonly stat: StatKey; readonly role: Role }
+  | { readonly type: 'takeAll' }
   | { readonly type: 'confirm' }
   | { readonly type: 'auto'; readonly plan: Pending }
   | { readonly type: 'setStat'; readonly stat: StatKey; readonly value: number }
-  | { readonly type: 'start'; readonly stats: Partial<Stats> }
   | { readonly type: 'xp'; readonly amount: number }
   | { readonly type: 'level'; readonly level: number; readonly xp: number }
   | { readonly type: 'points'; readonly n: number }
@@ -161,10 +180,16 @@ export type ProgressEvent =
 export type ProgressEventType = ProgressEvent['type'];
 type EventOf<T extends ProgressEventType> = Extract<ProgressEvent, { type: T }>;
 /** The events that read no rules, and the events that read only the progress (not the stats). */
-type NoRules = 'lower' | 'confirm' | 'setStat' | 'start';
+type NoRules = 'lower' | 'takeAll' | 'confirm' | 'setStat';
 type OfProgress = 'xp' | 'level' | 'points' | 'setPoints' | 'revived';
 /** Why each event that can be refused is. */
-type Refusals = { readonly raise: 'no-points'; readonly lower: 'confirmed' | 'at-min'; readonly auto: 'no-points'; readonly setPoints: 'not-a-number' };
+type Refusals = {
+  readonly raise: 'no-points';
+  readonly lower: 'nothing-spent' | 'at-min';
+  readonly takeAll: 'nothing-spent';
+  readonly auto: 'no-points';
+  readonly setPoints: 'not-a-number';
+};
 export type ProgressRefusal = Refusals[keyof Refusals];
 /** What an event of type `T` answers for `H`: `H`, or `H` or its refusal. */
 type Answer<H, T extends ProgressEventType> = T extends keyof Refusals ? H | Refused<Refusals[T]> : H;
@@ -172,19 +197,36 @@ type Cell<T extends ProgressEventType> = <H extends Allocating>(h: H, e: EventOf
 type ProgressRow = { readonly [T in ProgressEventType]: Cell<T> };
 
 const raiseCell: Cell<'raise'> = (h, e, R) => {
-  if (available(h, R) >= 1) return { ...h, pending: withPending(h.pending, e.stat, (h.pending[e.stat] ?? 0) + 1) };
+  const cur = h.pending[e.stat] ?? 0;
+  if (cur < 0) return { ...h, pending: withPending(h.pending, e.stat, cur + 1) };
+  if (available(h, R) >= 1) return { ...h, pending: withPending(h.pending, e.stat, cur + 1) };
   return e.role === 'gm' ? statCell(h, { type: 'setStat', stat: e.stat, value: allocated(h)[e.stat] + 1 }, undefined) : refuse('no-points');
 };
-/** − with nothing pending on the stat: a player is refused, the GM edits the stat one down, to `STAT_MIN`. */
-const lowerConfirmed: Cell<'lower'> = (h, e) => {
-  if (e.role !== 'gm') return refuse('confirmed');
-  return h.stats[e.stat] > STAT_MIN ? statCell(h, { type: 'setStat', stat: e.stat, value: h.stats[e.stat] - 1 }, undefined) : refuse('at-min');
-};
-const lowerPending: Cell<'lower'> = (h, e, R) => {
+/** − on a stat: steps `pending[k]` down to `-undoableOn(h, k)` for either role; at the floor a player is refused `nothing-spent` and the GM edits the stat down to `STAT_MIN`. */
+const lowerCell: Cell<'lower'> = (h, e) => {
   const n = h.pending[e.stat] ?? 0;
-  return n > 0 ? { ...h, pending: withPending(h.pending, e.stat, n - 1) } : lowerConfirmed(h, e, R);
+  const floor = -undoableOn(h, e.stat);
+  if (n > floor) return { ...h, pending: withPending(h.pending, e.stat, n - 1) };
+  if (e.role !== 'gm') return refuse('nothing-spent');
+  const cur = allocated(h)[e.stat];
+  return cur > STAT_MIN ? statCell(h, { type: 'setStat', stat: e.stat, value: cur - 1 }, undefined) : refuse('at-min');
 };
-const confirmCell: Cell<'confirm'> = h => ({ ...h, stats: allocated(h), spent: h.spent + pendingTotal(h), pending: {} });
+const takeAllCell: Cell<'takeAll'> = h => {
+  const next: Pending = {};
+  for (const k of STAT_KEYS) {
+    const u = undoableOn(h, k);
+    if (u > 0) next[k] = -u;
+  }
+  return STAT_KEYS.some(k => next[k] !== undefined) ? { ...h, pending: next } : refuse('nothing-spent');
+};
+const confirmCell: Cell<'confirm'> = h => {
+  let spent = h.spent;
+  for (const k of STAT_KEYS) {
+    const d = h.pending[k] ?? 0;
+    if (d !== 0) spent = withSpent(spent, k, (spent[k] ?? 0) + d);
+  }
+  return { ...h, stats: allocated(h), spent, pending: {} };
+};
 const autoCell: Cell<'auto'> = (h, e, R) => {
   const n = STAT_KEYS.reduce((a, k) => a + whole(e.plan[k]), 0);
   if (n < 1 || n > available(h, R)) return refuse('no-points');
@@ -194,9 +236,10 @@ const autoCell: Cell<'auto'> = (h, e, R) => {
 };
 const statCell: Cell<'setStat'> = (h, e) => {
   const to = Math.max(STAT_MIN, Math.trunc(e.value) || STAT_MIN);
-  return { ...h, stats: { ...h.stats, [e.stat]: to }, spent: h.spent + (h.pending[e.stat] ?? 0), pending: withPending(h.pending, e.stat, 0) };
+  const d = h.pending[e.stat] ?? 0;
+  const spent = d !== 0 ? withSpent(h.spent, e.stat, (h.spent[e.stat] ?? 0) + d) : h.spent;
+  return { ...h, stats: { ...h.stats, [e.stat]: to }, spent, pending: withPending(h.pending, e.stat, 0) };
 };
-const startCell: Cell<'start'> = (h, e) => ({ ...h, stats: { ...h.stats, ...e.stats }, pending: {} });
 const xpCell: Cell<'xp'> = (p, e, R) => ({ ...p, ...gainXp(p, e.amount, R).progress, pending: p.pending });
 const levelCell: Cell<'level'> = (p, e, R) => ({ ...p, ...setLevel(p, e.level, e.xp, R).progress, pending: p.pending });
 /** Points given; a deduction takes at most the points free. Not a finite number: nothing changes. */
@@ -207,7 +250,7 @@ const pointsCell: Cell<'points'> = (p, e, R) => {
 };
 const setPointsCell: Cell<'setPoints'> = (p, e, R) => {
   if (!Number.isFinite(e.n)) return refuse('not-a-number');
-  return { ...p, bonusPoints: Math.max(0, Math.trunc(e.n)) - levelPoints(R, p.level) + p.spent + pendingTotal(p) };
+  return { ...p, bonusPoints: Math.max(0, Math.trunc(e.n)) - levelPoints(R, p.level) + spentTotal(p) + placed(p) };
 };
 /**
  * A raising from death: the level falls to `levelAfterRaising`, as the GM's level edit would take it (`setLevel`), so
@@ -229,11 +272,11 @@ const handingBack = <T extends 'xp' | 'level' | 'revived'>(cell: Cell<T>): Cell<
 /** For each state of the allocation, what each event does. */
 export const PROGRESS_TABLE: { readonly [S in ProgressAllocation['at']]: ProgressRow } = {
   settled: {
-    raise: raiseCell, lower: lowerConfirmed, confirm: unchanged, auto: autoCell, setStat: statCell, start: startCell,
+    raise: raiseCell, lower: lowerCell, takeAll: takeAllCell, confirm: unchanged, auto: autoCell, setStat: statCell,
     xp: xpCell, level: levelCell, points: pointsCell, setPoints: setPointsCell, revived: revivedCell,
   },
   allocating: {
-    raise: raiseCell, lower: lowerPending, confirm: confirmCell, auto: autoCell, setStat: statCell, start: startCell,
+    raise: raiseCell, lower: lowerCell, takeAll: takeAllCell, confirm: confirmCell, auto: autoCell, setStat: statCell,
     // SMX-rules-7.1: the points pending are handed back when the level drops (the owner, Nov 22: "Yes")
     xp: handingBack(xpCell),
     level: handingBack(levelCell),
@@ -273,30 +316,30 @@ export const raisedLevels = <P extends Progress>(p: P, R: Rules): P => progressS
 export const plusPoint = <P extends Progress>(p: P, R: Rules): P | Refused<'not-a-number'> => setPoints(p, available(p, R) + 1, R);
 
 /**
- * + on a stat. With a point free, the point goes on the stat, pending. With none, a player is refused (`no-points`);
- * the GM edits the stat one up (`setStat`).
+ * + on a stat. Cancels one staged take-back if `pending[stat] < 0`, else places a free point pending. With none free,
+ * a player is refused (`no-points`); the GM edits the stat one up (`setStat`).
  */
 export const raise = <H extends Allocating>(h: H, stat: StatKey, role: Role, R: Rules): H | Refused<'no-points'> => progressStep(h, { type: 'raise', stat, role }, R);
 /**
- * − on a stat. A pending point comes off and is free again, on either phone. With none pending, a player is refused
- * (`confirmed`); the GM edits the stat one down (`setStat`), and is refused at `STAT_MIN` (`at-min`).
+ * − on a stat. Steps `pending[stat]` down to `-undoableOn(h, stat)` on either phone. At the floor a player is refused
+ * (`nothing-spent`); the GM edits the stat one down (`setStat`), and is refused at `STAT_MIN` (`at-min`).
  */
-export const lower = <H extends Allocating>(h: H, stat: StatKey, role: Role): H | Refused<'confirmed' | 'at-min'> => progressStep(h, { type: 'lower', stat, role });
-/** Confirm: every pending point goes into its stat and into `spent`. The points free do not change. */
+export const lower = <H extends Allocating>(h: H, stat: StatKey, role: Role): H | Refused<'nothing-spent' | 'at-min'> => progressStep(h, { type: 'lower', stat, role });
+/** Take all back: stages taking back every undoable confirmed point across all stats. Refused when none are spent. */
+export const takeAll = <H extends Allocating>(h: H): H | Refused<'nothing-spent'> => progressStep(h, { type: 'takeAll' });
+/** Confirm: every signed pending change goes into its stat and into `spent`. */
 export const confirm = <H extends Allocating>(h: H): H => progressStep(h, { type: 'confirm' });
 /** Auto: the points of `plan` go on their stats, pending, all or none. Refused when the plan holds more than is free. */
 export const raiseMany = <H extends Allocating>(h: H, plan: Pending, R: Rules): H | Refused<'no-points'> => progressStep(h, { type: 'auto', plan }, R);
 /**
- * The GM's edit of a stat to `value` as the sheet shows it. It confirms that stat: the points pending on it count as
- * spent, and no point returns. Below `STAT_MIN` it stops at `STAT_MIN`.
+ * The GM's edit of a stat to `value` as the sheet shows it. It confirms that stat: the points pending on it fold into
+ * `spent`, and no point returns from the GM's own change. Below `STAT_MIN` it stops at `STAT_MIN`.
  */
 export const setStat = <H extends Allocating>(h: H, stat: StatKey, value: number): H => progressStep(h, { type: 'setStat', stat, value });
-/** A hunter's starting stats (a pregen, a new hunter's build): set and confirmed, the points untouched, nothing pending. */
-export const startingStats = <H extends Allocating>(h: H, stats: Partial<Stats>): H => progressStep(h, { type: 'start', stats });
 
-/** What a player reads when + or − on a stat is refused (`raise`, `lower`). */
-export const ALLOCATION_WORDS: { readonly [W in 'no-points' | 'confirmed' | 'at-min']: string } = {
+/** What a player reads when +, −, or Take all back on a stat is refused (`raise`, `lower`, `takeAll`). */
+export const ALLOCATION_WORDS: { readonly [W in 'no-points' | 'nothing-spent' | 'at-min']: string } = {
   'no-points': 'No points to spend.',
-  confirmed: 'Confirmed points stay. Tap − to take back an unconfirmed point.',
+  'nothing-spent': 'No spent points to take back on this stat.',
   'at-min': `A stat goes no lower than ${STAT_MIN}.`,
 };

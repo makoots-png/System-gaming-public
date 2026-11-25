@@ -219,6 +219,7 @@ const SPEC = {
   usedUpShare: of(0.35, SHARE), // crystal-economy.md section 1 (the owner, Nov 23): rank-capped combat staples cost 35% of priceBase
   elixirPrices: real(1, 0, 100, 'price of a full-heal consumable in multiples of priceBase, from 0 to 100'), // crystal-economy.md section 1 (the owner, Nov 23): rank-capped Elixir of Life costs 1.0x priceBase
   revivePrices: whole(10, 1, 1000, 'price of a Resurrection Crystal in multiples of priceBase, from 1 to 1000'), // design 5: a full set of its rank's middle gear
+  respecPrices: real(0.5, 0, 10, 'price of a full point respec in multiples of priceBase, from 0 (free) to 10'), // point-respec: 0.5x priceBase for full reset, 1/10th per point, capped at full reset; 0 makes respec free
   // the owner (Nov 23, qd row 72): System revive debt pays off in about 5 gate clears for a party of 4 under gold table B
   // and the 50/25/25 split. Per-rank multiples of priceBase, calibrated to gold table B's 2.25x (E) to 3.33x (S) clear-gold
   // taper (E 500 to S 525,000 gold; mean 4.71 to 4.98 clears, median 5 at every rank). If you override RULES.loot away

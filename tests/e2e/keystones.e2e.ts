@@ -33,7 +33,7 @@ async function setupKeystoneHunter(page: Page, o: { rank: string; stats: Record<
       h.rank = cfg.rank;
       h.stats = { ...cfg.stats };
       h.pending = {};
-      h.spent = Object.values(cfg.stats as Record<string, number>).reduce((n, v) => n + Math.max(0, v - 10), 0);
+      h.spent = Object.fromEntries(Object.entries(cfg.stats as Record<string, number>).filter(([, v]) => v > 10).map(([k, v]) => [k, v - 10]));
       h.bonusPoints = cfg.bonusPoints ?? 0;
       if (cfg.job !== undefined) h.job = cfg.job;
       if (cfg.jobDone !== undefined) h.jobDone = cfg.jobDone;
@@ -169,7 +169,7 @@ test('a GM turns keystones on for a room, and a player sees shares, sheet reach,
         const h = d.hunters[0];
         h.rank = 'D';
         h.stats = { str: 50, agi: 35, vit: 10, ins: 10, dis: 45, pre: 10, pow: 10, ctl: 10 };
-        h.spent = 100;
+        h.spent = { str: 40, agi: 25, dis: 35 };
         h.pending = {};
       }, 'test-setup');
     });

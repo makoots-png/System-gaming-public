@@ -14,7 +14,8 @@ import { AUTO_ALLOC_WORDS, JOB_NAMES, focusWeights, isJobName, jobFocus, matchin
 import {
   KEYSTONE_WORDS, keystoneAwakenedLine, keystoneConfirmLine, keystoneNextLine, keystoneShareAria, keystoneShareText, keystoneTierLabel,
 } from '../core/rules-text.ts';
-import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, raiseMany, setPoints, setStat } from '../core/hunter/progress.ts';
+import { ALLOCATION_WORDS, allocated, available, hasPending, lower, plusPoint, raise, raiseMany, setPoints, setStat, takeAll, takenBack, undoableOn, undoableTotal } from '../core/hunter/progress.ts';
+import { RESPEC_WORDS, confirmCostLine, confirmPoints, respecCost, respecRefusalWords, respecSaid, respecToast } from '../core/hunter/respec.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
@@ -83,6 +84,9 @@ const CSS = `
 .stat .s-bonus:empty{display:none}
 .stat .s-share{display:block;font-size:calc(12px*var(--ts));color:var(--cyan-dim);margin-top:2px;line-height:1.2}
 .stat .s-share[hidden]{display:none}
+.ap-cost{margin:6px 0 0;font-size:calc(13px*var(--ts));color:var(--cyan-dim);overflow-wrap:anywhere}
+.ap-cost.bad{color:#ff8a96}
+.ap-cost[hidden]{display:none}
 .ap-ks{margin:6px 0 0;font-size:calc(13px*var(--ts));color:var(--gold);overflow-wrap:anywhere}
 .ap-ks[hidden]{display:none}
 .ks-list{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:8px}
@@ -428,12 +432,18 @@ export function register(app) {
   app.on('change', offerOnce);
   app.on('sync:docs', offerOnce);
   app.on('ready', offerOnce);
-  // the GM's phone: a player's report of the System's raise goes in the session log once per event id, with a toast
+  // the GM's phone: a player's report of the System's raise or point respec goes in the session log once per event id, with a toast
   app.on('sync:event', ({ event: ev }) => {
-    if (!app.isGM() || ev.type !== 'systemRaise') return;
-    const p = ev.payload, said = raisedSaid(p.name, p.raise, p.owes);
-    if (!app.api.sync.once(p.eid, logStep('system', null, said.title, said.text))) return;
-    ui.toast('! System', said.text, { kind: 'info' });
+    if (!app.isGM()) return;
+    if (ev.type === 'systemRaise') {
+      const p = ev.payload, said = raisedSaid(p.name, p.raise, p.owes);
+      if (!app.api.sync.once(p.eid, logStep('system', null, said.title, said.text))) return;
+      ui.toast('! System', said.text, { kind: 'info' });
+    } else if (ev.type === 'respec') {
+      const p = ev.payload, said = respecSaid(p.name, p.count, p.cost);
+      if (!app.api.sync.once(p.eid, logStep('system', null, said.title, said.text))) return;
+      ui.toast('! System', said.text, { kind: 'info' });
+    }
   });
 
   // ── reward bundles: a reward the GM saved under a name (library.rewards) ──
@@ -779,6 +789,43 @@ export function register(app) {
     ui.wrote('Points', store.apply('stat', atHunter(hid, both(x => raiseMany(x, plan, rules()), x => fitted(x, rules())))), ALLOCATION_WORDS);
   }
 
+  async function confirmAllocation(hid) {
+    const h = store.hunter(hid);
+    if (!h || !hasPending(h)) return;
+    const R = rules(), role = app.isGM() ? 'gm' : 'player', count = takenBack(h);
+    const plan = respecCost(h, count, role, R);
+    if (plan.cost > 0 && h.life.at !== 'dead' && h.gold >= plan.cost && heldIn(store.get(), { hid }) === null) {
+      const ksLine = R.fight.keystone.on ? keystoneConfirmLine(keystoneConfirmDiff(h, R.fight), R) : '';
+      const ok = await ui.warn({
+        tag: RESPEC_WORDS.warnTag,
+        title: RESPEC_WORDS.warnTitle,
+        body: RESPEC_WORDS.warnBody(plan.count, plan.cost, h.gold),
+        ...(ksLine ? { lines: [ksLine] } : {}),
+        actions: [
+          { label: RESPEC_WORDS.payAction(plan.cost), value: true, primary: true },
+          { label: 'Cancel', value: false, cancel: true },
+        ],
+      });
+      if (ok !== true) return;
+    }
+    /** @type {import('../core/hunter/respec.ts').ConfirmedPoints | null} */
+    let done = null;
+    const now = new Date().toISOString();
+    const room = role === 'player' ? app.api.sync.room() : null;
+    const stamp = room ? app.api.sync.stamp() : null;
+    const cur = store.hunter(hid);
+    const curPlan = cur ? respecCost(cur, takenBack(cur), role, rules()) : plan;
+    const curGold = cur ? cur.gold : h.gold;
+    const w = store.apply('confirm-alloc', s => {
+      const r = confirmPoints(s, hid, { role, held: heldIn(s, { hid }) !== null, at: now, room, stamp, R: rules() });
+      if (isRefused(r)) return r;
+      done = r;
+      return r.save;
+    });
+    if (!ui.wrote('Points', w, respecRefusalWords(curPlan.cost, curGold))) return;
+    if (done && done.count > 0) ui.toast('! Points', respecToast(done.returned, done.count, done.cost), { kind: 'good' });
+  }
+
   app.registerPanel({
     view: 'status', id: 'attributes', order: 12, title: 'Attributes', jump: 'Stats',
     mount(el) {
@@ -786,11 +833,13 @@ export function register(app) {
         <div class="ap-row">
           <span class="lbl">Ability points</span><span class="ap-num" data-ap>0</span>
           <button type="button" data-auto-alloc hidden>${esc(AUTO_ALLOC_WORDS.button)}</button>
+          <button type="button" data-take-all hidden>${esc(RESPEC_WORDS.takeAllAction)}</button>
           <button type="button" class="primary" data-confirm hidden>${esc(KEYSTONE_WORDS.confirmAction)}</button>
           <button type="button" data-grant hidden>+1 point</button>
         </div>
+        <p class="ap-cost" data-confirm-cost hidden aria-live="polite"></p>
         <p class="ap-ks" data-confirm-ks hidden aria-live="polite"></p>
-        <p class="dv-note">Tap a stat to roll a check. Tap &minus; to undo points until you confirm.</p>`;
+        <p class="dv-note">${esc(RESPEC_WORDS.note)}</p>`;
       el.addEventListener('click', e => {
         const b = e.target.closest('button'); if (!b) return;
         const d = b.dataset, h = store.active(), role = app.isGM() ? 'gm' : 'player';
@@ -807,7 +856,8 @@ export function register(app) {
           return;
         }
         if ('autoAlloc' in d) { void openAutoAllocate(h.id); return; }
-        if ('confirm' in d) { ui.wrote('! Hunter', store.apply('confirm-alloc', atHunter(h.id, confirm))); return; }
+        if ('takeAll' in d) { ui.wrote('Points', store.apply('stat', atHunter(h.id, both(takeAll, x => fitted(x, rules())))), ALLOCATION_WORDS); return; }
+        if ('confirm' in d) { void confirmAllocation(h.id); return; }
         if ('grant' in d && role === 'gm') ui.wrote('! Hunter', store.apply('grant', atHunter(h.id, x => plusPoint(x, rules()))));
       });
     },
@@ -837,9 +887,19 @@ export function register(app) {
       });
       el.querySelector('[data-ap]').textContent = points;
       el.querySelector('[data-auto-alloc]').hidden = points <= 0;
+      const canTakeAll = undoableTotal(h) > 0;
+      const takeBtn = el.querySelector('[data-take-all]');
+      takeBtn.hidden = !canTakeAll;
+      takeBtn.disabled = canTakeAll && STAT_KEYS.every(k => (h.pending[k] ?? 0) === -undoableOn(h, k));
       const pending = hasPending(h);
       el.querySelector('[data-confirm]').hidden = !pending;
       el.querySelector('[data-grant]').hidden = !gm;
+      const plan = respecCost(h, takenBack(h), role, R);
+      const costLine = confirmCostLine(plan, h.gold);
+      const costEl = el.querySelector('[data-confirm-cost]');
+      costEl.hidden = !costLine;
+      costEl.textContent = costLine;
+      costEl.classList.toggle('bad', plan.cost > 0 && h.gold < plan.cost);
       const ksLine = ksOn && pending ? keystoneConfirmLine(keystoneConfirmDiff(h, R.fight), R) : '';
       const ksEl = el.querySelector('[data-confirm-ks]');
       ksEl.hidden = !ksLine;

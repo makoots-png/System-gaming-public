@@ -808,3 +808,4 @@ ts	phase	decision	why	evidence	result
 2026-11-24T23:55Z	arch	gear-slots (V2 part 1) landed on lead-backlog; 10 slots, wear 6, two-handers; unit 6977, browser 618; merged tree unit 6983 (only the known sim-budget timing flake under box load)
 2026-11-25T00:09Z	ops	PR 119 (V2 part 1: 10 gear slots, wear 6, two-handed weapons) merged to main
 2026-11-25T00:36Z	arch	role-skills (A4) landed on lead-backlog; Taunt, Stun, Shield Wall 25% max HP, Marked Shot mark, Ruler's shove, Shadow Exchange swap; sim-budget flake fixed; unit 6998, merged tree 7009, browser 614 + reruns
+2026-11-25T00:47Z	arch	point-respec landed on lead-backlog; staged take-backs paid at Confirm, free until first fight; unit 6995, merged tree 7031, browser 614 + reruns

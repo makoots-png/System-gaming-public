@@ -168,6 +168,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, name: 'Mira', raise: 'debt', owes: 1000 },
     { eid: EID, by: KEY, name: 'Mira', raise: 'debt', owes: 1000 },
   ],
+  respec: [
+    { eid: EID, by: KEY, name: 'Mira', count: 4, cost: 20 },
+    { eid: EID, by: KEY, name: 'Mira', count: 4, cost: 20 },
+  ],
   rewardAsk: [
     { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { gold: 40 } },
     { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { xp: 0, points: 0, gold: 40, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } },

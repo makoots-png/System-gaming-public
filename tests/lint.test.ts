@@ -273,9 +273,9 @@ test('only src/core/hunter/progress.ts changes a hunter\'s stats or the points p
   const owners = ['src/core/hunter/progress.ts', 'src/core/hunter/hunter.ts'];
   const old: Line = { file: 'src/views/hunter.js', line: 0, text: 'if (paid) { Object.assign(h, paid); h.stats[k]++; } else if (gm) { h.stats[k]++; h.statsLocked[k] = h.stats[k]; }' };
   expect(writes.test(old.text), 'the rule sees the old stat write').toBe(true);
-  expect(writes.test('const h = startingStats(x, p.stats); h.pending[k] -= 1;'), 'and a pending write').toBe(true);
+  expect(writes.test('const h = takeAll(x); h.pending[k] -= 1;'), 'and a pending write').toBe(true);
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
-  expect(report(hits), 'change stats and pending points only through src/core/hunter/progress.ts (raise, lower, confirm, raiseMany, setStat, startingStats), in store.apply.').toEqual([]);
+  expect(report(hits), 'change stats and pending points only through src/core/hunter/progress.ts (raise, lower, takeAll, confirm, raiseMany, setStat), in store.apply.').toEqual([]);
 });
 
 test('only src/core/hunter/vitals.ts changes a hunter\'s HP, mana, fatigue, life or collapse, and nothing names the chips drawn from them', async () => {
@@ -1421,7 +1421,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/dice.js': { count: 4, why: 'the last typed rolls, the quick check\'s DC (src/core/dc-pick.ts, moved only by dcPickStep), the view\'s handle, whether the tray is open' },
     'src/views/ui.js': { count: 5, why: 'the audio context, a style element and the toast box (locals of two functions), the windows (src/core/windows.ts, moved only by `move`), the count of windows made, for their ids' },
     'src/views/reward-editor.js': { count: 4, why: 'the reward editor\'s rows, the numbers typed and the line it says, and a draw\'s locals (body, head)' },
-    'src/views/hunter.js': { count: 4, why: 'the hunter and level the sheet drew last, the title being edited and the hunter it was for, the hunter the System raise window last opened for, and a function\'s local (grantWrite\'s out)' },
+    'src/views/hunter.js': { count: 5, why: 'the hunter and level the sheet drew last, the title being edited and the hunter it was for, the hunter the System raise window last opened for, and locals of two functions (grantWrite\'s out, confirmAllocation\'s done)' },
     'src/views/io.js': { count: 3, why: 'the Data view\'s redraw (refresh), set by its mount, and locals of two functions (report, raw)' },
     'src/views/bestiary.js': { count: 2, why: 'the enemy maker\'s rank, archetype and kind on screen, and a draw\'s locals (pool, unknown)' },
     'src/views/forge.js': { count: 2, why: 'the app, set by register for the module\'s helpers; the status maker\'s colour and whether it lasts until removed' },
