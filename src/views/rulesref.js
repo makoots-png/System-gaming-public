@@ -71,7 +71,7 @@ export function cheatSheet() {
     return `<tr><th scope="row">${esc(r)}</th>${t.dc.map(d => `<td>${esc(d)}</td>`).join('')}<td>${esc(fmtN(t.xp))}</td><td>${esc(sg(R.rankBonus[r]))}</td></tr>`; }).join('');
   const loot = RANKS.filter(r => R.loot[r]).map(r => { const w = R.loot[r].weights, tot = Object.values(w).reduce((a, b) => a + b, 0) || 1;
     return `<li><b>${esc(r)}</b> ${Object.entries(w).map(([k, v]) => `${esc(k[0].toUpperCase() + k.slice(1))} ${Math.round(100 * v / tot)}%`).join(' · ')}</li>`; }).join('');
-  const cond = Object.entries(R.conditions).map(([k, c]) => { const fx = describeStatus(c, null, R).join('; ');
+  const cond = Object.entries(R.conditions).map(([k, c]) => { const fx = describeStatus(c, null, R, k).join('; ');
     return `<li><b>${esc((c && c.label) || k)}</b> ${esc((c && c.desc) || '')}${fx ? ` <span class="cs-fx">${esc(fx)}</span>` : ''}</li>`; }).join('');
   return `<div class="cs">
     <table class="cs-t"><caption>DC, monster XP and rank bonus by rank</caption><thead><tr><th scope="col">Rank</th><th scope="col">Easy</th><th scope="col">Standard</th><th scope="col">Hard</th><th scope="col">XP</th><th scope="col">Bonus</th></tr></thead><tbody>${rows}</tbody></table>
@@ -174,7 +174,7 @@ export function register(app) {
           esc(deathLine(R))]),
       ] },
       { id: 'conditions', title: 'Statuses', body: [
-        table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R).join('; ') || '-')])),
+        table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R, k).join('; ') || '-')])),
         p('Numbers that scale by rank use the rank of whoever applied the status.'),
         '<h3>Hiding</h3>' + ul(stealthLines(R).map(esc)),
       ] },

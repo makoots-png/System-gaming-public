@@ -19,7 +19,7 @@ import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
 import { stacked } from './op-amount.ts';
-import { grievousCutOf, hasTieredGrievousCut, withGrievousCut } from './grievous.ts';
+import { GRIEVOUS_LEGACY_MAX, GRIEVOUS_MAX, grievousCutOf, hasTieredGrievousCut, isGrievousKey, withGrievousCut } from './grievous.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { freeStatusKey } from './effect-ops.ts';
 import type { Body, CombatantKind, LandOp, StatusDef, StatusKey } from './effect-ops.ts';
@@ -615,7 +615,8 @@ function grievousVariant(s: DocStatus, defs: Readonly<Record<string, StatusDef>>
   if (!base || hasTieredGrievousCut(base)) return null;
   const cut = grievousCutOf(s.def);
   if (cut === null || !Number.isInteger(cut)) return null;
-  return canonicalJson(withGrievousCut(base, cut)) === canonicalJson(s.def) ? cut : null;
+  const max = isGrievousKey(s.key) ? GRIEVOUS_MAX : GRIEVOUS_LEGACY_MAX;
+  return canonicalJson(withGrievousCut(base, cut, max)) === canonicalJson(s.def) ? cut : null;
 }
 function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<string, unknown> {
   const known = knownDef(s, defs), cut = known ? null : grievousVariant(s, defs);

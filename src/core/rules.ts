@@ -685,7 +685,7 @@ const SPEC = {
       hits: whole(16, 1, 100, 'maximum targets counted by hits formulas, from 1 to 100'), // `hits` reads at most this many bodies: every zone's worth of a crowd
       // Wave 2 (kits design 8.1 to 8.7, kits-paper `KIT2`, table 8.1). Each bounds one block; the reason is beside it.
       shareCap: real(0.5, 0, 0.9, 'maximum damage-dealt or damage-taken modifier distance from 1, up to 0.9'), // a use's dealt times taken share stays in 0.5 to 1.5: Brutalize's -50% healing is the sheet's largest share
-      // Standard-action worth per round of a 100% healing reduction (scaled by cut up to shareCap, worth.ts `statusWorth`).
+      // Standard-action worth per round of a 100% healing reduction (scaled by cut up to GRIEVOUS_MAX for Grievous Wounds and shareCap for other statuses, worth.ts `statusWorth`).
       // Measured at 1.04x to 1.11x vs regenerating bosses at -40% and 0% vs non-healing foes: 0.04 prices -40% at 0.016 SA/round.
       antiHealWorth: real(0.04, 0, 1, 'standard-action worth per round of a 100% healing reduction, from 0 to 1'),
       // The most shield a body holds from its own damage dealt (shieldDrain), a share of its max HP: a fifth, so a hard

@@ -165,7 +165,7 @@ export function parsePack(v: unknown): PackRead {
   for (const [key, raw] of Object.entries(isObj(lib.statuses) ? lib.statuses : {})) {
     const c = counts.statuses;
     if (c.kept >= PACK_CAP.statuses) { c.over++; continue; }
-    const def = isStatusKey(key) && !isStateChip(key) ? parseStatusDef(raw, RULES) : null;
+    const def = isStatusKey(key) && !isStateChip(key) ? parseStatusDef(raw, RULES, key) : null;
     if (def) { pack.statuses[key] = def; c.kept++; } else c.unreadable++;
   }
   pack.items = readList(lib.items, PACK_CAP.items, parseItem, counts.items);

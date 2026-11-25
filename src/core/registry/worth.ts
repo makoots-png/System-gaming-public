@@ -26,6 +26,7 @@ import { atTier, isStacking } from '../combat/op-amount.ts';
 import { interval, paceCost } from '../combat/timeline.ts';
 import { damageTypeOf, defenceOf, isDamage } from '../combat/damage-type.ts';
 import { defenceLeft, NO_PEN, throughDefence } from '../combat/land.ts';
+import { GRIEVOUS_MAX, isGrievousKey } from '../combat/grievous.ts';
 import type { End, LandOp, Op, OpKind, OpRules, StatusDef } from '../combat/effect-ops.ts';
 import type { Trigger } from '../combat/triggers.ts';
 import type { Ability, AbilityKind, DamageType, Delivery, Price } from '../combat/ability-types.ts';
@@ -292,7 +293,7 @@ function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   if (o.op === 'delay') return atTier(o.ticks, at.tier) / actionTicks(R);
   if (o.op === 'extra') return 1;
   if (o.op === 'stagger') return o.share * breakWorth(R);
-  if (o.op === 'applyStatus') return statusWorth(o.def, o.stacks ?? 1, o.duration === null ? null : atTier(o.duration, at.tier) / R.fight.round, at, R);
+  if (o.op === 'applyStatus') return statusWorth(o.def, o.stacks ?? 1, o.duration === null ? null : atTier(o.duration, at.tier) / R.fight.round, at, R, o.key);
   if (o.op !== 'note') at.miss.add(o.op);
   return 0;
 }
@@ -319,7 +320,7 @@ const triggerWorth = (t: Trigger, at: At, R: WorthRules): number =>
  * its triggers their ops times their event's rate a round, for the rounds. A standing op (a stat, a hold, an edge) has
  * no rule in design 3: it is named in `miss`.
  */
-export function statusWorth(def: StatusDef, k: number, rounds: number | null, at: At, R: WorthRules): number {
+export function statusWorth(def: StatusDef, k: number, rounds: number | null, at: At, R: WorthRules, key: string | null = null): number {
   const held = rounds ?? R.fight.kit.referenceRounds, n = isStacking(def) ? Math.min(k, def.stack.cap) : 1;
   let w = 0, antiHealPct = 0;
   for (const o of def.ops) {
@@ -328,7 +329,8 @@ export function statusWorth(def: StatusDef, k: number, rounds: number | null, at
     else if (o.op === 'share' && o.on === 'healed' && atTier(o.pct, at.tier) < 0) antiHealPct = Math.max(antiHealPct, -atTier(o.pct, at.tier) * n);
     else if (o.op !== 'note') at.miss.add(o.op);
   }
-  if (antiHealPct > 0) w += Math.min(R.fight.kit.shareCap, antiHealPct / 100) * R.fight.kit.antiHealWorth * held;
+  const antiHealCap = isGrievousKey(key) ? GRIEVOUS_MAX / 100 : R.fight.kit.shareCap;
+  if (antiHealPct > 0) w += Math.min(antiHealCap, antiHealPct / 100) * R.fight.kit.antiHealWorth * held;
   const t = isStacking(def) ? def.stack.threshold : null;
   if (t && t.at.kind === 'count') w += t.ops.reduce((s, o) => s + landWorth(o, at, R), 0) / t.at.n * n * firings(t.at.n, n, at.land, at.uses, lapseAfter(rounds, at.uses / R.fight.kit.referenceRounds));
   else if (t) at.miss.add('count');
@@ -420,9 +422,9 @@ export function wornWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C', o: { 
  * plain def once), held the reference fight, against the budget of that standard action. Its end has no delay until an
  * ability sets one, so it is named as not weighed here.
  */
-export function defWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C'): Worth {
+export function defWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C', key: string | null = null): Worth {
   const at = atOf('curse', 'arcane', rank, { land: 1, time: R.fight.cost.standard, on: 'build' }, R);
-  const worth = statusWorth(def, isStacking(def) ? def.stack.cap : 1, null, at, R);
+  const worth = statusWorth(def, isStacking(def) ? def.stack.cap : 1, null, at, R, key);
   return judged(worth, 1, at, R);
 }
 

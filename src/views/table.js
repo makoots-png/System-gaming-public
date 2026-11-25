@@ -160,7 +160,7 @@ export function register(app) {
       const left = s.left !== undefined ? s.left : s.rounds, n = s.stacks;
       const ends = !!(def && def.end), when = left != null ? ` · ${ends ? 'in ' : ''}${left} round${left === 1 ? '' : 's'}` : '';
       return `<span class="chip${n ? ' stk' : ''}" data-chip="${esc(key)}"${def && def.color ? ` style="border-color:${esc(def.color)}"` : ''}><button type="button" class="c-info"${D().control(list, key)}><span class="c-ic">${icon(statusIcon(key, def || { ops: [] }))}</span>${esc(name)}${n ? ` <b class="c-n" data-stacks="${n}" data-sk="${esc(`${rowKey}:${key}`)}">${n}</b>` : ''}${esc(when)}</button></span>`
-        + D().panel(list, key, () => ({ kind: 'status', label: name, def, tier: s.source ? s.source.tier : s.tier ?? null, ...(n ? { stacks: n } : {}), left: left ?? null }));
+        + D().panel(list, key, () => ({ kind: 'status', key, label: name, def, tier: s.source ? s.source.tier : s.tier ?? null, ...(n ? { stacks: n } : {}), left: left ?? null }));
     }).join('')}</div>`;
   }
   /** Each count on a chip counts to its new value from the one shown last (motion.ts `numberTo`, by the row and the status). @param {ParentNode} root */

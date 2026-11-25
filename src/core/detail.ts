@@ -33,7 +33,7 @@ import type { SheetHunter } from './hunter/sheet.ts';
  * only (the doc carries its tone).
  */
 export type Thing =
-  | { readonly kind: 'status'; readonly label: string; readonly def: StatusDef | null; readonly tier: number | null; readonly stacks?: number; readonly left?: number | null }
+  | { readonly kind: 'status'; readonly key?: string | null; readonly label: string; readonly def: StatusDef | null; readonly tier: number | null; readonly stacks?: number; readonly left?: number | null }
   | { readonly kind: 'ability'; readonly ability: Ability }
   /** An item, and the hunter who holds it when it is in a bag: its amounts then say what they come to on that hunter. */
   | { readonly kind: 'item'; readonly item: ItemEffects & { readonly name: string; readonly desc?: string; readonly type?: string; readonly dice?: string; readonly attack?: Attack; readonly finesse?: true; readonly twoHanded?: true; readonly effects?: readonly Op[]; readonly worn?: StatusDef }; readonly hunter?: SheetHunter }
@@ -56,8 +56,8 @@ const signed = (n: number): string => (n < 0 ? `−${shown(-n)}` : `+${shown(n)}
  * What a status does to its bearer while it holds, the line a GM's card shows under its chips without a tap: its ops at its
  * source's tier (each per stack on a stacking one). Its cap, threshold, triggers and end are its detail's.
  */
-export function statusGlance(def: StatusDef, tier: number | null, R: Rules): string[] {
-  const lines = opLines(def.ops, tier, R);
+export function statusGlance(def: StatusDef, tier: number | null, R: Rules, statusKey: string | null = null): string[] {
+  const lines = opLines(def.ops, tier, R, null, statusKey);
   return isStacking(def) ? lines.map(l => `Each stack: ${l}`) : lines;
 }
 
@@ -87,7 +87,7 @@ export function detailOf(t: Thing, R: Rules): Detail {
       const d = t.def, now: string[] = [];
       if (t.stacks !== undefined) now.push(`${t.stacks}${d && isStacking(d) ? ` of ${d.stack.cap}` : ''} stack${t.stacks === 1 ? '' : 's'}.`);
       if (t.left !== undefined && t.left !== null) now.push(d?.end ? `Ends in ${rounds(t.left)}.` : `${rounds(t.left)} left.`);
-      return { title: d?.label ?? t.label, about: d?.desc ?? '', lines: [...now, ...(d ? describeStatus(d, t.tier, R) : [])] };
+      return { title: d?.label ?? t.label, about: d?.desc ?? '', lines: [...now, ...(d ? describeStatus(d, t.tier, R, t.key ?? null) : [])] };
     }
     case 'ability': {
       const a = t.ability, cost = [a.cost.fatigue ? `${a.cost.fatigue} fatigue` : '', a.cost.mana ? `${a.cost.mana} mana` : ''].filter(Boolean);

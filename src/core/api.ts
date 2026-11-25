@@ -197,11 +197,11 @@ export type EffectsApi = {
    */
   applyOps(hid: string, ops: readonly Op[], o: { label: string; source: Source }): { ok: true; lines: string[] } | Refused;
   /** A status def from outside data, as `parseStatusDef` reads it with the current rules, or null. */
-  sanitizeDef(def: unknown): StatusDef | null;
+  sanitizeDef(def: unknown, key?: string | null): StatusDef | null;
   /** The def of a status: the one it carries, else the rules' for its key, else a bare label. */
   statusDef(x: string | { key: string; def?: StatusDef }): StatusDef;
   /** What a status does, one line per op: at `tier` (its source's), or every rank's value with null or no tier. */
-  describe(def: StatusDef, tier?: number | null): string[];
+  describe(def: StatusDef, tier?: number | null, key?: string | null): string[];
   /** The lines an item's card shows for its ops (all of them, or `ops`), each at the item's rarity's tier. */
   describeItem(item: Pick<Item, 'rar' | 'revive'> & { effects?: readonly Op[] }, ops?: readonly Op[]): string[];
   /** A free key for a new custom status named `label`: none of the rules' statuses and none in `taken`. */
@@ -435,7 +435,7 @@ export type MakerApi = {
    * The effects editor in `box`: one row per op given, over the whole op vocabulary, at most 8. `kind` 'item' labels "By
    * rank" with the rarities; `kind` picks the quick chips. `newStatus` opens the status maker for an Apply status row's "New status…".
    */
-  effects(box: HTMLElement, o: { ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; newStatus?: () => Promise<{ key: string; def?: StatusDef } | null> }): MakerEffects;
+  effects(box: HTMLElement, o: { ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; statusKey?: string | null; newStatus?: () => Promise<{ key: string; def?: StatusDef } | null> }): MakerEffects;
   /**
    * The ability form in `box`: the formula field, then cost, reach, how it is avoided and the channel, each a group
    * collapsed until opened, every field starting at the kind's (`abilityOf`), or at `ability`'s when it is of `kind`.

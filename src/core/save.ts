@@ -375,7 +375,7 @@ function statusLibrary(value: Rec): Record<string, StatusDef> {
   for (const [key, raw] of Object.entries(value)) {
     if (Object.keys(out).length >= LIMITS.libraryStatuses) break;
     if (!STATUS_KEY_RE.test(key) || isStateChip(key)) continue;
-    const def = parseStatusDef(raw, BASE_RULES);
+    const def = parseStatusDef(raw, BASE_RULES, key);
     if (def) out[key] = def;
   }
   return out;

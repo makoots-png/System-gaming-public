@@ -36,8 +36,8 @@ export function register(app) {
 
   app.api.effects = {
     applyOps, statusDef,
-    sanitizeDef: def => parseStatusDef(def, rules()),
-    describe: (def, tier = null) => describeStatus(def, tier, rules()),
+    sanitizeDef: (def, key = undefined) => parseStatusDef(def, rules(), key ?? undefined),
+    describe: (def, tier = null, key = null) => describeStatus(def, tier, rules(), key),
     describeItem: (item, ops) => describeItem(rules(), item, ops),
     slug: (label, taken) => {
       const has = k => (taken instanceof Set ? taken.has(k) : !!taken && Object.hasOwn(taken, k)) || Object.hasOwn(rules().conditions, k);

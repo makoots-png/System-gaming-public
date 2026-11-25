@@ -28,7 +28,7 @@ import { abilityOf, averages, checkGap, defaultTicks, gapOf, paceOf, paceTime, p
 import { FAMILY, nameOf } from '../core/registry/scalers.ts';
 import { worthLine } from '../core/registry/worth.ts';
 import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, DAMAGE_WORD, defenceOf, isDamage } from '../core/combat/damage-type.ts';
-import { GRIEVOUS_MIN, grievousCapPct, grievousCutOf, hasTieredGrievousCut, withGrievousCut } from '../core/combat/grievous.ts';
+import { GRIEVOUS_LEGACY_MAX, GRIEVOUS_MAX, GRIEVOUS_MIN, grievousCapPct, grievousCutOf, hasTieredGrievousCut, isGrievousKey, shareCapPct, withGrievousCut } from '../core/combat/grievous.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
 import { percent, tiles } from '../core/combat/space.ts';
 import { roundsOf, tick } from '../core/combat/timeline.ts';
@@ -129,8 +129,9 @@ const STAT_SPEC = { key: 'amount', lo: -999, hi: 999 };
  * A number's field and bounds: a stat op's `STAT_SPEC`; a sheet op's its key's rule (standing.ts `sheetOpCap`, which the
  * parser and the reader keep too); the rest `NUMBERS`. A lasting row checks a flat amount against them.
  */
-function specOf(r) {
+function specOf(r, statusKey = null) {
   if (r.kind === 'stat') return STAT_SPEC;
+  if (r.kind === 'share' && r.shareOn === 'healed' && isGrievousKey(statusKey)) return { key: 'pct', lo: -GRIEVOUS_MAX, hi: 100 };
   if (r.kind !== 'sheet') return NUMBERS[r.kind];
   const hi = sheetOpCap(r.sheetKey, rules());
   return { key: 'amount', lo: -hi, hi, decimal: r.sheetKey === 'critSize' || r.sheetKey === 'costCut' };
@@ -302,7 +303,7 @@ function checkLasting(r, amount, item, fail, ok) {
  * The op a row holds, or what is wrong with it: `err` the words on the row, `bad` the values by rank that are wrong. A
  * formula is read by `parseFormula` with the rules' dice limits, and its error is the row's.
  */
-function checkRow(r, item) {
+function checkRow(r, item, statusKey = null) {
   const R = rules(), when = r.when ? { when: r.when } : {};
   const fail = (err, bad = []) => ({ op: null, err, bad });
   const ok = op => ({ op, err: '', bad: [] });
@@ -325,7 +326,7 @@ function checkRow(r, item) {
     return ok({ op: r.kind, ...(r.kind === 'damage' ? { type: r.type } : {}), amount, ...when });
   }
   if (numberRow(r)) {
-    const spec = specOf(r), lo = spec.lo, hi = spec.hi;
+    const spec = specOf(r, statusKey), lo = spec.lo, hi = spec.hi;
     const read = t => {
       const s = String(t).trim(), n = Number(s);
       if (s === '' || !Number.isFinite(n) || n < lo || n > hi || (!spec.decimal && !Number.isInteger(n))) return null;
@@ -411,20 +412,26 @@ function checkRow(r, item) {
   if (!baseDef) return fail('Pick a status.');
   const canCut = !hasTieredGrievousCut(baseDef) && grievousCutOf(baseDef) !== null;
   const baseCut = canCut ? grievousCutOf(baseDef) : null;
-  const gwCap = grievousCapPct(R), gwHi = baseCut !== null ? Math.max(gwCap, Math.floor(baseCut)) : gwCap;
+  const savedCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+  const isGw = isGrievousKey(r.status);
+  const gwCap = isGw ? grievousCapPct() : shareCapPct(R);
+  const gwHi = !isGw && savedCut !== null ? Math.max(gwCap, Math.floor(savedCut)) : gwCap;
   const rawCut = String(r.gwCut).trim();
-  const keptCut = canCut && rawCut !== '' && baseCut !== null && rawCut === String(baseCut);
+  const keptCut = canCut && rawCut !== '' && savedCut !== null && rawCut === String(savedCut);
   const cut = canCut && rawCut !== '' && !keptCut ? wholeIn(rawCut, GRIEVOUS_MIN, gwHi) : null;
   if (canCut && rawCut !== '' && !keptCut && cut === null) {
-    return fail(gwHi > gwCap
-      ? `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap), or no higher than its current ${gwHi}%.`
-      : `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap).`);
+    return fail(isGw
+      ? `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap}.`
+      : gwHi > gwCap
+        ? `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap), or no higher than its current ${gwHi}%.`
+        : `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap).`);
   }
   const condDef = Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null;
   const condCut = condDef && !hasTieredGrievousCut(condDef) ? grievousCutOf(condDef) : null;
+  const maxCut = isGw ? GRIEVOUS_MAX : GRIEVOUS_LEGACY_MAX;
   const def = !canCut || keptCut ? baseDef
-    : cut !== null ? (cut === baseCut ? baseDef : withGrievousCut(baseDef, cut))
-    : condCut !== null && condCut !== baseCut ? withGrievousCut(baseDef, condCut) : baseDef;
+    : cut !== null ? (cut === baseCut ? baseDef : withGrievousCut(baseDef, cut, maxCut))
+    : condCut !== null && condCut !== baseCut ? withGrievousCut(baseDef, condCut, maxCut) : baseDef;
   if (r.mode === 'rank') {
     const all = r.tiers.map(x => { const t = String(x).trim(), n = Number(t); return t !== '' && Number.isInteger(n) && n >= 1 && n <= 999 ? n * R.fight.round : null; });
     const bad = all.flatMap((n, i) => (n === null ? [i] : []));
@@ -439,10 +446,10 @@ function checkRow(r, item) {
 /**
  * The effects editor in `box`: one row per op. `kind` picks the ops a row may be and the quick chips; 'item' labels the
  * six values of "By rank" with the rarities. It raises an `input` event on `box` after each change of its own, so a shell redraws.
- * @param {HTMLElement} box @param {{ ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; event?: string | null; newStatus?: () => Promise<{ key: string; def?: unknown } | null> }} o
+ * @param {HTMLElement} box @param {{ ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; event?: string | null; statusKey?: string | null; newStatus?: () => Promise<{ key: string; def?: unknown } | null> }} o
  */
 function effects(box, o) {
-  const item = o.kind === 'item', defaultWhen = item || o.kind === 'land' ? 'use' : null;
+  const item = o.kind === 'item', defaultWhen = item || o.kind === 'land' ? 'use' : null, statusKey = o.statusKey ?? null;
   /** The ops a new row may be here (core's `opsOffered`): an echo only in a trigger on a status gained or imposed. */
   const offered = () => opsOffered(ROW_KINDS[o.kind], o.event ?? null);
   /** A row's own kind is always listed, so an echo kept after the trigger's event changed is shown, not dropped. */
@@ -483,8 +490,10 @@ function effects(box, o) {
     const gwBaseCut = gwDef && !hasTieredGrievousCut(gwDef) ? grievousCutOf(gwDef) : null;
     const gwCond = r.kind === 'applyStatus' ? defOf(r.status) : null;
     const gwCondCut = gwCond && !hasTieredGrievousCut(gwCond) ? grievousCutOf(gwCond) : null;
-    const gwCap = grievousCapPct(rules());
-    const gwHi = gwBaseCut !== null ? Math.max(gwCap, Math.floor(gwBaseCut)) : gwCap;
+    const gwIsGw = isGrievousKey(r.status);
+    const gwSavedCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+    const gwCap = gwIsGw ? grievousCapPct() : shareCapPct(rules());
+    const gwHi = !gwIsGw && gwSavedCut !== null ? Math.max(gwCap, Math.floor(gwSavedCut)) : gwCap;
     const gwPlaceholder = gwBaseCut !== null ? Math.min(gwCondCut ?? gwBaseCut, gwCap) : null;
     const gwIn = gwBaseCut !== null
       ? `<label class="field"><span class="lbl">Healing cut (%)</span><input type="number" inputmode="numeric" step="1" min="${GRIEVOUS_MIN}" max="${gwHi}" data-f="gwCut" aria-label="Healing cut of effect ${i + 1}" value="${esc(r.gwCut)}" placeholder="${esc(gwPlaceholder)}"></label>`
@@ -542,7 +551,7 @@ function effects(box, o) {
   /** Shows a row's error and marks the values that are wrong; a formula's average at E, C and S on a sample bearer. */
   function mark(i) {
     const el = box.querySelector(`[data-row="${i}"]`); if (!el) return;
-    const c = checkRow(rows[i], item);
+    const c = checkRow(rows[i], item, statusKey);
     el.querySelector('[data-err]').textContent = c.err;
     el.classList.toggle('bad', !!c.err);
     el.querySelectorAll('[data-t]').forEach(inp => inp.setAttribute('aria-invalid', String(c.bad.includes(Number(inp.dataset.t)))));
@@ -663,8 +672,8 @@ function effects(box, o) {
   render();
   return {
     /** The ops the rows hold (a row with an error is left out; `blocked` is then true). */
-    ops: () => rows.map(r => checkRow(r, item)).flatMap(c => (c.op ? [c.op] : [])),
-    blocked: () => rows.some(r => !!checkRow(r, item).err),
+    ops: () => rows.map(r => checkRow(r, item, statusKey)).flatMap(c => (c.op ? [c.op] : [])),
+    blocked: () => rows.some(r => !!checkRow(r, item, statusKey).err),
     /** The event of the trigger this list lands for changed: the list offers what that event allows, and keeps a row it no longer offers. */
     setEvent(ev) { o.event = ev; render(); },
   };

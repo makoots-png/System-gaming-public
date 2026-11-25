@@ -43,6 +43,7 @@ import type { Limit, Need, Trigger, Trip } from './triggers.ts';
 import { FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
 import type { DodgeWait, DueTurn, Fight, Fog, ForcedFace, Fudge, HeldUse, LogLine, Summary } from './fight-types.ts';
 import { NO_FUDGE } from './fudge.ts';
+import { clampGrievousOps, isGrievousKey } from './grievous.ts';
 import type { Extraction } from './extraction.ts';
 import { isMythicScriptId, mythicScriptOf } from '../registry/mythics.ts';
 import type { BarAt, MythicStanding, OmenKey } from './mythic-types.ts';
@@ -260,7 +261,7 @@ function opOf(v: unknown, R: Rules, depth: number): Op | null {
     case 'damage': { const type = oneOf(v.type, DAMAGE_TYPES, null), amount = tiered(v.amount, formula), w = when(v); return type && amount && w ? { op: 'damage', type, amount, ...w } : null; }
     case 'heal': case 'mana': case 'fatigue': { const amount = tiered(v.amount, formula), w = when(v); return amount && w ? { op: v.op, amount, ...w } : null; }
     case 'applyStatus': {
-      const key = idText(v.key), def = depth < 3 ? defOf(v.def, R, depth + 1) : null;
+      const key = idText(v.key), def = depth < 3 ? defOf(v.def, R, depth + 1, key ?? undefined) : null;
       const duration = v.duration === null ? null : tiered(v.duration, tickOf);
       if (!key || !def || (duration === null && v.duration !== null)) return null;
       const op = { op: 'applyStatus', key: statusKey(key), def, duration } as const;
@@ -369,11 +370,13 @@ const oldPenRead = (v: unknown): unknown => (Array.isArray(v)
   : v);
 /** Legacy pre-variable Grievous Wounds prose replaced on parse so saved items/skills match the number-free def. */
 const LEGACY_GRIEVOUS_DESC = 'Receives 40% less healing.';
-function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
+function defOf(v: unknown, R: Rules, depth: number, key?: string): StatusDef | null {
   if (!isObj(v)) return null;
-  const label = text(v.label, NAME_MAX), rawDesc = text(v.desc, STATUS_DESC_MAX), ops = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
+  const label = text(v.label, NAME_MAX), rawDesc = text(v.desc, STATUS_DESC_MAX), rawOps = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
   if (v.color !== undefined && !(typeof v.color === 'string' && COLOR_RE.test(v.color))) return null;
-  if (label === null || rawDesc === null || !ops) return null;
+  if (label === null || rawDesc === null || !rawOps) return null;
+  // Keyed Grievous Wounds clamps negative healed shares to -GRIEVOUS_MAX; unkeyed parseStatusDef falls back to label (parallel to LEGACY_GRIEVOUS_DESC).
+  const ops = (key !== undefined ? isGrievousKey(key) : label === 'Grievous Wounds') ? clampGrievousOps(rawOps) : rawOps;
   const desc = label === 'Grievous Wounds' && rawDesc === LEGACY_GRIEVOUS_DESC ? 'Receives less healing.' : rawDesc;
   const K = R.fight.kit;
   const triggers = v.triggers === undefined ? undefined : all(Array.isArray(v.triggers) ? v.triggers.slice(0, K.triggers) : null, K.triggers, x => triggerOf(x, R, depth));
@@ -482,15 +485,15 @@ function stackRuleOf(v: unknown, R: Rules, depth: number): StackRule | null {
  * or none, and a stack rule (`stackRuleOf`) or none. An `applyStatus` op's own def is read three levels deep at most.
  * A def past a status's size (size.ts `THING_MAX.status`) is refused whole.
  */
-export const parseStatusDef = (v: unknown, R: Rules): StatusDef | null => { const def = defOf(v, R, 0); return def && withinSize('status', def) ? def : null; };
+export const parseStatusDef = (v: unknown, R: Rules, key?: string): StatusDef | null => { const def = defOf(v, R, 0, key); return def && withinSize('status', def) ? def : null; };
 /** Whether `v` reads as a status def and is refused only for its size: what holds it (an item, a skill) is then refused whole. */
-export const statusTooLarge = (v: unknown, R: Rules): boolean => { const def = defOf(v, R, 0); return def !== null && !withinSize('status', def); };
+export const statusTooLarge = (v: unknown, R: Rules, key?: string): boolean => { const def = defOf(v, R, 0, key); return def !== null && !withinSize('status', def); };
 /** One op from outside data (an item's effects in a save, a pack, a form), read as a status's op is. */
 export const parseOp = (v: unknown, R: Rules): Op | null => opOf(v, R, 0);
 /** A status's key, def and source, which a fight's status and a sheet's share. */
 function keyDefSource(v: unknown, R: Rules): Pick<Status, 'key' | 'def' | 'source'> | null {
   if (!isObj(v) || !isObj(v.source)) return null;
-  const key = idText(v.key), def = parseStatusDef(v.def, R), srcId = v.source.id === null ? null : idText(v.source.id), tier = whole(v.source.tier, 0, 5);
+  const key = idText(v.key), def = key ? parseStatusDef(v.def, R, key) : null, srcId = v.source.id === null ? null : idText(v.source.id), tier = whole(v.source.tier, 0, 5);
   if (!key || !def || (v.source.id !== null && srcId === null) || tier === null) return null;
   return { key: statusKey(key), def, source: { id: srcId === null ? null : combatantId(srcId), tier } };
 }

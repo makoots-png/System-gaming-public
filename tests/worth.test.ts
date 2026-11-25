@@ -367,6 +367,9 @@ describe('grievous wounds and antiHealWorth (R4)', () => {
     expect(defWorth(cutOf(-20), RULES).worth).toBeCloseTo(gw.worth / 2, 9);
     expect(defWorth(cutOf(-50), RULES).worth).toBeCloseTo(K.shareCap * K.antiHealWorth * K.referenceRounds, 9);
     expect(defWorth(cutOf(-80), RULES).worth).toBeCloseTo(defWorth(cutOf(-50), RULES).worth, 9);
+    // Grievous Wounds (key 'grievous') scales up to 90% even when shareCap is 0.5
+    expect(defWorth(cutOf(-90), RULES, 'C', 'grievous').worth).toBeCloseTo(0.9 * K.antiHealWorth * K.referenceRounds, 9);
+    expect(defWorth(cutOf(-95), RULES, 'C', 'grievous').worth).toBeCloseTo(0.9 * K.antiHealWorth * K.referenceRounds, 9);
 
     // Positive healed share and other share targets remain unweighed
     expect(defWorth(cutOf(20), RULES).unweighed).toEqual(['share']);

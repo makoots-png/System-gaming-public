@@ -349,7 +349,7 @@ function landHp(p: PayloadOf<'hp'>, hids: string[], app: ApplyDeps): Land {
 
 /** What a status a hunter now holds does, at the tier of its source, and its rounds: a toast, not a window (A4). */
 function statusToast(app: ApplyDeps, s: SheetStatus): void {
-  const lines = describeStatus(s.def, s.source.tier, app.rules());
+  const lines = describeStatus(s.def, s.source.tier, app.rules(), s.key);
   const what = [...lines, ...(s.rounds ? [`${s.rounds} round${s.rounds === 1 ? '' : 's'}`] : [])].join(' · ');
   app.toast('! Status', what ? `${s.def.label}: ${what}` : s.def.label, { kind: 'info' });
 }

@@ -984,7 +984,7 @@ export function register(app) {
     };
     if (ro) return { ...base, condText: k.statuses.map(s => s.def.label).join(', ') || 'None' };
     // what each status does while it holds, at a glance (detail.ts `statusGlance`); its cap, threshold, triggers and end are its detail's
-    const glance = k.statuses.map(s => /** @type {[string, string[]]} */ ([s.def.label, statusGlance(s.def, s.source.tier, R)])).filter(([, L]) => L.length);
+    const glance = k.statuses.map(s => /** @type {[string, string[]]} */ ([s.def.label, statusGlance(s.def, s.source.tier, R, s.key)])).filter(([, L]) => L.length);
     let actions = '';
     if (now && !k.down) {
       if (remote) actions = `<p class="empty">${esc(r.name)} acts on their own phone.</p>`;
@@ -1014,7 +1014,7 @@ export function register(app) {
       actions,
       // a status opens what it does under the chips (app.api.detail); its x takes it off
       conds: k.statuses.map(s => `<span class="chip${s.stacks ? ' stk' : ''}" data-chip="${esc(s.key)}"><button type="button" class="c-info" data-fk="ci-${esc(s.key)}"${A().detail.control('gm-card', `${r.id}|${s.key}`)}><span class="c-ic">${icon(statusIcon(s.key, s.def))}</span>${esc(s.def.label)}${s.stacks ? ` <b class="c-n" data-stacks="${s.stacks}" data-sk="${esc(`${r.id}:${s.key}`)}">${s.stacks}</b>` : ''}${s.def.end && s.rounds != null ? ` · in ${s.rounds} round${s.rounds === 1 ? '' : 's'}` : roundsText(s)}</button><button type="button" data-fk="rc-${esc(s.key)}" data-rc="${esc(s.key)}" aria-label="Remove ${esc(s.def.label)}">✕</button></span>`
-        + A().detail.panel('gm-card', `${r.id}|${s.key}`, () => ({ kind: 'status', label: s.def.label, def: s.def, tier: s.source.tier, ...(s.stacks ? { stacks: s.stacks } : {}), left: s.rounds }))).join('') || '<span class="empty">No statuses.</span>',
+        + A().detail.panel('gm-card', `${r.id}|${s.key}`, () => ({ kind: 'status', key: s.key, label: s.def.label, def: s.def, tier: s.source.tier, ...(s.stacks ? { stacks: s.stacks } : {}), left: s.rounds }))).join('') || '<span class="empty">No statuses.</span>',
       fx: glance.map(([l, L]) => `<li><b>${esc(l)}</b>: ${esc(L.join(', '))}</li>`).join(''), noFx: !glance.length,
       lifeAct: lifeActHtml(r),
       extract: extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract (${esc(x.h.name)})` : 'Extract'}</button>`).join(''),

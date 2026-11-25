@@ -20,7 +20,7 @@ let A = null;
 const store = () => A.store;
 /** The GM's statuses by key: overrides of built-ins and statuses of the GM's own. */
 const library = () => store().get().library.statuses;
-const lines = (def, tier) => A.api.effects.describe(def, tier);
+const lines = (def, tier, key = null) => A.api.effects.describe(def, tier, key);
 /** Keys sorted, so the form's def and the parser's compare by what they hold. */
 const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
 /** The status a typed name means: one whose key or label is that name, any case. */
@@ -77,7 +77,7 @@ function openForge(opts) {
       const q = s => el.querySelector(s), all = s => [...el.querySelectorAll(s)];
       const name = q('[data-name]'), desc = q('[data-desc]'), fxBox = q('[data-fx]');
       if (editDef) { name.value = editDef.label; desc.value = editDef.desc; }
-      const fx = M.effects(fxBox, { ops: editDef ? editDef.ops : [], kind: 'status', newStatus: () => openForge({ mode: 'library' }) });
+      const fx = M.effects(fxBox, { ops: editDef ? editDef.ops : [], kind: 'status', statusKey: editKey, newStatus: () => openForge({ mode: 'library' }) });
       const kit = M.statusBlocks(q('[data-kit]'), editDef, 'fgk');
       // the worth line (worth.ts `defWorth`): what the def is worth put on by a standard curse at its cap, held the reference fight
       const drawWorth = M.worth(q('[data-worth-box]'));
@@ -110,9 +110,9 @@ function openForge(opts) {
       return {
         /** What the new status does: at the picked strength when there is one, else all six values. */
         preview() {
-          const src = source(), form = formDef(), def = form.label ? E.sanitizeDef(form) : null;
-          drawWorth(def && (def.ops.length || def.stack || def.triggers || def.end) ? defWorth(def, A.rules()) : null);
-          return lines(form, src ? src.tier : null);
+          const src = source(), form = formDef(), key = form.label ? keyOf(form.label) : editKey, def = form.label ? E.sanitizeDef(form, key) : null;
+          drawWorth(def && (def.ops.length || def.stack || def.triggers || def.end) ? defWorth(def, A.rules(), 'C', key) : null);
+          return lines(form, src ? src.tier : null, key);
         },
         blocked: () => fx.blocked() || kit.blocked(),
         save() {
@@ -122,11 +122,11 @@ function openForge(opts) {
           if (known) return existing(known);
           const big = tooLarge('status', form);
           if (big) { shell.error(big); return undefined; }
-          const def = E.sanitizeDef(form);
+          const newKey = keyOf(form.label);
+          const def = E.sanitizeDef(form, newKey);
           if (!def || canon(def) !== canon(form)) console.error('The Status dialog wrote a status its parser reads differently', form, def);
           if (!def) { shell.error('This status cannot be saved.'); return undefined; }
           const save = apply ? q('[data-save]').checked : true;
-          const newKey = keyOf(form.label);
           if (save && !wrote('Workshop', saveToLibrary(newKey, def), savedWords('status', def.label))) return undefined;
           return withSource({ key: newKey, rounds: apply ? roundsVal() : null, def });
         },

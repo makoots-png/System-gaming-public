@@ -102,9 +102,9 @@ function title(v: unknown): RewardTitle | null {
 function status(v: unknown): RewardStatus | null {
   if (!isObj(v) || !isStatusKey(v.key) || isStateChip(v.key)) return null;
   const out: RewardStatus = { key: v.key, rounds: v.rounds === null || v.rounds === undefined ? null : whole(v.rounds, 1, REWARD_BOUNDS.rounds, 1) };
-  const def = parseStatusDef(v.def, RULES);
+  const def = parseStatusDef(v.def, RULES, v.key);
   // refused whole for its def's size: the key without the def it came with would name another status, or none
-  if (!def && statusTooLarge(v.def, RULES)) return null;
+  if (!def && statusTooLarge(v.def, RULES, v.key)) return null;
   if (def) out.def = def;
   return out;
 }

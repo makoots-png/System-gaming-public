@@ -23,7 +23,7 @@ import type { MythicStanding } from './mythic-types.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
-import { grievousCapPct, grievousCutAt } from './grievous.ts';
+import { GRIEVOUS_MAX, grievousCapPct, grievousCutAt, isGrievousKey, shareCapPct } from './grievous.ts';
 import { counting, given, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
 import { asLevel } from './sight-levels.ts';
 import type { Level } from './sight-levels.ts';
@@ -187,7 +187,8 @@ export type Op =
   | { readonly op: 'sheet'; readonly key: SheetNumberKey; readonly amount: Tiered<number> }
   /**
    * A signed percent on the damage the bearer deals or takes, or the heals or shields it gets (8.1, rule 11c): of each,
-   * the strongest increase and the strongest decrease apply and multiply; the product stays within `kit.shareCap` of 1.
+   * the strongest increase and the strongest decrease apply and multiply; the product stays within `kit.shareCap` of 1,
+   * except Grievous Wounds (`key === 'grievous'`) which may cut healing received up to `GRIEVOUS_MAX` (90%).
    */
   | { readonly op: 'share'; readonly on: ShareOn; readonly pct: Tiered<number> }
   /** A foe's use cannot aim at the bearer nor catch it; it ends when the bearer acts against a foe or a place (8.1). */
@@ -612,7 +613,7 @@ export function applyStatus(list: readonly Status[], incoming: Status): Status[]
     const time: StatusTime = life === 'owed' && until !== null ? { until, owed: true } : { until };
     return [...list, incoming.owed === time.owed ? incoming : statusOn(incoming.def, fieldsOf(incoming, time), countOn(incoming))];
   }
-  const kept = oneInstance(old, stackOf(old), incoming, countOn(incoming), !old.owed);
+  const kept = oneInstance(incoming.key, old, stackOf(old), incoming, countOn(incoming), !old.owed);
   const until = kept.byCut && (old.until === null || incoming.until === null)
     ? (kept.picked === 'old' ? old.until : incoming.until)
     : later(old.until, incoming.until);
@@ -635,6 +636,7 @@ export const owedOf = (s: Status & { readonly until: Tick }): Status => statusOn
  * to its cap; a plain one counts 1.
  */
 function oneInstance(
+  key: StatusKey,
   old: { readonly def: StatusDef; readonly source: Source },
   before: Stack,
   incoming: { readonly def: StatusDef; readonly source: Source },
@@ -642,8 +644,10 @@ function oneInstance(
   oldActive: boolean,
 ): { def: StatusDef; source: Source; stacks: number; picked: 'old' | 'incoming'; byCut: boolean } {
   const plain = !isStacking(old.def) && !isStacking(incoming.def);
-  const oldCut = plain ? grievousCutAt(old.def, old.source.tier) : null;
-  const newCut = plain ? grievousCutAt(incoming.def, incoming.source.tier) : null;
+  // Cap Grievous Wounds at GRIEVOUS_MAX before comparing; non-Grievous keys keep raw cuts since oneInstance takes no Rules.
+  const capCut = (c: number | null): number | null => (c === null ? null : isGrievousKey(key) ? Math.min(GRIEVOUS_MAX, c) : c);
+  const oldCut = plain ? capCut(grievousCutAt(old.def, old.source.tier)) : null;
+  const newCut = plain ? capCut(grievousCutAt(incoming.def, incoming.source.tier)) : null;
   const oc = oldCut ?? 0, nc = newCut ?? 0;
   const byCut = (oldCut !== null || newCut !== null) && oc !== nc;
   const picked: 'old' | 'incoming' = byCut
@@ -689,7 +693,7 @@ export type SheetStatus = { readonly key: StatusKey; readonly def: StatusDef; re
 export function addSheetStatus(list: readonly SheetStatus[], incoming: SheetStatus): SheetStatus[] {
   const at = list.findIndex(s => s.key === incoming.key);
   if (at < 0) return [...list, incoming];
-  const old = list[at]!, kept = oneInstance(old, old.stacks === undefined ? { at: 'absent' } : { at: 'held', n: old.stacks }, incoming, incoming.stacks ?? 1, true);
+  const old = list[at]!, kept = oneInstance(incoming.key, old, old.stacks === undefined ? { at: 'absent' } : { at: 'held', n: old.stacks }, incoming, incoming.stacks ?? 1, true);
   const rounds = kept.byCut && (old.rounds === null || incoming.rounds === null)
     ? (kept.picked === 'old' ? old.rounds : incoming.rounds)
     : later(old.rounds, incoming.rounds);
@@ -926,7 +930,7 @@ const isNumber = (f: Formula): f is Extract<Formula, { kind: 'number' }> => f.ki
  * amount is `amountWords`: with a `wearer` (the hunter who holds the item, as user and target) an amount that reads the
  * wearer's numbers says what it comes to now. A status it applies is read without one: its numbers are its bearer's.
  */
-function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null): string {
+function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null, statusKey: string | null = null): string {
   const amount = (a: Tiered<Formula>) => tieredText(a, tier, f => amountWords(f, wearer));
   const num = (a: Tiered<number>, show: (n: number) => string) => tieredText(a, tier, show);
   const rank = (t: { byRank: boolean }) => (t.byRank ? BY_RANK : '');
@@ -950,7 +954,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     }
     case 'applyStatus': {
       const lasts = o.duration === null ? null : num(o.duration, n => roundsText(roundsOf(n, R, 'near')));
-      const inner = opLines(o.def.ops, tier, R);
+      const inner = opLines(o.def.ops, tier, R, null, o.key);
       return `Applies ${o.def.label}${lasts ? ` (${lasts.text}${rank(lasts)})` : ''}${inner.length ? `: ${inner.join(', ')}` : ''}`;
     }
     case 'cureStatus': return `Cures ${o.stacks === undefined ? '' : `${o.stacks} of `}${R.conditions[o.key]?.label ?? o.key}`;
@@ -977,7 +981,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
       const n = num(o.amount, signed); return `${SHEET_ADD_TEXT[o.key]} ${n.text}${rank(n)}`;
     }
     case 'share': {
-      const cap = grievousCapPct(R);
+      const cap = isGrievousKey(statusKey) ? grievousCapPct() : shareCapPct(R);
       const p = num(o.pct, n => `${signed(o.on === 'healed' && n < 0 ? Math.max(-cap, n) : n)}%`);
       return `${SHARE_TEXT[o.on]} ${p.text}${rank(p)}`;
     }
@@ -1029,17 +1033,18 @@ const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt',
 
 /**
  * Ops in words, one line each, read at `tier` (the source's rank or an item's rarity, 0 to 5), or every rank with null.
- * With a `wearer`, an amount that reads the wearer's numbers ends with what it comes to on them: `(now 34)`.
+ * With a `wearer`, an amount that reads the wearer's numbers ends with what it comes to on them: `(now 34)`. When
+ * `statusKey` is `'grievous'`, negative `healed` shares display up to `GRIEVOUS_MAX` (90%); otherwise `shareCap`.
  */
-export const opLines = (ops: readonly Op[], tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null): string[] =>
-  ops.map(o => opLine(o, tier, R, wearer)).filter(Boolean);
+export const opLines = (ops: readonly Op[], tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null, statusKey: string | null = null): string[] =>
+  ops.map(o => opLine(o, tier, R, wearer, statusKey)).filter(Boolean);
 
 /**
  * What a status does, one line per op: on a body, at its source's tier; on the status card of a picker or the rules, with
- * `tier` null, every rank's number E to S.
+ * `tier` null, every rank's number E to S. Pass `statusKey` so Grievous Wounds displays up to 90% and other statuses clamp to `shareCap`.
  */
-export function describeStatus(def: StatusDef, tier: number | null, R: DescribeRules): string[] {
-  return [...describeStack(def, tier, R), ...(def.triggers ?? []).map(t => triggerLine(t, tier, R)), ...(def.end ? [endLine(def.end, tier, R)] : [])];
+export function describeStatus(def: StatusDef, tier: number | null, R: DescribeRules, statusKey: string | null = null): string[] {
+  return [...describeStack(def, tier, R, statusKey), ...(def.triggers ?? []).map(t => triggerLine(t, tier, R)), ...(def.end ? [endLine(def.end, tier, R)] : [])];
 }
 /** A land op in words: time back, or the op's own line. */
 const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string => (o.op === 'refund' ? `${o.pct}% of an action's time back` : opLine(o, tier, R));
@@ -1068,10 +1073,10 @@ function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string 
 const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
   `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join(', ')}. ${e.cleanse === 'cancel' ? 'Curing this status cancels it.' : 'Curing this status triggers it right away.'}`;
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */
-function describeStack(def: StatusDef, tier: number | null, R: DescribeRules): string[] {
-  if (!isStacking(def)) return opLines(def.ops, tier, R);
+function describeStack(def: StatusDef, tier: number | null, R: DescribeRules, statusKey: string | null = null): string[] {
+  if (!isStacking(def)) return opLines(def.ops, tier, R, null, statusKey);
   const st = def.stack, t = st.threshold, out = [`Stacks to ${st.cap}.${worded(LEAVE_TEXT[st.leave.kind === 'event' ? st.leave.event : st.leave.kind], R)}`];
-  out.push(...opLines(def.ops, tier, R).map(l => `Each stack: ${l}`));
+  out.push(...opLines(def.ops, tier, R, null, statusKey).map(l => `Each stack: ${l}`));
   if (t) {
     const at = t.at.kind === 'count' ? `${t.at.n} stack${t.at.n === 1 ? '' : 's'}` : `${printFormula(t.at.formula)} stacks`;
     const where = reachText(t.to);

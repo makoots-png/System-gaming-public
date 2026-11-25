@@ -16,6 +16,7 @@ import type { Level } from './sight-levels.ts';
 import type { Body, HideStart, ShareOn, SheetFormulaKey, SheetOpKey, Status, StatusDef, StatusKey, StealthEnd, StealthEnds, Tiered } from './effect-ops.ts';
 import type { Ability, CombatantId, Tag } from './ability-types.ts';
 import type { Id } from '../ids.ts';
+import { GRIEVOUS_MAX, isGrievousKey } from './grievous.ts';
 
 /** The rule numbers this file reads. */
 export type StandingRules = Pick<Rules, 'fight'>;
@@ -209,8 +210,27 @@ export const ambushShare = (user: Pick<Body, 'statuses'>, target: Pick<Body, 'st
   const s = sharesOf(user, 'dealt');
   return hitShare(Math.max(s.up, R.fight.stealth.ambush) * s.down, target, R);
 };
-/** Rule 11c: what a heal `target` gets is multiplied by, a per-round one too. */
-export const healShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'healed'), R);
+/**
+ * Rule 11c: what a heal `target` gets is multiplied by, a per-round one too. Non-Grievous healed shares (positive or
+ * negative) stay within `kit.shareCap` of 1; Grievous Wounds (`key === 'grievous'`) may cut healing down to
+ * `1 - GRIEVOUS_MAX / 100` (90% cut) whatever `kit.shareCap` is, without letting non-Grievous cuts breach `shareCap`.
+ */
+export function healShare(target: Pick<Body, 'statuses'>, R: StandingRules): number {
+  let up = 0, gwDown = 0, otherDown = 0;
+  for (const s of counting(target.statuses)) for (const o of s.def.ops) if (o.op === 'share' && o.on === 'healed') {
+    const base = atTier(o.pct, s.source.tier);
+    const pct = base * countOn(s);
+    if (pct > 0) up = Math.max(up, pct);
+    else if (pct < 0) {
+      if (isGrievousKey(s.key)) gwDown = Math.max(gwDown, Math.min(100, Math.min(GRIEVOUS_MAX, -base) * countOn(s)));
+      else otherDown = Math.max(otherDown, Math.min(100, -pct));
+    }
+  }
+  const upFactor = 1 + up / 100, cap = R.fight.kit.shareCap;
+  const nonGw = clamp(upFactor * (1 - otherDown / 100), 1 - cap, 1 + cap);
+  const gw = clamp(upFactor * (1 - gwDown / 100), 1 - GRIEVOUS_MAX / 100, 1 + cap);
+  return Math.min(nonGw, gw);
+}
 /** Rule 11c: what a shield `target` gets is multiplied by (its `shielded` share), whoever or whatever gives it. */
 export const shieldShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'shielded'), R);
 /**

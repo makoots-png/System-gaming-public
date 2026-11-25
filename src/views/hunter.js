@@ -691,7 +691,7 @@ export function register(app) {
     setHTML(chipBox, chips.length ? chips.map(({ c, key, rm }) => {
       const def = c.def, rd = c.rounds != null ? ` \u00b7 ${c.rounds} round${c.rounds === 1 ? '' : 's'}` : '', n = 'stacks' in c ? c.stacks : undefined;
       return `<span class="chip${isStateChip(key) ? ' warn-c' : ''}" data-chip="${esc(key)}"${def.color ? ` style="border-color:${esc(def.color)}"` : ''}><button type="button" class="c-info"${app.api.detail.control('sheet-chips', key)}><span class="c-ic"${def.color ? ` style="color:${esc(def.color)}"` : ''}>${icon(statusIcon(key, def))}</span>${esc(def.label)}${n ? ` ×${n}` : ''}${rd}</button>${rm ? `<button type="button" data-cond-del="${esc(key)}" aria-label="Remove status ${esc(def.label)}">&times;</button>` : '<span class="c-end"></span>'}</span>`
-        + app.api.detail.panel('sheet-chips', key, () => ({ kind: 'status', label: def.label, def, tier: c.source ? c.source.tier : null, ...(n ? { stacks: n } : {}), left: c.rounds ?? null }));
+        + app.api.detail.panel('sheet-chips', key, () => ({ kind: 'status', key, label: def.label, def, tier: c.source ? c.source.tier : null, ...(n ? { stacks: n } : {}), left: c.rounds ?? null }));
     }).join('') : '<span class="empty">No statuses.</span>');
     if (chipsWere) for (const c of chipBox.querySelectorAll('[data-chip]')) if (!chipsWere.has(c.dataset.chip)) motion.pop(c);
   }

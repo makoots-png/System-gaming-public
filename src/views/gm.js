@@ -924,13 +924,13 @@ export function register(app) {
   function renderGrievousCuts(force = false) {
     const box = $('#gm-gw-list');
     if (!box) return;
-    const R = app.rules(), cap = grievousCapPct(R);
+    const R = app.rules(), cap = grievousCapPct();
     const gwDef = R.conditions.grievous || BUILT_IN_STATUSES.grievous;
     const tiered = hasTieredGrievousCut(gwDef);
     const flatCut = tiered ? null : grievousCutOf(gwDef);
     const editable = flatCut !== null;
     const shown = editable ? Math.min(flatCut, cap) : null;
-    const resetTarget = Math.min(DEFAULT_GRIEVOUS_PCT, cap);
+    const resetTarget = DEFAULT_GRIEVOUS_PCT;
     const label = gwDef.label || 'Grievous Wounds';
     const note = editable ? `Healing received −${shown}%` : tiered ? 'Varies by rank (edit in Status Maker)' : 'No flat healing cut (edit in Status Maker)';
     const html = `<div class="gm-dt-row" data-gw-row="grievous">
@@ -945,10 +945,10 @@ export function register(app) {
     const typing = document.activeElement instanceof HTMLInputElement && box.contains(document.activeElement);
     if (force || (box.dataset.sig !== html && !typing)) { box.dataset.sig = html; box.innerHTML = html; }
   }
-  /** Applies a GM Grievous Wounds healing-cut edit to built-in `library.statuses.grievous` (bounded by `kit.shareCap`). */
+  /** Applies a GM Grievous Wounds healing-cut edit to built-in `library.statuses.grievous` (1 to `GRIEVOUS_MAX`). */
   function setGrievousCut(rawVal, label) {
-    const cap = grievousCapPct(app.rules()), pct = parseGrievousCut(Number(String(rawVal).trim()));
-    if (pct === null || pct > cap) { say('#gm-r-msg', `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${cap} (the share cap).`, true); return; }
+    const cap = grievousCapPct(), pct = parseGrievousCut(Number(String(rawVal).trim()));
+    if (pct === null || pct > cap) { say('#gm-r-msg', `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${cap}.`, true); return; }
     const cur = app.rules().conditions.grievous || BUILT_IN_STATUSES.grievous;
     if (hasTieredGrievousCut(cur) || grievousCutOf(cur) === null) return;
     const next = withGrievousCut(cur, pct);
@@ -1207,7 +1207,7 @@ export function register(app) {
         if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
         if (t.dataset.dtKind) { setDamageType(t.dataset.dtKind, t.dataset.dtKey, t.dataset.dtVal, t.dataset.dtLabel || t.dataset.dtKey, t.dataset.dtShipped); return; }
         if (t.hasAttribute('data-gw-apply')) { const inp = t.closest('[data-gw-row]')?.querySelector('[data-gw-input]'); setGrievousCut(inp ? inp.value : '', t.dataset.gwLabel || 'Grievous Wounds'); return; }
-        if (t.hasAttribute('data-gw-reset')) { setGrievousCut(Math.min(DEFAULT_GRIEVOUS_PCT, grievousCapPct(app.rules())), t.dataset.gwLabel || 'Grievous Wounds'); return; }
+        if (t.hasAttribute('data-gw-reset')) { setGrievousCut(DEFAULT_GRIEVOUS_PCT, t.dataset.gwLabel || 'Grievous Wounds'); return; }
         if (t.dataset.grevive !== undefined && t.closest('.gm-card.remote')) { sendRevive(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `${now.name} is back up. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }

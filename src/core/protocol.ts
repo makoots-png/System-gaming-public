@@ -37,7 +37,7 @@ import type { IconKey } from './registry/icons.ts';
 import type { ClassName, ClassRarity, JobName, UniqueClassName } from './registry/jobs.ts';
 import { parseDamageTypes } from './combat/damage-type.ts';
 import type { DamageTypeMap } from './combat/damage-type.ts';
-import { grievousCutOf, hasTieredGrievousCut, parseGrievousCut, withGrievousCut } from './combat/grievous.ts';
+import { GRIEVOUS_LEGACY_MAX, GRIEVOUS_MAX, grievousCutOf, hasTieredGrievousCut, isGrievousKey, readLegacyGrievousCut, withGrievousCut } from './combat/grievous.ts';
 import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { abilityId, combatantId } from './combat/ability-types.ts';
 import type { AbilityId, CombatantId } from './combat/ability-types.ts';
@@ -1111,22 +1111,23 @@ function docDefs(v: unknown): Record<string, StatusDef> {
   if (JSON.stringify(v).length > DOC_DEFS_MAX) return refuse();
   const out: Record<string, StatusDef> = {};
   for (const [k, x] of Object.entries(obj(v))) {
-    const key = attempt(() => keyOf(k)), def = parseStatusDef(x, RULES);
+    const key = attempt(() => keyOf(k)), def = key !== null ? parseStatusDef(x, RULES, key) : null;
     if (key !== null && def) out[key] = def;
   }
   return out;
 }
 /**
  * A status on the wire: k key, b label (only when its def is neither in the doc's `defs` table nor a shipped keystone
- * def matching `RULES`), h Grievous Wounds healing-cut override (1..100 when this row's def differs from `defs[k]` only
- * in its healing cut), l rounds left, n stacks, t its source's tier.
+ * def matching `RULES`), h Grievous Wounds healing-cut override (1..90; persisted legacy 91..100 clamps to 90 on read
+ * when this row's def differs from `defs[k]` only in its healing cut), l rounds left, n stacks, t its source's tier.
  */
 function docStatus(v: unknown, defs: Record<string, StatusDef>): DocStatus {
   const o = obj(v), key = keyOf(own(o, 'k')), named = own(o, 'b'), cutRaw = own(o, 'h'), stacks = own(o, 'n');
   const baseDef = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : keystoneStatusDef(key) ?? refuse()) : undefined;
   if (cutRaw !== undefined && (named !== undefined || !baseDef || hasTieredGrievousCut(baseDef) || grievousCutOf(baseDef) === null)) return refuse();
-  const cut = cutRaw === undefined ? null : (parseGrievousCut(cutRaw) ?? refuse());
-  const def = baseDef ? (cut === null ? baseDef : withGrievousCut(baseDef, cut)) : undefined;
+  const max = isGrievousKey(key) ? GRIEVOUS_MAX : GRIEVOUS_LEGACY_MAX;
+  const cut = cutRaw === undefined ? null : (readLegacyGrievousCut(cutRaw, max) ?? refuse());
+  const def = baseDef ? (cut === null ? baseDef : withGrievousCut(baseDef, cut, max)) : undefined;
   const out = {
     key, label: def ? def.label : filled(NAME_MAX)(named), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null),
     tier: opt(own(o, 't'), int(0, RANKS.length - 1), 0), ...(def ? { def } : {}),
@@ -1389,7 +1390,7 @@ function soloDocOf(data: unknown): SoloDoc {
     if (m) monsters[k] = m;
   }
   for (const [k, v] of Object.entries(obj(own(o, 'statuses'))).slice(0, SOLO_DOC.statuses)) {
-    const key = attempt(() => keyOf(k)), def = key === null || k === '__proto__' ? null : parseStatusDef(v, RULES);
+    const key = attempt(() => keyOf(k)), def = key === null || k === '__proto__' ? null : parseStatusDef(v, RULES, key);
     if (key !== null && def) statuses[key] = def;
   }
   return { gates: listOf(own(o, 'gates'), WORLD_GATES, soloGate), monsters, statuses };
@@ -1493,7 +1494,7 @@ function roomStatuses(v: unknown): Record<string, StatusDef> {
   const out: Record<string, StatusDef> = {};
   for (const [k, x] of Object.entries(obj(v))) {
     if (!Object.hasOwn(BUILT_IN_STATUSES, k)) return refuse();
-    const def = parseStatusDef(x, RULES);
+    const def = parseStatusDef(x, RULES, k);
     if (!def) return refuse();
     out[k] = def;
   }

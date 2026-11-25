@@ -73,7 +73,7 @@ export function register(app) {
     if (kind === 'status') {
       const conds = app.rules().conditions;
       return Object.keys(L.statuses).filter(k => conds[k]).map(k => [k, String(conds[k].label || k), isBuiltIn(k) ? 'changed built-in' : '',
-        A().effects.describe(conds[k]).join(' · ') || conds[k].desc || '', ['edit', 'dup', isBuiltIn(k) ? 'reset' : 'del', 'share']]);
+        A().effects.describe(conds[k], null, k).join(' · ') || conds[k].desc || '', ['edit', 'dup', isBuiltIn(k) ? 'reset' : 'del', 'share']]);
     }
     if (kind === 'item') return L.items.map(it => [it.id, it.name, it.rar, [it.type, ...A().effects.describeItem(it)].filter(Boolean).join(' · '), ['edit', 'dup', 'del', 'share']]);
     if (kind === 'skill') return L.skills.map(k => [k.id, k.name, k.type, A().skills.lines(k).join(' · '), ['edit', 'dup', 'del', 'give', 'share']]);
@@ -103,7 +103,7 @@ export function register(app) {
   /** The examples of a kind as rows: [id, name, tag, meta]. */
   function examplesOf(kind) {
     const R = app.rules();
-    if (kind === 'status') return Object.entries(exampleStatuses(R)).map(([k, d]) => [k, d.label, 'example', A().effects.describe(d).join(' · ') || d.desc]);
+    if (kind === 'status') return Object.entries(exampleStatuses(R)).map(([k, d]) => [k, d.label, 'example', A().effects.describe(d, null, k).join(' · ') || d.desc]);
     if (kind === 'skill') return exampleSkills(R).map((k, i) => [String(i), k.name, k.type, k.desc]);
     // the GM's awards for roleplay (registry/bundles.ts): given from a hunter's card as they are, copied here to change one
     if (kind === 'bundle') return BUILT_IN_BUNDLES.map(b => [b.key, b.name, MOMENT_WORDS[b.moment], [b.window.title, ...rewardLines(R, b.rewards)].join(' · ')]);
