@@ -12,7 +12,7 @@ import { RANKS, RULES } from '../../src/core/rules.ts';
 import type { BonusKey, Rank, Rules } from '../../src/core/rules.ts';
 import { baseStats } from '../../src/core/stats.ts';
 import type { StatKey, Stats } from '../../src/core/stats.ts';
-import { kitGear, NO_TWEAK, pointsAt, referenceBonus, split } from '../../src/core/hunter/derive.ts';
+import { kitGear, NO_TWEAK, pointsAt, referenceBonus, sheetOf, split } from '../../src/core/hunter/derive.ts';
 import type { Archetype as MonsterArchetype, SheetBasis, Kit, MonsterKind, MonsterTrait } from '../../src/core/hunter/derive.ts';
 import { diceOf, parseFormula } from '../../src/core/formula.ts';
 import { dist, inShape, openGrid, place, reachable, straightCost, tiles } from '../../src/core/combat/space.ts';
@@ -28,7 +28,7 @@ import { formulaOf, abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, weaponAttack, wornAbilityId } from '../../src/core/registry/abilities.ts';
 import type { BuiltInSkill } from '../../src/core/registry/abilities.ts';
 import { keystoneOf } from '../../src/core/registry/keystones.ts';
-import { STARTER_GEAR } from '../../src/core/registry/items.ts';
+import { STARTER_GEAR, WEAR_LIMIT } from '../../src/core/registry/items.ts';
 import type { Rarity } from '../../src/core/registry/items.ts';
 import { itemSpend, middleBudget } from '../../src/core/registry/item-budget.ts';
 import type { AbilityInput } from '../../src/core/registry/ability-kinds.ts';
@@ -519,11 +519,50 @@ const READ_PRICE = 10;
 /**
  * `a` holding one item of its tier's middle budget (`middleBudget`) spent all one way, at the item budget's own prices
  * (`itemSpend`, which weighs a penetration on a same-rank `itemBudget.penFoe`): its main stat, or the percent or the flat
- * penetration of the defence its damage meets. Unrounded, so the three spend the same points; the bonus is a perk.
+ * penetration of the defence its damage meets. A percent penetration spend stops at the headroom `fight.penMax` leaves
+ * after the build's own penetration and spills the rest into the main stat. Unrounded, so the three spend the same points.
  */
 export function spending(a: PenBuild, rank: Rank, spend: PenSpend, id: string = a, R: Rules = RULES): SimRow {
-  const budget = middleBudget(R, rank), key: BonusKey = spend === 'main' ? BUILDS[a].main : PEN_PAIR[a][spend];
-  return hunterOn(a, rank, id, { ...buildOf(a, rank, R), perks: { [key]: budget / priceAt(key, rank, R) } }, R);
+  const build = buildOf(a, rank, R), budget = middleBudget(R, rank), mainKey = BUILDS[a].main;
+  if (spend === 'main') return hunterOn(a, rank, id, { ...build, perks: { [mainKey]: budget / priceAt(mainKey, rank, R) } }, R);
+  const key = PEN_PAIR[a][spend], rate = priceAt(key, rank, R);
+  if (spend === 'percent') {
+    const own = key === 'armorPen' ? sheetOf(build, R).armorPen : sheetOf(build, R).resistPen;
+    const used = Math.min(budget / rate, Math.max(0, R.fight.penMax - own));
+    const left = budget - used * rate;
+    const perks = left > 1e-9 ? { [key]: used, [mainKey]: left / priceAt(mainKey, rank, R) } : { [key]: used };
+    return hunterOn(a, rank, id, { ...build, perks }, R);
+  }
+  return hunterOn(a, rank, id, { ...build, perks: { [key]: budget / rate } }, R);
+}
+/**
+ * `a` wearing a full set of `WEAR_LIMIT` middle items (`WEAR_LIMIT * middleBudget`), split by `mainShare` across its main
+ * and second stats, replacing `referenceBonus` on the main stat so gear is not double-counted.
+ */
+export function geared(a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow {
+  const build = buildOf(a, rank, R), { main, second } = BUILDS[a];
+  const total = WEAR_LIMIT * middleBudget(R, rank);
+  const big = Math.round(total * R.fight.mainShare), small = Math.round(total - big);
+  const stats = { ...build.stats, [main]: build.stats[main] - referenceBonus(rank) };
+  return hunterOn(a, rank, id, { ...build, stats, perks: { [main]: big, [second]: small } }, R);
+}
+/** The Strength-to-physical-power rate on the item maker's sample wearer at `rank` (matching `item-budget.ts`). */
+function physRateAt(rank: Rank, R: Rules): number {
+  const level = R.rankLevels[rank], stats = split('agi', 'str', pointsAt(level, R), R);
+  const sh = (perks: Partial<Record<BonusKey, number>>) => sheetOf({ stats, level, gear: kitGear('medium', R), perks }, R);
+  return (sh({ str: READ_PRICE }).phys - sh({}).phys) / READ_PRICE;
+}
+/**
+ * A weapon-using build (`bruiser` or `speed`) spending one middle item (`middleBudget`) either on extra weapon damage
+ * (`weaponPoints === middleBudget`) or on its main stat (`str` or `agi`), for `itemBudget.weaponDuty` parity rows.
+ */
+export function weaponOrStat(a: 'bruiser' | 'speed', rank: Rank, mode: 'weapon' | 'stat', id: string = a, R: Rules = RULES): SimRow {
+  const budget = middleBudget(R, rank);
+  if (mode === 'stat') return hunterOn(a, rank, id, { ...buildOf(a, rank, R), perks: { [BUILDS[a].main]: budget } }, R);
+  const h = hunter(a, rank, id, R), attack = a === 'speed' ? 'shot' : 'strike';
+  const extra = budget * physRateAt(rank, R) / R.itemBudget.weaponDuty;
+  const wAb = weaponAttack({ name: 'BudgetWeapon', dice: `1d8 + ${extra.toFixed(4)}`, attack }, R);
+  return { ...h, row: { ...h.row, abilities: h.row.abilities.map(x => (x.id === ATTACK_ID ? wAb : x)) } };
 }
 /**
  * A same-rank hit (design 4.3, the paper's `sameRankHit`): the bruiser's strike at its average dice on a same-rank monster

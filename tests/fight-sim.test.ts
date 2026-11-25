@@ -67,7 +67,7 @@ import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
-import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2, withApex } from './models/fight-sim.ts';
+import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, geared, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2, weaponOrStat, withApex } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
 import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
@@ -342,21 +342,26 @@ const W2_ROWS: readonly Row[] = [
 
 // ── penetration and control against a boss tough by its body (balance plan section 9, rows P1 to P3) ──
 /**
- * The fights P1 and P2 read: a same-rank pack of three normal brutes, a same-rank brute boss, and its mirror, a same-rank
- * caster boss with the warded trait, whose thick defence is resist (34 against armor 15 at C and S, where the brute
- * boss holds armor 58 and 69 against resist 8).
+ * The fights P1 and P2 read: a same-rank pack of three normal brutes (armor 39/46) for the armor pair, three normal
+ * casters (resist 15) for the magic pair (a normal brute's resist 5 caps flat magic pen at 5 while capped percent pen
+ * spills leftover budget into Power), a same-rank brute boss (armor 58/69), and a warded caster boss (resist 34).
  */
-type PenFight = 'pack' | 'boss' | 'warded';
+type PenFight = 'pack' | 'casterPack' | 'boss' | 'warded';
 const PEN_FOES: { readonly [F in PenFight]: (rank: Rank) => SimRow[] } = {
-  pack, boss: rank => [monster(rank, 'brute', 'boss', 'boss')], warded: rank => [monster(rank, 'caster', 'boss', 'boss', RULES, ['warded'])],
+  pack,
+  casterPack: rank => [1, 2, 3].map(i => monster(rank, 'caster', 'normal', `caster-${i}`)),
+  boss: rank => [monster(rank, 'brute', 'boss', 'boss')],
+  warded: rank => [monster(rank, 'caster', 'boss', 'boss', RULES, ['warded'])],
 };
-const PEN_RUNS: { readonly [F in PenFight]: number } = { pack: RUNS.tenth, boss: RUNS.quarter, warded: RUNS.quarter };
+const PEN_RUNS: { readonly [F in PenFight]: number } = { pack: RUNS.tenth, casterPack: RUNS.tenth, boss: RUNS.quarter, warded: RUNS.quarter };
 /**
- * Each build that spends an item on a penetration, the pair it holds, and the boss P1 reads the pair on: the one whose
- * thick defence the pair counters (the lead's ruling after balance unit 2), the brute for the bruiser's armor and the
- * warded caster for the cannon's magic.
+ * Each build that spends an item on a penetration, the pair it holds, and the boss and pack P1 reads the pair on:
+ * the brute pair for the bruiser's armor, and the caster pair for the cannon's magic (matching `itemBudget.penFoe`).
  */
-const PAIRS: readonly (readonly [PenBuild, string, PenFight, string])[] = [['bruiser', 'armor', 'boss', 'boss'], ['cannon', 'magic', 'warded', 'warded caster boss']];
+const PAIRS: readonly (readonly [PenBuild, string, PenFight, string, PenFight, string])[] = [
+  ['bruiser', 'armor', 'boss', 'boss', 'pack', 'pack'],
+  ['cannon', 'magic', 'warded', 'warded caster boss', 'casterPack', 'caster pack'],
+];
 /** The mixed party with `who` spending one item of its tier's middle budget `spend`'s way and the other build on its main stat. */
 const spendKey = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): string => `spend ${spend === 'main' ? 'main' : `${who} ${spend}`} v ${fight} ${rank}`;
 const spendRuns = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): FightRecord[][] => {
@@ -384,13 +389,13 @@ const vsBossControlled = (rank: Rank) => {
 };
 const PEN_LEVER = 'itemBudget.penFoe, fight.penMax, the kinds\' armor and resist';
 const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
-  ...PAIRS.flatMap(([who, pair, boss, bossWords]): Row[] => [
+  ...PAIRS.flatMap(([who, pair, boss, bossWords, packFight, packWords]): Row[] => [
     { name: `against a same-rank ${bossWords} the ${who}'s ${pair} penetration clears in fewer rounds as percent than as flat at ${rank}`, setup: spendKey(who, 'flat', boss, rank), runs: 2 * PEN_RUNS[boss],
       measure: () => roundsOver(spendRuns(who, 'flat', boss, rank), spendRuns(who, 'percent', boss, rank)), low: 0, high: Infinity, lever: PEN_LEVER },
-    { name: `against a same-rank pack the ${who}'s ${pair} penetration clears in fewer rounds as flat than as percent at ${rank}`, setup: spendKey(who, 'flat', 'pack', rank), runs: 2 * RUNS.tenth,
-      measure: () => roundsOver(spendRuns(who, 'percent', 'pack', rank), spendRuns(who, 'flat', 'pack', rank)), low: 0, high: Infinity, lever: PEN_LEVER },
-    ...(['pack', 'boss'] as const).map((fight): Row => ({
-      name: `neither penetration of the ${who} clears a same-rank ${fight} more than 25% faster than its main stat at ${rank}`, setup: spendKey(who, 'main', fight, rank), runs: 3 * PEN_RUNS[fight],
+    { name: `against a same-rank ${packWords} the ${who}'s ${pair} penetration clears in fewer rounds as flat than as percent at ${rank}`, setup: spendKey(who, 'flat', packFight, rank), runs: 2 * PEN_RUNS[packFight],
+      measure: () => roundsOver(spendRuns(who, 'percent', packFight, rank), spendRuns(who, 'flat', packFight, rank)), low: 0, high: Infinity, lever: PEN_LEVER },
+    ...([[packFight, packWords], [boss, bossWords]] as const).map(([fight, words]): Row => ({
+      name: `neither penetration of the ${who} clears a same-rank ${words} more than 25% faster than its main stat at ${rank}`, setup: spendKey(who, 'main', fight, rank), runs: 3 * PEN_RUNS[fight],
       measure: () => fasterThanMain(who, fight, rank), low: 0, high: 1.25, lever: PEN_LEVER,
     })),
   ]),
@@ -587,6 +592,67 @@ const WORLDBREAKER_ROWS: readonly Row[] = [
     low: 0.06, high: 0.14, lever: 'KEYSTONES.apex.str (damage, stagger share, cooldown)' },
 ];
 
+// ── six-middle-item party and weaponDuty parity (BAL-A, QD 2026-11-24-v2-gear-budget-divisor) ──
+const gearedParty = (rank: Rank, R = RULES): SimRow[] => MIXED.map(a => geared(a, rank, a, R));
+const vsGearedBoss = (rank: Rank, level: DifficultyLevel) => {
+  const rows = once(() => {
+    const scale = difficultyFactor('boss', rank, level, RULES);
+    return [...gearedParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
+const vsGearedScript = (id: MythicScriptId) => {
+  const rows = once(() => {
+    const partyRows = gearedParty('S', SCRIPTED).map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities(SCRIPTED).stun] } } : s));
+    return [...partyRows, scripted(id, SCRIPTED)];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), rules: SCRIPTED, tallyDamage: false }, seed)];
+};
+const GEARED_RUNS = 200;
+const GEARED_ROWS: readonly Row[] = [
+  ...(['E', 'C', 'S'] as const).map((rank): Row => ({
+    name: `G1 three hunters wearing six middle items win 78 to 100% against a difficulty 5 boss at ${rank}`, setup: `geared v boss d5 ${rank}`, runs: GEARED_RUNS,
+    measure: () => wins(`geared v boss d5 ${rank}`, vsGearedBoss(rank, 5), GEARED_RUNS), low: 0.78, high: 1, lever: 'itemBudget.share (6 worn slots) and difficulty.boss[4]',
+  })),
+  ...([['E', 0.08, 0.30], ['C', 0.30, 0.58], ['S', 0.62, 0.88]] as const).map(([rank, low, high]): Row => ({
+    name: `G2 three hunters wearing six middle items punch up against a difficulty 10 boss (${Math.round(low * 100)} to ${Math.round(high * 100)}%) at ${rank}`, setup: `geared v boss d10 ${rank}`, runs: GEARED_RUNS,
+    measure: () => wins(`geared v boss d10 ${rank}`, vsGearedBoss(rank, 10), GEARED_RUNS), low, high, lever: 'itemBudget.share (6 worn slots) and difficulty.boss[9]',
+  })),
+  { name: 'G3 three hunters wearing six middle items average 35 to 60% across mythics at S', setup: 'geared v mythics S', runs: MYTHIC_IDS.length * GEARED_RUNS,
+    measure: () => {
+      const ms = MYTHIC_IDS.map(id => ({ id, m: wins(`geared v ${id} S`, vsGearedScript(id), GEARED_RUNS) }));
+      return {
+        value: mean(ms.map(x => x.m.value)),
+        se: Math.sqrt(ms.reduce((n, x) => n + x.m.se ** 2, 0)) / ms.length,
+        note: ms.map(x => `${x.id} ${fmt(x.m.value)}`).join(', '),
+      };
+    },
+    low: 0.35, high: 0.60, lever: 'itemBudget.share (6 worn slots) and mythic script HP' },
+];
+
+const WEAPON_DUTY_SIDE_RUNS = 100;
+/** Symmetric 1v1 duel (weapon spend vs main-stat spend): swaps party/foe so speed ties cancel, across both openings. */
+const weaponDutyParity = (seat: 'bruiser' | 'speed', rank: Rank): Measure => {
+  const wepP = weaponOrStat(seat, rank, 'weapon', `${seat}-w`), statF = foe(weaponOrStat(seat, rank, 'stat', `${seat}-s`));
+  const statP = weaponOrStat(seat, rank, 'stat', `${seat}-s`), wepF = foe(weaponOrStat(seat, rank, 'weapon', `${seat}-w`));
+  const out: boolean[] = [];
+  for (const opening of OPENINGS) {
+    const [p1, p2] = START[opening];
+    const rA = [at(wepP, p1), at(statF, p2)], rB = [at(statP, p1), at(wepF, p2)];
+    for (let s = 1; s <= WEAPON_DUTY_SIDE_RUNS; s++) {
+      out.push(playFight({ rows: rA, tallyDamage: false }, s).winner === 'party');
+      out.push(playFight({ rows: rB, tallyDamage: false }, s).winner === 'foe');
+    }
+  }
+  return share(out);
+};
+const WEAPON_DUTY_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => ([
+  { name: `WD1 bruiser spending one middle item on weapon damage vs Strength stays near parity (42 to 65%) at ${rank}`, setup: `weaponDuty bruiser ${rank}`, runs: 4 * WEAPON_DUTY_SIDE_RUNS,
+    measure: () => weaponDutyParity('bruiser', rank), low: 0.42, high: 0.65, lever: 'itemBudget.weaponDuty' },
+  { name: `WD2 speed spending one middle item on weapon damage vs Agility stays in band (55 to 85%) at ${rank}`, setup: `weaponDuty speed ${rank}`, runs: 4 * WEAPON_DUTY_SIDE_RUNS,
+    measure: () => weaponDutyParity('speed', rank), low: 0.55, high: 0.85, lever: 'itemBudget.weaponDuty' },
+]));
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -623,6 +689,8 @@ const ROWS: readonly Row[] = [
   ...SCRIPT_ROWS,
   ...DIFFICULTY_ROWS,
   ...WORLDBREAKER_ROWS,
+  ...GEARED_ROWS,
+  ...WEAPON_DUTY_ROWS,
 ];
 
 /**

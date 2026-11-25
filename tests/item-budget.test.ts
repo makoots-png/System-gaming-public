@@ -36,15 +36,15 @@ const gear = (rar: Rarity, rest: Partial<ItemTemplate>): ItemTemplate =>
 const weapon = (rar: Rarity, dice: string, rest: Partial<ItemTemplate> = {}): ItemTemplate =>
   gear(rar, { type: 'weapon', slot: 'weapon', dice, attack: 'strike', ...rest });
 
-/** Each rank's middle budget by the rule: 0.5 of the points at the rank's first level (12 + 3 a level after the first), over 10 slots. */
-const MIDDLE = { E: 0.5 * 12 / 10, D: 0.5 * 39 / 10, C: 0.5 * 69 / 10, B: 0.5 * 114 / 10, A: 0.5 * 159 / 10, S: 0.5 * 219 / 10 } as const;
+/** Each rank's middle budget by the rule: 0.5 of the points at the rank's first level (12 + 3 a level after the first), over 6 worn slots. */
+const MIDDLE = { E: 0.5 * 12 / 6, D: 0.5 * 39 / 6, C: 0.5 * 69 / 6, B: 0.5 * 114 / 6, A: 0.5 * 159 / 6, S: 0.5 * 219 / 6 } as const;
 
 group('the budget of a tier and a grade (economy design 2.4)', () => {
-  test('the middle budget is share times the points a hunter of the rank has at its first level, over the slots: E 0.6, D 1.95, C 3.45, B 5.7, A 7.95, S 10.95', () => {
+  test('the middle budget is share times the points a hunter of the rank has at its first level, over the worn slots: E 1, D 3.25, C 5.75, B 9.5, A 13.25, S 18.25', () => {
     for (const [rank, b] of Object.entries(MIDDLE) as [keyof typeof MIDDLE, number][]) expect(middleBudget(RULES, rank)).toBeCloseTo(b, 9);
   });
 
-  test('a tier runs from halfway to the tier below to halfway to the tier above on a log scale, cut in three equal steps: rare is 2.59 to 4.43', () => {
+  test('a tier runs from halfway to the tier below to halfway to the tier above on a log scale, cut in three equal steps: rare is 4.32 to 7.39', () => {
     const low = Math.sqrt(MIDDLE.D * MIDDLE.C), top = Math.sqrt(MIDDLE.C * MIDDLE.B), k = Math.cbrt(top / low);
     const s = tierSpan(RULES, 'C');
     expect(s.low).toBeCloseTo(low, 9);
@@ -65,7 +65,7 @@ group('the budget of a tier and a grade (economy design 2.4)', () => {
 
   test('block [2.4] to one decimal: the top of each grade, minus, middle and plus, at each rank', () => {
     const tops = (['E', 'D', 'C', 'B', 'A', 'S'] as const).map(r => { const t = tierSpan(RULES, r).tops; return [t[-1], t[0], t[1]].map(n => n.toFixed(1)); });
-    expect(tops).toEqual([['0.5', '0.7', '1.1'], ['1.4', '1.9', '2.6'], ['3.1', '3.7', '4.4'], ['5.1', '5.9', '6.7'], ['7.5', '8.4', '9.3'], ['10.4', '11.6', '12.9']]);
+    expect(tops).toEqual([['0.8', '1.2', '1.8'], ['2.4', '3.2', '4.3'], ['5.2', '6.2', '7.4'], ['8.5', '9.8', '11.2'], ['12.5', '13.9', '15.6'], ['17.3', '19.3', '21.4']]);
   });
 
   test('a rarity\'s budget is its rank\'s: rare reads C, and a GM who ranks rare as B moves its bands with it', () => {
@@ -74,7 +74,7 @@ group('the budget of a tier and a grade (economy design 2.4)', () => {
     expect(gradeBand(asB, 'rare', 1).high).toBeCloseTo(tierSpan(RULES, 'B').tops[1], 9);
   });
 
-  test('the minus is open below and the plus ends at the tier\'s top: Rare− holds up to 3.1, Rare 3.1 to 3.7, Rare+ 3.7 to 4.4', () => {
+  test('the minus is open below and the plus ends at the tier\'s top: Rare− holds up to 5.2, Rare 5.2 to 6.2, Rare+ 6.2 to 7.4', () => {
     const t = tierSpan(RULES, 'C').tops;
     expect(gradeBand(RULES, 'rare', -1)).toEqual({ grade: -1, low: null, high: t[-1] });
     expect(gradeBand(RULES, 'rare', 0)).toEqual({ grade: 0, low: t[-1], high: t[0] });
@@ -306,10 +306,10 @@ group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
   });
 });
 
-/** Ruling 6 (the owner, Nov 20: "Keep them."): the six built-ins past every grade of their tier, kept as they are and priced as its plus. By name, a built-in item's only key. */
-const KEPT: readonly string[] = ['Mage Circlet', "Baruka's Mana Ring", "Kamish's Wrath", 'Orb of Avarice', "Monarch's Scepter", 'Armor of the Absolute Being'];
+/** Ruling 6 (the owner, Nov 20: "Keep them."): the four built-ins still past every grade of their tier under the 6-slot divisor, kept as they are and priced as its plus. By name, a built-in item's only key. */
+const KEPT: readonly string[] = ["Kamish's Wrath", 'Orb of Avarice', "Monarch's Scepter", 'Armor of the Absolute Being'];
 /**
- * What breaks the budget among `defs`: an item spending past its grade's top that is not one of the six of ruling 6 (or
+ * What breaks the budget among `defs`: an item spending past its grade's top that is not one of the four of ruling 6 (or
  * is one of them but not graded plus), and one claiming a grade above its spend with no block the budget cannot weigh.
  */
 function breaches(defs: readonly ItemDef[], R: Rules): string[] {
@@ -329,15 +329,15 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
     expect(breaches(ALL, RULES)).toEqual([]);
   });
 
-  test('the check fails a seventh item past its tier\'s top, even graded plus, and an item graded above its spend with nothing unweighed', () => {
-    const seventh: ItemDef = { name: 'Seventh Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { manaMax: 3 }, grade: 1, desc: 'Past its top.' };
-    expect(breaches([...ALL, seventh], RULES)).toEqual(['Seventh Ring spends 6.0, past its tier\'s top']);
+  test('the check fails a fifth item past its tier\'s top, even graded plus, and an item graded above its spend with nothing unweighed', () => {
+    const fifth: ItemDef = { name: 'Fifth Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { manaMax: 4 }, grade: 1, desc: 'Past its top.' };
+    expect(breaches([...ALL, fifth], RULES)).toEqual(['Fifth Ring spends 8.0, past its tier\'s top']);
     const dagger = { ...def('Iron Dagger'), grade: 1 } as ItemDef;
     expect(breaches([dagger], RULES)).toEqual(['Iron Dagger claims a grade above its spend 0.0 with nothing the budget cannot weigh']);
   });
 
-  test('the six of ruling 6 are each past their tier\'s top, graded plus, and priced as its plus: 1,875 at rare, 28,500 at legendary, 112,500 at mythic', () => {
-    const price: Readonly<Partial<Record<Rarity, number>>> = { rare: 1875, legendary: 28500, mythic: 112500 };
+  test('the four of ruling 6 are each past their tier\'s top, graded plus, and priced as its plus: 28,500 at legendary, 112,500 at mythic', () => {
+    const price: Readonly<Partial<Record<Rarity, number>>> = { legendary: 28500, mythic: 112500 };
     for (const name of KEPT) {
       const d = def(name);
       expect(gradeOfSpend(RULES, d.rar, spendOf(name)), name).toBeNull();
@@ -349,72 +349,72 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
   test('each built-in item spends what the unified weapon budget says, to one decimal', () => {
     const SPEND: Readonly<Record<string, number>> = {
       'Iron Dagger': 0, 'Goblin Shortbow': 0, 'Steel Longsword': 0, 'Hunting Bow': 0, "Hunter's Leather": 0, 'Padded Cap': 0, 'Dented Tower Shield': 0, 'Worn Hunter Boots': 1,
-      "Orc Warrior's Cleaver": 1.7, 'Reinforced Hunter Vest': 0, 'Ironhide Gauntlets': 1, 'Swift Runner Greaves': 1, 'Mana Talisman': 2,
+      "Orc Warrior's Cleaver": 2.9, 'Reinforced Hunter Vest': 0, 'Ironhide Gauntlets': 1, 'Swift Runner Greaves': 1, 'Mana Talisman': 2,
       "Kasaka's Venom Fang": 2, "Ice Elf's Cloak": 1, 'Knight Killer': 4.3, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
-      'Ring of Vitality': 5, 'Frost Giant Hammer': 6.5, "Knight's Aegis": 1, 'Cloak of the Shadow Hunter': 2, 'Helm of the Iron Knight': 2,
-      'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 10.1, 'Orb of Avarice': 16,
-      'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 32.5, 'Armor of the Absolute Being': 45,
+      'Ring of Vitality': 5, 'Frost Giant Hammer': 11.1, "Knight's Aegis": 1, 'Cloak of the Shadow Hunter': 2, 'Helm of the Iron Knight': 2,
+      'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 18.4, 'Orb of Avarice': 16,
+      'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 45.5, 'Armor of the Absolute Being': 45,
     };
     const worn = OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory');
     expect(worn.map(d => d.name).sort()).toEqual(Object.keys(SPEND).sort());
     for (const d of worn) expect(Number(spendOf(d.name).toFixed(1)), d.name).toBe(SPEND[d.name]!);
   });
 
-  test('each built-in\'s grade matches its spend: Orc Warrior\'s Cleaver middle, Knight Killer and Frost Giant Hammer plus beside the other plus items', () => {
-    const PLUS = ['Worn Hunter Boots', 'Mana Talisman', 'Knight Killer', 'Frost Giant Hammer', "Ring of the Monarch's Will", ...KEPT];
-    const MID = ["Orc Warrior's Cleaver"];
+  test('each built-in\'s grade matches its spend: Worn Hunter Boots, Orc Warrior\'s Cleaver, Mage Circlet and Baruka\'s Mana Ring middle, Frost Giant Hammer plus beside the kept items', () => {
+    const PLUS = ['Frost Giant Hammer', ...KEPT];
+    const MID = ['Worn Hunter Boots', "Orc Warrior's Cleaver", 'Mage Circlet', "Baruka's Mana Ring"];
     for (const d of OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory')) {
       expect(d.grade, d.name).toBe(PLUS.includes(d.name) ? 1 : MID.includes(d.name) ? undefined : -1);
     }
     for (const d of ALL.filter(d => d.type === 'consumable' || d.type === 'material')) expect(d.grade, `${d.name}: a thing used up or sold has no grade`).toBeUndefined();
   });
 
-  test('the shop after the budget (block [2.2]): Iron Dagger, Hunter\'s Leather and Steel Longsword 67, Knight Killer 1,875 (Rare+), Ring of Vitality 3,333', () => {
+  test('the shop after the budget (block [2.2]): Iron Dagger, Hunter\'s Leather and Steel Longsword 67, Knight Killer 833 (Rare−), Ring of Vitality 3,333', () => {
     const prices = ['Iron Dagger', "Hunter's Leather", 'Steel Longsword', 'Knight Killer', 'Ring of Vitality'].map(n => valueOf(itemOf(RULES, def(n)), RULES));
-    expect(prices).toEqual([67, 67, 67, 1875, 3333]);
+    expect(prices).toEqual([67, 67, 67, 833, 3333]);
   });
 });
 
 group('the item maker\'s spend line (economy design 2.4)', () => {
   const line = (it: ItemTemplate, grade: Grade) => spendLine(itemSpend(it, RULES)!, RULES, it.rar, grade);
-  const plus4 = gear('rare', { bonus: { ins: 4 } });
+  const plus7 = gear('rare', { bonus: { ins: 7 } });
 
-  test('a spend inside its grade says the points and what the grade holds: "Uses 4.0 budget points. Rare+ range is 3.7 to 4.4."', () => {
-    expect(line(plus4, 1)).toEqual({ words: 'Uses 4.0 budget points. Rare+ range is 3.7 to 4.4.', over: false });
-    expect(line(gear('rare', { bonus: { ins: 2 } }), -1)).toEqual({ words: 'Uses 2.0 budget points. Rare− range is up to 3.1.', over: false });
+  test('a spend inside its grade says the points and what the grade holds: "Uses 7.0 budget points. Rare+ range is 6.2 to 7.4."', () => {
+    expect(line(plus7, 1)).toEqual({ words: 'Uses 7.0 budget points. Rare+ range is 6.2 to 7.4.', over: false });
+    expect(line(gear('rare', { bonus: { ins: 2 } }), -1)).toEqual({ words: 'Uses 2.0 budget points. Rare− range is up to 5.2.', over: false });
   });
 
   test('a grade under the spend warns and names the grade that holds it; it never refuses', () => {
-    expect(line(plus4, 0)).toEqual({ words: 'Uses 4.0 budget points, above Rare (3.1 to 3.7). Matches Rare+ (3.7 to 4.4).', over: true });
+    expect(line(plus7, 0)).toEqual({ words: 'Uses 7.0 budget points, above Rare (5.2 to 6.2). Matches Rare+ (6.2 to 7.4).', over: true });
   });
 
   test('a grade above the spend suggests the grade that holds it, with no warning', () => {
-    expect(line(gear('rare', { bonus: { ins: 1 } }), 1)).toEqual({ words: 'Uses 1.0 budget points. Rare+ range is 3.7 to 4.4. Matches Rare− (up to 3.1).', over: false });
+    expect(line(gear('rare', { bonus: { ins: 1 } }), 1)).toEqual({ words: 'Uses 1.0 budget points. Rare+ range is 6.2 to 7.4. Matches Rare− (up to 5.2).', over: false });
   });
 
   test('a spend past the tier\'s top says so whatever the grade: a GM\'s item is never fitted to the budget', () => {
-    expect(line(gear('rare', { bonus: { manaMax: 3 } }), 1)).toEqual({ words: 'Uses 6.0 budget points, above the Rare+ max (4.4). Stronger than any Rare grade.', over: true });
+    expect(line(gear('rare', { bonus: { manaMax: 4 } }), 1)).toEqual({ words: 'Uses 8.0 budget points, above the Rare+ max (7.4). Stronger than any Rare grade.', over: true });
   });
 
   test('what the budget cannot weigh is named, with the words to test it in a fight: a worn status\'s standing op with no rule', () => {
     const hasted: StatusDef = { label: 'Hasted', desc: '', ops: [{ op: 'speed', pct: 10 }] };
-    expect(line(gear('rare', { bonus: { ins: 4 }, worn: hasted }), 1)).toEqual({
-      words: 'Uses 4.0 budget points. Rare+ range is 3.7 to 4.4. Does not include unestimated worn status effects. Test it in a fight.',
+    expect(line(gear('rare', { bonus: { ins: 7 }, worn: hasted }), 1)).toEqual({
+      words: 'Uses 7.0 budget points. Rare+ range is 6.2 to 7.4. Does not include unestimated worn status effects. Test it in a fight.',
       over: false,
     });
   });
 
   test('a weapon\'s spend line prints the weapon damage and powers/stats breakdown using BUDGET_WORDS', () => {
     expect(line(itemOf(RULES, def('Frost Giant Hammer')), 1)).toEqual({
-      words: `Uses 6.5 budget points (6.5 ${BUDGET_WORDS.weapon}). Epic+ range is 5.9 to 6.7.`,
+      words: `Uses 11.1 budget points (11.1 ${BUDGET_WORDS.weapon}). Epic+ range is 9.8 to 11.2.`,
       over: false,
     });
-    expect(line(itemOf(RULES, def('Spellblade')), 0)).toEqual({
-      words: `Uses 3.6 budget points (0.0 ${BUDGET_WORDS.weapon}, 3.6 ${BUDGET_WORDS.powers}). Rare range is 3.1 to 3.7.`,
+    expect(line(itemOf(RULES, def('Spellblade')), -1)).toEqual({
+      words: `Uses 3.6 budget points (0.0 ${BUDGET_WORDS.weapon}, 3.6 ${BUDGET_WORDS.powers}). Rare− range is up to 5.2.`,
       over: false,
     });
-    expect(line(itemOf(RULES, def('Knight Killer')), 1)).toEqual({
-      words: `Uses 4.3 budget points (0.0 ${BUDGET_WORDS.weapon}, 4.3 ${BUDGET_WORDS.stats}). Rare+ range is 3.7 to 4.4.`,
+    expect(line(itemOf(RULES, def('Knight Killer')), -1)).toEqual({
+      words: `Uses 4.3 budget points (0.0 ${BUDGET_WORDS.weapon}, 4.3 ${BUDGET_WORDS.stats}). Rare− range is up to 5.2.`,
       over: false,
     });
   });
@@ -501,7 +501,7 @@ group('what a held thing\'s powers spend (item-stats 6.5)', () => {
     const s = itemSpend(gear('rare', { active: taunting }), RULES)!;
     expect(s.unweighed).toEqual(['active']);
     expect(spendLine(s, RULES, 'rare', -1)).toEqual({
-      words: 'Uses 0.0 budget points. Rare− range is up to 3.1. Does not include unestimated active ability effects. Test it in a fight.',
+      words: 'Uses 0.0 budget points. Rare− range is up to 5.2. Does not include unestimated active ability effects. Test it in a fight.',
       over: false,
     });
   });

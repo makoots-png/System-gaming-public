@@ -261,7 +261,7 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
     expect([bow.kind, text(bow)]).toEqual(['shot', '0.7 * (1d8 + finesse)']);
     expect([sword.kind, text(sword), (sword.effect?.by === 'hand')]).toEqual(['strike', '1d8 + phys', false]);
     expect([spellblade.kind, text(spellblade)]).toEqual(['strike', '1d8 + phys']);
-    expect([hammer.kind, text(hammer)]).toEqual(['strike', '3d12 + phys']);
+    expect([hammer.kind, text(hammer)]).toEqual(['strike', '2d12 + phys']);
     expect(text(plainSmall)).toBe('1d4 + phys');
     expect([fist.name, fist.kind, text(fist)]).toEqual(['Strike', 'strike', '1d8 + phys']);
   });

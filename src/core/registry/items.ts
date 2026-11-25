@@ -158,8 +158,8 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
   { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
   // "Cruel to armored foes": 5 Lethality (5 points of armor ignored on every hit; a resist is not armor) plus 1 Strength
-  // on a 1d8 finesse dagger spends 4.32 (0.0 weapon damage, 4.32 stats), inside Rare+'s 3.71 to 4.43.
-  { name: 'Knight Killer', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { str: 1, armorPenFlat: 5 }, desc: 'A finesse dagger that adds 1 Strength and ignores 5 points of armor.' },
+  // on a 1d8 finesse dagger spends 4.32 (0.0 weapon damage, 4.32 stats), inside Rare−'s top 5.17.
+  { name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { str: 1, armorPenFlat: 5 }, desc: 'A finesse dagger that adds 1 Strength and ignores 5 points of armor.' },
   { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
   // raises up to, and its price `revivePrices` times that rank's `priceBase`. The GM tells the table how common they are; its use
@@ -195,12 +195,11 @@ const BULWARK: Ability = abilityOf('support', {
 
 /** The recipe items: the library holds them with the other loot, and a gate may drop them by rarity. */
 export const RECIPE_ITEMS: readonly ItemDef[] = [
-  // Thornmail, Epic+: Vitality 1 costs 1.00, a struck trigger's reflect `1 + 0.01 * armor` 5.15 (read on the build with the
-  // most armor, one strike a round), so it spends 6.15 against Epic+'s 5.86 to 6.73. The plan's `3 + 0.1 * armor` spends 32
-  // here. Its healing cut is left out: priced as heal power's mirror, a cut of s is s of B's 119.6 points a standard
-  // action, so League's 40% spends 47.8 and the 0.59 points left hold 0.5% (item-stats.md, build note items-small).
+  // Thornmail, Epic−: Vitality 1 costs 1.00, a struck trigger's reflect `1 + 0.01 * armor` 5.15 (read on the build with the
+  // most armor, one strike a round), so it spends 6.15 against Epic−'s top 8.49. The plan's `3 + 0.1 * armor` spends 32
+  // here. Its healing cut is left out until grievous wounds is weighed (item-stats.md, build note items-small).
   {
-    name: 'Thornmail', rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
+    name: 'Thornmail', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
     desc: 'Heavy chest armor that adds 1 Vitality. When a foe strikes you, it takes magic damage equal to 1 + 1% of your armor.',
     worn: {
       label: 'Thornmail', desc: 'Foes that strike you take magic damage.', ops: [],
@@ -209,11 +208,11 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
       ] }],
     },
   },
-  // Spellblade, Rare: 1d8 spends 0.0 weapon damage so the whole budget goes to its power; the hit trigger
-  // `1 + 0.005 * str` is read on the build that favours Strength at one hit a round: 3.58 against Rare's 3.10 to 3.71.
+  // Spellblade, Rare−: 1d8 spends 0.0 weapon damage so the whole budget goes to its power; the hit trigger
+  // `1 + 0.005 * str` is read on the build that favours Strength at one hit a round: 3.58 against Rare−'s top 5.17.
   // The mark's stack has no rule worth reads. A GM tags a skill "spell" for it to ready the blade.
   {
-    name: 'Spellblade', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
+    name: 'Spellblade', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
     desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 1 + 0.5% of your Strength.',
     worn: {
       label: 'Spellblade', desc: 'Using a spell adds bonus physical damage to your next hit.', ops: [],
@@ -223,30 +222,30 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
       ],
     },
   },
-  // Healer's Charm, Rare: Presence 2 costs 2.00 and a heal of `0.05 * sup` (a twentieth of the wearer's heal power) on a kill
-  // 1.24 (its rate is 0.35 a round, on the support build), so it spends 3.24 against Rare's 3.10 to 3.71. A per-round
+  // Healer's Charm, Rare−: Presence 2 costs 2.00 and a heal of `0.05 * sup` (a twentieth of the wearer's heal power) on a kill
+  // 1.24 (its rate is 0.35 a round, on the support build), so it spends 3.24 against Rare−'s top 5.17. A per-round
   // heal would be unweighed (worth.ts reads no standing heal), so the heal is a trigger. `healPower` (unit 1) is not built.
   {
-    name: "Healer's Charm", rar: 'rare', type: 'accessory', slot: 'neck', bonus: { pre: 2 },
+    name: "Healer's Charm", rar: 'rare', grade: -1, type: 'accessory', slot: 'neck', bonus: { pre: 2 },
     desc: 'A charm that adds 2 Presence. When you defeat a foe, you heal for 5% of your support power.',
     worn: {
       label: "Healer's Charm", desc: 'Defeating a foe heals you.', ops: [],
       triggers: [{ on: 'kill', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: formula('0.05 * sup'), when: 'use' }] }],
     },
   },
-  // Bulwark Ring, Rare+: no bonus; the active's shield `10 + 0.05 * hpmax` on the build with the most max HP, over the
+  // Bulwark Ring, Rare−: no bonus; the active's shield `10 + 0.05 * hpmax` on the build with the most max HP, over the
   // support's standard shield, times its uses a round (one in 8, its cooldown) times the rate a worn worth pays: 4.17
-  // against Rare+'s 3.71 to 4.43. The plan's `10 + 0.2 * hpmax` every 3 rounds spends 23.2 here.
+  // against Rare−'s top 5.17. The plan's `10 + 0.2 * hpmax` every 3 rounds spends 23.2 here.
   {
-    name: 'Bulwark Ring', rar: 'rare', grade: 1, type: 'accessory', slot: 'ring1', bonus: {},
+    name: 'Bulwark Ring', rar: 'rare', grade: -1, type: 'accessory', slot: 'ring1', bonus: {},
     desc: 'While worn, you can use Bulwark in a fight to gain a shield equal to 10 + 5% of your max HP. 8-round cooldown.',
     active: BULWARK,
   },
-  // Lifeline Locket, Rare+: no bonus; a shield of `0.1 * hpmax` once a fight, when its wearer falls under 30% HP (the
+  // Lifeline Locket, Rare−: no bonus; a shield of `0.1 * hpmax` once a fight, when its wearer falls under 30% HP (the
   // `lowHp` event, `kit.lowHpAt`). Read on the build with the most max HP, an HP of shield weighed as an HP healed
-  // (`hpRate`), at `lowHp`'s rate of once a fight: 4.12 against Rare+'s 3.71 to 4.43. League's 30% of max HP spends 12.4.
+  // (`hpRate`), at `lowHp`'s rate of once a fight: 4.12 against Rare−'s top 5.17. League's 30% of max HP spends 12.4.
   {
-    name: 'Lifeline Locket', rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: {},
+    name: 'Lifeline Locket', rar: 'rare', grade: -1, type: 'accessory', slot: 'neck', bonus: {},
     desc: 'The first time you drop under 30% HP in a fight, you gain a shield equal to 10% of your max HP.',
     worn: {
       label: 'Lifeline Locket', desc: 'Gain a shield when you drop under 30% HP.', ops: [],
@@ -254,7 +253,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
     },
   },
   // Warden's Plate, Epic−: the heavy chest piece is free; the `sheet` armor op `0.015 * hpmax` is read on the build with the
-  // most max HP and costs the Vitality whose armor it is (item-budget.ts `SHEET_OP_COST`): 4.92 against Epic−'s top 5.10.
+  // most max HP and costs the Vitality whose armor it is (item-budget.ts `SHEET_OP_COST`): 4.92 against Epic−'s top 8.49.
   {
     name: "Warden's Plate", rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: {},
     desc: 'Heavy chest armor. While worn, you gain extra armor equal to 1.5% of your max HP.',
@@ -269,17 +268,17 @@ export const LOOT_ITEMS: readonly ItemDef[] = [
   { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
   { name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
   { name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
-  { name: 'Worn Hunter Boots', rar: 'common', grade: 1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
-  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '2d8', attack: 'strike', desc: 'A heavy cleaver built for raw damage.' },
+  { name: 'Worn Hunter Boots', rar: 'common', type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
+  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', desc: 'A heavy cleaver built for raw damage.' },
   { name: 'Reinforced Hunter Vest', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
   { name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'light', icon: 'gauntlet', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
-  { name: 'Mana Talisman', rar: 'uncommon', grade: 1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
+  { name: 'Mana Talisman', rar: 'uncommon', grade: -1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
   { name: 'Swift Runner Greaves', rar: 'uncommon', grade: -1, type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
   { name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
   { name: "Ice Elf's Cloak", rar: 'rare', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
-  { name: 'Mage Circlet', rar: 'rare', grade: 1, type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
-  { name: "Baruka's Mana Ring", rar: 'rare', grade: 1, type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
-  { name: 'Frost Giant Hammer', rar: 'epic', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d12', attack: 'strike', twoHanded: true, desc: 'A massive two-handed hammer with a head of ice, built for raw damage.' },
+  { name: 'Mage Circlet', rar: 'rare', type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
+  { name: "Baruka's Mana Ring", rar: 'rare', type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
+  { name: 'Frost Giant Hammer', rar: 'epic', grade: 1, type: 'weapon', slot: 'weapon', dice: '2d12', attack: 'strike', twoHanded: true, desc: 'A massive two-handed hammer with a head of ice, built for raw damage.' },
   { name: "Knight's Aegis", rar: 'epic', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
   { name: 'Cloak of the Shadow Hunter', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
   { name: 'Helm of the Iron Knight', rar: 'epic', grade: -1, type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
@@ -290,7 +289,7 @@ export const LOOT_ITEMS: readonly ItemDef[] = [
   { name: "Monarch's Scepter", rar: 'mythic', grade: 1, type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', twoHanded: true, bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
   { name: 'Crown of the Shadow Sovereign', rar: 'mythic', grade: -1, type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
   { name: 'Armor of the Absolute Being', rar: 'mythic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
-  { name: "Ring of the Monarch's Will", rar: 'mythic', grade: 1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
+  { name: "Ring of the Monarch's Will", rar: 'mythic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
   ...RECIPE_ITEMS,
 ];
 
