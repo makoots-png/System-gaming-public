@@ -449,9 +449,11 @@ describe('a mythic on the table (notes-11-keystones.md B.5, unit MY7)', () => {
     expect(omenBanner(m, names, late, R)!.title).toBe(`DOOM: ${script.omens[beat.omen]!.name}`);
   });
   test('Cannot be dodged or resisted on a sure move, and a blast says to step out of its tiles', () => {
-    const sure = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'note' as OmenKey, faltering: false, aim: id('Boss') } }), names, tick(0), R)!;
-    expect(sure.answers).toContain('Cannot be dodged or resisted.');
-    const blast = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'stars' as OmenKey, faltering: false, aim: { x: 1, y: 1 } } }), names, tick(0), R)!;
+    const note = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'note' as OmenKey, faltering: false, aim: id('Boss') } }), names, tick(0), R)!;
+    expect(note.answers).toContain('Cannot be dodged or resisted.');
+    const stars = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'stars' as OmenKey, faltering: false, aim: { x: 1, y: 1 } } }), names, tick(0), R)!;
+    expect(stars.answers).toContain('Cannot be dodged or resisted.');
+    const blast = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'breath' as OmenKey, faltering: false, aim: id('Boss') } }), names, tick(0), R)!;
     expect(blast.answers).toContain('Step out of the marked tiles to dodge it.');
   });
 

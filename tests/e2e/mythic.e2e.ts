@@ -82,6 +82,7 @@ test('a player whose hunter stands in Stars Fall\'s tiles reads that they are in
   const stars = script.omens['stars' as keyof typeof script.omens]!;
   await expect(combat(player).locator('.myth-title')).toHaveText(`OMEN: ${stars.name}`);
   await expect(combat(player).locator('.myth-when')).toHaveText('Lands on its next turn, on the marked tiles.');
+  await expect(combat(player).locator('.myth-omen')).toContainText('Cannot be dodged or resisted.');
   await expect(combat(player).locator('.myth-you')).toHaveText('You are in the marked tiles.');
   await expect(combat(gm).locator('.myth-you')).toHaveCount(0);
   await shot(player, 'player-stars');

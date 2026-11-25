@@ -818,3 +818,5 @@ ts	phase	decision	why	evidence	result
 2026-11-25T03:37Z	arch	landed status-type-rules (GM-editable damage types incl. keystone triggers per t123u-t125u); merged twice with lead-backlog by Neon, 2 fixture-id collisions fixed (s914, i914); 0 fight-sim rows moved; unit 7053 pass
 2026-11-25T03:51Z	ops	PR 124 (GM-editable damage types, status-type-rules) merged to main; CI 45541252996
 2026-11-25T05:27Z	arch	landed balance pass steps 1+2 (BAL-A): div WEAR_LIMIT, weaponDuty 0.45, regrade, spending() cap-and-spill; PEN_ROWS moved, new G1-G3 and WD1-WD2 rows; unit 7064 pass on merged tree
+2026-11-25T05:42Z	ops	PR 125 (balance pass steps 1+2) merged to main; CI 45553755223
+2026-11-25T05:52Z	arch	landed balance pass step 4 (bal-stars): stars-fall sure; Angel B5 step 0.760->0.735; unit 7064 pass merged

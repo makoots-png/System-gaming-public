@@ -297,15 +297,27 @@ describe('autoMonsterTurn builds a legal command and its dice needs for a monste
     expect(fizz.result.effects.some(e => e.type === 'refused')).toBe(false);
     expect(body(fizz.result.fight as Running, 'X').mythic?.at).toBe('calm');
 
-    // Dodgeable omen blast (Stars Fall) opens dodge prompt
+    // Dodgeable omen blast (The First Breath) opens dodge prompt
+    const fBreath = omened(begun('X', mythic('angel-of-the-last-trumpet', place(5, 5)), party('bruiser', 'A', place(8, 5)), party('cannon', 'C', place(11, 5))), 'breath', 'X');
+    const planBreath = autoMonsterTurn(fBreath, X, ON, fBreath.now);
+    if (planBreath.kind !== 'roll') throw new Error(`expected roll, got ${planBreath.kind}`);
+    const rBreath = reduce(fBreath, planBreath.command({
+      dice: Object.fromEntries(Object.entries(planBreath.needs.dice).map(([k, ds]) => [k, ds.map(() => 1)])),
+      react: Object.fromEntries(planBreath.needs.react.map(id => [id, 20])),
+    }), ctx);
+    expect(rBreath.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
+
+    // Undodgeable omen blast (Stars Fall) lands directly with no dodge prompt
     const fStars = omened(begun('X', mythic('angel-of-the-last-trumpet', place(5, 5)), party('bruiser', 'A', place(8, 5)), party('cannon', 'C', place(11, 5))), 'stars', place(8, 5));
     const planStars = autoMonsterTurn(fStars, X, ON, fStars.now);
     if (planStars.kind !== 'roll') throw new Error(`expected roll, got ${planStars.kind}`);
+    expect(planStars.needs.react).toEqual([]);
     const rStars = reduce(fStars, planStars.command({
       dice: Object.fromEntries(Object.entries(planStars.needs.dice).map(([k, ds]) => [k, ds.map(() => 1)])),
-      react: Object.fromEntries(planStars.needs.react.map(id => [id, 20])),
+      react: {},
     }), ctx);
-    expect(rStars.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
+    expect(rStars.effects.some(e => e.type === 'dodgeAsked')).toBe(false);
+    expect(rowHp(body(rStars.fight as Running, 'A'))).toBeLessThan(rowHp(body(fStars, 'A')));
   });
 
   test('taunt forces autoMonsterTurn to step toward an out-of-reach taunter, drops a conflicting stale intent, and frees the monster when the taunter hides', () => {

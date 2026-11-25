@@ -2266,4 +2266,20 @@ Why `1.15 * (1d8 + phys)` + `0.15` stagger on a 6-round cooldown:
 - `W2` (difficulty-5 boss at B, 300 runs): `0.880` win share (se `0.019`, mean `9.5` rounds), bound `0.780 to 0.940`.
 - `W3` (mean across all 4 mythics at S, 200 runs each = 800 fights): `0.101` win share (se `0.011`; `plain 0.145`, `angel 0.110`, `zaratan 0.075`, `rider 0.075`), bound `0.060 to 0.140`.
 
+## Balance pass step 4: Angel's Stars Fall (branch bal-stars, Nov 25)
+
+After R6 made `burning` meet Resist, a hunter who ignored the `Stars Fall` omen could still reaction-dodge out of the radius-2 blast on its 1-round wind-up, leaving the Angel's `B5 without step` row near its `0.800` ceiling. Setting `sure: true` on `stars-fall` (keeping `hits: 1` and reach 2) removes the last-second reaction dodge while keeping stepping off the center tile a full cancel and showing `Cannot be dodged or resisted.` on the omen banner.
+
+### Sweep on 600 runs (exact `fight-sim.test.ts` seeds)
+
+| Variant | B1 wins | B3 none | B4 3 cannons | B5 step (se) | B5 interrupt | B5 shield |
+|---|---|---|---|---|---|---|
+| Before (`sure: false, hits: 1.0`) | 0.083 (50) | 0.000 | 0.093 (56) | 0.760 (0.158) | 0.220 | 0.220 |
+| **After (`sure: true, hits: 1.0`)** | **0.082 (49)** | **0.000** | **0.093 (56)** | **0.735 (0.156)** | **0.204** | **0.224** |
+| `sure: true, hits: 1.2` | 0.082 (49) | 0.000 | 0.093 (56) | 0.735 (0.156) | | |
+| `sure: true, hits: 1.4` | 0.080 (48) | 0.000 | 0.093 (56) | 0.750 (0.160) | | |
+| `sure: true, hits: 1.6` | 0.080 (48) | 0.000 | 0.093 (56) | 0.750 (0.160) | | |
+
+Raising `hits` past `1.0` does not cut `noStep` wins below `36 / 600` because `1.0 * hpS` plus burning already kills a Cannon caught in the blast. The remaining floor comes from Phase 1 ending before beat 4 (`Stars Fall`) lands (`10` of `36` `noStep` wins exit Phase 1 in under 5 turns). Every Angel row stays inside its bound: B1 `0.082` (0.05 to 0.10), B2 `0 / 0`, B3 `0.000` (under 0.01), B4 `0.093` (at most 0.15), B5 step `0.735` / interrupt `0.204` / shield `0.224` (at most 0.80), B6 `0` capped / `0.000` after doom, B7 max `0.448` / least minus floor `0.069`, B8 median `15.5` rounds.
+
 

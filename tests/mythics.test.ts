@@ -182,8 +182,9 @@ test('a move\'s ability is named for its key, cannot be avoided when sure, never
   const note = mythicMove(...entryOf(angel, 'final-note')!, body!, RULES);
   expect([note.id, note.name, note.delivery, note.foesOnly]).toEqual(['mythic-final-note', 'The Final Note', { kind: 'sure' }, true]);
   expect(note.ops.map(o => (o.op === 'applyStatus' ? [o.key, o.duration] : o.op))).toEqual([['stunned', RULES.fight.round]]);
-  const stars = mythicMove(...entryOf(angel, 'stars-fall')!, body!, RULES);
-  expect([stars.delivery.kind, stars.range, stars.shape.kind === 'radius' && stars.shape.radius, stars.zone?.name]).toEqual(['travel', 12, 2, 'Fallen stars']);
+  const [starsKey, starsMove] = entryOf(angel, 'stars-fall')!;
+  const stars = mythicMove(starsKey, starsMove, body!, RULES);
+  expect([starsMove.sure, stars.delivery.kind, stars.range, stars.shape.kind === 'radius' && stars.shape.radius, stars.zone?.name]).toEqual([true, 'sure', 12, 2, 'Fallen stars']);
 });
 
 test('a GM\'s turn pace for a mythic is one of the paces, and a script bound runs low to high', () => {

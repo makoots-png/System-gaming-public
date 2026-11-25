@@ -89,9 +89,10 @@ export const MYTHICS = {
     name: 'The Angel of the Last Trumpet', hp: 1,
     shape: 'Every phase has a short timer. When a timer runs out, it uses The Final Note every other turn.',
     moves: {
-      // 1.0 at the farthest, not 0.55 at the crowd: the walk in stepped off the crowd's tile, and at 0.55 a party that
-      // never stepped won 0.83 of the share of one that did (row B5, sim-log.md MY5 fifth pass)
-      'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'arcane', reach: 2, range: 12, hits: 1, sure: false,
+      // 1.0 at the farthest and sure, not 0.55 at the crowd: the walk in stepped off the crowd's tile, at 0.55 a party
+      // that never stepped won 0.83 of B1 (MY5 fifth pass), and after burning met Resist a dodgeable blast let hunters
+      // reaction-dodge out of the radius-2 impact instead of stepping off the center tile (row B5, sim-log.md)
+      'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'arcane', reach: 2, range: 12, hits: 1, sure: true,
         applies: { status: 'burning', rounds: 2 }, leaves: { name: 'Fallen stars', rounds: 2, status: 'burning' }, self: null },
       // 1.2, not 0.35: a shield on the hunter it names cancels it, so its hit is the cost of no shield, as the Sinking's
       // is of not stepping off. At 0.35 three cannons, who hold no shield, lost little to it and won 0.17 of their
