@@ -1271,7 +1271,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
 describe('a hunter\'s job as the save keeps it (H9)', () => {
   test('a job is kept as its name; a blank, a non-string or the old default "None" is read as none (null)', () => {
     const read = (job: unknown) => parseSheetHunter({ ...newHunter(RULES), id: 'h1', job })?.job;
-    expect([read('Mage'), read('  Shadow   Monarch '), read(''), read('None'), read(7), read(null)]).toEqual(['Mage', 'Shadow Monarch', null, null, null, null]);
+    expect([read('Mage'), read('  Blade   Dancer '), read('  Shadow   Monarch '), read('Hemomancer'), read(''), read('None'), read(7), read(null)]).toEqual(['Mage', 'Blade Dancer', 'Necromancer', null, null, null, null, null]);
   });
 });
 

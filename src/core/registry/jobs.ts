@@ -1,9 +1,10 @@
-// jobs.ts: the jobs a GM can grant through a Job Change chain, one typed table. To add a job: add an entry here and run
-// `bun run test` (tests/jobs.test.ts checks every entry). A job has exactly three steps; the chain model
-// (src/core/hunter/job-chain.ts) issues them in order and grants the job when the third is complete. A job leans to one
-// pair of stats (`pair`), whose confluence it holds when the pair qualifies (src/core/hunter/keystones.ts), and carries
-// matching 2:1 Auto-allocate weights (`alloc`).
+// jobs.ts: the 36 built-in classes across four rarities (Common, Rare, Epic, Mythic), one typed table.
+// Common starters (6) are chainable via the level-10 Job Change chain (`BUILT_IN_JOBS` / `JOB_NAMES`).
+// Rare (12), Epic (8, unique), and Mythic (10, unique) live in `RARER_CLASSES`, joined into `BUILT_IN_CLASSES` (36).
+// Each class leans to one pair of stats (`pair`), whose Confluence it awakens when earned and active
+// (src/core/hunter/keystones.ts), and carries matching 2:1 Auto-allocate weights (`alloc`).
 import type { StatPair } from '../hunter/keystones.ts';
+import type { Rank } from '../rules.ts';
 import { STAT_KEYS } from '../stats.ts';
 import type { StatKey } from '../stats.ts';
 
@@ -12,30 +13,33 @@ export type StatWeights = Partial<Readonly<Record<StatKey, number>>>;
 /** A player's chosen stat focus for Auto-allocate: one main stat (2 parts) and an optional second stat (1 part). */
 export type StatFocus = { readonly main: StatKey; readonly second: StatKey | null };
 
+/** The four class rarities, in order from starter to capstone tier. */
+export const CLASS_RARITIES = ['common', 'rare', 'epic', 'mythic'] as const;
+export type ClassRarity = (typeof CLASS_RARITIES)[number];
+
 /** What one step of a chain asks. A `level` step completes itself when the hunter reaches `level`. */
 export type StepDef =
   | { goal: 'level'; level: number; title: string; desc: string }
   | { goal: 'task'; title: string; desc: string; objectives: readonly { label: string; target: number }[] };
 /**
- * A job: its three steps, in order (a tuple, so a job with two or four steps does not compile), the pair of stats
- * it leans to (when both hold the confluence's share, that pair is the hunter's confluence even if two other stats are
- * higher, and once the job's chain is done the confluence is awakened, design A.5), and its 2:1 Auto-allocate weights.
+ * A chainable starter job: its three steps, in order (a tuple, so a job with two or four steps does not compile),
+ * the pair of stats it leans to, and its 2:1 Auto-allocate weights.
  */
 export type JobDef = { steps: readonly [StepDef, StepDef, StepDef]; pair: StatPair; alloc: StatWeights };
 
 /** The level the standard chain asks for before the Job Change dungeon. */
 export const CHAIN_LEVEL = 10;
-/** The chain every job had before jobs had their own: reach level 10, survive the dungeon's 3 waves, defeat the Knight Captain. */
+/** The chain every starter job runs: reach level 10, survive the dungeon's 3 waves, defeat the Knight Captain. */
 const STANDARD: JobDef['steps'] = [
   { goal: 'level', level: CHAIN_LEVEL, title: 'Job Change 1/3: Requirements', desc: `Reach Level ${CHAIN_LEVEL} to qualify for the Job Change quest.` },
   { goal: 'task', title: 'Job Change 2/3: The Job Change Dungeon', desc: 'Enter the Job Change dungeon and survive.', objectives: [{ label: 'Survive dungeon waves', target: 3 }] },
   { goal: 'task', title: 'Job Change 3/3: Knight Captain', desc: 'Defeat the Knight Captain.', objectives: [{ label: 'Defeat the Knight Captain', target: 1 }] },
 ];
 
-// Each pair and alloc is the two stats that feed what the job does (derive.ts; item-budget.ts `FED_BY`), weighted 2:1.
-const JOBS = {
-  // the army and the mana to raise it: Presence holds shadows, Power is mana
-  Necromancer: { steps: STANDARD, pair: 'pre+pow', alloc: { pre: 2, pow: 1 } },
+// Six Common starters (settled.md: Necromancer moved to unique Mythic).
+const COMMON_JOBS_RAW = {
+  // the blow and the body to stand in reach: Strength is physical power, Vitality HP and armor
+  Fighter: { steps: STANDARD, pair: 'str+vit', alloc: { str: 2, vit: 1 } },
   // the first and the most turns: Agility is speed and finesse power, Instinct the opening, Reaction and crit faces
   Assassin: { steps: STANDARD, pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
   // the spell and its aim: Power is arcane power and mana, Control accuracy, penetration and the cost cut
@@ -44,23 +48,125 @@ const JOBS = {
   Tanker: { steps: STANDARD, pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },
   // the heal and the nerve to cast it under fire: Presence is support power, Discipline will and channel hold
   Healer: { steps: STANDARD, pair: 'dis+pre', alloc: { pre: 2, dis: 1 } },
-  // the blow and the body to stand in reach: Strength is physical power, Vitality HP and armor
-  Fighter: { steps: STANDARD, pair: 'str+vit', alloc: { str: 2, vit: 1 } },
   // range kept and the shot that lands: Agility is speed, move and finesse power, Control accuracy and crit size
   Ranger: { steps: STANDARD, pair: 'agi+ctl', alloc: { agi: 2, ctl: 1 } },
 } satisfies Record<string, JobDef>;
 
-export type JobName = keyof typeof JOBS;
-/** Every job by name, in the order the GM's picker lists them. */
-export const BUILT_IN_JOBS: Readonly<Record<JobName, JobDef>> = JOBS;
-export const JOB_NAMES = Object.keys(JOBS) as JobName[];
-export const isJobName = (v: unknown): v is JobName => typeof v === 'string' && Object.hasOwn(JOBS, v);
+export type JobName = keyof typeof COMMON_JOBS_RAW;
+export type CommonClassName = JobName;
+/** Every Common starter job by name, in the order the GM's Job Change picker lists them. */
+export const COMMON_JOBS: Readonly<Record<JobName, JobDef>> = COMMON_JOBS_RAW;
+export const BUILT_IN_JOBS: Readonly<Record<JobName, JobDef>> = COMMON_JOBS_RAW;
+export const JOB_NAMES = Object.keys(COMMON_JOBS_RAW) as JobName[];
+export const isJobName = (v: unknown): v is JobName => typeof v === 'string' && Object.hasOwn(COMMON_JOBS_RAW, v);
 
-/** Auto-allocate weights for a built-in job, or null when the hunter has no job or a custom GM job. */
+/** Metadata for any built-in class across all four rarities. */
+export type ClassDef = {
+  readonly rarity: ClassRarity;
+  readonly unique: boolean;
+  readonly pair: StatPair;
+  readonly alloc: StatWeights;
+  /** For Rare classes: the Common starter it branches from. */
+  readonly parent?: CommonClassName;
+  /** Informational recommended rank tag for Epic and Mythic classes (never a hard gate). */
+  readonly recRank?: Rank;
+  /** Job Change chain steps for chainable classes. */
+  readonly steps?: JobDef['steps'];
+};
+
+const RARER_CLASSES_RAW = {
+  // Rare (12, not unique, two branches per Common starter)
+  Berserker:    { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+vit', alloc: { str: 2, vit: 1 } },
+  Runeknight:   { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+pow', alloc: { str: 2, pow: 1 } },
+  Nightblade:   { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
+  Duelist:      { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'str+agi', alloc: { agi: 2, str: 1 } },
+  Pyromancer:   { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 } },
+  Artificer:    { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 } },
+  Brambleguard: { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },
+  Bastion:      { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'str+vit', alloc: { vit: 2, str: 1 } },
+  Cleric:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'dis+pre', alloc: { dis: 2, pre: 1 } },
+  Oracle:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'ins+pre', alloc: { pre: 2, ins: 1 } },
+  Sniper:       { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+ctl', alloc: { agi: 2, ctl: 1 } },
+  Strider:      { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+vit', alloc: { agi: 2, vit: 1 } },
+  // Epic (8, unique, in ship order)
+  Chronokeeper: { rarity: 'epic', unique: true, recRank: 'A', pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 } },
+  Grimreaper:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+pow', alloc: { agi: 2, pow: 1 } },
+  Stormcaller:  { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+pow', alloc: { pow: 2, agi: 1 } },
+  Seraph:       { rarity: 'epic', unique: true, recRank: 'A', pair: 'dis+pre', alloc: { dis: 2, pre: 1 } },
+  Voidstalker:  { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
+  Ironclad:     { rarity: 'epic', unique: true, recRank: 'A', pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },
+  Packlord:     { rarity: 'epic', unique: true, recRank: 'A', pair: 'vit+pre', alloc: { pre: 2, vit: 1 } },
+  Soulforger:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'dis+pow', alloc: { pow: 2, dis: 1 } },
+  // Mythic (10, unique)
+  Hemomancer:   { rarity: 'mythic', unique: true, recRank: 'S', pair: 'vit+pow', alloc: { pow: 2, vit: 1 } },
+  Necromancer:  { rarity: 'mythic', unique: true, recRank: 'S', pair: 'pre+pow', alloc: { pre: 2, pow: 1 } },
+  Starforger:   { rarity: 'mythic', unique: true, recRank: 'S', pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 } },
+  Bladefiend:   { rarity: 'mythic', unique: true, recRank: 'S', pair: 'str+agi', alloc: { str: 2, agi: 1 } },
+  Dreadnought:  { rarity: 'mythic', unique: true, recRank: 'S', pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },
+  Usurper:      { rarity: 'mythic', unique: true, recRank: 'S', pair: 'agi+pow', alloc: { agi: 2, pow: 1 } },
+  Dawnbringer:  { rarity: 'mythic', unique: true, recRank: 'S', pair: 'dis+pre', alloc: { dis: 2, pre: 1 } },
+  Rifthunter:   { rarity: 'mythic', unique: true, recRank: 'S', pair: 'ins+ctl', alloc: { ins: 2, ctl: 1 } },
+  Nullweaver:   { rarity: 'mythic', unique: true, recRank: 'S', pair: 'ins+pow', alloc: { ins: 2, pow: 1 } },
+  Godfist:      { rarity: 'mythic', unique: true, recRank: 'S', pair: 'str+dis', alloc: { str: 2, dis: 1 } },
+} satisfies Record<string, ClassDef>;
+
+export type RarerClassName = keyof typeof RARER_CLASSES_RAW;
+/** All 30 Rare, Epic, and Mythic classes by name. */
+export const RARER_CLASSES: Readonly<Record<RarerClassName, ClassDef>> = RARER_CLASSES_RAW;
+
+const ALL_CLASSES_RAW: Record<JobName | RarerClassName, ClassDef> = {
+  Fighter:  { rarity: 'common', unique: false, ...COMMON_JOBS_RAW.Fighter },
+  Assassin: { rarity: 'common', unique: false, ...COMMON_JOBS_RAW.Assassin },
+  Mage:     { rarity: 'common', unique: false, ...COMMON_JOBS_RAW.Mage },
+  Tanker:   { rarity: 'common', unique: false, ...COMMON_JOBS_RAW.Tanker },
+  Healer:   { rarity: 'common', unique: false, ...COMMON_JOBS_RAW.Healer },
+  Ranger:   { rarity: 'common', unique: false, ...COMMON_JOBS_RAW.Ranger },
+  ...RARER_CLASSES_RAW,
+};
+
+export type ClassName = keyof typeof ALL_CLASSES_RAW;
+/** All 36 built-in classes across Common, Rare, Epic, and Mythic. */
+export const BUILT_IN_CLASSES: Readonly<Record<ClassName, ClassDef>> = ALL_CLASSES_RAW;
+export const CLASS_NAMES = Object.keys(ALL_CLASSES_RAW) as readonly ClassName[];
+
+export type UniqueClassName = {
+  [K in RarerClassName]: (typeof RARER_CLASSES_RAW)[K]['unique'] extends true ? K : never;
+}[RarerClassName];
+
+/** The 18 unique built-in classes (8 Epic and 10 Mythic). */
+export const UNIQUE_CLASS_NAMES = CLASS_NAMES.filter(
+  (name): name is UniqueClassName => ALL_CLASSES_RAW[name].unique,
+);
+
+const UNIQUE_BY_LOWER = new Map<string, UniqueClassName>([
+  ...UNIQUE_CLASS_NAMES.map((name): [string, UniqueClassName] => [name.toLowerCase(), name]),
+  // Shadow Monarch is folded into Mythic Necromancer as a title/legacy extract string (settled.md) and must not bypass uniqueness.
+  ['shadow monarch', 'Necromancer'],
+]);
+
+export const isClassName = (v: unknown): v is ClassName =>
+  typeof v === 'string' && Object.hasOwn(ALL_CLASSES_RAW, v);
+
+export const isUniqueClass = (v: unknown): v is UniqueClassName =>
+  typeof v === 'string' && Object.hasOwn(ALL_CLASSES_RAW, v) && ALL_CLASSES_RAW[v as ClassName].unique;
+
+/** Case-insensitive match against the 18 unique built-in classes and aliases (including Shadow Monarch), or null. */
+export const canonicalUniqueClass = (v: string): UniqueClassName | null =>
+  UNIQUE_BY_LOWER.get(v.replace(/\s+/g, ' ').trim().toLowerCase()) ?? null;
+
+/** Metadata for a built-in class by name, or null for custom GM jobs and empty values. */
+export const classDefOf = (name: string | null | undefined): ClassDef | null =>
+  (isClassName(name) ? ALL_CLASSES_RAW[name] : null);
+
+/** Rarity of a built-in class by name, or null for custom GM jobs. */
+export const classRarityOf = (name: string | null | undefined): ClassRarity | null =>
+  (isClassName(name) ? ALL_CLASSES_RAW[name].rarity : null);
+
+/** Auto-allocate weights for any built-in class, or null when the hunter has no class or a custom GM job. */
 export const jobAlloc = (job: string | null | undefined): StatWeights | null =>
-  (isJobName(job) ? BUILT_IN_JOBS[job].alloc : null);
+  (classDefOf(job)?.alloc ?? null);
 
-/** A built-in job's main and second stats for the stat-focus picker, or null when not a built-in job. */
+/** A built-in class's main and second stats for the stat-focus picker, or null when not a built-in class. */
 export function jobFocus(job: string | null | undefined): StatFocus | null {
   const alloc = jobAlloc(job);
   if (!alloc) return null;
@@ -74,7 +180,7 @@ export function focusWeights(focus: StatFocus): StatWeights {
   return focus.second && focus.second !== focus.main ? { [focus.main]: 2, [focus.second]: 1 } : { [focus.main]: 1 };
 }
 
-/** The built-in job whose focus pair matches `focus` (same two stats), or null when none matches. */
+/** The Common starter job whose focus pair matches `focus` (same two stats), or null when none matches. */
 export function matchingJob(focus: StatFocus): JobName | null {
   if (!focus.second || focus.second === focus.main) return null;
   const pair = new Set<StatKey>([focus.main, focus.second]);

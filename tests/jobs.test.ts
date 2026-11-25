@@ -1,6 +1,6 @@
 // Every job in src/core/registry/jobs.ts must pass these. A new job is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { AUTO_ALLOC_WORDS, BUILT_IN_JOBS, JOB_NAMES, focusWeights, jobAlloc, jobFocus, matchingJob, parseStatFocus } from '../src/core/registry/jobs.ts';
+import { AUTO_ALLOC_WORDS, BUILT_IN_CLASSES, BUILT_IN_JOBS, CLASS_NAMES, JOB_NAMES, RARER_CLASSES, UNIQUE_CLASS_NAMES, canonicalUniqueClass, classDefOf, classRarityOf, focusWeights, isClassName, isJobName, isUniqueClass, jobAlloc, jobFocus, matchingJob, parseStatFocus } from '../src/core/registry/jobs.ts';
 import { statsOfPair } from '../src/core/hunter/keystones.ts';
 import { chainAfter, stepQuest } from '../src/core/hunter/job-chain.ts';
 import type { ChainResult, JobChain } from '../src/core/hunter/job-chain.ts';
@@ -104,6 +104,43 @@ group('stat focus helpers', () => {
     for (const s of lines) {
       expect(s).not.toMatch(/[—;]/);
       expect(s).not.toMatch(/\bjust\b/i);
+    }
+  });
+});
+
+group('36-class roster metadata', () => {
+  test('counts match settled.md (6 Common, 12 Rare, 8 Epic, 10 Mythic; 18 unique)', () => {
+    expect(JOB_NAMES).toHaveLength(6);
+    expect(Object.keys(RARER_CLASSES)).toHaveLength(30);
+    expect(CLASS_NAMES).toHaveLength(36);
+    expect(UNIQUE_CLASS_NAMES).toHaveLength(18);
+    expect(CLASS_NAMES.filter(n => classRarityOf(n) === 'common')).toHaveLength(6);
+    expect(CLASS_NAMES.filter(n => classRarityOf(n) === 'rare')).toHaveLength(12);
+    expect(CLASS_NAMES.filter(n => classRarityOf(n) === 'epic')).toHaveLength(8);
+    expect(CLASS_NAMES.filter(n => classRarityOf(n) === 'mythic')).toHaveLength(10);
+  });
+
+  test('every built-in class has a valid 2:1 alloc matching its pair, and uniqueness flags match rarity', () => {
+    for (const name of CLASS_NAMES) {
+      const def = BUILT_IN_CLASSES[name];
+      expect(isClassName(name)).toBe(true);
+      expect(classDefOf(name)).toBe(def);
+      const wantUnique = def.rarity === 'epic' || def.rarity === 'mythic';
+      expect(def.unique).toBe(wantUnique);
+      expect(isUniqueClass(name)).toBe(wantUnique);
+      if (wantUnique) {
+        expect(canonicalUniqueClass(`  ${name.toLowerCase()} `) as string | null).toBe(name);
+        expect(isJobName(name)).toBe(false);
+      } else {
+        expect(canonicalUniqueClass(name)).toBeNull();
+      }
+      if (def.rarity === 'rare') expect(isJobName(def.parent)).toBe(true);
+      const pairStats = statsOfPair(def.pair);
+      const focus = jobFocus(name);
+      expect(focus).not.toBeNull();
+      expect(pairStats).toContain(focus!.main);
+      expect(pairStats).toContain(focus!.second!);
+      expect(jobAlloc(name)).toEqual({ [focus!.main]: 2, [focus!.second!]: 1 });
     }
   });
 });

@@ -272,16 +272,16 @@ test('a player has no Build panel and uses Auto-allocate with a stat-focus picke
   });
 
   await test.step('a hunter with a built-in job gets their job focus pre-selected in Auto-allocate', async () => {
-    await patchHunter(page, { job: 'Necromancer', bonusPoints: 3 });
+    await patchHunter(page, { job: 'Healer', bonusPoints: 3 });
     await go(page, 'status');
-    const pre0 = await stat(page, 'pre'), pow0 = await stat(page, 'pow');
+    const pre0 = await stat(page, 'pre'), dis0 = await stat(page, 'dis');
     await page.locator(`${status}[data-auto-alloc]`).tap();
     await expect(page.locator(`${win} [data-af-main]`)).toHaveValue('pre');
-    await expect(page.locator(`${win} [data-af-second]`)).toHaveValue('pow');
-    await expect(page.locator(`${win} [data-af-job="Necromancer"]`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator(`${win} [data-af-second]`)).toHaveValue('dis');
+    await expect(page.locator(`${win} [data-af-job="Healer"]`)).toHaveAttribute('aria-pressed', 'true');
     await tapWin(page, 'Place ability points');
     await expect.poll(() => stat(page, 'pre')).toBe(pre0 + 3);
-    expect(await stat(page, 'pow')).toBe(pow0 + 1);
+    expect(await stat(page, 'dis')).toBe(dis0 + 1);
   });
 });
 

@@ -1234,7 +1234,7 @@ test('a view reads the answer of every write to the save: a refused write never 
     "src/views/bestiary.js: store.apply('codex-room', s => codexFromRoom(s, ": ROOM,
     "src/views/bestiary.js: store.apply('codex-record', s => recordDefeatSte": 'a defeat counted on the fight\'s events, which follow only a fight write the store took (combat.js `command`, `combat-ended`), so a read-only tab never gets here; its one refusal, `counted`, is a row counted already (the end counts every row down), which needs no word',
     "src/edge/sync.ts: store.apply('sync-status', atSync(serverSeen))": 'the mark that a server answered, for the next boot\'s probe: refused, the next boot probes from the page as before',
-    "src/edge/sync.ts: store.apply('noticed', s => released(s, noticeHe": 'the facts a fight held, released when the room\'s fight doc lets them go: refused, they wait in the inbox for the next release',
+    "src/edge/sync.ts: store.apply('noticed', s => releaseStep(s, holde": 'facts and class holder reconciliation waiting on the room\'s fight doc: refused, they wait for the next release',
     "src/edge/sync.ts: boxDo('outbox-gone', b => roomGone(b, code), s =": OUTBOX,
     'src/edge/sync.ts: flush()': OUTBOX,
     "src/edge/sync.ts: boxDo('outbox-failed', b => outStep(b, e.id, ev)": OUTBOX,
@@ -3021,4 +3021,136 @@ test('a damage-type literal is compared only in src/core/combat/damage-type.ts a
   const allowed = new Set(['src/core/combat/damage-type.ts', 'src/core/combat/land.ts']);
   const hits = (await sourceLines('src')).filter(l => !isComment(l.text) && !allowed.has(l.file) && badCmp(l.text));
   expect(report(hits), 'compare damage-type literals only in src/core/combat/damage-type.ts and src/core/combat/land.ts; use isDamage or defenceOf elsewhere').toEqual([]);
+});
+
+test('only src/core/hunter/classes.ts (and hunter.ts defaults/repair) writes hunter.classes, job, or jobDone', async () => {
+  // PR 1 architecture care: keeping one writer for the class locker and active pointer guarantees uniqueness refusal,
+  // locker cap, pricing, and outbox reporting cannot be bypassed. Scans comment-stripped full file text so multi-line
+  // object spreads (`{ ...h,\n job: x }`) are caught as well.
+  const owners = new Set(['src/core/hunter/classes.ts', 'src/core/hunter/hunter.ts']);
+  const stripComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
+  const write = /[\w$)\]!]\.(classes|job|jobDone)\s*(?:=(?![=>])|\?\?=|\|\|=)|\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])(classes|job|jobDone)\s*[:,}]/g;
+  const hasWrite = (s: string): boolean => { write.lastIndex = 0; return write.test(s); };
+  for (const bad of [
+    "h.job = 'Necromancer';",
+    "h.jobDone = 'Fighter';",
+    "h.classes = {};",
+    "return { ...next, job: fx.job, jobDone: fx.job };",
+    "return {\n  ...h,\n  job: 'Necromancer',\n};",
+    "return { ...h, classes: { ...h.classes } };",
+  ]) expect(hasWrite(bad), `catches ${bad}`).toBe(true);
+  for (const ok of [
+    "const j = h.job;",
+    "if (h.jobDone === h.job) return true;",
+    "const r = { ...newRewards(), xp: 10 };",
+  ]) expect(hasWrite(ok), `allows ${ok}`).toBe(false);
+
+  // Explicit zero-stale permit list for non-hunter objects that spread with a `job` field (rewards and chain payload).
+  const notHunters: Record<string, string[]> = {
+    'src/core/hunter/grant.ts': ['{ ...finished.rewards, job:', '{ ...r, xp, gold, crystal, points, job:'],
+    'src/core/protocol.ts': ["{ ...base(o), to: toList(own(o, 'to')), job:"],
+  };
+  const files = (await readdir(`${ROOT}/src`, { recursive: true }))
+    .filter(n => /\.(ts|js)$/.test(n))
+    .sort()
+    .map(n => `src/${n}`);
+  const all: Line[] = [];
+  for (const file of files) {
+    if (owners.has(file)) continue;
+    const cleaned = stripComments(await Bun.file(`${ROOT}/${file}`).text());
+    write.lastIndex = 0;
+    for (const m of cleaned.matchAll(write)) {
+      const line = cleaned.slice(0, m.index).split('\n').length;
+      all.push({ file, line, text: m[0].replace(/\s+/g, ' ').trim() });
+    }
+  }
+  const permitted = (line: Line): boolean => (notHunters[line.file] ?? []).some(tok => line.text.includes(tok));
+  const stale = Object.entries(notHunters).flatMap(([file, toks]) =>
+    toks.filter(tok => !all.some(l => l.file === file && l.text.includes(tok))).map(tok => `${file}: ${tok}`),
+  );
+  expect(stale, 'remove stale non-hunter permits').toEqual([]);
+  expect(report(all.filter(l => !permitted(l))), 'write hunter.classes, job, and jobDone only through src/core/hunter/classes.ts').toEqual([]);
+});
+
+test('only src/core/hunter/class-holders.ts (and save.ts defaults/repair) writes Save.classHolders', async () => {
+  const owners = new Set(['src/core/hunter/class-holders.ts', 'src/core/save.ts']);
+  const stripComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
+  const write = /[\w$)\]!]\.classHolders\s*(?:=(?![=>])|\?\?=|\|\|=)|[{,]\s*classHolders\s*[:,}]/g;
+  const hasWrite = (s: string): boolean => { write.lastIndex = 0; return write.test(s); };
+  for (const bad of [
+    'save.classHolders = {};',
+    'return { ...save, classHolders: next };',
+    'return {\n  ...save,\n  classHolders: next,\n};',
+  ]) expect(hasWrite(bad), `catches ${bad}`).toBe(true);
+  expect(hasWrite('const h = save.classHolders.held[cls];'), 'allows read').toBe(false);
+  const files = (await readdir(`${ROOT}/src`, { recursive: true }))
+    .filter(n => /\.(ts|js)$/.test(n))
+    .sort()
+    .map(n => `src/${n}`);
+  const hits: Line[] = [];
+  for (const file of files) {
+    if (owners.has(file)) continue;
+    const cleaned = stripComments(await Bun.file(`${ROOT}/${file}`).text());
+    write.lastIndex = 0;
+    for (const m of cleaned.matchAll(write)) {
+      const line = cleaned.slice(0, m.index).split('\n').length;
+      hits.push({ file, line, text: m[0].replace(/\s+/g, ' ').trim() });
+    }
+  }
+  expect(report(hits), 'write Save.classHolders only through src/core/hunter/class-holders.ts').toEqual([]);
+});
+
+test('only classPowers reads class tree nodes for combat and the sheet', async () => {
+  const nodeRead = /\.nodes\b/;
+  expect(nodeRead.test('const list = h.classes[h.job].nodes;'), 'catches direct .nodes read').toBe(true);
+  const files = [...(await sourceLines('src/core/combat')), ...(await sourceLines('src/core/hunter'))]
+    .filter(l => l.file.startsWith('src/core/combat/') || l.file === 'src/core/hunter/sheet.ts');
+  const hits = files.filter(l => !isComment(l.text) && nodeRead.test(l.text));
+  expect(report(hits), 'read class nodes for combat and the sheet only through classPowers in src/core/registry/class-powers.ts').toEqual([]);
+});
+
+test('class trees live in class-trees.ts with no gold literals, and not in RULES', async () => {
+  const { RULES } = await import('../src/core/rules.ts');
+  expect('classTrees' in RULES).toBe(false);
+  const treeLines = (await sourceLines('src/core/registry')).filter(l => l.file === 'src/core/registry/class-trees.ts' && !isComment(l.text));
+  const goldUse = /\b(gold|priceBase|classSwapPrices|classTreeRarityMult|classTreeDepthMult)\b/;
+  expect(goldUse.test('const cost = priceBase * 0.5;'), 'catches pricing inside tree file').toBe(true);
+  const hits = treeLines.filter(l => goldUse.test(l.text));
+  expect(report(hits), 'keep gold pricing out of class-trees.ts; prices come from RULES via src/core/hunter/classes.ts').toEqual([]);
+});
+
+test('solo.ts never claims or grants unique classes', async () => {
+  const soloText = await Bun.file(`${ROOT}/src/core/gates/solo.ts`).text();
+  expect(soloText).not.toMatch(/\b(claimUniqueClass|earnClass|classHolders)\b/);
+});
+
+test('all 36 built-in class names are disjoint from keystones, built-in items, and forbidden names', async () => {
+  const { CLASS_NAMES } = await import('../src/core/registry/jobs.ts');
+  const { KEYSTONES } = await import('../src/core/registry/keystones.ts');
+  const { RULES } = await import('../src/core/rules.ts');
+  const { SHOP_ITEMS, LOOT_ITEMS, RECIPE_ITEMS, STARTER_GEAR } = await import('../src/core/registry/items.ts');
+  const norm = (s: string) => s.trim().toLowerCase();
+  const classes = new Set(CLASS_NAMES.map(norm));
+  expect(classes.size).toBe(36);
+
+  const banned = ['Spellblade', 'Warlord', 'Sovereign', 'Guardian', 'Deadeye'];
+  expect(banned.filter(b => classes.has(norm(b))), 'never reuse banned keystone/item names').toEqual([]);
+
+  const keystoneNames = [
+    ...Object.values(KEYSTONES.mark).map(f => f(RULES).name),
+    ...Object.values(KEYSTONES.apex).map(f => f(RULES).name),
+    ...Object.values(KEYSTONES.confluence).map(f => f(RULES).name),
+  ];
+  expect(keystoneNames.length).toBe(44);
+  expect(keystoneNames.filter(k => classes.has(norm(k))), 'no class name collides with a keystone').toEqual([]);
+
+  const itemNames = [
+    ...SHOP_ITEMS.map(x => x.name),
+    ...LOOT_ITEMS.map(x => x.name),
+    ...RECIPE_ITEMS.map(x => x.name),
+    ...Object.values(STARTER_GEAR).flat().map(x => x.name),
+  ];
+  expect(itemNames.filter(n => classes.has(norm(n))), 'no class name collides with a built-in item').toEqual([]);
 });

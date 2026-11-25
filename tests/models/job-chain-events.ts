@@ -21,11 +21,11 @@ export type ChainMove = (s: ChainHunter) => { event: ChainEvent; apply?: (q: Map
 const tied = (s: ChainHunter): string => s.chain?.questId ?? 'q0';
 
 /**
- * 11 moves: the GM issues a Necromancer chain, the level becomes 10 or 3, the tied quest or another is completed, the
+ * 11 moves: the GM issues a Fighter chain, the level becomes 10 or 3, the tied quest or another is completed, the
  * tied quest fails or is deleted, and the GM and a player each reissue and abandon.
  */
 export const WALK_MOVES: ChainMove[] = [
-  s => ({ event: { type: 'issued', id: jcid(`jc${s.n}`), job: 'Necromancer', questId: qid(`q${s.n}`), level: s.level, at: AT } }),
+  s => ({ event: { type: 'issued', id: jcid(`jc${s.n}`), job: 'Fighter', questId: qid(`q${s.n}`), level: s.level, at: AT } }),
   () => ({ event: levelChanged(10) }),
   () => ({ event: levelChanged(3) }),
   s => ({ event: completed(tied(s), s.level, `q${s.n}`), apply: q => { if (q.has(tied(s))) q.set(tied(s), 'done'); } }),

@@ -1,8 +1,7 @@
-// record.ts: what a hunter is called and holds beside its numbers: its name, job and rank, its titles and the active
+// record.ts: what a hunter is called and holds beside its numbers: its name and rank, its titles and the active
 // one, its boons. Pure. A view changes these only through a function here, in `store.apply` (src/core/save-step.ts).
 // A change to the active title or a title's bonus changes the sheet: chain `fitted` (sheet.ts) after it.
 // Ids and times are arguments: the store reserves an id (`store.id('t')`), the view reads the clock.
-import { jobOf } from './hunter.ts';
 import type { Boon, Rank, RankBy, Title } from '../save.ts';
 import type { Powers } from '../registry/powers.ts';
 import { oneOf } from '../one-of.ts';
@@ -33,10 +32,6 @@ export const cleanName = (v: unknown): string => String(v ?? '').replace(/\s+/g,
 export function rename<H extends Named>(h: H, name: string): H | Refused<'blank'> {
   const n = cleanName(name);
   return n ? { ...h, name: n } : refuse('blank');
-}
-/** The job set to `job`, or to none (null) for a blank: a GM clears a job by clearing the field. */
-export function setJob<H extends Named>(h: H, job: string | null): H {
-  return { ...h, job: jobOf(job) };
 }
 
 // ── the rank, a machine (`RANK_TABLE`, `rankStep`). Only the rank and who set it (`rankBy`) are stored; where it stands

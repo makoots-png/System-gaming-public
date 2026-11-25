@@ -194,7 +194,7 @@ export function register(app) {
           '<b>Passive</b> skills grant their bonus permanently.', 'Skill levels run from 1 to 10. Level 10 shows MAX. Raise skill levels from the Skills panel.']),
       ] },
       { id: 'shadows', title: 'Shadows', body: [
-        ul([`Only a Necromancer or Shadow Monarch (${R.extractJobs.map(esc).join(', ')}) can extract shadows from defeated monsters.`,
+        ul([`Only a Necromancer (${R.extractJobs.map(esc).join(', ')}) can extract shadows from defeated monsters.`,
           `Extraction rolls d20 + Presence check bonus against DC ${R.shadow.dcBase} + ${R.shadow.dcPerRank} × (monster rank − hunter rank) + ${R.shadow.bossDc} for a boss (minimum 5). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${R.shadow.maxAttempts} attempts per corpse.`,
           'On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster\'s rank and archetype. Its grade sets its monster kind: Normal is normal, Elite and Knight are elite, and Commander and Marshal are boss.',
           `Army capacity = floor(${F.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${esc(r)} ${esc(R.shadow.summonMp[r])}`).join(', ')}. Unsummoning is free. Clearing a gate heals resting shadows to full HP.`]),

@@ -65,6 +65,12 @@ export function approvalIdOf(id: EventId): EventId {
 export type FeatKey = Id<'FeatKey'>;
 const FEAT_KEY_RE = /^[a-z0-9-]{1,40}$/;
 export const parseFeatKey = (v: unknown): FeatKey | null => (typeof v === 'string' && FEAT_KEY_RE.test(v) ? (v as FeatKey) : null);
+/** A node inside a class skill tree (src/core/registry/class-trees.ts). Lowercase slug, 1 to 32 characters. */
+export type ClassNodeId = Id<'ClassNodeId'>;
+export const CLASS_NODE_ID_MAX = 32;
+const CLASS_NODE_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+export const parseClassNodeId = (v: unknown): ClassNodeId | null =>
+  (typeof v === 'string' && CLASS_NODE_ID_RE.test(v) ? (v as ClassNodeId) : null);
 // ── the save's ids: a prefix and the save's `seq` (`h12`, `q40`), or `seed:<word>` for a built-in's copy ──
 /** A hunter of this phone's save: `Hunter.id`. */
 export type HunterId = Id<'HunterId'>;

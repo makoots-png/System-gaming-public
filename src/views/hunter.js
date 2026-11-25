@@ -17,7 +17,8 @@ import {
 import { ALLOCATION_WORDS, allocated, available, hasPending, lower, plusPoint, raise, raiseMany, setPoints, setStat, takeAll, takenBack, undoableOn, undoableTotal } from '../core/hunter/progress.ts';
 import { RESPEC_WORDS, confirmCostLine, confirmPoints, respecCost, respecRefusalWords, respecSaid, respecToast } from '../core/hunter/respec.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
-import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
+import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
+import { CLASS_REFUSAL_WORDS, setJob } from '../core/hunter/classes.ts';
 import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
 import { RAISE_REFUSED, RAISE_TITLE, canRaise, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
 import { setGold } from '../core/hunter/inventory.ts';
@@ -566,7 +567,7 @@ export function register(app) {
         // a refused change is told, and the redraw below puts the field back as the save holds it
         if (f === 'title') { const tid = store.id('t'); ui.wrote('! Hunter', onHunter(hid, 'identity', both(h => nameActiveTitle(h, v, tid), fit))); }
         else if (f === 'name') ui.wrote('! Hunter', onHunter(hid, 'identity', h => rename(h, v)));
-        else if (f === 'job') ui.wrote('! Hunter', onHunter(hid, 'identity', h => setJob(h, v)));
+        else if (f === 'job') ui.wrote('! Hunter', onHunter(hid, 'identity', h => setJob(h, v)), CLASS_REFUSAL_WORDS);
         update(el);
       });
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset.f) e.target.blur(); });

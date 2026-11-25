@@ -44,6 +44,8 @@ import { parsePenalty } from './penalty.ts';
 import type { Penalty } from './penalty.ts';
 import { parseJobChain } from './job-chain.ts';
 import type { JobChain } from './job-chain.ts';
+import { CLASS_NAME_MAX, gmBackedClasses, parseClasses } from './class-locker.ts';
+import type { ClassHolders, ClassLocker } from './class-locker.ts';
 import { newChronicle, parseChronicle } from './chronicle.ts';
 import type { Chronicle } from './chronicle.ts';
 import { newSolo, parseSolo } from '../gates/personal.ts';
@@ -125,7 +127,10 @@ export type RankBy = (typeof RANK_BY)[number];
 export type Hunter = Progress & Vitals & {
   id: HunterId; name: string; /** The hunter's job, or null for none. */ job: string | null;
   /** The job whose Job Change this hunter finished: what its keystones' awakened powers read, so deleting the done quest takes none. */
-  jobDone: string | null; rank: Rank;
+  jobDone: string | null;
+  /** Earned classes and their bought skill-tree node ids in purchase order. Changed only through classes.ts. */
+  classes: ClassLocker;
+  rank: Rank;
   /** Who set the rank: a rank set by the GM by hand stays when levels are lost (SMX-rules-7.2). */
   rankBy: RankBy; gold: number;
   /** Whole-number mana crystal balance, distinct from Resurrection Crystals. Changed only through crystal.ts. */
@@ -170,7 +175,7 @@ export const newShadow = (): Shadow => ({
 export const newHunter = (R: Rules = BASE_RULES): Hunter => {
   const stats = newStats(R);
   const h: Hunter = {
-    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, jobDone: null, rank: 'E', rankBy: 'level',
+    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, jobDone: null, classes: {}, rank: 'E', rankBy: 'level',
     gold: 0, crystal: 0, guild: null, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
@@ -185,7 +190,7 @@ export const newHunter = (R: Rules = BASE_RULES): Hunter => {
  * A job as a hunter holds it: the name (spaces cleaned, at most 60 characters), or null for none, a blank or the old
  * default word "None". "No job" is null, never a word a view compares with (implicit audit 3, H9).
  */
-export const jobOf = (v: unknown): string | null => { const j = String(typeof v === 'string' ? v : '').replace(/\s+/g, ' ').trim().slice(0, 60); return j && j !== 'None' ? j : null; };
+export const jobOf = (v: unknown): string | null => { const j = String(typeof v === 'string' ? v : '').replace(/\s+/g, ' ').trim().slice(0, CLASS_NAME_MAX); return j && j !== 'None' ? j : null; };
 /** A title's bonus keeps only a perk key (`BONUS_KEYS`) with a finite number. */
 function fixBonus(bonus: Rec): void {
   for (const key of Object.keys(bonus)) if (!(BONUS_KEYS as readonly string[]).includes(key) || !isNum(bonus[key])) delete bonus[key];
@@ -211,6 +216,18 @@ function fixVitals(h: Hunter, R: Rules): void {
   h.reviveLeft = oneOf(h.reviveLeft, REVIVE_STANDINGS, 'free'); h.debt = int(h.debt, 0, 0, DEBT_MAX);
 }
 
+/**
+ * GM-mode repair for one local hunter against `holders`: prunes unbacked same-campaign unique classes (for example,
+ * a duplicate Hemomancer imported from a hunter file) and parks foreign-campaign uniques without touching player saves.
+ */
+export function fixGmLocalUniques(h: Hunter, holders: ClassHolders): void {
+  const fixed = gmBackedClasses(h, holders);
+  if (!fixed.changed) return;
+  h.classes = fixed.classes;
+  h.job = fixed.job;
+  h.jobDone = fixed.jobDone;
+}
+
 /** The default a stored hunter is filled from. */
 export const hunterExample = (R: Rules): Hunter => newHunter(R);
 /**
@@ -220,7 +237,9 @@ export const hunterExample = (R: Rules): Hunter => newHunter(R);
 export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   const run: RepairRun = { ...saveRun, owner: h };
   const { R } = run;
-  h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job); h.jobDone = jobOf(h.jobDone);
+  h.name = h.name.slice(0, 60) || 'Hunter';
+  const parsedClasses = parseClasses(h.classes, { job: jobOf(h.job), jobDone: jobOf(h.jobDone), fallbackAt: run.env.now.toISOString() });
+  h.classes = parsedClasses.classes; h.job = parsedClasses.job; h.jobDone = parsedClasses.jobDone;
   h.rank = oneOf(h.rank, RANKS, 'E'); h.rankBy = oneOf(h.rankBy, RANK_BY, 'level');
   h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold); h.crystal = int(h.crystal, 0, 0, CRYSTAL_MAX);
   h.guild = parseGuild(h.guild);
@@ -317,7 +336,14 @@ export function fixRefs(h: Hunter, storedAs: ReadonlyMap<string, string>, now: s
   h.penalty = parsePenalty(withQuest(h.penalty), h.quests, now);
   // A save from before the chain had its own field kept it on the quests as `step` and `chainJob`: read once, then dropped.
   h.jobChain = parseJobChain(withQuest(h.jobChain), h.quests);
-  for (const q of h.quests) { delete (q as Rec).step; delete (q as Rec).chainJob; }
+  h.quests = h.quests.map(q => {
+    delete (q as Rec).step;
+    delete (q as Rec).chainJob;
+    if (q.status === 'active' && q.chainId && (!h.jobChain || q.chainId !== h.jobChain.id)) {
+      return { ...q, status: 'failed', doneAt: now };
+    }
+    return q;
+  });
 }
 
 /**
@@ -334,6 +360,8 @@ export function parseSheetHunter(value: unknown): Hunter | null {
   const h = fill(value, hunterExample(BASE_RULES));
   if (!SAVE_ID_RE.test(h.id)) return null;
   fixHunter(run, h);
+  // Server-side 1-entry wire cap: a pushed room sheet carries only the active class entry (matches client `pushedClasses`).
+  h.classes = h.job && Object.hasOwn(h.classes, h.job) ? { [h.job]: h.classes[h.job]! } : {};
   fixRefs(h, new Map(), now.toISOString());
   return h;
 }

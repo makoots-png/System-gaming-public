@@ -17,10 +17,10 @@ import { AT, WALK_MOVES, abandoned, completed, failed, levelChanged, play } from
 import type { ChainHunter } from './models/job-chain-events.ts';
 import { day, dev, jcid, qid } from './fixtures/ids.ts';
 
-const issued = (level: number, job: JobChain['job'] = 'Necromancer'): ChainEvent => ({ type: 'issued', id: jcid('jc1'), job, questId: qid('q1'), level, at: AT });
+const issued = (level: number, job: JobChain['job'] = 'Fighter'): ChainEvent => ({ type: 'issued', id: jcid('jc1'), job, questId: qid('q1'), level, at: AT });
 const reissued = (by: 'gm' | 'player', level = 1): ChainEvent => ({ type: 'reissued', by, questId: qid('q9'), level, at: AT });
-/** Necromancer chain c1 at `step`, its open quest `questId`. */
-const at = (step: JobChain['step'], questId: string, status: JobChain['status'] = 'active'): JobChain => ({ id: jcid('jc1'), job: 'Necromancer', step, status, questId: qid(questId) });
+/** Fighter chain c1 at `step`, its open quest `questId`. */
+const at = (step: JobChain['step'], questId: string, status: JobChain['status'] = 'active'): JobChain => ({ id: jcid('jc1'), job: 'Fighter', step, status, questId: qid(questId) });
 
 function freeze<T>(v: T): T { if (v && typeof v === 'object') { Object.freeze(v); for (const x of Object.values(v)) freeze(x); } return v; }
 const step = (c: JobChain | null, e: ChainEvent): ChainResult => chainAfter(freeze(c), freeze(e));
@@ -144,12 +144,12 @@ describe('completing a step', () => {
     expect(r.jobChain).toEqual(at(3, 'q3'));
     const q = issuedQuest(r);
     expect(q).toMatchObject({ id: 'q3', title: 'Job Change 3/3: Knight Captain' });
-    expect(q.rewards.job).toBe('Necromancer');
+    expect(q.rewards.job).toBe('Fighter');
     expect(progressOf(q)).toEqual(['Defeat the Knight Captain 0/1']);
   });
 
-  test('step 3 grants the job and ends the chain; a Necromancer can extract shadows, a Mage cannot', () => {
-    expect(step(at(3, 'q3'), completed('q3', 10))).toEqual({ jobChain: null, effects: [{ type: 'grantJob', job: 'Necromancer' }, { type: 'closed' }] });
+  test('step 3 grants the job and ends the chain', () => {
+    expect(step(at(3, 'q3'), completed('q3', 10))).toEqual({ jobChain: null, effects: [{ type: 'grantJob', job: 'Fighter' }, { type: 'closed' }] });
     expect(step({ ...at(3, 'q3'), job: 'Mage' }, completed('q3', 10))).toEqual({ jobChain: null, effects: [{ type: 'grantJob', job: 'Mage' }, { type: 'closed' }] });
   });
 

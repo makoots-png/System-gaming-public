@@ -148,8 +148,8 @@ test('an override of one rank\'s bonus keeps every other rank\'s, so no reader n
   expect(RANKS.map(r => R.rankBonus[r])).toEqual(RANKS.map(r => (r === 'E' ? 9 : RULES.rankBonus[r])));
 });
 
-test('a reward may name every job a hunter can hold: the rules\' jobs, then an extract job they lack, each once, a GM\'s too (implicit audit 3, R2)', () => {
-  expect(rewardJobs(RULES)).toEqual([...RULES.jobs, 'Shadow Monarch']);
+test('a reward may name every non-unique job a hunter can hold: the rules\' jobs, then custom GM extract jobs, excluding unique built-in classes', () => {
+  expect(rewardJobs(RULES)).toEqual([...RULES.jobs]);
   expect(rewardJobs(rulesOf({ extractJobs: ['Necromancer', 'Lich King'] }))).toEqual([...RULES.jobs, 'Lich King']);
 });
 

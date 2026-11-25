@@ -16,7 +16,7 @@ import { newHunter } from '../src/core/hunter/hunter.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { chapterBody } from '../src/core/story/story.ts';
 import { newRewards } from '../src/core/rewards.ts';
-import { parseDeviceId } from '../src/core/protocol.ts';
+import { parseDeviceId, parseRoomState } from '../src/core/protocol.ts';
 import type { StoredEvent } from '../src/core/protocol.ts';
 
 type Reply = { status: number; body: Record<string, any> };
@@ -282,6 +282,65 @@ describe('a player phone does not get another player\'s room events', () => {
 
     const afterUpdate = await pollAs(KAI_DEV, afterChapter.next);
     expect(afterUpdate.events).toEqual([]);
+  });
+
+  test('classGrant, classRevoke, classSwap, classNode, and the holders doc never leak another player\'s or GM\'s unique classes', async () => {
+    const { code, gm, postGm, postPlayer, pollAs } = await setupRoom();
+    const AT = '2026-11-25T12:00:00.000Z';
+
+    await postGm('classGrant', { eid: 'd-gm-cg1', to: [MIRA_KEY], className: 'Hemomancer', at: AT });
+    await postGm('classRevoke', { eid: 'd-gm-cr1', to: [MIRA_KEY], className: 'Hemomancer', at: AT });
+    await postPlayer(MIRA_DEV, 'classSwap', { eid: 'd-mira1-cs1', by: MIRA_KEY, name: 'Mira', fromClass: 'Fighter', toClass: 'Hemomancer', cost: 25 });
+    await postPlayer(MIRA_DEV, 'classNode', { eid: 'd-mira1-cn1', by: MIRA_KEY, name: 'Mira', className: 'Hemomancer', act: 'buy', nodeId: 'crimson-root', cost: 45000 });
+
+    const putHolders = await call('PUT', `/api/rooms/${code}/sheets/_holders`, {
+      headers: gm,
+      body: {
+        from: 'd-gm',
+        data: {
+          registryId: 'reg-1',
+          at: AT,
+          held: {
+            Hemomancer: { who: MIRA_KEY, grantId: 'cg1' },
+            Chronokeeper: { who: KAI_KEY, grantId: 'cg2' },
+            Necromancer: { who: 'gm', grantId: 'cg3' },
+          },
+        },
+      },
+    });
+    expect(putHolders.status).toBe(200);
+
+    // Non-GM cannot PUT _holders
+    const badPut = await call('PUT', `/api/rooms/${code}/sheets/_holders`, {
+      body: { from: KAI_DEV, data: { registryId: 'reg-1', at: AT, held: {} } },
+    });
+    expect(badPut.status).toBe(403);
+
+    const kai = await pollAs(KAI_DEV, 0);
+    expect(kai.events.map(e => e.type)).toEqual([]);
+    expect(kai.docs.holders?.data).toEqual({ registryId: 'reg-1', at: AT, held: { Chronokeeper: { who: KAI_KEY, grantId: 'cg2' } } });
+
+    const mira = await pollAs(MIRA_DEV, 0);
+    expect(mira.docs.holders?.data).toEqual({ registryId: 'reg-1', at: AT, held: { Hemomancer: { who: MIRA_KEY, grantId: 'cg1' } } });
+
+    const gmRes = await call('GET', `/api/rooms/${code}?after=0&d=d-gm`, { headers: gm });
+    expect(gmRes.status).toBe(200);
+    const gmState = parseRoomState(gmRes.body)!;
+    expect(gmState.docs.holders?.data).toEqual({
+      registryId: 'reg-1',
+      at: AT,
+      held: {
+        Hemomancer: { who: MIRA_KEY, grantId: 'cg1' },
+        Chronokeeper: { who: KAI_KEY, grantId: 'cg2' },
+        Necromancer: { who: 'gm', grantId: 'cg3' },
+      },
+    });
+
+    // Unproven viewer (anyone, no device token or GM key) has holders omitted completely so rejoining phones never wipe
+    const anonRes = await call('GET', `/api/rooms/${code}?after=0`);
+    expect(anonRes.status).toBe(200);
+    const anonState = parseRoomState(anonRes.body)!;
+    expect(anonState.docs.holders).toBeUndefined();
   });
 });
 

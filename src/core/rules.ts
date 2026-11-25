@@ -3,6 +3,7 @@
 // rulesOverrides) are deep-merged by rulesOf(), and the GM's statuses (a save's library.statuses) are laid over the
 // built-in ones.
 import { BUILT_IN_STATUSES } from './registry/statuses.ts';
+import { canonicalUniqueClass } from './registry/jobs.ts';
 import { STAT_KEYS, STAT_SHORT } from './stats.ts';
 import { GRID_SIDE } from './combat/space.ts';
 import { LEVELS } from './combat/sight-levels.ts';
@@ -114,6 +115,7 @@ const DIFFICULTY_LEVEL = wholeIn(1, 10, 'gate or boss difficulty level, 1 to 10'
 const DIFFICULTY_WIN_PCT = wholeIn(1, 99, 'expected three-hunter win chance in percent for one difficulty step');
 const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty multiplier for one step or rank');
 const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty multiplier applied to max HP. The rest applies to damage dealt');
+const CLASS_TREE_MULT = realIn(0, 20, 'skill tree price multiplier, from 0 (free) to 20');
 /** A bonus's points on a bonus key (a title's bonus, a passive skill, an item): the bound of every flat bonus a parser reads. */
 export const PERK_POINTS = wholeIn(-999, 999, 'flat stat or sheet bonus, between -999 and 999');
 /** A daily objective's target. */
@@ -179,8 +181,8 @@ const SPEC = {
       ...DAILY_REWARD_PARTS,
     },
   },
-  jobs: ['Fighter', 'Assassin', 'Mage', 'Tanker', 'Healer', 'Ranger', 'Necromancer'],
-  extractJobs: ['Necromancer', 'Shadow Monarch'],
+  jobs: ['Fighter', 'Assassin', 'Mage', 'Tanker', 'Healer', 'Ranger'],
+  extractJobs: ['Necromancer'],
   // Each rule title has a key a granted title records (`Title.seedKey`), so a rename keeps it and a GM title of the same
   // name is another. Its band is the rank whose `titleBudget` it fits (item-stats 6.7): +2 on a stat spends 2, a rank D
   // title's budget, and the GM-only +5 an S title's. The One Who Overcame Adversity was +20 max HP: 33 points at E and
@@ -221,6 +223,16 @@ const SPEC = {
   elixirPrices: real(1, 0, 100, 'price of a full-heal consumable in multiples of priceBase, from 0 to 100'), // crystal-economy.md section 1 (the owner, Nov 23): rank-capped Elixir of Life costs 1.0x priceBase
   revivePrices: whole(10, 1, 1000, 'price of a Resurrection Crystal in multiples of priceBase, from 1 to 1000'), // design 5: a full set of its rank's middle gear
   respecPrices: real(0.5, 0, 10, 'price of a full point respec in multiples of priceBase, from 0 (free) to 10'), // point-respec: 0.5x priceBase for full reset, 1/10th per point, capped at full reset; 0 makes respec free
+  // Class swap and skill tree pricing (settled.md, t135u, t136u). Swap and fork flips charge classSwapPrices * priceBase;
+  // tree nodes charge round(priceBase * rarityMult * depthMult). All paid from carried gold, never borrowed.
+  classSwapPrices: real(0.25, 0, 10, 'price of swapping classes or flipping a fork in multiples of priceBase, from 0 (free) to 10'),
+  classTreeRarityMult: {
+    common: of(0.5, CLASS_TREE_MULT),
+    rare: of(1.0, CLASS_TREE_MULT),
+    epic: of(2.0, CLASS_TREE_MULT),
+    mythic: of(4.0, CLASS_TREE_MULT),
+  },
+  classTreeDepthMult: each([0.15, 0.25, 0.4, 0.6, 0.9, 1.3, 1.8, 2.5, 3.5], CLASS_TREE_MULT),
   // the owner (Nov 23, qd row 72): System revive debt pays off in about 5 gate clears for a party of 4 under gold table B
   // and the 50/25/25 split. Per-rank multiples of priceBase, calibrated to gold table B's 2.25x (E) to 3.33x (S) clear-gold
   // taper (E 500 to S 525,000 gold; mean 4.71 to 4.98 clears, median 5 at every rank). If you override RULES.loot away
@@ -928,10 +940,11 @@ export const priceBaseOf = (R: Pick<Rules, 'priceBase'>, rank: Rank): number => 
  */
 export const clearOf = (R: Pick<Rules, 'loot'>, rank: Rank): number => (R.loot[rank].gold[0]! + R.loot[rank].gold[1]!) / 2;
 /**
- * Every job a reward may name: the rules' `jobs`, then each of the `extractJobs` they do not hold (a Shadow Monarch is
- * reached, never picked at the start).
+ * Every non-unique job a plain reward may name: the rules' `jobs`, then any custom GM `extractJobs`
+ * they do not hold, excluding unique built-in classes (granted only through the GM's uniqueness registry).
  */
-export const rewardJobs = (R: Pick<Rules, 'jobs' | 'extractJobs'>): string[] => [...new Set([...R.jobs, ...R.extractJobs])];
+export const rewardJobs = (R: Pick<Rules, 'jobs' | 'extractJobs'>): string[] =>
+  [...new Set([...R.jobs, ...R.extractJobs])].filter(j => canonicalUniqueClass(j) === null);
 /** Whether a hunter of this job may extract shadows: the job is one of the rules' `extractJobs`. */
 export const canExtract = (R: Pick<Rules, 'extractJobs'>, job: string | null): boolean => job !== null && (R.extractJobs as readonly string[]).includes(job);
 export const rankIdx = (rank: unknown): number => Math.max(0, (RANKS as readonly unknown[]).indexOf(rank));

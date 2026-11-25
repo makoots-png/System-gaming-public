@@ -177,6 +177,7 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'fight.difficulty.targets': numbers(10),
   'fight.difficulty.boss': numbers(10),
   'fight.difficulty.pack': numbers(10),
+  classTreeDepthMult: numbers(9),
   // sparse map of GM ability/reserved damage-type overrides (`attack` refused)
   'fight.damageTypes': damageTypes,
 };

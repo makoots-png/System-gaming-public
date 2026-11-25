@@ -526,8 +526,8 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
       ...(gm ? { presence: Object.fromEntries([...st.presence(code)].map(([d, t]) => [d, iso(t)])) } : {}),
       ...servedPage(page, viewer, dev), sheets, docs: board.docs,
     };
-    // the docs go out in the shape `DOCS` reads (`WIRES`); the store keeps them as read
-    return J({ ...answer, docs: wireDocs(board.docs) });
+    // the docs go out in the shape `DOCS` reads (`WIRES`), filtered for `viewer`; the store keeps them as read
+    return J({ ...answer, docs: wireDocs(board.docs, viewer) });
   }
   if (parts[2] === 'events' && parts.length === 3) {
     if (m !== 'POST') return J(apiError('method'), 405);

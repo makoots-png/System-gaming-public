@@ -4,6 +4,8 @@
 // `rename` (record.ts).
 import { newEquipped } from '../save.ts';
 import type { Hunter } from '../save.ts';
+import { isRefused } from '../save-step.ts';
+import { setJob } from './classes.ts';
 
 /** How long a hunter's name may be. */
 const NAME_MAX = 60;
@@ -17,8 +19,11 @@ export const withBadge = (h: Hunter, emblem: string, color: string): Hunter => (
  */
 export function neutralSeed(h: Hunter, name: string, job?: string): Hunter {
   const { seed: _seed, ...rest } = h;
-  return {
+  const base: Hunter = {
     ...rest, name: name.slice(0, NAME_MAX) || 'Hunter', titles: [], titleId: null, items: [], skills: [], equipped: newEquipped(),
-    quests: h.quests.filter(q => q.kind === 'daily'), ...(job ? { job } : {}),
+    quests: h.quests.filter(q => q.kind === 'daily'),
   };
+  if (!job) return base;
+  const jobbed = setJob(base, job);
+  return isRefused(jobbed) ? base : jobbed;
 }

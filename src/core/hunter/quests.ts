@@ -16,8 +16,9 @@ import type { Hunter, Objective, Quest, QuestKind, QuestSource, QuestState, Save
 import { newRewards, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { oneOf } from '../one-of.ts';
-import { refuse } from '../save-step.ts';
+import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
+import { earnClass } from './classes.ts';
 import { told } from '../session-log.ts';
 import { RECHECK_MS, dayGap, dayKey, nextReset, timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
@@ -133,7 +134,10 @@ export function chained(h: Hunter, event: ChainEvent): Told<ChainEffect> {
   for (const fx of effects) {
     if (fx.type === 'issueQuest') { next = { ...next, quests: [...next.quests, fx.quest] }; said.push(questLine(h, 'Quest issued', fx.quest.title)); }
     if (fx.type === 'progress') next = { ...next, quests: next.quests.map(q => (q.id === fx.questId && q.objectives[0] ? { ...q, objectives: [{ ...q.objectives[0], progress: fx.value }, ...q.objectives.slice(1)] } : q)) };
-    if (fx.type === 'grantJob') next = { ...next, job: fx.job, jobDone: fx.job };
+    if (fx.type === 'grantJob') {
+      const earned = earnClass(next, fx.job, { at: event.type === 'stepCompleted' ? event.at : '', activate: true, awaken: true });
+      if (!isRefused(earned)) next = earned;
+    }
   }
   return { hunter: next, said, effects };
 }

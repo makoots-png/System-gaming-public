@@ -38,7 +38,8 @@ import type { Completed, QuestCompletedBy, QuestWhy, Rollover, Told } from './qu
 import { reportsProgress } from './quest-rights.ts';
 import { newEvent } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
-import { giveBoons, giveTitle, holdsTitle, rankStep, setJob, titleNamed } from './record.ts';
+import { giveBoons, giveTitle, holdsTitle, rankStep, titleNamed } from './record.ts';
+import { setJob } from './classes.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
 import { healRestingShadows } from './shadows.ts';
@@ -150,6 +151,8 @@ export type Granted = {
   guildCut: GuildGoldCut | null;
   /** Earned XP reduced under System revive debt in this grant, or null when XP was not reduced. */
   debtXp: DebtXpCut | null;
+  /** Job actually granted by `r.job`, or null when no job was given or `setJob` refused it. */
+  job: string | null;
 };
 
 const sheetOf = (h: Hunter, R: Rules) => hunterSheet(h, R).sheet;
@@ -182,7 +185,8 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   // the title it took the place of, by the name the hunter held it under; none when it was given as new
   const replaced = titleNew && r.title?.replaces ? titleNamed(h, r.title.replaces, R.titles) : undefined;
   if (r.title && titleNew) h = giveTitle(h, r.title, ids.next('t'), R.titles);
-  if (r.job) { const j = setJob(h, r.job); if (!isRefused(j)) h = j; }
+  let jobGranted: string | null = null;
+  if (r.job) { const j = setJob(h, r.job); if (!isRefused(j)) { h = j; jobGranted = j.job; } }
   for (const k of r.skills) h = giveSkill(h, k, ids.next('s'));
   h = giveBoons(h, r.boons.map(b => ({ id: ids.next('bn'), name: b.name, text: b.text })), o.at);
   h = fitted(h, R);
@@ -246,7 +250,7 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   const debtLog = guildPaidLog(h.name, debtPaid, guildCut, debtXp, debtXpCleared ? xp : 0);
   const lines = grantLines(
     R,
-    { ...r, xp, gold, crystal, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
+    { ...r, xp, gold, crystal, points, job: jobGranted, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
     {
       level: { from: h0.level, to: h.level },
       ...(debtPaid ? { debt: debtPaid } : {}),
@@ -257,7 +261,7 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   );
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
-  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp };
+  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted };
 }
 
 // ── a Job Change chain event ──
@@ -305,7 +309,7 @@ export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vit
   if (isRefused(d)) return d;
   const g = grant(d.save, hid, d.rewards, o);
   if (isRefused(g)) return g;
-  return { save: g.save, quest: d.quest, completed: d.completed, granted: g, job: d.job, done: [...d.done, ...g.done] };
+  return { save: g.save, quest: d.quest, completed: d.completed, granted: g, job: d.rewards.job ? g.job : d.job, done: [...d.done, ...g.done] };
 }
 /** What completing a quest did before its reward is given: as `Finished`, with the reward it earned in place of the reward given. */
 export type QuestDone = Omit<Finished, 'granted'> & { rewards: Rewards };

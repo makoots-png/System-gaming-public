@@ -42,7 +42,9 @@ import type { ApplyDeps, PageLanded } from './room-events.ts';
 import { upgradeRefused } from './upgrade.ts';
 import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
-import { released } from '../core/hunter/noticed.ts';
+import { backedRemoteHunter, pushedClasses } from '../core/hunter/classes.ts';
+import { holdersDocOf, releaseNoticeStep } from '../core/hunter/class-holders.ts';
+import type { ReconcileResult } from '../core/hunter/class-holders.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
 import { fightHeard } from '../core/sync/fight-heard.ts';
 import type { TableSeen } from '../core/sync/fight-heard.ts';
@@ -73,7 +75,8 @@ import { NOBODY, NO_ATTEMPT, attemptStep, joinBinds } from '../core/sync/attempt
 import type { Attempt, AttemptEvent, JoinBinds, JoinFor, RoomTap } from '../core/sync/attempt.ts';
 import { NO_REMOVAL, boundTo, joinedAt, linkSaved, playAs, playAsAnswered, removedStep, ringGone, serverSeen } from '../core/sync/bind.ts';
 import type { BindAnswer, BindAsked, RemovedEvent, RemovedNotice } from '../core/sync/bind.ts';
-import { atSync, refuse } from '../core/save-step.ts';
+import { atSync, isRefused, refuse } from '../core/save-step.ts';
+import type { Refused } from '../core/save-step.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { askTaken, askedGone } from '../core/sync/asked.ts';
 import { wordTaken } from '../core/sync/word.ts';
@@ -114,6 +117,7 @@ const SAME: { [K in PublishedDoc]: (d: DocOf<K>) => unknown } = {
   solo: d => d,
   feats: d => d,
   stash: d => d,
+  holders: d => ({ ...d, at: '' }),
 };
 const sameDoc = <K extends PublishedDoc>(name: K, a: DocOf<K>, b: DocOf<K>): boolean => {
   const same = SAME[name] as (d: DocOf<K>) => unknown;
@@ -584,13 +588,15 @@ export function register(app: SyncHost): void {
       }
     }
   }
+  /** Trims chronicle inbox and inactive class entries before sending a sheet on the wire. */
+  const wireSheet = (h: Hunter): Hunter => pushedClasses(pushedSheet(h));
   /**
    * PUT the bound sheet as it is now. A 403 removed and a 426 are the link's to hear.
    */
   function sendSheet(gen: Gen, timeoutMs: number): void {
     const b = bound();
     if (link.at !== 'live' || link.gen !== gen || !b) { queueMicrotask(() => pushDo({ type: 'sent', gen })); return; } // nothing to send
-    const h = pushedSheet(b), text = JSON.stringify(h), code = link.code;
+    const h = wireSheet(b), text = JSON.stringify(h), code = link.code;
     // the room's own bound, counted before the request: a sheet past it is refused as too large, as the server would
     if (JSON.stringify({ hunter: h }).length > SHEET_MAX) { queueMicrotask(() => pushDo({ type: 'refused', gen, why: 'too-large' })); return; }
     const ac = track(gen);
@@ -778,6 +784,7 @@ export function register(app: SyncHost): void {
   /** A message as the player reads it when the room refuses it. */
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
     used: 'a use report', roll: 'a roll', questUpdate: 'quest progress', coinCall: 'a coin call', coinLand: 'a coin ruling',
+    classGrant: 'a unique class grant', classRevoke: 'a unique class release', classSwap: 'a class swap', classNode: 'a skill tree update',
     step: 'a step', cast: 'an ability use', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash request', stashAnswer: 'a stash reply',
     word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward request', respec: 'a point respec report',
@@ -840,18 +847,49 @@ export function register(app: SyncHost): void {
   const noticeHeld = (s: Save, hid: HunterId): boolean => fightHold(s.fight, { hid }, { seat: app.seat(), key: myKey(hid), ...table(s) }) !== null;
   // a player's facts belong to the room's session (its world doc) and wait while the GM's fight holds the hunter (noticed.ts)
   bindNotice(() => (playerRoom() ? { session: doc('world')?.session ?? 0, held: noticeHeld, library: doc('feats')?.feats ?? {} } : null));
-  /** The release write: once the room's fight doc lets a hunter with waiting facts go, they are noticed (noticed.ts `released`). */
-  const release = (): void => { if (store.get().hunters.some(h => h.chronicle.inbox.length)) store.apply('noticed', s => released(s, noticeHeld)); };
+  /** Applies `releaseNoticeStep` inside `store.apply`, passing `refuse('unchanged')` straight through. */
+  const releaseStep = (
+    s: Save,
+    holders: DocOf<'holders'> | null,
+    hasInbox: boolean,
+    onDiff: (d: ReconcileResult | null) => void,
+  ): Save | Refused<'unchanged'> => {
+    const out = releaseNoticeStep(s, holders, hasInbox, noticeHeld, app.rules());
+    if (isRefused(out)) return out;
+    onDiff(out.diff);
+    return out.save;
+  };
+  /** The release write: once the room's fight doc lets a hunter go, flush waiting facts and reconcile unique classes in one write. */
+  const release = (): void => {
+    const cur = store.get(), holders = doc('holders');
+    const hasInbox = cur.hunters.some(h => h.chronicle.inbox.length);
+    const preview = releaseNoticeStep(cur, holders, hasInbox, noticeHeld, app.rules());
+    if (isRefused(preview)) return;
+    const did: { diff: ReconcileResult | null } = { diff: null };
+    store.apply('noticed', s => releaseStep(s, holders, hasInbox, d => { did.diff = d; }));
+    const d = did.diff;
+    if (!d) return;
+    for (const cls of d.granted) ui.toast('! Class', `You received the unique class ${cls}.`, { kind: 'levelup' });
+    for (const cls of d.reset) ui.toast('! Class', `You received a fresh ${cls} class.`, { kind: 'levelup' });
+    for (const cls of d.restored) ui.toast('! Class', `${cls} is active again.`, { kind: 'info' });
+    for (const cls of d.revoked) ui.toast('! Class', `The GM released ${cls}.`, { kind: 'info' });
+    for (const cls of d.parked) ui.toast('! Class', `${cls} is parked while you play in this room. Its tree progress stays saved.`, { kind: 'info' });
+  };
   /**
    * The players' sheets with their device, hunter and when the device last polled, on the room's GM phone; none on any
    * other (a player's phone is told nothing of the others). A deleted hunter's tombstone is left out.
+   * Each remote hunter is verified against `save.classHolders` so unbacked unique claims are never trusted on the GM's phone.
    */
-  const remoteSheets = (): RemoteSheet[] => (!gmRoom() ? [] : Object.entries(view().sheets).flatMap(([text, s]) => {
-    const key = parseSheetKey(text);
-    if (!key || !('hunter' in s.data)) return [];
-    const deviceId = deviceOf(key);
-    return [{ key, polledAt: view().presence[deviceId] || null, deviceId, hunterId: hunterIdOf(key), at: s.at, from: s.from, data: s.data.hunter }];
-  }));
+  const remoteSheets = (): RemoteSheet[] => {
+    if (!gmRoom()) return [];
+    const holders = store.get().classHolders;
+    return Object.entries(view().sheets).flatMap(([text, s]) => {
+      const key = parseSheetKey(text);
+      if (!key || !('hunter' in s.data)) return [];
+      const deviceId = deviceOf(key);
+      return [{ key, polledAt: view().presence[deviceId] || null, deviceId, hunterId: hunterIdOf(key), at: s.at, from: s.from, data: backedRemoteHunter(s.data.hunter, key, holders) }];
+    });
+  };
   /** The other players' hunters as this player's phone gets them (protocol.ts `HunterFace`), for the Give window; none on the GM's phone or alone. */
   const faces = (): RoomFace[] => (!playerRoom() ? [] : Object.entries(view().sheets).flatMap(([text, s]) => {
     const key = parseSheetKey(text);
@@ -895,7 +933,9 @@ export function register(app: SyncHost): void {
    * put when it differs from the room's (`at` aside), so nothing remembers what was sent: a failed put is tried again at
    * the next change or poll, and nothing is put before this stretch of the link has read the room's docs.
    */
-  const publishers = new Map<PublishedDoc, () => unknown>();
+  const publishers = new Map<PublishedDoc, () => unknown>([
+    ['holders', () => holdersDocOf(store.get(), new Date().toISOString())],
+  ]);
   /** Each doc's publish machine (src/core/sync/publish.ts): at most one put of a doc out at a time. A doc not in it is idle. */
   const publishing = new Map<PublishedDoc, Publish>();
   /** One event of doc `name`'s publish machine; its effects carried out here. */
@@ -1067,7 +1107,7 @@ export function register(app: SyncHost): void {
   function bindHeard(): void {
     const h = bound(), id = h?.id ?? null;
     if (id !== boundSeen) { boundSeen = id; if (push.at !== 'off' && h) pushDo({ type: 'rebound' }); return; }
-    if (push.at !== 'off' && h && JSON.stringify(pushedSheet(h)) !== sheetText) pushDo({ type: 'changed' });
+    if (push.at !== 'off' && h && JSON.stringify(wireSheet(h)) !== sheetText) pushDo({ type: 'changed' });
   }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') linkDo({ type: 'visible' }); });
   addEventListener('online', () => linkDo({ type: 'online' })); // the link polls at once, and a good poll sends what waits

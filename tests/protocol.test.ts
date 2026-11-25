@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
 import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, newEvent, newEventId, onDodge, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
-import { FACE_LINES, WORD_MAX, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor } from '../src/core/protocol.ts';
+import { FACE_LINES, WORD_MAX, holdersFor, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor, wireDocs } from '../src/core/protocol.ts';
 import type { EventAudience, PayloadOf, RoomEvent, RoomViewer } from '../src/core/protocol.ts';
 import { GOODS_GOLD_MAX, GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
 import { stashDoc, stashFits } from '../src/core/trade/stash.ts';
@@ -210,17 +210,17 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'classGrant', 'classNode', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
+    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'classGrant', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classNode', 'classSwap', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -1279,8 +1279,58 @@ describe('the fight doc', () => {
 
 describe('the other room docs', () => {
   test('every doc the GM publishes has a parser, and no other name does', () => {
-    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'feats', 'fight', 'kicked', 'rules', 'solo', 'stash', 'world']);
+    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'feats', 'fight', 'holders', 'kicked', 'rules', 'solo', 'stash', 'world']);
     for (const name of ['nope', '__proto__', 'toString']) expect(parseDocName(name)).toBeNull();
+  });
+
+  test('holders doc validates unique classes with registryId and grantId, hides other claims, omits holders for anyone, and parseSheet caps classes to active entry', () => {
+    const KAI = 'd-kai:h1' as SheetKey, MIRA = 'd-mira:h2' as SheetKey;
+    const raw = {
+      registryId: 'reg-1',
+      at: '2026-11-25T12:00:00.000Z',
+      held: {
+        Hemomancer: { who: KAI, grantId: 'cg1' },
+        Chronokeeper: { who: MIRA, grantId: 'cg2' },
+        Necromancer: { who: 'gm' as const, grantId: 'cg3' },
+      },
+    };
+    const parsed = DOCS.holders(copy(raw))!;
+    expect(parsed).toEqual(raw);
+    expect(DOCS.holders({ at: raw.at, held: {} })).toBeNull();
+    expect(DOCS.holders({ registryId: 'reg-1', at: raw.at, held: { Fighter: { who: KAI, grantId: 'cg1' } } })).toBeNull();
+    expect(DOCS.holders({ registryId: 'reg-1', at: raw.at, held: { Hemomancer: { who: 'not-a-key', grantId: 'cg1' } } })).toBeNull();
+    expect(DOCS.holders({ registryId: 'reg-1', at: raw.at, held: { Hemomancer: { who: KAI, grantId: '' } } })).toBeNull();
+    expect(holdersFor(parsed, { kind: 'gm' })).toEqual(parsed);
+    expect(holdersFor(parsed, { kind: 'phone', device: parseDeviceId('d-kai')! })).toEqual({
+      registryId: 'reg-1',
+      at: raw.at,
+      held: { Hemomancer: { who: KAI, grantId: 'cg1' } },
+    });
+    expect(holdersFor(parsed, { kind: 'phone', device: parseDeviceId('d-eldrin')! })).toEqual({
+      registryId: 'reg-1',
+      at: raw.at,
+      held: {},
+    });
+    expect(holdersFor(parsed, { kind: 'anyone' })).toBeNull();
+
+    // wireDocs omits holders completely for unproven anyone viewers
+    const stored = { holders: { at: raw.at, from: parseDeviceId('d-gm')!, data: parsed } };
+    expect(wireDocs(stored, { kind: 'anyone' }).holders).toBeUndefined();
+    expect(wireDocs(stored, { kind: 'gm' }).holders?.data).toEqual(parsed);
+
+    // parseSheet enforces the 1-entry wire cap even if a hostile client sends multiple locker entries
+    const h = {
+      ...newHunter(),
+      id: 'h1',
+      job: 'Fighter',
+      jobDone: 'Fighter',
+      classes: {
+        Fighter: { unlockedAt: raw.at, nodes: [] },
+        Mage: { unlockedAt: raw.at, nodes: [] },
+      },
+    };
+    const sheet = parseSheet(KAI, { hunter: h });
+    expect(sheet && 'hunter' in sheet ? Object.keys(sheet.hunter.classes) : null).toEqual(['Fighter']);
   });
 
   test('the removed list keeps sheet keys with a time, and drops anything else', () => {
@@ -1364,7 +1414,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'statuses', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'classSwapPrices', 'classTreeDepthMult', 'classTreeRarityMult', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'statuses', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {

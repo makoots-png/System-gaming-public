@@ -6,6 +6,7 @@ import { GATE_STATUSES, GATE_TYPES, monsterId, shownGate } from './gates/gate.ts
 import { isStateChip } from './hunter/chips.ts';
 import type { GateFields, GateId, GateStatus, ShownGate } from './gates/gate.ts';
 import { QUEST_KINDS, QUEST_STATUSES, SHADOW_GRADES, parseSheetHunter } from './hunter/hunter.ts';
+import { CLASS_NAME_MAX } from './hunter/class-locker.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, parseMonster } from './registry/monsters.ts';
 import type { MonsterTemplate } from './registry/monsters.ts';
 import { RUN_OUTCOMES } from './combat/odds.ts';
@@ -30,10 +31,10 @@ import { parseObjectiveCount } from './hunter/counts.ts';
 import { questReaches } from './hunter/quest-secret.ts';
 import { oneOf } from './one-of.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestStatus, Rank, Rewards } from './save.ts';
-import { isJobName } from './registry/jobs.ts';
+import { CLASS_RARITIES, isClassName, isJobName, isUniqueClass } from './registry/jobs.ts';
 import { isIconKey } from './registry/icons.ts';
 import type { IconKey } from './registry/icons.ts';
-import type { JobName } from './registry/jobs.ts';
+import type { ClassName, ClassRarity, JobName, UniqueClassName } from './registry/jobs.ts';
 import { parseDamageTypes } from './combat/damage-type.ts';
 import type { DamageTypeMap } from './combat/damage-type.ts';
 import { grievousCutOf, hasTieredGrievousCut, parseGrievousCut, withGrievousCut } from './combat/grievous.ts';
@@ -54,10 +55,10 @@ import { TERRAIN, TERRAINS } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
 import { isMythicScriptId, mythicScriptOf, omensOf } from './registry/mythics.ts';
 import { MAX_ZONES, ZONE_NAME_MAX, zoneId } from './combat/zones.ts';
-import { deviceOf, fightId, hunterIdOf, parseDeviceId, parseEventId, parseGateId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
+import { deviceOf, fightId, hunterIdOf, parseClassNodeId, parseDeviceId, parseEventId, parseGateId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
-import type { DeviceId, EventId, FightId, ItemId, RoomCode, SheetKey } from './ids.ts';
+import type { ClassNodeId, DeviceId, EventId, FightId, ItemId, RoomCode, SheetKey } from './ids.ts';
 import { OFFER_ID_MAX, approvalIdOf, endIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
 import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods, parseStashAsk } from './trade/goods.ts';
@@ -512,6 +513,22 @@ export type WordPayload = Base & { by: SheetKey; name: string; text: string };
 export type WordBackPayload = Base & { to: [SheetKey]; re: EventId; text: string };
 /** The GM assigns, updates, or removes a player hunter's guild membership (sealed to the GM and that hunter's phone). */
 export type GuildPayload = Base & { to: [SheetKey]; guild: GuildMembership | null };
+/** The GM grants a unique Epic or Mythic class to a player hunter (sealed to the GM and that hunter's phone). */
+export type ClassGrantPayload = Base & { to: [SheetKey]; className: UniqueClassName; at: string };
+/** The GM revokes a unique Epic or Mythic class from a player hunter (sealed to the GM and that hunter's phone). */
+export type ClassRevokePayload = Base & { to: [SheetKey]; className: UniqueClassName; at: string };
+/** A player swapped their active class from their locker (sealed to the GM and that player's phone). */
+export type ClassSwapPayload = Base & { by: SheetKey; name: string; fromClass: string | null; toClass: string; cost: number };
+/** A player bought a skill-tree node or flipped a fork pair on their active class (sealed to the GM and that player's phone). */
+export type ClassNodePayload = Base & {
+  by: SheetKey;
+  name: string;
+  className: ClassName;
+  act: 'buy' | 'flip';
+  nodeId: ClassNodeId;
+  fromId?: ClassNodeId;
+  cost: number;
+};
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
@@ -519,6 +536,7 @@ type Payloads = {
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
+  classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -728,6 +746,44 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     if (raw === null) return { ...base(o), to: [to[0]!], guild: null };
     return { ...base(o), to: [to[0]!], guild: need(parseGuild(raw)) };
   } },
+  classGrant: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
+    const to = toList(own(o, 'to')), cls = own(o, 'className');
+    if (to.length !== 1 || !isUniqueClass(cls)) return refuse();
+    return { ...base(o), to: [to[0]!], className: cls, at: filled(40)(own(o, 'at')) };
+  } },
+  classRevoke: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
+    const to = toList(own(o, 'to')), cls = own(o, 'className');
+    if (to.length !== 1 || !isUniqueClass(cls)) return refuse();
+    return { ...base(o), to: [to[0]!], className: cls, at: filled(40)(own(o, 'at')) };
+  } },
+  classSwap: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
+    ...base(o),
+    by: sheetKey(own(o, 'by')),
+    name: opt(own(o, 'name'), text(NAME_MAX), ''),
+    fromClass: nullOr(filled(CLASS_NAME_MAX))(own(o, 'fromClass')),
+    toClass: filled(CLASS_NAME_MAX)(own(o, 'toClass')),
+    cost: int(0, MAX_TOTAL)(own(o, 'cost')),
+  }) },
+  classNode: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
+    const cls = own(o, 'className');
+    if (!isClassName(cls)) return refuse();
+    const act = choiceOf(['buy', 'flip'] as const)(own(o, 'act'));
+    const nodeId = need(parseClassNodeId(own(o, 'nodeId')));
+    const fromRaw = own(o, 'fromId');
+    const fromId = act === 'flip' ? need(parseClassNodeId(fromRaw)) : undefined;
+    if (act === 'buy' && fromRaw !== undefined) return refuse();
+    if (act === 'flip' && fromId === nodeId) return refuse();
+    return {
+      ...base(o),
+      by: sheetKey(own(o, 'by')),
+      name: opt(own(o, 'name'), text(NAME_MAX), ''),
+      className: cls,
+      act,
+      nodeId,
+      ...(fromId ? { fromId } : {}),
+      cost: int(0, MAX_TOTAL)(own(o, 'cost')),
+    };
+  } },
 };
 
 type EventEntry<K extends EventType> = {
@@ -746,6 +802,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
   systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
+  classGrant: entry('classGrant'), classRevoke: entry('classRevoke'), classSwap: entry('classSwap'), classNode: entry('classNode'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -973,6 +1030,9 @@ export type RoomRules = {
   elixirPrices: number;
   revivePrices: number;
   respecPrices: number;
+  classSwapPrices: number;
+  classTreeRarityMult: Rules['classTreeRarityMult'];
+  classTreeDepthMult: Rules['classTreeDepthMult'];
   reviveDebtPrices: Rules['reviveDebtPrices'];
   reviveDebtShare: number;
   reviveDebtBurn: number;
@@ -1037,7 +1097,11 @@ export const FEATS_DOC_MAX = 100;
 export const STASH_LINES = 40;
 /** The party stash as the GM's phone publishes it (trade/stash.ts `stashDoc`): its gold and its lines, each item whole with its id. */
 export type StashDoc = { gold: number; items: Item[] };
-type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc; stash: StashDoc };
+/** One entry in the GM's `holders` room document (`DOCS.holders`). */
+export type HoldersDocEntry = { readonly who: SheetKey | 'gm'; readonly grantId: string };
+/** Authoritative map of claimed unique classes published by the GM (`DOCS.holders`), filtered per viewer on poll. */
+export type HoldersDoc = { readonly registryId: string; readonly at: string; readonly held: Partial<Record<UniqueClassName, HoldersDocEntry>> };
+type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc; stash: StashDoc; holders: HoldersDoc };
 export type DocName = keyof Docs;
 export type DocOf<K extends DocName> = Docs[K];
 
@@ -1435,7 +1499,39 @@ function roomStatuses(v: unknown): Record<string, StatusDef> {
   }
   return out;
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and shadow/crystal/guilds/damageTypes/statuses (shipped defaults when absent). */
+/** The room's class-tree rarity multipliers (`RULES.classTreeRarityMult`): absent reads as shipped defaults. */
+function roomClassRarityMult(v: unknown): Rules['classTreeRarityMult'] {
+  const o = obj(opt(v, x => x, {}));
+  return Object.fromEntries(
+    CLASS_RARITIES.map((r: ClassRarity) => [r, opt(own(o, r), ruleNumber(`classTreeRarityMult.${r}`), RULES.classTreeRarityMult[r])]),
+  ) as Rules['classTreeRarityMult'];
+}
+/** The room's class-tree depth multipliers (`RULES.classTreeDepthMult`, 9 numbers): absent reads as shipped defaults. */
+function roomClassDepthMult(v: unknown): Rules['classTreeDepthMult'] {
+  if (v === undefined) return [...RULES.classTreeDepthMult];
+  if (!Array.isArray(v) || v.length !== RULES.classTreeDepthMult.length) return refuse();
+  const read = ruleNumber('classTreeDepthMult');
+  return v.map(x => read(x));
+}
+/** The room's unique-class holders doc (`DOCS.holders`). */
+function holdersDocOf(o: Rec): HoldersDoc {
+  const reg = own(o, 'registryId');
+  const registryId = typeof reg === 'string' && WORD_RE.test(reg) ? reg : refuse();
+  const at = text(40)(own(o, 'at'));
+  const raw = obj(own(o, 'held'));
+  const held: Partial<Record<UniqueClassName, HoldersDocEntry>> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!isUniqueClass(k)) return refuse();
+    const e = obj(v);
+    const whoRaw = own(e, 'who');
+    const who: SheetKey | 'gm' = whoRaw === 'gm' ? 'gm' : sheetKey(whoRaw);
+    const gRaw = own(e, 'grantId');
+    const grantId = typeof gRaw === 'string' && WORD_RE.test(gRaw) ? gRaw : refuse();
+    held[k] = { who, grantId };
+  }
+  return { registryId, at, held };
+}
+/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and shadow/crystal/guilds/damageTypes/statuses/class pricing (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1459,6 +1555,9 @@ function roomRulesDoc(o: Rec): RoomRules {
     elixirPrices: rule('elixirPrices'),
     revivePrices: rule('revivePrices'),
     respecPrices: opt(own(o, 'respecPrices'), ruleNumber('respecPrices'), RULES.respecPrices),
+    classSwapPrices: opt(own(o, 'classSwapPrices'), ruleNumber('classSwapPrices'), RULES.classSwapPrices),
+    classTreeRarityMult: roomClassRarityMult(own(o, 'classTreeRarityMult')),
+    classTreeDepthMult: roomClassDepthMult(own(o, 'classTreeDepthMult')),
     reviveDebtPrices: eachRank(r => ruleNumber(`reviveDebtPrices.${r}`)(own(rdp, r))),
     reviveDebtShare,
     reviveDebtBurn,
@@ -1486,18 +1585,39 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
     const o = obj(data);
     return { gold: int(0, GOODS_GOLD_MAX)(own(o, 'gold')), items: listOf(own(o, 'items'), STASH_LINES, stashLine) };
   }),
+  holders: data => attempt(() => holdersDocOf(obj(data))),
 };
 /**
  * Each doc as it goes on the wire, which `DOCS` reads back: the fight's shorter shape (fight-doc.ts `fightWire`), the rest as
  * they are. The server stores and serves a doc in this shape, after `DOCS` read it.
  */
 export const WIRES: { readonly [K in DocName]: (doc: Docs[K]) => object } = {
-  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d, stash: d => d,
+  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d, stash: d => d, holders: d => d,
 };
-/** A room's docs as they go on the wire (`WIRES`), each with when and from whom. */
-export function wireDocs(docs: RoomDocs): Partial<Record<DocName, Stored<unknown>>> {
+/** The `holders` doc filtered for `v`: the GM sees every claim, a proven phone sees only its own hunters' claims, and an unproven viewer gets null so the wire omits `holders`. */
+export function holdersFor(doc: HoldersDoc, v: RoomViewer): HoldersDoc | null {
+  if (v.kind === 'gm') return doc;
+  if (v.kind === 'anyone') return null;
+  const held: Partial<Record<UniqueClassName, HoldersDocEntry>> = {};
+  for (const [cls, entry] of Object.entries(doc.held) as [UniqueClassName, HoldersDocEntry | undefined][]) {
+    if (entry && entry.who !== 'gm' && deviceOf(entry.who) === v.device) held[cls] = entry;
+  }
+  return { registryId: doc.registryId, at: doc.at, held };
+}
+/** A room's docs as they go on the wire (`WIRES`), filtered for `viewer`, each with when and from whom. */
+export function wireDocs(docs: RoomDocs, viewer: RoomViewer): Partial<Record<DocName, Stored<unknown>>> {
   const out: Partial<Record<DocName, Stored<unknown>>> = {};
-  const put = <K extends DocName>(name: K): void => { const d = docs[name] as Stored<Docs[K]> | undefined; if (d) out[name] = { ...d, data: WIRES[name](d.data) }; };
+  const put = <K extends DocName>(name: K): void => {
+    const d = docs[name] as Stored<Docs[K]> | undefined;
+    if (!d) return;
+    if (name === 'holders') {
+      const filtered = holdersFor(d.data as HoldersDoc, viewer);
+      if (!filtered) return;
+      out[name] = { ...d, data: filtered };
+      return;
+    }
+    out[name] = { ...d, data: WIRES[name](d.data) };
+  };
   for (const name of Object.keys(DOCS) as DocName[]) put(name);
   return out;
 }

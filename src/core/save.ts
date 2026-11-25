@@ -39,6 +39,7 @@ import type { Story } from './story/story.ts';
 import { keptRuns, parseStoryRun } from './story/run.ts';
 import type { StoryRun } from './story/run.ts';
 import { oneOf } from './one-of.ts';
+import { roleOf } from './role.ts';
 import { parseCoins } from './coin.ts';
 import { parseCheck, parseRollKind } from './roll.ts';
 import { NO_TABLE_WEIGHT, parseHeldWeights, parseTableWeight } from './table-weight.ts';
@@ -64,6 +65,8 @@ import { parseWords } from './sync/word.ts';
 import type { Word } from './sync/word.ts';
 import { parsePending } from './hunter/pending.ts';
 import type { PendingReward } from './hunter/pending.ts';
+import { newClassHolders, parseClassHolders } from './hunter/class-locker.ts';
+import type { ClassEntry, ClassHolder, ClassHolders, ClassLocker } from './hunter/class-locker.ts';
 import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
 import type { JobChain } from './hunter/job-chain.ts';
@@ -80,7 +83,7 @@ import { LIMITS, NO_DEVICE, SEQ_MAX, VITAL_MAX, claimId, fill, idNumber, int, is
 import type { ParseEnv, Rec, RepairRun } from './repair.ts';
 import { atSync } from './save-step.ts';
 import {
-  QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, fixHunter, fixRefs, hunterExample, jobOf, newBoon, newEquipped, newHunter, newLoadout,
+  QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, fixGmLocalUniques, fixHunter, fixRefs, hunterExample, jobOf, newBoon, newEquipped, newHunter, newLoadout,
   newQuest, newShadow, newStats, newTitle, parseSheetHunter, questState,
 } from './hunter/hunter.ts';
 import type {
@@ -108,6 +111,8 @@ export type LogKind = (typeof LOG_KINDS)[number];
 
 // ── entities. A `?` field is one a view adds and removes as it goes, so it has no default. ──
 export type { StatusDef };
+/** A hunter's earned class locker and campaign unique-class registry types. */
+export type { ClassEntry, ClassHolder, ClassHolders, ClassLocker };
 /** A hunter and what it holds (quests, titles, boons, shadows, loadouts), its defaults and its repair: src/core/hunter/hunter.ts. */
 export {
   QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, jobOf, newBoon, newEquipped, newHunter, newLoadout, newQuest, newShadow, newStats,
@@ -235,6 +240,8 @@ export type Save = {
   tableWeight: TableWeight;
   /** The party stash (src/core/trade/stash.ts): on the GM's save, published to the room as the `stash` doc; written only by that file's steps. */
   stash: Stash;
+  /** Campaign registry of claimed unique Epic and Mythic classes (src/core/hunter/class-holders.ts). */
+  classHolders: ClassHolders;
 };
 /** A monster kind this campaign has defeated. `room`: copied from the GM's codex doc, with the numbers it carried in `info`. */
 export type CodexEntry = { name: string; rank: Rank; kills: number; firstAt: string; lastAt: string; monsterId: MonsterId | null; room?: true; info?: CodexInfo };
@@ -268,7 +275,7 @@ export const newRollEntry = (): RollEntry => ({
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
   monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
-  tableWeight: NO_TABLE_WEIGHT, stash: NO_STASH,
+  tableWeight: NO_TABLE_WEIGHT, stash: NO_STASH, classHolders: newClassHolders(deviceId),
 });
 
 // ── parser ──
@@ -443,6 +450,9 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.codexSeen = save.codexSeen.flatMap(v => parseCombatantId(v) ?? []).slice(-CODEX_SEEN_MAX);
   save.coins = parseCoins(save.coins); save.calls = parseCoins(save.calls);
   save.stash = parseStash(save.stash);
+  const regStamp = Math.max(0, Math.trunc(env.now.getTime())).toString(36);
+  const fallbackReg = `${st.deviceId.slice(0, 40 - 1 - regStamp.length)}-${regStamp}`;
+  save.classHolders = parseClassHolders(save.classHolders, env.now.toISOString(), fallbackReg);
   save.tableWeight = parseTableWeight(save.tableWeight);
   save.monsters = monsters(run, save.monsters);
   // A fight the fight's parser does not read as one is dropped. One its reducer stored in this app is kept.
@@ -477,6 +487,11 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   }
   const nowIso = env.now.toISOString();
   for (const h of save.hunters) fixRefs(h, storedAs.get(h) ?? new Map(), nowIso);
+  // GM-mode saves prune unbacked local uniques (e.g., duplicate imported hunter files) and park foreign-campaign uniques;
+  // player-mode saves carry an empty classHolders and reconcile against the GM's holders doc in a room.
+  if (roleOf(st, st.sync.room) === 'gm') {
+    for (const h of save.hunters) fixGmLocalUniques(h, save.classHolders);
+  }
   // A save holds a hunter: one read with none gets the starter here, so every view has an active one to read. It is made
   // after the rename, its ids from `seq` (its title's is the rule title's `t1`).
   if (!save.hunters.length) {

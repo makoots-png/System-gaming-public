@@ -1,7 +1,8 @@
 import { jobOf } from '../src/core/save.ts';
 import { describe, expect, test } from 'bun:test';
 import type { Powers } from '../src/core/registry/powers.ts';
-import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, rankStanding, rankStep, titleNamed, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
+import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, rankStanding, rankStep, titleNamed, reevaluate, removeTitle, rename, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
+import { setJob } from '../src/core/hunter/classes.ts';
 import type { ProgressRank, ProgressRankEvent } from '../src/core/hunter/record.ts';
 import { atLevel } from '../src/core/hunter/progress.ts';
 import { levelled } from '../src/core/hunter/grant.ts';
@@ -31,8 +32,8 @@ describe('name, job and rank', () => {
   test('round trip: a job set and set back is what it was; no job is null, from a blank or the old word "None"', () => {
     const h = hunter();
     expect(h.job, 'a new hunter has none').toBeNull();
-    expect(setJob(setJob(h, 'Tanker'), h.job)).toEqual(h);
-    expect(setJob(setJob(h, 'Tanker'), ' ').job).toBeNull();
+    expect(ok(setJob(ok(setJob(h, 'Tanker')), h.job))).toEqual(h);
+    expect(ok(setJob(ok(setJob(h, 'Tanker')), ' ')).job).toBeNull();
     expect([jobOf('None'), jobOf('  Shadow  Monarch '), jobOf(7)]).toEqual([null, 'Shadow Monarch', null]);
   });
 

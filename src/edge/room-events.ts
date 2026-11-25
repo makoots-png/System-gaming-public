@@ -81,6 +81,11 @@ const GM_ONLY_READS = null;
  * (core/trade/offer.ts `offersSeen`), guarded by each phone's record of the offer and never by the applied ring.
  */
 const OFFER_FOLD_READS = null;
+/**
+ * Not applied event-by-event: unique class grants and revokes converge level-triggered from the GM's `DOCS.holders`
+ * in `sync.ts` `release()` (with toasts driven by the reconcile diff), avoiding outbox-vs-`publishWait` races.
+ */
+const HOLDERS_DOC_READS = null;
 
 const money = (n: number): string => (n < 0 ? '-' : '+') + Math.abs(n);
 const nothing = (): void => undefined;
@@ -214,6 +219,12 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
       return { save: r.save, tell: () => app.toast('! Guild', GUILD_WORDS.playerToast(p.guild), { kind: 'info' }) };
     });
   } },
+  // unique class grants and revokes converge level-triggered from `DOCS.holders` in sync.ts `release()`
+  classGrant: HOLDERS_DOC_READS,
+  classRevoke: HOLDERS_DOC_READS,
+  // a player's report of a class swap or skill-tree node buy/flip (classes.ts): the GM's phone logs it
+  classSwap: GM_ONLY_READS,
+  classNode: GM_ONLY_READS,
 };
 
 /**

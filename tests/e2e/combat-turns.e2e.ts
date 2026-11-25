@@ -312,7 +312,17 @@ test('a goblin\'s corpse that crumbled on a natural 1 stays crumbled after the G
   });
 
   await test.step('the GM marks the goblin defeated and the Necromancer\'s extraction rolls a natural 1', async () => {
-    await page.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.find((h: any) => h.id === d.settings.activeHunterId).job = 'Necromancer'; }, 'test-setup'));
+    await page.evaluate(() => hunterApp.store.update((d: any) => {
+      const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId);
+      const at = new Date().toISOString();
+      d.classHolders = {
+        registryId: d.classHolders.registryId,
+        held: { ...d.classHolders.held, Necromancer: { kind: 'local', hunterId: h.id, name: h.name, grantId: 'cg-e2e', claimedAt: at } },
+      };
+      h.classes = { ...h.classes, Necromancer: { unlockedAt: at, nodes: [], registryId: d.classHolders.registryId, grantId: 'cg-e2e' } };
+      h.job = 'Necromancer';
+      h.jobDone = 'Necromancer';
+    }, 'test-setup'));
     await tapCombat(page, '.cmb-card.turn [data-defeat]');
     await tapCombat(page, `[data-pick="${id}"]`);
     // the extraction is a check rolled on the dice tray, which draws from Math.random (src/edge/roll.ts `trayRandom`)
@@ -339,7 +349,17 @@ test('a goblin that rises on a natural 20 joins the Necromancer\'s army as the c
   await gmFight(page);
   const goblin = await currentName(page), id: string = (await fightRow(page, goblin)).id;
   const army = () => page.evaluate(() => hunterApp.store.active().shadows.map((s: any) => s.name) as string[]);
-  await page.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.find((h: any) => h.id === d.settings.activeHunterId).job = 'Necromancer'; }, 'test-setup'));
+  await page.evaluate(() => hunterApp.store.update((d: any) => {
+    const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId);
+    const at = new Date().toISOString();
+    d.classHolders = {
+      registryId: d.classHolders.registryId,
+      held: { ...d.classHolders.held, Necromancer: { kind: 'local', hunterId: h.id, name: h.name, grantId: 'cg-e2e', claimedAt: at } },
+    };
+    h.classes = { ...h.classes, Necromancer: { unlockedAt: at, nodes: [], registryId: d.classHolders.registryId, grantId: 'cg-e2e' } };
+    h.job = 'Necromancer';
+    h.jobDone = 'Necromancer';
+  }, 'test-setup'));
   await tapCombat(page, '.cmb-card.turn [data-defeat]');
   await tapCombat(page, `[data-pick="${id}"]`);
   await page.evaluate(() => { Math.random = () => 0.99; });

@@ -7,7 +7,7 @@ import { STAT_KEYS } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
 import { rankIdx } from '../rules.ts';
 import type { FightRules, Rank } from '../rules.ts';
-import { BUILT_IN_JOBS, isJobName } from '../registry/jobs.ts';
+import { classDefOf } from '../registry/jobs.ts';
 import { allocated } from './progress.ts';
 import type { Pending } from './progress.ts';
 
@@ -235,9 +235,9 @@ export type KeystoneHunter = {
  * statuses are not read.
  */
 export function keystoneBasis(h: KeystoneHunter): KeystoneBasis {
-  const job = isJobName(h.job) ? h.job : null;
-  const awakened = job !== null && h.jobDone === job;
-  return { stats: allocated(h), rank: h.rank, pair: job ? BUILT_IN_JOBS[job].pair : null, awakened };
+  const def = classDefOf(h.job);
+  const awakened = def !== null && h.job !== null && h.jobDone === h.job;
+  return { stats: allocated(h), rank: h.rank, pair: def ? def.pair : null, awakened };
 }
 /** Keystones gained and lost if `h` confirms its pending stat points (confirmed stats vs allocated stats). */
 export function keystoneConfirmDiff(h: KeystoneHunter, R: KeystoneRules): KeystoneDiff {

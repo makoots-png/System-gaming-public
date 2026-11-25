@@ -9,7 +9,7 @@ import { STARTER_SKILLS, skillOf } from './registry/skills.ts';
 import type { SkillDef } from './registry/skills.ts';
 import { confirm, raiseMany } from './hunter/progress.ts';
 import type { StatPoints } from './hunter/progress.ts';
-import { setJob } from './hunter/record.ts';
+import { setJob } from './hunter/classes.ts';
 import { learnSkill } from './hunter/skills-held.ts';
 import { equip, putItem } from './hunter/inventory.ts';
 import { refill } from './hunter/vitals.ts';

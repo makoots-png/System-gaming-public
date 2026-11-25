@@ -533,8 +533,20 @@ test('a player\'s cast lands with the dice the GM\'s phone rolled for each targe
 test('the GM extracts a fallen monster with a player\'s Necromancer, and the shadow that rises joins the army on the player\'s phone', async ({ device }) => {
   const { gm, player } = await room(device);
   const army = () => player.evaluate(() => hunterApp.store.active().shadows.map((s: any) => [s.name, s.grade]) as [string, string][]);
-  await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().job = 'Necromancer'; }, 'test-setup'));
-  await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === n)?.data.job, HUNTER)).toBe('Necromancer');
+  const playerKey = await player.evaluate(() => hunterApp.api.sync.myKey(hunterApp.store.active().id));
+  // Seed ONLY the GM's classHolders: the room's _holders doc must grant Necromancer to the player's phone,
+  // fire the grant toast, push the sheet back, and enable shadow extraction end-to-end.
+  await gm.evaluate(({ key, name }) => {
+    hunterApp.store.update((d: any) => {
+      d.classHolders = {
+        registryId: d.classHolders.registryId,
+        held: { ...d.classHolders.held, Necromancer: { kind: 'remote', sheetKey: key, name, grantId: 'cg-e2e', claimedAt: new Date().toISOString() } },
+      };
+    }, 'test-setup');
+  }, { key: playerKey, name: HUNTER });
+  await expect.poll(() => player.evaluate(() => hunterApp.store.active().job), { timeout: 20_000 }).toBe('Necromancer');
+  await expect(player.locator('#toasts .toast', { hasText: 'You received the unique class Necromancer.' }).first()).toBeVisible();
+  await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === n)?.data.job, HUNTER), { timeout: 20_000 }).toBe('Necromancer');
   await gm.evaluate(() => hunterApp.store.update((d: any) => {
     d.monsters.push({ id: 'm900', name: 'Frost Wolf', rank: 'E', type: '', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 40, extractable: true, desc: '', statuses: [], loot: { gold: 0, items: [] } });
   }, 'test-setup'));
@@ -591,10 +603,22 @@ test('an S-rank Necromancer summons an S-rank shadow with the new mana cost, GM 
   const { gm, player } = await room(device);
   const sCost = RULES.shadow.summonMp.S;
   // Seed the player as a level 70 S-rank 2:1 Necromancer (26 mana) with an S-rank Marshal at full HP, a fallen resting shadow (0 HP), and a summoned shadow at 5 HP.
-  await player.evaluate(() => {
+  const playerKey = await player.evaluate(() => hunterApp.api.sync.myKey(hunterApp.store.active().id));
+  const regId: string = await gm.evaluate(({ key, name }) => {
+    hunterApp.store.update((d: any) => {
+      d.classHolders = {
+        registryId: d.classHolders.registryId,
+        held: { ...d.classHolders.held, Necromancer: { kind: 'remote', sheetKey: key, name, grantId: 'cg-e2e', claimedAt: new Date().toISOString() } },
+      };
+    }, 'test-setup');
+    return hunterApp.store.get().classHolders.registryId;
+  }, { key: playerKey, name: HUNTER });
+  await player.evaluate(registryId => {
     hunterApp.store.update(() => {
       const h = hunterApp.store.active();
+      h.classes = { ...h.classes, Necromancer: { unlockedAt: new Date().toISOString(), nodes: [], registryId, grantId: 'cg-e2e' } };
       h.job = 'Necromancer';
+      h.jobDone = 'Necromancer';
       h.rank = 'S';
       h.level = 70;
       h.peakLevel = 70;
@@ -606,7 +630,7 @@ test('an S-rank Necromancer summons an S-rank shadow with the new mana cost, GM 
         { id: hunterApp.store.id('sh'), name: 'Tank', monster: null, rank: 'C', archetype: 'skirmisher', grade: 'Normal', hp: 5, summoned: true, notes: '' },
       ];
     }, 'test-setup');
-  });
+  }, regId);
   await go(player, 'shadows');
   const igris = player.locator('#view-shadows .sh-card', { hasText: 'Igris' });
   const beru = player.locator('#view-shadows .sh-card', { hasText: 'Beru' });

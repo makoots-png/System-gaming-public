@@ -13,8 +13,8 @@ const LABEL: { readonly [K in ChainKind]: string } = { none: 'No Job Change', ac
 const KINDS = Object.keys(LABEL) as ChainKind[];
 const kindOf = (s: ChainHunter): ChainKind => s.chain?.status ?? 'none';
 
-/** The walk's chain is a Necromancer's; every job has the same three steps today. */
-const STEPS = BUILT_IN_JOBS.Necromancer.steps;
+/** The walk's chain is a Fighter's; every job has the same three steps today. */
+const STEPS = BUILT_IN_JOBS.Fighter.steps;
 
 function state(s: ChainHunter): string | readonly string[] {
   const c = s.chain;

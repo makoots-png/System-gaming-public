@@ -365,7 +365,7 @@ test('a gate set to cleared in the edit form, which pays nobody, still lets its 
   expect(Object.values(gained(start, await lifetimeXp(page)))).toEqual(Object.values(start).map(() => share(xp, n)));
 });
 
-test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes a Necromancer', async ({ device }) => {
+test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes a Fighter', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   await page.evaluate(() => hunterApp.store.update(() => { const h = hunterApp.store.active(); h.level = 10; h.xp = 0; }, 'test-setup'));
@@ -376,7 +376,7 @@ test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes 
     await go(page, 'quests');
     await page.locator('#view-quests [data-chain]').tap();
     await sys(page, hunterName);
-    await sys(page, 'Necromancer');
+    await sys(page, 'Fighter');
     await expect(windowTitle(page)).toHaveText('QUEST COMPLETE');
     await dismissAll(page);
     await page.locator('#view-quests [data-tab="active"]').tap();
@@ -395,9 +395,9 @@ test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes 
   await test.step('finishing step 3 announces the job and the hunter has it', async () => {
     await completeQuest(page, 'active', 'Job Change 3/3');
     await expect(topWindow(page)).toContainText('JOB CHANGE COMPLETE');
-    await expect(topWindow(page)).toContainText('You are now a Necromancer');
+    await expect(topWindow(page)).toContainText('You are now a Fighter');
     await dismissAll(page);
-    expect((await activeHunter(page)).job).toBe('Necromancer');
+    expect((await activeHunter(page)).job).toBe('Fighter');
     await go(page, 'quests');
     await page.locator('#view-quests [data-tab="active"]').tap();
     await expect(job('Job Change')).toHaveCount(0);
@@ -409,7 +409,7 @@ test('every job can be earned through the Job Change chain when it is issued at 
   await onboardGM(page);
   const failures = await page.evaluate(async () => {
     const A = hunterApp.api, s = hunterApp.store, out: string[] = [], pause = () => new Promise(r => setTimeout(r, 30));
-    for (const job of ['Necromancer', 'Assassin', 'Mage', 'Tanker', 'Healer', 'Fighter', 'Ranger']) for (const level of [1, 10, 30]) {
+    for (const job of ['Fighter', 'Assassin', 'Mage', 'Tanker', 'Healer', 'Ranger']) for (const level of [1, 10, 30]) {
       const hid = s.active().id;
       s.update(() => { const h = s.hunter(hid); h.level = level; h.peakLevel = level; h.xp = 0; h.job = null; h.jobChain = null; h.quests = h.quests.filter((q: any) => !q.chainId); }, 'test-setup');
       A.quests.issueJobChain(hid, job); await pause();
@@ -770,7 +770,7 @@ test('a player sees no Delete on the Penalty Zone quest that holds their penalty
   });
 });
 
-test('a failed Job Change shows on the Quests tab: the player is told the GM can reissue it, and the GM reissues the step and the hunter becomes a Necromancer', async ({ device }) => {
+test('a failed Job Change shows on the Quests tab: the player is told the GM can reissue it, and the GM reissues the step and the hunter becomes a Fighter', async ({ device }) => {
   const failedCard = (page: Page) => page.locator('#view-quests [data-jobchain]');
   const job = (page: Page, title: string) => page.locator('#view-quests .qc', { hasText: title });
   async function failStep(page: Page, title: string): Promise<void> {
@@ -804,12 +804,12 @@ test('a failed Job Change shows on the Quests tab: the player is told the GM can
     await go(page, 'quests');
     await page.locator('#view-quests [data-chain]').tap();
     await sys(page, hunterName);
-    await sys(page, 'Necromancer');
+    await sys(page, 'Fighter');
     // Level 10 is step 1's level (CHAIN_LEVEL in src/core/registry/jobs.ts), so step 1 completes as the chain is issued.
     await expect(windowTitle(page)).toHaveText('QUEST COMPLETE');
     await dismissAll(page);
     await failStep(page, 'Job Change 2/3');
-    await expect(failedCard(page)).toContainText('Job Change failed: Necromancer, step 2 of 3');
+    await expect(failedCard(page)).toContainText('Job Change failed: Fighter, step 2 of 3');
     await failedCard(page).locator('[data-reissue]').tap();
     await expect(failedCard(page)).toBeHidden();
     await page.locator('#view-quests [data-tab="active"]').tap();
@@ -817,9 +817,9 @@ test('a failed Job Change shows on the Quests tab: the player is told the GM can
     await completeQuest(page, 'active', 'Job Change 2/3');
     await dismissAll(page);
     await completeQuest(page, 'active', 'Job Change 3/3');
-    await expect(topWindow(page)).toContainText('You are now a Necromancer');
+    await expect(topWindow(page)).toContainText('You are now a Fighter');
     await dismissAll(page);
-    expect((await activeHunter(page)).job).toBe('Necromancer');
+    expect((await activeHunter(page)).job).toBe('Fighter');
   });
 });
 

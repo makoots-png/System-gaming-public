@@ -180,4 +180,20 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], guild: { archetype: 'ironwake', standing: 'core', name: 'Ironwake Watch', goldCut: 0.2 } },
     { eid: EID, to: [KEY], guild: { archetype: 'ironwake', standing: 'core', name: 'Ironwake Watch', goldCut: 0.2 } },
   ],
+  classGrant: [
+    { eid: EID, to: [KEY], className: 'Hemomancer', at: '2026-11-25T12:00:00.000Z' },
+    { eid: EID, to: [KEY], className: 'Hemomancer', at: '2026-11-25T12:00:00.000Z' },
+  ],
+  classRevoke: [
+    { eid: EID, to: [KEY], className: 'Hemomancer', at: '2026-11-25T12:00:00.000Z' },
+    { eid: EID, to: [KEY], className: 'Hemomancer', at: '2026-11-25T12:00:00.000Z' },
+  ],
+  classSwap: [
+    { eid: EID, by: KEY, name: 'Mira', fromClass: 'Fighter', toClass: 'Hemomancer', cost: 18750 },
+    { eid: EID, by: KEY, name: 'Mira', fromClass: 'Fighter', toClass: 'Hemomancer', cost: 18750 },
+  ],
+  classNode: [
+    { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', act: 'buy', nodeId: 'crimson-root', cost: 45000 },
+    { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', act: 'buy', nodeId: 'crimson-root', cost: 45000 },
+  ],
 };
