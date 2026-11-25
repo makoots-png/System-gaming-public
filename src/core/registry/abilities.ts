@@ -11,6 +11,7 @@ import type { Formula } from '../formula.ts';
 import { percent, tiles } from '../combat/space.ts';
 import { cost, paceCost, tick } from '../combat/timeline.ts';
 import type { Pace } from '../combat/timeline.ts';
+import { damageTypeOf, isDamage } from '../combat/damage-type.ts';
 import { abilityId } from '../combat/ability-types.ts';
 import type { Ability, AbilityEffect, AbilityId, AbilityKind, DamageType } from '../combat/ability-types.ts';
 import { isUseOp, statusKey } from '../combat/effect-ops.ts';
@@ -41,8 +42,8 @@ export type SkillRules = KindRules & { readonly conditions: { readonly [K in Ski
 /** The id of a body's default attack, a hunter's weapon or a monster's archetype attack. A skill's ability has its own. */
 export const ATTACK_ID = abilityId('attack');
 
-/** What `weaponAttack` reads of an item. A bow shoots and anything else strikes (plan 3.3). */
-export type Weapon = { readonly name: string; readonly dice: string; readonly attack: 'strike' | 'shot'; readonly finesse?: true };
+/** What `weaponAttack` reads of an item. A bow shoots and anything else strikes (plan 3.3). Absent `damageType` means physical. */
+export type Weapon = { readonly name: string; readonly dice: string; readonly attack: 'strike' | 'shot'; readonly finesse?: true; readonly damageType?: DamageType };
 
 /** How one built-in differs from its kind. A field left out is the kind's. */
 type Differs = {
@@ -115,22 +116,28 @@ function onSelf(id: string, name: string, status: SelfStatus, rounds: number | n
   return built('support', id, name, d, R, { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [op] });
 }
 
+/** Stamps `type` onto an already-built damaging ability without altering its formula. */
+const stampType = (a: Ability, type: DamageType): Ability =>
+  a.effect && isDamage(a.effect.type) && a.effect.type !== type ? { ...a, effect: { ...a.effect, type } } : a;
+
 /** Each monster archetype's default attack (plan 3.2): a brute strikes, a skirmisher shoots, a caster curses. */
 export const ARCHETYPE_ATTACKS: { readonly [A in Archetype]: (R: KindRules) => Ability } = {
-  brute: R => built('strike', ATTACK_ID, 'Strike', {}, R),
-  skirmisher: R => built('shot', ATTACK_ID, 'Shot', {}, R),
-  caster: R => built('curse', ATTACK_ID, 'Curse', {}, R),
+  brute: R => stampType(built('strike', ATTACK_ID, 'Strike', {}, R), damageTypeOf('attack-brute', 'physical', R)),
+  skirmisher: R => stampType(built('shot', ATTACK_ID, 'Shot', {}, R), damageTypeOf('attack-skirmisher', 'physical', R)),
+  caster: R => stampType(built('curse', ATTACK_ID, 'Curse', {}, R), damageTypeOf('attack-caster', 'arcane', R)),
 };
 
 /**
  * A hunter's default attack with this weapon: its kind's recommended formula with the weapon's dice. Bows (`shot`) and
  * melee weapons marked `finesse` scale with `finesse` (`max(phys, agi finesse)`) so Agility builds deal growing weapon
- * damage; other melee weapons and unarmed strikes (`1d8 + phys`) scale with `phys`.
+ * damage; other melee weapons and unarmed strikes (`1d8 + phys`) scale with `phys`. Built with the shipped type, then
+ * stamped with `item.damageType` (or the `attack-unarmed` override when unarmed) so the formula never shifts on retype.
  */
 export function weaponAttack(item: Weapon | null, R: KindRules): Ability {
-  if (item === null) return built('strike', ATTACK_ID, 'Strike', {}, R);
+  if (item === null) return stampType(built('strike', ATTACK_ID, 'Strike', {}, R), damageTypeOf('attack-unarmed', 'physical', R));
   const finesse = item.attack === 'shot' || item.finesse === true;
-  return built(item.attack, ATTACK_ID, item.name, { dice: item.dice, ...(finesse ? { finesse: true } : {}) }, R);
+  const base = built(item.attack, ATTACK_ID, item.name, { dice: item.dice, ...(finesse ? { finesse: true } : {}) }, R);
+  return item.damageType ? stampType(base, item.damageType) : base;
 }
 
 /**
@@ -256,8 +263,8 @@ export const itemOfAbility = (a: Pick<Ability, 'item'>): ItemId | null => a.item
  */
 export function itemAbility(item: ThrownItem, R: KindRules & Pick<Rules, 'rarities'>): Ability | null {
   const tier = itemSource(item).tier, effects = item.effects ?? [], self = item.target !== 'other';
-  const damage = self ? undefined : effects.find(o => o.op === 'damage' && o.type !== 'true'), heal = effects.find(o => o.op === 'heal');
-  const effect: AbilityEffect | null = damage?.op === 'damage' && damage.type !== 'true' ? { type: damage.type, by: 'hand', formula: atTier(damage.amount, tier) }
+  const damage = self ? undefined : effects.find(o => o.op === 'damage'), heal = effects.find(o => o.op === 'heal');
+  const effect: AbilityEffect | null = damage?.op === 'damage' ? { type: damage.type, by: 'hand', formula: atTier(damage.amount, tier) }
     : heal?.op === 'heal' ? { type: 'heal', by: 'hand', formula: atTier(heal.amount, tier) } : null;
   const ops = effects.filter(isUseOp).flatMap((o): UseOp[] => o.op !== 'mana' && o.op !== 'fatigue' ? [o] : self ? [{ op: o.op, amount: atTier(o.amount, tier) }] : []);
   if (effect === null && ops.length === 0) return null;

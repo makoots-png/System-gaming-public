@@ -12,6 +12,7 @@ import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
 import { isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
 import { counting, harmful } from './standing.ts';
+import { isDamage } from './damage-type.ts';
 import type { Ability, CombatantId, Outcome, Tag } from './ability-types.ts';
 import { tagsOf } from '../registry/ability-kinds.ts';
 import { alive, landOps, landThreshold, reached } from './land.ts';
@@ -147,7 +148,7 @@ export function eventsOf(a: Pick<Ability, 'ops' | 'kind' | 'channel' | 'tags'>, 
   const user = rowIn(after, by);
   for (const o of outcomes) {
     const mine: Raised[] = [], theirs: Raised[] = [];
-    const hit = (o.type === 'physical' || o.type === 'arcane') && o.avoid !== 'out' && o.dealt > 0;
+    const hit = isDamage(o.type) && o.avoid !== 'out' && o.dealt > 0;
     if (hit) { mine.push(raised(by, 'hitDealt', o.target, tags)); theirs.push(raised(o.target, 'struck', by, tags)); }
     if (o.crit) { mine.push(raised(by, 'critDealt', o.target, tags)); theirs.push(raised(o.target, 'critTaken', by, tags)); }
     if (o.down) { mine.push(raised(by, 'kill', o.target, tags)); theirs.push(raised(o.target, 'down', by, tags)); }

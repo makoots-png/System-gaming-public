@@ -17,6 +17,7 @@ import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import { atTier } from '../src/core/combat/op-amount.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import type { Body, Origin, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
+import { isDamage } from '../src/core/combat/damage-type.ts';
 import { diceFor, resolve } from '../src/core/combat/resolve.ts';
 import { formulaOf, abilityOf, kindDefaults } from '../src/core/registry/ability-kinds.ts';
 import { LOOT_ITEMS, SHOP_ITEMS, STARTER_GEAR } from '../src/core/registry/items.ts';
@@ -129,7 +130,7 @@ describe('the single-hit bound of design section 6', () => {
     const over: string[] = [];
     let tried = 0;
     for (const { label, ability: a, user } of ENTRIES) {
-      if (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane') continue;
+      if (!isDamage(a.effect?.type)) continue;
       for (const rank of RANKS) {
         const tank = body('tank', hunter('tank', rank), place(6, 5), 'foe', rank);
         const users = user === 'hunter'
@@ -153,7 +154,7 @@ describe('the single-hit bound of design section 6', () => {
   test('every built-in blast that leaves a field stays inside the bound with one round of its field: the hit and the field\'s per-round damage at mean dice', () => {
     const lines: string[] = [], over: string[] = [];
     for (const m of seedMonsters(RULES)) for (const a of m.abilities) {
-      if (!a.zone || (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane')) continue;
+      if (!a.zone || !isDamage(a.effect?.type)) continue;
       const tank = body('tank', hunter('tank', m.rank), place(6, 5), 'foe', m.rank);
       // the user out of its own blast's ring, the tank at its centre
       const u = body('user', { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { ...NO_TWEAK, ...m.tweak, stats: { ...NO_TWEAK.stats, ...m.tweak.stats } } }, place(0, 5), 'party', m.rank);

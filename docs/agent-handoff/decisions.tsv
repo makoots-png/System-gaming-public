@@ -814,3 +814,5 @@ ts	phase	decision	why	evidence	result
 2026-11-25T01:08Z	ops	PR 121 (point respec, staged take-backs paid at Confirm) merged to main
 2026-11-25T01:24Z	ops	PR 122 (small fixes: approve race, e2e local-midnight seeds) merged to main
 2026-11-25T01:56Z	arch	landed gear-slots part 2 (V2p2): weapon damage over basic costs budget (weaponDuty 0.15), finesse flag, unclipped GM edits with warnings; 0 fight-sim rows moved; unit 7038 pass on merged tree
+2026-11-25T02:11Z	ops	PR 123 (V2 part 2, gear-slots) merged to main as 311d8e73; CI 45529443279
+2026-11-25T03:37Z	arch	landed status-type-rules (GM-editable damage types incl. keystone triggers per t123u-t125u); merged twice with lead-backlog by Neon, 2 fixture-id collisions fixed (s914, i914); 0 fight-sim rows moved; unit 7053 pass

@@ -8,6 +8,7 @@
 // Stored sparse: a field that never moved is absent, and `tallyOf` reads absent as zero.
 import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
+import { isDamage } from './damage-type.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import type { Raised } from './triggers.ts';
 
@@ -100,7 +101,7 @@ export function tallied(rows: readonly Body[], e: TallyEvent): Body[] {
       for (const o of e.outcomes) {
         const target = map.get(o.target);
         if (!target) continue;
-        const foe = target.side !== user.side, hit = (o.type === 'physical' || o.type === 'arcane') && o.avoid !== 'out' && o.dealt > 0;
+        const foe = target.side !== user.side, hit = isDamage(o.type) && o.avoid !== 'out' && o.dealt > 0;
         if (hit && foe) {
           bump(e.by, t => {
             const run = o.crit ? t.critRun + 1 : 0;

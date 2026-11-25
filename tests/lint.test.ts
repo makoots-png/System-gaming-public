@@ -2987,9 +2987,8 @@ test('fightRest is applied only in core fight-turn.ts: playDungeon carries post-
   expect([...new Set(srcHits)].filter(f => !allowed.has(f)), 'only fight-turn.ts applies fightRest (rules.ts defines it and rules-text.ts describes it)').toEqual([]);
 });
 
-test('the old damage-type word "magical" appears in src/ and public/ only at the parser alias', async () => {
-  // Unit R6: "arcane" replaced "magical" across code and UI copy so Resist has one damage word everywhere.
-  // Only the one-way parser alias in src/core/combat/fight-parse.ts may mention "magical" to read old saves, packs, and room docs.
+test('the old damage-type word "magical" does not appear anywhere in src/ or public/', async () => {
+  // Unit R6 replaced "magical" with "arcane"; unit status-type-rules (t122u) removed the temporary parser alias.
   const word = /\bmagical\b/i;
   expect(word.test("type: 'magical'"), 'catches lowercase token').toBe(true);
   expect(word.test('Magical damage'), 'catches capitalized copy').toBe(true);
@@ -3005,8 +3004,21 @@ test('the old damage-type word "magical" appears in src/ and public/ only at the
       lines.forEach((text, i) => { if (word.test(text)) hits.push({ file, line: i + 1, text }); });
     }
   }
-  const alias = hits.filter(h => h.file === 'src/core/combat/fight-parse.ts' && /const readDamageType\b/.test(h.text));
-  expect(alias.length, 'the parser alias line in src/core/combat/fight-parse.ts must exist').toBe(1);
-  const bad = hits.filter(h => !alias.includes(h));
-  expect(report(bad), 'use "arcane" instead of "magical" in src/ and public/ (keep "magical" only at readDamageType in fight-parse.ts)').toEqual([]);
+  expect(report(hits), 'use "arcane" instead of "magical" everywhere in src/ and public/').toEqual([]);
+});
+
+test('a damage-type literal is compared only in src/core/combat/damage-type.ts and src/core/combat/land.ts', async () => {
+  // One predicate (`isDamage`) and one defence lookup (`defenceOf`) in damage-type.ts prevent literal-pair drift bugs.
+  const pairCmp = /(?:===|!==)\s*'(?:physical|arcane)'|'(?:physical|arcane)'\s*(?:===|!==)/;
+  const trueTypeCmp = /(?:\.type|\btype|\bdamageType)\s*(?:===|!==)\s*'true'|'true'\s*(?:===|!==)\s*(?:[a-zA-Z0-9_.]+\.type|\btype|\bdamageType)/;
+  const badCmp = (s: string): boolean => pairCmp.test(s) || trueTypeCmp.test(s);
+  expect(badCmp("if (o.type === 'physical' || o.type === 'arcane')"), 'catches literal pair check').toBe(true);
+  expect(badCmp("if (type !== 'arcane')"), 'catches single arcane compare').toBe(true);
+  expect(badCmp("if (o.type === 'true')"), 'catches true damage type compare').toBe(true);
+  expect(badCmp("if (btn.getAttribute('aria-pressed') === 'true')"), 'allows DOM aria-pressed string compare').toBe(false);
+  expect(badCmp("if (spec.t === 'flag') return raw === 'true';"), 'allows generic boolean string parse').toBe(false);
+
+  const allowed = new Set(['src/core/combat/damage-type.ts', 'src/core/combat/land.ts']);
+  const hits = (await sourceLines('src')).filter(l => !isComment(l.text) && !allowed.has(l.file) && badCmp(l.text));
+  expect(report(hits), 'compare damage-type literals only in src/core/combat/damage-type.ts and src/core/combat/land.ts; use isDamage or defenceOf elsewhere').toEqual([]);
 });

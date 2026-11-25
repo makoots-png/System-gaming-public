@@ -16,7 +16,7 @@ import { tiles } from './space.ts';
 import type { Place, Side, Tiles } from './space.ts';
 import { roundsOf, tick, withSpeed } from './timeline.ts';
 import type { Clock, Tick } from './timeline.ts';
-import type { Ability, AbilityId, CombatantId, HunterId, OpDamageType, Tag } from './ability-types.ts';
+import type { Ability, AbilityId, CombatantId, DamageType, HunterId, Tag } from './ability-types.ts';
 import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
 import type { MythicStanding } from './mythic-types.ts';
@@ -128,7 +128,7 @@ export const reactionMayHold = (o: UseOp): boolean => landsAlone(o) || o.op === 
  * stun floor; `taunt` forces the bearer's target and makes a threat burst; `refund` gives the bearer back part of a turn.
  */
 export type Op =
-  | { readonly op: 'damage'; readonly type: OpDamageType; readonly amount: Tiered<Formula>; readonly when?: When }
+  | { readonly op: 'damage'; readonly type: DamageType; readonly amount: Tiered<Formula>; readonly when?: When }
   | { readonly op: 'heal'; readonly amount: Tiered<Formula>; readonly when?: When }
   | { readonly op: 'mana'; readonly amount: Tiered<Formula>; readonly when?: When }
   /** A negative amount removes fatigue. */

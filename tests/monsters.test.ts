@@ -13,6 +13,7 @@ import type { Ability } from '../src/core/combat/ability-types.ts';
 import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, Origin } from '../src/core/combat/effect-ops.ts';
 import { parseAbility } from '../src/core/combat/fight-parse.ts';
+import { isDamage } from '../src/core/combat/damage-type.ts';
 import { resolve } from '../src/core/combat/resolve.ts';
 import { monsterRows } from '../src/core/combat/rows.ts';
 import type { RowMonster } from '../src/core/combat/rows.ts';
@@ -103,7 +104,7 @@ for (const [i, m] of MONSTERS.entries()) {
       const user: Origin = { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? 1, dealt: 1, stats: m.tweak.stats ?? {}, traits: m.tweak.traits ?? [] } };
       const u = body('user', user, place(5, 5), 'foe', m.rank), tank = body('tank', tankOf(m.rank), place(6, 5), 'party', m.rank);
       for (const a of m.abilities) {
-        if (a.effect?.type !== 'physical' && a.effect?.type !== 'arcane') continue;
+        if (!isDamage(a.effect?.type)) continue;
         const aim = a.aim === 'place' ? tank.place! : tank.id;
         // A blast catches its user too when it stands inside it, so both roll.
         const dice = diceOf(formulaOf(a, RULES)!).map(mean);

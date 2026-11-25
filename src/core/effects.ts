@@ -1,6 +1,8 @@
 // effects.ts: what an item does when it is used, as the ops of the fight (src/core/combat/effect-ops.ts), and its card's
 // words. Pure. What an item adds while worn is its stats and gear numbers, which src/core/hunter/sheet.ts reads.
 // src/views/effects.js rolls and applies the ops to a hunter: `amountDice` says what to roll, `amountOn` what it comes to.
+import { DAMAGE_WORD } from './combat/damage-type.ts';
+import type { DamageType } from './combat/damage-type.ts';
 import { FULL_HEAL, healsFully, opLines } from './combat/effect-ops.ts';
 import { atTier } from './combat/op-amount.ts';
 import type { DescribeRules, Op, Source } from './combat/effect-ops.ts';
@@ -14,7 +16,7 @@ import type { Grade } from './registry/items.ts';
 export { FULL_HEAL, healsFully };
 
 /** What this file reads of an item. */
-export type ItemEffects = { readonly rar: string; readonly grade?: Grade; readonly effects?: readonly Op[]; readonly revive?: true; readonly rankCap?: true };
+export type ItemEffects = { readonly rar: string; readonly grade?: Grade; readonly damageType?: DamageType; readonly effects?: readonly Op[]; readonly revive?: true; readonly rankCap?: true };
 /** What an item that revives says it does (src/core/hunter/use.ts `useItem`). */
 export const REVIVE_TEXT = `Revives a dead hunter at ${REVIVE_HP} HP (outside a fight).`;
 /** What a rank-capped consumable says on its detail card (src/core/hunter/use.ts `usableAtRank`). */
@@ -52,6 +54,7 @@ export const gradeLabel = (rar: string, grade: Grade): string => `${rar[0]!.toUp
 export function describeItem(R: DescribeRules, item: ItemEffects, ops: readonly Op[] = effectsOf(item), wearer: FormulaBody | null = null): string[] {
   return [
     ...(item.grade ? [gradeLabel(item.rar, item.grade)] : []),
+    ...(item.damageType ? [DAMAGE_WORD[item.damageType]] : []),
     ...(item.revive ? [REVIVE_TEXT] : []),
     ...(item.rankCap && !item.revive ? [RANK_CAP_TEXT] : []),
     ...opLines(ops, itemSource(item).tier, R, wearer),

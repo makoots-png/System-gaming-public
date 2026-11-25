@@ -37,6 +37,7 @@ import { freeStatusKey, modified, shadowId, statusKey, statusOn, statusShield, T
 import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
 import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
+import { typed } from './damage-type.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { mythicStart } from './mythic.ts';
@@ -55,7 +56,7 @@ export type RowSkill = { readonly type: 'active'; readonly ability: Ability | nu
  * (`target: 'other'`) is an ability the hunter takes into the fight; a worn one gives its powers (`heldPowers`).
  */
 export type RowItem = SheetItem & {
-  readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack']; readonly finesse?: true;
+  readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack']; readonly finesse?: true; readonly damageType?: Weapon['damageType'];
   readonly type?: string; readonly rar?: string; readonly qty?: number; readonly target?: 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true;
 } & Readonly<Powers>;
 /** The fields of a schema 4 hunter a row reads, on this phone or from a parsed remote sheet. */
@@ -109,10 +110,10 @@ const JOINS = tick(0);
 const starting = (key: string, def: StatusDef, source: Status['source'], rounds: number | null, now: Tick, R: RowRules, stacks = 1): Status => statusOn(def, {
   key: statusKey(key), source, until: rounds === null ? null : tick(now + Math.round(rounds * R.fight.round)), since: now, settledAt: now,
 }, stacks);
-/** The first ability of each id, at most `MAX_ABILITIES`: a second with the same id could never be chosen. */
-function distinct(list: readonly Ability[]): Ability[] {
+/** The first ability of each id, at most `MAX_ABILITIES`, stamped with `typed(a, R)` so learned by-value copies follow GM overrides. */
+function distinct(list: readonly Ability[], R: RowRules): Ability[] {
   const out: Ability[] = [];
-  for (const a of list) if (out.length < MAX_ABILITIES && !out.some(b => b.id === a.id)) out.push(a);
+  for (const a of list) if (out.length < MAX_ABILITIES && !out.some(b => b.id === a.id)) out.push(typed(a, R));
   return out;
 }
 
@@ -159,7 +160,7 @@ export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
     const { item: _never, ...own } = active;
     return [{ ...own, id: wornAbilityId(active.id) }];
   });
-  return distinct([weaponAttack(weapon, R), ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held, ...thrown]);
+  return distinct([weaponAttack(weapon, R), ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held, ...thrown], R);
 }
 
 /** A worn status of `def` from `source`, under a key made from its label that `keys` does not hold, which then holds it. */
@@ -278,7 +279,7 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
   const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak, ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
   const bar = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak }, R);
   const tier = rankIdx(m.rank), stagger = bar && first ? { ...bar, max: bar.max * first.bar } : bar;
-  const abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
+  const abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities], R);
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
     const own = m.statuses.flatMap(s => {
@@ -315,7 +316,7 @@ export function shadowRow(s: RowShadow, owner: string, id: CombatantId, R: RowRu
   return {
     id, name: cut(s.name), side: 'party', kind: 'shadow', origin, tier: rankIdx(s.rank), place: null,
     life: s.hp >= 1 ? { at: 'up', hp: clamp(s.hp, 1, sheet.hpMax) } : { at: 'dead' }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null, statuses: [],
-    readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]), intent: null, holder: { kind: 'shadow', hunterId: hunterId(owner), shadowId: shadowId(s.id) }, xp: 0, mythic: null,
+    readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)], R), intent: null, holder: { kind: 'shadow', hunterId: hunterId(owner), shadowId: shadowId(s.id) }, xp: 0, mythic: null,
   };
 }
 
@@ -339,7 +340,7 @@ export function summonRow(user: Pick<Body, 'id' | 'side' | 'tier'>, s: Summon, i
   const { sheet } = modified(origin, statuses, R);
   return {
     id, name: cut(s.name), side: user.side, kind: 'summon', origin, tier: user.tier, place: null, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
-    shield: null, stagger: null, channel: null, threat: user.side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]),
+    shield: null, stagger: null, channel: null, threat: user.side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)], R),
     intent: null, holder: null, xp: 0, mythic: null, owner: user.id, until: tick(now + Math.round(rounds * R.fight.round)),
   };
 }

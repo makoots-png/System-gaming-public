@@ -35,6 +35,8 @@ export const ROUNDTRIP_REGISTRY = [
   { id: 'identity', viewFile: 'src/views/custom.js', opensMaker: false, coverage: 'both', description: 'Hunter emblem and color picker (custom.js + identity.ts)' },
   { id: 'rules-overrides', viewFile: 'src/views/gm.js', opensMaker: false, coverage: 'both', description: 'GM rules overrides JSON editor (gm.js + overrides.ts)' },
   { id: 'roll-tables', viewFile: 'src/views/gm.js', opensMaker: false, coverage: 'both', description: 'GM roll tables editor (gm.js + settings.ts)' },
+  { id: 'typed-weapon', viewFile: 'src/views/loot.js', opensMaker: true, coverage: 'both', description: 'Weapon with custom damageType (loot.js + items.ts)' },
+  { id: 'true-ability', viewFile: 'src/views/skills.js', opensMaker: true, coverage: 'both', description: 'Active skill with true damage effect (skills.js + maker.js)' },
 ] as const satisfies readonly MakerRegistryEntry[];
 
 export type MakerId = (typeof ROUNDTRIP_REGISTRY)[number]['id'];

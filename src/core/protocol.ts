@@ -34,6 +34,9 @@ import { isJobName } from './registry/jobs.ts';
 import { isIconKey } from './registry/icons.ts';
 import type { IconKey } from './registry/icons.ts';
 import type { JobName } from './registry/jobs.ts';
+import { parseDamageTypes } from './combat/damage-type.ts';
+import type { DamageTypeMap } from './combat/damage-type.ts';
+import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { abilityId, combatantId } from './combat/ability-types.ts';
 import type { AbilityId, CombatantId } from './combat/ability-types.ts';
 import { statusKey } from './combat/effect-ops.ts';
@@ -951,6 +954,10 @@ export type RoomRules = {
   mythic: { scripts: boolean };
   /** The GM's keystone switch and thresholds (`RULES.fight.keystone`): a doc without it reads as off with shipped shares and ranks. */
   keystone: { on: boolean; markShare: number; pairShare: number; apexShare: number; markRank: Rank; pairRank: Rank; apexRank: Rank };
+  /** The GM's sparse ability/reserved damage-type overrides (`RULES.fight.damageTypes`): absent reads as empty. */
+  damageTypes: DamageTypeMap;
+  /** The GM's overridden built-in status defs (`library.statuses` entries matching `BUILT_IN_STATUSES`, at most 16): absent reads as empty. */
+  statuses: Record<string, StatusDef>;
   /** The GM's shadow summon mana costs (`RULES.shadow.summonMp`): a doc without it reads as the shipped table. */
   shadow: { summonMp: Rules['shadow']['summonMp'] };
   /** The rank whose base price prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
@@ -1401,7 +1408,26 @@ function roomShadow(v: unknown): RoomRules['shadow'] {
   const sh = obj(opt(v, x => x, {})), mp = obj(opt(own(sh, 'summonMp'), x => x, {}));
   return { summonMp: eachRank(r => opt(own(mp, r), ruleNumber(`shadow.summonMp.${r}`), RULES.shadow.summonMp[r])) };
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and shadow/crystal/guilds (shipped defaults when absent). */
+/** The room's sparse damage-type override map (`RULES.fight.damageTypes`): absent reads as empty, invalid entries refuse the doc. */
+function roomDamageTypes(v: unknown): DamageTypeMap {
+  if (v === undefined) return {};
+  const parsed = parseDamageTypes(v, () => refuse());
+  return parsed ?? refuse();
+}
+/** The room's overridden built-in status defs (at most 16 built-in keys, bounded by `DOC_DEFS_MAX`): absent reads as empty. */
+function roomStatuses(v: unknown): Record<string, StatusDef> {
+  if (v === undefined) return {};
+  if (JSON.stringify(v).length > DOC_DEFS_MAX) return refuse();
+  const out: Record<string, StatusDef> = {};
+  for (const [k, x] of Object.entries(obj(v))) {
+    if (!Object.hasOwn(BUILT_IN_STATUSES, k)) return refuse();
+    const def = parseStatusDef(x, RULES);
+    if (!def) return refuse();
+    out[k] = def;
+  }
+  return out;
+}
+/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and shadow/crystal/guilds/damageTypes/statuses (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1413,6 +1439,8 @@ function roomRulesDoc(o: Rec): RoomRules {
     trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },
     mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
     keystone: roomKeystone(own(o, 'keystone')),
+    damageTypes: roomDamageTypes(own(o, 'damageTypes')),
+    statuses: roomStatuses(own(o, 'statuses')),
     shadow: roomShadow(own(o, 'shadow')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
     priceBase: eachRank(r => ruleNumber(`priceBase.${r}`)(own(pb, r))),

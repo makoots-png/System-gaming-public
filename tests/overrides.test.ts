@@ -9,7 +9,7 @@ import { priceOf } from '../src/core/registry/items.ts';
 /** Each path of RULES whose shipped value cannot read an override: a list, a null, or a map the GM may add to. */
 function unreadable(v: unknown, path: string, out: string[]): string[] {
   if (path === 'conditions') return out;
-  if (Array.isArray(v) || v === null || path === 'rarities') out.push(path);
+  if (Array.isArray(v) || v === null || path === 'rarities' || path === 'fight.damageTypes') out.push(path);
   else if (typeof v === 'object') for (const [k, x] of Object.entries(v)) unreadable(x, path ? `${path}.${k}` : k, out);
   return out;
 }

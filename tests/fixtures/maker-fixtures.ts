@@ -207,7 +207,41 @@ export const WORST_ITEM_CONSUMABLE: Item = {
   id: saveId('i', 912),
 };
 
+export const WORST_ITEM_TYPED_WEAPON: Item = {
+  ...must(parseItem({
+    name: 'Void Fang',
+    rar: 'rare',
+    type: 'weapon',
+    slot: 'weapon',
+    qty: 1,
+    dice: '1d8',
+    attack: 'strike',
+    damageType: 'true',
+    bonus: { str: 2 },
+    desc: 'A blade that deals true damage directly.',
+    armor: 0,
+    resist: 0,
+  }), 'WORST_ITEM_TYPED_WEAPON'),
+  id: saveId('i', 914),
+};
+
 // ── 3. Skills ──
+export const WORST_SKILL_TRUE: Skill = {
+  ...must(parseSkill({
+    name: 'Soul Sever',
+    level: 3,
+    label: 'True Cut',
+    desc: 'A rule-built strike dealing true damage.',
+    type: 'active',
+    ability: abilityOf('strike', {
+      id: abilityId('ab-soul-sever'),
+      name: 'Soul Sever',
+      ticks: { type: 'true', scale: 'str', pace: 'standard', gap: null, channel: null, scalers: [] },
+    }, RULES),
+  }), 'WORST_SKILL_TRUE'),
+  id: saveId('s', 914),
+};
+
 export const WORST_SKILL_ACTIVE: Skill = {
   ...must(parseSkill({
     name: 'Starfall Domain',
@@ -599,7 +633,7 @@ export const WORST_IDENTITY = { emblem: 'wolf', color: '#c79bff' } as const;
 // ── 15. Rules overrides and Roll tables ──
 export const WORST_OVERRIDES = parseOverrides({
   pointsPerLevel: 5,
-  fight: { round: 1200, sight: 14 },
+  fight: { round: 1200, sight: 14, damageTypes: { 'arc-bolt': 'true', 'attack-unarmed': 'arcane' } },
   feats: { on: false },
 }).overrides;
 

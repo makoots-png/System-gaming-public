@@ -187,15 +187,14 @@ group('a status def from outside data', () => {
     expect(parseStatusDef(big, RULES)).toBeNull();
   });
 
-  test('old saves with damage type "magical" read as "arcane" in both ops and ability effects, missing type is refused, and "true" stays on ops only', () => {
+  test('damage type "magical" and missing type are refused, and "true" is allowed on both ops and ability effects', () => {
     const amt = { kind: 'dice', count: 1, sides: 6 };
-    expect(parseOp({ op: 'damage', type: 'magical', amount: amt }, RULES)).toEqual({ op: 'damage', type: 'arcane', amount: amt });
+    expect(parseOp({ op: 'damage', type: 'magical', amount: amt }, RULES)).toBeNull();
     expect(parseOp({ op: 'damage', type: 'true', amount: amt }, RULES)).toEqual({ op: 'damage', type: 'true', amount: amt });
     expect(parseOp({ op: 'damage', amount: amt }, RULES)).toBeNull();
     const base = abilityOf('curse', { id: abilityId('bolt'), name: 'Bolt' }, RULES);
-    const oldAbility = { ...base, effect: { type: 'magical', by: 'hand', formula: amt } };
-    expect(parseAbility(oldAbility, RULES)?.effect).toEqual({ type: 'arcane', by: 'hand', formula: amt });
-    expect(parseAbility({ ...base, effect: { type: 'true', by: 'hand', formula: amt } }, RULES)).toBeNull();
+    expect(parseAbility({ ...base, effect: { type: 'magical', by: 'hand', formula: amt } }, RULES)).toBeNull();
+    expect(parseAbility({ ...base, effect: { type: 'true', by: 'hand', formula: amt } }, RULES)?.effect).toEqual({ type: 'true', by: 'hand', formula: amt });
     expect(parseAbility({ ...base, effect: { by: 'hand', formula: amt } }, RULES)).toBeNull();
   });
 });

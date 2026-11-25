@@ -23,12 +23,15 @@ import { isRefused } from '../src/core/save-step.ts';
 import { dev } from './fixtures/ids.ts';
 import { UNIT_MAKER_IDS } from './fixtures/maker-registry.ts';
 import type { UnitMakerId } from './fixtures/maker-registry.ts';
+import { parseItem } from '../src/core/registry/items.ts';
+import { parseSkill } from '../src/core/registry/skills.ts';
 import {
   WORST_BUNDLE,
   WORST_FEAT_AFTER,
   WORST_FEAT_COUNT,
   WORST_GUILD,
   WORST_IDENTITY,
+  WORST_ITEM_TYPED_WEAPON,
   WORST_MAP,
   WORST_MONSTER_BOSS,
   WORST_MONSTER_MYTHIC,
@@ -37,6 +40,7 @@ import {
   WORST_QUEST_SELF,
   WORST_REWARDS,
   WORST_ROLL_TABLES,
+  WORST_SKILL_TRUE,
   WORST_STORY,
   worstGate,
   worstPreset,
@@ -254,6 +258,20 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     const ov1 = writeTable(ov0, 'urgent', '', linesOf(WORST_ROLL_TABLES.urgent.join('\n')));
     const ov2 = writeTable(ov1, 'encounter', 'B', linesOf(WORST_ROLL_TABLES.encounterB.join('\n')));
     expect(ov2).toEqual(ov0);
+  },
+
+  'typed-weapon'() {
+    const { id: _id, ...tpl } = WORST_ITEM_TYPED_WEAPON;
+    const back = parseItem(JSON.parse(JSON.stringify(tpl)));
+    expect(back).toEqual(tpl);
+    expect(back?.damageType).toBe('true');
+  },
+
+  'true-ability'() {
+    const { id: _id, ...tpl } = WORST_SKILL_TRUE;
+    const back = parseSkill(JSON.parse(JSON.stringify(tpl)));
+    expect(back).toEqual(tpl);
+    expect(back?.type === 'active' && back.ability?.effect?.type).toBe('true');
   },
 };
 

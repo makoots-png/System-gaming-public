@@ -569,18 +569,25 @@ group('an item\'s icon', () => {
     expect(worn('nope')).not.toHaveProperty('icon');
   });
 
-  test('a thrown item refuses a true damage op, while an item applying a true-damage status like Poisoned is kept', () => {
+  test('a thrown item keeps a true damage op alongside arcane damage and status-applying ops, and weapons keep arcane or true damageType', () => {
     const thrownTrue = parseItem({ name: 'True Bomb', type: 'consumable', target: 'other', effects: [{ op: 'damage', type: 'true', amount: number(8), when: 'use' }] })!;
-    expect(thrownTrue.effects).toBeUndefined();
+    expect(thrownTrue.effects).toEqual([{ op: 'damage', type: 'true', amount: number(8), when: 'use' }]);
     const mixed = parseItem({ name: 'Mixed Bomb', type: 'consumable', target: 'other', effects: [
       { op: 'damage', type: 'true', amount: number(8), when: 'use' },
       { op: 'damage', type: 'arcane', amount: number(5), when: 'use' },
     ] })!;
-    expect(mixed.effects).toEqual([{ op: 'damage', type: 'arcane', amount: number(5), when: 'use' }]);
+    expect(mixed.effects).toEqual([
+      { op: 'damage', type: 'true', amount: number(8), when: 'use' },
+      { op: 'damage', type: 'arcane', amount: number(5), when: 'use' },
+    ]);
     const vial = parseItem({ name: 'Venom Flask', type: 'consumable', target: 'other', effects: [
       { op: 'applyStatus', key: statusKey('poisoned'), def: BUILT_IN_STATUSES.poisoned, duration: tick(3 * RULES.fight.round) },
     ] })!;
     expect(vial.effects?.length).toBe(1);
+    expect(parseItem({ name: 'Void Blade', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', damageType: 'true' })!.damageType).toBe('true');
+    expect(parseItem({ name: 'Rune Bow', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', damageType: 'arcane' })!.damageType).toBe('arcane');
+    expect(parseItem({ name: 'Plain Sword', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', damageType: 'physical' })!).not.toHaveProperty('damageType');
+    expect(parseItem({ name: 'Not Weapon', type: 'consumable', damageType: 'true' })!).not.toHaveProperty('damageType');
   });
 });
 

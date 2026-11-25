@@ -15,7 +15,8 @@ import { dist, dodge, dodgeOptions, inShape, sees, shovePath, terrain, TERRAIN, 
 import type { Dodge, DodgeTile, Grid, Place, Side, Tiles } from './space.ts';
 import { acted, delayed, extraNow, extraStep, interval, notBefore, refunded, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
+import { isDamage } from './damage-type.ts';
+import type { Ability, AbilityEffectType, Avoid, CombatantId, DamageType, Outcome } from './ability-types.ts';
 import type { LifeState } from '../hunter/vitals.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { moveLeft, removeStatus, shielded, shieldOn, withMoved, withStatuses } from './effect-ops.ts';
@@ -244,21 +245,20 @@ function multiplied(raw: number, a: Ability, user: Body, avoid: Avoid, isCrit: b
 // Rule 11b: a target standing in cover takes `coverShare` less from a damaging use that travels to it across the ground
 // (a line or an area), and nothing less from a touch, which reaches round the cover (design 4.7).
 export const inCover = (a: Pick<Ability, 'delivery' | 'shape' | 'effect'>, at: Place, grid: Grid): boolean =>
-  a.delivery.kind === 'travel' && (a.shape.kind === 'line' || a.shape.kind === 'radius') && (a.effect?.type === 'physical' || a.effect?.type === 'arcane')
+  a.delivery.kind === 'travel' && (a.shape.kind === 'line' || a.shape.kind === 'radius') && isDamage(a.effect?.type)
   && TERRAIN[terrain(grid, at.x, at.y)].cover;
-const covered = (raw: number, a: Ability, target: Body, grid: Grid, R: ResolveRules): number =>
-  inCover(a, target.place, grid) ? raw * (1 - R.fight.coverShare) : raw;
+const covered = (raw: number, a: Ability, type: AbilityEffectType | null, target: Body, grid: Grid, R: ResolveRules): number =>
+  isDamage(type) && inCover(a, target.place, grid) ? raw * (1 - R.fight.coverShare) : raw;
 
 // Rule 11c (kits design 8.1): a damaging use is multiplied by the user's dealt share and the target's taken share, a heal
 // by the user's heal and shield power (standing.ts `given`, outside the cap) and the target's healed share, a shield by
 // that power and its shielded share, each share within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
 // perceive its hidden user is an ambush (`ambushes`): the rules' `stealth.ambush` joins the user's dealt increases. A
 // damaging use is then multiplied by its user's `dealtBy` (a solo run's foe's tweak), outside the cap.
-function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R: ResolveRules): number {
-  const type = a.effect?.type;
+function shared(raw: number, type: AbilityEffectType | null, user: Body, target: Body, grid: Grid, R: ResolveRules): number {
   if (type === 'heal') return given(raw, user) * healShare(target, R);
   if (type === 'shield') return given(raw, user) * shieldShare(target, R);
-  if (type !== 'physical' && type !== 'arcane') return raw;
+  if (!isDamage(type)) return raw;
   return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R)) * dealtBy(user);
 }
 /**
@@ -269,10 +269,10 @@ function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R
 const ambushes = (user: Body, target: Body, grid: Grid): boolean => !perceives(eyesOf(target), figureOf(user), grid, { kind: 'whole' });
 
 // Rule 12: penetration percent, then flat; then the flat part of what is left comes off the hit, then the percentage; at least 1.
-function defended(raw: number, a: Ability, user: Body, target: Body, R: ResolveRules): number {
-  if (!a.effect) return 0;
-  if (a.effect.type === 'heal' || a.effect.type === 'shield') return Math.max(0, Math.round(raw));
-  return afterDefence(raw, a.effect.type, user.sheet, target.sheet, R);
+function defended(raw: number, type: AbilityEffectType | null, user: Body, target: Body, R: ResolveRules): number {
+  if (!type) return 0;
+  if (type === 'heal' || type === 'shield') return Math.max(0, Math.round(raw));
+  return afterDefence(raw, type, user.sheet, target.sheet, R);
 }
 
 // Rule 15 (design 4.2): the damage a hit's threat counts, `threatBeforeDefence` of it from the hit before the target's
@@ -634,12 +634,17 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     const isCrit = crit(a, u, t, end.avoid, d20, R);
     const price = targetPrices(a, t, now, R);
     t = price.target;
-    const raw = shared(covered(multiplied(formulaValue(a, u, t, dice, kitFor(snap, t.id, price.spent), R), a, u, end.avoid, isCrit, R), a, t, grid, R), a, u, t, grid, R);
+    const raw = shared(covered(multiplied(formulaValue(a, u, t, dice, kitFor(snap, t.id, price.spent), R), a, u, end.avoid, isCrit, R), a, type, t, grid, R), type, u, t, grid, R);
     const guard = a.kind === 'strike' ? answers.guard?.[t.id] ?? 0 : 0;
-    const struck = guard ? raw * (1 - guard) : raw, dealt = defended(struck, a, u, t, R);
+    const struck = guard ? raw * (1 - guard) : raw, dealt = defended(struck, type, u, t, R);
     let absorbed = 0, hpDamage = 0, threat = 0, fill = 0, stag = false;
     const before = rowHp(t);
-    if (type === 'physical' || type === 'arcane') {
+    if (type === null) {
+      // no direct damage, heal, or shield
+    } else if (type === 'heal') t = healed(t, dealt);
+    else if (type === 'shield') t = { ...t, shield: shielded(t.shield, { amount: dealt, until: tick(now + R.fight.shieldLife * R.fight.round) }, now) };
+    else {
+      const _exhaustive: DamageType = type satisfies DamageType; void _exhaustive;
       const shield = throughShield(t, dealt, now);
       t = shield.target; absorbed = shield.absorbed; hpDamage = wardedDamage(t, dealt - absorbed);
       // rule 13b: a hit about to take a body to 0 sets off an armed lethal reaction, which lands before the hit does
@@ -652,8 +657,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
       t = threatened(t, u.id, threat);
       const s = staggered(t, hpDamage, now, R);
       t = s.target; fill = s.fill; stag = s.staggered;
-    } else if (type === 'heal') t = healed(t, dealt);
-    else if (type === 'shield') t = { ...t, shield: shielded(t.shield, { amount: dealt, until: tick(now + R.fight.shieldLife * R.fight.round) }, now) };
+    }
     let channelBroken = false;
     const lands = end.avoid === 'caught';
     // a hide that starts out of sight is refused on a body a foe that is up watches, whoever casts it (land.ts `landStatus`)

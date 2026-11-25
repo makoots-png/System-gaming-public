@@ -25,6 +25,7 @@ import { hides, hideStarts, holds } from './standing.ts';
 import { watched } from './sight.ts';
 import { counted, usesGates } from './uses.ts';
 import type { Aim } from './resolve.ts';
+import { isDamage } from './damage-type.ts';
 import { combatantId } from './ability-types.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
@@ -377,7 +378,7 @@ function hideLands(a: Ability, u: Body, f: Running, R: Rules): boolean {
  */
 function useStealth(a: Ability, u: Body, aim: Aim, outcomes: readonly Outcome[], bodies: readonly Body[], now: Tick, R: Rules): Body[] {
   const side = (id: CombatantId) => bodies.find(b => b.id === id)?.side ?? u.side;
-  const dealt = outcomes.some(o => (o.type === 'physical' || o.type === 'arcane') && o.dealt > 0 && side(o.target) !== u.side);
+  const dealt = outcomes.some(o => isDamage(o.type) && o.dealt > 0 && side(o.target) !== u.side);
   const picked = (id: CombatantId) => !isArea(a.shape) && id === aim;
   const hit = new Set(outcomes.filter(o => o.avoid !== 'out' && !picked(o.target) && side(o.target) !== u.side).map(o => o.target));
   return bodies.map(b => b.id === u.id && dealt ? stealthAfter(b, { type: 'dealt' }, now, R, putBy(a.ops)) : hit.has(b.id) ? stealthAfter(b, { type: 'revealed' }, now, R) : b);

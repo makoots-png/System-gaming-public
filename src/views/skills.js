@@ -8,6 +8,7 @@ import { describeAbility, formulaOf, kindDefaults } from '../core/registry/abili
 import { abilityWorth, gateCredit, wornWorth } from '../core/registry/worth.ts';
 import { exampleSkills } from '../core/registry/kit-examples.ts';
 import { describeStatus, reactionMayHold } from '../core/combat/effect-ops.ts';
+import { effectWord } from '../core/combat/damage-type.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
 import { opLines } from '../core/combat/effect-ops.ts';
 import { printFormula } from '../core/formula.ts';
@@ -29,7 +30,6 @@ const BONUS_LABEL = { ...BONUS_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 const KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
 const KIND_LABEL = { strike: 'Strike (melee)', shot: 'Shot (ranged)', blast: 'Blast (area)', curse: 'Curse (spell)', support: 'Support (heal or shield)', none: 'No fight use' };
 const AIM_LABEL = { foe: 'On a foe', ally: 'On an ally', self: 'On the user', place: 'On a place' };
-const EFFECT_LABEL = { physical: 'Physical damage', arcane: 'Arcane damage', heal: 'Heals', shield: 'Shield' };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /** @param {import('./app.ts').App} app */
@@ -76,10 +76,11 @@ export function register(app) {
     const a = k.ability; if (!a) return [KIND_LABEL.none];
     const R = rules(), pace = Object.entries(R.fight.cost).find(([, n]) => n === a.cost.time), rounds = roundsOf(a.cost.cooldown, R, 'near');
     const cost = [a.cost.fatigue ? `${a.cost.fatigue} fatigue` : '', a.cost.mana ? `${a.cost.mana} mana` : ''].filter(Boolean).join(', ');
+    const what = effectWord(a, R);
     return [
       `${KIND_LABEL[a.kind]}${pace ? `, ${pace[0]}` : ''} · ${AIM_LABEL[a.aim]}${a.aim === 'self' ? '' : `, ${plural(a.range, 'tile')}`}`,
       [cost ? `Costs ${cost}` : 'No cost', rounds ? `ready again after ${plural(rounds, 'round')}` : ''].filter(Boolean).join(', '),
-      a.effect ? `${EFFECT_LABEL[a.effect.type]}: ${printFormula(formulaOf(a, R))}${a.effect.by === 'hand' ? ' (edited)' : ''}` : '',
+      what && a.effect ? `${what}: ${printFormula(formulaOf(a, R))}${a.effect.by === 'hand' ? ' (edited)' : ''}` : '',
       ...opLines(a.ops, from ? from.tier : null, R),
     ].filter(Boolean);
   }

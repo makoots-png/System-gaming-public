@@ -12,6 +12,7 @@ import type { StatusDef } from './combat/effect-ops.ts';
 import type { SheetNumber } from './hunter/derive.ts';
 import type { Rewards } from './rewards.ts';
 import type { Pace } from './combat/timeline.ts';
+import type { DamageType, DamageTypeMap } from './combat/damage-type.ts';
 
 const deepFreeze = <T>(o: T): T => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o as object).forEach(deepFreeze); } return o; };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -862,6 +863,8 @@ const SPEC = {
         S: of(0.85, DIFFICULTY_FACTOR),
       },
     },
+    // Sparse GM overrides of damaging ability types (AbilityId or the six reserved keys; `attack` is refused).
+    damageTypes: {} as DamageTypeMap,
   },
 };
 
@@ -989,6 +992,20 @@ export function saveRuleNumbers(ov: Overrides, parsed: Overrides): Overrides {
 }
 /** The GM's switch for every feat (`feats.on`) set to `on`, the other overrides kept: the GM view's control beside the rules editor. */
 export const featsSwitched = (ov: Overrides, on: boolean): Overrides => ({ ...ov, feats: { ...recOf(ov.feats), on } });
+/**
+ * Sets or clears one entry of `rulesOverrides.fight.damageTypes`, keeping all other overrides intact.
+ * Passing `null` removes the override so the ability or reserved key returns to its shipped default.
+ */
+export function damageTypeSet(ov: Overrides, key: string, type: DamageType | null): Overrides {
+  const fight = recOf(ov.fight), cur = recOf(fight.damageTypes);
+  const next: Overrides = { ...cur };
+  if (type === null) delete next[key]; else next[key] = type;
+  if (Object.keys(next).length > 0) return { ...ov, fight: { ...fight, damageTypes: next } };
+  const { damageTypes: _gone, ...restFight } = fight;
+  if (Object.keys(restFight).length > 0) return { ...ov, fight: restFight };
+  const { fight: _goneFight, ...restOv } = ov;
+  return restOv;
+}
 /** The save with the GM's trading switch (`trade.on`) set to `on`, the other overrides kept: the switch in the GM view's Trades section (trade.js). */
 export const tradeRuleSet = <S extends { readonly rulesOverrides: unknown }>(save: S, on: boolean): S => {
   const ov = recOf(save.rulesOverrides);

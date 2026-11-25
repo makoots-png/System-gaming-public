@@ -13,6 +13,7 @@
 import type { Rules } from '../rules.ts';
 import { average } from '../formula.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
+import { isDamage } from './damage-type.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
@@ -78,7 +79,7 @@ function caught(f: Running, me: Body, a: Ability, t: Body): { foes: number; alli
 /** What one use of a damaging `a` on `t` is worth: its formula's average, once for each foe it catches. 0 for any other. */
 function damageOf(f: Running, me: Body, a: Ability, t: Body, R: Rules): number {
   const type = a.effect?.type;
-  if (type !== 'physical' && type !== 'arcane') return 0;
+  if (!isDamage(type)) return 0;
   const formula = formulaOf(a, R);
   if (!formula) return 0;
   const { foes, allies } = caught(f, me, a, t);

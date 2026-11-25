@@ -19,6 +19,7 @@ import { dist, inShape, openGrid, place, reachable, straightCost, tiles } from '
 import type { Place } from '../../src/core/combat/space.ts';
 import { interval, paceCost, tick, walkCost } from '../../src/core/combat/timeline.ts';
 import type { Tick } from '../../src/core/combat/timeline.ts';
+import { isDamage } from '../../src/core/combat/damage-type.ts';
 import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { freeStatusKey, modified, statusKey, statusOn } from '../../src/core/combat/effect-ops.ts';
@@ -578,7 +579,7 @@ export function scripted(id: MythicScriptId, R: Rules = scriptsOn()): SimRow {
  */
 const mythicPolicy: Policy = (f, me, plan, R) => {
   if (me.mythic && me.mythic.at !== 'calm') return sensible(f, me, R);
-  const target = suggested(f, me)!, uses = beatUses(me, me.abilities).filter(a => a.effect?.type === 'physical' || a.effect?.type === 'arcane');
+  const target = suggested(f, me)!, uses = beatUses(me, me.abilities).filter(a => isDamage(a.effect?.type));
   const a = uses.find(x => usable(f, me, x, target.place) && clearLine(f, me, x, target)) ?? uses[0];
   return a ? (clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target)) : monsterPolicy(f, me, plan, R);
 };
@@ -711,7 +712,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
     const t = tally[user.id]!;
     t.acts[a.id] = (t.acts[a.id] ?? 0) + 1;
     for (const o of r.outcomes) {
-      if (o.type !== 'physical' && o.type !== 'arcane') continue;
+      if (!isDamage(o.type)) continue;
       const victim = f.rows.find(b => b.id === o.target)!;
       if (victim.side === user.side) continue;
       t[o.avoid]++;

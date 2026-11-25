@@ -19,6 +19,8 @@ import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
 import type { ItemId } from '../ids.ts';
+import { DAMAGE_TYPES, defenceOf } from '../combat/damage-type.ts';
+import type { DamageType } from '../combat/damage-type.ts';
 import { abilityId, tag } from '../combat/ability-types.ts';
 import type { Ability } from '../combat/ability-types.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
@@ -76,6 +78,8 @@ export type Item = {
   weight?: number;
   desc: string; armor: number; resist: number;
   attack?: Attack;
+  /** What kind of damage this weapon deals (`physical`, `arcane`, or `true`). Absent means physical. */
+  damageType?: DamageType;
   /** Uses finesse power (`max(phys, agi finesse)`) instead of physical power alone; kept only on strike weapons (shots already use finesse). */
   finesse?: true;
   /** Takes both hand slots (main hand and off hand); kept only on a weapon in the main-hand slot. */
@@ -116,7 +120,7 @@ type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?:
  * orb or ring slot and a bonus; a consumable the ops it does when used. The rest is a thing to carry and sell.
  */
 export type ItemDef =
-  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; finesse?: true; twoHanded?: true; bonus?: ItemBonus }
+  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; damageType?: DamageType; finesse?: true; twoHanded?: true; bonus?: ItemBonus }
   | Common & Powers & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
   | Common & Powers & { type: 'accessory'; slot: 'neck' | 'orb' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; rankCap?: true; tell?: true }
@@ -409,7 +413,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
-      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.finesse ? { finesse: true as const } : {}), ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def) };
+      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.damageType && defenceOf(def.damageType) !== 'armor' ? { damageType: def.damageType } : {}), ...(def.finesse ? { finesse: true as const } : {}), ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def) };
     case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def) };
     case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.rankCap ? { rankCap: true } : {}), ...(def.tell ? { tell: true } : {}) };
@@ -464,10 +468,12 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (isIconKey(v.icon)) out.icon = v.icon;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
+  const damageType = out.type === 'weapon' ? oneOf(v.damageType, DAMAGE_TYPES, null) : null;
+  if (damageType && defenceOf(damageType) !== 'armor') out.damageType = damageType;
   if (v.finesse === true && out.type === 'weapon' && out.attack !== 'shot') out.finesse = true;
   if (v.twoHanded === true && out.type === 'weapon' && out.slot === 'weapon') out.twoHanded = true;
   const effects = (Array.isArray(v.effects) ? v.effects : [])
-    .flatMap(o => { const p = parseOp(o, RULES); return p && !(p.op === 'damage' && p.type === 'true') ? [p] : []; })
+    .flatMap(o => { const p = parseOp(o, RULES); return p ? [p] : []; })
     .slice(0, B.effects);
   if (effects.length) out.effects = effects;
   if (v.target === 'other') out.target = 'other';

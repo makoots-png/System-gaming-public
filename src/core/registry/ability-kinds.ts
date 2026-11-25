@@ -17,8 +17,9 @@ import { percent, tiles } from '../combat/space.ts';
 import type { Shape, Tiles } from '../combat/space.ts';
 import { paceCost, roundsOf, tick } from '../combat/timeline.ts';
 import type { Cost, Pace, Tick } from '../combat/timeline.ts';
+import { defenceOf, isDamage, typed } from '../combat/damage-type.ts';
 import { tag } from '../combat/ability-types.ts';
-import type { Ability, AbilityEffect, AbilityId, AbilityKind, Delivery, AbilityGate, AbilityEffectType, Gap, OpDamageType, Price, RuleTicks, Tag } from '../combat/ability-types.ts';
+import type { Ability, AbilityEffect, AbilityId, AbilityKind, Delivery, AbilityGate, AbilityEffectType, Gap, Price, RuleTicks, Tag } from '../combat/ability-types.ts';
 import { baseOf, bounded, FAMILY, scalerLine, scalersOf, scalerText, suggestScaler } from './scalers.ts';
 import type { Scaler, ScalerName } from './scalers.ts';
 
@@ -94,21 +95,25 @@ export function kindDefaults<K extends AbilityKind>(kind: K, R: KindRules): Kind
   };
 }
 
+/** Sheet power keyed by stat: Strength reads `phys`, Power reads `mag`, Presence reads `sup`; every other stat uses the curve. */
+const STAT_POWER: Partial<Readonly<Record<StatKey, SheetNumber>>> = { str: 'phys', pow: 'mag', pre: 'sup' };
 /**
- * The power a formula of each type reads, the stat that power grows with (`mine`, which a gap also compares), and the
- * target's stat a gap compares it with.
+ * The default stat (`mine`, which a gap also compares) and target stat (`theirs`) for each non-true effect type.
+ * True damage has no row here and inherits its ability kind's stat via `powerOf`.
  */
-const POWER: { readonly [T in AbilityEffect['type']]: { readonly power: SheetNumber; readonly mine: StatKey; readonly theirs: StatKey } } = {
-  physical: { power: 'phys', mine: 'str', theirs: 'vit' },
-  arcane: { power: 'mag', mine: 'pow', theirs: 'dis' },
-  heal: { power: 'sup', mine: 'pre', theirs: 'dis' },
-  shield: { power: 'sup', mine: 'pre', theirs: 'dis' },
+const POWER: Partial<Readonly<Record<AbilityEffectType, { readonly mine: StatKey; readonly theirs: StatKey }>>> = {
+  physical: { mine: 'str', theirs: 'vit' },
+  arcane: { mine: 'pow', theirs: 'dis' },
+  heal: { mine: 'pre', theirs: 'dis' },
+  shield: { mine: 'pre', theirs: 'dis' },
 };
-/** The stat the power of a type grows with: Strength for physical damage, Power for arcane, Presence for a heal or a shield. */
-export const powerStat = (type: AbilityEffect['type']): StatKey => POWER[type].mine;
+const powerOf = (type: AbilityEffectType, kind: AbilityKind = 'strike'): { readonly mine: StatKey; readonly theirs: StatKey } =>
+  POWER[type] ?? POWER[KINDS[kind].type]!;
+/** The stat a type grows with by default: Strength for physical, Power for arcane, Presence for heal/shield, or the kind's stat for true. */
+export const powerStat = (type: AbilityEffect['type'], kind: AbilityKind = 'strike'): StatKey => powerOf(type, kind).mine;
 
 export type { Gap };
-export const gapOf = (type: AbilityEffect['type']): Gap => ({ mine: POWER[type].mine, theirs: POWER[type].theirs, per: 0.1, cap: 1 });
+export const gapOf = (type: AbilityEffect['type'], kind: AbilityKind = 'strike'): Gap => ({ mine: powerOf(type, kind).mine, theirs: powerOf(type, kind).theirs, per: 0.1, cap: 1 });
 /**
  * What is wrong with a gap the GM set, or null. A gap must have a cap above 0: uncapped it is nothing between equals and
  * a one-shot against a mismatch, and stat-lowering widens it (combat-rework-notes.md, "Abilities and stats"). Its
@@ -129,9 +134,9 @@ export function checkGap(g: Gap): string | null {
 export type Ticks = RuleTicks & { readonly type: AbilityEffectType; readonly pace: Pace; readonly channel: 'linear' | 'exponential' | null };
 /** The rule's own part of the maker's ticks, as an effect by the rule keeps it. */
 export const ruleTicks = (t: Ticks): RuleTicks => ({ scale: t.scale, gap: t.gap, scalers: t.scalers });
-/** A kind's ticks: it grows with the power of its type (or of `type`), at the kind's pace, with no gap, channel or scaler. */
+/** A kind's ticks: it grows with the power of its type (or of `type`, falling back to the kind's stat for true), at the kind's pace, with no gap, channel or scaler. */
 export const defaultTicks = (kind: AbilityKind, type: AbilityEffect['type'] = KINDS[kind].type): Ticks =>
-  ({ scale: POWER[type].mine, type, pace: KINDS[kind].pace, gap: null, channel: null, scalers: [] });
+  ({ scale: powerStat(type, kind), type, pace: KINDS[kind].pace, gap: null, channel: null, scalers: [] });
 /**
  * The scaler the maker suggests for `kind` when the GM ticks `name` (kits design 8.0, table 8.0.2): its start and scale,
  * which the GM may type over; `recommended` cuts the base to match whatever they hold.
@@ -141,13 +146,12 @@ export const suggestedScaler = (kind: AbilityKind, name: ScalerName, R: KindRule
 export const SCALER_CHOICES: readonly { readonly name: ScalerName; readonly label: string }[] = (Object.keys(FAMILY) as ScalerName[]).map(name => ({ name, label: FAMILY[name].label }));
 
 /**
- * The term a scaled formula adds for `stat`. The type's own stat is its power (`phys` is 0.6 times the curve of Strength,
- * design 2.2); any other stat gets the same curve written out, `6 * (ins / 10)^0.8`, so a point of Instinct buys what a
- * point of Strength buys in `phys` and no stat is the cheap one to scale with.
+ * The term a scaled formula adds for `stat`. Strength, Power, and Presence read their sheet powers (`phys`, `mag`, `sup`);
+ * any other stat gets the same curve written out, `6 * (ins / 10)^0.8`, so retyping an ability never alters its formula.
  */
-function scaleTerm(stat: StatKey, type: AbilityEffect['type'], R: KindRules): string {
+function scaleTerm(stat: StatKey, R: KindRules): string {
   const F = R.fight;
-  return stat === POWER[type].mine ? POWER[type].power : `${F.powerK * F.statBase} * (${stat} / ${F.statBase})^${F.effExp}`;
+  return STAT_POWER[stat] ?? `${F.powerK * F.statBase} * (${stat} / ${F.statBase})^${F.effExp}`;
 }
 
 /**
@@ -156,7 +160,7 @@ function scaleTerm(stat: StatKey, type: AbilityEffect['type'], R: KindRules): st
  */
 export function recommended(kind: AbilityKind, ticks: Ticks, R: KindRules): { text: string; formula: Formula } {
   const k = KINDS[kind], F = R.fight;
-  const scaled = ticks.scale === null ? null : scaleTerm(ticks.scale, ticks.type, R);
+  const scaled = ticks.scale === null ? null : scaleTerm(ticks.scale, R);
   const term = scaled === null ? null : k.power === 1 ? scaled : `${k.power} * ${scaled}`;
   let text = term === null ? (k.dice ?? '0') : k.dice === null ? term : `${k.dice} + ${term}`;
   const share = F.cost[ticks.pace] / F.cost.standard;
@@ -283,12 +287,12 @@ export const PREVIEW_RANKS: readonly Rank[] = ['E', 'C', 'S'];
  * `main` on a normal brute of the same rank, the monster a GM meets most, with no charge. A damage type also gives what
  * is left after the brute's Armor or Resist (`dealt`, rule 12).
  */
-export function averages(formula: Formula, type: AbilityEffect['type'] | OpDamageType | null, main: StatKey, R: SampleRules): { rank: Rank; average: number; dealt: number | null }[] {
+export function averages(formula: Formula, type: AbilityEffect['type'] | null, main: StatKey, R: SampleRules): { rank: Rank; average: number; dealt: number | null }[] {
   return PREVIEW_RANKS.map(rank => {
     const user = sampleBody(rank, main, R), sheet = monsterSheet(rank, 'brute', 'normal', R);
     const target = { stats: monsterStats(rank, 'brute', R), sheet };
     const avg = average(formula, { user, target, charge: 0 });
-    const dealt = type === 'physical' || type === 'arcane' ? afterDefence(avg, type, user.sheet, sheet, R) : null;
+    const dealt = isDamage(type) && defenceOf(type) !== null ? afterDefence(avg, type, user.sheet, sheet, R) : null;
     return { rank, average: avg, dealt };
   });
 }
@@ -298,13 +302,14 @@ export type AbilityInput = { readonly id: AbilityId; readonly name: string; read
   & Partial<Pick<Ability, 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'foesOnly' | 'effect' | 'ops' | 'zone' | 'move'>>;
 
 /**
- * An ability of `kind` with every field the input leaves out filled from the kind's defaults. The effect is the
- * recommended formula of the ticks unless the input gives its own, which sets the "edited" mark.
+ * An ability of `kind` with every field the input leaves out filled from the kind's defaults, then stamped with any GM
+ * damage-type override in `R.fight.damageTypes` (`typed`). The effect is the recommended formula of the ticks unless
+ * the input gives its own, which sets the "edited" mark.
  */
 export function abilityOf(kind: AbilityKind, input: AbilityInput, R: KindRules): Ability {
   const k = kindDefaults(kind, R), ticks: Ticks = { ...defaultTicks(kind, input.ticks?.type), ...input.ticks };
   const effect: AbilityEffect | null = input.effect !== undefined ? input.effect : { type: ticks.type, by: 'rule', ticks: ruleTicks(ticks) };
-  return {
+  return typed({
     id: input.id, name: input.name, kind,
     cost: input.cost ?? { fatigue: k.fatigue, mana: k.mana, time: paceCost(ticks.pace, R.fight), cooldown: k.cooldown },
     aim: input.aim ?? k.aim, range: input.range ?? k.range, shape: input.shape ?? k.shape, delivery: input.delivery ?? k.delivery,
@@ -312,7 +317,7 @@ export function abilityOf(kind: AbilityKind, input: AbilityInput, R: KindRules):
     channel: ticks.channel === null ? null : { growth: ticks.channel, max: R.fight.channelMax },
     ...(input.zone ? { zone: input.zone } : {}),
     ...(input.move ? { move: input.move } : {}),
-  };
+  }, R);
 }
 
 // ── what an ability is, as tags (keystones K0) ──

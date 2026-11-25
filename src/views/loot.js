@@ -18,6 +18,7 @@ import { wornWorth } from '../core/registry/worth.ts';
 import { itemSpend, spendLine } from '../core/registry/item-budget.ts';
 import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, SLOTS, SLOT_LABELS, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
 import { tooLarge } from '../core/size.ts';
+import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, defenceOf } from '../core/combat/damage-type.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
 import { kindDefaults } from '../core/registry/ability-kinds.ts';
 import { tiles } from '../core/combat/space.ts';
@@ -95,6 +96,9 @@ export function register(app) {
             <p class="mk-fx-err" data-dice-err></p>
             <div class="lbl">Attacks with</div>
             ${M.chips('attack', ATTACKS.map(a => [a, ATTACK_LABEL[a]]), was && was.attack ? was.attack : 'strike', { label: 'Attacks with' })}
+            <div class="lbl">Weapon deals</div>
+            ${M.chips('dmgtype', DAMAGE_TYPES.map(t => [t, DAMAGE_SHORT[t]]), was && was.damageType ? was.damageType : DAMAGE_TYPES[0], { label: 'Weapon deals' })}
+            <p class="mk-avg">${esc(DAMAGE_HELP_LINE)}</p>
             <label class="lf-chk" data-finesse-w><input type="checkbox" id="lf-finesse"${was && was.finesse ? ' checked' : ''}><span>Finesse (uses Agility if higher)</span></label>
             <label class="lf-chk" data-twohanded-w><input type="checkbox" id="lf-twohanded"${was && was.twoHanded ? ' checked' : ''}><span>Two-handed (uses both hands)</span></label>
           </div>
@@ -197,7 +201,11 @@ export function register(app) {
           if (value !== undefined) out.value = value;
           if (grade()) out.grade = grade();
           if (weight !== undefined) out.weight = weight;
-          if (weapon) out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike');
+          if (weapon) {
+            out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike');
+            const dt = oneOf(M.picked(el, 'dmgtype'), DAMAGE_TYPES, DAMAGE_TYPES[0]);
+            if (defenceOf(dt) !== 'armor') out.damageType = dt;
+          }
           if (weapon && out.attack !== 'shot' && $('#lf-finesse').checked) out.finesse = true;
           if (weapon && out.slot === 'weapon' && $('#lf-twohanded').checked) out.twoHanded = true;
           const effects = fx.ops(); if (effects.length) out.effects = effects;

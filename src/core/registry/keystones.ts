@@ -17,6 +17,7 @@ import type { KeystoneKey } from '../hunter/keystones.ts';
 import type { Bonus } from '../hunter/derive.ts';
 import { parseFormula } from '../formula.ts';
 import type { Formula } from '../formula.ts';
+import { DAMAGE_WORD, damageTypeOf } from '../combat/damage-type.ts';
 import { abilityId } from '../combat/ability-types.ts';
 import type { Ability } from '../combat/ability-types.ts';
 import { statusKey } from '../combat/effect-ops.ts';
@@ -185,10 +186,11 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
   pow: R => {
     const line = 'Once a fight, you can cast a 3-tile magic blast that burns the ground for 2 rounds.';
     const blast = recommended('blast', defaultTicks('blast'), R).text;
+    const zoneType = damageTypeOf('keystone-cataclysm-zone', 'arcane', R);
     const a = abilityOf('blast', {
       id: abilityId('keystone-cataclysm'), name: 'Cataclysm', shape: { kind: 'radius', radius: tiles(3), ring: null },
       effect: { type: 'arcane', by: 'hand', formula: formula(blast, R) },
-      zone: { name: 'Cataclysm', duration: rounds(2, R), ops: [{ op: 'damage', type: 'arcane', when: 'turn', amount: formula('0.2 * mag', R) }], endsWithOwner: false, around: null, grow: null },
+      zone: { name: 'Cataclysm', duration: rounds(2, R), ops: [{ op: 'damage', type: zoneType, when: 'turn', amount: formula('0.2 * mag', R) }], endsWithOwner: false, around: null, grow: null },
     }, R);
     return plain('Cataclysm', line, { active: { ...a, gates: [{ kind: 'uses', per: 'fight', n: 1 }] } });
   },
@@ -223,9 +225,10 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'str+ins': R => {
-    const line = 'Your strikes deal extra physical damage equal to 20% of your physical power, rising up to 40% as the foe nears 0 HP.';
+    const execType = damageTypeOf('keystone-executioner', 'physical', R);
+    const line = `Your strikes deal extra ${DAMAGE_WORD[execType].toLowerCase()} equal to 20% of your physical power, rising up to 40% as the foe nears 0 HP.`;
     return plain('Executioner', line, { worn: worn('Executioner', line, [], [
-      { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'physical', amount: formula('0.2 * phys * 1 * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))', R) }] },
+      { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: execType, amount: formula('0.2 * phys * 1 * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))', R) }] },
     ]) });
   },
   'str+dis': () => {
@@ -246,13 +249,15 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'str+pow': R => {
-    const line = 'After you cast a spell, your next strike deals extra magic damage equal to 12.5% of your magic power.';
+    const bladeType = damageTypeOf('keystone-spellblade', 'arcane', R);
+    const word = DAMAGE_WORD[bladeType].toLowerCase();
+    const line = `After you cast a spell, your next strike deals extra ${word} equal to 12.5% of your magic power.`;
     // A.6's half of Power (31 at C, a whole strike) weighs 171. The bar counts Charged's strike for both its rounds,
     // where the cure ends it at the first: an eighth of magic power weighs 18 and plays about half that (K5).
     // Charged goes with the strike by its own trigger, not a stack's leave, so a spell's hit does not spend it.
     const charged: StatusDef = {
-      label: 'Charged', desc: 'Its next strike adds magic damage.', ops: [], triggers: [
-        { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'arcane', amount: formula('0.125 * mag', R) }] },
+      label: 'Charged', desc: `Its next strike adds ${word}.`, ops: [], triggers: [
+        { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: bladeType, amount: formula('0.125 * mag', R) }] },
         { on: 'hitDealt', tag: STRIKE, to: 'self', limit: EACH, ops: [{ op: 'cureStatus', key: key('charged') }] },
       ],
     };
@@ -274,12 +279,14 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'agi+ins': R => {
-    const line = 'When a foe\'s attack misses you, you strike back for 40% of your finesse power (once a round).';
-    const cut = 'Your crits strike again for 4 times your finesse power.';
+    const riposteType = damageTypeOf('keystone-riposte', 'physical', R);
+    const word = DAMAGE_WORD[riposteType].toLowerCase();
+    const line = `When a foe's attack misses you, you strike back for ${word} equal to 40% of your finesse power (once a round).`;
+    const cut = `Your crits strike again for ${word} equal to 4 times your finesse power.`;
     return awake(plain('Riposte', line, { worn: worn('Riposte', line, [], [
-      { on: 'avoided', tag: null, to: 'other', limit: ROUND, ops: [{ op: 'damage', type: 'physical', amount: formula('0.4 * finesse', R) }] },
+      { on: 'avoided', tag: null, to: 'other', limit: ROUND, ops: [{ op: 'damage', type: riposteType, amount: formula('0.4 * finesse', R) }] },
     ]) }), { worn: worn('Riposte, awakened', cut, [], [
-      { on: 'critDealt', tag: null, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'physical', amount: formula('4 * finesse', R) }] },
+      { on: 'critDealt', tag: null, to: 'other', limit: EACH, ops: [{ op: 'damage', type: riposteType, amount: formula('4 * finesse', R) }] },
     ]) });
   },
   'agi+dis': () => {
@@ -362,9 +369,11 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'ins+pow': R => {
-    const line = 'Your spells burn the target for 2 rounds. It takes magic damage equal to 10% of your magic power each round.';
+    const searedType = damageTypeOf('keystone-seared', 'arcane', R);
+    const word = DAMAGE_WORD[searedType].toLowerCase();
+    const line = `Your spells burn the target for 2 rounds. It takes ${word} equal to 10% of your magic power each round.`;
     // On a crit (0.05 a round) A.6's burn weighs 1.4: on every spell's hit, at half the burn.
-    const seared = worn('Seared', 'Takes magic damage each round.', [{ op: 'damage', type: 'arcane', when: 'turn', amount: formula('0.1 * mag', R) }]);
+    const seared = worn('Seared', `Takes ${word} each round.`, [{ op: 'damage', type: searedType, when: 'turn', amount: formula('0.1 * mag', R) }]);
     return plain('Searing Insight', line, { worn: worn('Searing Insight', line, [], [
       { on: 'hitDealt', tag: SPELL, to: 'other', limit: EACH, ops: [apply('seared', seared, rounds(2, R))] },
     ]) });

@@ -21,7 +21,12 @@ import { questOffer } from '../core/hunter/quests.ts';
 import { SECRET_WORDS, questReaches } from '../core/hunter/quest-secret.ts';
 import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
-import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
+import { damageTypeSet, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
+import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, DAMAGE_WORD, damageTypeOf, isDamage } from '../core/combat/damage-type.ts';
+import { BUILT_IN_ABILITY_DAMAGE_ROWS, DAMAGING_STATUS_KEYS, DEFAULT_ATTACK_ROWS, KEYSTONE_DAMAGE_ROWS, isShippedStatusDef, statusDamageTypeOf, statusWithDamageType } from '../core/registry/damage-catalog.ts';
+import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
+import { removeStatus, saveStatus } from '../core/library.ts';
+import { atLibrary } from '../core/save-step.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
 import { BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
 import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
@@ -170,6 +175,16 @@ export function register(app) {
 .gm-card .tagline{font-size:12px;color:var(--muted);letter-spacing:.06em}
 .gm-chron{width:100%;min-height:var(--control-h);margin:8px 0 0;text-align:left;white-space:normal;overflow-wrap:anywhere}
 .gm-switch{margin:0 0 14px}.gm-switch .seg{margin:6px 0}.gm-switch .seg button{min-height:var(--control-h);min-width:72px}
+.gm-dt{margin:0 0 14px;display:flex;flex-direction:column;gap:8px}
+.gm-dt-list{display:flex;flex-direction:column;gap:8px}
+.gm-dt-row{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px solid var(--line);background:rgba(10,26,46,.45);min-width:0}
+.gm-dt-lbl{font-size:13px;color:var(--ice);overflow-wrap:anywhere}
+.gm-dt-sub{font-size:11px;color:var(--cyan-dim);margin-left:6px;letter-spacing:.06em;text-transform:uppercase}
+.gm-dt-seg{display:flex;gap:4px;width:100%}.gm-dt-seg button{flex:1 1 0;min-width:0;min-height:var(--control-h);padding:6px 4px;font-size:13px}
+.gm-dt-fold{border:1px solid var(--line);background:rgba(10,26,46,.35);padding:6px 10px}
+.gm-dt-fold>summary{cursor:pointer;min-height:var(--control-h);display:flex;align-items:center;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-dim)}
+.gm-dt-fold[open]>summary{margin-bottom:8px}
+.gm-dt-q{margin-bottom:8px}
 .gm-chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .gm-chip{font-size:12px;padding:1px 7px;border:1px solid var(--line);color:var(--ice)}
 .gm-chip.pen{border-color:var(--red);color:#ff8a96}
@@ -840,6 +855,68 @@ export function register(app) {
     if (app.rules().feats.on === on) return;
     setOv(o => featsSwitched(o, on), [line('system', FEATS_SWITCH_WORDS.logTitle, FEATS_SWITCH_WORDS.logLine(on))]);
   }
+  /** One damage-type control row: "<Label> deals" followed by Physical, Arcane, and True buttons. */
+  function dtRowHtml({ kind, key, label, sub = '', current, shipped }) {
+    const lid = `gm-dt-l-${kind}-${key}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `<div class="gm-dt-row" data-dt-row="${esc(label.toLowerCase())}">
+      <span class="gm-dt-lbl" id="${lid}">${esc(label)} deals${sub ? `<span class="gm-dt-sub">${esc(sub)}</span>` : ''}</span>
+      <div class="seg gm-dt-seg" role="group" aria-labelledby="${lid}">${DAMAGE_TYPES.map(t => `<button type="button" data-dt-kind="${kind}" data-dt-key="${esc(key)}" data-dt-label="${esc(label)}" data-dt-shipped="${shipped}" data-dt-val="${t}" aria-pressed="${t === current}">${esc(DAMAGE_SHORT[t])}</button>`).join('')}</div>
+    </div>`;
+  }
+  /** Draws the GM's Damage types rows in the Rules editor: statuses, default attacks, and built-in plus custom damaging abilities. */
+  function renderDamageTypes() {
+    const statusBox = $('#gm-dt-statuses'), atkBox = $('#gm-dt-attacks'), abBox = $('#gm-dt-abilities');
+    if (!statusBox || !atkBox || !abBox) return;
+    const R = app.rules();
+    const statusHtml = [
+      ...DAMAGING_STATUS_KEYS.map(key => {
+        const curDef = R.conditions[key] || BUILT_IN_STATUSES[key];
+        const shipped = statusDamageTypeOf(BUILT_IN_STATUSES[key]) || DAMAGE_TYPES[0];
+        const current = statusDamageTypeOf(curDef) || shipped;
+        return dtRowHtml({ kind: 'status', key, label: curDef.label || key, current, shipped });
+      }),
+      ...KEYSTONE_DAMAGE_ROWS.map(r => dtRowHtml({ kind: 'rule', key: r.key, label: r.label, sub: 'Keystone', current: damageTypeOf(r.key, r.shipped, R), shipped: r.shipped })),
+    ].join('');
+    if (statusBox.dataset.sig !== statusHtml) { statusBox.dataset.sig = statusHtml; statusBox.innerHTML = statusHtml; }
+
+    const atkHtml = DEFAULT_ATTACK_ROWS.map(r => dtRowHtml({ kind: 'rule', key: r.key, label: r.label, current: damageTypeOf(r.key, r.shipped, R), shipped: r.shipped })).join('');
+    if (atkBox.dataset.sig !== atkHtml) { atkBox.dataset.sig = atkHtml; atkBox.innerHTML = atkHtml; }
+
+    const q = ($('#gm-dt-q')?.value || '').trim().toLowerCase();
+    const customSkills = S().library.skills.flatMap(k =>
+      k.type === 'active' && k.ability?.effect && isDamage(k.ability.effect.type)
+        ? [{ id: k.ability.id, label: k.name, group: 'Custom', shipped: k.ability.effect.type }]
+        : []);
+    const allAbilities = [...BUILT_IN_ABILITY_DAMAGE_ROWS, ...customSkills]
+      .filter(r => !q || r.label.toLowerCase().includes(q) || r.group.toLowerCase().includes(q));
+    const abHtml = allAbilities.length
+      ? allAbilities.map(r => dtRowHtml({ kind: 'rule', key: r.id, label: r.label, sub: r.group, current: damageTypeOf(r.id, r.shipped, R), shipped: r.shipped })).join('')
+      : '<p class="empty">No matching abilities.</p>';
+    if (abBox.dataset.sig !== abHtml) { abBox.dataset.sig = abHtml; abBox.innerHTML = abHtml; }
+  }
+  /** Applies a GM damage-type tap: built-in statuses write through `saveStatus` / `removeStatus`; abilities and reserved keys write `rulesOverrides.fight.damageTypes`. */
+  function setDamageType(kind, key, val, label, shipped) {
+    if (!isDamage(val)) return;
+    if (kind === 'status') {
+      const builtInKey = DAMAGING_STATUS_KEYS.find(k => k === key);
+      if (!builtInKey) return;
+      const cur = app.rules().conditions[builtInKey] || BUILT_IN_STATUSES[builtInKey];
+      if (statusDamageTypeOf(cur) === val) return;
+      const next = statusWithDamageType(cur, val);
+      const step = isShippedStatusDef(builtInKey, next)
+        ? atLibrary(l => (Object.hasOwn(l.statuses, builtInKey) ? removeStatus(l, builtInKey) : l))
+        : atLibrary(l => saveStatus(l, builtInKey, next));
+      if (gmWrite('gm-damage-type', step, [], [line('system', 'Damage type updated', `${label} deals ${DAMAGE_WORD[val].toLowerCase()}.`)])) {
+        say('#gm-r-msg', `${label} now deals ${DAMAGE_WORD[val].toLowerCase()}.`);
+      }
+      return;
+    }
+    const cur = damageTypeOf(key, isDamage(shipped) ? shipped : DAMAGE_TYPES[0], app.rules());
+    if (cur === val) return;
+    if (setOv(o => damageTypeSet(o, key, val === shipped ? null : val), [line('system', 'Damage type updated', `${label} deals ${DAMAGE_WORD[val].toLowerCase()}.`)])) {
+      say('#gm-r-msg', `${label} now deals ${DAMAGE_WORD[val].toLowerCase()}.`);
+    }
+  }
   async function resetRules() {
     if (!await ui.confirm({ title: 'Reset rules?', body: 'Every rule number goes back to its default. Your roll tables and everything in the Workshop stay.', danger: true, confirmLabel: 'Reset rules' })) return;
     // the GM's statuses live in the library, which a reset of the rule numbers keeps
@@ -967,6 +1044,17 @@ export function register(app) {
           <div class="gm-switch"><span class="lbl" id="gm-feats-l">${esc(FEATS_SWITCH_WORDS.label)}</span>
             <div class="seg" role="group" aria-labelledby="gm-feats-l"><button type="button" data-feats="on">${esc(FEATS_SWITCH_WORDS.on)}</button><button type="button" data-feats="off">${esc(FEATS_SWITCH_WORDS.off)}</button></div>
             <p class="empty">${esc(FEATS_SWITCH_WORDS.hint)}</p></div>
+          <div class="gm-dt" id="gm-dt">
+            <span class="lbl">Damage types</span>
+            <p class="empty">${esc(DAMAGE_HELP_LINE)}</p>
+            <p class="empty">Fights already running and saved copies of skills or monsters keep their current damage type.</p>
+            <div class="gm-dt-list" id="gm-dt-statuses"></div>
+            <details class="gm-dt-fold" id="gm-dt-attacks-fold"><summary>Default attacks</summary><div class="gm-dt-list" id="gm-dt-attacks"></div></details>
+            <details class="gm-dt-fold" id="gm-dt-abilities-fold"><summary>Abilities</summary>
+              <div class="gm-dt-q">${txt_('gm-dt-q', 'Filter abilities', 'maxlength="60" placeholder="Search skills, monsters, or mythic moves"')}</div>
+              <div class="gm-dt-list" id="gm-dt-abilities"></div></details>
+            <p class="empty">To change a weapon's damage type, edit the weapon in the Workshop or in a hunter's bag.</p>
+          </div>
           <p class="empty">Enter JSON overrides for the default rules, such as {"pointsPerLevel":5}. Unknown rules and invalid values are rejected.</p>
           ${ui.field('Rules overrides (JSON)', '<textarea id="gm-r-text" rows="9" spellcheck="false" autocomplete="off"></textarea>')}
           <div class="gm-msg" id="gm-r-msg" role="status"></div>
@@ -1065,6 +1153,7 @@ export function register(app) {
         if (t.dataset.ggive !== undefined) { void giveFrom(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.gchron !== undefined) { A().chronicle.open(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
+        if (t.dataset.dtKind) { setDamageType(t.dataset.dtKind, t.dataset.dtKey, t.dataset.dtVal, t.dataset.dtLabel || t.dataset.dtKey, t.dataset.dtShipped); return; }
         if (t.dataset.grevive !== undefined && t.closest('.gm-card.remote')) { sendRevive(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `${now.name} is back up. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
@@ -1094,6 +1183,7 @@ export function register(app) {
         if (id.startsWith('gm-b-')) renderPreview();
         if (id === 'gm-l-q') renderLog();
         if (id === 'gm-r-text') { e.target.dataset.dirty = '1'; liveRules(); }
+        if (id === 'gm-dt-q') renderDamageTypes();
         if (id === 'gm-t-list') e.target.dataset.dirty = '1';
       });
       const renderTargetsAll = () => { for (const i of targetList()) sel.add(i.id); };
@@ -1105,7 +1195,7 @@ export function register(app) {
       // the drop the form holds was set aside or given elsewhere, or its waiting reward was answered: the form lets it go
       if (awardDraft.at === 'tied' && !tiedDrop() && !waitingOf()) draft({ type: 'gone' });
       showTie();
-      const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
+      const csig = JSON.stringify([ov(), S().library.statuses]), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
       renderBoard(); renderTargets(); renderWaiting();
       if (!('waiting' in open) && waitingHere().length) { open.waiting = true; applyOpen(); }
       $('#gm-hsum-words').textContent = A().words.paint($('#gm-words'));
@@ -1113,7 +1203,7 @@ export function register(app) {
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
       editor.refresh();
       $('#gm-day').textContent = `Day ${S().world.day}`;
-      syncTableUi(); renderLog(); renderNotify(); renderUses();
+      syncTableUi(); renderLog(); renderNotify(); renderUses(); renderDamageTypes();
       root.querySelectorAll('[data-feats]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.feats === 'on') === app.rules().feats.on)));
       const ta = $('#gm-r-text');
       if (document.activeElement !== ta && !ta.dataset.dirty && ta.value !== rulesJson()) { ta.value = rulesJson(); liveRules(); }

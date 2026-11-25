@@ -19,6 +19,7 @@ import { TERRAIN, TERRAINS, percent, place, tiles } from './space.ts';
 import type { Grid, Place, Shape } from './space.ts';
 import { cost, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
+import { DAMAGE_TYPES } from './damage-type.ts';
 import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-types.ts';
 import { fightId, parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
@@ -250,16 +251,13 @@ function tiered<T>(v: unknown, read: (x: unknown) => T | null): Tiered<T> | null
   return t && t.length === 6 ? t as unknown as Tiered<T> : null;
 }
 const WHEN = ['use', 'turn'] as const;
-const OP_DAMAGE_TYPES = ['physical', 'arcane', 'true'] as const;
-/** Shared damage-type reader for `opOf` and `effectOf` (one-way alias for pre-R6 saves, packs, and room docs). */
-const readDamageType = <T extends string>(v: unknown, list: readonly T[]): T | null => oneOf(v === 'magical' ? 'arcane' : v, list, null);
 const when = (v: Rec): { when?: 'use' | 'turn' } | null => v.when === undefined ? {} : (w => w ? { when: w } : null)(oneOf(v.when, WHEN, null));
 const anyNum = (x: unknown): number | null => num(x, -BIG, BIG);
 function opOf(v: unknown, R: Rules, depth: number): Op | null {
   if (!isObj(v)) return null;
   const formula = (x: unknown): Formula | null => formulaOf(x, R);
   switch (v.op) {
-    case 'damage': { const type = readDamageType(v.type, OP_DAMAGE_TYPES), amount = tiered(v.amount, formula), w = when(v); return type && amount && w ? { op: 'damage', type, amount, ...w } : null; }
+    case 'damage': { const type = oneOf(v.type, DAMAGE_TYPES, null), amount = tiered(v.amount, formula), w = when(v); return type && amount && w ? { op: 'damage', type, amount, ...w } : null; }
     case 'heal': case 'mana': case 'fatigue': { const amount = tiered(v.amount, formula), w = when(v); return amount && w ? { op: v.op, amount, ...w } : null; }
     case 'applyStatus': {
       const key = idText(v.key), def = depth < 3 ? defOf(v.def, R, depth + 1) : null;
@@ -541,14 +539,14 @@ function deliveryOf(v: unknown): Delivery | null {
   const windup = tickOf(v.windup), speed = v.speed === 'instant' ? 'instant' : num(v.speed, 1, 1000);
   return windup === null || speed === null ? null : { kind: 'travel', windup, speed };
 }
-const EFFECT_TYPES = ['physical', 'arcane', 'heal', 'shield'] as const;
+const EFFECT_TYPES = [...DAMAGE_TYPES, 'heal', 'shield'] as const;
 /**
  * An ability's effect: by the rule (`by: 'rule'` with the ticks it is worked out from) or by hand (`by: 'hand'` with its
  * formula). One stored before `by` existed reads as typed by hand, its formula kept as written: the one-way repair, so a
  * hunter keeps its skills' abilities (the maker's Reset puts one back on the rule).
  */
 function effectOf(v: Rec, R: Rules): AbilityEffect | null {
-  const type = readDamageType(v.type, EFFECT_TYPES);
+  const type = oneOf(v.type, EFFECT_TYPES, null);
   if (!type) return null;
   if (v.by === 'rule') { const ticks = ruleTicksOf(v.ticks, R); return ticks ? { type, by: 'rule', ticks } : null; }
   if (v.by !== 'hand' && v.by !== undefined) return null;

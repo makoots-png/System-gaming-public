@@ -22,7 +22,7 @@ const SCALER_SETS: readonly (readonly Scaler[])[] = [
   [], [{ measure: 'target', dir: 'under', start: 0.5, scale: 1 }],
   [{ measure: 'maxPair', dir: 'over', start: 2 / 3, scale: 0.25 }, { measure: 'user', dir: 'under', start: 0.3, scale: 0.6 }],
 ];
-const TYPES: readonly AbilityEffect['type'][] = ['physical', 'arcane', 'heal', 'shield'];
+const TYPES: readonly AbilityEffect['type'][] = ['physical', 'arcane', 'true', 'heal', 'shield'];
 
 // A C bruiser on a C body, so every power and stat a formula reads is above 0.
 const user = { stats: { ...baseStats(RULES.fight), str: 63, pow: 63, pre: 63 }, sheet: sheetOf({ stats: { ...baseStats(RULES.fight), str: 63, pow: 63, pre: 63 }, level: 20, gear: kitGear('medium', RULES), perks: {} }, RULES) };
@@ -33,7 +33,7 @@ describe('every kind\'s recommended formulas', () => {
   test('parse for every tick the maker offers', () => {
     const failed: string[] = [];
     for (const kind of KIND_LIST) for (const type of TYPES) for (const scale of [null, 'str', 'ins'] as const)
-      for (const gap of [null, gapOf(type)]) for (const channel of [null, 'linear', 'exponential'] as const) for (const scalers of SCALER_SETS) {
+      for (const gap of [null, gapOf(type, kind)]) for (const channel of [null, 'linear', 'exponential'] as const) for (const scalers of SCALER_SETS) {
         const ticks: Ticks = { scale, type, pace: KINDS[kind].pace, gap, channel, scalers };
         try { recommended(kind, ticks, RULES); } catch (e) { failed.push(`${kind} ${JSON.stringify(ticks)}: ${String(e)}`); }
       }

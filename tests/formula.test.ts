@@ -604,7 +604,7 @@ describe('a formula\'s size (notes-5-trade.md 12.3)', () => {
     let largest = 0;
     for (const kind of Object.keys(KINDS) as AbilityKind[]) {
       const scaler = Object.fromEntries(SCALER_NAMES.map(n => [n, suggestScaler(kind, n, RULES)]));
-      for (const type of ['physical', 'arcane', 'heal', 'shield'] as const) for (const scale of STAT_KEYS) for (const a of SCALER_NAMES) for (const b of SCALER_NAMES) {
+      for (const type of ['physical', 'arcane', 'true', 'heal', 'shield'] as const) for (const scale of STAT_KEYS) for (const a of SCALER_NAMES) for (const b of SCALER_NAMES) {
         const f = recommended(kind, { type, scale, gap, scalers: [scaler[a]!, scaler[b]!], pace: 'quick', channel: 'linear' }, RULES).formula;
         largest = Math.max(largest, partsOf(f));
       }

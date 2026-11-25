@@ -47,7 +47,7 @@ const DISTINGUISHES: Record<keyof Item, boolean> = {
   // them would lose one pick (loot's `lootOf` already compares every field but the count).
   // Waits on the owner's ruling SMX-rules-5.3 ("items that differ in description or attack do not stack"): as the app
   // behaves today, they do not. The ruling is this row.
-  desc: true, attack: true, finesse: true, twoHanded: true,
+  desc: true, attack: true, damageType: true, finesse: true, twoHanded: true,
 };
 const DISTINGUISHING = (Object.keys(DISTINGUISHES) as (keyof Item)[]).filter(k => DISTINGUISHES[k]);
 /** What makes two unworn things one stack: every field that `DISTINGUISHES`, and nothing else. */

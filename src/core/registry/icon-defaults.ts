@@ -12,7 +12,7 @@ import type { BuiltInStatus } from './statuses.ts';
 import type { Archetype } from '../hunter/derive.ts';
 import { monsterTypeOf } from './monster-types.ts';
 import type { MonsterType } from './monster-types.ts';
-import type { AbilityKind, OpDamageType } from '../combat/ability-types.ts';
+import type { AbilityKind, DamageType } from '../combat/ability-types.ts';
 import type { Op, OpKind, StatusDef, Tiered } from '../combat/effect-ops.ts';
 import { signOf } from '../formula.ts';
 import { atTier } from '../combat/op-amount.ts';
@@ -71,7 +71,7 @@ const STATUS_ICON: { readonly [K in BuiltInStatus]: IconKey } = {
   bloodlust: 'rage', regenerating: 'heal', plague: 'plague', taunted: 'taunt', marked: 'eye',
 };
 /** A hit's picture by what it hurts with. */
-const DAMAGE_ICON: { readonly [T in OpDamageType]: IconKey } = { physical: 'slash', arcane: 'spark', true: 'bolt' };
+const DAMAGE_ICON: { readonly [T in DamageType]: IconKey } = { physical: 'slash', arcane: 'spark', true: 'bolt' };
 /** An op's E value (its first tier's, or its one value), whose sign picks a speed's or a stat's picture. */
 const eValue = (v: Tiered<number>): number => (typeof v === 'number' ? v : v[0]);
 /** A signed op's picture: `up` at 0 and above (no sign is no harm), `down` below. */

@@ -9,6 +9,7 @@ import { titleKey } from './ids.ts';
 import { OBJECTIVE_TARGET, BONUS_KEYS, PERK_POINTS, RANKS, RULES, domainOf, inDomain } from './rules.ts';
 import type { Domain, Perk, Rank } from './rules.ts';
 import { REWARD_ENTRY, parseBand } from './rewards.ts';
+import { parseDamageTypes } from './combat/damage-type.ts';
 
 /**
  * Why an override was refused. `statuses`: a status is made in the Status dialog and kept in the library, not here.
@@ -136,6 +137,9 @@ const reviveDebtPrices: Reader = (v, path, no) => {
   return out;
 };
 
+/** Sparse GM damage-type overrides (`fight.damageTypes`): bounded map of valid keys (refusing `attack`) to damage types. */
+const damageTypes: Reader = (v, path, no) => parseDamageTypes(v, (k, reason) => no(`${path}.${k}`, reason)) ?? no(path, 'object');
+
 /**
  * The reader of each rule `against` cannot read from its shipped value: every list, every null and every open map. A
  * `*` stands for any one key (a rank, a path's id). tests/overrides.test.ts walks RULES and fails on such a rule with no
@@ -173,6 +177,8 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'fight.difficulty.targets': numbers(10),
   'fight.difficulty.boss': numbers(10),
   'fight.difficulty.pack': numbers(10),
+  // sparse map of GM ability/reserved damage-type overrides (`attack` refused)
+  'fight.damageTypes': damageTypes,
 };
 const PATTERNS = Object.keys(READERS).map(k => ({ re: new RegExp(`^${k.replace(/\./g, '\\.').replace(/\*/g, '[^.]+')}$`), read: READERS[k]! }));
 /** The reader of the rule at `path`, or null when its shipped value reads it. */

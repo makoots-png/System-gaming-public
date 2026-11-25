@@ -11,7 +11,7 @@ import type { Formula, KitScope, Scope } from '../formula.ts';
 import { dist } from './space.ts';
 import { delayed, hastened, hasteStep, interval, notBefore, paceCost, stunned, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import type { CombatantId, OpDamageType } from './ability-types.ts';
+import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
@@ -37,7 +37,7 @@ export const NO_PEN: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 're
   armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0,
 };
 /** The armor or resist a hit of `type` from a user with this sheet meets on a target with this one, after penetration (0 for true damage). */
-export function defenceLeft(type: OpDamageType, user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, target: Pick<Sheet, 'armor' | 'resist'>): number {
+export function defenceLeft(type: DamageType, user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, target: Pick<Sheet, 'armor' | 'resist'>): number {
   if (type === 'true') return 0;
   const physical = type === 'physical';
   const def = physical ? target.armor : target.resist, pct = physical ? user.armorPen : user.resistPen, flat = physical ? user.armorPenFlat : user.resistPenFlat;
@@ -47,7 +47,7 @@ export function defenceLeft(type: OpDamageType, user: Pick<Sheet, 'armorPen' | '
 export const throughDefence = (raw: number, left: number, R: Pick<OpRules, 'fight'>): number =>
   Math.max(0, raw - R.fight.armorFlat * left) * R.fight.armorK / (R.fight.armorK + left);
 /** Rule 12 for a hit of `raw` of `type` from a user with this sheet on a target with this one (the maker's preview reads it too). */
-export function afterDefence(raw: number, type: OpDamageType, user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, target: Pick<Sheet, 'armor' | 'resist'>, R: Pick<OpRules, 'fight'>): number {
+export function afterDefence(raw: number, type: DamageType, user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, target: Pick<Sheet, 'armor' | 'resist'>, R: Pick<OpRules, 'fight'>): number {
   return Math.max(1, Math.round(throughDefence(raw, defenceLeft(type, user, target), R)));
 }
 

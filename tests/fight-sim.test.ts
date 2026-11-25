@@ -62,6 +62,7 @@ import type { Rank } from '../src/core/rules.ts';
 import { difficultyFactor } from '../src/core/gates/difficulty.ts';
 import type { DifficultyLevel } from '../src/core/gates/difficulty.ts';
 import { place } from '../src/core/combat/space.ts';
+import { isDamage } from '../src/core/combat/damage-type.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
@@ -180,7 +181,7 @@ function bestUse(rank: Rank, uses: number, builds: readonly Archetype[] = PLAIN_
     const user = hunter(a, rank, 'user'), tank = foe(hunter('tank', rank, 'tank'));
     for (const ability of user.row.abilities) {
       // a channel, and a use with a price (Violence spends Pain it holds none of here), are not single uses on a fresh body
-      if (ability.channel || ability.prices || !ability.effect || (ability.effect.type !== 'physical' && ability.effect.type !== 'arcane')) continue;
+      if (ability.channel || ability.prices || !ability.effect || !isDamage(ability.effect.type)) continue;
       const gap = ability.range <= 1 ? 1 : 4;
       const rows = [{ ...user.row, place: place(5, 5) }, { ...tank.row, place: place(5, 5 + gap) }];
       const ctx = { rules: RULES };

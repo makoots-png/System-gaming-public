@@ -27,6 +27,7 @@ import { isStateChip } from '../core/hunter/chips.ts';
 import { abilityOf, averages, checkGap, defaultTicks, gapOf, paceOf, paceTime, powerStat, recommended, ruleTicks, sampleBody, SCALER_CHOICES, suggestedScaler, ticksOf } from '../core/registry/ability-kinds.ts';
 import { FAMILY, nameOf } from '../core/registry/scalers.ts';
 import { worthLine } from '../core/registry/worth.ts';
+import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, DAMAGE_WORD, defenceOf, isDamage } from '../core/combat/damage-type.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
 import { percent, tiles } from '../core/combat/space.ts';
 import { roundsOf, tick } from '../core/combat/timeline.ts';
@@ -190,8 +191,7 @@ const MOVE_FROM_LABEL = [['user', 'User to target'], ['target', 'Target to user'
 const WHICH_LABEL = [['first', 'One harmful status'], ['all', 'All harmful statuses']];
 /** A tag's form (fight-parse.ts `TAG_RE`): lower-case words joined by hyphens. */
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const DAMAGE_TYPES = [['physical', 'Physical'], ['arcane', 'Arcane']];
-const OP_DAMAGE_TYPES = [...DAMAGE_TYPES, ['true', 'True']];
+const DAMAGE_CHOICES = DAMAGE_TYPES.map(t => [t, DAMAGE_SHORT[t]]);
 const WHEN_LABEL = [['turn', 'Each round'], ['use', 'Once, when applied']];
 const CHANNEL_LABEL = [['protect', 'Protect channel from hits'], ['break', 'Break target\'s channel']];
 const RARITY_SHORT = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary', mythic: 'Mythic' };
@@ -501,7 +501,7 @@ function effects(box, o) {
         ${r.kind === 'stat' ? `<select data-f="stat" aria-label="Stat of effect ${i + 1}">${STAT_KEYS.map(k => `<option value="${k}"${k === r.stat ? ' selected' : ''}>${esc(STAT_LABELS[k])}</option>`).join('')}</select>` : ''}
         ${r.kind === 'sheet' ? `<select data-f="sheetKey" aria-label="Number of effect ${i + 1}">${SHEET_KEY_LABEL.map(([k, l]) => `<option value="${k}"${k === r.sheetKey ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
         <button type="button" class="icon-btn" data-rm aria-label="Remove effect ${i + 1}">&times;</button></div>
-      ${r.kind === 'damage' ? seg('data-type', `Damage type of effect ${i + 1}`, item ? DAMAGE_TYPES : OP_DAMAGE_TYPES, r.type) : ''}
+      ${r.kind === 'damage' ? `${seg('data-type', `Damage type of effect ${i + 1}`, DAMAGE_CHOICES, r.type)}<p class="mk-avg">${esc(DAMAGE_HELP_LINE)}</p>` : ''}
       ${r.kind === 'share' ? segF('shareOn', `What effect ${i + 1} changes`, SHARE_LABEL, r.shareOn) : ''}
       ${FORMULA_KINDS.includes(r.kind) && o.kind === 'status' ? seg('data-when', `When effect ${i + 1} acts`, WHEN_LABEL, r.when || 'turn') : ''}
       ${modes.length ? seg('data-mode', `Amount of effect ${i + 1}`, modes, r.mode) : ''}
@@ -635,9 +635,11 @@ function effects(box, o) {
 }
 
 // ── the formula field ──
-/** What an ability's effect is, as the GM names it: aimed at Armor or Resist, a heal, a shield, or nothing. */
-const EFFECT_TYPES = [['physical', 'Physical damage'], ['arcane', 'Arcane damage'], ['heal', 'Heal'], ['shield', 'Shield'], ['none', 'None']];
-const DEFENCE_WORD = { physical: 'Armor', arcane: 'Resist' };
+/** What an ability's effect is, as the GM names it: physical, arcane, or true damage, a heal, a shield, or nothing. */
+const EFFECT_TYPES = [...DAMAGE_TYPES.map(t => [t, DAMAGE_WORD[t]]), ['heal', 'Heal'], ['shield', 'Shield'], ['none', 'None']];
+/** @type {readonly import('../core/combat/ability-types.ts').AbilityEffectType[]} */
+const EFFECT_VALUES = [...DAMAGE_TYPES, 'heal', 'shield'];
+const DEFENCE_WORD = { armor: 'Armor', resist: 'Resist' };
 /** The kits' formula names (formula.ts, kits design 1.5) a chip inserts; KEY is the status picked beside them. */
 const FORMULA_NAMES = [
   ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks this use spent'], ['field(KEY)', 'Its stacks on everyone'],
@@ -648,7 +650,8 @@ const lastingLine = op => `On a sample rank ${SAMPLE_RANK} hunter: ${opLines([op
 /** The averages line of a formula: at E, C and S on a same-rank brute, and after its Armor or Resist for a damage type. */
 function averagesLine(f, type, main) {
   const rows = averages(f, type, main, rules()), r = n => String(Math.round(n));
-  const dealt = rows.every(x => x.dealt !== null) ? `. After ${DEFENCE_WORD[type]}: ${rows.map(x => r(x.dealt)).join(', ')}` : type === 'true' ? '. Ignores Armor and Resist' : '';
+  const def = isDamage(type) ? defenceOf(type) : null;
+  const dealt = rows.every(x => x.dealt !== null) && def ? `. After ${DEFENCE_WORD[def]}: ${rows.map(x => r(x.dealt)).join(', ')}` : isDamage(type) && def === null ? '. Ignores Armor and Resist' : '';
   return `Average on a same-rank brute: ${rows.map(x => `${x.rank} ${r(x.average)}`).join(', ')}${dealt}`;
 }
 /**
@@ -660,13 +663,13 @@ function averagesLine(f, type, main) {
  * makes it the GM's, Reset gives it back to the rule (implicit audit 3, M2).
  * @param {HTMLElement} box
  * `typed`: a formula the GM typed under another kind, kept as it was typed (edited, its Reset this kind's recommendation).
- * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; effect?: import('../core/combat/ability-types.ts').AbilityEffect | null; ticks?: import('../core/registry/ability-kinds.ts').Ticks | null; typed?: { text: string; type: 'physical' | 'arcane' | 'heal' | 'shield' } | null }} o
+ * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; effect?: import('../core/combat/ability-types.ts').AbilityEffect | null; ticks?: import('../core/registry/ability-kinds.ts').Ticks | null; typed?: { text: string; type: import('../core/combat/ability-types.ts').AbilityEffectType } | null }} o
  */
 function formulaField(box, o) {
   const kind = o.kind, typed0 = o.typed || null, hand = o.effect && o.effect.by === 'hand' ? o.effect : null;
   let ticks = o.ticks || defaultTicks(kind, typed0 ? typed0.type : o.effect ? o.effect.type : undefined);
   let type = o.effect === null && !typed0 ? 'none' : o.effect ? o.effect.type : ticks.type, edited = !!hand || !!typed0, scaleTouched = !!o.ticks;
-  let gapOn = !!ticks.gap, gap = ticks.gap || gapOf(ticks.type);
+  let gapOn = !!ticks.gap, gap = ticks.gap || gapOf(ticks.type, kind);
   const rec = () => recommended(kind, { ...ticks, gap: gapOn ? gap : null }, rules());
   let text = typed0 ? typed0.text : hand ? printFormula(hand.formula) : rec().text;
   // a typed tree as it came, kept while its text is unchanged ("-10" reads back as a negation: the same number in another tree)
@@ -676,6 +679,7 @@ function formulaField(box, o) {
   box.innerHTML = `<div class="mk-formula">
     <div class="lbl">What it does</div>
     ${chips('ftype', EFFECT_TYPES.map(([v, l]) => [v, l]), type, { label: 'What it does' })}
+    <p class="mk-avg">${esc(DAMAGE_HELP_LINE)}</p>
     <div data-f-has><label class="field"><span class="lbl">Formula <span class="mk-edited" data-edited hidden>edited</span></span>
       <span class="mk-formula-row"><input type="text" data-formula autocomplete="off" spellcheck="false" aria-label="Formula" value="${esc(text)}">
       <button type="button" class="quiet" data-reset hidden>Reset formula</button></span></label>
@@ -738,7 +742,7 @@ function formulaField(box, o) {
     input.setAttribute('aria-invalid', String('error' in p));
     $('[data-gap-err]').textContent = gapErr() || '';
     $('[data-gap]').hidden = !gapOn;
-    $('[data-formula-avg]').textContent = 'formula' in p && !none ? averagesLine(p.formula, type, ticks.scale || powerStat(ticks.type)) : '';
+    $('[data-formula-avg]').textContent = 'formula' in p && !none ? averagesLine(p.formula, type, ticks.scale || powerStat(ticks.type, kind)) : '';
   }
   /** The text back to the recommendation of the ticks as they stand (unless the GM typed over it). */
   const follow = () => { if (!edited) { text = rec().text; input.value = text; } draw(); };
@@ -748,9 +752,9 @@ function formulaField(box, o) {
       type = String(picked(box, 'ftype') || type);
       if (type !== 'none') {
         const was = ticks.type;
-        ticks = { ...ticks, type: oneOf(type, ['physical', 'arcane', 'heal', 'shield'], 'physical') };
-        if (!scaleTouched && ticks.scale === powerStat(was)) ticks = { ...ticks, scale: powerStat(ticks.type) };
-        if (!gapOn) gap = gapOf(ticks.type);
+        ticks = { ...ticks, type: oneOf(type, EFFECT_VALUES, DAMAGE_TYPES[0]) };
+        if (!scaleTouched && ticks.scale === powerStat(was, kind)) ticks = { ...ticks, scale: powerStat(ticks.type, kind) };
+        if (!gapOn) gap = gapOf(ticks.type, kind);
         box.querySelector('[data-tick="scale"]').value = ticks.scale || '';
       }
       follow();
@@ -818,7 +822,7 @@ const WHERE_LABEL = [['lands', 'Where it lands'], ['user', 'Around the user']];
  * each group collapsed until opened: cost, reach, how it is avoided, and the channel. The skill maker holds it, and the
  * enemy maker's abilities are edited in the skill maker.
  * @param {HTMLElement} box
- * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; ability?: import('../core/combat/ability-types.ts').Ability | null; typed?: { text: string; type: 'physical' | 'arcane' | 'heal' | 'shield' } | null; kit?: any }} o
+ * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; ability?: import('../core/combat/ability-types.ts').Ability | null; typed?: { text: string; type: import('../core/combat/ability-types.ts').AbilityEffectType } | null; kit?: any }} o
  */
 function buildAbility(box, o) {
   const R = rules(), round = R.fight.round;

@@ -19,6 +19,7 @@ import type { Tick } from './timeline.ts';
 import { printFormula } from '../formula.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
+import { effectWord } from './damage-type.ts';
 import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { LifeState } from '../hunter/vitals.ts';
@@ -149,8 +150,8 @@ export const ABILITY_LINES = 4;
  */
 export function abilityLines(a: Ability, R: KindRules): string[] {
   const out: string[] = [];
-  if (a.effect) {
-    const what = a.effect.type === 'heal' ? 'Heals' : a.effect.type === 'shield' ? 'Shields' : `${a.effect.type === 'physical' ? 'Physical' : 'Arcane'} damage`;
+  const what = effectWord(a, R);
+  if (what) {
     const f = formulaOf(a, R);
     if (f) out.push(`${what} ${printFormula(f)}`);
   }
