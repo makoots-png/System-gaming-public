@@ -13,6 +13,8 @@ import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-typ
 import { modified } from '../src/core/combat/effect-ops.ts';
 import type { Origin } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { parseAbility } from '../src/core/combat/fight-parse.ts';
+import { parseSkill, SKILL_SEEDS, skillOf } from '../src/core/registry/skills.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Effect, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -66,5 +68,20 @@ describe('a hunter added to a fight and removed', () => {
     expect(hit.effects.filter(e => e.type === 'vitals').map(e => (e as Extract<Effect, { type: 'vitals' }>).life)).toContainEqual({ at: 'up', hp });
     const gone = play(hit.fight, { type: 'remove', id: id('A') });
     expect(gone.effects.filter(e => e.type === 'vitals')).toEqual([]);
+  });
+});
+
+describe('move abilities round-trip through parseAbility and parseSkill (unit A4)', () => {
+  test('Shadow Exchange keeps move.only === "shadow" through JSON serialization, rejects unknown only, and rejects move with channel', () => {
+    const seed = SKILL_SEEDS.find(s => s.name === 'Shadow Exchange')!;
+    const sk = skillOf(seed, RULES);
+    expect(sk.type === 'active' && sk.ability?.move).toEqual({ kind: 'swap', only: 'shadow' });
+    expect(parseSkill(JSON.parse(JSON.stringify(sk)))).toEqual(sk);
+
+    const ab = sk.type === 'active' ? sk.ability! : null;
+    expect(parseAbility({ ...ab, move: { kind: 'swap', only: 'summon' } }, RULES)).toBeNull();
+    expect(parseAbility({ ...ab, move: { kind: 'blink', only: 'shadow' } }, RULES)).toBeNull();
+    expect(parseAbility({ ...ab, channel: { growth: 'linear', max: 2 } }, RULES)).toBeNull();
+    expect(parseAbility({ ...ab, move: { kind: 'blink' }, channel: { growth: 'linear', max: 2 } }, RULES)).toBeNull();
   });
 });

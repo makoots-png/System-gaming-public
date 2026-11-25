@@ -209,6 +209,9 @@ export function register(app) {
             if (form.type === 'active' && form.ability && form.ability.react && !form.ability.ops.every(reactionMayHold)) {
               shell.error('A reaction cannot push, pull, or grant an extra action. Remove that effect or uncheck Reaction.'); return undefined;
             }
+            if (form.type === 'active' && form.ability && form.ability.channel && form.ability.move) {
+              shell.error('A channeled ability cannot teleport or swap places. Turn off channeling or set User movement to None.'); return undefined;
+            }
             const big = form.type === 'active' ? (form.ability ? tooLarge('ability', form.ability) : null) : form.worn ? tooLarge('status', form.worn) : null;
             if (big) { shell.error(big); return undefined; }
             const out = parseSkill(form);

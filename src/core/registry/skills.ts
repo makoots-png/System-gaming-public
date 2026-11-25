@@ -44,7 +44,9 @@ export const SKILL_SEEDS: readonly SkillDef[] = [
   { name: 'Dagger Rush', type: 'active', desc: 'A quick dagger strike that rolls 2d4.' },
   { name: 'Stealth', type: 'active', desc: 'Hide out of sight. Attacks from hiding deal 1.5 times damage. Taking damage, dealing damage, or being revealed ends it.' },
   { name: 'Mutilation', type: 'active', desc: 'A strike that rolls 2d6.' },
-  { name: "Ruler's Authority", type: 'active', desc: 'Move or crush objects and foes within 6 tiles (30 ft) with your mind.' },
+  { name: 'Taunt', type: 'active', desc: 'Force one foe within 6 tiles (30 ft) to target you for 2 rounds.' },
+  { name: 'Stun', type: 'active', desc: 'Stun one foe for 1 round if they fail to resist. Interrupts channeling and mythic omens.' },
+  { name: "Ruler's Authority", type: 'active', desc: 'Crush and push a foe up to 3 tiles away within 6 tiles (30 ft) with telekinetic force.' },
   { name: 'Shadow Exchange', type: 'active', desc: 'Swap places with one of your shadows.' },
   { name: 'Arise', type: 'active', desc: 'Raise a defeated monster as one of your shadows.' },
   { name: 'Mending Aura', type: 'active', desc: 'For three rounds, you and every ally near you heal each round. The area moves with you.' },
@@ -52,9 +54,9 @@ export const SKILL_SEEDS: readonly SkillDef[] = [
 
 /** The skills the starter campaign's three hunters begin with (src/views/starter.js), two each. */
 export const STARTER_SKILLS = {
-  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Put a shield on one ally in range.' },
+  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Put a shield equal to 25% of your max HP on one ally in range.' },
   ironSkin: { name: 'Iron Skin', type: 'passive', desc: 'Adds 2 Vitality.', bonus: { vit: 2 } },
-  markedShot: { name: 'Marked Shot', type: 'active', desc: 'A shot that rolls 1d6.' },
+  markedShot: { name: 'Marked Shot', type: 'active', desc: 'Fire a quick 1d10 shot that marks the target for 2 rounds (+15% damage taken).' },
   trailsense: { name: 'Trailsense', type: 'passive', desc: 'You notice tracks and signs others miss, and a gate never surprises you.', bonus: {} },
   arcBolt: { name: 'Arc Bolt', type: 'active', desc: 'Fire a bolt of mana at one foe in range.' },
   manaSense: { name: 'Mana Sense', type: 'passive', desc: 'You can sense mana near you, which lets you find hidden gates.', bonus: {} },

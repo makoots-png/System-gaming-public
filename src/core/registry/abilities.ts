@@ -29,13 +29,14 @@ import type { AbilityInput, KindRules } from './ability-kinds.ts';
 const N = (value: number): Formula => ({ kind: 'number', value });
 const MENDING: Op = { op: 'heal', when: 'turn', amount: [N(2), N(4), N(6), N(10), N(15), N(25)] };
 
-/** The statuses a built-in skill puts on its user. */
+/** The statuses a built-in skill puts on its user or target. */
 type SelfStatus = 'hasted' | 'stealth';
+type SkillStatus = SelfStatus | 'taunted' | 'stunned' | 'marked';
 /**
  * The rule numbers a skill's ability reads: the kinds' numbers, and the defs of the statuses it applies. `conditions` is
  * the rules' built-in statuses with the GM's laid over them, so an edited Hasted reaches Sprint.
  */
-export type SkillRules = KindRules & { readonly conditions: { readonly [K in SelfStatus]: StatusDef } };
+export type SkillRules = KindRules & { readonly conditions: { readonly [K in SkillStatus]: StatusDef } };
 
 /** The id of a body's default attack, a hunter's weapon or a monster's archetype attack. A skill's ability has its own. */
 export const ATTACK_ID = abilityId('attack');
@@ -58,7 +59,7 @@ type Differs = {
   readonly finesse?: boolean;
 };
 /** Fields an ability sets past its kind's, as `abilityOf` takes them. */
-type Fields = Pick<AbilityInput, 'aim' | 'shape' | 'range' | 'effect' | 'ops' | 'zone'>;
+type Fields = Pick<AbilityInput, 'aim' | 'shape' | 'range' | 'delivery' | 'effect' | 'ops' | 'zone' | 'move'>;
 
 /** `f` with each dice term replaced by `dice`. */
 function withDice(f: Formula, dice: Formula): Formula {
@@ -140,20 +141,40 @@ export function weaponAttack(item: Weapon | null, R: KindRules): Ability {
 
 /**
  * The fight ability of each active built-in skill (src/core/registry/skills.ts) and starter skill (src/views/starter.js),
- * by the skill's name (plan 3.5). Arise is the extraction on the Shadows panel and Shadow Exchange needs the map, so in M2
- * they have no ability.
+ * by the skill's name (plan 3.5). Arise is the extraction on the Shadows panel, so it has no fight ability.
  */
 const SKILLS = {
   'Dagger Rush': R => built('strike', 'dagger-rush', 'Dagger Rush', { dice: '2d4', pace: 'quick', cooldown: 2, finesse: true }, R),
   Mutilation: R => built('strike', 'mutilation', 'Mutilation', { dice: '2d6', cooldown: 3 }, R),
   Sprint: R => onSelf('sprint', 'Sprint', 'hasted', 1, { pace: 'quick', cooldown: 3 }, R),
   Stealth: R => onSelf('stealth', 'Stealth', 'stealth', null, { cooldown: 4 }, R),
-  // "Telekinetic force ... within 30 ft": a physical curse.
-  "Ruler's Authority": R => built('curse', 'rulers-authority', "Ruler's Authority", { type: 'physical', feet: 30, cooldown: 5 }, R),
-  'Shadow Exchange': () => null,
+  // A Tanker's aggro pull: sure to land at 6 tiles (30 ft) for `tauntRounds` (2) on a 3-round cooldown so a backpedaling tank cannot keep an auto melee foe walking forever.
+  Taunt: R => built('curse', 'taunt', 'Taunt', { feet: 30, cooldown: 3 }, R, {
+    delivery: { kind: 'sure' }, effect: null,
+    ops: [{ op: 'applyStatus', key: statusKey('taunted'), def: R.conditions.taunted, duration: tick(R.fight.tauntRounds * R.fight.round) }],
+  }),
+  // A direct Will-resist hold for 1 round on a 3-round cooldown; answers all five interruptible mythic omens.
+  Stun: R => built('curse', 'stun', 'Stun', { cooldown: 3 }, R, {
+    effect: null,
+    ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: R.conditions.stunned, duration: tick(R.fight.round) }],
+  }),
+  // "Telekinetic force ... within 30 ft": a physical curse that shoves caught foes 3 tiles away.
+  "Ruler's Authority": R => built('curse', 'rulers-authority', "Ruler's Authority", { type: 'physical', feet: 30, cooldown: 5 }, R, {
+    ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: 3 }],
+  }),
+  // Map swap with an allied shadow within 12 tiles (60 ft).
+  'Shadow Exchange': R => built('support', 'shadow-exchange', 'Shadow Exchange', { feet: 60, cooldown: 3 }, R, {
+    aim: 'ally', effect: null, move: { kind: 'swap', only: 'shadow' },
+  }),
   Arise: () => null,
-  'Shield Wall': R => built('support', 'shield-wall', 'Shield Wall', { cooldown: 3 }, R),
-  'Marked Shot': R => built('shot', 'marked-shot', 'Marked Shot', { dice: '1d6', cooldown: 2, finesse: true }, R),
+  // Scales off the caster's max HP (`25% of max HP`) so Tankers build real shields without breaking Support.
+  'Shield Wall': R => built('support', 'shield-wall', 'Shield Wall', { cooldown: 3 }, R, {
+    effect: { type: 'shield', by: 'hand', formula: { kind: 'binary', op: '*', left: N(0.25), right: { kind: 'sheet', whose: 'user', key: 'hpMax' } } },
+  }),
+  // Beats basic Hunting Bow (`1d8`) on direct hit (`1d10`) and marks the target for +15% damage taken for 2 rounds.
+  'Marked Shot': R => built('shot', 'marked-shot', 'Marked Shot', { dice: '1d10', cooldown: 2, finesse: true }, R, {
+    ops: [{ op: 'applyStatus', key: statusKey('marked'), def: R.conditions.marked, duration: tick(2 * R.fight.round) }],
+  }),
   'Arc Bolt': R => built('curse', 'arc-bolt', 'Arc Bolt', { dice: '2d6' }, R),
   // An aura around its user (design 4.8): Regenerating's heal a round, at the user's rank, for 3 rounds, to the user and
   // every ally within the rules' aura radius; it moves with the user and ends when the user goes down.

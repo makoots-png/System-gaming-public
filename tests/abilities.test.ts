@@ -31,10 +31,13 @@ import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { newHunter } from '../src/core/save.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
-// Hasted and Stealth as plan section 3.1 restates them; W1a puts them in RULES.conditions.
+// Built-in conditions read by SKILL_ABILITIES.
 const CONDITIONS: SkillRules['conditions'] = {
   hasted: { label: 'Hasted', desc: 'Faster, with a chance of a turn back.', ops: [{ op: 'speed', pct: [20, 25, 30, 35, 40, 50] }, { op: 'refund', pct: 50, chance: 25 }] },
   stealth: { label: 'Stealth', desc: 'Hidden from view.', ops: [] },
+  taunted: RULES.conditions.taunted,
+  stunned: RULES.conditions.stunned,
+  marked: RULES.conditions.marked,
 };
 const R = { ...RULES, conditions: CONDITIONS };
 
@@ -58,8 +61,8 @@ describe('every built-in ability', () => {
     const wrong: string[] = [];
     for (const { label, ability: a } of ENTRIES) {
       const of = abilityOf(a.kind, { id: a.id, name: a.name }, R), k = kindDefaults(a.kind, R);
-      // a field it leaves (`zone`) is the one optional field an ability has
-      const keys = Object.keys(a).filter(k => k !== 'zone').sort();
+      // a field it leaves (`zone`) and user movement (`move`) are the optional fields a built-in ability may carry
+      const keys = Object.keys(a).filter(k => k !== 'zone' && k !== 'move').sort();
       if (JSON.stringify(keys) !== JSON.stringify(Object.keys(of).sort()) || Object.values(a).some(v => v === undefined)) wrong.push(`${label}: fields`);
       if (a.cost.fatigue !== k.fatigue || a.cost.mana !== k.mana) wrong.push(`${label}: cost`);
       if (!Object.values(R.fight.cost).includes(a.cost.time)) wrong.push(`${label}: time ${a.cost.time}`);
@@ -198,9 +201,22 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
     expect([a.kind, a.aim, a.effect, a.ops]).toEqual(['support', 'self', null, [{ op: 'applyStatus', key: statusKey('stealth'), def: CONDITIONS.stealth, duration: null }]]);
   });
 
-  test('Ruler\'s Authority is a physical curse that reaches 30 feet, 6 tiles', () => {
+  test('Taunt is a sure curse at 6 tiles that puts Taunted on its target for tauntRounds on a 3-round cooldown', () => {
+    const a = skill('Taunt');
+    expect([a.kind, a.range, a.delivery, a.effect, a.cost.cooldown]).toEqual(['curse', 6, { kind: 'sure' }, null, 3 * round]);
+    expect(a.ops).toEqual([{ op: 'applyStatus', key: statusKey('taunted'), def: CONDITIONS.taunted, duration: tick(R.fight.tauntRounds * round) }]);
+  });
+
+  test('Stun is a direct curse that puts Stunned on its target for 1 round on a 3-round cooldown', () => {
+    const a = skill('Stun');
+    expect([a.kind, a.range, a.delivery, a.effect, a.cost.cooldown]).toEqual(['curse', 8, { kind: 'direct' }, null, 3 * round]);
+    expect(a.ops).toEqual([{ op: 'applyStatus', key: statusKey('stunned'), def: CONDITIONS.stunned, duration: tick(round) }]);
+  });
+
+  test('Ruler\'s Authority is a physical curse that reaches 30 feet, 6 tiles, and shoves caught foes 3 tiles away', () => {
     const a = skill("Ruler's Authority");
     expect([a.kind, a.effect?.type, text(a), a.range, a.shape, a.delivery]).toEqual(['curse', 'physical', '1d8 + phys', 6, { kind: 'touch', reach: 6 }, { kind: 'direct' }]);
+    expect(a.ops).toEqual([{ op: 'shove', dir: 'away', from: 'user', tiles: 3 }]);
   });
 
   test('Mending Aura is a support on its user that leaves an aura of Regenerating\'s heal a round around it for 3 rounds, gone when its user goes down', () => {
@@ -209,14 +225,17 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
     expect(a.zone).toEqual({ name: 'Mending aura', duration: tick(3 * round), endsWithOwner: true, around: R.fight.auraRadius, grow: null, ops: [RULES.conditions.regenerating.ops[0]] });
   });
 
-  test('Arise and Shadow Exchange have no fight ability in M2', () => {
-    expect([SKILL_ABILITIES.Arise(R), SKILL_ABILITIES['Shadow Exchange'](R)]).toEqual([null, null]);
+  test('Arise has no fight ability; Shadow Exchange swaps with an allied shadow within 12 tiles on a 3-round cooldown', () => {
+    expect(SKILL_ABILITIES.Arise(R)).toBeNull();
+    const ex = skill('Shadow Exchange');
+    expect([ex.kind, ex.aim, ex.range, ex.effect, ex.move, ex.cost.cooldown]).toEqual(['support', 'ally', 12, null, { kind: 'swap', only: 'shadow' }, 3 * round]);
   });
 
-  test('Shield Wall is a support with the kind\'s shield; Marked Shot a finesse shot of 1d6; Arc Bolt a curse of 2d6', () => {
+  test('Shield Wall shields for 25% of user max HP; Marked Shot is a finesse shot of 1d10 that marks for 2 rounds; Arc Bolt is a curse of 2d6', () => {
     const [wall, mark, bolt] = [skill('Shield Wall'), skill('Marked Shot'), skill('Arc Bolt')];
-    expect([wall.kind, wall.effect?.type, text(wall), (wall.effect?.by === 'hand')]).toEqual(['support', 'shield', '1.5 * sup', false]);
-    expect([mark.kind, text(mark), mark.cost.cooldown]).toEqual(['shot', '0.7 * (1d6 + finesse)', 2 * round]);
+    expect([wall.kind, wall.effect?.type, text(wall), (wall.effect?.by === 'hand')]).toEqual(['support', 'shield', '0.25 * hpMax', true]);
+    expect([mark.kind, text(mark), mark.cost.cooldown]).toEqual(['shot', '0.7 * (1d10 + finesse)', 2 * round]);
+    expect(mark.ops).toEqual([{ op: 'applyStatus', key: statusKey('marked'), def: CONDITIONS.marked, duration: tick(2 * round) }]);
     expect([bolt.kind, text(bolt), bolt.cost.cooldown]).toEqual(['curse', '2d6 + mag', 0]);
   });
 

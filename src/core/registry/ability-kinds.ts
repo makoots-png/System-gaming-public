@@ -247,7 +247,7 @@ const WHEN_TEXT: { readonly [W in NonNullable<Ability['react']>['when']]: string
 function wave2Lines(a: Pick<Ability, 'range' | 'move' | 'react' | 'zoneAct'> & { readonly ops?: Ability['ops'] }, R: KindRules): string[] {
   const out: string[] = [];
   if (a.move?.kind === 'blink') out.push(`Teleports to a tile you can see within ${tilesWord(Math.min(a.range, R.fight.kit.blinkMax))}.`);
-  if (a.move?.kind === 'swap') out.push('Swaps places with the target.');
+  if (a.move?.kind === 'swap') out.push(a.move.only === 'shadow' ? 'Swaps places with an allied shadow.' : 'Swaps places with the target.');
   if (a.react) {
     const guard = a.ops?.find(o => o.op === 'guard'), negate = a.ops?.some(o => o.op === 'negate');
     const who = a.react.reach > 0 && a.react.when !== 'turn' ? ` (or an ally within ${tilesWord(a.react.reach)})` : '';
@@ -295,7 +295,7 @@ export function averages(formula: Formula, type: AbilityEffect['type'] | OpDamag
 
 /** What a caller gives `abilityOf`: an id and a name, the ticks, and any field it sets itself. */
 export type AbilityInput = { readonly id: AbilityId; readonly name: string; readonly ticks?: Partial<Ticks> }
-  & Partial<Pick<Ability, 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'foesOnly' | 'effect' | 'ops' | 'zone'>>;
+  & Partial<Pick<Ability, 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'foesOnly' | 'effect' | 'ops' | 'zone' | 'move'>>;
 
 /**
  * An ability of `kind` with every field the input leaves out filled from the kind's defaults. The effect is the
@@ -311,6 +311,7 @@ export function abilityOf(kind: AbilityKind, input: AbilityInput, R: KindRules):
     foesOnly: input.foesOnly ?? k.foesOnly, effect, ops: input.ops ?? [],
     channel: ticks.channel === null ? null : { growth: ticks.channel, max: R.fight.channelMax },
     ...(input.zone ? { zone: input.zone } : {}),
+    ...(input.move ? { move: input.move } : {}),
   };
 }
 

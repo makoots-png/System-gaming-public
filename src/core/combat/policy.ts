@@ -22,11 +22,11 @@ import { counting, hides, warded } from './standing.ts';
 import { perceivedBy } from './sight.ts';
 import { dist, reachable } from './space.ts';
 import type { Place } from './space.ts';
-import { needs, placeOf, usable, whoIsIn } from './resolve.ts';
+import { againstFoes, coversBody, needs, placeOf, usable, whoIsIn } from './resolve.ts';
 import type { Aim, Needs, Rolls } from './resolve.ts';
 import type { Tick } from './timeline.ts';
-import { spotOf, stepToward, tauntOf } from './fight-view.ts';
-import { threatOf } from './threat.ts';
+import { spotOf, stepToward } from './fight-view.ts';
+import { taunter, threatOf } from './threat.ts';
 import { omenMove, omenNeeds } from './fight-turn.ts';
 import { ANSWERS, aimedBody, answerOutcome, scriptOf } from './mythic.ts';
 import type { Answer } from './mythic.ts';
@@ -107,15 +107,25 @@ const step = (f: Running, me: Body, t: Body): TurnChoice => {
   return to ? { type: 'move', to: to.place } : PASS;
 };
 
+/** The perceived living foe that a taunt forces `me` to target, or undefined when none holds it. */
+const forcedOf = (me: Body, foes: readonly Body[]): Body | undefined => {
+  const t = taunter(me);
+  return t ? foes.find(b => b.id === t.by) : undefined;
+};
+
 /** The uses a monster may take on its turn: a mythic's act beat only those its phase's `acts` names (all of them under `every`). */
 export function beatUses(me: Body, uses: readonly Ability[]): readonly Ability[] {
   const acts = me.mythic && scriptOf(me.mythic).phases[me.mythic.phase]?.acts;
   return !acts || acts === 'every' ? uses : uses.filter(a => acts.includes(a.name));
 }
-/** A monster: its intent when it may, else its strongest use on the target its threat table suggests, else a step toward it. */
+/** A monster: its intent when it may, else while taunted its strongest use on or a step toward its taunter, else its threat suggestion. */
 function monsterChoice(f: Running, me: Body, all: readonly Ability[], foes: readonly Body[], R: Rules): TurnChoice {
-  const uses = beatUses(me, all), i = me.intent, intended = i && uses.find(a => a.id === i.ability);
-  if (intended && i && fits(f, me, intended, i.aim, R)) return { type: 'act', ability: intended, aim: i.aim };
+  const uses = beatUses(me, all), forced = forcedOf(me, foes);
+  const i = me.intent, intended = i && uses.find(a => a.id === i.ability);
+  const intentAt = i ? placeOf(i.aim, f.rows) : null;
+  const intentOk = !!intended && !!i && (!forced || !againstFoes(intended) || (intentAt !== null && coversBody(intended, me, intentAt, forced, f.grid)));
+  if (intentOk && fits(f, me, intended, i.aim, R)) return { type: 'act', ability: intended, aim: i.aim };
+  if (forced) return strongest(f, me, uses, [forced], R) ?? step(f, me, forced);
   const suggest = threatOf(f, me)?.suggest, target = foes.find(b => b.id === suggest) ?? nearest(me, foes)!;
   return strongest(f, me, uses, [target], R) ?? strongest(f, me, uses, foes, R) ?? step(f, me, target);
 }
@@ -137,7 +147,7 @@ function partyChoice(f: Running, me: Body, uses: readonly Ability[], foes: reado
   const mine = f.rows.some(r => r.owner === me.id && isUp(r));
   const call = !mine && uses.find(a => a.summon && fits(f, me, a, aimAt(a, me, me), R));
   if (call) return { type: 'act', ability: call, aim: aimAt(call, me, me) };
-  const taunt = tauntOf(me, f.now, R), forced = taunt && foes.find(b => b.id === taunt.by);
+  const forced = forcedOf(me, foes);
   const target = forced || nearest(me, foes)!;
   const curse = uses.find(a => a.aim !== 'self' && a.aim !== 'ally' && !a.effect && lacks(target, a) && fits(f, me, a, aimAt(a, me, target), R));
   if (curse) return { type: 'act', ability: curse, aim: aimAt(curse, me, target) };

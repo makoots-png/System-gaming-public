@@ -34,6 +34,7 @@ import { charged, cooled, stacksOn, taken } from './charge.ts';
 import type { ChargeRefusal } from './charge.ts';
 import { beforeReactions } from './fight-react.ts';
 import type { Reacted } from './fight-react.ts';
+import { taunter } from './threat.ts';
 
 /** Where a use is aimed: a tile, or a combatant. */
 export type Aim = Place | CombatantId;
@@ -69,8 +70,8 @@ export type UseRefusal = ChargeRefusal | 'taunted' | 'range' | 'noTarget' | 'nee
 export type { Burst } from './land.ts';
 export { afterDefence } from './land.ts';
 /**
- * `shoved`: the bodies a push, a pull or a swap moved (kits design 8.3), whose entry into a zone pays nothing; `reacted`:
- * the reactions the use set off (rules 7c and 13b).
+ * `shoved`: the bodies moved by another's use (a push, a pull or the target of a swap, kits design 8.3), whose entry
+ * into a zone pays nothing (`zones.ts:216`); `reacted`: the reactions the use set off (rules 7c and 13b).
  */
 export type Resolved =
   | { readonly ok: false; readonly reason: UseRefusal }
@@ -99,7 +100,7 @@ export type ResolveRules = OpRules & Pick<Rules, 'dice'>;
 
 const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
 export const placeOf = (aim: Aim, bodies: readonly Body[]): Place | null => typeof aim === 'string' ? bodies.find(b => b.id === aim)?.place ?? null : aim;
-const againstFoes = (a: Ability): boolean => a.aim === 'foe' || a.aim === 'place';
+export const againstFoes = (a: Pick<Ability, 'aim'>): boolean => a.aim === 'foe' || a.aim === 'place';
 const rollsReaction = (a: Ability): boolean => againstFoes(a) && a.delivery.kind !== 'sure';
 /** The formula of an op that rolls dice for each target, at the user's tier. */
 const rolled = (o: UseOp, tier: number): Formula | null => o.op === 'shield' ? o.amount : o.op === 'mana' || o.op === 'fatigue' ? atTier(o.amount, tier) : null;
@@ -110,17 +111,20 @@ const extraDice = (ops: readonly UseOp[], tier: number): Dice[] => ops.flatMap(o
  */
 export const diceFor = (a: Ability, tier: number, R: KindRules): Dice[] => { const f = formulaOf(a, R); return [...(f ? diceOf(f) : []), ...extraDice(a.ops, tier)]; };
 
-// Rule 2: a taunted user aims at its taunter, or at a place whose shape holds it, while the taunter is up and in range.
-export function taunted(a: Ability, user: Body, bodies: readonly Body[], at: Place, grid: Grid, now: Tick): boolean {
+/** Whether `a` aimed at `at` from `user` covers `src`'s tile (hit or ring). */
+export function coversBody(a: Pick<Ability, 'shape'>, user: Pick<Body, 'place'>, at: Place, src: Pick<Body, 'place'>, grid: Grid): boolean {
+  const cover = tilesOf(a.shape, user.place, at, grid);
+  return [...cover.hit, ...cover.ring].some(p => samePlace(p, src.place));
+}
+
+// Rule 2: a taunted user aims at its taunter, or at a place whose shape holds it, while the taunter is pickable and in range.
+export function taunted(a: Ability, user: Body, at: Place, seen: Lookout, R: ResolveRules): boolean {
   if (!againstFoes(a)) return false;
-  for (const s of live(user)) {
-    if (!s.def.ops.some(o => o.op === 'taunt') || s.source.id === null) continue;
-    const src = bodies.find(b => b.id === s.source.id);
-    if (!src || !isUp(src) || dist(user.place, src.place) > a.range) continue;
-    const cover = tilesOf(a.shape, user.place, at, grid);
-    if (![...cover.hit, ...cover.ring].some(p => samePlace(p, src.place))) return true;
-  }
-  return false;
+  const t = taunter(user);
+  if (!t) return false;
+  const src = seen.rows.find(b => b.id === t.by);
+  if (!src || !pickable(src, user, seen) || dist(user.place, src.place) > rangeFor(a, user, R)) return false;
+  return !coversBody(a, user, at, src, seen.grid);
 }
 
 // Rules 3 to 4 (cooldown, gates and uses, cost and kit prices) are `charged` in charge.ts, which a reaction asks as well.
@@ -433,9 +437,14 @@ function asked(a: Ability, f: Field, now: Tick, R: KindRules): Needs {
  */
 type Field = { readonly from: Body; readonly bodies: readonly Body[]; readonly hit: readonly Body[]; readonly ring: readonly Body[]; readonly answers: Answers; readonly reacted: Reacted };
 function field(a: Ability, user: Body, paid: Body, bodies: readonly Body[], at: Place, grid: Grid, now: Tick, R: ResolveRules): Field | 'rooted' | 'blocked' {
-  // Rule 5b (kits design 8.3.5): a blink stands its user on the tile it aims at before rule 6, so the use hits from there
+  // Rule 5b (kits design 8.3.5): a blink stands its user on the tile it aims at before rule 6; a swap checks standing before cost is kept.
   const blink = a.move?.kind === 'blink' ? blinked(user, paid, bodies, at, grid) : null;
   if (typeof blink === 'string') return blink;
+  if (a.move?.kind === 'swap') {
+    const swapTarget = a.aim === 'ally' ? (catchable(bodies, user).find(b => b.id !== user.id && samePlace(b.place, at)) ?? null) : null;
+    const bad = swapStands(user, swapTarget, grid);
+    if (bad) return bad;
+  }
   const stand = blink ?? paid, stood = bodies.map(b => b.id === user.id ? stand : b);
   // rule 7c (kits design 8.4): before the use lands, the reactions of the bodies its shape catches fire on the bodies they protect
   const shape = whoIsIn(a, stand, catchable(stood, stand), at, grid);
@@ -511,8 +520,12 @@ export type Ready = { readonly at: Place; readonly paid: Body; readonly spent: n
 export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules, fog: Fog | null = null): Ready | UseRefusal {
   const at = placeOf(aim, bodies);
   if (at === null) return 'noTarget';
-  if (typeof aim === 'string' && !pickable(bodies.find(b => b.id === aim)!, user, { rows: bodies, grid, fog })) return 'noTarget';
-  if (taunted(a, user, bodies, at, grid, now)) return 'taunted';
+  const seen: Lookout = { rows: bodies, grid, fog };
+  if (typeof aim === 'string') {
+    const target = bodies.find(b => b.id === aim)!;
+    if (!pickable(target, user, seen) || !swapWith(a, user, target)) return 'noTarget';
+  }
+  if (taunted(a, user, at, seen, R)) return 'taunted';
   if (extraTaken(a, user, now, R)) return 'extra';
   const priced = charged(a, user, bodies, at, now, R);
   if (typeof priced === 'string') return priced;
@@ -527,6 +540,16 @@ export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim,
  */
 export const canAimAt = (target: { readonly life: { readonly at: LifeState } } | { readonly down: boolean }): boolean =>
   'life' in target ? isUp(target) : !target.down;
+
+/**
+ * Rule 2: whether `user` may pick `target` for a swap move: never itself, and only a shadow when `only === 'shadow'`.
+ * The one predicate for `ready` here and `aims` in fight-view.ts.
+ */
+export const swapWith = (
+  a: Pick<Ability, 'move'>,
+  user: { readonly id: CombatantId },
+  target: { readonly id: CombatantId; readonly kind: Body['kind'] },
+): boolean => a.move?.kind !== 'swap' || (target.id !== user.id && (a.move.only !== 'shadow' || target.kind === 'shadow'));
 
 /**
  * Rule 2: whether `user` may pick `t` as its target: `t` can be aimed at (`canAimAt`), is not warded from it (standing.ts
@@ -670,13 +693,23 @@ function blinked(user: Body, paid: Body, bodies: readonly Body[], at: Place, gri
 /** A rooted body is not moved by another's use (kits design 8.3.4). */
 const rooted = (b: Body): boolean => b.sheet.stride <= 0;
 /**
+ * Rule 5b: whether `user` (and `target`, when checked up front for an ally swap or at swap time) may stand and swap on
+ * `grid`. A rooted user gives `'rooted'`; a rooted target or unwalkable tile gives `'blocked'`.
+ */
+function swapStands(user: Body, target: Body | null, grid: Grid): 'rooted' | 'blocked' | null {
+  if (rooted(user)) return 'rooted';
+  if (!TERRAIN[terrain(grid, user.place.x, user.place.y)].walk) return 'blocked';
+  if (target && (rooted(target) || !TERRAIN[terrain(grid, target.place.x, target.place.y)].walk)) return 'blocked';
+  return null;
+}
+/**
  * A swap (kits design 8.3.5): the user and the body it aimed at exchange places when each may stand on the other's;
  * against a foe only when the use caught it (a dodge or a resist is no swap). Neither moves if either is rooted.
  */
 function swapped(a: Ability, userId: CombatantId, outcomes: readonly Outcome[], rows: Map<CombatantId, Body>, grid: Grid, R: ResolveRules): CombatantId[] {
   if (a.move?.kind !== 'swap') return [];
   const o = outcomes.find(x => x.target !== userId && x.avoid === 'caught'), u = rows.get(userId), t = o && rows.get(o.target);
-  if (!u || !t || rooted(u) || rooted(t) || !TERRAIN[terrain(grid, u.place.x, u.place.y)].walk || !TERRAIN[terrain(grid, t.place.x, t.place.y)].walk) return [];
+  if (!u || !t || swapStands(u, t, grid) !== null) return [];
   rows.set(u.id, { ...u, place: t.place });
   rows.set(t.id, moveBreaks({ ...t, place: u.place }, R));
   return [t.id];

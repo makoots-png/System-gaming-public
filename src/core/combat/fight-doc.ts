@@ -553,8 +553,8 @@ function isShippedKeystoneDef(key: StatusKey, def: StatusDef): boolean {
  * by key, the current row's first, then in the rows' order, while the table fits. Shipped keystone defs matching
  * `RULES` are omitted from `defs` and reconstructed on read (`keystoneStatusDef`), while any overridden or colliding
  * keystone def falls back to `defs`. A status whose def did not fit, or whose def differs from the one in `defs` under
- * its key, carries its label instead. 6,000 holds the 16 built-ins (3,183 characters) with the five kit examples
- * (2,206). The doc's worst case with the table full is in `DOC_MAX`'s arithmetic (protocol.ts).
+ * its key, carries its label instead. 6,000 holds all 18 built-ins (5,287 characters); real fights only send statuses
+ * currently held on a row. The doc's worst case with the table full is in `DOC_MAX`'s arithmetic (protocol.ts).
  */
 export const DOC_DEFS_MAX = 6000;
 /**

@@ -33,6 +33,7 @@ import { itemSpend, middleBudget } from '../../src/core/registry/item-budget.ts'
 import type { AbilityInput } from '../../src/core/registry/ability-kinds.ts';
 import { onCooldown, payCost } from '../../src/core/combat/charge.ts';
 import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
+import { taunter as liveTaunter } from '../../src/core/combat/threat.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { reduce, runningState } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, Fight, Fudge, FudgeSet, NewRow, Running } from '../../src/core/combat/fight.ts';
@@ -77,9 +78,9 @@ export function builtIns(R: Rules = RULES) {
     bow: weaponAttack(STARTER_GEAR.huntingBow, R),
     /** No weapon: the strike kind's own `1d8 + phys`, the Tanker's attack (a tower shield and no weapon). */
     strike: weaponAttack(null, R),
-    /** The Ranger's skill: a quick arrow of `0.7 * (1d6 + phys)` with a 2-round cooldown, never better than the bow. */
+    /** The Ranger's skill: a quick finesse arrow of `0.7 * (1d10 + finesse)` with a 2-round cooldown that marks for +15% taken. */
     markedShot: skill('Marked Shot'),
-    /** The Tanker's skill: a shield of `1.5 * sup` on an ally in range 6, cooldown 3 rounds. */
+    /** The Tanker's skill: a shield of `0.25 * hpMax` on an ally in range 6, cooldown 3 rounds. */
     shieldWall: skill('Shield Wall'),
     /** The Mage's skill: a curse of `2d6 + mag`, no travel, the target's Will resists it for half. */
     arcBolt: skill('Arc Bolt'),
@@ -227,12 +228,12 @@ const own = (me: Body, name: string): Ability => {
 };
 /** Whether `me` may use `a` at `at` now, by the rules' own checks (taunt, cooldown, cost, range). */
 export function usable(f: Running, me: Body, a: Ability, at: Place): boolean {
-  return !taunted(a, me, f.rows, at, f.grid, f.now) && !onCooldown(a, me, f.now) && payCost(a, me) !== null && inRange(a, me, at);
+  return !taunted(a, me, at, { rows: f.rows, grid: f.grid, fog: f.fog }, RULES) && !onCooldown(a, me, f.now) && payCost(a, me) !== null && inRange(a, me, at);
 }
-/** The taunter `me` must aim at, if a taunt holds it. */
+/** The taunter `me` must aim at, if a taunt holds it (from threat.ts `taunter`). */
 function taunter(f: Running, me: Body): Body | undefined {
-  const s = me.statuses.find(x => (x.until === null || x.until > f.now) && x.def.ops.some(o => o.op === 'taunt') && x.source.id !== null);
-  const src = s && f.rows.find(r => r.id === s.source.id);
+  const t = liveTaunter(me);
+  const src = t && f.rows.find(r => r.id === t.by);
   return src && up(src) ? src : undefined;
 }
 /** A step toward `target`: the tile within a stride that is nearest it, fewest steps on a tie; null when none is nearer. */
@@ -275,7 +276,7 @@ export function suggested(f: Running, m: Body): Body | undefined {
 }
 
 // ── the policies ──
-/** Speed: picks off the weakest foe in bow range; walks in when none is. Marked Shot is never the better arrow. */
+/** Speed: picks off the weakest foe in bow range; walks in when none is. */
 const speedPolicy: Policy = (f, me) => {
   const shot = own(me, ATTACK_ID);
   const forced = taunter(f, me);
@@ -284,7 +285,6 @@ const speedPolicy: Policy = (f, me) => {
 };
 /**
  * Tank: taunts a monster that is aiming at someone else; otherwise strikes the nearest foe, charging or walking up to it.
- * Shield Wall is never worth a turn: its shield is `1.5 * sup`, 9 at Presence 10, half a strike.
  */
 const tankPolicy: Policy = (f, me, _plan, R) => {
   const taunt = own(me, 'taunt'), strike = own(me, ATTACK_ID);

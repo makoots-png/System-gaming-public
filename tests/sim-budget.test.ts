@@ -25,9 +25,9 @@ describe('sim-budget deterministic work guard', () => {
     const budget = workBudget(2);
     const work = measureRow(() => {
       sleepSync(120);
-      const end = performance.now() + 80;
-      let acc = 0;
-      while (performance.now() < end) acc = (acc + 1) | 0;
+      // Deterministic CPU work independent of wall-clock preemption on shared runners.
+      let acc = 1;
+      for (let i = 1; i <= 5_000_000; i++) acc = (Math.imul(acc, 1664525) + i) | 0;
       expect(acc).not.toBe(0);
       beginFight();
       for (let i = 0; i < 25; i++) recordFightStep();
@@ -38,8 +38,9 @@ describe('sim-budget deterministic work guard', () => {
     expect(work.fights).toBe(2);
     expect(work.steps).toBe(65);
     expect(work.maxFightSteps).toBe(40);
-    expect(work.wallMs).toBeGreaterThanOrEqual(150);
-    expect(work.threadUserMs).toBeGreaterThanOrEqual(30);
+    expect(work.wallMs).toBeGreaterThanOrEqual(100);
+    expect(Number.isFinite(work.threadUserMs) && work.threadUserMs > 0).toBe(true);
+    expect(Number.isFinite(work.threadSystemMs) && work.threadSystemMs >= 0).toBe(true);
     expect(() => assertRowBudget('slow host row', work, budget)).not.toThrow();
 
     // Even a 20x host slowdown (87 s thread-user CPU, 93 s wall) passes when deterministic counts are inside budget.

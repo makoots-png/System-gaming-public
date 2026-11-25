@@ -68,7 +68,7 @@ export function itemIcon(i: IconItem): IconKey {
 const STATUS_ICON: { readonly [K in BuiltInStatus]: IconKey } = {
   bleeding: 'blood', burning: 'flame', poisoned: 'poison', paralyzed: 'bolt', stunned: 'dizzy', frightened: 'fear',
   blinded: 'blind', slowed: 'snail', hasted: 'wing', invisible: 'faded', prone: 'fallen', restrained: 'chain', stealth: 'hood',
-  bloodlust: 'rage', regenerating: 'heal', plague: 'plague',
+  bloodlust: 'rage', regenerating: 'heal', plague: 'plague', taunted: 'taunt', marked: 'eye',
 };
 /** A hit's picture by what it hurts with. */
 const DAMAGE_ICON: { readonly [T in OpDamageType]: IconKey } = { physical: 'slash', arcane: 'spark', true: 'bolt' };

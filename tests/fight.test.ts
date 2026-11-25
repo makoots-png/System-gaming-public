@@ -2019,6 +2019,74 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
       { type: 'act', by: id('A'), ability: swap.id, aim: id('B'), rolls: rolls() });
     expect([at(r.fight, 'A'), at(r.fight, 'B')]).toEqual([place(6, 2), place(1, 2)]);
   });
+
+  test('swap refuses self, non-shadow on shadow-only swap, rooted user, and rooted ally target, while foe swap still deals damage', () => {
+    const swap = ability('support', 'swap', null, { aim: 'ally', effect: null, range: tiles(12), move: { kind: 'swap' } });
+    const shadowSwap = ability('support', 'shadow-swap', null, { aim: 'ally', effect: null, range: tiles(12), move: { kind: 'swap', only: 'shadow' } });
+    const foeSwap = ability('strike', 'foe-swap', '8', { ...FAR, move: { kind: 'swap' } });
+    const f0 = play(
+      add(
+        row('A', 'party', { abilities: [swap, shadowSwap, foeSwap], place: place(1, 2) }),
+        row('B', 'party', { place: place(4, 2) }),
+        row('S', 'party', { kind: 'shadow', place: place(6, 2) }),
+        row('M', 'foe', { place: place(8, 2), statuses: [st('root', null, { op: 'root' })] }),
+      ),
+      start(['A', 20], ['B', 10], ['S', 8], ['M', 5]),
+    ).fight;
+    refuses(f0, { type: 'act', by: id('A'), ability: swap.id, aim: id('A'), rolls: rolls() }, 'noTarget');
+    refuses(f0, { type: 'act', by: id('A'), ability: shadowSwap.id, aim: id('B'), rolls: rolls() }, 'noTarget');
+    const swapped = play(
+      add(row('A', 'party', { abilities: [shadowSwap], place: place(1, 2) }), row('S', 'party', { kind: 'shadow', place: place(6, 2) }), row('M', 'foe')),
+      start(['A', 20], ['S', 8], ['M', 5]),
+      { type: 'act', by: id('A'), ability: shadowSwap.id, aim: id('S'), rolls: rolls() },
+    );
+    expect([at(swapped.fight, 'A'), at(swapped.fight, 'S')]).toEqual([place(6, 2), place(1, 2)]);
+
+    const rootedUser = play(
+      add(row('A', 'party', { abilities: [swap], place: place(1, 2), statuses: [st('root', null, { op: 'root' })] }), row('B', 'party', { place: place(4, 2) }), row('M', 'foe')),
+      start(['A', 20], ['B', 10], ['M', 5]),
+    ).fight;
+    refuses(rootedUser, { type: 'act', by: id('A'), ability: swap.id, aim: id('B'), rolls: rolls() }, 'rooted');
+
+    const rootedAlly = play(
+      add(row('A', 'party', { abilities: [swap], place: place(1, 2) }), row('B', 'party', { place: place(4, 2), statuses: [st('root', null, { op: 'root' })] }), row('M', 'foe')),
+      start(['A', 20], ['B', 10], ['M', 5]),
+    ).fight;
+    refuses(rootedAlly, { type: 'act', by: id('A'), ability: swap.id, aim: id('B'), rolls: rolls() }, 'blocked');
+
+    // A foe swap on a rooted foe still lands its damage without moving either body.
+    const hitFoe = reduce(f0, { type: 'act', by: id('A'), ability: foeSwap.id, aim: id('M'), rolls: rolls({ M: 10 }, { M: [] }) }, ctx);
+    expect(hitFoe.effects.some(e => e.type === 'refused')).toBe(false);
+    expect(rowHp(body(hitFoe.fight, 'M'))).toBeLessThan(rowHp(body(f0, 'M')));
+    expect([at(hitFoe.fight, 'A'), at(hitFoe.fight, 'M')]).toEqual([place(1, 2), place(8, 2)]);
+  });
+
+  test('taunt respects range bonuses and does not soft-lock when the taunter is hidden', () => {
+    const shot = ability('shot', 'shot', '5', { range: tiles(6), shape: { kind: 'touch', reach: tiles(6) } });
+    const farOp = st('far', null, { op: 'sheet', key: 'range', amount: 2 });
+    const tauntByB = { ...st('taunted', null, { op: 'taunt' }), source: { id: id('B'), tier: 0 } };
+    const fRange = play(
+      add(
+        row('M', 'foe', { abilities: [shot], place: place(0, 0), statuses: [farOp, tauntByB] }),
+        row('A', 'party', { place: place(0, 2) }),
+        row('B', 'party', { place: place(0, 7) }),
+      ),
+      start(['M', 20], ['A', 10], ['B', 5]),
+    ).fight;
+    refuses(fRange, { type: 'act', by: id('M'), ability: shot.id, aim: id('A'), rolls: rolls({ A: 10 }, { A: [] }) }, 'taunted');
+
+    const hide = st('deep-hide', null, { op: 'hidden', level: 5, start: 'anywhere', ends: { hurt: false, revealed: false, dealt: false } });
+    const fHidden = play(
+      add(
+        row('M', 'foe', { abilities: [shot], place: place(0, 0), statuses: [tauntByB] }),
+        row('A', 'party', { place: place(0, 2) }),
+        row('B', 'party', { place: place(0, 4), statuses: [hide] }),
+      ),
+      start(['M', 20], ['A', 10], ['B', 5]),
+    ).fight;
+    const hitA = reduce(fHidden, { type: 'act', by: id('M'), ability: shot.id, aim: id('A'), rolls: rolls({ A: 10 }, { A: [] }) }, ctx);
+    expect(hitA.effects.some(e => e.type === 'refused')).toBe(false);
+  });
 });
 
 describe('a zone act: shift and grow (kits design 8.5.4)', () => {

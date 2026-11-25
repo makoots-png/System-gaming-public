@@ -268,7 +268,7 @@ export const kitPartsCss = `
 // ── the ability form's kits groups (design 5.1 and 8.12) ──
 const PRICE_LABEL = [['hp', 'HP'], ['stacks', 'Stacks'], ['zone', 'A field']];
 const GATE_LABEL = [['holds', 'Has a status'], ['uses', 'Use limit'], ['inside', 'Inside a field']];
-const MOVE_LABEL = [['none', 'None'], ['blink', 'Teleport'], ['swap', 'Swap places']];
+const MOVE_LABEL = [['none', 'None'], ['blink', 'Teleport'], ['swap', 'Swap places'], ['swap-shadow', 'Swap with a shadow']];
 const REACT_LABEL = [['before', 'Before a hit'], ['lethal', 'Before a killing hit'], ['after', 'After a hit'], ['turn', 'Before a turn']];
 const ACT_LABEL = [['none', 'None'], ['shift', 'Moves field'], ['grow', 'Widens field']];
 const ARCH_LABEL = [['brute', 'Brute'], ['skirmisher', 'Skirmisher'], ['caster', 'Caster']];
@@ -306,7 +306,7 @@ export function abilityBlocks(box, a, M) {
   const sstatRow = x => (!x ? { key: first(), rounds: '2' } : { key: x.key, rounds: String(x.rounds) });
   const sstats = (a && a.summon ? a.summon.statuses : []).map(sstatRow);
   const st = {
-    tags: (a && a.tags ? a.tags : []).join(', '), move: a && a.move ? a.move.kind : 'none',
+    tags: (a && a.tags ? a.tags : []).join(', '), move: a && a.move ? (a.move.kind === 'swap' && a.move.only === 'shadow' ? 'swap-shadow' : a.move.kind) : 'none',
     react: !!(a && a.react), when: a && a.react ? a.react.when : 'before', reach: String(a && a.react ? a.react.reach : 0),
     summon: !!(a && a.summon), sName: a && a.summon ? a.summon.name : 'Sprite', arch: a && a.summon ? a.summon.archetype : 'skirmisher', sRounds: String(a && a.summon ? a.summon.rounds : 2),
     act: a && a.zoneAct ? a.zoneAct.act : 'none', by: String(a && a.zoneAct ? a.zoneAct.by : 2), actZone: a && a.zoneAct && a.zoneAct.name ? a.zoneAct.name : '',
@@ -392,7 +392,7 @@ export function abilityBlocks(box, a, M) {
     if (tags.length > K.tags) groupErr(`Use at most ${K.tags} tags.`);
     else if (tags.some(t => !(TAG_RE.test(t) && t.length <= K.tagLength))) groupErr(`A tag must be one word or hyphenated words, up to ${K.tagLength} characters.`);
     else if (tags.length) out.tags = [...new Set(tags)];
-    if (st.move !== 'none') out.move = { kind: st.move };
+    if (st.move !== 'none') out.move = st.move === 'swap-shadow' ? { kind: 'swap', only: 'shadow' } : { kind: st.move };
     if (st.react) {
       const reach = wholeIn(st.reach, 0, R.fight.fieldRadiusMax);
       if (reach === null) groupErr(`Reach must be from 0 to ${R.fight.fieldRadiusMax} tiles.`); else out.react = { when: st.when, reach };
@@ -423,7 +423,7 @@ export function abilityBlocks(box, a, M) {
     q('[data-sum="prices"]').textContent = prices.length ? `Extra costs: ${n(prices.length, 'cost')}` : 'Extra costs: none';
     q('[data-sum="gates"]').textContent = gates.length ? `Requirements: ${n(gates.length, 'condition')}` : 'Requirements: none';
     q('[data-sum="tags"]').textContent = f.tags ? `Tags: ${f.tags.join(', ')}` : 'Tags: none';
-    q('[data-sum="moves"]').textContent = `Movement: ${st.move === 'none' ? 'none' : st.move === 'blink' ? 'teleport' : 'swap places'}${st.act === 'none' ? '' : `, ${st.act === 'shift' ? 'moves' : 'widens'} a field`}`;
+    q('[data-sum="moves"]').textContent = `Movement: ${st.move === 'none' ? 'none' : st.move === 'blink' ? 'teleport' : st.move === 'swap-shadow' ? 'swap with a shadow' : 'swap places'}${st.act === 'none' ? '' : `, ${st.act === 'shift' ? 'moves' : 'widens'} a field`}`;
     q('[data-sum="react"]').textContent = st.react ? `Reaction: ${(REACT_LABEL.find(([w]) => w === st.when) || REACT_LABEL[0])[1].toLowerCase()}` : 'Reaction: no';
     q('[data-sum="summon"]').textContent = f.summon ? `Summons ${f.summon.name} for ${n(f.summon.rounds, 'round')}${f.summon.statuses.length ? `, starting with ${f.summon.statuses.length === 1 ? 'a status' : `${f.summon.statuses.length} statuses`}` : ''}` : 'Summons: no';
   }

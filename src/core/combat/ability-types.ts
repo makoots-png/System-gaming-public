@@ -98,8 +98,8 @@ export type Ability = {
    */
   readonly maxTier?: number;
 };
-/** A blink to a free tile the user sees within the ability's range (at most `kit.blinkMax`), or a swap of places with the body aimed at. */
-export type AbilityMove = { readonly kind: 'blink' } | { readonly kind: 'swap' };
+/** A blink to a free tile the user sees within the ability's range (at most `kit.blinkMax`), or a swap of places with the body aimed at (restricted to shadows when `only: 'shadow'`). */
+export type AbilityMove = { readonly kind: 'blink' } | { readonly kind: 'swap'; readonly only?: 'shadow' };
 /**
  * When an armed reaction fires (kits design 8.4): a foe's use is about to land on the reactor or an ally within `reach`
  * (`before`, rule 7c), a hit is about to take one of them to 0 (`lethal`, rule 13b), a foe's use landed on one of them

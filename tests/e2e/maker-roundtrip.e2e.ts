@@ -27,6 +27,7 @@ import {
   WORST_SKILL_ACTIVE,
   WORST_SKILL_PASSIVE,
   WORST_SKILL_REACTION,
+  WORST_SKILL_SWAP,
   WORST_STATUS_KITS,
   WORST_STATUS_OPS,
   WORST_STORY,
@@ -35,7 +36,7 @@ import {
 
 /** Explicit list of registry ids exercised in this browser suite; checked against E2E_MAKER_IDS below. */
 const COVERED_E2E_IDS: readonly MakerId[] = [
-  'status', 'item', 'skill', 'monster', 'rewards', 'bundle', 'map', 'feat', 'story',
+  'status', 'item', 'skill', 'skill-swap', 'monster', 'rewards', 'bundle', 'map', 'feat', 'story',
   'quest', 'gate', 'preset', 'title', 'guild', 'identity', 'rules-overrides', 'roll-tables',
 ];
 
@@ -51,7 +52,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
     d.library.items.push(f.bulwark, f.worn, f.consumable);
-    d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive);
+    d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.rewards.push(f.bundle);
     d.library.maps.push(f.map);
@@ -67,6 +68,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     skillActive: WORST_SKILL_ACTIVE,
     skillReaction: WORST_SKILL_REACTION,
     skillPassive: WORST_SKILL_PASSIVE,
+    skillSwap: WORST_SKILL_SWAP,
     monsterMythic: WORST_MONSTER_MYTHIC,
     monsterBoss: WORST_MONSTER_BOSS,
     bundle: WORST_BUNDLE,
@@ -94,6 +96,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     { label: 'skill (active with null-duration zone + kits)', ws: 'skill', id: WORST_SKILL_ACTIVE.id, overlay: '.skm-overlay', expected: WORST_SKILL_ACTIVE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_ACTIVE.id) },
     { label: 'skill (reaction)', ws: 'skill', id: WORST_SKILL_REACTION.id, overlay: '.skm-overlay', expected: WORST_SKILL_REACTION, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_REACTION.id) },
     { label: 'skill (passive large bonus + worn icon/label)', ws: 'skill', id: WORST_SKILL_PASSIVE.id, overlay: '.skm-overlay', expected: WORST_SKILL_PASSIVE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_PASSIVE.id) },
+    { label: 'skill (shadow swap movement, kit-parts)', ws: 'skill', id: WORST_SKILL_SWAP.id, overlay: '.skm-overlay', expected: WORST_SKILL_SWAP, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_SWAP.id) },
     { label: 'monster (mythic script)', ws: 'monster', id: WORST_MONSTER_MYTHIC.id, overlay: '.enm-overlay', expected: WORST_MONSTER_MYTHIC, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_MYTHIC.id) },
     { label: 'monster (extractable boss)', ws: 'monster', id: WORST_MONSTER_BOSS.id, overlay: '.enm-overlay', expected: WORST_MONSTER_BOSS, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_BOSS.id) },
     { label: 'bundle + reward editor (9e57d384)', ws: 'bundle', id: WORST_BUNDLE.id, overlay: '.rwm-overlay', expected: WORST_BUNDLE, read: () => page.evaluate(id => hunterApp.store.get().library.rewards.find((x: any) => x.id === id), WORST_BUNDLE.id) },

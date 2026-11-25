@@ -18,6 +18,7 @@ import { openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
 import type { Place, Terrain } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
+import { statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, StatusKey } from '../src/core/combat/effect-ops.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -305,5 +306,45 @@ describe('autoMonsterTurn builds a legal command and its dice needs for a monste
       react: Object.fromEntries(planStars.needs.react.map(id => [id, 20])),
     }), ctx);
     expect(rStars.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
+  });
+
+  test('taunt forces autoMonsterTurn to step toward an out-of-reach taunter, drops a conflicting stale intent, and frees the monster when the taunter hides', () => {
+    const T = combatantId('T'), C = combatantId('C');
+
+    // Melee monster taunted by Tank at dist 4 while Mage stands adjacent (dist 1): steps toward Tank instead of hitting Mage.
+    const fBase = begun('M', brute(M, place(5, 5)), party('cannon', 'C', place(5, 6)), party('tank', 'T', place(5, 9)));
+    const tauntStatus = statusOn(ON.conditions.taunted!, { key: 'taunted' as StatusKey, source: { id: T, tier: 0 }, until: tick(fBase.now + 2 * ON.fight.round), since: fBase.now, settledAt: fBase.now });
+    const fTaunt: Running = {
+      ...fBase,
+      rows: fBase.rows.map(r => (r.id === M ? { ...r, statuses: [...r.statuses, tauntStatus] } : r)),
+    };
+    const walked = runAuto(fTaunt, M, 1, fTaunt.now);
+    expect(walked.plan.kind).toBe('ready');
+    expect(walked.cmd.type).toBe('move');
+    expect(walked.result.effects.some(e => e.type === 'refused')).toBe(false);
+    if (walked.cmd.type === 'move') expect(walked.cmd.to.y).toBeGreaterThan(5);
+
+    // Stale intent aimed at adjacent Mage is dropped while taunted by Tank at dist 4.
+    const strikeId = body(fTaunt, 'M').abilities[0]!.id;
+    const fIntent: Running = {
+      ...fTaunt,
+      rows: fTaunt.rows.map(r => (r.id === M && r.kind === 'monster' ? { ...r, intent: { ability: strikeId, aim: C, revealed: true } } : r)),
+    };
+    const dropped = runAuto(fIntent, M, 2, fIntent.now);
+    expect(dropped.plan.kind).toBe('ready');
+    expect(dropped.cmd.type).toBe('move');
+    expect(dropped.result.effects.some(e => e.type === 'refused')).toBe(false);
+
+    // Hidden taunter (not perceived by monster) leaves the monster free to attack adjacent visible Mage.
+    const hideStatus = statusOn({ label: 'Deep Hide', desc: '', ops: [{ op: 'hidden', level: 5, start: 'anywhere', ends: { hurt: false, revealed: false, dealt: false } }] },
+      { key: 'deep-hide' as StatusKey, source: { id: T, tier: 5 }, until: null, since: fBase.now, settledAt: fBase.now });
+    const fHidden: Running = {
+      ...fTaunt,
+      rows: fTaunt.rows.map(r => (r.id === T ? { ...r, statuses: [...r.statuses, hideStatus] } : r)),
+    };
+    const free = runAuto(fHidden, M, 3, fHidden.now);
+    expect(free.plan.kind).toBe('roll');
+    expect(free.cmd.type === 'act' && free.cmd.aim).toBe(C);
+    expect(free.result.effects.some(e => e.type === 'refused')).toBe(false);
   });
 });

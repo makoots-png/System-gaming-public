@@ -4,6 +4,8 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 ## Open
 
+- **V2 two-hander count (shipped Nov 24, PR 119, optional check):** A two-handed weapon counts as 1 of your 6 worn items and locks the off hand (Neon's call). Say if it should count as 2.
+
 - **R6 status damage types, old GM content (shipped Nov 24, PR 115, reversible, optional check):** Old GM-made statuses and zones now meet Armor and Resist too, so a "3 arcane" zone deals about 1 to a Resist 60 tank. Say if you want a line in the update notes for GMs. Also, the B5 step on the Angel of the Last Trumpet sits exactly at its 0.800 ceiling, so any further softening of Stars Fall will push it over.
 
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).

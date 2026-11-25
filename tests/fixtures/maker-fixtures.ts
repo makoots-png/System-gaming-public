@@ -233,12 +233,33 @@ export const WORST_SKILL_ACTIVE: Skill = {
       prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.1 } }],
       gates: [{ kind: 'uses', per: 'fight', n: 2 }],
       tags: ['cosmic', 'ultimate'],
-      move: { kind: 'blink' },
       summon: { name: 'Star Wisp', archetype: 'caster', rounds: 3, statuses: [{ key: statusKey('hasted'), rounds: 2 }] },
       zoneAct: { act: 'shift', name: 'Starlight Field', by: 2 },
     },
   }), 'WORST_SKILL_ACTIVE'),
   id: saveId('s', 910),
+};
+
+export const WORST_SKILL_SWAP: Skill = {
+  ...must(parseSkill({
+    name: 'Umbral Shift',
+    level: 3,
+    label: 'Shadow',
+    desc: 'Swap places with an allied shadow.',
+    type: 'active',
+    ability: {
+      ...abilityOf('support', {
+        id: abilityId('ab-umbral-shift'),
+        name: 'Umbral Shift',
+        aim: 'ally',
+        range: tiles(12),
+        shape: { kind: 'touch', reach: tiles(12) },
+        effect: null,
+        move: { kind: 'swap', only: 'shadow' },
+      }, RULES),
+    },
+  }), 'WORST_SKILL_SWAP'),
+  id: saveId('s', 913),
 };
 
 export const WORST_SKILL_REACTION: Skill = {

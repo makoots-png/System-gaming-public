@@ -249,6 +249,14 @@ describe('aims: whom an ability can aim at', () => {
     expect(aims([spot('M', 'foe', 0, 0)], id('A'), STRIKE, GRID)).toEqual([]);
   });
 
+  test('a swap excludes its user, and a shadow swap offers only allied shadows', () => {
+    const spots = [spot('A', 'party', 0, 0), spot('Ally', 'party', 2, 0), spot('Shade', 'party', 4, 0, { kind: 'shadow' }), spot('M', 'foe', 1, 0)];
+    const swap = { ...ability('support'), move: { kind: 'swap' } } as const;
+    const shadowSwap = { ...ability('support'), move: { kind: 'swap', only: 'shadow' } } as const;
+    expect(aims(spots, id('A'), swap, GRID).map(a => a.target.id)).toEqual(['Ally', 'Shade']);
+    expect(aims(spots, id('A'), shadowSwap, GRID).map(a => a.target.id)).toEqual(['Shade']);
+  });
+
 });
 
 describe('the move control: a step toward or away from a picked body', () => {

@@ -604,6 +604,7 @@ function abilityOf(v: unknown, R: Rules): Ability | null {
   if (!id || name === null || !kind || !aim || fatigue === null || mana === null || time === null || cooldown === null || range === null
     || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || !w2 || item === null || maxTier === null) return null;
   if (w2.react && !ops.every(reactionMayHold)) return null;
+  if (w2.move && channel) return null;
   return {
     id: abilityId(id), name, kind, cost: { fatigue, mana, time: cost(time), cooldown }, aim, range, shape, delivery, foesOnly, effect, ops,
     channel, ...(zone ? { zone } : {}), ...(tags ? { tags } : {}), ...(prices ? { prices } : {}), ...(gates ? { gates } : {}),
@@ -611,14 +612,18 @@ function abilityOf(v: unknown, R: Rules): Ability | null {
   };
 }
 /**
- * An ability's wave 2 parts (kits design 8.3 to 8.5), each left out when absent: a blink or a swap; a reaction's moment and
- * its reach (0 to `fieldRadiusMax` tiles); a zone act (shift by 1 to `zoneMove`, grow by 1 to `zoneGrow`, a zone name or
- * null for any). Null when one is there and does not read.
+ * An ability's wave 2 parts (kits design 8.3 to 8.5), each left out when absent: a blink or a swap (optionally
+ * restricted to `only: 'shadow'`); a reaction's moment and its reach (0 to `fieldRadiusMax` tiles); a zone act (shift
+ * by 1 to `zoneMove`, grow by 1 to `zoneGrow`, a zone name or null for any). Null when one is there and does not read.
  */
 function abilityWave2(v: Rec, R: Rules): Pick<Ability, 'move' | 'react' | 'zoneAct'> | null {
   const K = R.fight.kit;
   const moveKind = isObj(v.move) ? oneOf(v.move.kind, ['blink', 'swap'] as const, null) : null;
-  const move = v.move === undefined ? undefined : moveKind ? { kind: moveKind } : null;
+  const moveOnly = isObj(v.move) && v.move.only !== undefined ? oneOf(v.move.only, ['shadow'] as const, null) : undefined;
+  const move: Ability['move'] | null = v.move === undefined ? undefined
+    : moveKind === 'blink' && moveOnly === undefined ? { kind: 'blink' }
+    : moveKind === 'swap' && moveOnly !== null ? (moveOnly ? { kind: 'swap', only: moveOnly } : { kind: 'swap' })
+    : null;
   const when = isObj(v.react) ? oneOf(v.react.when, REACT_WHEN, null) : null;
   const react = v.react === undefined ? undefined : isObj(v.react) && when ? { when, reach: tiles(clamped(v.react.reach, 0, R.fight.fieldRadiusMax)) } : null;
   const act = isObj(v.zoneAct) ? oneOf(v.zoneAct.act, ['shift', 'grow'] as const, null) : null;
