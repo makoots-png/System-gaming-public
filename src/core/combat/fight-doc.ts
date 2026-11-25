@@ -9,6 +9,7 @@ import type { Rules } from '../rules.ts';
 import { STAT_KEYS } from '../stats.ts';
 import { STAT_PAIRS } from '../hunter/keystones.ts';
 import { keystoneOf } from '../registry/keystones.ts';
+import { classStatusDef } from '../registry/class-powers.ts';
 import { parseSheetKey } from '../ids.ts';
 import type { DeviceId, FightId, SheetKey } from '../ids.ts';
 import { ahead, roundsOf, tick } from './timeline.ts';
@@ -542,10 +543,16 @@ const KEYSTONE_STATUS_DEFS: ReadonlyMap<StatusKey, ShippedDef> = buildKeystoneSt
 export function keystoneStatusDef(key: StatusKey): StatusDef | null {
   return KEYSTONE_STATUS_DEFS.get(key)?.def ?? null;
 }
-/** Whether `def` matches the shipped keystone StatusDef under `key` by key-sorted canonical JSON. */
-function isShippedKeystoneDef(key: StatusKey, def: StatusDef): boolean {
+/** The shipped keystone or class StatusDef for `key` under `RULES`, or null when `key` is neither. */
+export function shippedStatusDef(key: StatusKey): StatusDef | null {
+  return KEYSTONE_STATUS_DEFS.get(key)?.def ?? classStatusDef(key);
+}
+/** Whether `def` matches the shipped keystone or class StatusDef under `key` by key-sorted canonical JSON. */
+function isShippedDef(key: StatusKey, def: StatusDef): boolean {
   const shipped = KEYSTONE_STATUS_DEFS.get(key);
-  return shipped !== undefined && shipped.json === canonicalJson(def);
+  if (shipped !== undefined) return shipped.json === canonicalJson(def);
+  const cls = classStatusDef(key);
+  return cls !== null && canonicalJson(cls) === canonicalJson(def);
 }
 
 // ── the wire: the doc as the room stores and sends it ──
@@ -592,7 +599,7 @@ function defsOf(d: FightDoc & { ended: false }): Record<string, StatusDef> {
   for (const s of rows.flatMap(r => r.statuses)) {
     if (!s.def || tried.has(s.key)) continue;
     tried.add(s.key);
-    if (isShippedKeystoneDef(s.key, s.def)) continue;
+    if (isShippedDef(s.key, s.def)) continue;
     const n = JSON.stringify(s.key).length + JSON.stringify(s.def).length + 2;
     if (used + n <= DOC_DEFS_MAX) { out[s.key] = s.def; used += n; }
   }
@@ -603,15 +610,15 @@ const unlessNull = <K extends string, V>(k: K, v: V | null): { [P in K]?: V } =>
 function knownDef(s: DocStatus, defs: Readonly<Record<string, StatusDef>>): boolean {
   if (!s.def) return false;
   if (Object.hasOwn(defs, s.key)) return canonicalJson(defs[s.key]) === canonicalJson(s.def);
-  return isShippedKeystoneDef(s.key, s.def);
+  return isShippedDef(s.key, s.def);
 }
 /**
- * When `s.def` differs from the base def under `s.key` (`defs[s.key]` or shipped keystone) only in its flat Grievous
+ * When `s.def` differs from the base def under `s.key` (`defs[s.key]` or shipped keystone/class def) only in its flat Grievous
  * Wounds healing-cut percentage, returns that cut so `statusWire` can send compact `h: cut` instead of dropping the def.
  */
 function grievousVariant(s: DocStatus, defs: Readonly<Record<string, StatusDef>>): number | null {
   if (!s.def || hasTieredGrievousCut(s.def)) return null;
-  const base = Object.hasOwn(defs, s.key) ? defs[s.key]! : keystoneStatusDef(s.key);
+  const base = Object.hasOwn(defs, s.key) ? defs[s.key]! : shippedStatusDef(s.key);
   if (!base || hasTieredGrievousCut(base)) return null;
   const cut = grievousCutOf(s.def);
   if (cut === null || !Number.isInteger(cut)) return null;

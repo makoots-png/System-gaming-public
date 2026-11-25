@@ -2456,15 +2456,19 @@ test('every test in tests/fight-sim.test.ts uses simTest with deterministic work
   expect(modelSrc, 'report each fight to sim-budget.ts from playFight').toContain('beginFight(');
   expect(modelSrc, 'report each playStep to sim-budget.ts from playFight').toContain('recordFightStep(');
 
-  const simSrc = await Bun.file(`${ROOT}/tests/fight-sim.test.ts`).text();
-  expect(simSrc, 'import simTest from ./models/sim-budget.ts in tests/fight-sim.test.ts').toMatch(/from\s+['"]\.\/models\/sim-budget\.ts['"]/);
-  const simCode = simSrc.split('\n').filter(l => !isComment(l)).join('\n');
-  expect(usesProcessWide(simCode), 'do not call process.cpuUsage() in tests/fight-sim.test.ts; use simTest from sim-budget.ts').toBe(false);
-  expect(assertsClock(simCode), 'do not assert clock times in tests/fight-sim.test.ts; use simTest work budgets').toBe(false);
-  const rawTests = simSrc.split('\n')
-    .map((line, idx) => ({ line: idx + 1, text: line }))
-    .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/^\s*\/\//.test(line));
-  expect(rawTests, 'call simTest(...) instead of test(...) in tests/fight-sim.test.ts so every test uses the deterministic work guard and wall timeout').toEqual([]);
+  const soloSimFiles = (await readdir(`${ROOT}/tests`)).filter(n => /-solo-sim\.test\.ts$/.test(n)).sort().map(n => `tests/${n}`);
+  const simFiles = ['tests/fight-sim.test.ts', ...soloSimFiles];
+  for (const rel of simFiles) {
+    const simSrc = await Bun.file(`${ROOT}/${rel}`).text();
+    expect(simSrc, `import simTest from ./models/sim-budget.ts in ${rel}`).toMatch(/from\s+['"]\.\/models\/sim-budget\.ts['"]/);
+    const simCode = simSrc.split('\n').filter(l => !isComment(l)).join('\n');
+    expect(usesProcessWide(simCode), `do not call process.cpuUsage() in ${rel}; use simTest from sim-budget.ts`).toBe(false);
+    expect(assertsClock(simCode), `do not assert clock times in ${rel}; use simTest work budgets`).toBe(false);
+    const rawTests = simSrc.split('\n')
+      .map((line, idx) => ({ line: idx + 1, text: line }))
+      .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/^\s*\/\//.test(line));
+    expect(rawTests, `call simTest(...) instead of test(...) in ${rel} so every test uses the deterministic work guard and wall timeout`).toEqual([]);
+  }
 });
 
 /** Pure check backing the maker round-trip registry lint so a self-test can prove it fails on unregistered makers. */
@@ -3114,11 +3118,13 @@ test('only classPowers reads class tree nodes for combat and the sheet', async (
 test('class trees live in class-trees.ts with no gold literals, and not in RULES', async () => {
   const { RULES } = await import('../src/core/rules.ts');
   expect('classTrees' in RULES).toBe(false);
-  const treeLines = (await sourceLines('src/core/registry')).filter(l => l.file === 'src/core/registry/class-trees.ts' && !isComment(l.text));
+  const treeLines = (await sourceLines('src/core/registry')).filter(
+    l => (l.file === 'src/core/registry/class-trees.ts' || /^src\/core\/registry\/class-(?!powers\.ts$).+\.ts$/.test(l.file)) && !isComment(l.text),
+  );
   const goldUse = /\b(gold|priceBase|classSwapPrices|classTreeRarityMult|classTreeDepthMult)\b/;
   expect(goldUse.test('const cost = priceBase * 0.5;'), 'catches pricing inside tree file').toBe(true);
   const hits = treeLines.filter(l => goldUse.test(l.text));
-  expect(report(hits), 'keep gold pricing out of class-trees.ts; prices come from RULES via src/core/hunter/classes.ts').toEqual([]);
+  expect(report(hits), 'keep gold pricing out of class-trees.ts and class tree data files; prices come from RULES via src/core/hunter/classes.ts').toEqual([]);
 });
 
 test('solo.ts never claims or grants unique classes', async () => {

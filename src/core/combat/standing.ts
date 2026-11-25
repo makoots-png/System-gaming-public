@@ -5,6 +5,7 @@
 // reads: nothing here changes a body. resolve.ts, land.ts, fight-turn.ts and effect-ops.ts `modified` call it. A new
 // reading of a wave 2 op is a function here with a case in tests/effect-ops.test.ts ("wave 2's sheet and share ops").
 
+import { share } from '../hunter/derive.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import type { Rules } from '../rules.ts';
 import { atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_USE_KEYS } from './op-amount.ts';
@@ -90,6 +91,7 @@ export function sheetOpCap(key: SheetOpKey, R: StandingRules): number {
   const caps: { readonly [Key in SheetOpKey]: number } = {
     armor: K.armorOp, resist: K.armorOp, armorPen: F.penMax, resistPen: F.penMax, armorPenFlat: K.armorOp, resistPenFlat: K.armorOp,
     critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd,
+    mag: K.hpFlat, hpMax: K.hpFlat, drain: K.scaleCap, shieldDrain: K.scaleCap,
     sight: Math.max(...LEVELS),
   };
   return caps[key];
@@ -148,6 +150,10 @@ export function withSheetOps(sheet: Sheet, statuses: readonly Status[], bare: Fo
     critFaces: up(sheet.critFaces, Math.trunc(a.critFaces), 1, K.critFacesMax),
     critSize: up(sheet.critSize, a.critSize, F.critSizeBase, K.critSizeMax),
     costCut: up(sheet.costCut, a.costCut, 0, K.costCutMax) as Sheet['costCut'],
+    mag: Math.max(0, sheet.mag + a.mag),
+    hpMax: Math.max(1, Math.round(sheet.hpMax + a.hpMax)),
+    drain: Math.max(0, sheet.drain + a.drain),
+    shieldDrain: share(Math.max(0, sheet.shieldDrain + a.shieldDrain)),
     sight: l.sight === null ? sheet.sight : asLevel(Math.max(sheet.sight, l.sight)),
   };
 }

@@ -335,7 +335,21 @@ export function statusWorth(def: StatusDef, k: number, rounds: number | null, at
   if (t && t.at.kind === 'count') w += t.ops.reduce((s, o) => s + landWorth(o, at, R), 0) / t.at.n * n * firings(t.at.n, n, at.land, at.uses, lapseAfter(rounds, at.uses / R.fight.kit.referenceRounds));
   else if (t) at.miss.add('count');
   if (def.end && rounds === null) at.miss.add('end');
-  else if (def.end) w += def.end.ops.reduce((s, o) => s + landWorth(o, at, R), 0) * n * delayedShare(rounds!, def.end.cleanse, R);
+  else if (def.end) {
+    const endW = def.end.ops.reduce((s, o) => s + landWorth(o, at, R), 0);
+    const share = def.end.sourceHealShare ?? 0;
+    let healW = 0;
+    if (share > 0) {
+      for (const o of def.end.ops) {
+        if (o.op !== 'damage') continue;
+        const f = atTier(o.amount, at.tier) as Formula, sc = scalersOf(f, R);
+        const scope = scopeFor(sc ? sc.core : f, at, R), raw = formulaAmount(f, at, R);
+        const dealt = throughDefence(raw, defenceLeft(o.type, scope.user.sheet, scope.target.sheet), R);
+        healW += dealt * share * hpRate(at.rank, R) * at.landed;
+      }
+    }
+    w += (endW + healW) * n * delayedShare(rounds!, def.end.cleanse, R);
+  }
   for (const tr of def.triggers ?? []) w += triggerWorth(tr, at, R) * held;
   return w;
 }

@@ -399,7 +399,10 @@ const landOpsOf = (v: unknown, R: Rules, depth: number): LandOp[] | null =>
 function endOf(v: unknown, R: Rules, depth: number): End | null {
   if (!isObj(v)) return null;
   const ops = landOpsOf(v.ops, R, depth), cleanse = oneOf(v.cleanse, ['cancel', 'land'] as const, null);
-  return ops && cleanse ? { ops, cleanse } : null;
+  if (!ops || !cleanse) return null;
+  const sourceHealShare = v.sourceHealShare === undefined ? undefined : within(v.sourceHealShare, 0, 2);
+  if (sourceHealShare === null) return null;
+  return sourceHealShare !== undefined && sourceHealShare > 0 ? { ops, cleanse, sourceHealShare } : { ops, cleanse };
 }
 /** A GM's word on an ability: lower-case letters, digits and hyphens, at most `tagLength`. */
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

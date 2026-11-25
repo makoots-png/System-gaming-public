@@ -233,6 +233,7 @@ const SHEET_OP_COST: { readonly [K in SheetOpKey]: ((r: Rates, R: BudgetRules) =
   armor: r => 1 / r.armor, resist: r => 1 / r.armor,
   armorPen: perNumber('armorPen'), resistPen: perNumber('resistPen'), armorPenFlat: perNumber('armorPenFlat'), resistPenFlat: perNumber('resistPenFlat'),
   critFaces: perNumber('critFaces'), critSize: perNumber('critSize'), costCut: perNumber('costCut'),
+  mag: r => 1 / r.mag, hpMax: perNumber('hpMax'), drain: perNumber('drain'), shieldDrain: perNumber('shieldDrain'),
   exposed: null, range: null, sight: null,
 };
 /** An amount of a standing op: a number as it is, a formula's average on the paper build it favours (`bestScope`). */

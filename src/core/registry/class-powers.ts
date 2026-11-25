@@ -1,16 +1,19 @@
 // class-powers.ts: class signatures and the sole reader of `Hunter.classes[job].nodes` for combat and the sheet. Pure.
-// Populated starting in PR 2 (Hemomancer and Necromancer). Empty in PR 1 while exposing the full folding seam and
-// fight-doc worn status lookup (`classStatusDef`).
+// Exposes the folding seam (`classPowers`) and fight-doc status lookup (`classStatusDef`).
 import { BONUS_KEYS } from '../rules.ts';
 import type { BonusKey, Perk, Rules } from '../rules.ts';
 import type { Scaler } from './scalers.ts';
-import type { StatusDef } from '../combat/effect-ops.ts';
+import type { LandOp, Op, StatusDef } from '../combat/effect-ops.ts';
 import type { Ability } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName } from './jobs.ts';
 import { CLASS_ACTIVES_MAX, CLASS_TREES, repairNodes } from './class-trees.ts';
 import type { ClassTreeMap, ClassWorn } from './class-trees.ts';
+import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
 import type { ClassLocker } from '../hunter/class-locker.ts';
+
+/** Rule slice accepted by `classPowers` (satisfied by `Rules`, `SheetRules`, and `RowRules`). */
+export type ClassPowersRules = Pick<Rules, 'fight' | 'dice'>;
 
 /** Hunter slice read by `classPowers`. */
 export type ClassPowersHunter = {
@@ -39,8 +42,10 @@ export type ClassPowersResult = {
 
 export type ClassSignatureMap = Readonly<Partial<Record<ClassName, ClassSignature>>>;
 
-/** Shipped class signatures. Empty in PR 1; populated starting in PR 2. */
-export const CLASS_SIGNATURES: ClassSignatureMap = {};
+/** Shipped class signatures. */
+export const CLASS_SIGNATURES: ClassSignatureMap = {
+  Hemomancer: HEMOMANCER_SIGNATURE,
+};
 
 const EMPTY_CLASS_POWERS: ClassPowersResult = { bonus: {}, scalers: [], worn: null, actives: [] };
 
@@ -51,7 +56,7 @@ const EMPTY_CLASS_POWERS: ClassPowersResult = { bonus: {}, scalers: [], worn: nu
  */
 export function classPowers(
   h: ClassPowersHunter,
-  _R: Rules,
+  _R: ClassPowersRules,
   opts?: { readonly signatures?: ClassSignatureMap; readonly trees?: ClassTreeMap },
 ): ClassPowersResult {
   if (!h.job || h.jobDone !== h.job || !isClassName(h.job)) return EMPTY_CLASS_POWERS;
@@ -109,25 +114,56 @@ export function classPowers(
   return { bonus, scalers, worn, actives };
 }
 
+/** Collects every class worn status, active-applied status, and nested child status def keyed by status key. */
+function buildClassStatusDefs(signatures: ClassSignatureMap, trees: ClassTreeMap): ReadonlyMap<string, StatusDef> {
+  const out = new Map<string, StatusDef>();
+  const recordOps = (ops: readonly (Op | LandOp)[]): void => {
+    for (const op of ops) if (op.op === 'applyStatus') record(op.key, op.def);
+  };
+  const record = (key: string, def: StatusDef): void => {
+    const prev = out.get(key);
+    if (prev) {
+      if (JSON.stringify(prev) !== JSON.stringify(def)) {
+        throw new Error(`Duplicate class status key "${key}" with conflicting definitions`);
+      }
+      return;
+    }
+    out.set(key, def);
+    for (const tr of def.triggers ?? []) recordOps(tr.ops);
+    if ('stack' in def && def.stack?.threshold) recordOps(def.stack.threshold.ops);
+    if (def.end) recordOps(def.end.ops);
+  };
+  for (const sig of Object.values(signatures)) {
+    if (!sig) continue;
+    if (sig.worn) record(sig.worn.key, sig.worn.def);
+    for (const active of sig.actives ?? []) recordOps(active.ops);
+  }
+  for (const tree of Object.values(trees)) {
+    if (!tree) continue;
+    for (const node of tree.nodes) {
+      for (const gift of node.gifts) {
+        if (gift.kind === 'replace-worn') record(gift.worn.key, gift.worn.def);
+        else if (gift.kind === 'replace-active') recordOps(gift.active.ops);
+      }
+    }
+  }
+  return out;
+}
+
+const DEFAULT_CLASS_STATUS_DEFS: ReadonlyMap<string, StatusDef> = buildClassStatusDefs(CLASS_SIGNATURES, CLASS_TREES);
+
 /**
- * Looks up a registry class worn `StatusDef` by status key (either a base signature worn status or a tree node's
- * `replace-worn` upgrade), so fight docs can reference class worn defs by key instead of copying them in full.
+ * Looks up a registry class `StatusDef` by status key (a base signature worn status, a tree node's `replace-worn`
+ * upgrade, an active's applied status, or any nested child status), so fight docs can reference shipped class defs by
+ * key instead of copying them in full.
  */
 export function classStatusDef(
   key: string,
   signatures: ClassSignatureMap = CLASS_SIGNATURES,
   trees: ClassTreeMap = CLASS_TREES,
 ): StatusDef | null {
-  for (const sig of Object.values(signatures)) {
-    if (sig?.worn?.key === key) return sig.worn.def;
+  if (signatures === CLASS_SIGNATURES && trees === CLASS_TREES) {
+    return DEFAULT_CLASS_STATUS_DEFS.get(key) ?? null;
   }
-  for (const tree of Object.values(trees)) {
-    if (!tree) continue;
-    for (const node of tree.nodes) {
-      for (const gift of node.gifts) {
-        if (gift.kind === 'replace-worn' && gift.worn.key === key) return gift.worn.def;
-      }
-    }
-  }
-  return null;
+  return buildClassStatusDefs(signatures, trees).get(key) ?? null;
 }

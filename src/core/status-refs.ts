@@ -128,7 +128,7 @@ function thresholdAt(at: Threshold['at'], f: KeyFn): Threshold['at'] {
 }
 const threshold = fields<Threshold>({ at: thresholdAt, to: none, ops, then: none });
 const stackRule = fields<StackRule>({ cap: none, leave: none, keep: none, threshold });
-const end = fields<End>({ ops, cleanse: none });
+const end = fields<End>({ ops, cleanse: none, sourceHealShare: none });
 /** A status def: its ops, its triggers, its stack's threshold and its end. */
 export const statusDef: Walk<StatusDef> = fields<StatusDef>({ label: none, desc: none, color: none, icon: none, ops, triggers: list(trigger), end, stack: stackRule });
 

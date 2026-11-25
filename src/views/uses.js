@@ -106,6 +106,7 @@ export function register(app) {
         /** @type {import('../core/protocol.ts').CastPayload['aim']} */
         let aim = t.me.id;
         if (given !== undefined) aim = typeof given === 'string' ? given : { x: given.x, y: given.y }; // the map picked it (map-view.ts)
+        else if (a.aim === 'place' && a.range === 0) aim = { x: t.me.place.x, y: t.me.place.y };
         else if (a.aim !== 'self') {
           const list = aims(docSpots(t.doc.rows), t.me.id, a, openGrid(t.doc.grid.w, t.doc.grid.h)).filter(x => x.inRange && x.inShape);
           if (!list.length) { ui.news(`No targets in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`, 'warning'); return null; }

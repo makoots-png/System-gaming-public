@@ -10,7 +10,8 @@ import type { Rules } from '../rules.ts';
 import type { Rank } from '../rules.ts';
 import type { ShadowGrade } from '../save.ts';
 import type { StatKey } from '../stats.ts';
-import { diceOf, mean as meanOf } from '../formula.ts';
+import { diceOf, FORMULA_PARTS, mean as meanOf, parseFormula, partsOf } from '../formula.ts';
+import type { Formula } from '../formula.ts';
 import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, referenceBonus, split } from '../hunter/derive.ts';
 import type { Archetype, Bonus, SheetBasis, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
 import { buildOf, heldKeystones } from '../hunter/sheet.ts';
@@ -18,6 +19,9 @@ import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
+import { classPowers } from '../registry/class-powers.ts';
+import { scalerText, scalersOf } from '../registry/scalers.ts';
+import type { Scaler } from '../registry/scalers.ts';
 import type { Powers } from '../registry/powers.ts';
 import { monsterScript, monsterXp, tweakOfMonster } from '../registry/monsters.ts';
 import { mythicScriptOf } from '../registry/mythics.ts';
@@ -37,7 +41,7 @@ import { freeStatusKey, modified, shadowId, statusKey, statusOn, statusShield, T
 import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
 import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
-import { typed } from './damage-type.ts';
+import { isDamage, typed } from './damage-type.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { mythicStart } from './mythic.ts';
@@ -139,11 +143,38 @@ export function heldPowers(h: RowHunter, R: RowRules): Held[] {
 const asWeapon = (i: RowItem | undefined): Weapon | null =>
   (i && i.attack !== undefined && i.dice !== undefined ? i as RowItem & Weapon : null);
 
+/** Folded class powers for `h`, or null when `h` has no class locker. */
+const activeClassPowers = (h: RowHunter, R: RowRules) =>
+  (h.classes ? classPowers({ job: h.job ?? null, jobDone: h.jobDone ?? null, classes: h.classes }, R) : null);
+
 /**
- * The worn weapon's attack, then each active skill's ability in the skill list's order, then the active of each held
- * thing (`heldPowers`) as `wornAbilityId` of its id, then each consumable in the bag that does something in a fight
- * (`itemAbility`), on its user or on another, in the bag's order. A held thing's active is its holder's at the holder's
- * rank, as a skill's is, with its own cooldown and gates; it is never a bag item's use, so it spends nothing held.
+ * Multiplies a damaging ability's resolved formula by `1 * (1 + s1 + ...)` for class tree scalers (up to
+ * `R.fight.kit.scalers`, emitting the `core * base * (1 + ...)` shape that `scalersOf` reads back cleanly, within
+ * `FORMULA_PARTS`). Abilities that already carry scalers or non-damaging abilities are left unchanged.
+ */
+function withClassScalers(a: Ability, scalers: readonly Scaler[], R: RowRules): Ability {
+  const cap = R.fight.kit.scalers;
+  if (scalers.length === 0 || cap <= 0 || !a.effect || !isDamage(a.effect.type)) return a;
+  const base = formulaOf(a, R);
+  if (!base || scalersOf(base, R)) return a;
+  let mult: Formula = { kind: 'number', value: 1 };
+  for (const s of scalers.slice(0, cap)) {
+    const parsed = parseFormula(scalerText(s, R), R);
+    if (!parsed.ok) continue;
+    mult = { kind: 'binary', op: '+', left: mult, right: parsed.formula };
+  }
+  if (mult.kind === 'number') return a;
+  const scaledBase: Formula = { kind: 'binary', op: '*', left: base, right: { kind: 'number', value: 1 } };
+  const combined: Formula = { kind: 'binary', op: '*', left: scaledBase, right: mult };
+  if (partsOf(combined) > FORMULA_PARTS) return a;
+  return { ...a, effect: { type: a.effect.type, by: 'hand', formula: combined } };
+}
+
+/**
+ * The worn weapon's attack, then each active class ability (`classPowers`) as `wornAbilityId` of its id (placed ahead
+ * of skills and consumables so core class abilities are never truncated by `MAX_ABILITIES`), then each active skill's
+ * ability, then held actives (`heldPowers`), then each consumable in the bag (`itemAbility`). Class tree scalers apply
+ * to non-consumable damaging abilities.
  */
 export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
   const weapon = asWeapon(h.items.find(i => i.id === h.equipped['weapon']));
@@ -160,12 +191,20 @@ export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
     const { item: _never, ...own } = active;
     return [{ ...own, id: wornAbilityId(active.id) }];
   });
-  return distinct([weaponAttack(weapon, R), ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held, ...thrown], R);
+  const cp = activeClassPowers(h, R);
+  const classActives: Ability[] = (cp?.actives ?? []).map(a => {
+    const { item: _never, ...own } = a;
+    return { ...own, id: wornAbilityId(a.id) };
+  });
+  const scalers = cp?.scalers ?? [];
+  const core = [weaponAttack(weapon, R), ...classActives, ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held];
+  const scaled = scalers.length ? core.map(a => withClassScalers(a, scalers, R)) : core;
+  return distinct([...scaled, ...thrown], R);
 }
 
-/** A worn status of `def` from `source`, under a key made from its label that `keys` does not hold, which then holds it. */
-function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now: Tick): Status {
-  const key = freeStatusKey(def.label, k => keys.has(k));
+/** A worn status of `def` from `source`, preferring `preferredKey` when free, else a key made from its label. */
+function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now: Tick, preferredKey?: Status['key']): Status {
+  const key = preferredKey && !keys.has(preferredKey) ? preferredKey : freeStatusKey(def.label, k => keys.has(k));
   keys.add(key);
   return statusOn(def, { key, source, until: null, since: now, settledAt: now, worn: true });
 }
@@ -173,15 +212,18 @@ function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now
 /**
  * The worn statuses of a hunter (kits design 1.3.2): each passive skill's, at the hunter's rank with the row as its
  * source, then each held thing's `worn` (`heldPowers`: the active title's at the hunter's rank, feature 1's notes 17.14,
- * then each worn item's at the item's rarity, then its keystones), the row its source (item-stats 6.3: its threshold and end read the
- * wearer, and it is the wearer's act). Each lasts until removed, under a
- * key made from its label that no condition and no other worn status holds, and is never written back (`worn`).
+ * then each worn item's at the item's rarity, then its keystones), then the active awakened class's worn status
+ * (`classPowers`, preferring its registry key for 0-byte fight-doc lookup), the row its source. Each lasts until removed
+ * and is never written back (`worn`).
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
   const keys = new Set(taken), out: Status[] = [];
-  const put = (def: StatusDef, source: Status['source']): void => { out.push(wornOn(def, source, keys, now)); };
-  for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier: rankIdx(h.rank) });
-  for (const { powers, tier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier });
+  const put = (def: StatusDef, source: Status['source'], preferredKey?: Status['key']): void => { out.push(wornOn(def, source, keys, now, preferredKey)); };
+  const tier = rankIdx(h.rank);
+  for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier });
+  for (const { powers, tier: heldTier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier: heldTier });
+  const cp = activeClassPowers(h, R);
+  if (cp?.worn) put(cp.worn.def, { id, tier }, cp.worn.key);
   return out;
 }
 

@@ -346,7 +346,15 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   },
   // Lifesteal is rare: a confluence is one of the few ways to get it (A.6). A point of it is 0.45 points at C
   // (item-budget.ts `drainCost`) and one of max mana 2: A.6's 20 mana was 40, so 5 (14.5 with the drain).
-  'vit+pow': () => plain('Blood Magic', 'You heal 10% of the damage you deal, and you gain 5 max mana.', {}, { drain: 10, manaMax: 5 }),
+  'vit+pow': R => {
+    const line = 'You heal 10% of the damage you deal, and you gain 5 max mana.';
+    const veil = 'When your spell hits a foe, you gain a shield equal to 6% of your max HP (once a round).';
+    return awake(plain('Blood Magic', line, {}, { drain: 10, manaMax: 5 }), {
+      worn: worn('Blood Magic, awakened', veil, [], [
+        { on: 'hitDealt', tag: SPELL, to: 'self', limit: ROUND, ops: [{ op: 'shield', amount: formula('0.06 * hpmax', R) }] },
+      ]),
+    });
+  },
   'vit+ctl': R => {
     const line = 'A foe that hits you is slowed 20% for a round.';
     const slowed = worn('Briar', 'Speed reduced by 20%.', [{ op: 'speed', pct: -20 }]);

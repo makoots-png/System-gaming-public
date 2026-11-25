@@ -345,12 +345,26 @@ export function cleansed(t: Body, c: Cleanse, now: Tick, R: OpRules): { target: 
 /**
  * A delayed effect's end landing on its bearer (kits design 1.6, table 2.2), from the status's source, at its formulas'
  * averages times its stacks. The source's sheet reads as the user and meets the bearer's defence; a source no longer in
- * the fight reads the bearer itself. Its statuses set off no threshold.
+ * the fight reads the bearer itself. When `end.sourceHealShare` is set, the living source heals for that share of the
+ * pop's dealt damage (modified by the source's healing received share). Its statuses set off no threshold.
  */
-export function landEnd(rows: Map<CombatantId, Body>, bearer: CombatantId, s: Status, now: Tick, R: OpRules): Landed {
+export function landEnd(rows: Map<CombatantId, Body>, bearer: CombatantId, s: Status, now: Tick, R: OpRules): Landed & { readonly sourceHealed?: number } {
   const from = s.source.id === null ? null : rows.get(s.source.id) ?? null;
   const r = landOps(rows, (s.def.end?.ops ?? []).filter(o => o.op !== 'refund'), from, [bearer], s.source, now, R, { times: countOn(s) });
-  return r.landed[0] ?? { target: bearer, dealt: 0, down: false, gained: [], cured: [] };
+  const res = r.landed[0] ?? { target: bearer, dealt: 0, down: false, gained: [], cured: [] };
+  const share = s.def.end?.sourceHealShare ?? 0;
+  let sourceHealed = 0;
+  if (share > 0 && res.dealt > 0 && s.source.id !== null) {
+    const src = rows.get(s.source.id);
+    if (src && isUp(src)) {
+      const amt = Math.max(0, Math.round(res.dealt * share * healShare(src, R)));
+      if (amt > 0) {
+        rows.set(src.id, healed(src, amt));
+        sourceHealed = amt;
+      }
+    }
+  }
+  return sourceHealed > 0 ? { ...res, sourceHealed } : res;
 }
 
 /**

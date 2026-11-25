@@ -337,7 +337,8 @@ export function register(app) {
     const f = fight(); if (!running(f)) return;
     const a = row.abilities.find(x => x.id === aid); if (!a) return;
     let aim = row.id;
-    if (a.aim !== 'self') {
+    if (a.aim === 'place' && a.range === 0) aim = row.place;
+    else if (a.aim !== 'self') {
       const list = aims(spots(f), row.id, a, f.grid).filter(x => x.inRange && x.inShape);
       if (!list.length) { toast(`Nobody in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`, 'warning'); return; }
       const first = picks.get(row.id), sorted = [...list.filter(x => x.target.id === first), ...list.filter(x => x.target.id !== first)];
@@ -1062,7 +1063,8 @@ export function register(app) {
       actions: [...r.abilities.map((a, i) => ({ label: a.name, value: a.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
     const a = aid && r.abilities.find(x => x.id === aid); if (!a) return;
     let aim = r.id;
-    if (a.aim !== 'self') {
+    if (a.aim === 'place' && a.range === 0) aim = r.place;
+    else if (a.aim !== 'self') {
       const list = aims(spots(f), r.id, a, f.grid);
       if (!list.length) { toast('No valid targets.', 'warning'); return; }
       const id = await ui.system({ tag: '! Fight', title: `${a.name} at…`, layout: 'list',

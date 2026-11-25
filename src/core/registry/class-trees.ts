@@ -11,6 +11,7 @@ import type { StatusDef, StatusKey } from '../combat/effect-ops.ts';
 import type { Ability, AbilityId } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName, ClassRarity } from './jobs.ts';
+import { HEMOMANCER_TREE } from './class-hemomancer.ts';
 
 /** A class worn passive stored with its registry status key for fight-doc references. */
 export type ClassWorn = { readonly key: StatusKey; readonly def: StatusDef };
@@ -80,9 +81,11 @@ export type ClassTree = {
   readonly nodes: readonly ClassNodeDef[];
 };
 
-/** Lookup table of shipped skill trees. Empty in PR 1; populated starting in PR 2. */
+/** Lookup table of shipped skill trees. */
 export type ClassTreeMap = Readonly<Partial<Record<ClassName, ClassTree>>>;
-export const CLASS_TREES: ClassTreeMap = {};
+export const CLASS_TREES: ClassTreeMap = {
+  Hemomancer: HEMOMANCER_TREE,
+};
 
 /** Returns the skill tree for `name`, or null for custom GM jobs and classes without a tree yet. */
 export function classTreeOf(name: string | null | undefined, trees: ClassTreeMap = CLASS_TREES): ClassTree | null {

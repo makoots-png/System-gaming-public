@@ -14,7 +14,7 @@ import type { Op, SheetFormulaOp, StackDef, StackStatus, Status, StatusDef, Tier
  * The sheet numbers whose `sheet` op takes a formula (item-stats.md 6.2): `withSheetOps` (standing.ts) reads each on its
  * bearer's bare body, the sheet `derive` made before any status, so `armor: 0.1 * hpmax` grows with its bearer.
  */
-export const SHEET_FORMULA_KEYS = ['armor', 'resist', 'armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'critFaces', 'critSize', 'costCut'] as const;
+export const SHEET_FORMULA_KEYS = ['armor', 'resist', 'armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'critFaces', 'critSize', 'costCut', 'mag', 'hpMax', 'drain', 'shieldDrain'] as const;
 /**
  * The sheet numbers a `sheet` op adds to that stay plain numbers: each is read inside a use from the statuses alone, with
  * no bare body at hand (`exposedOf` reads a target's statuses for an attacker's crit faces, `rangeWith` a user's for its

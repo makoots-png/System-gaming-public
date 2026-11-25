@@ -698,7 +698,8 @@ function aimFocus(user: MapBody, shown: readonly MapBody[], grid: Grid, a: Aimin
   if (a.aim === 'self') reach.push(user.place);
   else for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) { const p = place(x, y); if (inRange(a, user, p)) reach.push(p); }
   const targets = a.aim === 'place' ? [] : hittable(user, shown, grid, a);
-  const where = a.aim === 'self' ? user.place : at;
+  const selfCentered = a.aim === 'place' && a.range === 0;
+  const where = a.aim === 'self' || selfCentered ? user.place : at;
   if (!where) return { kind: 'aim', ability: a, reach, targets, aim: null };
   const target = a.aim === 'place' ? null : shown.find(b => same(b.place, where) && targets.includes(b.id))?.id ?? null;
   const cover = a.aim === 'self' ? { hit: [user.place], ring: [] } : a.aim === 'ally' ? { hit: [where], ring: [] } : tilesOf(a.shape, user.place, where, grid);
@@ -879,8 +880,9 @@ const went: ChoiceStep<'go'> = (c, e) => {
   if (f.kind === 'move' && f.path && now.kind === 'move' && same(f.path.to, now.to)) {
     return kept({ ...cleared(c), sent: { by, way: f.path.tiles } }, { kind: 'move', to: f.path.to, dash: f.path.dash });
   }
-  // the scene must be the one drawn from this choice: the same ability aimed at the same tile (a self ability at its user)
-  if (f.kind === 'aim' && f.aim && f.aim.ok && f.aim.send !== null && now.kind === 'aim' && f.ability === now.ability && (now.at ? same(f.aim.at, now.at) : f.ability.aim === 'self')) {
+  // the scene must be the one drawn from this choice: the same ability aimed at the same tile (a self or self-centered place ability at its user)
+  const autoSelf = f.kind === 'aim' && (f.ability.aim === 'self' || (f.ability.aim === 'place' && f.ability.range === 0));
+  if (f.kind === 'aim' && f.aim && f.aim.ok && f.aim.send !== null && now.kind === 'aim' && f.ability === now.ability && (now.at ? same(f.aim.at, now.at) : autoSelf)) {
     return kept({ ...cleared(c), sent: null }, { kind: 'use', ability: now.ability, aim: f.aim.send, at: f.aim.at });
   }
   return kept(c);

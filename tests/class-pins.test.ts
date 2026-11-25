@@ -150,20 +150,22 @@ function checkSeamWiring(
 }
 
 describe('PR 2 combat/sheet seam tripwire', () => {
-  test('passes while CLASS_SIGNATURES and CLASS_TREES are empty, catches unwired callers, and is not fooled by comments', async () => {
+  test('verifies live sheet.ts, rows.ts, and fight-doc.ts wire classPowers/classStatusDef once kits ship, catches unwired callers, and is not fooled by comments', async () => {
     const [sheetSrc, rowsSrc, fightDocSrc] = await Promise.all([
       Bun.file(`${ROOT}/src/core/hunter/sheet.ts`).text(),
       Bun.file(`${ROOT}/src/core/combat/rows.ts`).text(),
       Bun.file(`${ROOT}/src/core/combat/fight-doc.ts`).text(),
     ]);
 
-    // Live check: passes today (tables empty) and enforces wiring the moment PR 2 populates either table
+    // PR 2 populates Hemomancer in both tables and wires all three callers
+    expect(Object.keys(CLASS_SIGNATURES)).toContain('Hemomancer');
+    expect(Object.keys(CLASS_TREES)).toContain('Hemomancer');
     expect(
       checkSeamWiring(Object.keys(CLASS_SIGNATURES), Object.keys(CLASS_TREES), sheetSrc, rowsSrc, fightDocSrc),
     ).toEqual([]);
 
     // Self-test: synthetic non-empty table against unwired sources fails loudly on all three callers
-    expect(checkSeamWiring(['Hemomancer'], [], sheetSrc, rowsSrc, fightDocSrc)).toEqual([
+    expect(checkSeamWiring(['Hemomancer'], [], 'export const x = 1;', 'export const y = 2;', 'export const z = 3;')).toEqual([
       'src/core/hunter/sheet.ts must import classPowers from class-powers.ts',
       'src/core/combat/rows.ts must import classPowers from class-powers.ts',
       'src/core/combat/fight-doc.ts must import classStatusDef from class-powers.ts',

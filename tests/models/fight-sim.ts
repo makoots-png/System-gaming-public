@@ -24,6 +24,7 @@ import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { freeStatusKey, modified, statusKey, statusOn } from '../../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, Tiers, UseOp } from '../../src/core/combat/effect-ops.ts';
+import { warded } from '../../src/core/combat/standing.ts';
 import { formulaOf, abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, weaponAttack, wornAbilityId } from '../../src/core/registry/abilities.ts';
 import type { BuiltInSkill } from '../../src/core/registry/abilities.ts';
@@ -217,7 +218,7 @@ export type Policy = (f: Running, me: Body, plan: Plan, R: Rules) => Choice;
 export type Plan = { readonly channel: 'none' | 'safe' | 'aimed' };
 
 const up = (b: Body): boolean => rowHp(b) > 0;
-const foesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && up(r));
+const foesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && up(r) && !warded(r, me.side));
 const alliesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side === me.side && r.id !== me.id && up(r));
 const nearest = (me: Body, list: readonly Body[]): Body | undefined =>
   [...list].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || rowHp(a) - rowHp(b) || (a.id < b.id ? -1 : 1))[0];
@@ -370,7 +371,8 @@ const clearLine = (f: Running, me: Body, a: Ability, target: Body): boolean =>
   a.shape.kind !== 'line' || a.shape.pierce || inShape(a.shape, me.place, target.place, f.grid, f.rows.filter(r => r.id !== me.id && (up(r) || r.kind === 'hunter'))).hit[0]?.id === target.id;
 /** A monster: its one attack on its suggested target, walking toward it when out of range or when a fallen hunter stands in its line. */
 const monsterPolicy: Policy = (f, me) => {
-  const a = me.abilities[0]!, target = suggested(f, me)!;
+  const a = me.abilities[0]!, target = suggested(f, me);
+  if (!target) return { type: 'pass' };
   return clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target);
 };
 /** Pain: the bruiser's play, with Violence in place of the strike once it holds `spendAt` Pain (design 3.6: at 5). */
@@ -618,7 +620,9 @@ export function scripted(id: MythicScriptId, R: Rules = scriptsOn()): SimRow {
  */
 const mythicPolicy: Policy = (f, me, plan, R) => {
   if (me.mythic && me.mythic.at !== 'calm') return sensible(f, me, R);
-  const target = suggested(f, me)!, uses = beatUses(me, me.abilities).filter(a => isDamage(a.effect?.type));
+  const target = suggested(f, me);
+  if (!target) return { type: 'pass' };
+  const uses = beatUses(me, me.abilities).filter(a => isDamage(a.effect?.type));
   const a = uses.find(x => usable(f, me, x, target.place) && clearLine(f, me, x, target)) ?? uses[0];
   return a ? (clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target)) : monsterPolicy(f, me, plan, R);
 };
@@ -850,6 +854,43 @@ export function playDungeon(make: (fight: number) => Setup, seed: number, fights
   return out;
 }
 
+
+/** Summary of one solo-Mythic simulation row across `runs` seeded fights. */
+export type SoloMythicResult = {
+  readonly mythicId: MythicScriptId;
+  readonly runs: number;
+  readonly wins: number;
+  readonly winRate: number;
+  readonly se: number;
+  readonly meanRounds: number;
+  readonly capped: number;
+};
+
+/**
+ * Plays `runs` seeded solo fights of `hero` (wrapped in `answering`) against scripted mythic `mythicId` under `R`.
+ * Reusable helper for all Mythic-class solo checks (Hemomancer in PR 2, Bladefiend/Rifthunter/etc. in PR 4+).
+ */
+export function runSoloMythic(hero: SimRow, mythicId: MythicScriptId, runs: number, R: Rules = scriptsOn()): SoloMythicResult {
+  const player = answering(hero);
+  const boss = scripted(mythicId, R);
+  let wins = 0, roundSum = 0, cappedCount = 0;
+  for (let i = 0; i < runs; i++) {
+    const rec = playFight({ rows: [player, boss], rules: R, tallyDamage: false }, 1 + i);
+    if (rec.winner === 'party') wins++;
+    roundSum += rec.rounds;
+    if (rec.capped) cappedCount++;
+  }
+  const winRate = wins / runs;
+  return {
+    mythicId,
+    runs,
+    wins,
+    winRate,
+    se: Math.sqrt(winRate * (1 - winRate) / runs),
+    meanRounds: roundSum / runs,
+    capped: cappedCount,
+  };
+}
 
 /**
  * How many blasts a fresh cannon's mana pays for, by the rules' own cost check (`payCost`, cost cut included): the blasts

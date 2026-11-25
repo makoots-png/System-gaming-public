@@ -4,6 +4,7 @@
 // (the `keystone` source) and the GM's `hpAdj` and `manaAdj`. A new source of bonuses is a field of `SheetHunter` and a line in `buildOf`, with a case
 // in tests/sheet.test.ts. The numbers themselves are derive.ts's.
 
+import { RANKS } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { STAT_KEYS, above, baseStats } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
@@ -17,6 +18,8 @@ import { weightOf } from '../registry/items.ts';
 import type { StatWeights } from '../registry/jobs.ts';
 import { keystoneOf } from '../registry/keystones.ts';
 import type { Keystone } from '../registry/keystones.ts';
+import { classPowers } from '../registry/class-powers.ts';
+import type { ClassLocker } from './class-locker.ts';
 import type { Powers } from '../registry/powers.ts';
 import { keystoneBasis, keystonesOf } from './keystones.ts';
 import type { Penalty } from './penalty.ts';
@@ -67,6 +70,8 @@ export type SheetHunter = {
    */
   readonly job?: string | null;
   readonly jobDone?: string | null;
+  /** Earned class locker read only through `classPowers` when present. */
+  readonly classes?: ClassLocker;
 };
 
 /** A keystone a hunter holds, and the powers its job's Job Change adds to it (a confluence's `awakened`, once the chain is done); null for none. */
@@ -98,6 +103,17 @@ const worn = (h: SheetHunter): SheetItem[] =>
 const gearOf = (i: SheetItem): GearPiece =>
   ({ weight: weightOf(i), armor: i.armor ?? 0, resist: i.resist ?? 0 });
 
+const classBonus = (h: SheetHunter, R: SheetRules): Bonus =>
+  (h.classes ? classPowers({ job: h.job ?? null, jobDone: h.jobDone ?? null, classes: h.classes }, R).bonus : {});
+
+const classWorn = (h: SheetHunter, R: SheetRules): Status[] => {
+  if (!h.classes) return [];
+  const worn = classPowers({ job: h.job ?? null, jobDone: h.jobDone ?? null, classes: h.classes }, R).worn;
+  if (!worn) return [];
+  const tier = Math.max(0, RANKS.indexOf(h.rank));
+  return [statusOn(worn.def, { key: worn.key, source: { id: null, tier }, until: null, since: tick(0), settledAt: tick(0), worn: true })];
+};
+
 /** What `derive` builds the hunter's sheet from: its spent stats, its level, its worn gear and every bonus it holds. */
 export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
   const gear = worn(h);
@@ -110,6 +126,7 @@ export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
       ...gear.map(i => i.bonus ?? {}),
       ...h.skills.map(s => s.type === 'passive' ? s.bonus : {}),
       ...heldKeystones(h, R).map(k => k.keystone.bonus),
+      classBonus(h, R),
       { hpMax: h.hpAdj, manaMax: h.manaAdj },
     ]),
   };
@@ -118,15 +135,15 @@ export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
 // A condition has no fight time; `modified` reads only its def and its source.
 const asStatus = (c: SheetCondition): Status => statusOn(c.def, { key: c.key, source: c.source, until: null, since: tick(0), settledAt: tick(0) }, c.stacks);
 
-/** The hunter's stats (spent, plus bonuses, plus what its conditions do) and its sheet under its conditions. */
+/** The hunter's stats (spent, plus bonuses, plus active class worn passive and conditions) and its sheet. */
 export const hunterSheet = (h: SheetHunter, R: SheetRules): { stats: Stats; sheet: Sheet } =>
-  modified({ kind: 'hunter', build: buildOf(h, R) }, h.conditions.map(asStatus), R);
+  modified({ kind: 'hunter', build: buildOf(h, R) }, [...classWorn(h, R), ...h.conditions.map(asStatus)], R);
 
 /** Where a part of a sheet number comes from, in the order `explain` adds them. */
-export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'skills', 'keystone', 'gm', 'statuses'] as const;
+export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'skills', 'keystone', 'class', 'gm', 'statuses'] as const;
 export type SheetSource = (typeof SOURCES)[number];
 export const SOURCE_LABELS: { readonly [K in SheetSource]: string } = {
-  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', skills: 'Passive skills', keystone: 'Keystones', gm: 'GM edit', statuses: 'Statuses',
+  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', skills: 'Passive skills', keystone: 'Keystones', class: 'Class', gm: 'GM edit', statuses: 'Statuses',
 };
 /** One part of a sheet number: where it comes from and how much it adds. */
 export type Part = { readonly from: SheetSource; readonly amount: number };
@@ -147,9 +164,11 @@ export function explain(h: SheetHunter, key: SheetNumber, R: SheetRules): { tota
   const title = add(geared, h.titles.find(t => t.id === h.titleId)?.bonus ?? {});
   const skills = add(title, sum(h.skills.map(s => s.type === 'passive' ? s.bonus : {})));
   const keys = add(skills, sum(heldKeystones(h, R).map(k => k.keystone.bonus)));
+  const cls = add(keys, classBonus(h, R));
+  const clsWorn = classWorn(h, R);
   const steps: readonly (readonly [SheetSource, SheetBasis, readonly Status[]])[] = [
     ['base', base, []], ['level', level, []], ['stats', stats, []], ['gear', geared, []], ['title', title, []],
-    ['skills', skills, []], ['keystone', keys, []], ['gm', full, []], ['statuses', full, h.conditions.map(asStatus)],
+    ['skills', skills, []], ['keystone', keys, []], ['class', cls, clsWorn], ['gm', full, clsWorn], ['statuses', full, [...clsWorn, ...h.conditions.map(asStatus)]],
   ];
   const values = steps.map(([, b, s]) => modified({ kind: 'hunter', build: b }, s, R).sheet[key]);
   return { total: values[values.length - 1]!, parts: steps.map(([from], i) => ({ from, amount: i === 0 ? values[0]! : values[i]! - values[i - 1]! })) };

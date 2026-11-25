@@ -104,7 +104,12 @@ export type Reach = { readonly kind: 'bearer' } | { readonly kind: 'area'; reado
   /** The one body `on` the bearer's side, the other or either within `radius` with the most HP (kits design 8.5: The Cycle Continues). */
   | { readonly kind: 'most'; readonly of: 'hp'; readonly radius: Tiles; readonly on: AuraOn };
 /** A delayed effect (kits design 1.6): ops that land on the bearer when the time runs out; a cure cancels it or sets it off. */
-export type End = { readonly ops: readonly LandOp[]; readonly cleanse: 'cancel' | 'land' };
+export type End = {
+  readonly ops: readonly LandOp[];
+  readonly cleanse: 'cancel' | 'land';
+  /** Optional share of the end pop's dealt damage healed back to the status's source per victim popped. */
+  readonly sourceHealShare?: number;
+};
 /**
  * What a threshold, a trigger or an end lands: an ability's own ops that land on one body at a time (`LAND_USE_OPS`), a
  * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright; a reveal among them), and time
@@ -1024,6 +1029,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
 const SHEET_ADD_TEXT: { readonly [K in Exclude<SheetOpKey, SheetLevelKey>]: string } = {
   armor: 'Armor', resist: 'Resist', armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', critFaces: 'Crit range (+)', exposed: 'Faces a foe crits it on', critSize: 'Crit multiplier',
   costCut: 'Ability cost reduction', range: 'Range of 2 or more',
+  mag: 'Arcane power', hpMax: 'Max HP', drain: 'Lifesteal', shieldDrain: 'Damage to shield',
 };
 /** A sheet level's words, read before its level and "or under": a level is no amount added, the highest source is the level (ruling 8). */
 const SHEET_LEVEL_TEXT: { readonly [K in SheetLevelKey]: string } = { sight: 'Sees foes hidden at stealth level' };
@@ -1071,7 +1077,7 @@ function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string 
 }
 /** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag arcane damage. Curing this status cancels it." */
 const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
-  `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join(', ')}. ${e.cleanse === 'cancel' ? 'Curing this status cancels it.' : 'Curing this status triggers it right away.'}`;
+  `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join(', ')}.${e.sourceHealShare ? ` Heals the caster for ${Math.round(e.sourceHealShare * 100)}% of the damage dealt.` : ''} ${e.cleanse === 'cancel' ? 'Curing this status cancels it.' : 'Curing this status triggers it right away.'}`;
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */
 function describeStack(def: StatusDef, tier: number | null, R: DescribeRules, statusKey: string | null = null): string[] {
   if (!isStacking(def)) return opLines(def.ops, tier, R, null, statusKey);

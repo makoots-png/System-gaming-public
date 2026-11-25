@@ -49,7 +49,7 @@ import type { Fight, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
-import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_DODGE_RUNS, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, keystoneStatusDef, unpackBits } from './combat/fight-doc.ts';
+import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_DODGE_RUNS, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, shippedStatusDef, unpackBits } from './combat/fight-doc.ts';
 import type { Band, DocBurst, DocChannel, DocDodge, DocGrid, DocIntent, DocStanding, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
 import { TERRAIN, TERRAINS } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
@@ -1123,7 +1123,7 @@ function docDefs(v: unknown): Record<string, StatusDef> {
  */
 function docStatus(v: unknown, defs: Record<string, StatusDef>): DocStatus {
   const o = obj(v), key = keyOf(own(o, 'k')), named = own(o, 'b'), cutRaw = own(o, 'h'), stacks = own(o, 'n');
-  const baseDef = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : keystoneStatusDef(key) ?? refuse()) : undefined;
+  const baseDef = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : shippedStatusDef(key) ?? refuse()) : undefined;
   if (cutRaw !== undefined && (named !== undefined || !baseDef || hasTieredGrievousCut(baseDef) || grievousCutOf(baseDef) === null)) return refuse();
   const max = isGrievousKey(key) ? GRIEVOUS_MAX : GRIEVOUS_LEGACY_MAX;
   const cut = cutRaw === undefined ? null : (readLegacyGrievousCut(cutRaw, max) ?? refuse());

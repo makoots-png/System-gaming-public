@@ -479,7 +479,9 @@ function settleRow(f: Running, row: Body, ctx: Ctx, fx: Fx): { fight: Running; e
     const rows = new Map(g.rows.map(b => [b.id, b] as const));
     for (const x of due) {
       const e = landEnd(rows, row.id, x, f.now, R);
-      g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${row.name}: ${x.def.label} lands${e.dealt ? ` (${e.dealt})` : ''}.`, [row.id]), R);
+      const srcName = e.sourceHealed && x.source.id !== null ? rows.get(x.source.id)?.name : null;
+      const parts = [...(e.dealt ? [`${e.dealt}`] : []), ...(e.sourceHealed && srcName ? [`${srcName} heals ${e.sourceHealed}`] : [])];
+      g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${row.name}: ${x.def.label} lands${parts.length ? ` (${parts.join(', ')})` : ''}.`, [row.id]), R);
       if (e.dealt > 0) ended.push(raised(row.id, 'struck', x.source.id));
     }
   }
