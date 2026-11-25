@@ -140,7 +140,7 @@ describe('the end of a fight', () => {
     const out = ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [] }, DAY, HOARD)).save;
     expect(out.loot).toEqual({ at: 'waiting', drops: [{ fight: 'f-den', ...HOARD }] });
     const env = { now: new Date(AT), newDeviceId: () => 'd-x' as never, newDeviceToken: () => 't' };
-    expect(loadSave({ v4: JSON.stringify(out), v3: null, v2: null, v1: null }, env).save.loot).toEqual(out.loot);
+    expect(loadSave(JSON.stringify(out), env).save.loot).toEqual(out.loot);
     expect(ok(dropDealt(out, fightId('f-den'))).loot).toEqual({ at: 'none' });
     expect(ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [] }, DAY, NONE)).save.loot, 'a fight that dropped nothing leaves nothing waiting').toEqual({ at: 'none' });
   });

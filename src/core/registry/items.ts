@@ -446,8 +446,7 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
 /**
  * An item read from outside data, without its id, or null when it is not an object or has no name. Each field of the
  * wrong type or value takes the default a new item has; a number is cut to a whole one inside `ITEM_BOUNDS`. The bonus
- * keeps each bonus key (`BONUS_KEYS`) that is not 0; an old item's `penFlat` (armor its hits ignored, from before the
- * four penetrations) is read as its bonus's `armorPenFlat`, Lethality, when it has none: the one-way read of old gear. Each effect is read by the fight's op
+ * keeps each bonus key (`BONUS_KEYS`) that is not 0. Each effect is read by the fight's op
  * reader with the shipped rules' dice limits (as a reward is), one it refuses dropped, at most 12. `grade` is kept when it
  * is 1 or -1 (anything else is the middle, left out, so one item is never two stacks by a 0), `attack` when it is
  * strike or shot, `target` only when it is `other`, `tell` only when it is true, `revive`
@@ -466,8 +465,6 @@ export function parseItem(v: unknown): ItemTemplate | null {
   const bonus: ItemBonus = {};
   const rawBonus = isObj(v.bonus) ? v.bonus : {};
   for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
-  const oldPenFlat = whole(v.penFlat, 0, B.bonus, 0);
-  if (oldPenFlat && bonus.armorPenFlat === undefined) bonus.armorPenFlat = oldPenFlat;
   const out: ItemTemplate = {
     name, rar: oneOf(v.rar, RARITIES, 'common'), type: oneOf(v.type, ITEM_TYPES, 'misc'), slot: oneOf(v.slot, SLOTS, null), qty: whole(v.qty, 1, B.qty, 1),
     dice: typeof v.dice === 'string' ? v.dice.trim() : '', bonus, desc: text(v.desc, B.desc),

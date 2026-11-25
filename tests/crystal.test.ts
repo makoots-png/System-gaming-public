@@ -224,7 +224,7 @@ describe('rewards, grant, debt, saves, room rules, and gate clears', () => {
     expect(parsed && 'hunter' in parsed ? parsed.hunter.crystal : -1).toBe(0);
   });
 
-  test('RoomRules round-trips crystal rules and defaults missing crystal to RULES.crystal', () => {
+  test('RoomRules round-trips crystal rules and refuses docs missing crystal', () => {
     const custom = rulesOf({ crystal: { unsignedShare: 0.25, rates: { bureau: 0.88 } } });
     const rr = roomRulesOf(custom);
     const parsed = DOCS.rules(rr);
@@ -233,12 +233,9 @@ describe('rewards, grant, debt, saves, room rules, and gate clears', () => {
     expect(parsed!.crystal.rates.bureau).toBe(0.88);
     expect(withRoomRules(RULES, parsed).crystal.rates.bureau).toBe(0.88);
 
-    // Missing crystal field falls back to shipped defaults
-    const legacy = JSON.parse(JSON.stringify(rr));
-    delete legacy.crystal;
-    const parsedLegacy = DOCS.rules(legacy);
-    expect(parsedLegacy).not.toBeNull();
-    expect(parsedLegacy!.crystal).toEqual(RULES.crystal);
+    const partial = JSON.parse(JSON.stringify(rr));
+    delete partial.crystal;
+    expect(DOCS.rules(partial)).toBeNull();
   });
 
   test('clearShares, recommendPreset, parseClearPreset, and settleClearPreset handle mana crystal', () => {

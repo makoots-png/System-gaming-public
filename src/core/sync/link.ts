@@ -476,7 +476,7 @@ function saves(before: Link, after: Link): LinkEffect[] {
   if (!b || a.room !== b.room) fields.room = a.room;
   if (!b || a.cursor !== b.cursor) fields.cursor = a.cursor;
   if (!b || !sameLast(a.last, b.last)) fields.last = a.last;
-  // the key goes with the room: a save written by an older build may hold a key the link's room never had
+  // the key goes with the room
   if (!b || a.room !== b.room || a.gmKey !== b.gmKey) fields.gmKey = a.gmKey;
   return Object.keys(fields).length ? [{ type: 'save', fields }] : [];
 }

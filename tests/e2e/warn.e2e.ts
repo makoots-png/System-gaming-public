@@ -6,7 +6,7 @@ import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
 import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, noonDate, PHONE, SMALL_PHONE, type Page } from './helpers.ts';
 
-const V4 = 'hunter-system-v4';
+const V4 = 'hunter-system-v5';
 const SHOT_DIR = process.env.E2E_SHOT_DIR || '';
 
 async function maybeShot(page: Page, name: string): Promise<void> {

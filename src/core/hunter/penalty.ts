@@ -107,17 +107,13 @@ export const penaltyChipsOf = (h: { penalty: Penalty | null }): PenaltyChip[] =>
 // ── the boundary ──
 /**
  * The penalty in `value` for a hunter with `quests`, or null. Days are whole and at least 1; a missing start is `now`.
- * A penalty from before the tie (no `questId`) takes the hunter's open Penalty Zone quest, else a failed one. A penalty
- * whose quest is gone is dropped: nothing could lift it.
+ * A penalty without a valid `questId` matching one of the hunter's quests is dropped: nothing could lift it.
  */
 export function parsePenalty(value: unknown, quests: readonly QuestRef[], now: string): Penalty | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const o = value as Record<string, unknown>;
   const since = typeof o.since === 'string' && o.since ? o.since.slice(0, 40) : now;
   const days = Math.max(1, Math.min(MAX_DAYS, whole(o.days) ?? 1));
-  const tied = (q: QuestRef): boolean => q.kind === 'penalty';
-  const questId = typeof o.questId === 'string'
-    ? (quests.find(q => q.id === o.questId)?.id ?? null)
-    : (quests.find(q => tied(q) && q.status === 'active') ?? quests.find(q => tied(q) && q.status === 'failed'))?.id ?? null;
+  const questId = typeof o.questId === 'string' ? (quests.find(q => q.id === o.questId)?.id ?? null) : null;
   return questId === null ? null : { since, days, questId };
 }

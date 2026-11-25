@@ -43,7 +43,7 @@ API: `GET /api/health`, `POST /api/rooms`, `GET /api/rooms/:code?after=N`, `POST
 
 ## Saves and backups
 
-Your game is saved in this browser under `hunter-system-v3`. A save from an older version of the app is updated once when the app opens: your hunters and campaign are kept, a fight in progress and the room link are not, and the old save stays under its old key and in the backups. The Data view exports and imports the whole save as JSON, and keeps the last 8 automatic backups (before the update, imports, restores and resets). Export a copy before clearing browser data, and when switching phones.
+Your game is saved in this browser under `hunter-system-v5` (schema 5). Older saves are not carried over. The Data view exports and imports the whole save as JSON, refuses files from older or newer schemas before changing your campaign, and keeps the last 8 automatic backups (daily, imports, restores and resets). Export a copy before clearing browser data, and when switching phones.
 
 ## Features
 

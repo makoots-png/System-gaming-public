@@ -140,14 +140,8 @@ describe('a penalty as a save or a sheet holds it', () => {
     expect(parsePenalty({ days: 1, questId: 'q5' }, [quest('q5')], NOW)).toEqual({ since: NOW, days: 1, questId: 'q5' });
   });
 
-  test('an old penalty with no quest id is tied to the hunter\'s open Penalty Zone quest, else to a failed one, else dropped', () => {
-    const old = { since: MON, days: 2 };
-    expect(parsePenalty(old, [quest('q3', 'failed'), quest('q5'), DAILY], NOW)).toEqual({ ...old, questId: 'q5' });
-    expect(parsePenalty(old, [quest('q3', 'failed'), DAILY], NOW)).toEqual({ ...old, questId: 'q3' });
-    expect(parsePenalty(old, [quest('q3', 'done'), DAILY], NOW)).toBeNull();
-  });
-
-  test('a penalty whose quest is gone is no penalty: nothing could ever lift it', () => {
+  test('a penalty without a valid questId is dropped', () => {
+    expect(parsePenalty({ since: MON, days: 2 }, [quest('q5'), DAILY], NOW)).toBeNull();
     expect(parsePenalty({ since: MON, days: 1, questId: 'q5' }, [DAILY], NOW)).toBeNull();
   });
 

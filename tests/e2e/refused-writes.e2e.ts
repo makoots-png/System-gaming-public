@@ -7,7 +7,7 @@ import { parseDeviceId } from '../../src/core/ids.ts';
 import { NOT_SAVED, TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { test, expect, openApp, onboardPlayer, dismissAll, go, save, noonDate, type Page } from './helpers.ts';
 
-const V4 = 'hunter-system-v4';
+const V4 = 'hunter-system-v5';
 const seedEnv = () => ({ now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' });
 
 function newerSave(o: { gm?: boolean; calls?: unknown[]; items?: unknown[]; personal?: boolean; edit?: (s: any) => void } = {}): string {

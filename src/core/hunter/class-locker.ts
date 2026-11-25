@@ -12,13 +12,6 @@ import type { ClassTreeMap } from '../registry/class-trees.ts';
 
 /** Shared maximum length of a class or job name across locker parsing, `jobOf`, and wire events. */
 export const CLASS_NAME_MAX = 60;
-/**
- * Whether the GM Claim Registry UI (PR 3) is live. While false in standalone PR 1, pre-existing legacy
- * `Necromancer` / `Shadow Monarch` saves keep `'Necromancer'` as an un-earned label so shadow extraction
- * remains reachable until PR 3 ships; all 17 new unique classes still clear when un-held, and PR 3 flips
- * this single constant to `true`.
- */
-export const UNIQUE_REGISTRY_UI_LIVE = false;
 const HOLDER_NAME_MAX = 60;
 const TOKEN_ID_RE = /^[\w-]{1,40}$/;
 
@@ -67,10 +60,7 @@ export function activeClass(h: { readonly job: string | null; readonly jobDone: 
 /**
  * Parses and repairs `Hunter.classes` together with the active `job` and `jobDone` pointers.
  * - Caps the locker at `CLASS_LOCKER_CAP` (48).
- * - Reads any legacy 0-to-5 `upgrades` field as `nodes: []` (never maps tiers to nodes).
- * - Never auto-claims a unique built-in class (including legacy `Necromancer` and `Shadow Monarch`) when absent from
- *   `raw`, clearing any un-held unique `job` / `jobDone` to `null`.
- * - Seeds non-unique earned classes from `jobDone` alone (so `job: 'Custom', jobDone: 'Fighter'` keeps earned `Fighter`).
+ * - Never auto-claims a unique built-in class when absent from `raw`, clearing any un-held unique `job` / `jobDone` to `null`.
  * - Repairs `jobDone` to `job && Object.hasOwn(classes, job) ? job : null`.
  */
 export function parseClasses(
@@ -80,12 +70,9 @@ export function parseClasses(
     readonly jobDone: string | null;
     readonly fallbackAt: string;
     readonly trees?: ClassTreeMap;
-    /** Override for `UNIQUE_REGISTRY_UI_LIVE` (used in tests to verify both pre-PR-3 and post-PR-3 modes). */
-    readonly enforceUnique?: boolean;
   },
 ): { readonly classes: ClassLocker; readonly job: string | null; readonly jobDone: string | null } {
   const trees = opts.trees ?? CLASS_TREES;
-  const enforceUnique = opts.enforceUnique ?? UNIQUE_REGISTRY_UI_LIVE;
   const out: Record<string, ClassEntry> = {};
 
   if (isObj(raw)) {
@@ -107,7 +94,6 @@ export function parseClasses(
       }
       const registryId = parseRegistryId(v.registryId);
       const grantId = parseGrantId(v.grantId);
-      // Legacy 0-to-5 `upgrades` field is intentionally ignored and reads as `nodes: []`.
       out[name] = {
         unlockedAt,
         nodes,
@@ -118,35 +104,15 @@ export function parseClasses(
   }
 
   let job = opts.job;
-  let jobDone = opts.jobDone;
 
-  // Unique class strings never auto-claim into `classes` when un-held. Before PR 3's GM Claim UI ships
-  // (`!enforceUnique`), legacy Necromancer / Shadow Monarch saves keep `'Necromancer'` as an un-earned label so
-  // shadow extraction stays reachable; all 17 new unique classes always clear when un-held.
+  // Unique class strings never auto-claim into `classes` when un-held.
   if (job && canonicalUniqueClass(job) !== null) {
     const canon = canonicalUniqueClass(job)!;
-    if (Object.hasOwn(out, canon)) {
-      job = canon;
-    } else if (!enforceUnique && canon === 'Necromancer') {
-      job = 'Necromancer';
-    } else {
-      job = null;
-    }
-  }
-  if (jobDone && canonicalUniqueClass(jobDone) !== null) {
-    const canon = canonicalUniqueClass(jobDone)!;
-    jobDone = Object.hasOwn(out, canon) ? canon : null;
-  }
-
-  // Non-unique legacy saves seed from `jobDone` alone so a hunter with a custom label keeps their completed Job Change.
-  if (jobDone && !isUniqueClass(jobDone) && !Object.hasOwn(out, jobDone)) {
-    if (Object.keys(out).length < CLASS_LOCKER_CAP) {
-      out[jobDone] = { unlockedAt: opts.fallbackAt, nodes: [] };
-    }
+    job = Object.hasOwn(out, canon) ? canon : null;
   }
 
   // Repair invariant: `jobDone` is `job` iff `job` names an earned locker entry; else `null`.
-  jobDone = job && Object.hasOwn(out, job) ? job : null;
+  const jobDone = job && Object.hasOwn(out, job) ? job : null;
 
   return { classes: out, job, jobDone };
 }
@@ -173,9 +139,9 @@ export function parseClassHolders(raw: unknown, fallbackAt: string, fallbackRegi
   const safeReg = parseRegistryId(fallbackRegistryId) ?? 'reg-default';
   if (!isObj(raw)) return newClassHolders(safeReg);
   const registryId = parseRegistryId(raw.registryId) ?? safeReg;
-  const source = isObj(raw.held) ? raw.held : raw;
+  if (!isObj(raw.held)) return newClassHolders(registryId);
   const held: Partial<Record<UniqueClassName, ClassHolder>> = {};
-  for (const [k, v] of Object.entries(source)) {
+  for (const [k, v] of Object.entries(raw.held)) {
     if (!isUniqueClass(k) || !isObj(v)) continue;
     const claimedAt = timeOf(v.claimedAt) ?? fallbackAt;
     const grantId = parseGrantId(v.grantId) ?? `g-${k.toLowerCase()}`;

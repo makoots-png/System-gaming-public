@@ -129,16 +129,13 @@ export function chainAfter(chain: JobChain | null, event: ChainEvent): ChainResu
 export const canReissue = (chain: JobChain | null): boolean => stateOf(chain) === 'failed';
 
 // ── the boundary ──
-/** What the parser reads of a quest. An old save kept its chain on its quests (`step`, `chainJob`). */
-export type ChainQuestRef = { id: QuestId; status: QuestStatus; chainId?: unknown; step?: unknown; chainJob?: unknown };
+/** What the parser reads of a quest. */
+export type ChainQuestRef = { id: QuestId; status: QuestStatus; chainId?: unknown };
 /**
  * The chain in `value` for a hunter with `quests`, or null. An active chain whose quest is no longer open (failed, or
- * gone, some way other than its event) is failed at its step. A hunter stored before the chain had its own field (no
- * chain, its quests carrying `step` and `chainJob`) takes it from the old quest fields: the open step of the first chain
- * with a job, else a chain whose last step was failed. The save repair drops the old fields after reading them.
+ * gone, some way other than its event) is failed at its step.
  */
 export function parseJobChain(value: unknown, quests: readonly ChainQuestRef[]): JobChain | null {
-  if (value === undefined || value === null) return fromOldQuests(quests);
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const o = value as Record<string, unknown>;
   if (!isJobName(o.job) || !isStep(o.step)) return null;
@@ -147,12 +144,4 @@ export function parseJobChain(value: unknown, quests: readonly ChainQuestRef[]):
   if (!id || !questId) return null;
   const openQuest = quests.some(q => q.id === questId && q.status === 'active');
   return { id, job: o.job, step: o.step, status: o.status === 'active' && openQuest ? 'active' : 'failed', questId };
-}
-function fromOldQuests(quests: readonly ChainQuestRef[]): JobChain | null {
-  const steps = quests.filter(q => parseSaveId<'jc'>(q.chainId) !== null && isJobName(q.chainJob) && isStep(q.step));
-  const last = steps.find(q => q.status === 'active')
-    ?? steps.filter(q => q.status === 'failed').find(q => !steps.some(x => x.chainId === q.chainId && (x.step as number) > (q.step as number)));
-  const id = last ? parseSaveId<'jc'>(last.chainId) : null;
-  if (!last || !id) return null;
-  return { id, job: last.chainJob as JobName, step: last.step as ChainStep, status: last.status === 'active' ? 'active' : 'failed', questId: last.id };
 }

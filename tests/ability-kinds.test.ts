@@ -148,12 +148,12 @@ describe('an ability that follows the recommended formula (implicit audit 3, M2)
     expect(printFormula(formulaOf(typed, keener)!)).toBe('1d8 + 6 * (agi / 10)^0.8');
   });
 
-  test('a saved ability by the rule reads back with its ticks, so the maker opens it unmarked under any rules; one from before `by` reads as typed', () => {
+  test('a saved ability by the rule reads back with its ticks, so the maker opens it unmarked under any rules; missing `by` is refused', () => {
     const back = parseAbility(JSON.parse(JSON.stringify(agile)), RULES)!;
     expect(back.effect).toEqual({ type: 'physical', by: 'rule', ticks: { scale: 'agi', gap: null, scalers: [] } });
     expect(ticksOf(back, keener)).toEqual({ ...defaultTicks('strike'), scale: 'agi' });
     const old = { ...JSON.parse(JSON.stringify(typed)), effect: { type: 'physical', formula: JSON.parse(JSON.stringify(typed.effect.formula)) } };
-    expect(parseAbility(old, RULES)!.effect).toEqual(typed.effect);
+    expect(parseAbility(old, RULES)).toBeNull();
   });
 });
 

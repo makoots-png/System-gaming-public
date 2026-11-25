@@ -9,8 +9,7 @@
     "e2e": "playwright test",
     "ci": "bun scripts/ci.ts",
     "deps": "bun scripts/deps.ts",
-    "charts": "bun scripts/statecharts.ts --write",
-    "shots": "bun scripts/shots.ts"
+    "charts": "bun scripts/statecharts.ts --write"
   },
   "devDependencies": {
     "@playwright/test": "1.49.1",

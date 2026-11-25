@@ -1,24 +1,37 @@
 import { readFile } from 'node:fs/promises';
-import { freshSave } from '../../src/core/save.ts';
-import { parseDeviceId } from '../../src/core/ids.ts';
+import { SCHEMA, createHunter, freshSave } from '../../src/core/save.ts';
+import { RULES } from '../../src/core/rules.ts';
+import { parseItem } from '../../src/core/registry/items.ts';
+import { parseDeviceId, saveId } from '../../src/core/ids.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { test, expect, openApp, onboardPlayer, dismissAll, editIdentity, go, save, answerWindow, noonDate, type Page } from './helpers.ts';
 
-const V1 = 'hunter-system-v1', V2 = 'hunter-system-v2', V3 = 'hunter-system-v3', V4 = 'hunter-system-v4', BACKUPS = 'hunter-system-backups';
-/** The reason the backups give an old save's text, and the words of the banner and of a refused import. */
-const OLD_REASON = 'before the new combat rules';
-const OLD_BANNER = 'This save is from before the new combat rules. It is kept in Backups, and the app starts a new campaign.';
-const OLD_IMPORT = 'This save is from before the new combat rules, and this app cannot open it.';
+const V1 = 'hunter-system-v1', V2 = 'hunter-system-v2', V3 = 'hunter-system-v3', V4 = 'hunter-system-v4', V5 = 'hunter-system-v5', BACKUPS = 'hunter-system-backups';
+const OLD_IMPORT = 'This save is from an older version and cannot be imported. Start a fresh campaign or import a current save.';
+const OLD_PACK_IMPORT = 'This file is from an older version and cannot be imported. Export it again from the current version, or create it fresh in the Workshop.';
+const OLD_BACKUP_RESTORE = 'That backup is from an older version and cannot be restored. Keep your current save or use Reset campaign to start fresh.';
 
-const fixturePath = (name: string): string => `${test.info().project.testDir}/../fixtures/saves/${name}`;
-const fixtureText = (name: string): Promise<string> => readFile(fixturePath(name), 'utf8');
+const testEnv = (id = 'd-e2e-save') => ({ now: noonDate(), newDeviceId: () => parseDeviceId(id)!, newDeviceToken: () => 'test-device-token-0123456789abcd' });
 const pinAfter = (text: string): string => new Date(Date.parse(JSON.parse(text).savedAt) + 60_000).toISOString();
-/** A save made on main, stamped with this app's schema so the app reads it as its own, with personal gates off: a
- * hunter alone gets one on open, and its "A GATE HAS APPEARED" window would stand over the steps these tests take. */
-const asCurrent = (text: string): string => {
-  const s = JSON.parse(text);
-  return JSON.stringify({ ...s, schema: 4, rulesOverrides: { ...s.rulesOverrides, solo: { personal: false } } });
-};
+/** A current-schema player save with personal gates off (a hunter alone otherwise gets a personal gate window on open). */
+function playerSaveText(): string {
+  const s = freshSave(testEnv('d-e2e-player'), { onboarded: true });
+  s.savedAt = noonDate().toISOString();
+  s.rulesOverrides = { solo: { personal: false } };
+  const h = s.hunters[0]!;
+  h.name = 'Mira Fixture';
+  h.gold = 0;
+  h.skills = [];
+  h.items = [{ ...parseItem({ name: 'Player Charm', rar: 'common', type: 'misc', qty: 2 })!, id: saveId('i', 10) }];
+  return JSON.stringify(s);
+}
+/** A current-schema campaign save with two hunters for export/import round-trip tests. */
+function exportSaveText(): string {
+  const base = JSON.parse(playerSaveText());
+  const { save: withTwo } = createHunter(base, 'Brakk Ironhide', RULES, noonDate());
+  withTwo.settings.activeHunterId = base.hunters[0].id;
+  return JSON.stringify(withTwo);
+}
 
 const stored = (page: Page, key: string): Promise<string | null> => page.evaluate(k => localStorage.getItem(k), key);
 /** The texts the backups hold under this reason. */
@@ -26,12 +39,6 @@ const backedUp = (page: Page, reason: string): Promise<string[]> => page.evaluat
   const ring: { reason: string; data: string }[] = JSON.parse(localStorage.getItem(key ?? '') ?? '[]');
   return ring.filter(b => b.reason === wanted).map(b => b.data);
 }, [BACKUPS, reason]);
-
-/** The app wrote a new schema 4 save under its own key and left the old key as it was. */
-async function expectNewSaveAndOldKept(page: Page, oldKey: string, oldText: string): Promise<void> {
-  expect(JSON.parse((await stored(page, V4)) ?? 'null')).toMatchObject({ schema: 4 });
-  expect(await stored(page, oldKey)).toBe(oldText);
-}
 
 /** The part of a hunter a player would miss if it changed. */
 const whatPlayersKeep = (h: any) => ({
@@ -74,53 +81,69 @@ async function importThroughDataPanel(page: Page, file: string): Promise<void> {
   await expect(preview).toHaveCount(0);
 }
 
-/** The player sees the old-save banner and a new campaign, and the Data panel lists one backup that holds exactly the old text. */
-async function expectNewCampaignAndOldKept(page: Page, oldKey: string, oldText: string): Promise<void> {
-  await expect(page.locator('#banners .banner')).toHaveCount(1);
-  await expect(page.locator('#banners .banner')).toContainText(OLD_BANNER);
-  await expect(page.locator('.sys-overlay.show')).toHaveCount(0);
-  await go(page, 'status');
-  await expect(page.locator('#view-status [data-idname]')).toHaveText('Sung Jin-Woo');
-  await go(page, 'data');
-  await expect(page.locator('#view-data [data-backups] li', { hasText: OLD_REASON })).toHaveCount(1);
-  expect(await backedUp(page, OLD_REASON)).toEqual([oldText]);
-  await expectNewSaveAndOldKept(page, oldKey, oldText);
-}
-
-test('a v1 save and player and GM saves made before the new combat rules open a new campaign, say so, and keep their text in Backups', async ({ device }) => {
-  const schema3 = JSON.stringify({ ...JSON.parse(await fixtureText('main-gm-starter.json')), schema: 3 });
+test('old storage keys boot cleanly into fresh onboarding, and an older-schema file is refused at import', async ({ device }) => {
+  const oldV4 = JSON.stringify({ ...JSON.parse(playerSaveText()), schema: SCHEMA - 1 });
   const cases: [string, string, string][] = [
-    ['a v1 save', V1, await fixtureText('v1-save.json')],
-    ['a player save made on main', V2, await fixtureText('main-player.json')],
-    ['a GM save of schema 3', V3, schema3],
+    ['v1 key', V1, JSON.stringify({ name: 'Old Hero', stats: { str: 12 } })],
+    ['v2 key', V2, JSON.stringify({ ...JSON.parse(playerSaveText()), schema: 2 })],
+    ['v3 key', V3, JSON.stringify({ ...JSON.parse(playerSaveText()), schema: 3 })],
+    ['v4 key', V4, oldV4],
   ];
   let last: Page | null = null;
   for (const [what, key, text] of cases) {
-    await test.step(`${what} opens a new campaign`, async () => {
-      const { page } = await device(what, { seed: { [key]: text } });
+    await test.step(`${what} is ignored and starts fresh onboarding`, async () => {
+      const { page } = await device(what, { seed: { [key]: text, 'hunter-system-told': JSON.stringify({ campaign: 'old-c', feat: { h1: ['threads-end'] }, personal: {}, room: {} }) } });
       await openApp(page);
-      await expectNewCampaignAndOldKept(page, key, text);
+      await expect(page.locator('#banners .banner')).toHaveCount(0);
+      await expect(page.locator('.ob-overlay')).toBeVisible();
+      expect(await stored(page, key)).toBe(text);
+      expect(JSON.parse((await stored(page, V5)) ?? 'null')).toMatchObject({ schema: SCHEMA });
+      const told = JSON.parse((await stored(page, 'hunter-system-told')) ?? 'null');
+      expect(told?.campaign).not.toBe('old-c');
+      expect(told?.feat?.h1 ?? []).toEqual([]);
       last = page;
     });
   }
 
-  await test.step('an old campaign file chosen in the Data panel is refused before any preview offers to import it, and the campaign stays', async () => {
-    const page = last!, before = (await save(page)).hunters;
+  await test.step('an older-schema file chosen in the Data panel is refused before any preview offers to import it', async () => {
+    const page = last!;
+    await onboardPlayer(page, 'Fresh Hero');
+    await dismissAll(page, 4);
+    const before = (await save(page)).hunters;
     await go(page, 'data');
-    await page.locator('#view-data [data-import]').setInputFiles(fixturePath('main-export.json'));
+    await page.locator('#view-data [data-import]').setInputFiles({ name: 'old-save.json', mimeType: 'application/json', buffer: Buffer.from(btoa(oldV4), 'base64') });
     await expect(page.locator('.sys-overlay.show', { hasText: 'Import failed' })).toContainText(OLD_IMPORT);
     await expect(page.locator('.sys-overlay.show', { hasText: 'Import preview' })).toHaveCount(0);
     await answerWindow(page, 'Import failed');
     expect((await save(page)).hunters).toEqual(before);
+
+    const oldPack = JSON.stringify({ schema: SCHEMA - 1, kind: 'library', library: {} });
+    await page.locator('#view-data [data-import]').setInputFiles({ name: 'old-pack.json', mimeType: 'application/json', buffer: Buffer.from(btoa(oldPack), 'base64') });
+    await expect(page.locator('.sys-overlay.show', { hasText: 'Import failed' })).toContainText(OLD_PACK_IMPORT);
+    await answerWindow(page, 'Import failed');
+
+    await page.evaluate(([bkKey, data]) => {
+      const ring = JSON.parse(localStorage.getItem(bkKey!) ?? '[]');
+      ring.unshift({ at: '2026-11-20T12:00:00.000Z', reason: 'manual', data });
+      localStorage.setItem(bkKey!, JSON.stringify(ring));
+    }, [BACKUPS, oldV4]);
     await go(page, 'status');
-    await expect(page.locator('#view-status [data-idname]')).toHaveText('Sung Jin-Woo');
+    await go(page, 'data');
+    await page.locator('#view-data [data-backups] li [data-restore="0"]').tap();
+    await answerWindow(page, 'Restore this backup?', 'Restore backup');
+    await expect(page.locator('.sys-overlay.show', { hasText: 'Restore failed' })).toContainText(OLD_BACKUP_RESTORE);
+    await answerWindow(page, 'Restore failed');
+    expect((await save(page)).hunters).toEqual(before);
+
+    await go(page, 'status');
+    await expect(page.locator('#view-status [data-idname]')).toHaveText('Fresh Hero');
   });
 });
 
 test('a campaign exported from the Data panel and imported on another phone brings the same hunters back', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-export.json')), fixture = JSON.parse(text);
+  const text = exportSaveText(), fixture = JSON.parse(text);
   const pinTo = pinAfter(text);
-  const first = (await device('first phone', { seed: { [V4]: text }, pinTo })).page, second = (await device('second phone', { pinTo })).page;
+  const first = (await device('first phone', { seed: { [V5]: text }, pinTo })).page, second = (await device('second phone', { pinTo })).page;
   let exported = '', hunters: any[] = [];
 
   await test.step('the first phone opens the campaign and exports it', async () => {
@@ -175,22 +198,14 @@ async function expectWarnedAndBackedUp(page: Page, oldText: string): Promise<voi
 
 test('a save that is not JSON opens the app with a fresh hunter, a warning, and the old text kept in the backups', async ({ device }) => {
   const junk = 'not json {name: Lost Hunter';
-  const { page } = await device('phone', { seed: { [V2]: junk } });
+  const { page } = await device('phone', { seed: { [V5]: junk } });
   await openApp(page);
   await expectWarnedAndBackedUp(page, junk);
 });
 
-test('a save of the wrong shape warns the player and keeps the old text in the backups', async ({ device }) => {
-  const odd = JSON.stringify({ schema: 2, hunters: { h1: { name: 'Odd Shape Hunter', level: 4 } } });
-  const { page } = await device('phone', { seed: { [V2]: odd } });
-  await openApp(page);
-  await expectWarnedAndBackedUp(page, odd);
-  expect(await stored(page, V2)).toBe(odd);
-});
-
 test('a current save of the wrong shape warns the player and keeps the old text in the backups', async ({ device }) => {
-  const odd = JSON.stringify({ schema: 4, hunters: { h1: { name: 'Odd Shape Hunter', level: 4 } } });
-  const { page } = await device('phone', { seed: { [V4]: odd } });
+  const odd = JSON.stringify({ schema: SCHEMA, hunters: { h1: { name: 'Odd Shape Hunter', level: 4 } } });
+  const { page } = await device('phone', { seed: { [V5]: odd } });
   await openApp(page);
   await expectWarnedAndBackedUp(page, odd);
 });
@@ -199,7 +214,7 @@ test('a save whose running fight is damaged opens without the fight, says so, an
   const env = { now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   const base = freshSave(env, { onboarded: true });
   const text = JSON.stringify({ ...base, hunters: [{ ...base.hunters[0]!, name: 'Kept Hunter' }], fight: { phase: 'running', rows: 'not rows' } });
-  const { page } = await device('phone', { seed: { [V4]: text } });
+  const { page } = await device('phone', { seed: { [V5]: text } });
   await openApp(page);
   await expect(page.locator('#banners .banner')).toHaveCount(1);
   await expect(page.locator('#banners .banner')).toContainText('running fight');
@@ -211,7 +226,7 @@ test('a save whose running fight is damaged opens without the fight, says so, an
 
 test('a player who opens the app days after their last daily meets the PENALTY window as the app opens', async ({ device }) => {
   const env = { now: noonDate(new Date(Date.now() - 3 * 86_400_000)), newDeviceId: () => parseDeviceId('d-e2e-late')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
-  const { page } = await device('phone', { seed: { [V4]: JSON.stringify(freshSave(env, { onboarded: true })) } });
+  const { page } = await device('phone', { seed: { [V5]: JSON.stringify(freshSave(env, { onboarded: true })) } });
   await openApp(page);
   await expect(page.locator('.sys-overlay.show')).toContainText('Penalty Zone');
   await dismissAll(page);
@@ -220,8 +235,8 @@ test('a player who opens the app days after their last daily meets the PENALTY w
 });
 
 test('a save from a newer app opens read-only: the blocking takeover screen stops edits without Take over here, and nothing is overwritten', async ({ device }) => {
-  const text = JSON.stringify({ ...JSON.parse(await fixtureText('main-player.json')), schema: 99 });
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = JSON.stringify({ ...JSON.parse(playerSaveText()), schema: 99 });
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   const win = page.locator('.tk-overlay.show .tk-win');
   await expect(win).toContainText(TAKEOVER_WORDS.causes.newer.heading);
@@ -231,17 +246,17 @@ test('a save from a newer app opens read-only: the blocking takeover screen stop
   expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Fixture');
   expect((await save(page)).hunters[0].name).toBe('Mira Fixture');
-  expect(await stored(page, V4)).toBe(text);
+  expect(await stored(page, V5)).toBe(text);
 
   await openApp(page);
   await expect(win).toContainText(TAKEOVER_WORDS.causes.newer.heading);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Fixture');
-  expect(await stored(page, V4)).toBe(text);
+  expect(await stored(page, V5)).toBe(text);
 });
 
 test('a renamed hunter and a newly stored item are still there after reloading the page', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   await go(page, 'status');
   await editIdentity(page, 'name', 'Mira Renamed');
@@ -268,20 +283,20 @@ const fill = (page: Page, ...keys: string[]): Promise<void> => page.evaluate(ks 
   for (const k of ks) w.e2eFull.add(k);
 }, keys);
 const free = (page: Page): Promise<void> => page.evaluate(() => { (window as any).e2eFull.clear(); });
-const storedName = async (page: Page): Promise<string> => JSON.parse((await stored(page, V4)) ?? 'null').hunters[0].name;
+const storedName = async (page: Page): Promise<string> => JSON.parse((await stored(page, V5)) ?? 'null').hunters[0].name;
 const SAVE_FAILED = 'Saving failed';
 const OWN_SETTINGS = 'device settings';
 const banner = (page: Page, text: string) => page.locator('#banners .banner', { hasText: text });
 
 test('storage full on a write: the player is told, the change stays on screen, and it is saved once storage has room', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   await go(page, 'status');
   const inventory = page.locator('#view-status [data-panel="inventory"]');
 
   await test.step('a change storage refuses shows a banner and stays on screen', async () => {
-    await fill(page, V4);
+    await fill(page, V5);
     await editIdentity(page, 'name', 'Mira Unsaved');
     await expect(banner(page, SAVE_FAILED)).toHaveCount(1);
     await expect(page.locator('#view-status [data-idname]')).toHaveText('Mira Unsaved');
@@ -301,16 +316,16 @@ test('storage full on a write: the player is told, the change stays on screen, a
     await editIdentity(page, 'name', 'Mira Saved');
     await expect(banner(page, SAVE_FAILED)).toHaveCount(0);
     await expect.poll(() => storedName(page)).toBe('Mira Saved');
-    expect(JSON.parse((await stored(page, V4))!).hunters[0].items.map((i: any) => i.name)).toEqual(['Player Charm', 'Full Storage Charm']);
+    expect(JSON.parse((await stored(page, V5))!).hunters[0].items.map((i: any) => i.name)).toEqual(['Player Charm', 'Full Storage Charm']);
   });
 });
 
 test('a change storage refused is saved when the page is reloaded once storage has room, with no change after it', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   await go(page, 'status');
-  await fill(page, V4);
+  await fill(page, V5);
   await editIdentity(page, 'name', 'Mira Kept On Leaving');
   await expect(banner(page, SAVE_FAILED)).toHaveCount(1);
   await free(page);
@@ -321,8 +336,8 @@ test('a change storage refused is saved when the page is reloaded once storage h
 });
 
 test('a reload between a change and its write keeps the change', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   await go(page, 'status');
   const inventory = page.locator('#view-status [data-panel="inventory"]');
@@ -344,8 +359,8 @@ test('a reload between a change and its write keeps the change', async ({ device
 });
 
 test('another tab\'s save shows in this tab while this tab has nothing unsaved', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page, ctx } = await device('first tab', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page, ctx } = await device('first tab', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   const other = await ctx.newPage();
   await openApp(other);
@@ -357,15 +372,15 @@ test('another tab\'s save shows in this tab while this tab has nothing unsaved',
 });
 
 test('another tab saving while this tab holds a change storage refused: this tab says so, keeps its change in Backups and stops saving over the other', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page, ctx } = await device('first tab', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page, ctx } = await device('first tab', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   const other = await ctx.newPage();
   await openApp(other);
 
   await test.step('this tab holds a change storage refused', async () => {
     await go(page, 'status');
-    await fill(page, V4);
+    await fill(page, V5);
     await editIdentity(page, 'name', 'Named In This Tab');
     await expect(banner(page, SAVE_FAILED)).toHaveCount(1);
   });
@@ -398,13 +413,13 @@ test('another tab saving while this tab holds a change storage refused: this tab
 });
 
 test('another tab saving while storage is too full to keep this tab\'s unsaved change in Backups: this tab keeps showing it behind the takeover screen and offers Export backup', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page, ctx } = await device('first tab', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page, ctx } = await device('first tab', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   const other = await ctx.newPage();
   await openApp(other);
   await go(page, 'status');
-  await fill(page, V4, BACKUPS);
+  await fill(page, V5, BACKUPS);
   await editIdentity(page, 'name', 'Named In This Tab');
   await expect(banner(page, SAVE_FAILED)).toHaveCount(1);
   await go(other, 'status');
@@ -420,7 +435,7 @@ test('another tab saving while storage is too full to keep this tab\'s unsaved c
 
 test('a save the app cannot open, when storage is too full to back it up, is never written over: the blocking takeover screen says so and omits Take over here', async ({ device }) => {
   const junk = 'not json {name: Lost Hunter';
-  const { page, ctx } = await device('phone', { seed: { [V4]: junk } });
+  const { page, ctx } = await device('phone', { seed: { [V5]: junk } });
   await ctx.addInitScript(key => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (k: string, v: string) {
@@ -435,7 +450,7 @@ test('a save the app cannot open, when storage is too full to back it up, is nev
   await expect(win.getByRole('button', { name: TAKEOVER_WORDS.takeOver })).toHaveCount(0);
   await expect(page.locator('#banners .banner')).toHaveCount(0);
   expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
-  expect(await stored(page, V4)).toBe(junk);
+  expect(await stored(page, V5)).toBe(junk);
 });
 
 test('a save that opens whole but for its damaged fight, when storage is too full to back it up, says the fight could not be read, not that the save could not be opened', async ({ device }) => {
@@ -443,7 +458,7 @@ test('a save that opens whole but for its damaged fight, when storage is too ful
   const env = { now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
   const base = freshSave(env, { onboarded: true });
   const text = JSON.stringify({ ...base, hunters: [{ ...base.hunters[0]!, name: 'Intact Hero' }], fight: { phase: 'running', rows: 'not rows' } });
-  const { page, ctx } = await device('phone', { seed: { [V4]: text } });
+  const { page, ctx } = await device('phone', { seed: { [V5]: text } });
   await ctx.addInitScript(key => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (k: string, v: string) {
@@ -459,12 +474,12 @@ test('a save that opens whole but for its damaged fight, when storage is too ful
   await expect(page.locator('#banners .banner')).toHaveCount(0);
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Intact Hero');
   expect(await page.evaluate(() => (document.getElementById('main') as HTMLElement).inert)).toBe(true);
-  expect(await stored(page, V4)).toBe(text);
+  expect(await stored(page, V5)).toBe(text);
 });
 
 test('a reset that cannot back up the campaign first asks before it goes on, and Cancel keeps the campaign', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   await go(page, 'data');
   await fill(page, BACKUPS);
@@ -490,8 +505,8 @@ test('with no browser storage the app still opens, and says progress will not be
 });
 
 test('a failed write of this phone\'s own settings is told, and the banner goes once one is kept', async ({ device }) => {
-  const text = asCurrent(await fixtureText('main-player.json'));
-  const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });
+  const text = playerSaveText();
+  const { page } = await device('phone', { seed: { [V5]: text }, pinTo: pinAfter(text) });
   await openApp(page);
   await go(page, 'device');
   await fill(page, 'hunter-system-prefs');

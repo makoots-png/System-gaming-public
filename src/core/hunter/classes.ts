@@ -25,7 +25,7 @@ import {
   repairNodes,
 } from '../registry/class-trees.ts';
 import type { ClassTreeMap } from '../registry/class-trees.ts';
-import { UNIQUE_REGISTRY_UI_LIVE, activeClass } from './class-locker.ts';
+import { activeClass } from './class-locker.ts';
 import type { ActiveClass, ClassEntry, ClassHolders, ClassLocker } from './class-locker.ts';
 import { hasFought } from './chronicle.ts';
 import type { Tally } from './chronicle.ts';
@@ -450,14 +450,12 @@ export function pushedClasses(h: Hunter): Hunter {
 
 /**
  * Verifies a remote player's pushed sheet against the GM's `classHolders` before GM views or combat consume it.
- * Strips any unique class entry not backed by `holders.held[cls]` for `sheetKey`, and clears unbacked unique `job`/`jobDone`
- * (allowing legacy un-earned `'Necromancer'` labels while `!enforceUnique` until PR 3's GM Claim UI ships).
+ * Strips any unique class entry not backed by `holders.held[cls]` for `sheetKey`, and clears unbacked unique `job`/`jobDone`.
  */
 export function backedRemoteHunter(
   h: Hunter,
   sheetKey: SheetKey,
   holders: ClassHolders,
-  enforceUnique: boolean = UNIQUE_REGISTRY_UI_LIVE,
 ): Hunter {
   let changed = false;
   let classes: Record<string, ClassEntry> | null = null;
@@ -477,8 +475,7 @@ export function backedRemoteHunter(
     if (canon !== null) {
       const holder = holders.held[canon];
       const backed = !!holder && holder.kind === 'remote' && holder.sheetKey === sheetKey;
-      const legacyLabel = !enforceUnique && canon === 'Necromancer' && !Object.hasOwn(h.classes, 'Necromancer');
-      if (!backed && !legacyLabel) {
+      if (!backed) {
         job = null;
         jobDone = null;
         changed = true;

@@ -199,7 +199,7 @@ describe('an override of a list rule', () => {
     expect(parseOverrides({ elixirPrices: 101 }).refused.map(r => [r.path, r.reason])).toEqual([['elixirPrices', 'range']]);
   });
 
-  test('reviveDebtPrices validates per rank, deep-merges partial edits, and expands a legacy flat scalar to every rank', () => {
+  test('reviveDebtPrices validates per rank, deep-merges partial edits, and refuses non-object values including scalars', () => {
     const partial = parseOverrides({ reviveDebtPrices: { E: 4, S: 9 } });
     expect(partial).toEqual({ overrides: { reviveDebtPrices: { E: 4, S: 9 } }, refused: [] });
     expect(rulesOf(partial.overrides).reviveDebtPrices).toEqual({ ...RULES.reviveDebtPrices, E: 4, S: 9 });
@@ -213,15 +213,7 @@ describe('an override of a list rule', () => {
       ['reviveDebtPrices.Z', 'unknown'],
     ]);
 
-    const scalar = parseOverrides({ reviveDebtPrices: 6 });
-    expect(scalar).toEqual({ overrides: { reviveDebtPrices: { E: 6, D: 6, C: 6, B: 6, A: 6, S: 6 } }, refused: [] });
-    expect(rulesOf(scalar.overrides).reviveDebtPrices).toEqual({ E: 6, D: 6, C: 6, B: 6, A: 6, S: 6 });
-
-    expect(parseOverrides({ reviveDebtPrices: 0 }).refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtPrices', 'range']]);
-    expect(parseOverrides({ reviveDebtPrices: 5.5 }).refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtPrices', 'range']]);
-    expect(parseOverrides({ reviveDebtPrices: 1001 }).refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtPrices', 'range']]);
-    expect(parseOverrides({ reviveDebtPrices: Infinity }).refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtPrices', 'number']]);
-    for (const bad of ['6', null, [5]]) {
+    for (const bad of [6, 0, '6', null, [5]]) {
       expect(parseOverrides({ reviveDebtPrices: bad }).refused.map(r => [r.path, r.reason])).toEqual([['reviveDebtPrices', 'object']]);
     }
   });

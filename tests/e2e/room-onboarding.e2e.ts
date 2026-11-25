@@ -5,7 +5,7 @@ import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
 
-const SAVE_KEY = 'hunter-system-v4';
+const SAVE_KEY = 'hunter-system-v5';
 const OB = '.ob-overlay';
 const NO_ROOM = /no room/i;
 

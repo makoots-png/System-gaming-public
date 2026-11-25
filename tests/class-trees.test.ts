@@ -207,28 +207,12 @@ describe('parseClasses', () => {
   const trees = { Hemomancer: mythic };
   const AT = '2026-11-25T12:00:00.000Z';
 
-  test('reads legacy 0-to-5 upgrades field as empty node list and never maps tiers', () => {
-    const res = parseClasses(
-      { Hemomancer: { unlockedAt: AT, upgrades: 5 } },
-      { job: 'Hemomancer', jobDone: 'Hemomancer', fallbackAt: AT, trees },
-    );
-    expect(res.classes.Hemomancer).toEqual({ unlockedAt: AT, nodes: [] });
-  });
-
-  test('parseClasses clears un-held unique classes (gating legacy Necromancer/Shadow Monarch on enforceUnique until PR 3 UI)', () => {
-    // Post-PR-3 (enforceUnique: true): legacy Necromancer and Shadow Monarch clear cleanly
-    const strictNecro = parseClasses(undefined, { job: 'Necromancer', jobDone: 'Necromancer', fallbackAt: AT, trees, enforceUnique: true });
+  test('parseClasses always clears un-held unique classes including Necromancer and Shadow Monarch', () => {
+    const strictNecro = parseClasses(undefined, { job: 'Necromancer', jobDone: 'Necromancer', fallbackAt: AT, trees });
     expect(strictNecro).toEqual({ classes: {}, job: null, jobDone: null });
-    const strictAlias = parseClasses(undefined, { job: 'Shadow Monarch', jobDone: 'Shadow Monarch', fallbackAt: AT, trees, enforceUnique: true });
+    const strictAlias = parseClasses(undefined, { job: 'Shadow Monarch', jobDone: 'Shadow Monarch', fallbackAt: AT, trees });
     expect(strictAlias).toEqual({ classes: {}, job: null, jobDone: null });
-
-    // Standalone PR 1 (enforceUnique: false): legacy Necromancer/Shadow Monarch keep 'Necromancer' label (no classes entry)
-    // so shadow extraction stays reachable before PR 3's GM Claim UI, while brand-new uniques still clear to null.
-    const legacyNecro = parseClasses(undefined, { job: 'Necromancer', jobDone: 'Necromancer', fallbackAt: AT, trees, enforceUnique: false });
-    expect(legacyNecro).toEqual({ classes: {}, job: 'Necromancer', jobDone: null });
-    const legacyAlias = parseClasses(undefined, { job: 'Shadow Monarch', jobDone: 'Shadow Monarch', fallbackAt: AT, trees, enforceUnique: false });
-    expect(legacyAlias).toEqual({ classes: {}, job: 'Necromancer', jobDone: null });
-    const unheldHemo = parseClasses(undefined, { job: 'Hemomancer', jobDone: 'Hemomancer', fallbackAt: AT, trees, enforceUnique: false });
+    const unheldHemo = parseClasses(undefined, { job: 'Hemomancer', jobDone: 'Hemomancer', fallbackAt: AT, trees });
     expect(unheldHemo).toEqual({ classes: {}, job: null, jobDone: null });
   });
 
@@ -242,22 +226,12 @@ describe('parseClasses', () => {
     expect(res.jobDone).toBe('Necromancer');
   });
 
-  test('non-unique awakened legacy job seeds locker from jobDone even if job is a different label, while unawakened starter stays outside locker', () => {
-    const awakened = parseClasses(undefined, { job: 'Fighter', jobDone: 'Fighter', fallbackAt: AT, trees });
-    expect(awakened.classes.Fighter).toEqual({ unlockedAt: AT, nodes: [] });
-    expect(awakened.job).toBe('Fighter');
-    expect(awakened.jobDone).toBe('Fighter');
-
-    // jobDone-only seeding when active job is a custom label: Fighter enters locker, jobDone clears to match active label
-    const split = parseClasses(undefined, { job: 'Wanderer', jobDone: 'Fighter', fallbackAt: AT, trees });
-    expect(split.classes.Fighter).toEqual({ unlockedAt: AT, nodes: [] });
-    expect(split.job).toBe('Wanderer');
-    expect(split.jobDone).toBeNull();
+  test('unearned jobDone does not seed classes; unawakened starter stays outside locker', () => {
+    const unseeded = parseClasses(undefined, { job: 'Fighter', jobDone: 'Fighter', fallbackAt: AT, trees });
+    expect(unseeded).toEqual({ classes: {}, job: 'Fighter', jobDone: null });
 
     const unawakened = parseClasses(undefined, { job: 'Fighter', jobDone: null, fallbackAt: AT, trees });
-    expect(unawakened.classes).toEqual({});
-    expect(unawakened.job).toBe('Fighter');
-    expect(unawakened.jobDone).toBeNull();
+    expect(unawakened).toEqual({ classes: {}, job: 'Fighter', jobDone: null });
   });
 
   test('activeClass reports none, label, and earned states cleanly', () => {

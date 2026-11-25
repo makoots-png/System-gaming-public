@@ -2477,9 +2477,9 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
     expect(fudgeOf(reduce(fight, pass('A'), ctx).fight).forced, 'a turn that rolls nothing spends nothing').toEqual({ [id('A')]: 20, [id('M')]: 1, [id('N')]: 20 });
   });
 
-  test('a fight read from a save without a fudge has all 0', () => {
+  test('a fight read from a save without a fudge is refused', () => {
     const { fudge: _, ...stored } = running(play(...duel(), weigh(side('party'), 2)));
-    expect(fudgeOf(parseFight(JSON.parse(JSON.stringify(stored)), RULES))).toEqual({ sides: { party: 0, foe: 0 }, rows: {}, forced: {} });
+    expect(parseFight(JSON.parse(JSON.stringify(stored)), RULES)).toBeNull();
   });
 
   test('a saved fudge reads back as it was set, and one naming a row the fight lacks, or not whole, is no fight', () => {

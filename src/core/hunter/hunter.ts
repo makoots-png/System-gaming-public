@@ -212,7 +212,6 @@ function fixVitals(h: Hunter, R: Rules): void {
   h.mana = int(h.mana, 0, 0, VITAL_MAX); h.fatigue = int(h.fatigue, 0, 0, VITAL_MAX);
   h.used = parseUsed(h.used, R);
   h.restsTaken = int(h.restsTaken, 0, 0, VITAL_MAX);
-  // a hunter stored before the ladder has never been raised by the System: its free raise is left
   h.reviveLeft = oneOf(h.reviveLeft, REVIVE_STANDINGS, 'free'); h.debt = int(h.debt, 0, 0, DEBT_MAX);
 }
 
@@ -302,7 +301,6 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   h.solo = parseSolo(h.solo);
   h.chronicle = parseChronicle(h.chronicle);
   // Looks: an unknown emblem or color means "automatic". A lowered loadoutCap keeps saved sets. A loadout's slots are references: `fixRefs` reads them.
-  // Any legacy `build` field on a pre-R1 save or sheet stays untouched as an unknown key (`fill` keeps unknown keys).
   if (!isIconKey(h.emblem)) h.emblem = '';
   if (!HUNTER_COLORS.includes(h.color)) h.color = '';
   h.loadouts = list(run, h.loadouts, 'lo', newLoadout, l => { l.name = l.name.replace(/\s+/g, ' ').trim().slice(0, 24) || 'Set'; }).slice(0, LIMITS.loadouts);
@@ -334,11 +332,8 @@ export function fixRefs(h: Hunter, storedAs: ReadonlyMap<string, string>, now: s
   }
   const withQuest = (v: unknown): unknown => (isObj(v) ? { ...v, questId: named(h.quests, v.questId)?.id ?? v.questId } : v);
   h.penalty = parsePenalty(withQuest(h.penalty), h.quests, now);
-  // A save from before the chain had its own field kept it on the quests as `step` and `chainJob`: read once, then dropped.
   h.jobChain = parseJobChain(withQuest(h.jobChain), h.quests);
   h.quests = h.quests.map(q => {
-    delete (q as Rec).step;
-    delete (q as Rec).chainJob;
     if (q.status === 'active' && q.chainId && (!h.jobChain || q.chainId !== h.jobChain.id)) {
       return { ...q, status: 'failed', doneAt: now };
     }
@@ -348,10 +343,9 @@ export function fixRefs(h: Hunter, storedAs: ReadonlyMap<string, string>, now: s
 
 /**
  * A hunter another phone sent to a room (its sheet), repaired the way a save's hunter is, or null when it is not an
- * object or its id is not a hunter id. In place, like the save repair. Unknown keys (including legacy `build` from
- * older phones) stay untouched, and a malformed id inside the hunter (a quest's, an item's) is kept, since no other
- * phone looks things up by those ids. A penalty with no start date takes the epoch: the sending phone's own repair
- * always sets one.
+ * object or its id is not a hunter id. In place, like the save repair. Unknown keys stay untouched, and a malformed
+ * id inside the hunter (a quest's, an item's) is kept, since no other phone looks things up by those ids. A penalty
+ * with no start date takes the epoch: the sending phone's own repair always sets one.
  */
 export function parseSheetHunter(value: unknown): Hunter | null {
   if (!isObj(value)) return null;

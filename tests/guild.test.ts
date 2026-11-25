@@ -253,12 +253,10 @@ describe('Helix clerk opening, mixed-party crystal shares, and protocol sync', (
     expect(wire).not.toBeNull();
     expect(withRoomRules(RULES, wire).guilds.archetypes.ironwake.goldCut.core.C).toBe(0.2);
 
-    // Backwards compatibility: RoomRules without guilds falls back to shipped defaults
-    const legacy = { ...roomRulesOf(RULES) } as Record<string, unknown>;
-    delete legacy.guilds;
-    const parsedLegacy = DOCS.rules(legacy);
-    expect(parsedLegacy).not.toBeNull();
-    expect(parsedLegacy!.guilds).toEqual(RULES.guilds);
+    // Missing guilds field refuses the rules doc
+    const partial = { ...roomRulesOf(RULES) } as Record<string, unknown>;
+    delete partial.guilds;
+    expect(DOCS.rules(partial)).toBeNull();
 
     // Save + Sheet round-trip
     const s0 = makeSave();

@@ -117,15 +117,8 @@ const rarities: Reader = (v, path, no) => {
 
 /** A rank: one of `RANKS`, as written. */
 const oneRank: Reader = (v, path, no) => RANKS.find(r => r === v) ?? no(path, 'entry');
-/**
- * Per-rank System revive debt multiples: a per-rank map validated rank by rank, or a flat scalar number validated
- * against the rank domain and expanded to every rank so pre-map saves and flat-multiple edits stay intact.
- */
+/** Per-rank System revive debt multiples, validated rank by rank. */
 const reviveDebtPrices: Reader = (v, path, no) => {
-  if (typeof v === 'number') {
-    const n = numberAt(v, path, no, domainOf('reviveDebtPrices.E'));
-    return n === undefined ? undefined : Object.fromEntries(RANKS.map(r => [r, n]));
-  }
   if (!isObj(v)) return no(path, 'object');
   const out: Rec = {};
   for (const [k, x] of Object.entries(v)) {

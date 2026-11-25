@@ -416,15 +416,9 @@ group('parseItem: an item from a save, a room message, a form or an import', () 
     expect(parseItem(plain({ attack: 'strike' }))!.attack).toBe('strike');
   });
 
-  test('an old item\'s armor ignored, `penFlat`, reads as that much Lethality in its bonus, above 0 and at most the bonus bound, and the old field is gone', () => {
-    expect(parseItem(plain({ penFlat: 5, bonus: { str: 2 } }))!.bonus).toEqual({ str: 2, armorPenFlat: 5 });
-    expect(parseItem(plain({ penFlat: 5000 }))!.bonus).toEqual({ armorPenFlat: ITEM_BOUNDS.bonus });
-    for (const penFlat of [0, -2, '5']) expect(parseItem(plain({ penFlat }))!.bonus).toEqual({});
+  test('unknown top-level penFlat field is ignored and dropped on parse', () => {
+    expect(parseItem(plain({ penFlat: 5, bonus: { str: 2 } }))!.bonus).toEqual({ str: 2 });
     expect(parseItem(plain({ penFlat: 5 }))).not.toHaveProperty('penFlat');
-  });
-
-  test('an item that holds Lethality keeps its own over an old armor ignored', () => {
-    expect(parseItem(plain({ penFlat: 5, bonus: { armorPenFlat: 3 } }))!.bonus).toEqual({ armorPenFlat: 3 });
   });
 
   test('a bonus keeps every bonus key, each a whole number within the bound: the four penetrations, a share read in hundredths, a stat', () => {

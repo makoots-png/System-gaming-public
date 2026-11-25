@@ -7,7 +7,7 @@
 import { parseCounted } from './counts.ts';
 import type { Counted } from './counts.ts';
 import { parseFeatKey } from '../ids.ts';
-import { dayKey, parseDayKey, timeOf } from '../day.ts';
+import { parseDayKey, timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
 import { bossLike, parseFact, parseKept } from './facts.ts';
 import type { Fact, Kept } from './facts.ts';
@@ -159,8 +159,7 @@ export function parseChronicle(v: unknown): Chronicle {
 function featState(v: unknown): FeatState | null {
   if (!isObj(v)) return null;
   if (v.at === 'earned') {
-    // a state from before the day was kept takes the local calendar day of its time, once (old saves: the hunter survives)
-    const on = timeOf(v.on), day = parseDayKey(v.day) ?? (on ? dayKey(new Date(on), 0) : null);
+    const on = timeOf(v.on), day = parseDayKey(v.day);
     return on && day && typeof v.name === 'string' ? { at: 'earned', on, day, name: v.name.slice(0, 60) } : null;
   }
   return v.at === 'hidden' || v.at === 'shown' ? { at: v.at, ...parseCounted(v) } : null;

@@ -250,8 +250,8 @@ export type CodexInfo = { hpMax: number; armor: number; resist: number; speed: n
 export const CODEX_SEEN_MAX = 400;
 
 // ── defaults. Each factory is typed by its entity, so a field added to a type without a default does not compile. ──
-/** 4: the new combat rules (eight stats, mana, gear weight). A save of an older schema is not read. */
-export const SCHEMA = 4;
+/** 5: current save shape. Saves of an older schema are not read. */
+export const SCHEMA = 5;
 /** A fight's drop: the fight it came from, its gold and its items, as a monster's loot holds them (registry/monsters.ts `Loot`). */
 export type Dropped = { readonly fight: FightId; readonly gold: number; readonly items: ItemTemplate[] };
 /** The loot waiting for the GM (pay.ts `lootStep`): none, or the drops of one or more fights, oldest first, one per fight. */
@@ -293,12 +293,7 @@ export type Parsed =
   | { kind: 'save'; save: Save; fightLost: boolean }
   /** Written by a newer app: the edge opens it read-only. */
   | { kind: 'newer'; schema: number; save: Save }
-  /**
-   * Written before the new combat rules (schema 1 to 3): not read, so nothing of it is carried over. `serverOk`: it says
-   * this host has a room server, a fact about the host that the update does not change.
-   */
-  | { kind: 'old'; serverOk: boolean }
-  | { kind: 'invalid'; reason: 'not-json' | 'not-an-object' | 'not-a-save' };
+  | { kind: 'invalid'; reason: 'not-json' | 'not-an-object' | 'not-a-save' | 'old' };
 
 /** Gates come from their own parser, which builds new objects with only the fields a gate has. One without an id takes the default's. */
 function gates(run: RepairRun, value: unknown): Gate[] {
@@ -392,7 +387,7 @@ function fixSync(sync: SyncSettings, now: number): void {
   if ('lastRoom' in sync) {
     const last: unknown = sync.lastRoom;
     const code = isObj(last) ? parseRoomCode(last.code) : null;
-    if (isObj(last) && code) sync.lastRoom = { code, why: LAST_WHY.includes(last.why as LastWhy) ? (last.why as LastWhy) : last.gone === true ? 'gone' : 'left' };
+    if (isObj(last) && code) sync.lastRoom = { code, why: LAST_WHY.includes(last.why as LastWhy) ? (last.why as LastWhy) : 'left' };
     else if (last !== null) delete sync.lastRoom;
   }
   optional(sync, 'boundHunterId', v => parseSaveId<'h'>(v) !== null);
@@ -444,8 +439,6 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.gates = gates(run, save.gates);
   save.shop = Array.isArray(save.shop) ? templates(save.shop) : null;
   save.loot = lootOf(save.loot);
-  // the old single drop (`dropped`, before SMX-gates-1) is not read: old saves need not keep it
-  delete (save as Rec).dropped;
   save.codex = codexOf(save.codex);
   save.codexSeen = save.codexSeen.flatMap(v => parseCombatantId(v) ?? []).slice(-CODEX_SEEN_MAX);
   save.coins = parseCoins(save.coins); save.calls = parseCoins(save.calls);
@@ -519,17 +512,16 @@ export function parseSave(text: string, env: ParseEnv): Parsed {
 
 /**
  * The same for a value that is already parsed. The value is handed over: it is repaired in place and becomes the
- * save, so the caller must not use it again. A save of this schema holds a list of hunters, whatever else is damaged.
- * One with a list of hunters under another schema, or the first app's flat shape (stats, a name or quests), is from
- * before the new combat rules: `old`. Anything else is not a save.
+ * save, so the caller must not use it again. A save of this schema holds `schema === SCHEMA` and a list of hunters,
+ * whatever else is damaged. An integer schema below `SCHEMA` is refused as `old`; anything else is not a save.
  */
 export function parseSaveValue(value: unknown, env: ParseEnv): Parsed {
   if (!isObj(value)) return { kind: 'invalid', reason: 'not-an-object' };
   const schema = value.schema;
-  if (typeof schema === 'number' && schema > SCHEMA) return { kind: 'newer', schema, save: repair(value, env) };
-  const old = { kind: 'old', serverOk: isObj(value.settings) && isObj(value.settings.sync) && value.settings.sync.serverOk === true } as const;
-  if (!Array.isArray(value.hunters)) return isObj(value.stats) || 'name' in value || 'quests' in value ? old : { kind: 'invalid', reason: 'not-a-save' };
-  if (schema !== SCHEMA) return old;
+  if (typeof schema === 'number' && Number.isInteger(schema) && schema > SCHEMA) return { kind: 'newer', schema, save: repair(value, env) };
+  if (!Array.isArray(value.hunters)) return { kind: 'invalid', reason: 'not-a-save' };
+  if (typeof schema === 'number' && Number.isInteger(schema) && schema >= 1 && schema < SCHEMA) return { kind: 'invalid', reason: 'old' };
+  if (schema !== SCHEMA) return { kind: 'invalid', reason: 'not-a-save' };
   const held = value.fight !== null && value.fight !== undefined, save = repair(value, env);
   return { kind: 'save', save, fightLost: held && save.fight === null };
 }
@@ -564,43 +556,34 @@ export function keepPhone(save: Save, mine: Pick<Save, 'settings'>): Save {
   return atSync(() => ({ ...ownedBy(theirs, 'campaign'), ...ownedBy(own, 'phone'), gmKey, gmKeys: ringMerged(ownKeys, theirKeys) }) as SyncSettings)(next);
 }
 
-/** The text under each storage key, newest first. `null` means the key holds nothing. */
-export type StoredKeys = { v4: string | null; v3: string | null; v2: string | null; v1: string | null };
 /** What the app starts with. The edge acts on it: it owns storage, the backups and the words of the notice. */
 export type Loaded = {
   save: Save;
+  /** True when nothing was stored under the current key (fresh campaign). */
+  fresh: boolean;
   /** A newer app wrote the stored save: never overwrite it. */
   readOnly: boolean;
   /** Raw text the edge must put in the backups before it writes. */
   backup: { reason: string; data: string } | null;
   /**
-   * What the player is told of the load itself: `old`, the stored save is from before the new combat rules, so the app
-   * opens a new campaign; `unreadable`, it is not a save; `fight`, its running fight did not read and was dropped (the
-   * rest opens). Each keeps the stored text in the backups. A read-only save is told by the store's life (store-life.ts).
+   * What the player is told of the load itself: `unreadable`, the stored text is not a save of this schema; `fight`,
+   * its running fight did not read and was dropped (the rest opens). Each keeps the stored text in the backups. A
+   * read-only save is told by the store's life (store-life.ts).
    */
   notice: LoadNotice | null;
 };
-export type LoadNotice = 'unreadable' | 'old' | 'fight';
+export type LoadNotice = 'unreadable' | 'fight';
 
 /**
- * Decides what the app opens with. The newest key that holds anything is the only one read: an unreadable newer text
- * never falls back to an older key, because the older text is from before the newer one existed. A save from before
- * the new combat rules is not carried over: its text goes to the backups and the app opens a new campaign.
+ * Decides what the app opens with from the text stored under the current key (`null` when empty).
  */
-export function loadSave(stored: StoredKeys, env: ParseEnv): Loaded {
-  const quiet = { readOnly: false, backup: null, notice: null };
-  const text = stored.v4 ?? stored.v3 ?? stored.v2 ?? stored.v1;
-  if (text === null) return { ...quiet, save: freshSave(env, { onboarded: false }) };
+export function loadSave(text: string | null, env: ParseEnv): Loaded {
+  const quiet = { fresh: false, readOnly: false, backup: null, notice: null };
+  if (text === null) return { ...quiet, fresh: true, save: freshSave(env, { onboarded: false }) };
   const parsed = parseSave(text, env);
   switch (parsed.kind) {
     case 'save': return parsed.fightLost ? { ...quiet, save: parsed.save, backup: { reason: 'a fight that could not be read', data: text }, notice: 'fight' } : { ...quiet, save: parsed.save };
     case 'newer': return { ...quiet, save: parsed.save, readOnly: true };
-    case 'old': {
-      // Without `serverOk` a phone opened from its cache would hide the room panel until it reached the server again.
-      const save = freshSave(env, { onboarded: true });
-      save.settings.sync.serverOk = parsed.serverOk;
-      return { ...quiet, save, backup: { reason: 'before the new combat rules', data: text }, notice: 'old' };
-    }
     case 'invalid': return { ...quiet, save: freshSave(env, { onboarded: true }), backup: { reason: 'unreadable', data: text }, notice: 'unreadable' };
   }
 }

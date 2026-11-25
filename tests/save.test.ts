@@ -1,5 +1,5 @@
-// What a save is at schema 4 (docs/agent-handoff/rw/m2-plan.md section 1.2): a save from before the new combat rules is
-// not read, so the app opens a new campaign; a current save reads back as it was written; a damaged one is repaired.
+// What a save is at schema 5: an older save is refused at the schema boundary; a current save reads back as it was
+// written; a damaged one is repaired.
 // Expected numbers come from the rules by name: a new hunter has `statBase` in each of the eight stats, the creation
 // points free, and the HP, mana and fatigue capacity of base stats at level 1, where every curve term of design 2.2 is 0
 // (`hpBase`, `manaBase`, `fatigueBase`).
@@ -10,7 +10,7 @@ import { STAT_KEYS } from '../src/core/stats.ts';
 import {
   RARITIES, SCHEMA, createHunter, exportedSave, fileKind, freshSave, keepPhone, loadSave, makeHunter, newHunter, newMonster, newRewards, newShadow, newSyncSettings, parseSave, parseSaveValue, parseSheetHunter, repairSave, SLOTS,
 } from '../src/core/save.ts';
-import type { Hunter, ParseEnv, Parsed, Save, StoredKeys, SyncSettings } from '../src/core/save.ts';
+import type { Hunter, ParseEnv, Parsed, Save, SyncSettings } from '../src/core/save.ts';
 import { KEYS_MAX } from '../src/core/sync/bind.ts';
 import type { EventId, GmKey, RoomCode } from '../src/core/ids.ts';
 import { newGate } from '../src/core/gates/gate.ts';
@@ -41,11 +41,12 @@ function env(): ParseEnv {
   return { now: NOW, newDeviceId: () => dev(`d-test${++made}`), newDeviceToken: () => `token-${String(++tokens).padStart(26, '0')}` };
 }
 
-/** Saves made by the app before the new combat rules: the first app's flat save (schema 1) and three of schema 2. */
-const OLD_FIXTURES = ['v1-save.json', 'main-gm-starter.json', 'main-player.json', 'main-export.json'];
-const fixtureText = (name: string): Promise<string> => Bun.file(`${import.meta.dir}/fixtures/saves/${name}`).text();
-const fixture = async (name: string): Promise<Raw> => JSON.parse(await fixtureText(name));
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const samplePlayer = (name = 'Mira Fixture'): Save => {
+  const save = freshSave(env(), { onboarded: true });
+  save.hunters[0]!.name = name;
+  return save;
+};
 
 function saved(parsed: Parsed): Save {
   if (parsed.kind !== 'save') throw new Error(`expected a save, got ${JSON.stringify(parsed).slice(0, 200)}`);
@@ -98,52 +99,34 @@ function campaign(): Save {
   return save;
 }
 
-describe('a save from before the new combat rules', () => {
-  for (const name of OLD_FIXTURES) {
-    test(`${name} is old, so nothing of it is read`, async () => {
-      expect(parseSave(await fixtureText(name), env())).toMatchObject({ kind: 'old' });
-    });
-  }
-
-  test('a save of schema 3, one of schema 2 and one with a hunters list but no schema number are old', async () => {
-    const raw = await fixture('main-player.json');
-    for (const schema of [3, 2, undefined]) expect(parseSaveValue({ ...copy(raw), schema }, env())).toMatchObject({ kind: 'old' });
-  });
-
-  test('a flat save of the first app with only a name, stats or quests is old', () => {
-    for (const v of [{ name: 'Solo' }, { stats: { str: 12 } }, { quests: [] }]) expect(parseSaveValue(v, env())).toMatchObject({ kind: 'old' });
-  });
-
-  test('an old save says whether this host had a room server, and nothing else', () => {
-    const reached = (serverOk: unknown): Parsed => parseSaveValue({ schema: 3, hunters: [], settings: { sync: { room: 'ABCDEF', serverOk } } }, env());
-    expect(reached(true)).toEqual({ kind: 'old', serverOk: true });
-    expect(reached(false)).toEqual({ kind: 'old', serverOk: false });
-    expect(reached('yes')).toEqual({ kind: 'old', serverOk: false });
-    expect(parseSaveValue({ name: 'Solo' }, env())).toEqual({ kind: 'old', serverOk: false });
+describe('the schema boundary for older saves', () => {
+  test('an integer schema below SCHEMA with a hunters list is refused as old; non-saves and bad schemas are not-a-save', () => {
+    const raw = samplePlayer();
+    for (const schema of [4, 3, 2, 1]) expect(parseSaveValue({ ...copy(raw), schema }, env())).toEqual({ kind: 'invalid', reason: 'old' });
+    for (const schema of [0, -1, undefined, '4', 4.5, 5.5, Number.POSITIVE_INFINITY, Number.NaN]) {
+      expect(parseSaveValue({ ...copy(raw), schema }, env())).toEqual({ kind: 'invalid', reason: 'not-a-save' });
+    }
+    for (const v of [{ schema: 4, foo: 1 }, { schema: 2, hunters: { h1: {} } }, { name: 'Solo' }, { stats: { str: 12 } }, { quests: [] }]) {
+      expect(parseSaveValue(v, env())).toEqual({ kind: 'invalid', reason: 'not-a-save' });
+    }
   });
 });
 
-describe('what the app opens with, from the text under each storage key', () => {
-  const NOTHING: StoredKeys = { v4: null, v3: null, v2: null, v1: null };
-  const current = (name: string): string => {
-    const save = freshSave(env(), { onboarded: true });
-    save.hunters[0]!.name = name;
-    return JSON.stringify(save);
-  };
-  const UNREADABLE = ['not json {name: Lost Hunter', '[]', '{"foo":1}', '{"schema":2,"hunters":{"h1":{"name":"Odd Shape Hunter"}}}'];
-  const OLD_RESULT = { readOnly: false, notice: 'old' };
+describe('what the app opens with, from the stored save key', () => {
+  const current = (name: string): string => JSON.stringify(samplePlayer(name));
+  const UNREADABLE = ['not json {name: Lost Hunter', '[]', '{"foo":1}', `{"schema":${SCHEMA},"hunters":{"h1":{"name":"Odd Shape Hunter"}}}`, JSON.stringify({ ...samplePlayer(), schema: SCHEMA - 1 })];
 
   test('a current save opens as it was stored, with no warning and nothing to back up', () => {
     const text = current('Stored Hunter');
-    const loaded = loadSave({ ...NOTHING, v4: text }, env());
-    expect(loaded).toEqual({ save: JSON.parse(text), readOnly: false, backup: null, notice: null });
+    const loaded = loadSave(text, env());
+    expect(loaded).toEqual({ save: JSON.parse(text), fresh: false, readOnly: false, backup: null, notice: null });
   });
 
-  test('a save from a newer app opens read-only with the newer warning and its hunters', async () => {
-    const raw = await fixture('main-player.json');
+  test('a save from a newer app opens read-only with the newer warning and its hunters', () => {
+    const raw: Raw = copy(samplePlayer());
     raw.schema = 99;
-    const loaded = loadSave({ ...NOTHING, v4: JSON.stringify(raw) }, env());
-    expect(loaded).toMatchObject({ readOnly: true, backup: null, notice: null });
+    const loaded = loadSave(JSON.stringify(raw), env());
+    expect(loaded).toMatchObject({ fresh: false, readOnly: true, backup: null, notice: null });
     expect(loaded.save.schema).toBe(99);
     expect(loaded.save.hunters[0]!.name).toBe('Mira Fixture');
   });
@@ -152,8 +135,8 @@ describe('what the app opens with, from the text under each storage key', () => 
     const save = JSON.parse(current('Stored Hunter'));
     save.fight = { phase: 'running', rows: 'not rows' };
     const text = JSON.stringify(save);
-    const loaded = loadSave({ ...NOTHING, v4: text }, env());
-    expect(loaded).toMatchObject({ readOnly: false, backup: { reason: 'a fight that could not be read', data: text }, notice: 'fight' });
+    const loaded = loadSave(text, env());
+    expect(loaded).toMatchObject({ fresh: false, readOnly: false, backup: { reason: 'a fight that could not be read', data: text }, notice: 'fight' });
     expect(loaded.save.fight).toBeNull();
     expect(loaded.save.hunters[0]!.name).toBe('Stored Hunter');
   });
@@ -163,72 +146,23 @@ describe('what the app opens with, from the text under each storage key', () => 
     const kept = { op: 'shield', amount: { kind: 'number', value: 3 } };
     const save = JSON.parse(current('Stored Hunter'));
     save.library.items = [{ id: 'i20001', name: 'Odd Charm', effects: [{ op: 'shield', amount: negated(201) }, kept] }];
-    const loaded = loadSave({ ...NOTHING, v4: JSON.stringify(save) }, env());
+    const loaded = loadSave(JSON.stringify(save), env());
     expect(loaded.save.library.items).toHaveLength(1);
     expect(loaded.save.library.items[0]).toMatchObject({ name: 'Odd Charm', effects: [kept] });
     expect(loaded.save.hunters[0]!.name).toBe('Stored Hunter');
   });
 
   for (const text of UNREADABLE) {
-    test(`a current save that reads ${text.slice(0, 24)} gives a starter hunter, the unreadable warning and the old text to back up`, () => {
-      const loaded = loadSave({ ...NOTHING, v4: text }, env());
-      expect(loaded).toMatchObject({ readOnly: false, backup: { reason: 'unreadable', data: text }, notice: 'unreadable' });
+    test(`a stored text that reads ${text.slice(0, 24)} gives a starter hunter, the unreadable warning and the text to back up`, () => {
+      const loaded = loadSave(text, env());
+      expect(loaded).toMatchObject({ fresh: false, readOnly: false, backup: { reason: 'unreadable', data: text }, notice: 'unreadable' });
       expect(loaded.save).toEqual(freshSave(env(), { onboarded: true }));
     });
   }
 
-  for (const [key, name] of [['v3', 'main-player.json'], ['v2', 'main-gm-starter.json'], ['v1', 'v1-save.json']] as const) {
-    test(`a save from before the new combat rules under ${key} opens a new campaign with the old warning and its text to back up`, async () => {
-      const text = await fixtureText(name);
-      const loaded = loadSave({ ...NOTHING, [key]: text }, env());
-      expect(loaded).toMatchObject({ ...OLD_RESULT, backup: { reason: 'before the new combat rules', data: text } });
-      const fresh = freshSave(env(), { onboarded: true });
-      fresh.settings.sync.serverOk = key !== 'v1';
-      expect(loaded.save).toEqual(fresh);
-      expect(onlyHunter(loaded.save).name).toBe('Sung Jin-Woo');
-    });
-  }
-
-  test('a phone that reached the room server before the update still knows this host has one, and keeps no room', async () => {
-    const raw = await fixture('main-gm-starter.json');
-    raw.settings.sync = { room: 'ABCDEF', cursor: 41, serverOk: true, gmKey: 'k'.repeat(32), boundHunterId: 'h107' };
-    const loaded = loadSave({ ...NOTHING, v2: JSON.stringify(raw) }, env());
-    expect(loaded.save.settings.sync).toEqual({ ...newSyncSettings(), serverOk: true, deviceToken: loaded.save.settings.sync.deviceToken });
-    expect(loaded.save.settings.sync.deviceToken).toHaveLength(32);
-    expect(loaded.save.fight).toBeNull();
-  });
-
-  test('an unreadable save under an old key gives a starter hunter, the unreadable warning and the old text to back up', () => {
-    for (const key of ['v3', 'v2', 'v1'] as const) {
-      for (const text of UNREADABLE) {
-        const loaded = loadSave({ ...NOTHING, [key]: text }, env());
-        expect(loaded).toMatchObject({ readOnly: false, backup: { reason: 'unreadable', data: text }, notice: 'unreadable' });
-        expect(loaded.save).toEqual(freshSave(env(), { onboarded: true }));
-      }
-    }
-  });
-
-  test('a phone with nothing stored gets a starter hunter that has not been through the welcome, and no warning', () => {
-    const loaded = loadSave(NOTHING, env());
-    expect(loaded).toEqual({ save: freshSave(env(), { onboarded: false }), readOnly: false, backup: null, notice: null });
-    expect(onlyHunter(loaded.save).name).toBe('Sung Jin-Woo');
-  });
-
-  test('a current save wins over older saves, which are not backed up', async () => {
-    const loaded = loadSave({ v4: current('Newest Hunter'), v3: await fixtureText('main-player.json'), v2: await fixtureText('main-export.json'), v1: await fixtureText('v1-save.json') }, env());
-    expect(loaded).toMatchObject({ backup: null, notice: null });
-    expect(onlyHunter(loaded.save).name).toBe('Newest Hunter');
-  });
-
-  test('of the old keys only the newest is backed up', async () => {
-    const v3 = await fixtureText('main-player.json');
-    const loaded = loadSave({ v4: null, v3, v2: await fixtureText('main-export.json'), v1: await fixtureText('v1-save.json') }, env());
-    expect(loaded.backup).toEqual({ reason: 'before the new combat rules', data: v3 });
-  });
-
-  test('an unreadable current save does not fall back to an older key', async () => {
-    const loaded = loadSave({ v4: '{"foo":1}', v3: await fixtureText('main-player.json'), v2: null, v1: await fixtureText('v1-save.json') }, env());
-    expect(loaded).toMatchObject({ backup: { reason: 'unreadable', data: '{"foo":1}' }, notice: 'unreadable' });
+  test('a phone with nothing stored gets a fresh starter hunter that has not been through the welcome, and no warning', () => {
+    const loaded = loadSave(null, env());
+    expect(loaded).toEqual({ save: freshSave(env(), { onboarded: false }), fresh: true, readOnly: false, backup: null, notice: null });
     expect(onlyHunter(loaded.save).name).toBe('Sung Jin-Woo');
   });
 });
@@ -337,8 +271,9 @@ describe('text that is not a save', () => {
     ['an empty object', '{}', 'not-a-save'],
     ['an object of something else', '{"foo":1}', 'not-a-save'],
     ['an object whose hunters is not a list', '{"hunters":"many","settings":{}}', 'not-a-save'],
-    ['an old save whose hunters is not a list', '{"schema":2,"hunters":{"h1":{"name":"Odd Shape Hunter","level":4}}}', 'not-a-save'],
-    ['a current save with no hunters list', '{"schema":4,"settings":{},"world":{"day":4}}', 'not-a-save'],
+    ['an older schema save', `{"schema":${SCHEMA - 1},"hunters":[]}`, 'old'],
+    ['a current save whose hunters is not a list', `{"schema":${SCHEMA},"hunters":{"h1":{"name":"Odd Shape Hunter","level":4}}}`, 'not-a-save'],
+    ['a current save with no hunters list', `{"schema":${SCHEMA},"settings":{},"world":{"day":4}}`, 'not-a-save'],
   ];
   for (const [what, text, reason] of cases) {
     test(`${what} is refused as ${reason}`, () => {
@@ -348,8 +283,8 @@ describe('text that is not a save', () => {
 });
 
 describe('a save written by a newer app', () => {
-  test('is reported as newer with its schema number, and its hunters are still readable', async () => {
-    const raw = await fixture('main-player.json');
+  test('is reported as newer with its schema number, and its hunters are still readable', () => {
+    const raw: Raw = copy(samplePlayer());
     raw.schema = 99;
     const parsed = parseSaveValue(raw, env());
     expect(parsed).toMatchObject({ kind: 'newer', schema: 99 });
@@ -409,9 +344,10 @@ describe('a damaged or hostile save', () => {
     expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
   });
 
-  test('a hunter saved before the Job Change was remembered has finished none', () => {
+  test('jobDone matches job only when that class is earned in classes', () => {
     expect(onlyHunter(parseRaw(withHunter({ job: 'Mage' }))).jobDone).toBeNull();
-    expect(onlyHunter(parseRaw(withHunter({ job: 'Mage', jobDone: 'Mage' }))).jobDone).toBe('Mage');
+    expect(onlyHunter(parseRaw(withHunter({ job: 'Mage', jobDone: 'Mage' }))).jobDone).toBeNull();
+    expect(onlyHunter(parseRaw(withHunter({ job: 'Mage', jobDone: 'Mage', classes: { Mage: { unlockedAt: NOW.toISOString(), nodes: [] } } }))).jobDone).toBe('Mage');
     expect(onlyHunter(parseRaw(withHunter({ jobDone: 7 }))).jobDone).toBeNull();
   });
 
@@ -641,17 +577,17 @@ describe('what a repair fixes', () => {
     expect(onlyHunter(parseRaw(withHunter({ spent: 12 }))).spent).toEqual({});
   });
 
-  test('a pre-R1 hunter with a stored build field loads cleanly, keeps the unknown build field on round-trip, and gets no path bonuses', () => {
-    const legacyBuild = { path: 'vanguard', picks: [0, 1, 0] };
-    const save = parseRaw(withHunter({ build: legacyBuild, skills: [{ id: 's9', name: 'Sprint' }] }));
+  test('an unknown hunter field survives round-trip untouched and grants no bonuses', () => {
+    const extraField = { path: 'vanguard', picks: [0, 1, 0] };
+    const save = parseRaw(withHunter({ build: extraField, skills: [{ id: 's9', name: 'Sprint' }] }));
     const h = onlyHunter(save);
-    expect((h as unknown as Record<string, unknown>).build).toEqual(legacyBuild);
+    expect((h as unknown as Record<string, unknown>).build).toEqual(extraField);
     expect(h.skills.map(k => k.name)).toEqual(['Sprint']);
     const roundTripped = onlyHunter(parseRaw(JSON.parse(JSON.stringify(save))));
-    expect((roundTripped as unknown as Record<string, unknown>).build).toEqual(legacyBuild);
+    expect((roundTripped as unknown as Record<string, unknown>).build).toEqual(extraField);
   });
 
-  test('pre-R1 build and paths rulesOverrides are dropped cleanly while keeping valid sibling overrides', () => {
+  test('unknown rulesOverrides keys are dropped cleanly while keeping valid sibling overrides', () => {
     const save = parseRaw({
       schema: SCHEMA, hunters: [],
       rulesOverrides: { logCap: 42, build: { enabled: false, playerPick: false }, paths: { vanguard: { name: 'Custom' } } },
@@ -873,10 +809,10 @@ describe('what a repair fixes', () => {
     expect(shadow).toEqual({ ...newShadow(), id: 'sh1', name: 'Igris', rank: 'B', grade: 'Knight', archetype: 'skirmisher', hp: 81 });
   });
 
-  test('a last room without a reason reads as left, and one marked gone by an older build as gone', () => {
+  test('a last room without a valid reason reads as left', () => {
     const last = (lastRoom: unknown) => parseRaw({ schema: SCHEMA, hunters: [], settings: { sync: { lastRoom } } }).settings.sync.lastRoom;
     expect(last({ code: 'ABCDEF' })).toEqual({ code: 'ABCDEF', why: 'left' });
-    expect(last({ code: 'ABCDEF', gone: true })).toEqual({ code: 'ABCDEF', why: 'gone' });
+    expect(last({ code: 'ABCDEF', why: 'gone' })).toEqual({ code: 'ABCDEF', why: 'gone' });
     expect(last({ code: 'ABCDEF', why: 'removed' })).toEqual({ code: 'ABCDEF', why: 'removed' });
     expect(last({ code: 'ABCDEF', why: 'banished' })).toEqual({ code: 'ABCDEF', why: 'left' });
   });
@@ -944,13 +880,11 @@ describe('the loot waiting for the GM (SMX-gates-1)', () => {
     expect(loot(drops)).toEqual({ at: 'waiting', drops: drops as never });
   });
 
-  test('what is not waiting loot reads as none: no loot, none, an empty list, a state it does not know, the old single drop', () => {
+  test('what is not waiting loot reads as none: no loot, none, an empty list, a state it does not know', () => {
     expect(parseRaw({ schema: SCHEMA, hunters: [] }).loot).toEqual({ at: 'none' });
     expect(loot([], 'waiting')).toEqual({ at: 'none' });
     expect(loot([{ fight: 'f-1', gold: 5, items: [] }], 'none')).toEqual({ at: 'none' });
     expect(loot([{ fight: 'f-1', gold: 5, items: [] }], 'later')).toEqual({ at: 'none' });
-    const old = parseRaw({ schema: SCHEMA, hunters: [], dropped: { gold: 75, items: [] } });
-    expect([old.loot, 'dropped' in old]).toEqual([{ at: 'none' }, false]);
   });
 
   test('a drop that does not read is left out and the rest kept: no fight, gold not a whole number from 0, items not a list, nothing in it, a second drop of one fight', () => {
@@ -1078,10 +1012,10 @@ describe('an ability\'s effect, by the rule or by hand (implicit audit 3, M2)', 
     expect(kept.type === 'active' ? kept.ability : null).toEqual(swing);
   });
 
-  test('one stored before `by` is read as typed by hand, its formula kept, so a hunter keeps the ability; anything else for `by` drops it', () => {
-    const formula = formulaOf(swing, RULES)!, old = { ...copy(swing), effect: { type: 'physical', formula: copy(formula) } };
-    const kept = library(old);
-    expect(kept.type === 'active' ? kept.ability?.effect : null).toEqual({ type: 'physical', by: 'hand', formula });
+  test('an ability effect requires an explicit `by` of rule or hand; missing or unknown `by` drops it', () => {
+    const formula = formulaOf(swing, RULES)!;
+    const missing = library({ ...copy(swing), effect: { type: 'physical', formula: copy(formula) } });
+    expect(missing.type === 'active' ? missing.ability : 'not active').toBeNull();
     const odd = library({ ...copy(swing), effect: { type: 'physical', by: 'luck', formula: copy(formula) } });
     expect(odd.type === 'active' ? odd.ability : 'not active').toBeNull();
   });
@@ -1269,9 +1203,9 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
 });
 
 describe('a hunter\'s job as the save keeps it (H9)', () => {
-  test('a job is kept as its name; a blank, a non-string or the old default "None" is read as none (null)', () => {
+  test('a job is kept as its name; un-held unique names, blanks, non-strings and "None" read as null', () => {
     const read = (job: unknown) => parseSheetHunter({ ...newHunter(RULES), id: 'h1', job })?.job;
-    expect([read('Mage'), read('  Blade   Dancer '), read('  Shadow   Monarch '), read('Hemomancer'), read(''), read('None'), read(7), read(null)]).toEqual(['Mage', 'Blade Dancer', 'Necromancer', null, null, null, null, null]);
+    expect([read('Mage'), read('  Blade   Dancer '), read('  Shadow   Monarch '), read('Hemomancer'), read(''), read('None'), read(7), read(null)]).toEqual(['Mage', 'Blade Dancer', null, null, null, null, null, null]);
   });
 });
 

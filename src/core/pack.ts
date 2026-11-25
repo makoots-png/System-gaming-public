@@ -137,7 +137,7 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
 export type KindCount = { kept: number; unreadable: number; over: number };
 export type PackRead =
   | { ok: true; pack: Pack; counts: Record<PackKind, KindCount> }
-  | { ok: false; why: 'not-a-pack' | 'newer' };
+  | { ok: false; why: 'not-a-pack' | 'newer' | 'older' };
 
 function readList<T>(v: unknown, cap: number, read: (x: unknown) => T | null, count: KindCount): T[] {
   const out: T[] = [];
@@ -158,7 +158,11 @@ function readList<T>(v: unknown, cap: number, read: (x: unknown) => T | null, co
  */
 export function parsePack(v: unknown): PackRead {
   if (!isObj(v) || v.kind !== 'library') return { ok: false, why: 'not-a-pack' };
-  if (typeof v.schema === 'number' && v.schema > SCHEMA) return { ok: false, why: 'newer' };
+  if (v.schema !== undefined) {
+    if (typeof v.schema !== 'number' || !Number.isInteger(v.schema) || v.schema < 1) return { ok: false, why: 'not-a-pack' };
+    if (v.schema > SCHEMA) return { ok: false, why: 'newer' };
+    if (v.schema < SCHEMA) return { ok: false, why: 'older' };
+  }
   const lib = isObj(v.library) ? v.library : {};
   const counts = each((): KindCount => ({ kept: 0, unreadable: 0, over: 0 }));
   const pack = newPack();

@@ -7,7 +7,7 @@ import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, editIde
 // Chromium logs every 426 answer as a console error. The 426 is the refusal these tests are about.
 const REFUSED_LOG = /Failed to load resource: the server responded with a status of 426 \(Upgrade Required\)/;
 const OLD_BUILD = 'old-build-01';
-const V4 = 'hunter-system-v4';
+const V4 = 'hunter-system-v5';
 const UPGRADE_KEY = 'hunter-system-upgrade';
 
 const tkOverlay = (page: Page) => page.locator('.tk-overlay.show');

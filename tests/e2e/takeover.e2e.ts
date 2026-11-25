@@ -7,7 +7,7 @@ import { TAKEOVER_WORDS, canTakeOver } from '../../src/core/store-life.ts';
 import type { ReadOnlyWhy } from '../../src/core/store-life.ts';
 import { test, expect, openApp, editIdentity, go, save, noonDate, PHONE, type Page } from './helpers.ts';
 
-const V4 = 'hunter-system-v4', BACKUPS = 'hunter-system-backups';
+const V4 = 'hunter-system-v5', BACKUPS = 'hunter-system-backups';
 const seedEnv = () => ({ now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-takeover')!, newDeviceToken: () => 'test-device-token-0123456789abcd' });
 
 function playerSave(name = 'Mira Fixture'): string {

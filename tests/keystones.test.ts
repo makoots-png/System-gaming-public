@@ -369,6 +369,7 @@ describe('the registry of keystones (design A.6)', () => {
     const base = freshSave(env, { onboarded: true });
     const necro = {
       ...base.hunters[0]!, name: 'Sung', rank: 'C' as const, level: 20, job: 'Necromancer', jobDone: 'Necromancer',
+      classes: { Necromancer: { unlockedAt: AT, nodes: [], registryId: base.classHolders.registryId, grantId: 'cg-ks' } },
       stats: built({ pre: 46, pow: 23 }),
     };
     // Build a row holding legacy Conduit worn statuses as an older version would have serialized into Save.fight

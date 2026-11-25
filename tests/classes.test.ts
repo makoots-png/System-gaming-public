@@ -349,16 +349,15 @@ describe('setJob, earnClass, swapClass, buyClassNode, flipClassFork, pushedClass
     };
 
     // Backed holder k1 keeps Necromancer untouched
-    expect(backedRemoteHunter(spoofed, k1, holders, true)).toBe(spoofed);
+    expect(backedRemoteHunter(spoofed, k1, holders)).toBe(spoofed);
     // Unbacked phone k2 has Necromancer stripped from classes and job cleared
-    const stripped = backedRemoteHunter(spoofed, k2, holders, true);
+    const stripped = backedRemoteHunter(spoofed, k2, holders);
     expect(stripped.job).toBeNull();
     expect(stripped.jobDone).toBeNull();
     expect(stripped.classes.Necromancer).toBeUndefined();
 
-    // Pre-PR-3 legacy Necromancer label (no classes entry) stays allowed when enforceUnique=false, stripped when true
-    const legacy = { ...h, job: 'Necromancer', jobDone: null, classes: {} };
-    expect(backedRemoteHunter(legacy, k2, { registryId: 'reg-1', held: {} }, false).job).toBe('Necromancer');
-    expect(backedRemoteHunter(legacy, k2, { registryId: 'reg-1', held: {} }, true).job).toBeNull();
+    // Unbacked Necromancer label (even with no classes entry) is always stripped
+    const unbackedLabel = { ...h, job: 'Necromancer', jobDone: null, classes: {} };
+    expect(backedRemoteHunter(unbackedLabel, k2, { registryId: 'reg-1', held: {} }).job).toBeNull();
   });
 });

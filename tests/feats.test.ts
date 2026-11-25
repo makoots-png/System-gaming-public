@@ -194,10 +194,9 @@ describe('the day a feat was earned', () => {
     expect(progressLine(book('threads-end')[0]![1], state(s, 'threads-end')!)).toBe('Earned 2026-11-19.');
     expect(me(s).chronicle.facts.find(f => f.kind === 'feat')?.day).toBe(parseDayKey('2026-11-19')!);
   });
-  test('an earned feat kept before its day was stored takes the local day of its time, once, at the load', () => {
-    process.env.TZ = 'America/Los_Angeles';
+  test('an earned feat without a valid day is dropped on parse', () => {
     const c = parseChronicle({ feats: { 'threads-end': { at: 'earned', on: '2026-11-20T03:30:00.000Z', name: 'Thread\'s End' } } });
-    expect(c.feats['threads-end']).toEqual({ at: 'earned', on: '2026-11-20T03:30:00.000Z', day: '2026-11-19', name: 'Thread\'s End' });
+    expect(c.feats['threads-end']).toBeUndefined();
   });
 });
 

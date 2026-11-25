@@ -58,13 +58,11 @@ describe('mythic-phases-on adversarial probes', () => {
     expect(parseFight(legacy, RULES)).toBeNull();
   });
 
-  test('probe: old room rules doc without mythic field reads as scripts off and overrides player default', () => {
+  test('probe: room rules doc without mythic field is refused', () => {
     const full = roomRulesOf(RULES);
     expect(full.mythic).toEqual({ scripts: true });
     const { mythic: _drop, ...oldDoc } = full;
-    const parsed = DOCS.rules(JSON.parse(JSON.stringify(oldDoc)))!;
-    expect(parsed.mythic).toEqual({ scripts: false });
-    expect(withRoomRules(RULES, parsed).fight.mythic.scripts).toBe(false);
+    expect(DOCS.rules(JSON.parse(JSON.stringify(oldDoc)))).toBeNull();
   });
 
   test('probe: setup fight with mythic added before flipping switch off still starts with phases on', () => {

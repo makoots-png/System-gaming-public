@@ -162,32 +162,20 @@ describe('variable Grievous Wounds helpers, bounds, and number-free prose', () =
     expect(thorn25Lines).toContain('Healing received −25%');
   });
 
-  test('legacy saves with old Grievous Wounds desc ("Receives 40% less healing.") are repaired on parse, including old Thornmails', () => {
-    const legacyDef = { label: 'Grievous Wounds', desc: 'Receives 40% less healing.', ops: [{ op: 'share', on: 'healed', pct: -40 }] };
-    const repaired = parseStatusDef(legacyDef, RULES)!;
-    expect(repaired.desc).toBe('Receives less healing.');
-    expect(grievousCutOf(repaired)).toBe(40);
-
-    // Other labels or custom descriptions are untouched
-    const custom = parseStatusDef({ label: 'Rot', desc: 'Receives 40% less healing.', ops: [{ op: 'share', on: 'healed', pct: -40 }] }, RULES)!;
-    expect(custom.desc).toBe('Receives 40% less healing.');
-
-    // Old saved Thornmail carrying the legacy embedded Grievous Wounds desc repairs on parseItem and uses compact h on the wire
-    const oldThornRaw = JSON.parse(JSON.stringify(itemOf(RULES, thornDef)));
-    oldThornRaw.worn.triggers[0].ops[1].def.desc = 'Receives 40% less healing.';
-    const parsedThorn = parseItem(oldThornRaw)!;
+  test('Thornmail uses compact h on the wire for Grievous Wounds', () => {
+    const parsedThorn = parseItem(JSON.parse(JSON.stringify(itemOf(RULES, thornDef))))!;
     const thornOp = parsedThorn.worn?.triggers?.[0]?.ops[1];
     expect(thornOp?.op === 'applyStatus' ? thornOp.def.desc : null).toBe('Receives less healing.');
-    const repairedDef = thornOp?.op === 'applyStatus' ? thornOp.def : gwDef(40);
+    const thornDefObj = thornOp?.op === 'applyStatus' ? thornOp.def : gwDef(40);
 
     const doc: FightDoc = {
-      ended: false, active: true, by: parseDeviceId('d-gm')!, id: fightId('f-legacy'), at: '2026-11-25T12:00:00.000Z',
+      ended: false, active: true, by: parseDeviceId('d-gm')!, id: fightId('f-thorn'), at: '2026-11-25T12:00:00.000Z',
       now: tick(0), currentId: combatantId('c1'), ahead: [],
       grid: { w: 10, h: 10, tiles: null, lit: null }, zones: [], log: [], refused: null, ready: {},
       rows: [
         {
           id: combatantId('c1'), name: 'Kai', side: 'party', key: null, place: { x: 1, y: 1 }, at: tick(0), speed: 100, band: 'healthy',
-          statuses: [{ key: GW, label: 'Grievous Wounds', left: 2, tier: 0, def: repairedDef }],
+          statuses: [{ key: GW, label: 'Grievous Wounds', left: 2, tier: 0, def: thornDefObj }],
           shield: null, shieldLeft: null, channel: null, taunt: null, icon: null, life: { at: 'up' }, kind: 'hunter', hp: 100, hpMax: 100, stride: 1, move: 6,
         },
         {
@@ -331,7 +319,7 @@ describe('room sync, wire letter h, and DOC_MAX', () => {
     expect(awOp?.op === 'applyStatus' ? grievousCutOf(awOp.def) : null).toBe(25);
   });
 
-  test('RoomRules carries fight.kit.shareCap so player cards match GM combat cap (and older docs default cleanly)', () => {
+  test('RoomRules carries fight.kit.shareCap so player cards match GM combat cap (and missing/invalid shareCap refuses)', () => {
     const gmRules = rulesOf({ fight: { kit: { shareCap: 0.8 } } }, { grievous: gwDef(70) });
     const wire = JSON.parse(JSON.stringify(roomRulesOf(gmRules)));
     const parsed = DOCS.rules(wire)!;
@@ -348,11 +336,9 @@ describe('room sync, wire letter h, and DOC_MAX', () => {
     expect(detailOf({ kind: 'status', key: 'blight', label: 'Blight', def: blightDef, tier: 0, left: 2 }, playerRules).lines).toContain('Healing received −70%');
     expect(detailOf({ kind: 'status', key: 'blight', label: 'Blight', def: blightDef, tier: 0, left: 2 }, RULES).lines).toContain('Healing received −50%');
 
-    // Older room doc without shareCap defaults to shipped shareCap (0.5)
+    // Missing or invalid shareCap refuses the rules doc
     const { shareCap: _omitted, ...older } = wire;
-    expect(DOCS.rules(older)!.shareCap).toBe(RULES.fight.kit.shareCap);
-
-    // Invalid shareCap refuses the rules doc
+    expect(DOCS.rules(older)).toBeNull();
     expect(DOCS.rules({ ...wire, shareCap: '0.8' })).toBeNull();
   });
 

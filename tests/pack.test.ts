@@ -139,9 +139,13 @@ describe('a pack made and read back', () => {
 });
 
 describe('a pack from outside data', () => {
-  test('anything but an object of kind library is not a pack, and a newer schema is refused', () => {
+  test('anything but an object of kind library is not a pack, and newer, older, or malformed schemas are refused', () => {
     for (const v of [null, 'HS1.x', 42, [], {}, { kind: 'hunter', hunters: [] }, { schema: 3, library: {} }]) expect(parsePack(v)).toEqual({ ok: false, why: 'not-a-pack' });
+    for (const schema of [0, -1, 4.5, Number.NaN, Number.POSITIVE_INFINITY, '4', null]) {
+      expect(parsePack({ schema, kind: 'library', library: {} })).toEqual({ ok: false, why: 'not-a-pack' });
+    }
     expect(parsePack({ schema: SCHEMA + 1, kind: 'library', library: {} })).toEqual({ ok: false, why: 'newer' });
+    expect(parsePack({ schema: SCHEMA - 1, kind: 'library', library: {} })).toEqual({ ok: false, why: 'older' });
   });
 
   test('parts of the wrong type hold nothing', () => {

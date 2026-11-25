@@ -210,7 +210,6 @@ describe('the step quests', () => {
 
 describe('a chain as a save or a sheet holds it', () => {
   const quests = (...qs: [string, Quest['status']][]) => qs.map(([id, status]) => ({ id: qid(id), status }));
-  // An old save kept the chain on its quests: `chainId`, `step` and `chainJob` on each step's quest.
   test('a chain on an open quest is kept', () => {
     expect(parseJobChain(at(2, 'q2'), quests(['q2', 'active']))).toEqual(at(2, 'q2'));
   });
@@ -221,21 +220,9 @@ describe('a chain as a save or a sheet holds it', () => {
   });
 
   test('a job not in the table, a step outside 1 to 3 or junk is no chain', () => {
-    for (const v of [{ ...at(2, 'q2'), job: 'Baker' }, { ...at(2, 'q2'), step: 4 }, { ...at(2, 'q2'), status: 'done' }, 'yes', null, [at(2, 'q2')]]) {
+    for (const v of [{ ...at(2, 'q2'), job: 'Baker' }, { ...at(2, 'q2'), step: 4 }, { ...at(2, 'q2'), status: 'done' }, 'yes', null, undefined, [at(2, 'q2')]]) {
       expect(parseJobChain(v, quests(['q2', 'active']))).toBeNull();
     }
-  });
-
-  test('an old save\'s chain, stored on its quests as step and chainJob, becomes the hunter\'s chain on its open step', () => {
-    const old: ChainQuestRef[] = [{ id: qid('q1'), status: 'done', chainId: 'c4', step: 1, chainJob: 'Mage' }, { id: qid('q2'), status: 'active', chainId: 'c4', step: 2, chainJob: 'Mage' }];
-    expect(parseJobChain(undefined, old)).toEqual({ id: 'c4', job: 'Mage', step: 2, status: 'active', questId: 'q2' });
-  });
-
-  test('an old chain whose last step was failed becomes a failed chain; one finished or with no job is none', () => {
-    const failedOld: ChainQuestRef[] = [{ id: qid('q2'), status: 'failed', chainId: 'c4', step: 2, chainJob: 'Mage' }];
-    expect(parseJobChain(undefined, failedOld)).toEqual({ id: 'c4', job: 'Mage', step: 2, status: 'failed', questId: 'q2' });
-    expect(parseJobChain(undefined, [{ id: qid('q3'), status: 'done', chainId: 'c4', step: 3, chainJob: 'Mage' }])).toBeNull();
-    expect(parseJobChain(undefined, [{ id: qid('q2'), status: 'active', chainId: 'c4', step: 2 }])).toBeNull();
   });
 });
 

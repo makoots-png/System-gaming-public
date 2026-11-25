@@ -12,7 +12,7 @@ import type { Change } from '../core/events.ts';
 import { oneOf } from '../core/one-of.ts';
 import { PINS } from '../core/combat/map-view.ts';
 import { exportedSave, fileKind, keepPhone, loadSave, parseSave, repairSave, rulesOf, freshSave } from '../core/save.ts';
-import type { Hunter, LoadNotice, ParseEnv, Save, StoredKeys } from '../core/save.ts';
+import type { Hunter, LoadNotice, ParseEnv, Save } from '../core/save.ts';
 import { isRefused, refuse, writeInto } from '../core/save-step.ts';
 import { READ_ONLY, canTakeOver, dailyBackupDue, mayChange, noticesOf, opened, storeStep } from '../core/store-life.ts';
 import type { DeviceLife, LifeNotice, Opened, ReadOnlyWhy, StoreEvent, StoreLife, StoreStep, Theirs } from '../core/store-life.ts';
@@ -29,8 +29,8 @@ import { NO_TABLE } from '../core/sync/fight-heard.ts';
 import { NO_TOLD, parseTold, toldStep } from '../core/told.ts';
 import type { ToldEvent, ToldMemory } from '../core/told.ts';
 
-/** The save. The three old keys are read by `load()` while the save key is empty, and never written or removed. */
-const SAVE_KEY = 'hunter-system-v4', OLD_KEY_V3 = 'hunter-system-v3', OLD_KEY_V2 = 'hunter-system-v2', OLD_KEY_V1 = 'hunter-system-v1';
+/** The save under the current schema key. */
+const SAVE_KEY = 'hunter-system-v5';
 const BACKUPS_KEY = 'hunter-system-backups';
 /** Device only: never exported, backed up or sent to a room. */
 const PREFS_KEY = 'hunter-system-prefs';
@@ -102,7 +102,6 @@ function readJson(key: string, where: Area = 'phone'): unknown {
 export type Notice = { id: string; text: string };
 const LOAD_TEXT: { readonly [N in LoadNotice]: string } = {
   unreadable: 'Your save could not be read. It is kept in Backups, and a new hunter was made.',
-  old: 'This save is from before the new combat rules. It is kept in Backups, and the app starts a new campaign.',
   fight: 'The running fight in your save could not be read, so it was dropped. Everything else opened, and the save as it was is kept in Backups.',
 };
 const LIFE_TEXT: { readonly [N in LifeNotice]: string } = {
@@ -136,8 +135,6 @@ export type Memory = { read(): unknown; write(value: unknown): void };
 
 // ── the campaign's told memory (src/core/told.ts): what this phone told its player, one record, a new one each campaign ──
 const TOLD_KEY = 'hunter-system-told';
-/** The views' own told memories from before the campaign's one record: dropped at load, read by nothing. */
-const OLD_TOLD = ['feat-told:', 'quest-told:', 'personal-told:', 'gates-seen:'].map(p => `hunter-system-${p}`);
 /** The record as stored; with none kept (storage blocked or full), the record of no campaign, which tells nothing. */
 const readTold = (): ToldMemory => parseTold(readJson(TOLD_KEY)) ?? NO_TOLD;
 /** The record after `event`, kept when the step changed it. Its one writer. */
@@ -171,19 +168,18 @@ const backupCap = (save: Save): number => rulesOf(save.rulesOverrides).backupCap
 
 // ── the save and the store's life (src/core/store-life.ts) ──
 /**
- * Reads the four keys and lets core decide what the app opens with. Then does what core cannot: the backup and the
+ * Reads the save key and lets core decide what the app opens with. Then does what core cannot: the backup and the
  * notice. A backup that failed reaches the store's life (`opened`), whose banner says so instead of the load's notice.
  */
-function load(): { save: Save; opened: Opened } {
+function load(): { save: Save; fresh: boolean; opened: Opened } {
   let blocked = false;
   const read = (key: string): string | null => {
     try { return readKey(key); } catch { blocked = true; return null; } // no storage: the life opens noStorage and its banner says so
   };
-  const stored: StoredKeys = { v4: read(SAVE_KEY), v3: read(OLD_KEY_V3), v2: read(OLD_KEY_V2), v1: read(OLD_KEY_V1) };
-  const loaded = loadSave(stored, env());
+  const loaded = loadSave(read(SAVE_KEY), env());
   const backup: Opened['backup'] = !loaded.backup ? 'none' : pushBackup(loaded.backup.reason, loaded.backup.data, backupCap(loaded.save)) ? 'kept' : { unkept: loaded.notice ?? 'unreadable' };
   if (loaded.notice && backup === 'kept') raised.push({ id: loaded.notice, text: LOAD_TEXT[loaded.notice] });
-  return { save: loaded.save, opened: { storage: blocked ? 'blocked' : 'ok', newer: loaded.readOnly, backup } };
+  return { save: loaded.save, fresh: loaded.fresh, opened: { storage: blocked ? 'blocked' : 'ok', newer: loaded.readOnly, backup } };
 }
 const loaded = load();
 let state: Save = loaded.save;
@@ -284,11 +280,7 @@ function carry(first: StoreStep, theirs: Save | null = null, quiet = false): voi
 }
 const run = (e: StoreEvent, theirs: Save | null = null): void => carry(storeStep(life, e), theirs);
 carry(opened(loaded.opened), null, true);
-if (!parseTold(readJson(TOLD_KEY))) newCampaignTold(state);
-try {
-  const old = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter((k): k is string => k !== null && OLD_TOLD.some(p => k.startsWith(p)));
-  for (const k of old) localStorage.removeItem(k);
-} catch { /* no storage to tidy: the life opened noStorage and its banner says so */ }
+if (loaded.fresh || !parseTold(readJson(TOLD_KEY))) newCampaignTold(state);
 const newest = readBackups()[0];
 if (dailyBackupDue(typeof newest?.at === 'string' ? newest.at : null, new Date())) pushBackup('daily', currentText(), backupCap(state));
 
@@ -319,7 +311,7 @@ export const IMPORT_ERRORS = {
   'not-an-object': 'Save data must be a JSON object.',
   'not-a-save': 'This does not look like a Hunter System save.',
   newer: 'This save is from a newer version of the app.',
-  old: 'This save is from before the new combat rules, and this app cannot open it.',
+  old: 'This save is from an older version and cannot be imported. Start a fresh campaign or import a current save.',
 };
 /** A file read as this app reads a save: the save and whether it is one hunter's file, or the words of why it cannot come in. */
 export type Read = { ok: true; save: Save; kind: 'hunter' | 'campaign' } | { ok: false; error: string };
@@ -372,11 +364,12 @@ export const store = {
   hunter: (id: string): Hunter | null => state.hunters.find(h => h.id === id) ?? null,
   backupNow: (reason = 'manual'): boolean => pushBackup(reason, currentText(), backupCap(state)),
   backups: (): { at: string; reason: string }[] => readBackups().map(({ at, reason }) => ({ at: String(at ?? ''), reason: String(reason ?? '') })),
-  /** Swaps in backup `i`: `unreadable` when it is gone or not a save. */
-  restore(i: number, anyway = false): Replaced | 'unreadable' {
+  /** Swaps in backup `i`: `old` for an older schema, `unreadable` when it is gone or not a current save. */
+  restore(i: number, anyway = false): Replaced | 'unreadable' | 'old' {
     const entry = readBackups()[i];
     if (!entry) return 'unreadable';
     const parsed = parseSave(entry.data, env());
+    if (parsed.kind === 'invalid' && parsed.reason === 'old') return 'old';
     if (parsed.kind !== 'save') return 'unreadable';
     return replace(parsed.save, 'pre-restore', 'restore', anyway);
   },

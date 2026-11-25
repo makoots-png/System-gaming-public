@@ -286,8 +286,8 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
       given.push([hid, off ? { ...g, fight: { statuses: [], refill: false } } : g, off]);
     }
     // one window a hunter, in the bundle's words when it has them, else "REWARD RECEIVED" (saying what earned it when the
-    // reward waited for the GM's approval); a level-up window may follow. Legacy build-only awards arrive with empty
-    // rewards after parseRewards drops `build`, so skip an empty window while still recording the event id.
+    // reward waited for the GM's approval); a level-up window may follow. Empty rewards skip the window while still
+    // recording the event id.
     const words = b?.window ? { title: b.window.title, body: b.window.line || b.name }
       : { title: 'REWARD RECEIVED', body: p.earned ? PENDING_WORDS.approvedBody(p.earned.from, p.earned.what) : 'The System has delivered a reward.' };
     return {

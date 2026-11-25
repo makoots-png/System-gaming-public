@@ -402,7 +402,7 @@ describe('an award', () => {
     expect(award({ items: [{ ...POTION, bonus }] })!.rewards.items[0].bonus).toEqual({ str: 2, vit: 999 });
   });
 
-  test('a legacy award carrying a build change drops build cleanly and preserves sibling rewards', () => {
+  test('an award carrying unknown fields drops them cleanly and preserves sibling rewards', () => {
     const empty = { xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] };
     expect(award({ build: 'respec', xp: 50 })!.rewards).toEqual({ ...empty, xp: 50 });
     expect(award({ build: { path: 'vanguard' } })!.rewards).toEqual(empty);
@@ -1338,31 +1338,32 @@ describe('the other room docs', () => {
     expect(DOCS.kicked({ v: 1, keys, names: { [KEY]: 'Kai' } })).toEqual({ keys: { [sk(KEY)]: '2026-11-12T12:00:00.000Z' }, names: { [sk(KEY)]: 'Kai' } });
   });
 
-  test('the room\'s rules: the personal gates\' switch true or false, its hours whole within their bounds, and legacy build keys ignored', () => {
+  test('the room\'s rules: the personal gates\' switch true or false, its hours whole within their bounds, and unknown keys ignored', () => {
     const rules = { ...roomRulesOf(RULES), solo: { ...roomRulesOf(RULES).solo, personal: false, hours: 4 }, feats: { on: false } };
     expect(DOCS.rules(copy(rules))).toEqual(rules);
-    expect(DOCS.rules(copy({ ...rules, build: { enabled: false, playerPick: true } })), 'legacy pre-R1 room rules doc parses cleanly').toEqual(rules);
+    expect(DOCS.rules(copy({ ...rules, build: { enabled: false, playerPick: true } })), 'unknown keys on room rules doc are ignored').toEqual(rules);
     const { feats: _none, ...older } = rules;
-    expect(DOCS.rules(older)!.feats, 'a doc without the feats switch reads as on').toEqual({ on: true });
+    expect(DOCS.rules(older), 'a doc without the feats switch is refused').toBeNull();
     const { trade: _no, ...noTrade } = { ...rules, trade: { on: false } };
     expect(DOCS.rules(copy({ ...rules, trade: { on: false } }))!.trade, 'the trading switch comes through').toEqual({ on: false });
-    expect(DOCS.rules(noTrade)!.trade, 'a doc without the trading switch reads as on').toEqual({ on: true });
+    expect(DOCS.rules(noTrade), 'a doc without the trading switch is refused').toBeNull();
+    const { statuses: _noSt, ...noStatuses } = rules;
+    expect(DOCS.rules(copy(noStatuses)), 'a doc missing only statuses is refused cleanly without throwing').toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, personal: 'yes' } })).toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 0 } })!.solo.hours).toBe(1);
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 1e6 } })!.solo.hours).toBe(168);
-    expect(DOCS.rules({ enabled: true, playerPick: true }), 'the old build doc is not read').toBeNull();
+    expect(DOCS.rules({ enabled: true, playerPick: true }), 'a non-rules doc is refused').toBeNull();
   });
 
-  test('the room carries the mythic switch: a doc without it reads as off, and a player\'s rules follow the GM\'s', () => {
+  test('the room carries the mythic switch: missing or invalid is refused, and a player\'s rules follow the GM\'s', () => {
     const rules = roomRulesOf(RULES);
     expect(rules.mythic, 'the shipped switch is on').toEqual({ scripts: true });
     const off = { ...rules, mythic: { scripts: false } };
     expect(DOCS.rules(copy(rules))!.mythic).toEqual({ scripts: true });
     expect(DOCS.rules(copy(off))!.mythic).toEqual({ scripts: false });
     const { mythic: _none, ...older } = rules;
-    expect(DOCS.rules(copy(older))!.mythic, 'a doc without the switch reads as off').toEqual({ scripts: false });
-    for (const bad of [{ scripts: 'yes' }, { scripts: 1 }, {}]) expect(DOCS.rules(copy({ ...rules, mythic: bad }))!.mythic, JSON.stringify(bad)).toEqual({ scripts: false });
-    for (const bad of [null, 'on']) expect(DOCS.rules(copy({ ...rules, mythic: bad })), `a switch that is ${JSON.stringify(bad)} is no room's rules, as the trading switch's`).toBeNull();
+    expect(DOCS.rules(copy(older)), 'a doc without the switch is refused').toBeNull();
+    for (const bad of [{ scripts: 'yes' }, { scripts: 1 }, {}, null, 'on']) expect(DOCS.rules(copy({ ...rules, mythic: bad })), JSON.stringify(bad)).toBeNull();
     const ownOff: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: false } } };
     expect(roomRulesOf(ownOff).mythic, 'the GM\'s phone publishes its own switch').toEqual({ scripts: false });
     expect(withRoomRules(ownOff, rules).fight.mythic.scripts, 'a player\'s phone plays by the room\'s switch').toBe(true);
@@ -1387,15 +1388,14 @@ describe('the other room docs', () => {
     expect(DOCS.rules(copy(custom))!.keystone).toEqual(custom.keystone);
 
     const { keystone: _none, ...older } = rules;
-    expect(DOCS.rules(copy(older))!.keystone, 'a doc without keystone reads as off with shipped thresholds').toEqual(shippedKs);
-    for (const bad of [{ on: 'yes' }, { on: 1 }, {}]) expect(DOCS.rules(copy({ ...rules, keystone: bad }))!.keystone.on, JSON.stringify(bad)).toBe(false);
-    for (const bad of [null, 'on']) expect(DOCS.rules(copy({ ...rules, keystone: bad })), JSON.stringify(bad)).toBeNull();
-    expect(DOCS.rules(copy({ ...rules, keystone: { on: true, markShare: 0.05, apexShare: 0.99 } }))!.keystone).toMatchObject({
+    expect(DOCS.rules(copy(older)), 'a doc without keystone is refused').toBeNull();
+    for (const bad of [{ on: 'yes' }, { on: 1 }, {}, null, 'on']) expect(DOCS.rules(copy({ ...rules, keystone: bad })), JSON.stringify(bad)).toBeNull();
+    expect(DOCS.rules(copy({ ...rules, keystone: { ...shippedKs, on: true, markShare: 0.05, apexShare: 0.99 } }))!.keystone).toMatchObject({
       on: true,
       markShare: domainOf('fight.keystone.markShare')!.least,
       apexShare: domainOf('fight.keystone.apexShare')!.most,
     });
-    expect(DOCS.rules(copy({ ...rules, keystone: { on: true, markRank: 'Z' } }))).toBeNull();
+    expect(DOCS.rules(copy({ ...rules, keystone: { ...shippedKs, on: true, markRank: 'Z' } }))).toBeNull();
 
     const gmOn: Rules = { ...RULES, fight: { ...RULES.fight, keystone: { ...RULES.fight.keystone, ...custom.keystone } } };
     expect(roomRulesOf(gmOn).keystone).toEqual(custom.keystone);
@@ -1484,8 +1484,9 @@ describe('the other room docs', () => {
 
   test('a world gate open to solo runs says so, and only then', () => {
     const gate = { id: 'g1', name: 'Den', rank: 'E', type: 'normal', status: 'detected', breakDay: 5 };
-    expect(DOCS.world({ day: 3, gates: [{ ...gate, solo: true }, { ...gate, id: 'g2', solo: false }] })).toEqual({ day: 3, session: 0, gates: [{ ...gate, solo: true }, { ...gate, id: 'g2' }] });
-    expect(DOCS.world({ day: 3, gates: [{ ...gate, solo: 'yes' }] })).toEqual({ day: 3, session: 0, gates: [] });
+    expect(DOCS.world({ day: 3, session: 0, gates: [{ ...gate, solo: true }, { ...gate, id: 'g2', solo: false }] })).toEqual({ day: 3, session: 0, gates: [{ ...gate, solo: true }, { ...gate, id: 'g2' }] });
+    expect(DOCS.world({ day: 3, session: 0, gates: [{ ...gate, solo: 'yes' }] })).toEqual({ day: 3, session: 0, gates: [] });
+    expect(DOCS.world({ day: 3, gates: [] })).toBeNull();
   });
 
   test('the solo doc reads each monster by the monster parser and each status by the status parser; a bad entry is dropped', () => {
@@ -1508,15 +1509,15 @@ describe('the other room docs', () => {
 
   test('the world keeps at most 40 gates and drops a gate with a status gates do not have', () => {
     const gate = { id: 'g1', name: 'Den', rank: 'E', type: 'normal', status: 'detected', breakDay: 5 };
-    expect(DOCS.world({ v: 1, day: 3, gates: [gate, { ...gate, status: 'gone' }] })).toEqual({ day: 3, session: 0, gates: [gate] });
-    expect(DOCS.world({ day: 3, gates: many(10_000, i => ({ ...gate, id: `g${i}` })) })!.gates).toHaveLength(40);
+    expect(DOCS.world({ v: 1, day: 3, session: 0, gates: [gate, { ...gate, status: 'gone' }] })).toEqual({ day: 3, session: 0, gates: [gate] });
+    expect(DOCS.world({ day: 3, session: 0, gates: many(10_000, i => ({ ...gate, id: `g${i}` })) })!.gates).toHaveLength(40);
   });
 
   test('a cleared gate in the world carries the day it was cleared; one without it does not read', () => {
     const cleared = { id: 'g1', name: 'Den', rank: 'E', type: 'normal', status: 'cleared', breakDay: 5, clearedDay: 4 };
-    expect(DOCS.world({ day: 6, gates: [cleared] })).toEqual({ day: 6, session: 0, gates: [cleared] });
+    expect(DOCS.world({ day: 6, session: 0, gates: [cleared] })).toEqual({ day: 6, session: 0, gates: [cleared] });
     const { clearedDay: _gone, ...bare } = cleared;
-    expect(DOCS.world({ day: 6, gates: [bare] })).toEqual({ day: 6, session: 0, gates: [] });
+    expect(DOCS.world({ day: 6, session: 0, gates: [bare] })).toEqual({ day: 6, session: 0, gates: [] });
   });
 
   // The solo doc's arithmetic is the comment above SOLO_DOC in protocol.ts: built within DOC_MAX, every built-in monster
@@ -1614,7 +1615,7 @@ describe('a hunter sheet', () => {
     expect(JSON.stringify(read).length).toBeLessThan(SHEET_MAX / 6);
   });
 
-  test('an older phone\'s pushed sheet carrying a legacy build field parses cleanly and keeps the unknown field intact', () => {
+  test('a pushed sheet carrying an unknown field parses cleanly and keeps the unknown field intact', () => {
     expect(hunterOf(parseSheet(sk(KEY), sheet({ build: { path: 'house-path', picks: [0, 1] } })))).toMatchObject({ build: { path: 'house-path', picks: [0, 1] } });
   });
 });

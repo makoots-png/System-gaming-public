@@ -104,7 +104,7 @@ function send(p: Phone, cmd: Command, crash: Part | null = null): void {
 }
 /** The page loaded again from what storage holds, then its first look: the dice owed paid, the outbox sent. */
 function reload(p: Phone): void {
-  p.save = loadSave({ v4: JSON.stringify(p.save), v3: null, v2: null, v1: null }, ENV).save;
+  p.save = loadSave(JSON.stringify(p.save), ENV).save;
   payOwed(p);
   flush(p);
 }

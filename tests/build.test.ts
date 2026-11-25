@@ -109,12 +109,10 @@ describe('the room carries the economy', () => {
     expect(withRoomRules(mine, fromGM(gm)).rarities.rare).toEqual({ color: '#123456', rank: 'B' });
   });
 
-  test('a room rules doc without shadow defaults summonMp to the shipped table', () => {
-    const legacy = { ...roomRulesOf(RULES) } as Record<string, unknown>;
-    delete legacy.shadow;
-    const parsed = DOCS.rules(legacy);
-    expect(parsed).not.toBeNull();
-    expect(withRoomRules(own, parsed).shadow.summonMp).toEqual(RULES.shadow.summonMp);
+  test('a room rules doc without shadow is refused', () => {
+    const partial = { ...roomRulesOf(RULES) } as Record<string, unknown>;
+    delete partial.shadow;
+    expect(DOCS.rules(partial)).toBeNull();
   });
 });
 

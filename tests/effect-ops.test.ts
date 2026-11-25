@@ -537,12 +537,8 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
     expect(parseOp({ op: 'sheet', key: 'resistPenFlat', amount: 12 }, RULES)).toEqual({ op: 'sheet', key: 'resistPenFlat', amount: { kind: 'number', value: 12 } });
   });
 
-  test('an old status\'s pen op, a share of armor or resist ignored, reads as the armor and the magic percent of the same amount', () => {
-    const old = parseStatusDef({ label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'pen', amount: 0.1 }, { op: 'sheet', key: 'pen', amount: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3] }] }, RULES)!;
-    expect(old.ops).toEqual([
-      { op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: 10 } }, { op: 'sheet', key: 'resistPen', amount: { kind: 'number', value: 10 } },
-      { op: 'sheet', key: 'armorPen', amount: [{ kind: 'number', value: 5 }, { kind: 'number', value: 10 }, { kind: 'number', value: 15 }, { kind: 'number', value: 20 }, { kind: 'number', value: 25 }, { kind: 'number', value: 30 }] }, { op: 'sheet', key: 'resistPen', amount: [{ kind: 'number', value: 5 }, { kind: 'number', value: 10 }, { kind: 'number', value: 15 }, { kind: 'number', value: 20 }, { kind: 'number', value: 25 }, { kind: 'number', value: 30 }] },
-    ]);
+  test('unknown sheet op key `pen` is refused', () => {
+    expect(parseStatusDef({ label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'pen', amount: 0.1 }] }, RULES)).toBeNull();
     expect(parseOp({ op: 'sheet', key: 'pen', amount: 0.1 }, RULES)).toBeNull();
   });
 

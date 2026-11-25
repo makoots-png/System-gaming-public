@@ -24,14 +24,12 @@ describe('the store\'s life', () => {
   });
 
   test('a stored text the app cannot open, which storage was too full to back up, is never written over: the tab opens read-only and says so', () => {
-    for (const lost of ['unreadable', 'old'] as const) {
-      const r = opened({ storage: 'ok', newer: false, backup: { unkept: lost } });
-      expect(r).toEqual({ life: { at: 'readOnly', why: 'loadUnkept' }, effects: [] });
-      expect(mayChange(r.life)).toBe(false);
-      expect(noticesOf(r.life, 'kept')).toEqual(['loadUnkept']);
-      expect(at(r.life, changed, due, leaving).effects).toEqual([]);
-      expect(at(r.life, { type: 'replaced' })).toEqual({ life: { at: 'ready', write: 'dirty' }, effects: ['write'] });
-    }
+    const r = opened({ storage: 'ok', newer: false, backup: { unkept: 'unreadable' } });
+    expect(r).toEqual({ life: { at: 'readOnly', why: 'loadUnkept' }, effects: [] });
+    expect(mayChange(r.life)).toBe(false);
+    expect(noticesOf(r.life, 'kept')).toEqual(['loadUnkept']);
+    expect(at(r.life, changed, due, leaving).effects).toEqual([]);
+    expect(at(r.life, { type: 'replaced' })).toEqual({ life: { at: 'ready', write: 'dirty' }, effects: ['write'] });
   });
 
   test('a save that opened whole but for its running fight, which storage was too full to back up, says that, not that the save could not be opened (SMX-sync-9.2)', () => {
@@ -253,7 +251,7 @@ describe('the save\'s write after a change, on the page (src/edge/store.ts)', ()
   const disk = new Map<string, string>();
   const storage = {
     getItem: (k: string): string | null => disk.get(k) ?? null,
-    setItem: (k: string, v: string): void => { disk.set(k, v); if (k === 'hunter-system-v4') page.writes.push(v); },
+    setItem: (k: string, v: string): void => { disk.set(k, v); if (k === 'hunter-system-v5') page.writes.push(v); },
     removeItem: (k: string): void => { disk.delete(k); },
     key: (i: number): string | null => [...disk.keys()][i] ?? null,
     get length(): number { return disk.size; },

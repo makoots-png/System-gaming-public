@@ -40,9 +40,10 @@ const CODE_ERROR = {
   unsupported: 'Share codes are not supported in this browser. Ask for a file instead.',
   'not-a-pack': 'This code does not contain custom content.',
   newer: 'This code is from a newer version of the app. Update the app, then try again.',
+  older: 'This code is from an older version and cannot be imported. Ask for a new share code from the current version, or create it fresh in the Workshop.',
 };
 /** The custom content of a campaign file, read as a pack: its library and its monsters. */
-const campaignPack = raw => parsePack({ kind: 'library', library: raw.library, monsters: raw.monsters });
+const campaignPack = raw => parsePack({ schema: SCHEMA, kind: 'library', library: raw.library, monsters: raw.monsters });
 const flash = (b, t) => { if (!b.dataset.lbl) b.dataset.lbl = b.textContent; b.textContent = t; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = b.dataset.lbl; }, 2000); };
 
 /** @param {import('./app.ts').App} app */
@@ -171,7 +172,12 @@ export function register(app) {
     let raw = null; try { raw = JSON.parse(text); } catch { /* not JSON: store.read below refuses it and the Import failed window says why */ }
     if (isObj(raw) && raw.kind === 'library') {
       const r = parsePack(raw);
-      if ('why' in r) return ui.warn({ tag: 'Import error', title: 'Import failed', body: r.why === 'newer' ? 'This file is from a newer version of the app.' : 'This file does not contain custom content.' });
+      if ('why' in r) {
+        const body = r.why === 'newer' ? 'This file is from a newer version of the app.'
+          : r.why === 'older' ? 'This file is from an older version and cannot be imported. Export it again from the current version, or create it fresh in the Workshop.'
+            : 'This file does not contain custom content.';
+        return ui.warn({ tag: 'Import error', title: 'Import failed', body });
+      }
       return void await importPack(r);
     }
     const r = store.read(text);
@@ -271,6 +277,7 @@ export function register(app) {
         if (!ok) return;
         const r = await replaceAsking(anyway => store.restore(i, anyway), 'Restore');
         if (r === 'replaced') ui.toast('System', 'Backup restored.');
+        else if (r === 'old') ui.warn({ tag: 'Restore error', title: 'Restore failed', body: 'That backup is from an older version and cannot be restored. Keep your current save or use Reset campaign to start fresh.' });
         else if (r === 'unreadable') ui.warn({ tag: 'Restore error', title: 'Restore failed', body: 'That backup could not be read.' });
       });
       $('[data-reset]').addEventListener('click', async () => {

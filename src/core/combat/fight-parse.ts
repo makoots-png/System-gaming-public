@@ -42,7 +42,6 @@ import { ALONE_EVENTS, BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
 import { FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
 import type { DodgeWait, DueTurn, Fight, Fog, ForcedFace, Fudge, HeldUse, LogLine, Summary } from './fight-types.ts';
-import { NO_FUDGE } from './fudge.ts';
 import { clampGrievousOps, isGrievousKey } from './grievous.ts';
 import type { Extraction } from './extraction.ts';
 import { isMythicScriptId, mythicScriptOf } from '../registry/mythics.ts';
@@ -173,7 +172,7 @@ function groundOf(v: unknown, grid: Grid): Ground | null {
     const body = idText(a.id), status = a.status === null ? null : idText(a.status);
     anchor = body && (status !== null || a.status === null) ? { kind: 'body', id: combatantId(body), status: status === null ? null : statusKey(status) } : null;
   }
-  const grow = v.grow === null || v.grow === undefined ? null : growOf(v.grow);
+  const grow = v.grow === null ? null : growOf(v.grow);
   return radius === null || !anchor || grow === undefined ? null : { kind: 'around', anchor, radius, grow };
 }
 /** A field's growth: a step of 1 to 64 tiles a round, a cap of 0 to 64, and when it was laid; undefined when it does not read. */
@@ -184,17 +183,17 @@ function growOf(v: unknown): Growth | undefined {
 }
 /**
  * What an ability leaves: a name of 1 to 40 characters, an end or null, at most 12 ops, whether it ends with its owner,
- * where it lies (`around`: null where it lands, or an aura's radius of 1 to 64 around its user; left out, null), and
- * how it grows (`grow`: a step and a cap of 1 to 64 tiles, or null; left out, null).
+ * where it lies (`around`: null where it lands, or an aura's radius of 1 to 64 around its user), and how it grows
+ * (`grow`: a step and a cap of 1 to 64 tiles, or null).
  */
 function zoneSpecOf(v: unknown, R: Rules): ZoneSpec | null {
   if (!isObj(v)) return null;
   const name = text(v.name, ZONE_NAME_MAX), duration = v.duration === null ? null : tickOf(v.duration), ops = all(v.ops, 12, x => opOf(x, R, 0)), ends = bool(v.endsWithOwner);
-  const around = v.around === undefined || v.around === null ? null : whole(v.around, 1, 64);
+  const around = v.around === null ? null : whole(v.around, 1, 64);
   const g = isObj(v.grow) ? v.grow : null, step = g && whole(g.step, 1, 64), cap = g && whole(g.cap, 1, 64);
   const kit = zoneKitOf(v, R);
-  if (!name || (v.duration !== null && duration === null) || !ops || ends === null || (around === null && v.around !== undefined && v.around !== null)
-    || (v.grow !== undefined && v.grow !== null && (step === null || cap === null)) || !kit) return null;
+  if (!name || (v.duration !== null && duration === null) || !ops || ends === null || (around === null && v.around !== null)
+    || (v.grow !== null && (step === null || cap === null)) || !kit) return null;
   return { name, duration, ops, endsWithOwner: ends, around: around === null ? null : tiles(around), grow: step && cap ? { step: tiles(step), cap: tiles(cap) } : null, ...kit };
 }
 /** An aim: a row's id, or any tile of the grid, a wall too. */
@@ -358,26 +357,13 @@ const stealthEndsOf = (v: unknown): StealthEnds => {
 };
 const useOpOf = (v: unknown, R: Rules): UseOp | null => { const o = opOf(v, R, 0); return o && isUseOp(o) ? o : null; };
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
-/** An old share (0.1) as whole percent (10), each value of a list of tiers; anything else as it is, for the reader to refuse. */
-const asPercent = (a: unknown): unknown => (typeof a === 'number' ? Math.round(a * 1e4) / 100 : Array.isArray(a) ? a.map(asPercent) : a);
-/**
- * A status's ops with each old `pen` sheet op (a share of armor or resist ignored, from before the four penetrations)
- * read as the two percent ops it was, `armorPen` and `resistPen` of the same amount in whole percent: the one-way read
- * of a saved status (balance plan section 9).
- */
-const oldPenRead = (v: unknown): unknown => (Array.isArray(v)
-  ? v.flatMap(o => (isObj(o) && o.op === 'sheet' && o.key === 'pen' ? (['armorPen', 'resistPen'] as const).map(key => ({ ...o, key, amount: asPercent(o.amount) })) : [o]))
-  : v);
-/** Legacy pre-variable Grievous Wounds prose replaced on parse so saved items/skills match the number-free def. */
-const LEGACY_GRIEVOUS_DESC = 'Receives 40% less healing.';
 function defOf(v: unknown, R: Rules, depth: number, key?: string): StatusDef | null {
   if (!isObj(v)) return null;
-  const label = text(v.label, NAME_MAX), rawDesc = text(v.desc, STATUS_DESC_MAX), rawOps = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
+  const label = text(v.label, NAME_MAX), desc = text(v.desc, STATUS_DESC_MAX), rawOps = all(v.ops, 12, x => opOf(x, R, depth));
   if (v.color !== undefined && !(typeof v.color === 'string' && COLOR_RE.test(v.color))) return null;
-  if (label === null || rawDesc === null || !rawOps) return null;
-  // Keyed Grievous Wounds clamps negative healed shares to -GRIEVOUS_MAX; unkeyed parseStatusDef falls back to label (parallel to LEGACY_GRIEVOUS_DESC).
+  if (label === null || desc === null || !rawOps) return null;
+  // Keyed Grievous Wounds clamps negative healed shares to -GRIEVOUS_MAX; unkeyed parseStatusDef falls back to the label.
   const ops = (key !== undefined ? isGrievousKey(key) : label === 'Grievous Wounds') ? clampGrievousOps(rawOps) : rawOps;
-  const desc = label === 'Grievous Wounds' && rawDesc === LEGACY_GRIEVOUS_DESC ? 'Receives less healing.' : rawDesc;
   const K = R.fight.kit;
   const triggers = v.triggers === undefined ? undefined : all(Array.isArray(v.triggers) ? v.triggers.slice(0, K.triggers) : null, K.triggers, x => triggerOf(x, R, depth));
   const end = v.end === undefined ? undefined : endOf(v.end, R, depth);
@@ -548,14 +534,13 @@ function deliveryOf(v: unknown): Delivery | null {
 const EFFECT_TYPES = [...DAMAGE_TYPES, 'heal', 'shield'] as const;
 /**
  * An ability's effect: by the rule (`by: 'rule'` with the ticks it is worked out from) or by hand (`by: 'hand'` with its
- * formula). One stored before `by` existed reads as typed by hand, its formula kept as written: the one-way repair, so a
- * hunter keeps its skills' abilities (the maker's Reset puts one back on the rule).
+ * formula).
  */
 function effectOf(v: Rec, R: Rules): AbilityEffect | null {
   const type = oneOf(v.type, EFFECT_TYPES, null);
   if (!type) return null;
   if (v.by === 'rule') { const ticks = ruleTicksOf(v.ticks, R); return ticks ? { type, by: 'rule', ticks } : null; }
-  if (v.by !== 'hand' && v.by !== undefined) return null;
+  if (v.by !== 'hand') return null;
   const formula = formulaOf(v.formula, R);
   return formula ? { type, by: 'hand', formula } : null;
 }
@@ -950,12 +935,11 @@ function hadOf(v: unknown): Fight['had'] | null {
 }
 
 /**
- * The GM's weight on a fight in setup or running (notes-8-fudge.md section 2): all 0 when the save has none. Null when a
- * weight is not a whole number, a forced face is not 1 or 20, or it names a row the fight lacks. A row's weight of 0
- * leaves no entry, as `fudgeStep` leaves none.
+ * The GM's weight on a fight in setup or running (notes-8-fudge.md section 2). Null when malformed, a weight is not a
+ * whole number, a forced face is not 1 or 20, or it names a row the fight lacks. A row's weight of 0 leaves no entry,
+ * as `fudgeStep` leaves none.
  */
 function fudgeOf(v: unknown, rows: readonly Body[]): Fudge | null {
-  if (v === undefined) return NO_FUDGE;
   if (!isObj(v) || !isObj(v.sides) || !isObj(v.rows) || !isObj(v.forced)) return null;
   const weight = (n: unknown): number | null => typeof n === 'number' && Number.isSafeInteger(n) ? n : null;
   const party = weight(v.sides.party), foe = weight(v.sides.foe), ids = new Set<string>(rows.map(r => r.id));
@@ -1064,9 +1048,9 @@ export function parseFight(raw: unknown, R: Rules): Fight | null {
   if (!rows || new Set(rows.map(r => r.id)).size !== rows.length) return null;
   const tiles = rows.filter(r => isUp(r) || r.kind === 'hunter').map(r => `${r.place.x},${r.place.y}`);
   if (new Set(tiles).size !== tiles.length) return null;
-  const zones = raw.zones === undefined ? [] : all(raw.zones, MAX_ZONES, x => parseZone(x, grid, R)), fog = raw.fog === undefined ? null : fogOn(raw.fog, grid);
+  const zones = all(raw.zones, MAX_ZONES, x => parseZone(x, grid, R)), fog = fogOn(raw.fog, grid);
   if (!zones || fog === undefined || new Set(zones.map(z => z.id)).size !== zones.length) return null;
-  const had = raw.had === undefined ? {} : hadOf(raw.had);
+  const had = hadOf(raw.had);
   if (!had) return null;
   const shared = { id: fightId(id), grid, zones, fog, rows, log, banked, had };
   if (phase === 'ended') {

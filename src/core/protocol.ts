@@ -1343,12 +1343,12 @@ function bySheetKey<T>(v: unknown, read: (v: unknown) => T): Record<SheetKey, T>
   return out;
 }
 function codexEntry(v: unknown): CodexDocEntry {
-  const o = obj(v), stat = (k: string): number => opt(own(o, k), int(0, MAX_TOTAL), 0), icon = iconOrNull(own(o, 'icon'));
+  const o = obj(v), stat = (k: string): number => int(0, MAX_TOTAL)(own(o, k)), icon = iconOrNull(own(o, 'icon'));
   return {
-    key: filled(100)(own(o, 'key')), name: text(60)(own(o, 'name')), rank: opt(own(o, 'rank'), choiceOf(RANKS), 'E'), hpMax: stat('hpMax'),
-    armor: stat('armor'), resist: stat('resist'), speed: stat('speed'), abilities: opt(own(o, 'abilities'), v => listOf(v, 4, text(70)), []),
-    kills: opt(own(o, 'kills'), int(1, 1e9), 1),
-    firstAt: opt(own(o, 'firstAt'), text(40), ''),
+    key: filled(100)(own(o, 'key')), name: text(60)(own(o, 'name')), rank: choiceOf(RANKS)(own(o, 'rank')), hpMax: stat('hpMax'),
+    armor: stat('armor'), resist: stat('resist'), speed: stat('speed'), abilities: listOf(own(o, 'abilities'), 4, text(70)),
+    kills: int(1, 1e9)(own(o, 'kills')),
+    firstAt: text(40)(own(o, 'firstAt')),
     ...(icon ? { icon } : {}),
   };
 }
@@ -1420,79 +1420,76 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
 /** One `T` for each rank, made by `f`: how per-rank tables (`priceBase`, `reviveDebtPrices`) are read from the room's rules doc. */
 const eachRank = <T>(f: (r: Rank) => T): Record<Rank, T> =>
   Object.fromEntries(RANKS.map(r => [r, f(r)])) as Record<Rank, T>;
-/** The room's keystone switch and earning rules: absent reads as off with shipped shares and ranks. */
+/** The room's keystone switch and earning rules. */
 function roomKeystone(v: unknown): RoomRules['keystone'] {
-  const ks = obj(opt(v, x => x, {})), d = RULES.fight.keystone;
+  const ks = obj(v);
   return {
-    on: own(ks, 'on') === true,
-    markShare: opt(own(ks, 'markShare'), ruleNumber('fight.keystone.markShare'), d.markShare),
-    pairShare: opt(own(ks, 'pairShare'), ruleNumber('fight.keystone.pairShare'), d.pairShare),
-    apexShare: opt(own(ks, 'apexShare'), ruleNumber('fight.keystone.apexShare'), d.apexShare),
-    markRank: opt(own(ks, 'markRank'), choiceOf(RANKS), d.markRank),
-    pairRank: opt(own(ks, 'pairRank'), choiceOf(RANKS), d.pairRank),
-    apexRank: opt(own(ks, 'apexRank'), choiceOf(RANKS), d.apexRank),
+    on: bool(own(ks, 'on')),
+    markShare: ruleNumber('fight.keystone.markShare')(own(ks, 'markShare')),
+    pairShare: ruleNumber('fight.keystone.pairShare')(own(ks, 'pairShare')),
+    apexShare: ruleNumber('fight.keystone.apexShare')(own(ks, 'apexShare')),
+    markRank: choiceOf(RANKS)(own(ks, 'markRank')),
+    pairRank: choiceOf(RANKS)(own(ks, 'pairRank')),
+    apexRank: choiceOf(RANKS)(own(ks, 'apexRank')),
   };
 }
-/** The room's mana crystal economy rules: absent reads as the shipped defaults. */
+/** The room's mana crystal economy rules. */
 function roomCrystal(v: unknown): Rules['crystal'] {
-  const c = obj(opt(v, x => x, {})), d = RULES.crystal;
-  const r = obj(opt(own(c, 'rates'), x => x, {}));
+  const c = obj(v), r = obj(own(c, 'rates'));
   return {
-    poolBase: opt(own(c, 'poolBase'), ruleNumber('crystal.poolBase'), d.poolBase),
-    specialMult: opt(own(c, 'specialMult'), ruleNumber('crystal.specialMult'), d.specialMult),
-    unsignedShare: opt(own(c, 'unsignedShare'), ruleNumber('crystal.unsignedShare'), d.unsignedShare),
-    personalShare: opt(own(c, 'personalShare'), ruleNumber('crystal.personalShare'), d.personalShare),
+    poolBase: ruleNumber('crystal.poolBase')(own(c, 'poolBase')),
+    specialMult: ruleNumber('crystal.specialMult')(own(c, 'specialMult')),
+    unsignedShare: ruleNumber('crystal.unsignedShare')(own(c, 'unsignedShare')),
+    personalShare: ruleNumber('crystal.personalShare')(own(c, 'personalShare')),
     rates: {
-      helix: opt(own(r, 'helix'), ruleNumber('crystal.rates.helix'), d.rates.helix),
-      bureau: opt(own(r, 'bureau'), ruleNumber('crystal.rates.bureau'), d.rates.bureau),
-      stair: opt(own(r, 'stair'), ruleNumber('crystal.rates.stair'), d.rates.stair),
+      helix: ruleNumber('crystal.rates.helix')(own(r, 'helix')),
+      bureau: ruleNumber('crystal.rates.bureau')(own(r, 'bureau')),
+      stair: ruleNumber('crystal.rates.stair')(own(r, 'stair')),
     },
   };
 }
-/** The room's guild contract tables: absent reads as the shipped defaults. */
+/** The room's guild contract tables. */
 function roomGuilds(v: unknown): Rules['guilds'] {
-  const g = obj(opt(v, x => x, {})), d = RULES.guilds;
-  const aRaw = obj(opt(own(g, 'archetypes'), x => x, {}));
-  const readTable = (raw: unknown, prefix: string, def: Record<Rank, number>): Record<Rank, number> => {
-    const o = obj(opt(raw, x => x, {}));
-    return eachRank(r => opt(own(o, r), ruleNumber(`${prefix}.${r}`), def[r]));
+  const g = obj(v), aRaw = obj(own(g, 'archetypes'));
+  const readTable = (raw: unknown, prefix: string): Record<Rank, number> => {
+    const o = obj(raw);
+    return eachRank(r => ruleNumber(`${prefix}.${r}`)(own(o, r)));
   };
   const archetypes = Object.fromEntries(GUILD_ARCHETYPES.map(a => {
-    const def = d.archetypes[a] as {
+    const def = RULES.guilds.archetypes[a] as {
       readonly goldCut: Record<string, Record<Rank, number>>;
       readonly crystalShare: Record<string, number>;
     };
-    const raw = obj(opt(own(aRaw, a), x => x, {}));
-    const gcRaw = obj(opt(own(raw, 'goldCut'), x => x, {}));
-    const csRaw = obj(opt(own(raw, 'crystalShare'), x => x, {}));
+    const raw = obj(own(aRaw, a));
+    const gcRaw = obj(own(raw, 'goldCut'));
+    const csRaw = obj(own(raw, 'crystalShare'));
     const standings = Object.keys(def.goldCut);
     return [a, {
-      goldCut: Object.fromEntries(standings.map(s => [s, readTable(own(gcRaw, s), `guilds.archetypes.${a}.goldCut.${s}`, def.goldCut[s]!)])),
-      crystalShare: Object.fromEntries(standings.map(s => [s, opt(own(csRaw, s), ruleNumber(`guilds.archetypes.${a}.crystalShare.${s}`), def.crystalShare[s]!)])),
+      goldCut: Object.fromEntries(standings.map(s => [s, readTable(own(gcRaw, s), `guilds.archetypes.${a}.goldCut.${s}`)])),
+      crystalShare: Object.fromEntries(standings.map(s => [s, ruleNumber(`guilds.archetypes.${a}.crystalShare.${s}`)(own(csRaw, s))])),
     }];
   })) as Rules['guilds']['archetypes'];
   return {
-    baseGoldCut: opt(own(g, 'baseGoldCut'), ruleNumber('guilds.baseGoldCut'), d.baseGoldCut),
+    baseGoldCut: ruleNumber('guilds.baseGoldCut')(own(g, 'baseGoldCut')),
     archetypes,
   };
 }
-/** The room's shadow summon mana costs: absent reads as the shipped table. */
+/** The room's shadow summon mana costs. */
 function roomShadow(v: unknown): RoomRules['shadow'] {
-  const sh = obj(opt(v, x => x, {})), mp = obj(opt(own(sh, 'summonMp'), x => x, {}));
-  return { summonMp: eachRank(r => opt(own(mp, r), ruleNumber(`shadow.summonMp.${r}`), RULES.shadow.summonMp[r])) };
+  const sh = obj(v), mp = obj(own(sh, 'summonMp'));
+  return { summonMp: eachRank(r => ruleNumber(`shadow.summonMp.${r}`)(own(mp, r))) };
 }
-/** The room's sparse damage-type override map (`RULES.fight.damageTypes`): absent reads as empty, invalid entries refuse the doc. */
+/** The room's sparse damage-type override map (`RULES.fight.damageTypes`): invalid entries refuse the doc. */
 function roomDamageTypes(v: unknown): DamageTypeMap {
-  if (v === undefined) return {};
   const parsed = parseDamageTypes(v, () => refuse());
   return parsed ?? refuse();
 }
-/** The room's overridden built-in status defs (at most 16 built-in keys, bounded by `DOC_DEFS_MAX`): absent reads as empty. */
+/** The room's overridden built-in status defs (at most 16 built-in keys, bounded by `DOC_DEFS_MAX`). */
 function roomStatuses(v: unknown): Record<string, StatusDef> {
-  if (v === undefined) return {};
-  if (JSON.stringify(v).length > DOC_DEFS_MAX) return refuse();
+  const o = obj(v);
+  if (JSON.stringify(o).length > DOC_DEFS_MAX) return refuse();
   const out: Record<string, StatusDef> = {};
-  for (const [k, x] of Object.entries(obj(v))) {
+  for (const [k, x] of Object.entries(o)) {
     if (!Object.hasOwn(BUILT_IN_STATUSES, k)) return refuse();
     const def = parseStatusDef(x, RULES, k);
     if (!def) return refuse();
@@ -1500,16 +1497,15 @@ function roomStatuses(v: unknown): Record<string, StatusDef> {
   }
   return out;
 }
-/** The room's class-tree rarity multipliers (`RULES.classTreeRarityMult`): absent reads as shipped defaults. */
+/** The room's class-tree rarity multipliers (`RULES.classTreeRarityMult`). */
 function roomClassRarityMult(v: unknown): Rules['classTreeRarityMult'] {
-  const o = obj(opt(v, x => x, {}));
+  const o = obj(v);
   return Object.fromEntries(
-    CLASS_RARITIES.map((r: ClassRarity) => [r, opt(own(o, r), ruleNumber(`classTreeRarityMult.${r}`), RULES.classTreeRarityMult[r])]),
+    CLASS_RARITIES.map((r: ClassRarity) => [r, ruleNumber(`classTreeRarityMult.${r}`)(own(o, r))]),
   ) as Rules['classTreeRarityMult'];
 }
-/** The room's class-tree depth multipliers (`RULES.classTreeDepthMult`, 9 numbers): absent reads as shipped defaults. */
+/** The room's class-tree depth multipliers (`RULES.classTreeDepthMult`, 9 numbers). */
 function roomClassDepthMult(v: unknown): Rules['classTreeDepthMult'] {
-  if (v === undefined) return [...RULES.classTreeDepthMult];
   if (!Array.isArray(v) || v.length !== RULES.classTreeDepthMult.length) return refuse();
   const read = ruleNumber('classTreeDepthMult');
   return v.map(x => read(x));
@@ -1532,20 +1528,20 @@ function holdersDocOf(o: Rec): HoldersDoc {
   }
   return { registryId, at, held };
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and shadow/crystal/guilds/damageTypes/statuses/class pricing (shipped defaults when absent). */
+/** The room's rules doc: every field required and validated against its rule domain. */
 function roomRulesDoc(o: Rec): RoomRules {
   const so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'respecPrices' | 'classSwapPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   const reviveDebtShare = rule('reviveDebtShare'), reviveDebtBurn = rule('reviveDebtBurn');
   if (reviveDebtShare + reviveDebtBurn > 1 + 1e-9) return refuse();
   return {
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
-    feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false },
-    trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },
-    mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
+    feats: { on: bool(own(obj(own(o, 'feats')), 'on')) },
+    trade: { on: bool(own(obj(own(o, 'trade')), 'on')) },
+    mythic: { scripts: bool(own(obj(own(o, 'mythic')), 'scripts')) },
     keystone: roomKeystone(own(o, 'keystone')),
     damageTypes: roomDamageTypes(own(o, 'damageTypes')),
-    shareCap: opt(own(o, 'shareCap'), ruleNumber('fight.kit.shareCap'), RULES.fight.kit.shareCap),
+    shareCap: ruleNumber('fight.kit.shareCap')(own(o, 'shareCap')),
     statuses: roomStatuses(own(o, 'statuses')),
     shadow: roomShadow(own(o, 'shadow')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
@@ -1555,8 +1551,8 @@ function roomRulesDoc(o: Rec): RoomRules {
     usedUpShare: rule('usedUpShare'),
     elixirPrices: rule('elixirPrices'),
     revivePrices: rule('revivePrices'),
-    respecPrices: opt(own(o, 'respecPrices'), ruleNumber('respecPrices'), RULES.respecPrices),
-    classSwapPrices: opt(own(o, 'classSwapPrices'), ruleNumber('classSwapPrices'), RULES.classSwapPrices),
+    respecPrices: rule('respecPrices'),
+    classSwapPrices: rule('classSwapPrices'),
     classTreeRarityMult: roomClassRarityMult(own(o, 'classTreeRarityMult')),
     classTreeDepthMult: roomClassDepthMult(own(o, 'classTreeDepthMult')),
     reviveDebtPrices: eachRank(r => ruleNumber(`reviveDebtPrices.${r}`)(own(rdp, r))),
@@ -1575,10 +1571,10 @@ function roomRulesDoc(o: Rec): RoomRules {
 /** Every room document by name, with its parser (unknown in, the doc or null out). A name missing here does not compile. */
 export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null } = {
   fight: data => attempt(() => fightDocOf(obj(data))),
-  kicked: data => attempt(() => { const o = obj(data); return { keys: bySheetKey(own(o, 'keys'), time), names: opt(own(o, 'names'), v => bySheetKey(v, text(60)), {}) }; }),
+  kicked: data => attempt(() => { const o = obj(data); return { keys: bySheetKey(own(o, 'keys'), time), names: bySheetKey(own(o, 'names'), text(60)) }; }),
   codex: data => attempt(() => { const o = obj(data); return { at: text(40)(own(o, 'at')), entries: listOf(own(o, 'entries'), CODEX_DOC_ENTRIES, codexEntry) }; }),
   rules: data => attempt(() => roomRulesDoc(obj(data))),
-  world: data => attempt(() => { const o = obj(data); return { day: int(1, 1e6)(own(o, 'day')), session: opt(own(o, 'session'), int(0, 1e6), 0), gates: listOf(own(o, 'gates'), WORLD_GATES, worldGate) }; }),
+  world: data => attempt(() => { const o = obj(data); return { day: int(1, 1e6)(own(o, 'day')), session: int(0, 1e6)(own(o, 'session')), gates: listOf(own(o, 'gates'), WORLD_GATES, worldGate) }; }),
   solo: data => attempt(() => soloDocOf(data)),
   feats: data => attempt(() => ({ feats: parseFeats(own(obj(data), 'feats'), FEATS_DOC_MAX) })),
   stash: data => attempt(() => {

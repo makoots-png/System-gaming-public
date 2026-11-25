@@ -395,11 +395,9 @@ describe('GM overrides, weapons, keystones, running fight snapshots, and RoomRul
     expect(playerRules.fight.damageTypes).toEqual({ 'arc-bolt': 'true' });
     expect(statusDamageTypeOf(playerRules.conditions.poisoned)).toBe('arcane');
 
-    // Absent damageTypes/statuses read as empty; invalid attack key or non-built-in status key refuses the doc
-    const { damageTypes: _d, statuses: _s, ...legacy } = wire;
-    const legacyParsed = DOCS.rules(legacy)!;
-    expect(legacyParsed.damageTypes).toEqual({});
-    expect(legacyParsed.statuses).toEqual({});
+    // Missing damageTypes/statuses or invalid keys refuse the doc
+    const { damageTypes: _d, statuses: _s, ...partial } = wire;
+    expect(DOCS.rules(partial)).toBeNull();
     expect(DOCS.rules({ ...wire, damageTypes: { attack: 'true' } })).toBeNull();
     expect(DOCS.rules({ ...wire, statuses: { 'not-built-in': arcanePoison } })).toBeNull();
   });
