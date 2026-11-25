@@ -139,3 +139,18 @@ test('fight.keystone.monsterKinds is no rule now: an override of it is refused a
   const R = loaded({ fight: { keystone: { monsterKinds: ['elite', 'boss'] } } });
   expect('monsterKinds' in R.fight.keystone).toBe(false);
 });
+
+test('fight.bulkSlow is retired and replaced by fight.bulkFull and fight.bulkExp, each validated by its domain', () => {
+  expect(parseOverrides({ fight: { bulkSlow: 0.025, bulkFull: 34, bulkExp: 1 } })).toEqual({
+    overrides: { fight: { bulkFull: 34, bulkExp: 1 } },
+    refused: [{ path: 'fight.bulkSlow', reason: 'unknown' }],
+  });
+  expect(domainOf('fight.bulkFull')).toMatchObject({ least: 1, most: 1000, whole: true });
+  expect(domainOf('fight.bulkExp')).toMatchObject({ least: 0.05, most: 5, whole: false });
+  expect(parseOverrides({ fight: { bulkFull: 0, bulkExp: 0 } }).refused.map(refusalWords)).toEqual([
+    'fight.bulkFull: must be a whole number from 1 to 1000. Gear weight where heavy gear bulk reaches full slow, from 1 to 1000.',
+    'fight.bulkExp: must be a number from 0.05 to 5. Curve exponent for heavy gear bulk above base carry. 1 is linear, and lower values apply more slow to partial heavy armor.',
+  ]);
+  const linear = loaded({ fight: { bulkFull: 34, bulkExp: 1 } });
+  expect([linear.fight.bulkFull, linear.fight.bulkExp]).toEqual([34, 1]);
+});

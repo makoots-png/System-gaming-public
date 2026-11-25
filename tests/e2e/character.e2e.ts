@@ -337,6 +337,16 @@ test('the Rules editor names the bounds of a number out of its domain and why th
   await openSection(p, 'rules');
   await p.locator('#gm-r-text').fill('{"fight":{"round":0}}');
   await expect(p.locator('#gm-r-msg')).toHaveText(refusalWords(parseOverrides({ fight: { round: 0 } }).refused[0]!));
+  await p.locator('#gm-r-text').fill('{"fight":{"bulkExp":0}}');
+  await expect(p.locator('#gm-r-msg')).toHaveText(refusalWords(parseOverrides({ fight: { bulkExp: 0 } }).refused[0]!));
+  await expect(p.locator('#gm-r-save')).toBeDisabled();
+  await p.locator('#gm-r-text').fill('{"fight":{"bulkSlow":0.025}}');
+  await expect(p.locator('#gm-r-msg')).toHaveText('Unknown rule: fight.bulkSlow');
+  await expect(p.locator('#gm-r-save')).toBeDisabled();
+  await p.locator('#gm-r-text').fill('{"fight":{"bulkFull":34,"bulkExp":1}}');
+  await expect(p.locator('#gm-r-save')).toBeEnabled();
+  await p.locator('#gm-r-save').tap();
+  await expect.poll(() => p.evaluate(() => [hunterApp.rules().fight.bulkFull, hunterApp.rules().fight.bulkExp])).toEqual([34, 1]);
 });
 
 test('The skill maker starts the formula at the kind\'s recommendation, unmarked: a Shot is the quick share of 1d8 + phys, and the card says how it is used', async ({ device }) => {

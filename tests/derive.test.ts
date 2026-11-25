@@ -248,10 +248,20 @@ describe('kits and weight (table 2.5)', () => {
     expect([LIGHT, MEDIUM, HEAVY].map(kit => [10, 33, 83].map(str => factor(kit, str)))).toEqual([[1, 1, 1], [0.72, 0.98, 1], [0.65, 0.7, 0.7]]);
   });
 
-  test('Strength lifts weight but not bulk: weight over 20 slows any wearer 2.5% a point, at most 35%', () => {
-    const at = (str: number, weight: number): number => sheetOf({ stats: stats({ str }), level: 1, gear: [{ weight, armor: 0, resist: 0 }], perks: {} }, RULES).speed;
-    // Plate (32) is 12 over a base body's carry of 20: 30% slower however strong; the medium kit (18) has no bulk.
-    expect([at(400, 32), at(400, 18), at(400, 20), at(400, 24), at(400, 60)]).toEqual([70, 100, 100, 90, 65]);
+  test('Strength lifts weight but not bulk: weight over carryBase slows any wearer on the bulk curve up to loadSlow', () => {
+    const at = (str: number, weight: number, R = RULES): number => sheetOf({ stats: stats({ str }), level: 1, gear: [{ weight, armor: 0, resist: 0 }], perks: {} }, R).speed;
+    // Light and medium with a one-die weapon (18, 19, 20) stay at or under carryBase (20) with no bulk.
+    // Medium with a two-dice weapon (22) pays 23% bulk (77); partial plate + 1d8 (24, 29) pays 74 and 71;
+    // bare plate (32) stays at 70, plate + 1d8 (34) at 69, and weight >= bulkFull (52) caps at loadSlow (65).
+    expect([18, 19, 20, 22, 24, 29, 32, 34, 52, 60].map(w => at(400, w))).toEqual([100, 100, 100, 77, 74, 71, 70, 69, 65, 65]);
+    // Linear override (bulkExp 1, bulkFull 34) reproduces the old 2.5% per point curve exactly.
+    const linear = { ...RULES, fight: { ...RULES.fight, bulkFull: 34, bulkExp: 1 } };
+    expect([18, 19, 20, 22, 24, 29, 32, 34, 60].map(w => at(400, w, linear))).toEqual([100, 100, 100, 95, 90, 78, 70, 65, 65]);
+    // A zero or negative bulk span (bulkFull <= carryBase) stays finite: 0 bulk up to carryBase, full loadSlow past it.
+    for (const bulkFull of [RULES.fight.carryBase, RULES.fight.carryBase - 5]) {
+      const zeroSpan = { ...RULES, fight: { ...RULES.fight, bulkFull } };
+      expect([at(400, 19, zeroSpan), at(400, 20, zeroSpan), at(400, 21, zeroSpan), at(400, 32, zeroSpan)]).toEqual([100, 100, 65, 65]);
+    }
   });
 
   test('up to half the carry never slows, and full carry or more is 35% slower', () => {

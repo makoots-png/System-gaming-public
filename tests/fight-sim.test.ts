@@ -69,6 +69,11 @@ import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
 import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, geared, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2, weaponOrStat, withApex } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
+import { piece, weaponWeight } from '../src/core/registry/items.ts';
+import type { ArmorSlot } from '../src/core/registry/items.ts';
+import { kitGear } from '../src/core/hunter/derive.ts';
+import type { GearPiece } from '../src/core/hunter/derive.ts';
+import { modified } from '../src/core/combat/effect-ops.ts';
 import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { ANSWERS, answerOutcome } from '../src/core/combat/mythic.ts';
@@ -592,6 +597,45 @@ const WORLDBREAKER_ROWS: readonly Row[] = [
     low: 0.06, high: 0.14, lever: 'KEYSTONES.apex.str (damage, stagger share, cooldown)' },
 ];
 
+// ── heavy armor bulk with a 1d8 weapon worn (R3): adding heavy pieces above carryBase is never a loss ──
+const ARMOR_SLOTS: readonly ArmorSlot[] = ['chest', 'legs', 'head', 'feet', 'offhand'];
+const SWORD_GEAR: GearPiece = { weight: weaponWeight('1d8'), armor: 0, resist: 0 };
+const withGear = (s: SimRow, gear: readonly GearPiece[]): SimRow => {
+  if (s.row.origin.kind !== 'hunter') return s;
+  const origin = { ...s.row.origin, build: { ...s.row.origin.build, gear } };
+  const { sheet } = modified(origin, s.row.statuses, RULES);
+  return { ...s, row: { ...s.row, origin, life: { at: 'up' as const, hp: sheet.hpMax } } };
+};
+const platedTank = (pieces: number, rank: Rank, id: string): SimRow =>
+  withGear(hunter('tank', rank, id), [...ARMOR_SLOTS.slice(0, pieces).map(slot => piece('heavy', slot, RULES)), SWORD_GEAR]);
+const armedSpeed = (rank: Rank): SimRow =>
+  withGear(hunter('speed', rank, 'speed'), [...kitGear('light', RULES), SWORD_GEAR]);
+const pairOpenings = (key: string, makeA: () => SimRow, makeB: () => SimRow, runs: number): Measure => {
+  const ms = OPENINGS.map(o => {
+    const rows = once(() => [at(makeA(), START[o][0]), at(foe(makeB()), START[o][1])]);
+    return wins(`${key} ${o}`, (seed: number) => [playFight({ rows: rows(), tallyDamage: false }, seed)], runs);
+  });
+  return {
+    value: mean(ms.map(m => m.value)), se: Math.sqrt(ms.reduce((n, m) => n + m.se ** 2, 0)) / ms.length,
+    note: `each opening, no bound: ${OPENINGS.map((o, i) => `${o} ${fmt(ms[i]!.value)} (se ${fmt(ms[i]!.se)}, ${ms[i]!.note})`).join(', ')}`,
+  };
+};
+const BULK_LEVER = 'fight.bulkFull, fight.bulkExp';
+const BULK_ROWS: readonly Row[] = SIM_RANKS.flatMap((rank): Row[] => [
+  { name: `adding the 4th heavy piece with a 1d8 weapon worn is never a loss at ${rank}`, setup: `4pc v 3pc +1d8 ${rank}`, runs: 2 * RUNS.even,
+    measure: () => pairOpenings(`4pc v 3pc +1d8 ${rank}`, () => platedTank(4, rank, 'tank-4'), () => platedTank(3, rank, 'tank-3'), RUNS.even),
+    low: 0.5, high: 1, lever: BULK_LEVER },
+  { name: `adding the 5th heavy piece with a 1d8 weapon worn is never a loss at ${rank}`, setup: `5pc v 4pc +1d8 ${rank}`, runs: 2 * RUNS.even,
+    measure: () => pairOpenings(`5pc v 4pc +1d8 ${rank}`, () => platedTank(5, rank, 'tank-5'), () => platedTank(4, rank, 'tank-4'), RUNS.even),
+    low: 0.5, high: 1, lever: BULK_LEVER },
+  { name: `full 5-piece plate with a 1d8 weapon worn beats 3-piece plate at ${rank}`, setup: `5pc v 3pc +1d8 ${rank}`, runs: 2 * RUNS.even,
+    measure: () => pairOpenings(`5pc v 3pc +1d8 ${rank}`, () => platedTank(5, rank, 'tank-5'), () => platedTank(3, rank, 'tank-3'), RUNS.even),
+    low: 0.5, high: 1, lever: BULK_LEVER },
+  { name: `full 5-piece plate with a 1d8 weapon worn holds Tank v Speed at ${rank}`, setup: `5pc +1d8 v speed ${rank}`, runs: 2 * RUNS.even,
+    measure: () => pairOpenings(`5pc +1d8 v speed ${rank}`, () => platedTank(5, rank, 'tank-5'), () => armedSpeed(rank), RUNS.even),
+    low: rank === 'E' ? 0.25 : 0.6, high: rank === 'E' ? 0.75 : 0.9, lever: BULK_LEVER },
+]);
+
 // ── six-middle-item party and weaponDuty parity (BAL-A, QD 2026-11-24-v2-gear-budget-divisor) ──
 const gearedParty = (rank: Rank, R = RULES): SimRow[] => MIXED.map(a => geared(a, rank, a, R));
 const vsGearedBoss = (rank: Rank, level: DifficultyLevel) => {
@@ -689,6 +733,7 @@ const ROWS: readonly Row[] = [
   ...SCRIPT_ROWS,
   ...DIFFICULTY_ROWS,
   ...WORLDBREAKER_ROWS,
+  ...BULK_ROWS,
   ...GEARED_ROWS,
   ...WEAPON_DUTY_ROWS,
 ];

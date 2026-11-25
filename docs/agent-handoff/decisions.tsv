@@ -820,3 +820,4 @@ ts	phase	decision	why	evidence	result
 2026-11-25T05:27Z	arch	landed balance pass steps 1+2 (BAL-A): div WEAR_LIMIT, weaponDuty 0.45, regrade, spending() cap-and-spill; PEN_ROWS moved, new G1-G3 and WD1-WD2 rows; unit 7064 pass on merged tree
 2026-11-25T05:42Z	ops	PR 125 (balance pass steps 1+2) merged to main; CI 45553755223
 2026-11-25T06:22Z	arch	landed balance pass step 4 (bal-stars): stars-fall sure; Angel B5 step 0.760->0.735; unit 7064 pass merged
+2026-11-25T06:31Z	arch	landed balance pass step 3 (bal-bulk): bulkFull 52, bulkExp 0.15; 0 existing sim rows moved; medium+2-dice weapon 95->77 speed flagged for the owner; unit 7077 pass merged

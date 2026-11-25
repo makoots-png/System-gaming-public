@@ -224,8 +224,9 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
   const weight = total('weight') + b('weight');
   const carry = F.carryBase + c('str', F.carryCap) + b('carry');
   // Strength lifts weight but does not shrink plate: what a base body could not carry at all (weight over `carryBase`)
-  // is bulk, and slows any wearer `bulkSlow` a point, never more than the full load's slow.
-  const bulk = Math.min(F.loadSlow, F.bulkSlow * Math.max(0, weight - F.carryBase));
+  // is bulk, ramping to `loadSlow` at `bulkFull` with exponent `bulkExp` (`bulkExp = 1` at `bulkFull = 34` is linear).
+  const bulkSpan = F.bulkFull - F.carryBase;
+  const bulk = weight <= F.carryBase ? 0 : bulkSpan <= 0 ? F.loadSlow : F.loadSlow * Math.pow(clamp((weight - F.carryBase) / bulkSpan, 0, 1), F.bulkExp);
   const load = 1 - Math.max(bulk, F.loadSlow * clamp((weight / carry - F.freeLoad) / (1 - F.freeLoad), 0, 1));
   const speed = Math.round(clamp(((F.speedBase + c('agi', F.speedCap)) * load + b('speed')) * (1 + speedPct / 100), F.speedMin, F.speedMax));
   const move = F.moveBase * speed / 100 + b('move');

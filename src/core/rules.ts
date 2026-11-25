@@ -437,11 +437,13 @@ const SPEC = {
     carryBase: whole(20, 1, 1000, 'base carry capacity before Strength. Must be at least 1'), carryCap: of(50, STAT_CAP), // weight is what Strength lets you wear
     // free up to half the carry, then up to 35% slower at full carry: a heavy kit on a weak body costs a third of its turns
     freeLoad: of(0.5, SHARE), loadSlow: real(0.35, 0, 0.9, 'maximum speed reduction from heavy gear, up to 0.9'),
-    // Strength lifts weight but does not shrink plate: weight over a base body's whole carry (`carryBase`, 20) is bulk, and
-    // slows any wearer 2.5% a point, at most `loadSlow`. Only plate (32) has bulk: 12 points, 30% slower, so a tank runs
-    // at 70 at C and at S alike (an S tank's Strength had lifted its load to 87, and it beat an S speed build in every
-    // duel; sim-log.md, round four). The medium kit (18) and the light (8) have none.
-    bulkSlow: real(0.025, 0, 0.1, 'speed reduction per point of heavy armor bulk, from 0 to 0.1'),
+    // Strength lifts weight but does not shrink plate: weight over a base body's whole carry (`carryBase`, 20) is bulk,
+    // ramping to `loadSlow` at `bulkFull` with exponent `bulkExp` (`bulkExp = 1` at `bulkFull = 34` is linear 2.5%/pt).
+    // Concave bulk (`bulkFull = 52`, `bulkExp = 0.15`) keeps bare 5-piece plate (32) at speed 70, 5-piece plate plus a
+    // 1d8 weapon (34) at 69, and 3- to 4-piece heavy kits close enough in speed that dropping heavy pieces is not a gain.
+    // Light kits (8) and medium kits with a one-die weapon (18 to 20) stay at or below `carryBase` and pay no bulk.
+    bulkFull: whole(52, 1, 1000, 'gear weight where heavy gear bulk reaches full slow, from 1 to 1000'),
+    bulkExp: real(0.15, 0.05, 5, 'curve exponent for heavy gear bulk above base carry. 1 is linear, and lower values apply more slow to partial heavy armor'),
     speedBase: whole(100, 10, 1000, 'base combat speed before Agility and gear weight. 100 equals one standard action per round'), speedCap: of(90, STAT_CAP), // Agility alone takes a body to at most 190 before load
     moveBase: whole(6, 1, 40, 'base movement tiles per round at speed 100, from 1 to 40'), // tiles a round at speed 100: 30 feet, the pace the old text assumes
     strideShare: real(0.5, 0.1, 1, 'share of full movement allowed in one move command, from 0.1 to 1'), // one move command walks at most half of `move`, so a turn is never one long walk
@@ -528,7 +530,7 @@ const SPEC = {
       frail: { hp: of(0.8, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
       // the middle of the shipped seeds' hand HP factors over 1 (1.1 to 1.5)
       tough: { hp: of(1.3, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
-      // what plate's bulk costs (`bulkSlow` on plate's 12 points over the carry): "slow" is as slow as a body in plate
+      // what plate's bulk costs (plate's weight 32 over carryBase 20): "slow" is as slow as a body in plate
       slow: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(-30, TRAIT_SPEED), xp: of(1, KIND_XP) },
       // the mirror of slow
       fast: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(30, TRAIT_SPEED), xp: of(1, KIND_XP) },
