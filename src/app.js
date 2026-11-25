@@ -31,6 +31,7 @@ import * as gates from './views/gates.js';
 import * as map from './views/map.js';
 import * as combat from './views/combat.js';
 import * as shadows from './views/shadows.js';
+import * as classes from './views/classes.js';
 import * as gm from './views/gm.js';
 import * as io from './views/io.js';
 import * as sync from './edge/sync.ts';
@@ -306,7 +307,7 @@ app.on('sync:docs', rulesMoved); app.on('sync:status', rulesMoved);
 // ── boot ──
 // Registration order is load order: a module's register may read the api of a module listed before it (a read of one
 // listed after it throws, src/edge/api-table.ts). A register that throws is logged and the rest still register.
-const MODULES = { takeover, effects, detail, odds, maker, guild, hunter, quests, skills, inventory, trade, dice, rulesref, keystones, sync, roomPill, bestiary, gates, map, combat, shadows, stories, gm, io, room, onboard, table, uses, coin, forge, loot, mapMaker, workshop, custom, chronicle, feats, words };
+const MODULES = { takeover, effects, detail, odds, maker, guild, hunter, quests, skills, inventory, trade, dice, rulesref, keystones, sync, roomPill, bestiary, gates, map, combat, shadows, stories, classes, gm, io, room, onboard, table, uses, coin, forge, loot, mapMaker, workshop, custom, chronicle, feats, words };
 for (const [name, mod] of Object.entries(MODULES)) {
   ran('register:' + name, () => mod.register(app));
 }

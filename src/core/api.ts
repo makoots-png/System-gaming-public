@@ -315,6 +315,8 @@ export type HunterApi = {
    * (`cid`), the GM's fight on a player's phone (`gm`, where a change is refused), or the sheet (null). Every writer asks it.
    */
   fightOf(who: { hid: string } | { key: string }): { at: 'row'; cid: string } | { at: 'gm' } | null;
+  /** `fightOf` evaluated against a specific save `s` inside a `store.apply` step so core guards never read stale state. */
+  heldIn(s: Save, who: { hid: string } | { key: string }): { at: 'row'; cid: string } | { at: 'gm' } | null;
   /**
    * Takes `n` mana as a price, where the mana lives (`fightOf`: the fight's row, or the sheet), and `also` (a step on the
    * hunter, such as a shadow summoned) in the same write. Refused, with nothing taken, when the mana there is less
@@ -836,9 +838,16 @@ export type GuildApi = {
   edit(who: HunterRef, sheet: Hunter | null): Promise<void>;
 };
 
+/** The player class locker / skill tree panel and GM unique-class registry (src/views/classes.js). */
+export type ClassesApi = {
+  /** Draws the GM view's "Unique classes" section in `box`; answers its head summary (for example, "2 of 18 held"). */
+  paint(box: HTMLElement): string;
+};
+
 /** Every `app.api` name and the type of what its module registers. */
 export type AppApi = {
   award: AwardApi;
+  classUi: ClassesApi;
   coin: CoinApi;
   bestiary: BestiaryApi;
   bundles: BundlesApi;

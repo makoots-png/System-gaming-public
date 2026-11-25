@@ -1045,6 +1045,7 @@ export function register(app) {
         section('words', WORD_WORDS.gm.title, '<div id="gm-words"></div>', false, true),
         section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
+        section('classes', 'Unique classes', '<div id="gm-classes"></div>', false, true),
         section('award', 'Award', `
           <div class="lbl">Hunters <span id="gm-sel-sum-a" class="gm-sum"></span></div>
           <div class="gm-targets"><label class="gm-chk"><input type="checkbox" id="gm-all"><span><strong>All hunters</strong></span></label></div>
@@ -1115,10 +1116,10 @@ export function register(app) {
       wireDifficultyLive(el, () => app.rules());
 
       // D04: desktop columns. Sections move into column wrappers at >=1100 (2 cols) / >=1500 (3 cols); phone/tablet keep the original single stack
-      const ORDER = ['cheat', 'party', 'waiting', 'words', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
+      const ORDER = ['cheat', 'party', 'waiting', 'words', 'trade', 'stories', 'classes', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
       // A20: the Award form is a full-width row under the columns, its reward rows two to a line
-      const PLAN2 = [['party', 'waiting', 'words', 'trade', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
-      const PLAN3 = [['party', 'waiting', 'words', 'trade', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
+      const PLAN2 = [['party', 'waiting', 'words', 'trade', 'stories', 'classes', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
+      const PLAN3 = [['party', 'waiting', 'words', 'trade', 'stories', 'classes'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
       let planSig = '';
       const arrange = () => {
         const L = app.layout || { desktop: () => false, wide: () => false };
@@ -1255,6 +1256,7 @@ export function register(app) {
       $('#gm-hsum-words').textContent = A().words.paint($('#gm-words'));
       $('#gm-hsum-trade').textContent = A().trade.paint($('#gm-trade'));
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
+      $('#gm-hsum-classes').textContent = A().classUi.paint($('#gm-classes'));
       editor.refresh();
       $('#gm-day').textContent = `Day ${S().world.day}`;
       syncTableUi(); renderLog(); renderNotify(); renderUses(); renderDamageTypes(); renderGrievousCuts();
@@ -1267,7 +1269,8 @@ export function register(app) {
 
   setInterval(() => { if (root && root.isConnected && !root.closest('[hidden]') && document.visibilityState === 'visible') renderRoom(); }, 5000); // presence ages
   app.on('sync:status', () => { if (root && root.isConnected && !root.closest('[hidden]')) renderRoom(); });
-  app.on('sync:sheets', () => { if (root && root.isConnected && !root.closest('[hidden]')) { renderBoard(); renderTargets(); } });
+  app.on('sync:sheets', () => { if (root && root.isConnected && !root.closest('[hidden]')) { renderBoard(); renderTargets(); $('#gm-hsum-classes').textContent = A().classUi.paint($('#gm-classes')); } });
+  app.on('sync:docs', () => { if (root && root.isConnected && !root.closest('[hidden]')) $('#gm-hsum-classes').textContent = A().classUi.paint($('#gm-classes')); });
   app.on('sync:sheets', weighJoined);
   // a player's reward asked of the GM (hunter/pending.ts): kept waiting once by its id, with its log line
   app.on('sync:event', ({ event: ev }) => {

@@ -13,6 +13,8 @@ import { oneOf } from '../core/one-of.ts';
 import { PINS } from '../core/combat/map-view.ts';
 import { exportedSave, fileKind, keepPhone, loadSave, parseSave, repairSave, rulesOf, freshSave } from '../core/save.ts';
 import type { Hunter, LoadNotice, ParseEnv, Save } from '../core/save.ts';
+import { CLASS_TREES } from '../core/registry/class-trees.ts';
+import type { ClassTreeMap } from '../core/registry/class-trees.ts';
 import { isRefused, refuse, writeInto } from '../core/save-step.ts';
 import { READ_ONLY, canTakeOver, dailyBackupDue, mayChange, noticesOf, opened, storeStep } from '../core/store-life.ts';
 import type { DeviceLife, LifeNotice, Opened, ReadOnlyWhy, StoreEvent, StoreLife, StoreStep, Theirs } from '../core/store-life.ts';
@@ -44,7 +46,14 @@ function randToken(): string {
   const a = new Uint8Array(24); crypto.getRandomValues(a);
   return Array.from(a, b => b.toString(36).padStart(2, '0')).join('').slice(0, 32);
 }
-const env = (): ParseEnv => ({ now: new Date(), newDeviceId: randId, newDeviceToken: randToken });
+const e2eClassTrees = (): ClassTreeMap | undefined => {
+  const injected = (globalThis as { __e2eClassTrees?: ClassTreeMap }).__e2eClassTrees;
+  return injected ? { ...injected, ...CLASS_TREES } : undefined;
+};
+const env = (): ParseEnv => {
+  const classTrees = e2eClassTrees();
+  return { now: new Date(), newDeviceId: randId, newDeviceToken: randToken, ...(classTrees ? { classTrees } : {}) };
+};
 
 // ── device prefs: their own key, so a campaign export, a backup and a sheet never carry them ──
 const MOTIONS = ['os', 'reduce', 'full'] as const;

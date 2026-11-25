@@ -24,7 +24,7 @@ import {
   classTreeOf,
   repairNodes,
 } from '../registry/class-trees.ts';
-import type { ClassTreeMap } from '../registry/class-trees.ts';
+import type { ClassNodeDef, ClassTree, ClassTreeMap } from '../registry/class-trees.ts';
 import { activeClass } from './class-locker.ts';
 import type { ActiveClass, ClassEntry, ClassHolders, ClassLocker } from './class-locker.ts';
 import { hasFought } from './chronicle.ts';
@@ -114,13 +114,17 @@ export function nodeCost(
 
 /**
  * Sets a hunter's job from free text (pre-chain Common starter or custom GM job), or clears it with null/blank.
- * Refuses unique built-in names or aliases (including Shadow Monarch), earned non-active classes (no free-swap loophole),
- * and unearned Rare built-in class names (so typing a Rare name never grants its keystone stat pair).
+ * Refuses dead or fight-held hunters when `opts` supplies those guards, unique built-in names or aliases
+ * (including Shadow Monarch), earned non-active classes (no free-swap loophole), and unearned Rare built-in
+ * class names (so typing a Rare name never grants its keystone stat pair).
  */
 export function setJob<H extends { job: string | null; jobDone: string | null; classes: ClassLocker }>(
   h: H,
   job: string | null,
-): H | Refused<'unique-class' | 'earned-class' | 'not-earned'> {
+  opts?: { readonly held?: boolean; readonly dead?: boolean },
+): H | Refused<'dead' | 'held' | 'unique-class' | 'earned-class' | 'not-earned'> {
+  if (opts?.dead) return refuse('dead');
+  if (opts?.held) return refuse('held');
   const clean = jobOf(job);
   if (clean && canonicalUniqueClass(clean) !== null) return refuse('unique-class');
   if (clean === null) return { ...h, job: null, jobDone: null };
@@ -228,28 +232,56 @@ export function classSwapSaid(name: string, from: string | null, to: string, cos
   };
 }
 
-/** Session log / GM report entry for buying a tree node. */
-export function classNodeSaid(name: string, className: string, nodeId: string, cost: number): Said {
+/** Session log / GM report entry for buying a tree node (takes human-readable node name). */
+export function classNodeSaid(name: string, className: string, nodeName: string, cost: number): Said {
   return {
     kind: 'system',
     hunterId: null,
     title: 'Class node bought',
     text: cost > 0
-      ? `${name} bought ${nodeId} on ${className} for ${gp(cost)}.`
-      : `${name} bought ${nodeId} on ${className} for free.`,
+      ? `${name} bought ${nodeName} on ${className} for ${gp(cost)}.`
+      : `${name} bought ${nodeName} on ${className} for free.`,
   };
 }
 
-/** Session log / GM report entry for flipping an exclusive fork pair. */
-export function classForkSaid(name: string, className: string, fromId: string, toId: string, cost: number): Said {
+/** Session log / GM report entry for flipping an exclusive fork pair (takes human-readable node names). */
+export function classForkSaid(name: string, className: string, fromName: string, toName: string, cost: number): Said {
   return {
     kind: 'system',
     hunterId: null,
     title: 'Class fork flipped',
     text: cost > 0
-      ? `${name} switched ${className} fork from ${fromId} to ${toId} for ${gp(cost)}.`
-      : `${name} switched ${className} fork from ${fromId} to ${toId} for free.`,
+      ? `${name} switched ${className} fork from ${fromName} to ${toName} for ${gp(cost)}.`
+      : `${name} switched ${className} fork from ${fromName} to ${toName} for free.`,
   };
+}
+
+/** Pure plan of flipping fork node `fromId` to its twin `toId`, shared by `flipClassFork` and UI preview. */
+export type ForkFlipPlan = {
+  readonly ok: true;
+  readonly from: ClassNodeDef;
+  readonly to: ClassNodeDef;
+  readonly nextNodes: readonly ClassNodeId[];
+  readonly dropped: readonly ClassNodeId[];
+  readonly droppedDefs: readonly ClassNodeDef[];
+};
+
+/** Computes the exact post-flip node list and dropped dependents using `canFlipFork` and `repairNodes`. */
+export function planForkFlip(
+  tree: ClassTree,
+  owned: readonly ClassNodeId[],
+  fromId: ClassNodeId,
+  toId: ClassNodeId,
+): ForkFlipPlan | Refused<'unknown-node' | 'not-fork-pair' | 'not-owned' | 'already-owned'> {
+  const check = canFlipFork(tree, owned, fromId, toId);
+  if (isRefused(check)) return check;
+  const replaced = owned.map(id => (id === fromId ? toId : id));
+  const nextNodes = repairNodes(tree, replaced);
+  const keptSet = new Set(nextNodes);
+  const dropped = owned.filter(id => id !== fromId && !keptSet.has(id));
+  const byId = new Map(tree.nodes.map(n => [n.id, n]));
+  const droppedDefs = dropped.map(id => byId.get(id)).filter((n): n is ClassNodeDef => !!n);
+  return { ok: true, from: check.from, to: check.to, nextNodes, dropped, droppedDefs };
 }
 
 /** Outcome of `swapClass`. */
@@ -259,7 +291,7 @@ export type SwappedClass = {
   readonly to: string;
   readonly cost: number;
 };
-export type SwapRefusal = Refused<'no-hunter' | 'dead' | 'held' | 'not-earned' | 'same-class' | 'foreign-class' | 'gold'>;
+export type SwapRefusal = Refused<'no-hunter' | 'dead' | 'held' | 'not-earned' | 'same-class' | 'foreign-class' | 'holders-pending' | 'gold'>;
 
 /**
  * Swaps hunter `hid` to another earned class in their locker in one atomic save step.
@@ -274,8 +306,9 @@ export function swapClass(save: Save, hid: string, targetClass: string, ctx: Cla
   const target = jobOf(targetClass);
   if (!target || !Object.hasOwn(h.classes, target)) return refuse('not-earned');
   const entry = h.classes[target]!;
-  if (isUniqueClass(target) && ctx.activeRegistryId && entry.registryId && entry.registryId !== ctx.activeRegistryId) {
-    return refuse('foreign-class');
+  if (isUniqueClass(target) && entry.registryId) {
+    if (ctx.role === 'player' && ctx.room && !ctx.activeRegistryId) return refuse('holders-pending');
+    if (ctx.activeRegistryId && entry.registryId !== ctx.activeRegistryId) return refuse('foreign-class');
   }
   const active = activeClass(h);
   if (active.kind === 'earned' && active.name === target) return refuse('same-class');
@@ -360,7 +393,7 @@ export function buyClassNode(
     }, ctx.stamp);
     if (ev) s = atOutbox(box => post(box, ctx.room!, { kind: 'event', event: ev }, null).box)(s);
   } else {
-    const said = classNodeSaid(h.name, active.name, nodeId, priced.cost);
+    const said = classNodeSaid(h.name, active.name, check.node.name, priced.cost);
     s = told(s, { at: ctx.at, cap: ctx.R.logCap }, { ...said, hunterId: h.id });
   }
   return { save: s, className: active.name, nodeId, cost: priced.cost };
@@ -401,18 +434,13 @@ export function flipClassFork(
   const trees = ctx.trees ?? CLASS_TREES;
   const tree = classTreeOf(active.name, trees);
   if (!tree || !isClassName(active.name)) return refuse('no-tree');
-  const check = canFlipFork(tree, active.entry.nodes, fromId, toId);
-  if (isRefused(check)) return check;
+  const plan = planForkFlip(tree, active.entry.nodes, fromId, toId);
+  if (isRefused(plan)) return plan;
 
   const { cost } = forkFlipCost(h, ctx.role, ctx.R);
   if (cost > h.gold) return refuse('gold');
 
-  const replaced = active.entry.nodes.map(id => (id === fromId ? toId : id));
-  const repaired = repairNodes(tree, replaced);
-  const keptSet = new Set(repaired);
-  const dropped = active.entry.nodes.filter(id => id !== fromId && !keptSet.has(id));
-
-  const nextEntry: ClassEntry = { ...active.entry, nodes: repaired };
+  const nextEntry: ClassEntry = { ...active.entry, nodes: plan.nextNodes };
   let next: Hunter = { ...h, classes: { ...h.classes, [active.name]: nextEntry } };
   if (cost > 0) next = addGold(next, -cost);
   next = fitted(next, ctx.R);
@@ -430,10 +458,10 @@ export function flipClassFork(
     }, ctx.stamp);
     if (ev) s = atOutbox(box => post(box, ctx.room!, { kind: 'event', event: ev }, null).box)(s);
   } else {
-    const said = classForkSaid(h.name, active.name, fromId, toId, cost);
+    const said = classForkSaid(h.name, active.name, plan.from.name, plan.to.name, cost);
     s = told(s, { at: ctx.at, cap: ctx.R.logCap }, { ...said, hunterId: h.id });
   }
-  return { save: s, className: active.name, fromId, toId, cost, dropped };
+  return { save: s, className: active.name, fromId, toId, cost, dropped: plan.dropped };
 }
 
 /**
@@ -499,6 +527,7 @@ export const CLASS_REFUSAL_WORDS = {
   'same-class': 'You are already using that class.',
   'earned-class': 'Swap to earned classes from your class locker.',
   'foreign-class': 'That unique class belongs to another campaign and is parked in this room.',
+  'holders-pending': 'Waiting for the room\'s class registry. Try again in a moment.',
   'no-class': 'You do not have an active awakened class.',
   'no-tree': 'This class has no skill tree.',
   'unknown-node': 'That skill tree node does not exist.',

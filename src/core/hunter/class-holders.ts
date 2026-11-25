@@ -428,3 +428,16 @@ export function releaseNoticeStep(
   if (!inboxReady && next === save) return refuse('unchanged');
   return { save: next, diff: recon && recon.save !== base ? recon : null };
 }
+
+/** Plain-English refusal messages for GM unique-class claim, release, and reassign actions (voice.md compliant). */
+export const HOLDER_REFUSAL_WORDS = {
+  'not-unique': 'That class is not a unique class.',
+  'class-taken': 'Another hunter or NPC already holds that unique class. Release or reassign it first.',
+  'not-held': 'Nobody holds that unique class.',
+  'same-holder': 'That hunter or NPC already holds that unique class.',
+  'no-hunter': 'Hunter not found.',
+  'locker-full': `That hunter's class locker is full (${CLASS_LOCKER_CAP} classes).`,
+  'bad-target': 'Enter an NPC name or select a hunter.',
+  held: 'You cannot change a unique class while its hunter is in a fight.',
+  'foreign-class': 'That hunter already has parked progress for this class from another campaign.',
+} as const;

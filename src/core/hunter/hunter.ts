@@ -237,7 +237,12 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   const run: RepairRun = { ...saveRun, owner: h };
   const { R } = run;
   h.name = h.name.slice(0, 60) || 'Hunter';
-  const parsedClasses = parseClasses(h.classes, { job: jobOf(h.job), jobDone: jobOf(h.jobDone), fallbackAt: run.env.now.toISOString() });
+  const parsedClasses = parseClasses(h.classes, {
+    job: jobOf(h.job),
+    jobDone: jobOf(h.jobDone),
+    fallbackAt: run.env.now.toISOString(),
+    ...(run.env.classTrees ? { trees: run.env.classTrees } : {}),
+  });
   h.classes = parsedClasses.classes; h.job = parsedClasses.job; h.jobDone = parsedClasses.jobDone;
   h.rank = oneOf(h.rank, RANKS, 'E'); h.rankBy = oneOf(h.rankBy, RANK_BY, 'level');
   h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold); h.crystal = int(h.crystal, 0, 0, CRYSTAL_MAX);

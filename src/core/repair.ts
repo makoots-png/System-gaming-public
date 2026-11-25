@@ -15,10 +15,11 @@ import { parseSkill } from './registry/skills.ts';
 import type { Skill } from './registry/skills.ts';
 import { MAX_MAPS } from './registry/maps.ts';
 import type { Rules } from './rules.ts';
+import type { ClassTreeMap } from './registry/class-trees.ts';
 import type { Hunter } from './hunter/hunter.ts';
 
 /** What a read needs from outside: the clock, and the makers of this phone's device id and device token (random, the edge's). */
-export type ParseEnv = { now: Date; newDeviceId: () => DeviceId; newDeviceToken: () => string };
+export type ParseEnv = { now: Date; newDeviceId: () => DeviceId; newDeviceToken: () => string; classTrees?: ClassTreeMap };
 
 /** Bounds for junk or hostile saves only. GM rules (loadoutCap) never prune saved data. */
 export const LIMITS = { loadouts: 24, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, boons: 50 } as const;

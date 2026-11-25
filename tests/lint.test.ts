@@ -1431,6 +1431,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/takeover.js': { count: 1, why: 'the blocking takeover window\'s open handle and cause while shown (read-only or stuck update)' },
     'src/views/skills.js': { count: 2, why: 'the skill maker\'s type and kind on screen' },
     'src/views/coin.js': { count: 1, why: 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design' },
+    'src/views/classes.js': { count: 1, why: 'the last DOCS.holders snapshot drawn (holdersSig), so sync:docs redraws only on a change' },
     'src/views/custom.js': { count: 1, why: 'the HP last felt, so a buzz follows only a change' },
     'src/views/inventory.js': { count: 1, why: 'the bag\'s tab on screen' },
     'src/views/loot.js': { count: 1, why: 'the item maker\'s type on screen and whether its slot was set by hand' },
@@ -1604,6 +1605,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
   };
   const named: Record<string, string> = {
     'bestiary.js lastHtml': what.drawn,
+    'classes.js holdersSig': what.drawn,
     'coin.js prompt': 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design',
     'combat.js surprised': 'the side the GM marked surprised before the start; the fight takes it at its start',
     'combat.js tableRefusal': 'the last refusal of a player\'s move for the fight doc, its count inside it (`n`), so a repeat is told again',

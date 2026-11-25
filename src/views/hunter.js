@@ -384,6 +384,7 @@ export function register(app) {
     },
     /** HP and mana to their maxima: in a fight the row's (`combat.refill`), refused in the GM's fight. */
     fightOf,
+    heldIn,
     // the price is checked where the mana lives: the row refuses a paid adjust it cannot cover, the sheet's `spend` the same
     spendMana(hid, n, also = null) {
       n = Math.max(0, int(n));
@@ -567,7 +568,7 @@ export function register(app) {
         // a refused change is told, and the redraw below puts the field back as the save holds it
         if (f === 'title') { const tid = store.id('t'); ui.wrote('! Hunter', onHunter(hid, 'identity', both(h => nameActiveTitle(h, v, tid), fit))); }
         else if (f === 'name') ui.wrote('! Hunter', onHunter(hid, 'identity', h => rename(h, v)));
-        else if (f === 'job') ui.wrote('! Hunter', onHunter(hid, 'identity', h => setJob(h, v)), CLASS_REFUSAL_WORDS);
+        else if (f === 'job') ui.wrote('! Hunter', store.apply('identity', s => atHunter(hid, h => setJob(h, v, { held: heldIn(s, { hid }) !== null, dead: h.life.at === 'dead' }))(s)), CLASS_REFUSAL_WORDS);
         update(el);
       });
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset.f) e.target.blur(); });
