@@ -283,10 +283,20 @@ describe('the kits\' names (kits design 1.5)', () => {
   });
 
   test('roll no dice, and read back as the same tree', () => {
-    for (const text of ['stacks(pain) * 2', 'target.stacks(hemo-plague) + field(corruption)', '1 - target.missing', 'held(crimson-pact) * hits + kills - spent']) {
+    for (const text of ['stacks(pain) * 2', 'target.stacks(hemo-plague) + field(corruption)', '1 - target.missing', 'held(crimson-pact) * hits + kills - spent', 'hp', 'target.hp', 'min(0.05 * target.hp, 0.2 * phys)']) {
       const tree = parse(text);
       expect([text, diceOf(tree), parse(printFormula(tree))]).toEqual([text, [], tree]);
     }
+  });
+
+  test('hp and target.hp are parse-time shorthands for hpMax * (1 - missing) and round-trip cleanly', () => {
+    expect(parse('hp')).toEqual(parse('hpMax * (1 - missing)'));
+    expect(parse('target.hp')).toEqual(parse('target.hpMax * (1 - target.missing)'));
+    expect(printFormula(parse('hp'))).toBe('hpMax * (1 - missing)');
+    expect(printFormula(parse('target.hp'))).toBe('target.hpMax * (1 - target.missing)');
+    expect(value('hp')).toBeCloseTo(SCOPE.user.sheet.hpMax * (1 - kit.missing.user), 9);
+    expect(value('target.hp')).toBeCloseTo(SCOPE.target.sheet.hpMax * (1 - kit.missing.target), 9);
+    expect(bareRefusal(parse('hp'))).toContain('missing');
   });
 });
 

@@ -11,7 +11,7 @@ import type { Op, Origin, Status, StatusDef, Tiered } from '../src/core/combat/e
 import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
-import { hideOf } from '../src/core/combat/standing.ts';
+import { harmful, healShare, hideOf } from '../src/core/combat/standing.ts';
 import { BUILT_IN_STATUSES, STATE_CHIP_DEFS, STATUS_KEYS } from '../src/core/registry/statuses.ts';
 import type { BuiltInStatus } from '../src/core/registry/statuses.ts';
 import { STATE_CHIPS, chipDef } from '../src/core/hunter/chips.ts';
@@ -146,6 +146,14 @@ group('the old statuses restated (plan 3.1)', () => {
       expect(roundDamage('burning', t)).toBeGreaterThan(roundDamage('bleeding', t));
       expect(roundDamage('bleeding', t)).toBeGreaterThanOrEqual(roundDamage('poisoned', t));
     }
+  });
+
+  test('Grievous Wounds cuts healing received by 40% via a share-on-healed op, is harmful, and can be overridden in the library', () => {
+    expect(BUILT_IN_STATUSES.grievous.ops).toEqual([{ op: 'share', on: 'healed', pct: -40 }]);
+    expect(harmful(BUILT_IN_STATUSES.grievous)).toBe(true);
+    expect(healShare({ statuses: [on('grievous', 0)] }, RULES)).toBeCloseTo(0.6, 9);
+    const custom: StatusDef = { ...BUILT_IN_STATUSES.grievous, ops: [{ op: 'share', on: 'healed', pct: -25 }] };
+    expect(rulesOf({}, { grievous: custom }).conditions.grievous).toEqual(custom);
   });
 });
 

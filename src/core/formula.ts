@@ -137,11 +137,12 @@ export type ParsedFormula = { readonly ok: true; readonly formula: Formula } | {
 /** Every name a formula may use, lower case, to what it reads. One table, so the parser has no list of its own. */
 type Name =
   | { readonly kind: 'stat'; readonly key: StatKey } | { readonly kind: 'sheet'; readonly key: SheetNumber } | { readonly kind: 'charge' }
-  | { readonly kind: 'missing' } | { readonly kind: 'count'; readonly name: CountName };
+  | { readonly kind: 'missing' } | { readonly kind: 'hp' } | { readonly kind: 'count'; readonly name: CountName };
 const NAMES: ReadonlyMap<string, Name> = new Map<string, Name>([
   ...STAT_KEYS.map(key => [key, { kind: 'stat', key }] as const),
   ...(Object.keys(SHEET_LABELS) as SheetNumber[]).map(key => [key.toLowerCase(), { kind: 'sheet', key }] as const),
   ['charge', { kind: 'charge' }],
+  ['hp', { kind: 'hp' }],
   ['missing', { kind: 'missing' }],
   ...COUNT_NAMES.map(name => [name, { kind: 'count', name }] as const),
 ]);
@@ -150,7 +151,7 @@ const KEYED = ['stacks', 'field', 'held'] as const;
 type Keyed = (typeof KEYED)[number];
 /** The longest status key (effect-ops.ts `STATUS_KEY_RE`). */
 const KEY_MAX = 40;
-const NAME_HINT = `Use a stat (${STAT_KEYS.join(', ')}), a sheet value (like phys for physical power, mag for magic, sup for support, hpMax, or armor), charge, missing (missing HP share), hits, kills, spent, or stacks(key), field(key), or held(key). Add target. in front to read the target's value.`;
+const NAME_HINT = `Use a stat (${STAT_KEYS.join(', ')}), a sheet value (like phys for physical power, mag for magic, sup for support, hpMax, or armor), charge, hp (current HP), missing (missing HP share), hits, kills, spent, or stacks(key), field(key), or held(key). Add target. in front to read the target's value.`;
 
 type Token =
   | { readonly t: 'number'; readonly value: number; readonly at: number; readonly text: string }
@@ -426,6 +427,13 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
     if (found.kind === 'charge') {
       if (whose === 'target') refuse(`"${tok.text}" at character ${tok.at}: charge belongs to the user. Write charge.`);
       return { kind: 'charge' };
+    }
+    if (found.kind === 'hp') {
+      return {
+        kind: 'binary', op: '*',
+        left: { kind: 'sheet', whose, key: 'hpMax' },
+        right: { kind: 'binary', op: '-', left: { kind: 'number', value: 1 }, right: { kind: 'missing', whose } },
+      };
     }
     if (found.kind === 'missing') return { kind: 'missing', whose };
     if (found.kind === 'count') {

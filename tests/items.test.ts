@@ -613,10 +613,12 @@ group('the recipe items: each is read back whole and spends inside its grade', (
       if (band.low !== null) expect(s.points).toBeGreaterThan(band.low);
     });
   }
-  test('Thornmail strikes back with magic damage of 1 + 1% of the wearer\'s armor and prices whole', () => {
+  test('Thornmail strikes back with magic damage of 3% of the wearer\'s armor, applies Grievous Wounds for 2 rounds, and prices whole', () => {
     const t = holds('Thornmail').worn!.triggers![0]!;
     expect([t.on, t.to]).toEqual(['struck', 'other']);
-    expect(t.ops.map(o => o.op)).toEqual(['damage']);
+    expect(t.ops.map(o => o.op)).toEqual(['damage', 'applyStatus']);
+    const gw = t.ops[1]!;
+    expect(gw.op === 'applyStatus' && [gw.key, gw.duration]).toEqual([statusKey('grievous'), tick(2 * RULES.fight.round)]);
     expect(spendOf('Thornmail').unweighed).toEqual([]);
   });
   test('Spellblade readies on an ability tagged "spell" and spends its mark with the next hit it deals', () => {
@@ -625,27 +627,29 @@ group('the recipe items: each is read back whole and spends inside its grade', (
     expect(strike!.need).toEqual({ kind: 'holds', key: statusKey('spellblade-ready') });
     const mark = ready!.ops[0]!;
     expect(mark.op === 'applyStatus' && mark.def.stack?.leave).toEqual({ kind: 'event', event: 'hitDealt' });
+    expect(strike!.ops[0]).toMatchObject({ op: 'damage', type: 'physical', amount: formulaOf('0.1 * phys') });
   });
-  test('Healer\'s Charm adds Presence and heals its wearer on a kill by a share of its heal power', () => {
+  test('Healer\'s Charm adds Presence and healPower and heals its wearer on a kill by a share of its heal power', () => {
     const c = holds("Healer's Charm");
-    expect(c.bonus).toEqual({ pre: 2 });
+    expect(c.bonus).toEqual({ pre: 2, healPower: 4 });
     expect(c.worn!.triggers![0]).toMatchObject({ on: 'kill', to: 'self' });
   });
-  test('Bulwark Ring gives its wearer a shield of 10 + a share of max HP to use on themselves, once in 8 rounds', () => {
+  test('Bulwark Ring gives its wearer a shield of 10 + 10% of max HP to use on themselves, once in 8 rounds', () => {
     const a = holds('Bulwark Ring').active!;
     expect(a.aim).toBe('self');
-    expect(a.effect).toMatchObject({ type: 'shield', formula: formulaOf('10 + 0.05 * hpmax') });
+    expect(a.effect).toMatchObject({ type: 'shield', formula: formulaOf('10 + 0.1 * hpmax') });
     expect(a.cost.cooldown).toBe(tick(8 * RULES.fight.round));
     expect(spendOf('Bulwark Ring').unweighed).toEqual([]);
   });
-  test('Lifeline Locket shields its wearer for 10% of max HP once a fight, when it falls under the low share, and prices whole', () => {
-    expect(holds('Lifeline Locket').worn!.triggers).toEqual([{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formulaOf('0.1 * hpmax') }] }]);
+  test('Lifeline Locket shields its wearer for 16% of max HP once a fight, when it falls under the low share, and prices whole', () => {
+    expect(holds('Lifeline Locket').worn!.triggers).toEqual([{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formulaOf('0.16 * hpmax') }] }]);
     expect(spendOf('Lifeline Locket').unweighed).toEqual([]);
   });
-  test('Warden\'s Plate adds armor equal to a share of max HP, and is a heavy chest piece', () => {
+  test('Warden\'s Plate adds Vitality and armor equal to 3% of max HP, and is a heavy chest piece', () => {
     const p = holds("Warden's Plate");
     expect(p.slot).toBe('chest');
-    expect(p.worn!.ops).toEqual([{ op: 'sheet', key: 'armor', amount: formulaOf('0.015 * hpmax') }]);
+    expect(p.bonus).toEqual({ vit: 1 });
+    expect(p.worn!.ops).toEqual([{ op: 'sheet', key: 'armor', amount: formulaOf('0.03 * hpmax') }]);
     expect([p.armor, p.resist]).toEqual([piece('heavy', 'chest', RULES).armor, piece('heavy', 'chest', RULES).resist]);
     expect(spendOf("Warden's Plate").unweighed).toEqual([]);
   });

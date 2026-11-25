@@ -15,7 +15,8 @@ import type { RefBuild } from '../src/core/registry/worth.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
-import type { Ability } from '../src/core/combat/ability-types.ts';
+import type { Ability, DamageType } from '../src/core/combat/ability-types.ts';
+import { defenceLeft, throughDefence } from '../src/core/combat/land.ts';
 import { cost, tick } from '../src/core/combat/timeline.ts';
 import { tiles } from '../src/core/combat/space.ts';
 import { LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
@@ -126,6 +127,18 @@ group('what an item spends, in points on the sample wearer (economy design 2.3)'
 
   test('a die the rules refuse is weighed as the kind\'s own 1d8, the die the fight would roll', () => {
     expect(itemSpend(weapon('common', 'not dice'), RULES)!.points).toBeCloseTo(0, 9);
+  });
+
+  test('a true-damage weapon pays the defense-ratio premium over physical 1d8, and a defense-ignoring type prices identically', () => {
+    const physC = (wearer('C', { str: 10 }).phys - wearer('C').phys) / 10;
+    const bruiserC = referenceBody('bruiser', 'C', RULES).sheet, bruteC = monsterSheet('C', 'brute', 'normal', RULES);
+    const raw = 4.5 + bruiserC.phys;
+    const eff = raw * (raw / throughDefence(raw, defenceLeft('physical', bruiserC, bruteC), RULES));
+    const expected = (eff - raw) / physC * RULES.itemBudget.weaponDuty;
+    const trueBlade = itemSpend(weapon('rare', '1d8', { damageType: 'true' }), RULES)!;
+    expect(trueBlade.parts.weapon).toBeCloseTo(expected, 9);
+    expect(itemSpend(weapon('rare', '1d8', { damageType: 'void' as DamageType }), RULES)!.parts.weapon).toBeCloseTo(expected, 9);
+    expect(itemSpend(weapon('rare', '1d8', { damageType: 'arcane' }), RULES)!.parts.weapon).toBeCloseTo(0, 9);
   });
 
   test('armor and resist at the piece the item\'s weight carries spend nothing: Hunter\'s Leather, the Reinforced Hunter Vest, the Dented Tower Shield', () => {
@@ -409,8 +422,8 @@ group('the item maker\'s spend line (economy design 2.4)', () => {
       words: `Uses 11.1 budget points (11.1 ${BUDGET_WORDS.weapon}). Epic+ range is 9.8 to 11.2.`,
       over: false,
     });
-    expect(line(itemOf(RULES, def('Spellblade')), -1)).toEqual({
-      words: `Uses 3.6 budget points (0.0 ${BUDGET_WORDS.weapon}, 3.6 ${BUDGET_WORDS.powers}). Rare− range is up to 5.2.`,
+    expect(line(itemOf(RULES, def('Spellblade')), 1)).toEqual({
+      words: `Uses 7.1 budget points (0.0 ${BUDGET_WORDS.weapon}, 7.1 ${BUDGET_WORDS.powers}). Rare+ range is 6.2 to 7.4.`,
       over: false,
     });
     expect(line(itemOf(RULES, def('Knight Killer')), -1)).toEqual({

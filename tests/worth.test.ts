@@ -3,20 +3,23 @@
 // docs/agent-handoff/kits/notes-worth.md states, not a run of the code. The last group plays the example kits on the real
 // reducer (tests/models/fight-sim.ts) and holds the bar to what the simulation measures.
 import { describe, expect, test } from 'bun:test';
-import { RULES } from '../src/core/rules.ts';
+import { RULES, rulesOf } from '../src/core/rules.ts';
+import { monsterSheet } from '../src/core/hunter/derive.ts';
+import { defenceLeft, NO_PEN, throughDefence } from '../src/core/combat/land.ts';
+import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { abilityOf, defaultTicks, recommended } from '../src/core/registry/ability-kinds.ts';
 import type { AbilityInput } from '../src/core/registry/ability-kinds.ts';
-import { suggestScaler } from '../src/core/registry/scalers.ts';
-import { abilityWorth, bestScope, breakWorth, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
+import { missingMean, suggestScaler } from '../src/core/registry/scalers.ts';
+import { abilityWorth, bestScope, breakWorth, defenceAdjusted, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { exampleSkills } from '../src/core/registry/kit-examples.ts';
 import { place } from '../src/core/combat/space.ts';
 import { abilities, builtIns, hunter, playFight } from './models/fight-sim.ts';
 import type { Archetype, SimRow } from './models/fight-sim.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
-import type { AbilityKind } from '../src/core/combat/ability-types.ts';
+import type { AbilityKind, DamageType } from '../src/core/combat/ability-types.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StackDef, StatusDef } from '../src/core/combat/effect-ops.ts';
 import { tick } from '../src/core/combat/timeline.ts';
@@ -287,6 +290,103 @@ describe('what the bar cannot estimate it names, never counting it as 0', () => 
     expect(w.worth).toBeCloseTo(RULES.fight.kit.referenceRounds / 0.775, 6);
     expect(w.unweighed).toEqual(['stat', 'end']);
     expect(w.over).toBe(true);
+  });
+});
+
+describe('true-damage worth (R5): defense-ignoring hits price at raw / throughDefence against the reference target', () => {
+  test('a true-damage strike, curse, trigger, and status each pay the exact defense ratio on the weighing\'s reference brute', () => {
+    const bruteC = monsterSheet('C', 'brute', 'normal', RULES);
+    const bruiserC = referenceBody('bruiser', 'C', RULES).sheet;
+    const cannonC = referenceBody('cannon', 'C', RULES).sheet;
+
+    // Direct strike: physical vs true
+    const strikePhys = of('strike');
+    const strikeTrue = of('strike', { ticks: { ...defaultTicks('strike', 'true') } });
+    const rawStrike = 4.5 + bruiserC.phys;
+    const strikeRatio = rawStrike / throughDefence(rawStrike, defenceLeft('physical', bruiserC, bruteC), RULES);
+    expect(abilityWorth(strikeTrue, RULES).worth / abilityWorth(strikePhys, RULES).worth).toBeCloseTo(strikeRatio, 9);
+
+    // Direct curse: arcane vs true (cannon has resistPen)
+    const curseArc = of('curse');
+    const curseTrue = of('curse', { ticks: { ...defaultTicks('curse', 'true') } });
+    const rawCurse = 4.5 + cannonC.mag;
+    const curseRatio = rawCurse / throughDefence(rawCurse, defenceLeft('arcane', cannonC, bruteC), RULES);
+    expect(abilityWorth(curseTrue, RULES).worth / abilityWorth(curseArc, RULES).worth).toBeCloseTo(curseRatio, 9);
+
+    // Worn trigger: small true tick earns a larger premium than a big hit because of armorFlat
+    const hitTrigger = (type: DamageType, amount: string): StatusDef => ({
+      label: 'Hit', desc: '', ops: [],
+      triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type, amount: f(amount), when: 'use' }] }],
+    });
+    const smallRatio = 4 / throughDefence(4, defenceLeft('physical', bruiserC, bruteC), RULES);
+    const bigRatio = 30 / throughDefence(30, defenceLeft('physical', bruiserC, bruteC), RULES);
+    expect(smallRatio).toBeGreaterThan(bigRatio);
+    expect(wornWorth(hitTrigger('true', '4'), RULES).worth / wornWorth(hitTrigger('physical', '4'), RULES).worth).toBeCloseTo(smallRatio, 9);
+    expect(wornWorth(hitTrigger('true', '30'), RULES).worth / wornWorth(hitTrigger('physical', '30'), RULES).worth).toBeCloseTo(bigRatio, 9);
+
+    // Per-round status: Poisoned and Plague use NO_PEN against brute resist (arcane baseline) and stay within budget
+    const tickRatio = 3.5 / throughDefence(3.5, defenceLeft('arcane', NO_PEN, bruteC), RULES);
+    const poisonTrue = defWorth(BUILT_IN_STATUSES.poisoned, RULES);
+    const poisonArc: StatusDef = { ...BUILT_IN_STATUSES.poisoned, ops: BUILT_IN_STATUSES.poisoned.ops.map(o => (o.op === 'damage' ? { ...o, type: 'arcane' } : o)) };
+    expect(poisonTrue.worth / defWorth(poisonArc, RULES).worth).toBeCloseTo(tickRatio, 9);
+    expect(poisonTrue.over).toBe(false);
+    expect(defWorth(BUILT_IN_STATUSES.plague, RULES).over).toBe(false);
+    // Tiny ticks under the 1-damage floor never divide by zero or drop below 1x
+    expect(defenceAdjusted(1, 'true', 'physical', bruiserC, bruteC, RULES)).toBe(1);
+    expect(defenceAdjusted(0.5, 'true', 'physical', bruiserC, bruteC, RULES)).toBe(0.5);
+  });
+
+  test('a GM override via RULES.fight.damageTypes and a custom defense-ignoring type both price the same as true', () => {
+    const baseStrike = abilityOf('strike', { id: abilityId('gm-strike'), name: 'GM Strike' }, RULES);
+    const explicitTrue = abilityOf('strike', { id: abilityId('gm-strike'), name: 'GM Strike', ticks: { ...defaultTicks('strike', 'true') } }, RULES);
+    const R = rulesOf({ fight: { damageTypes: { 'gm-strike': 'true' } } });
+    expect(abilityWorth(baseStrike, R).worth).toBeCloseTo(abilityWorth(explicitTrue, RULES).worth, 9);
+
+    // Custom defense-ignoring type (defenceOf returns null) prices identically to true across weigh, landWorth, and statusWorth
+    const custom = 'void' as DamageType;
+    const customAbility = abilityOf('strike', { id: abilityId('void-strike'), name: 'Void Strike', effect: { type: custom, by: 'hand', formula: f('1d8 + phys') } }, RULES);
+    expect(abilityWorth(customAbility, RULES).worth).toBeCloseTo(abilityWorth(explicitTrue, RULES).worth, 9);
+    const customStatus: StatusDef = { label: 'Void', desc: '', ops: [{ op: 'damage', type: custom, amount: f('1d6'), when: 'turn' }] };
+    const trueStatus: StatusDef = { label: 'True', desc: '', ops: [{ op: 'damage', type: 'true', amount: f('1d6'), when: 'turn' }] };
+    expect(defWorth(customStatus, RULES).worth).toBeCloseTo(defWorth(trueStatus, RULES).worth, 9);
+    const customTrig: StatusDef = { label: 'T', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: custom, amount: f('10'), when: 'use' }] }] };
+    const trueTrig: StatusDef = { label: 'T', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'true', amount: f('10'), when: 'use' }] }] };
+    expect(wornWorth(customTrig, RULES).worth).toBeCloseTo(wornWorth(trueTrig, RULES).worth, 9);
+  });
+});
+
+describe('grievous wounds and antiHealWorth (R4)', () => {
+  test('a share-on-healed healing cut is weighed via kit.antiHealWorth, scales with pct up to kit.shareCap, and is not unweighed', () => {
+    const K = RULES.fight.kit;
+    const gw = defWorth(BUILT_IN_STATUSES.grievous, RULES);
+    expect(gw.unweighed).toEqual([]);
+    expect(gw.worth).toBeCloseTo(0.4 * K.antiHealWorth * K.referenceRounds, 9);
+    expect(gw.over).toBe(false);
+
+    const cutOf = (pct: number): StatusDef => ({ label: 'Cut', desc: '', ops: [{ op: 'share', on: 'healed', pct }] });
+    expect(defWorth(cutOf(-20), RULES).worth).toBeCloseTo(gw.worth / 2, 9);
+    expect(defWorth(cutOf(-50), RULES).worth).toBeCloseTo(K.shareCap * K.antiHealWorth * K.referenceRounds, 9);
+    expect(defWorth(cutOf(-80), RULES).worth).toBeCloseTo(defWorth(cutOf(-50), RULES).worth, 9);
+
+    // Positive healed share and other share targets remain unweighed
+    expect(defWorth(cutOf(20), RULES).unweighed).toEqual(['share']);
+    expect(defWorth(BUILT_IN_STATUSES.marked, RULES).unweighed).toEqual(['share']);
+
+    // GM override of fight.kit.antiHealWorth scales worth proportionally
+    const doubleR = rulesOf({ fight: { kit: { antiHealWorth: K.antiHealWorth * 2 } } });
+    expect(defWorth(BUILT_IN_STATUSES.grievous, doubleR).worth).toBeCloseTo(gw.worth * 2, 9);
+  });
+});
+
+describe('hp shorthand and missing mean weighing (R6)', () => {
+  test('target.hp and missing are weighed at missingMean from kit.reference instead of flagging count', () => {
+    const bruteHp = monsterSheet('C', 'brute', 'normal', RULES).hpMax;
+    const mean = missingMean('strike', 'C', RULES);
+    const pctHp = of('strike', { effect: { type: 'physical', by: 'hand', formula: f('0.1 * target.hp') } });
+    const flat = of('strike', { effect: { type: 'physical', by: 'hand', formula: f(String(0.1 * bruteHp * (1 - mean))) } });
+    const w = abilityWorth(pctHp, RULES);
+    expect(w.unweighed).toEqual([]);
+    expect(w.worth).toBeCloseTo(abilityWorth(flat, RULES).worth, 9);
   });
 });
 

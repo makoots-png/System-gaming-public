@@ -30,6 +30,7 @@ import { tick } from '../combat/timeline.ts';
 import { abilityOf } from './ability-kinds.ts';
 import { parsePowers } from './powers.ts';
 import type { Powers } from './powers.ts';
+import { BUILT_IN_STATUSES } from './statuses.ts';
 
 // The item enums live here, beside the one parser that reads them; save.ts re-exports them.
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
@@ -186,78 +187,78 @@ const SPELLBLADE_READY: StatusDef = {
   label: 'Spellblade ready', desc: 'The next hit deals bonus damage.', ops: [],
   stack: { cap: 1, leave: { kind: 'event', event: 'hitDealt' }, keep: 'fight', threshold: null },
 };
-/** Bulwark: a shield of 10 + 5% of max HP on its user, ready again 8 rounds later (once a fight of six rounds); it takes a standard action. */
+/** Bulwark: a shield of 10 + 10% of max HP on its user, ready again 8 rounds later (once a fight of six rounds); it takes a standard action. */
 const BULWARK: Ability = abilityOf('support', {
   id: abilityId('bulwark'), name: 'Bulwark', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
-  effect: { type: 'shield', by: 'hand', formula: formula('10 + 0.05 * hpmax') },
+  effect: { type: 'shield', by: 'hand', formula: formula('10 + 0.1 * hpmax') },
   cost: { fatigue: 0, mana: 0, time: abilityOf('support', { id: abilityId('x'), name: 'x' }, RULES).cost.time, cooldown: rounds(8) },
 }, RULES);
 
 /** The recipe items: the library holds them with the other loot, and a gate may drop them by rarity. */
 export const RECIPE_ITEMS: readonly ItemDef[] = [
-  // Thornmail, Epic−: Vitality 1 costs 1.00, a struck trigger's reflect `1 + 0.01 * armor` 5.15 (read on the build with the
-  // most armor, one strike a round), so it spends 6.15 against Epic−'s top 8.49. The plan's `3 + 0.1 * armor` spends 32
-  // here. Its healing cut is left out until grievous wounds is weighed (item-stats.md, build note items-small).
+  // Thornmail, Epic+: a struck trigger reflects `0.03 * armor` arcane damage (6.72, read on the build with the most
+  // armor, one strike a round) and applies Grievous Wounds (-40% healing, 2 rounds so it covers the attacker's next
+  // turn and regen tick: 3.83), spending 10.54 inside Epic+'s 9.76..11.22.
   {
-    name: 'Thornmail', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
-    desc: 'Heavy chest armor that adds 1 Vitality. When a foe strikes you, it takes magic damage equal to 1 + 1% of your armor.',
+    name: 'Thornmail', rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: {},
+    desc: 'Heavy chest armor. When a foe strikes you, it takes magic damage equal to 3% of your armor and gets Grievous Wounds for 2 rounds.',
     worn: {
-      label: 'Thornmail', desc: 'Foes that strike you take magic damage.', ops: [],
+      label: 'Thornmail', desc: 'Foes that strike you take magic damage and get Grievous Wounds.', ops: [],
       triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [
-        { op: 'damage', type: 'arcane', amount: formula('1 + 0.01 * armor'), when: 'use' },
+        { op: 'damage', type: 'arcane', amount: formula('0.03 * armor'), when: 'use' },
+        { op: 'applyStatus', key: statusKey('grievous'), def: BUILT_IN_STATUSES.grievous, duration: rounds(2) },
       ] }],
     },
   },
-  // Spellblade, Rare−: 1d8 spends 0.0 weapon damage so the whole budget goes to its power; the hit trigger
-  // `1 + 0.005 * str` is read on the build that favours Strength at one hit a round: 3.58 against Rare−'s top 5.17.
+  // Spellblade, Rare+: 1d8 spends 0.0 weapon damage so the whole budget goes to its power; the hit trigger
+  // `0.1 * phys` is read on the build with the most physical power at one hit a round: 7.11 inside Rare+'s 6.18..7.39.
   // The mark's stack has no rule worth reads. A GM tags a skill "spell" for it to ready the blade.
   {
-    name: 'Spellblade', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
-    desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 1 + 0.5% of your Strength.',
+    name: 'Spellblade', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
+    desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 10% of your physical power.',
     worn: {
       label: 'Spellblade', desc: 'Using a spell adds bonus physical damage to your next hit.', ops: [],
       triggers: [
         { on: 'used', tag: tag('spell'), to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('spellblade-ready'), def: SPELLBLADE_READY, duration: null }] },
-        { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, need: { kind: 'holds', key: statusKey('spellblade-ready') }, ops: [{ op: 'damage', type: 'physical', amount: formula('1 + 0.005 * str'), when: 'use' }] },
+        { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, need: { kind: 'holds', key: statusKey('spellblade-ready') }, ops: [{ op: 'damage', type: 'physical', amount: formula('0.1 * phys'), when: 'use' }] },
       ],
     },
   },
-  // Healer's Charm, Rare−: Presence 2 costs 2.00 and a heal of `0.05 * sup` (a twentieth of the wearer's heal power) on a kill
-  // 1.24 (its rate is 0.35 a round, on the support build), so it spends 3.24 against Rare−'s top 5.17. A per-round
-  // heal would be unweighed (worth.ts reads no standing heal), so the heal is a trigger. `healPower` (unit 1) is not built.
+  // Healer's Charm, Rare+: Presence 2 (2.00), 4% heal and shield power (3.33), and a kill heal of `0.05 * sup` (1.24,
+  // rate 0.35 a round on the support build), spending 6.58 inside Rare+'s 6.18..7.39.
   {
-    name: "Healer's Charm", rar: 'rare', grade: -1, type: 'accessory', slot: 'neck', bonus: { pre: 2 },
-    desc: 'A charm that adds 2 Presence. When you defeat a foe, you heal for 5% of your support power.',
+    name: "Healer's Charm", rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: { pre: 2, healPower: 4 },
+    desc: 'A charm that adds 2 Presence and 4% heal and shield power. When you defeat a foe, you heal for 5% of your support power.',
     worn: {
       label: "Healer's Charm", desc: 'Defeating a foe heals you.', ops: [],
       triggers: [{ on: 'kill', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: formula('0.05 * sup'), when: 'use' }] }],
     },
   },
-  // Bulwark Ring, Rare−: no bonus; the active's shield `10 + 0.05 * hpmax` on the build with the most max HP, over the
-  // support's standard shield, times its uses a round (one in 8, its cooldown) times the rate a worn worth pays: 4.17
-  // against Rare−'s top 5.17. The plan's `10 + 0.2 * hpmax` every 3 rounds spends 23.2 here.
+  // Bulwark Ring, Rare: no bonus; the active's shield `10 + 0.1 * hpmax` on the build with the most max HP, over the
+  // support's standard shield, times its uses a round (one in 8, its cooldown) times the rate a worn worth pays: 5.68
+  // inside Rare's 5.17..6.18.
   {
-    name: 'Bulwark Ring', rar: 'rare', grade: -1, type: 'accessory', slot: 'ring1', bonus: {},
-    desc: 'While worn, you can use Bulwark in a fight to gain a shield equal to 10 + 5% of your max HP. 8-round cooldown.',
+    name: 'Bulwark Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: {},
+    desc: 'While worn, you can use Bulwark in a fight to gain a shield equal to 10 + 10% of your max HP. 8-round cooldown.',
     active: BULWARK,
   },
-  // Lifeline Locket, Rare−: no bonus; a shield of `0.1 * hpmax` once a fight, when its wearer falls under 30% HP (the
+  // Lifeline Locket, Rare+: no bonus; a shield of `0.16 * hpmax` once a fight, when its wearer falls under 30% HP (the
   // `lowHp` event, `kit.lowHpAt`). Read on the build with the most max HP, an HP of shield weighed as an HP healed
-  // (`hpRate`), at `lowHp`'s rate of once a fight: 4.12 against Rare−'s top 5.17. League's 30% of max HP spends 12.4.
+  // (`hpRate`), at `lowHp`'s rate of once a fight: 6.59 inside Rare+'s 6.18..7.39.
   {
-    name: 'Lifeline Locket', rar: 'rare', grade: -1, type: 'accessory', slot: 'neck', bonus: {},
-    desc: 'The first time you drop under 30% HP in a fight, you gain a shield equal to 10% of your max HP.',
+    name: 'Lifeline Locket', rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: {},
+    desc: 'The first time you drop under 30% HP in a fight, you gain a shield equal to 16% of your max HP.',
     worn: {
       label: 'Lifeline Locket', desc: 'Gain a shield when you drop under 30% HP.', ops: [],
-      triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formula('0.1 * hpmax') }] }],
+      triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formula('0.16 * hpmax') }] }],
     },
   },
-  // Warden's Plate, Epic−: the heavy chest piece is free; the `sheet` armor op `0.015 * hpmax` is read on the build with the
-  // most max HP and costs the Vitality whose armor it is (item-budget.ts `SHEET_OP_COST`): 4.92 against Epic−'s top 8.49.
+  // Warden's Plate, Epic+: the heavy chest piece is free; Vitality 1 (1.00) plus the `sheet` armor op `0.03 * hpmax`
+  // read on the build with the most max HP (9.84, item-budget.ts `SHEET_OP_COST`): 10.84 inside Epic+'s 9.76..11.22.
   {
-    name: "Warden's Plate", rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: {},
-    desc: 'Heavy chest armor. While worn, you gain extra armor equal to 1.5% of your max HP.',
-    worn: { label: "Warden's Plate", desc: 'Adds armor equal to 1.5% of max HP.', ops: [{ op: 'sheet', key: 'armor', amount: formula('0.015 * hpmax') }] },
+    name: "Warden's Plate", rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
+    desc: 'Heavy chest armor that adds 1 Vitality. While worn, you gain extra armor equal to 3% of your max HP.',
+    worn: { label: "Warden's Plate", desc: 'Adds armor equal to 3% of max HP.', ops: [{ op: 'sheet', key: 'armor', amount: formula('0.03 * hpmax') }] },
   },
 ];
 

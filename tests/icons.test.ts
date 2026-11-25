@@ -241,7 +241,7 @@ describe('an item\'s default icon', () => {
 const BUILT_IN_PICTURE: Readonly<Record<BuiltInStatus, IconKey>> = {
   bleeding: 'blood', burning: 'flame', poisoned: 'poison', paralyzed: 'bolt', stunned: 'dizzy', frightened: 'fear', blinded: 'blind',
   slowed: 'snail', hasted: 'wing', invisible: 'faded', prone: 'fallen', restrained: 'chain', stealth: 'hood', bloodlust: 'rage',
-  regenerating: 'heal', plague: 'plague', taunted: 'taunt', marked: 'eye',
+  regenerating: 'heal', plague: 'plague', taunted: 'taunt', marked: 'eye', grievous: 'slash',
 };
 const num = (value: number): Formula => ({ kind: 'number', value });
 const PLAIN: StatusDef = { label: 'Plain', desc: '', ops: [] };

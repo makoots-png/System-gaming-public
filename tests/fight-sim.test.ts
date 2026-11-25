@@ -81,6 +81,10 @@ import type { Answer } from '../src/core/combat/mythic.ts';
 import { monsterRows } from '../src/core/combat/rows.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
+import type { Status } from '../src/core/combat/effect-ops.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import type { Archetype as MonsterArchetype } from '../src/core/hunter/derive.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
@@ -697,6 +701,35 @@ const WEAPON_DUTY_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => (
     measure: () => weaponDutyParity('speed', rank), low: 0.55, high: 0.85, lever: 'itemBudget.weaponDuty' },
 ]));
 
+// ── Grievous Wounds against a regenerating boss (R4, Thornmail retune) ──
+const regenBossStatus = (amount: number): Status => ({
+  key: statusKey('regen-boss'),
+  def: { label: 'Regenerating', desc: 'Heals each round.', ops: [{ op: 'heal', amount: { kind: 'number', value: amount }, when: 'turn' }] },
+  source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0),
+});
+const struckGrievous: Status = {
+  key: statusKey('thorn-gw'),
+  def: {
+    label: 'Grievous thorns', desc: 'Applies Grievous Wounds when struck.', ops: [],
+    triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('grievous'), def: BUILT_IN_STATUSES.grievous, duration: tick(2 * RULES.fight.round) }] }],
+  },
+  source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0),
+};
+const vsRegenBoss = (withGrievous: boolean) => {
+  const rows = once(() => {
+    const [tank, bruiser, cannon] = party(MIXED, 'S');
+    const tankRow: SimRow = withGrievous ? { ...tank!, row: { ...tank!.row, statuses: [...tank!.row.statuses, struckGrievous] } } : tank!;
+    const boss = monster('S', 'brute', 'boss', 'boss');
+    return [tankRow, bruiser!, cannon!, { ...boss, row: { ...boss.row, statuses: [...boss.row.statuses, regenBossStatus(25)] } }];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
+const GRIEVOUS_ROWS: readonly Row[] = [
+  { name: 'GW1 a tank applying Grievous Wounds on struck clears a regenerating boss faster at S', setup: 'grievous v regen boss S', runs: 2 * RUNS.tenth,
+    measure: () => ratio(rounds('plain v regen boss S', vsRegenBoss(false), RUNS.tenth), rounds('grievous v regen boss S', vsRegenBoss(true), RUNS.tenth)),
+    low: 1.02, high: 1.25, lever: 'BUILT_IN_STATUSES.grievous and kit.shareCap' },
+];
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -736,6 +769,7 @@ const ROWS: readonly Row[] = [
   ...BULK_ROWS,
   ...GEARED_ROWS,
   ...WEAPON_DUTY_ROWS,
+  ...GRIEVOUS_ROWS,
 ];
 
 /**

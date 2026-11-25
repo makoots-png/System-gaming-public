@@ -68,6 +68,7 @@ const STATUSES = {
   ] },
   taunted: { label: 'Taunted', desc: 'Must target the taunter while they are up and in reach.', ops: [{ op: 'taunt' }] },
   marked: { label: 'Marked', desc: 'Takes 15% more damage from all attacks.', ops: [{ op: 'share', on: 'taken', pct: 15 }] },
+  grievous: { label: 'Grievous Wounds', desc: 'Receives 40% less healing.', ops: [{ op: 'share', on: 'healed', pct: -40 }] },
 } satisfies Record<string, StatusDef>;
 
 /** The key of a built-in status. A status key of any status, the GM's too, is `StatusKey` (src/core/combat/effect-ops.ts). */

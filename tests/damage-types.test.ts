@@ -166,10 +166,10 @@ describe('true-damage abilities across all combat resolution sites', () => {
     expect(averages(num(20), 'true', 'str', RULES).every(x => x.dealt === null)).toBe(true);
   });
 
-  test('worth weighs true-damage abilities at 1.0x without crashing', () => {
+  test('worth weighs true-damage abilities by the reference target defense ratio without crashing', () => {
     const phys = abilityOf('strike', { id: abilityId('p1'), name: 'P1' }, RULES);
     const tr = abilityOf('strike', { id: abilityId('t1'), name: 'T1', ticks: { ...defaultTicks('strike', 'true') } }, RULES);
-    expect(abilityWorth(tr, RULES).worth).toBeCloseTo(abilityWorth(phys, RULES).worth, 6);
+    expect(abilityWorth(tr, RULES).worth).toBeGreaterThan(abilityWorth(phys, RULES).worth);
   });
 });
 

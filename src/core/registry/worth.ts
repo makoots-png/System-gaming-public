@@ -20,13 +20,15 @@ import { SKILL_ABILITIES } from './abilities.ts';
 import type { SkillRules } from './abilities.ts';
 import { defaultTicks, formulaOf, KINDS, kindDefaults, recommended } from './ability-kinds.ts';
 import type { SampleRules } from './ability-kinds.ts';
-import { scalerMean, scalersOf } from './scalers.ts';
+import { missingMean, scalerMean, scalersOf } from './scalers.ts';
 import type { Scaler } from './scalers.ts';
 import { atTier, isStacking } from '../combat/op-amount.ts';
 import { interval, paceCost } from '../combat/timeline.ts';
-import type { End, LandOp, Op, OpKind, StatusDef } from '../combat/effect-ops.ts';
+import { damageTypeOf, defenceOf, isDamage } from '../combat/damage-type.ts';
+import { defenceLeft, NO_PEN, throughDefence } from '../combat/land.ts';
+import type { End, LandOp, Op, OpKind, OpRules, StatusDef } from '../combat/effect-ops.ts';
 import type { Trigger } from '../combat/triggers.ts';
-import type { Ability, AbilityKind, Delivery, Price } from '../combat/ability-types.ts';
+import type { Ability, AbilityKind, DamageType, Delivery, Price } from '../combat/ability-types.ts';
 
 /** The rule numbers this file reads. */
 export type WorthRules = SampleRules & SkillRules;
@@ -47,13 +49,14 @@ export function referenceBody(build: RefBuild, rank: Rank, R: WorthRules): { rea
   const base = split(b.main, b.second, pointsAt(level, R), R), stats = { ...base, [b.main]: base[b.main] + bonus };
   return { stats, sheet: sheetOf({ stats, level, gear: kitGear(b.kit, R), perks: {} }, R) };
 }
-/** What a use by paper build `build` reads at `rank`: the build on a same-rank normal brute, with no kit snapshot (no stacks, full HP). */
-function buildScope(build: RefBuild, rank: Rank, R: WorthRules): Scope {
+/** What a use by paper build `build` reads at `rank`: the build on a same-rank normal brute, with `missing` at its reference mean (`missingMean`). */
+function buildScope(build: RefBuild, rank: Rank, R: WorthRules, kind: AbilityKind = 'strike'): Scope {
   const target = { stats: monsterStats(rank, 'brute', R), sheet: monsterSheet(rank, 'brute', 'normal', R) };
-  return { user: referenceBody(build, rank, R), target, charge: 0, kit: NO_KIT };
+  const m = missingMean(kind, rank, R);
+  return { user: referenceBody(build, rank, R), target, charge: 0, kit: { ...NO_KIT, missing: { user: m, target: m } } };
 }
 /** What a use reads at `rank`: the kind's paper build (`BUILD_OF`) on a same-rank normal brute. */
-const scopeOf = (kind: AbilityKind, rank: Rank, R: WorthRules): Scope => buildScope(BUILD_OF[kind], rank, R);
+const scopeOf = (kind: AbilityKind, rank: Rank, R: WorthRules): Scope => buildScope(BUILD_OF[kind], rank, R, kind);
 /**
  * The scope of the five paper builds of `rank` on which `f` averages highest, on the same brute (item-stats 6.5): an
  * amount that grows with its holder's stats costs what it gives the body that gets the most from it, a Presence heal on
@@ -190,11 +193,11 @@ const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
   stayHidden: 'staying hidden', reveal: 'a reveal', stagger: 'a stagger', echo: 'copying statuses to a nearby ally or foe',
 };
 
-/** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent, HP lost). */
+/** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent). `missing` is weighed at `missingMean`. */
 function readsCounts(f: Formula): boolean {
   switch (f.kind) {
-    case 'stacks': case 'field': case 'held': case 'count': case 'missing': return true;
-    case 'number': case 'dice': case 'stat': case 'sheet': case 'charge': return false;
+    case 'stacks': case 'field': case 'held': case 'count': return true;
+    case 'number': case 'dice': case 'stat': case 'sheet': case 'charge': case 'missing': return false;
     case 'negate': case 'fn': return readsCounts(f.arg);
     case 'binary': case 'min': case 'max': return readsCounts(f.left) || readsCounts(f.right);
     default: return f satisfies never;
@@ -241,9 +244,39 @@ export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank:
   const packs = 1 + means.reduce((n, m) => n + m.normal, 0), boss = 1 + means.reduce((n, m) => n + m.boss, 0);
   return { packs, boss, worst: Math.max(packs, boss) };
 }
+/** The baseline damage type a weighing kind compares against: physical for strikes/shots, arcane for curses/blasts/support. */
+const baselineType = (kind: AbilityKind): DamageType => (isDamage(KINDS[kind].type) ? KINDS[kind].type : 'arcane');
+/**
+ * Effective raw damage of a hit of `raw` and damage type `type` against the reference target, relative to `baseType`.
+ * When `type` ignores defense (`defenceOf(type) === null`), scales `raw` by `raw / throughDefence(raw, left, R)` where
+ * `left` is the target's remaining defense against `baseType`. The denominator floors at `min(raw, 1)` to match rule
+ * 12's 1-damage floor and prevent division by zero on tiny ticks.
+ */
+export function defenceAdjusted(
+  raw: number,
+  type: DamageType,
+  baseType: DamageType,
+  user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>,
+  target: Pick<Sheet, 'armor' | 'resist'>,
+  R: Pick<OpRules, 'fight'>,
+): number {
+  if (raw <= 0 || defenceOf(type) !== null) return raw;
+  const left = defenceLeft(baseType, user, target);
+  if (left <= 0) return raw;
+  const denom = Math.max(Math.min(raw, 1), throughDefence(raw, left, R));
+  return raw * (raw / denom);
+}
+/** A damaging formula's worth in SA, pricing defense-ignoring damage by its defense ratio against the weighing's reference target. */
+function damageWorth(f: Formula, type: DamageType, at: At, userPen: boolean, R: WorthRules): number {
+  const sc = scalersOf(f, R);
+  const scope = scopeFor(sc ? sc.core : f, at, R);
+  const raw = formulaAmount(f, at, R);
+  const pen = userPen ? scope.user.sheet : NO_PEN;
+  return defenceAdjusted(raw, type, baselineType(at.kind), pen, scope.target.sheet, R) / at.sa;
+}
 /**
  * An op that lands outside a use's own roll (a threshold's, a trigger's, an end's, or an ability's own op), in SA: a hit
- * or a heal at its average, whole (`landed`); a shield its HP at `hpRate`, as an active's shield is weighed against the
+ * or a heal at its average, whole (`landed`), with defense-ignoring damage scaled by its defense ratio; a shield its HP at `hpRate`, as an active's shield is weighed against the
  * support's standard shield (1.5 times `sup`, the heal's), since an HP of shield is weighed as an HP healed; time as its share of a standard action, whoever gains or loses it (time
  * back to the user, an ally's turn sooner, a foe's turn later, an extra action whole), since a standard action is the
  * unit itself and a body at parity does as much with an action as the user; a stagger its share of a break
@@ -251,7 +284,8 @@ export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank:
  * named in `miss` and adds nothing.
  */
 function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
-  if (o.op === 'damage' || o.op === 'heal') return formulaWorth(atTier(o.amount, at.tier) as Formula, at, R) * at.landed;
+  if (o.op === 'damage') return damageWorth(atTier(o.amount, at.tier) as Formula, o.type, at, true, R) * at.landed;
+  if (o.op === 'heal') return formulaWorth(atTier(o.amount, at.tier) as Formula, at, R) * at.landed;
   if (o.op === 'shield') return formulaAmount(o.amount, at, R) * hpRate(at.rank, R);
   if (o.op === 'refund') return atTier(o.pct, at.tier) / 100;
   if (o.op === 'hasten') return o.share;
@@ -287,11 +321,14 @@ const triggerWorth = (t: Trigger, at: At, R: WorthRules): number =>
  */
 export function statusWorth(def: StatusDef, k: number, rounds: number | null, at: At, R: WorthRules): number {
   const held = rounds ?? R.fight.kit.referenceRounds, n = isStacking(def) ? Math.min(k, def.stack.cap) : 1;
-  let w = 0;
+  let w = 0, antiHealPct = 0;
   for (const o of def.ops) {
-    if ((o.op === 'damage' || o.op === 'heal') && (o.when ?? 'turn') === 'turn') w += formulaWorth(atTier(o.amount, at.tier), at, R) * at.landed * held * n;
+    if (o.op === 'damage' && (o.when ?? 'turn') === 'turn') w += damageWorth(atTier(o.amount, at.tier), o.type, at, false, R) * at.landed * held * n;
+    else if (o.op === 'heal' && (o.when ?? 'turn') === 'turn') w += formulaWorth(atTier(o.amount, at.tier), at, R) * at.landed * held * n;
+    else if (o.op === 'share' && o.on === 'healed' && atTier(o.pct, at.tier) < 0) antiHealPct = Math.max(antiHealPct, -atTier(o.pct, at.tier) * n);
     else if (o.op !== 'note') at.miss.add(o.op);
   }
+  if (antiHealPct > 0) w += Math.min(R.fight.kit.shareCap, antiHealPct / 100) * R.fight.kit.antiHealWorth * held;
   const t = isStacking(def) ? def.stack.threshold : null;
   if (t && t.at.kind === 'count') w += t.ops.reduce((s, o) => s + landWorth(o, at, R), 0) / t.at.n * n * firings(t.at.n, n, at.land, at.uses, lapseAfter(rounds, at.uses / R.fight.kit.referenceRounds));
   else if (t) at.miss.add('count');
@@ -317,10 +354,11 @@ const judged = (worth: number, budget: number, at: At, R: WorthRules): Worth =>
 
 /** What the bar weighs of an ability (the worth, before any budget), with the blocks it met that have no rule. */
 function weigh(a: Ability, rank: Rank, on: ReadOn, R: WorthRules): { readonly worth: number; readonly at: At } {
-  const type = a.effect?.type ?? KINDS[a.kind].type;
+  const rawType = a.effect?.type ?? KINDS[a.kind].type;
+  const type = rawType !== 'heal' && rawType !== 'shield' ? damageTypeOf(a.id, rawType, R) : rawType;
   const at = atOf(a.kind, type, rank, { land: landShare(a, R), time: a.cost.time, on }, R);
   const f = formulaOf(a, R);
-  let worth = f ? formulaWorth(f, at, R) * deliveredShare(a.delivery, R) * at.landed : 0;
+  let worth = f ? (type !== 'heal' && type !== 'shield' ? damageWorth(f, type, at, true, R) : formulaWorth(f, at, R)) * deliveredShare(a.delivery, R) * at.landed : 0;
   worth += a.ops.reduce((n, op) => n + landWorth(op, at, R), 0) * at.land;
   for (const p of a.prices ?? []) if (p.kind === 'hp') worth -= hpPriceWorth(p, at.scope.user.sheet.hpMax, rank, R);
   if (a.channel) at.miss.add('charge');

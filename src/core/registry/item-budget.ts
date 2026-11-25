@@ -23,7 +23,7 @@ import { GRADES, KIT_SHARE, SAMPLE_WEARER, WEAR_LIMIT, piece, weightOf } from '.
 import type { ArmorSlot, Grade, Item, Rarity } from './items.ts';
 import { formulaOf, KINDS } from './ability-kinds.ts';
 import { weaponAttack } from './abilities.ts';
-import { abilityWorth, bestScope, BUILD_OF, hpRate, referenceBody, usesPerRound, wornWorth } from './worth.ts';
+import { abilityWorth, bestScope, BUILD_OF, defenceAdjusted, hpRate, referenceBody, usesPerRound, wornWorth } from './worth.ts';
 import type { WorthRules } from './worth.ts';
 import type { Powers } from './powers.ts';
 import { bandOf } from '../rewards.ts';
@@ -85,7 +85,7 @@ export const BUDGET_WORDS: Readonly<Record<keyof SpendParts, string>> = {
 /** An item's spend in points beyond its slot's free numbers, its parts, and what it carries that the budget cannot weigh. */
 export type Spend = { readonly points: number; readonly parts: SpendParts; readonly unweighed: readonly Unbudgeted[] };
 /** What a spend reads of an item. */
-export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'attack' | 'finesse' | 'weight' | 'worn' | 'active'>>;
+export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'attack' | 'damageType' | 'finesse' | 'weight' | 'worn' | 'active'>>;
 
 /** The points a conversion is read over: max HP and max mana are whole numbers, so one point's share is read off ten. */
 const READ_OVER = 10;
@@ -121,12 +121,16 @@ function strikeDie(body: Scope['user'], R: BudgetRules): number {
 function weaponPoints(it: Spendable, rank: Rank, r: Rates, R: BudgetRules): number {
   const attack = it.attack ?? 'strike', baseDice = KINDS[attack].dice ?? '1d8';
   const finesse = it.finesse ? { finesse: true as const } : {};
-  const actual = weaponAttack({ name: 'w', dice: it.dice, attack, ...finesse }, R);
+  const damageType = it.damageType ? { damageType: it.damageType } : {};
+  const actual = weaponAttack({ name: 'w', dice: it.dice, attack, ...finesse, ...damageType }, R);
   const base = weaponAttack({ name: 'w', dice: baseDice, attack, ...finesse }, R);
   const fActual = formulaOf(actual, R), fBase = formulaOf(base, R);
   if (!fActual || !fBase) return 0;
   const s = bestScope(fActual, rank, R), paceShare = R.fight.cost[KINDS[attack].pace] / R.fight.cost.standard;
-  const extra = (average(fActual, s) - average(fBase, s)) / paceShare;
+  const actualType = actual.effect && actual.effect.type !== 'heal' && actual.effect.type !== 'shield' ? actual.effect.type : 'physical';
+  const baseType = base.effect && base.effect.type !== 'heal' && base.effect.type !== 'shield' ? base.effect.type : 'physical';
+  const effActual = defenceAdjusted(average(fActual, s), actualType, baseType, s.user.sheet, s.target.sheet, R);
+  const extra = (effActual - average(fBase, s)) / paceShare;
   return Math.max(0, extra) / r.phys * R.itemBudget.weaponDuty;
 }
 

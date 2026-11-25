@@ -147,6 +147,12 @@ export function scalerMean(s: Scaler, kind: AbilityKind, rank: Rank, R: ScalerRu
   const normal = meanAgainst(s, body.normal, R), boss = meanAgainst(s, body.boss, R);
   return { normal, boss, mean: (ref.pack * normal + ref.boss * boss) / (ref.pack + ref.boss) };
 }
+/**
+ * The mean missing-HP share over the reference dungeon (`RULES.fight.kit.reference`), read by the same uniform-HP model
+ * `scalerMean` uses for share scalers (a body takes equal hits over its life).
+ */
+export const missingMean = (kind: AbilityKind, rank: Rank, R: ScalerRules): number =>
+  scalerMean({ measure: 'target', dir: 'under', start: 1, scale: 1 }, kind, rank, R).mean;
 /** The cut on the rest of the formula that keeps it at its plain budget over the reference dungeon at C: `1 / (1 + sum of means)`, to two places. */
 export function baseOf(scalers: readonly Scaler[], kind: AbilityKind, R: ScalerRules): number {
   const sum = scalers.reduce((n, s) => n + scalerMean(s, kind, BASE_RANK, R).mean, 0);

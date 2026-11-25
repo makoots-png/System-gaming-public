@@ -32,6 +32,11 @@ const strike = (name: string, text: string, o: Partial<Ability> = {}): Ability =
 const HIT = strike('hit', '10');
 const SPELL = strike('spell', '10', { tags: [tag('spell')] });
 const BIG = strike('big', '999');
+const MEND: Ability = abilityOf('support', {
+  id: abilityId('mend'), name: 'Mend', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
+  effect: { type: 'heal', by: 'hand', formula: f('20') },
+}, RULES);
+const heavyOrigin: Origin = { kind: 'hunter', build: { stats: { ...baseStats(RULES.fight), vit: 80 }, level: 20, gear: kitGear('heavy', RULES), perks: {} } };
 const item = (name: string) => itemOf(RULES, RECIPE_ITEMS.find(d => d.name === name)!);
 const wornOf = (name: string): Status => {
   const def: StatusDef = item(name).worn!;
@@ -69,18 +74,26 @@ const lost = (fight: Fight, name: string): number => { const b = body(fight, nam
 const sheetOf = (statuses: Status[]) => modified(origin, statuses, RULES).sheet;
 
 describe('the recipe items in a fight', () => {
-  test('Thornmail: a foe that strikes its wearer takes magic damage of 1 + 1% of the wearer\'s armor', () => {
+  test('Thornmail: a foe that strikes its wearer takes magic damage of 3% of the wearer\'s armor and gets Grievous Wounds for 2 rounds', () => {
     const thorn = wornOf('Thornmail');
-    const armor = sheetOf([thorn]).armor;
-    const fight = play(...duel(row('A', 'party'), row('M', 'foe', [thorn])), use('A', 'M'));
-    expect(lost(fight, 'A')).toBe(afterDefence(1 + 0.01 * armor, 'arcane', sheetOf([]), sheetOf([]), RULES));
-    expect(lost(fight, 'A')).toBeGreaterThan(0);
+    const armor = modified(heavyOrigin, [thorn], RULES).sheet.armor;
+    const afterHit = play(...duel(row('A', 'party', [], { abilities: [HIT, MEND] }), row('M', 'foe', [thorn], { origin: heavyOrigin })), use('A', 'M'));
+    const reflected = afterDefence(0.03 * armor, 'arcane', sheetOf([]), sheetOf([]), RULES);
+    expect(lost(afterHit, 'A')).toBe(reflected);
+    expect(reflected).toBeGreaterThan(1);
+    const gw = body(afterHit, 'A').statuses.find(s => s.key === statusKey('grievous'));
+    expect(gw).toBeDefined();
+    expect(gw!.until).toBe(tick(gw!.since + 2 * RULES.fight.round));
+    // A subsequent heal on A is cut by 40% while Grievous Wounds holds
+    const hurtA = row('A', 'party', [], { hp: 10, abilities: [HIT, MEND] });
+    const afterHeal = play(...duel(hurtA, row('M', 'foe', [thorn], { origin: heavyOrigin })), use('A', 'M'), use('A', 'A', MEND));
+    expect(rowHp(body(afterHeal, 'A'))).toBe(10 - reflected + Math.round(20 * 0.6));
   });
 
-  test('Spellblade: the next hit after a "spell" use deals 1 + 0.5% of Strength more, and the hit after that does not', () => {
+  test('Spellblade: the next hit after a "spell" use deals 10% of physical power more, and the hit after that does not', () => {
     const blade = wornOf('Spellblade');
     const base = afterDefence(10, 'physical', sheetOf([blade]), sheetOf([]), RULES);
-    const bonus = afterDefence(1 + 0.005 * baseStats(RULES.fight).str, 'physical', sheetOf([blade]), sheetOf([]), RULES);
+    const bonus = afterDefence(0.1 * sheetOf([blade]).phys, 'physical', sheetOf([blade]), sheetOf([]), RULES);
     const setup = duel(row('A', 'party', [blade]), row('M', 'foe', []));
     const first = play(...setup, use('A', 'M', SPELL));
     expect(lost(first, 'M')).toBe(base);
@@ -90,7 +103,9 @@ describe('the recipe items in a fight', () => {
     expect(lost(third, 'M') - lost(second, 'M')).toBe(base);
   });
 
-  test('Healer\'s Charm: a kill heals its wearer by 5% of its heal power', () => {
+  test('Healer\'s Charm: a kill heals its wearer by 5% of its heal power and its bonus adds Presence and healPower', () => {
+    const charmItem = item("Healer's Charm");
+    expect(charmItem.bonus).toEqual({ pre: 2, healPower: 4 });
     const charm = wornOf("Healer's Charm");
     const sheet = sheetOf([charm]);
     const hurt = 5;
@@ -99,7 +114,7 @@ describe('the recipe items in a fight', () => {
     expect(rowHp(body(fight, 'A'))).toBe(hurt + Math.round(0.05 * sheet.sup));
   });
 
-  test('Bulwark Ring: its wearer shields itself for 10 + 5% of max HP, and cannot use it again for 8 rounds', () => {
+  test('Bulwark Ring: its wearer shields itself for 10 + 10% of max HP, and cannot use it again for 8 rounds', () => {
     const bulwark = item('Bulwark Ring').active!;
     const start = duel(row('A', 'party', [], { abilities: [HIT, bulwark] }), row('M', 'foe'));
     const ready = play(...start);
@@ -107,25 +122,25 @@ describe('the recipe items in a fight', () => {
     const first = step(ready, use('A', 'A', bulwark));
     expect(first.refused).toBeNull();
     const a = body(first.fight, 'A');
-    expect(a.shield?.amount).toBe(Math.round(10 + 0.05 * a.sheet.hpMax));
+    expect(a.shield?.amount).toBe(Math.round(10 + 0.1 * a.sheet.hpMax));
     expect(a.readyAt[bulwark.id]).toBe(tick(usedAt + 8 * RULES.fight.round));
     expect(step(first.fight, use('A', 'A', bulwark)).refused).toBe('cooldown');
   });
 
-  test('Lifeline Locket: a hit that takes its wearer under 30% HP gives it a shield of 10% of its max HP, and a hit that leaves it at 30% does not', () => {
+  test('Lifeline Locket: a hit that takes its wearer under 30% HP gives it a shield of 16% of its max HP, and a hit that leaves it at 30% does not', () => {
     const locket = wornOf('Lifeline Locket');
     const hpMax = sheetOf([locket]).hpMax, at30 = Math.ceil(RULES.fight.kit.lowHpAt * hpMax), d = afterDefence(10, 'physical', sheetOf([]), sheetOf([locket]), RULES);
     const under = body(play(...duel(row('A', 'party'), row('M', 'foe', [locket], { hp: at30 })), use('A', 'M')), 'M');
-    expect([rowHp(under), under.shield?.amount]).toEqual([at30 - d, Math.round(0.1 * hpMax)]);
+    expect([rowHp(under), under.shield?.amount]).toEqual([at30 - d, Math.round(0.16 * hpMax)]);
     const stays = body(play(...duel(row('A', 'party'), row('M', 'foe', [locket], { hp: at30 + d })), use('A', 'M')), 'M');
     expect([rowHp(stays), stays.shield]).toEqual([at30, null]);
   });
 
-  test('Warden\'s Plate: its wearer has 1.5% of max HP more armor', () => {
+  test('Warden\'s Plate: its wearer has 3% of max HP more armor', () => {
     const plate = wornOf("Warden's Plate");
     const without = sheetOf([]), within = sheetOf([plate]);
-    expect(within.armor - without.armor).toBeCloseTo(0.015 * within.hpMax, 9);
+    expect(within.armor - without.armor).toBeCloseTo(0.03 * within.hpMax, 9);
     const fight = play(...duel(row('A', 'party', [plate]), row('M', 'foe')));
-    expect(body(fight, 'A').sheet.armor).toBeCloseTo(without.armor + 0.015 * within.hpMax, 9);
+    expect(body(fight, 'A').sheet.armor).toBeCloseTo(without.armor + 0.03 * within.hpMax, 9);
   });
 });
