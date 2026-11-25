@@ -327,7 +327,7 @@ test('in the item maker a consumable shows no slot, no gear numbers and no bonus
   await expect(d.locator('[data-gear="weight"]')).toHaveValue('');
   await expect(d.locator('[data-gear="weight"]')).toHaveAttribute('placeholder', 'Default: 4');
   await expect(d.locator('.mk-preview')).toContainText('Weight 4');
-  await expect(d.locator('.mk-preview')).toContainText('Shot (ranged) with 2d6');
+  await expect(d.locator('.mk-preview')).toContainText('Weapon attack: 0.7 * (2d6 + finesse) (finesse).');
   await d.locator('#lf-dice').fill('1d6');
   await expect(d.locator('.mk-preview')).toContainText('Weight 1');
 });
@@ -399,8 +399,7 @@ test('the item maker says what a rare weapon spends against its grade, names the
   await page.locator('#gm-make [data-make="item"]').tap();
   await d.locator('[data-chips="type"] [data-chip="weapon"]').tap();
   await d.locator('#lf-rar').selectOption('rare');
-  // a rare weapon's free die is 1d12 (1d8 and weaponStep 1 a tier for two tiers), so +2 Strength is its whole spend:
-  // under Rare−'s top of 3.1 (design block [2.4])
+  // a rare weapon with 1d12 (extra weapon damage above 1d8) and +2 Strength sits inside Rare− (up to 3.1)
   await d.locator('#lf-dice').fill('1d12');
   await d.locator('[data-bonus="str"]').fill('2');
 
@@ -411,6 +410,19 @@ test('the item maker says what a rare weapon spends against its grade, names the
     await grades.locator('[data-chip="-1"]').tap();
     await expect(spend).toHaveText(spendLine(s, RULES, 'rare', -1).words);
     await expect(spend).not.toHaveClass(/\bover\b/);
+  });
+
+  await test.step('an unparseable weapon formula shows parseFormula\'s error and disables Save; a huge valid GM formula warns in gold and saves unclipped', async () => {
+    await d.locator('#lf-name').fill('Worldbreaker');
+    await d.locator('#lf-dice').fill('2d +');
+    await expect(d.locator('[data-dice-err]')).not.toBeEmpty();
+    await expect(d.locator('[data-apply]')).toBeDisabled();
+    await d.locator('#lf-dice').fill('20d12 + 50');
+    await expect(d.locator('[data-dice-err]')).toBeEmpty();
+    await expect(d.locator('[data-apply]')).toBeEnabled();
+    await expect(spend).toHaveClass(/\bover\b/);
+    await d.locator('#lf-dice').fill('1d12');
+    await d.locator('#lf-name').fill('');
   });
 
   await test.step('past the tier\'s top it warns, and never stops the save', async () => {

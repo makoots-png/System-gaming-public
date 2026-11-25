@@ -15,7 +15,11 @@ import { isStacking } from './combat/op-amount.ts';
 import type { Op, StatusDef } from './combat/effect-ops.ts';
 import type { ZoneTone } from './combat/zones.ts';
 import { abilityLines } from './combat/fight-view.ts';
-import { describeAbility } from './registry/ability-kinds.ts';
+import { parseFormula, printFormula } from './formula.ts';
+import { describeAbility, formulaOf, KINDS } from './registry/ability-kinds.ts';
+import type { KindRules } from './registry/ability-kinds.ts';
+import { weaponAttack } from './registry/abilities.ts';
+import type { Attack } from './registry/items.ts';
 import { describeItem } from './effects.ts';
 import type { ItemEffects } from './effects.ts';
 import { SHEET_LABELS } from './hunter/derive.ts';
@@ -32,7 +36,7 @@ export type Thing =
   | { readonly kind: 'status'; readonly label: string; readonly def: StatusDef | null; readonly tier: number | null; readonly stacks?: number; readonly left?: number | null }
   | { readonly kind: 'ability'; readonly ability: Ability }
   /** An item, and the hunter who holds it when it is in a bag: its amounts then say what they come to on that hunter. */
-  | { readonly kind: 'item'; readonly item: ItemEffects & { readonly name: string; readonly desc?: string; readonly effects?: readonly Op[] }; readonly hunter?: SheetHunter }
+  | { readonly kind: 'item'; readonly item: ItemEffects & { readonly name: string; readonly desc?: string; readonly type?: string; readonly dice?: string; readonly attack?: Attack; readonly finesse?: true; readonly twoHanded?: true; readonly effects?: readonly Op[] }; readonly hunter?: SheetHunter }
   | { readonly kind: 'zone'; readonly name: string; readonly tone: ZoneTone; readonly left: number | null; readonly ops: readonly Op[] | null; readonly tier: number }
   | { readonly kind: 'number'; readonly key: SheetNumber; readonly hunter: SheetHunter }
   | { readonly kind: 'odds'; readonly odds: OddsRead; readonly voice: OddsVoice };
@@ -57,6 +61,25 @@ export function statusGlance(def: StatusDef, tier: number | null, R: Rules): str
   return isStacking(def) ? lines.map(l => `Each stack: ${l}`) : lines;
 }
 
+/**
+ * What a weapon's attack line says on an item card and in the item maker's preview: the amplified attack formula
+ * `weaponAttack` actually rolls under `R`, plus a plain fallback notice when the saved dice exceed current rules limits.
+ */
+export function weaponLines(
+  i: { readonly name: string; readonly type?: string; readonly dice?: string; readonly attack?: Attack; readonly finesse?: true; readonly twoHanded?: true },
+  R: KindRules,
+): string[] {
+  if (i.type !== 'weapon') return [];
+  const attack = i.attack ?? 'strike', raw = (i.dice ?? '').trim(), fallbackDie = KINDS[attack].dice ?? '1d8';
+  const a = weaponAttack({ name: i.name, dice: raw, attack, ...(i.finesse ? { finesse: true as const } : {}) }, R);
+  const f = formulaOf(a, R), expr = f ? printFormula(f) : fallbackDie;
+  const tags = [i.twoHanded ? 'two-handed' : '', attack === 'shot' || i.finesse ? 'finesse' : ''].filter(Boolean);
+  const main = `Weapon attack: ${expr}${tags.length ? ` (${tags.join(', ')})` : ''}.`;
+  return raw !== '' && !parseFormula(raw, R).ok
+    ? [main, `Dice "${raw}" exceed current rules limits, so this weapon uses ${fallbackDie}.`]
+    : [main];
+}
+
 /** The detail of `t` under the current rules. */
 export function detailOf(t: Thing, R: Rules): Detail {
   switch (t.kind) {
@@ -73,7 +96,7 @@ export function detailOf(t: Thing, R: Rules): Detail {
     }
     case 'item': {
       const i = t.item;
-      return { title: i.name, about: i.desc ?? '', lines: describeItem(R, i, i.effects ?? [], t.hunter ? hunterSheet(t.hunter, R) : null) };
+      return { title: i.name, about: i.desc ?? '', lines: [...weaponLines(i, R), ...describeItem(R, i, i.effects ?? [], t.hunter ? hunterSheet(t.hunter, R) : null)] };
     }
     case 'zone':
       return { title: t.name, about: ZONE_WORD[t.tone], lines: [...(t.left === null ? [] : [`${rounds(t.left)} left.`]), ...(t.ops ? opLines(t.ops, t.tier, R) : [])] };

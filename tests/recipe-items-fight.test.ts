@@ -77,10 +77,10 @@ describe('the recipe items in a fight', () => {
     expect(lost(fight, 'A')).toBeGreaterThan(0);
   });
 
-  test('Spellblade: the next hit after a "spell" use deals 2 + 2% of Strength more, and the hit after that does not', () => {
+  test('Spellblade: the next hit after a "spell" use deals 1 + 0.5% of Strength more, and the hit after that does not', () => {
     const blade = wornOf('Spellblade');
     const base = afterDefence(10, 'physical', sheetOf([blade]), sheetOf([]), RULES);
-    const bonus = afterDefence(2 + 0.02 * baseStats(RULES.fight).str, 'physical', sheetOf([blade]), sheetOf([]), RULES);
+    const bonus = afterDefence(1 + 0.005 * baseStats(RULES.fight).str, 'physical', sheetOf([blade]), sheetOf([]), RULES);
     const setup = duel(row('A', 'party', [blade]), row('M', 'foe', []));
     const first = play(...setup, use('A', 'M', SPELL));
     expect(lost(first, 'M')).toBe(base);

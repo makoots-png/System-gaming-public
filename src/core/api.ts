@@ -427,8 +427,8 @@ export type MakerApi = {
   chips(name: string, options: ReadonlyArray<readonly string[]>, value: string | string[] | null, o?: { many?: boolean; clear?: boolean; label?: string }): string;
   /** The pressed value of a chip group under `root` (null when none), or every pressed value of a `many` group. */
   picked(root: ParentNode, name: string): string | string[] | null;
-  /** The nine bonus inputs as HTML, each empty when 0. */
-  bonus(values?: Partial<Record<string, number>>): string;
+  /** The bonus inputs as HTML, each empty when 0, with optional parser bounds. */
+  bonus(values?: Partial<Record<string, number>>, o?: { min?: number; max?: number }): string;
   /** What the bonus inputs under `root` hold: each whole number that is not 0. */
   readBonus(root: ParentNode): Record<string, number>;
   /**

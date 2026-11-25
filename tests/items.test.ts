@@ -301,9 +301,21 @@ group('the items as plan section 3.3 restates them', () => {
     expect(itemOf(RULES, STARTER_GEAR.towerShield)).toMatchObject({ weight: 5, armor: 9, resist: 9 });
   });
 
-  test('the Knight Killer holds 5 Lethality beside its Strength 2, and no old field of armor ignored', () => {
-    expect(of('Knight Killer').bonus).toEqual({ str: 2, armorPenFlat: 5 });
+  test('the Knight Killer is a finesse dagger holding 5 Lethality beside Strength 1, and no old field of armor ignored', () => {
+    expect(of('Knight Killer').bonus).toEqual({ str: 1, armorPenFlat: 5 });
+    expect(of('Knight Killer').finesse).toBe(true);
     expect(of('Knight Killer')).not.toHaveProperty('penFlat');
+  });
+
+  test('built-in daggers carry explicit finesse while heavy weapons and bows do not need the flag', () => {
+    for (const name of ['Iron Dagger', "Kasaka's Venom Fang", 'Knight Killer', "Kamish's Wrath"]) expect(of(name).finesse, name).toBe(true);
+    for (const name of ['Steel Longsword', 'Spellblade', 'Frost Giant Hammer', 'Goblin Shortbow']) expect(of(name).finesse, name).toBeUndefined();
+  });
+
+  test('weaponWeight reads the first dice term anywhere in a weapon formula', () => {
+    expect(weightOf({ type: 'weapon', dice: '0.3 * phys + 3d8' })).toBe(4);
+    expect(weightOf({ type: 'weapon', dice: '2 + 1d8' })).toBe(2);
+    expect(weightOf({ type: 'weapon', dice: '10' })).toBe(1);
   });
 
   test('a Mana Potion restores 4 mana, an Elixir of Life heals fully, a Stamina Tonic removes 25 fatigue, and a Health Potion heals 50% of max HP', () => {
@@ -429,9 +441,19 @@ group('parseItem: an item from a save, a room message, a form or an import', () 
     expect(parseItem(plain({ bonus }))!.bonus).toEqual({ str: 2, agi: 999, vit: -999, pow: 1, hpMax: 20, manaMax: 2, dis: 1, ctl: -1 });
   });
 
-  test('text is cut: a name to 60, a description to 500, dice to 30', () => {
-    const item = parseItem(plain({ name: 'n'.repeat(100), desc: 'd'.repeat(1000), dice: '1'.repeat(40) }))!;
-    expect([item.name.length, item.desc.length, item.dice.length]).toEqual([60, 500, 30]);
+  test('name and description are cut to bounds; an over-bound dice formula is refused whole instead of cut', () => {
+    const longFormula = '1d8 + ' + '1 + '.repeat(24) + '1';
+    expect(longFormula.length).toBeLessThanOrEqual(ITEM_BOUNDS.dice);
+    const ok = parseItem(plain({ name: 'n'.repeat(100), desc: 'd'.repeat(1000), dice: longFormula }))!;
+    expect([ok.name.length, ok.desc.length, ok.dice]).toEqual([60, 500, longFormula]);
+    expect(parseItem(plain({ dice: '1'.repeat(ITEM_BOUNDS.dice + 1) }))).toBeNull();
+  });
+
+  test('finesse is kept on strike weapons only, dropped on shots and non-weapons', () => {
+    expect(parseItem(plain({ type: 'weapon', attack: 'strike', finesse: true }))!.finesse).toBe(true);
+    expect(parseItem(plain({ type: 'weapon', attack: 'shot', finesse: true }))).not.toHaveProperty('finesse');
+    expect(parseItem(plain({ type: 'armor', finesse: true }))).not.toHaveProperty('finesse');
+    for (const finesse of [false, 'yes', 1, null]) expect(parseItem(plain({ type: 'weapon', attack: 'strike', finesse }))).not.toHaveProperty('finesse');
   });
 
   test('an item used on another keeps target other; one used on oneself has no target, whatever else was written', () => {

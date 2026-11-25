@@ -21,7 +21,7 @@ import { tiles } from '../src/core/combat/space.ts';
 import { LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
-import { gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan, titleFit, titleLine, titleSpend } from '../src/core/registry/item-budget.ts';
+import { BUDGET_WORDS, gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan, titleFit, titleLine, titleSpend } from '../src/core/registry/item-budget.ts';
 import type { TitleSpendable } from '../src/core/registry/item-budget.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 
@@ -106,17 +106,25 @@ group('what an item spends, in points on the sample wearer (economy design 2.3)'
     expect(itemSpend(gear('common', { bonus: { hpMax: 10 } }), RULES)!.points).toBeCloseTo(10 / 0.6, 1);
   });
 
-  test('a plain weapon with its tier\'s free die spends 0: 1d8 at common, then weaponStep (1) mean damage more a tier, up to 1d18 at mythic', () => {
-    const free: Readonly<Record<Rarity, string>> = { common: '1d8', uncommon: '1d10', rare: '1d12', epic: '3d4', legendary: '1d16', mythic: '1d18' };
-    for (const rar of RARITIES) expect(itemSpend(weapon(rar, free[rar]), RULES)!.points, rar).toBeCloseTo(0, 9);
+  test('a weapon at or under its kind\'s default die (1d8) spends 0 weapon damage at every rarity: weaker dice never refund points', () => {
+    for (const rar of RARITIES) {
+      expect(itemSpend(weapon(rar, '1d8'), RULES)!.points, `${rar} 1d8`).toBeCloseTo(0, 9);
+      expect(itemSpend(weapon(rar, '1d4'), RULES)!.points, `${rar} 1d4 floor`).toBeCloseTo(0, 9);
+      expect(itemSpend(weapon(rar, '1d6', { attack: 'shot' }), RULES)!.points, `${rar} shot 1d6 floor`).toBeCloseTo(0, 9);
+    }
   });
 
-  test('mean damage off the free die costs what the Strength that gives it would: a common 1d4 is 2 short, −4.7; a rare 1d12 + 2 is 2 over, +5.4', () => {
-    expect(itemSpend(weapon('common', '1d4'), RULES)!.points).toBeCloseTo(-2 * 2.36, 1);
-    expect(itemSpend(weapon('rare', '1d12 + 2'), RULES)!.points).toBeCloseTo(2 * 2.72, 1);
+  test('extra weapon damage above 1d8 costs weaponDuty of a standard action a round, and shots price the same as strikes via pace share', () => {
+    const strikePlus2 = itemSpend(weapon('rare', '1d8 + 2'), RULES)!;
+    const shotPlus2 = itemSpend(weapon('rare', '1d8 + 2', { attack: 'shot' }), RULES)!;
+    const physC = (wearer('C', { str: 10 }).phys - wearer('C').phys) / 10;
+    expect(strikePlus2.parts.weapon).toBeCloseTo(2 / physC * RULES.itemBudget.weaponDuty, 9);
+    expect(shotPlus2.parts.weapon).toBeCloseTo(strikePlus2.parts.weapon!, 9);
+    const scaling = itemSpend(weapon('rare', '2d8 + 0.5 * agi', { finesse: true }), RULES)!;
+    expect(scaling.parts.weapon!).toBeGreaterThan(itemSpend(weapon('rare', '2d8', { finesse: true }), RULES)!.parts.weapon!);
   });
 
-  test('a die the rules refuse is weighed as the strike\'s own 1d8, the die the fight would roll', () => {
+  test('a die the rules refuse is weighed as the kind\'s own 1d8, the die the fight would roll', () => {
     expect(itemSpend(weapon('common', 'not dice'), RULES)!.points).toBeCloseTo(0, 9);
   });
 
@@ -142,20 +150,34 @@ group('what an item spends, in points on the sample wearer (economy design 2.3)'
     expect(weightless).toBeCloseTo((vest.armor + vest.resist) * onePoint, 9);
   });
 
-  test('a worn status spends its worth in standard actions at the strike\'s damage, over what a Strength point gives: 2 damage on each hit dealt spends what 2 mean damage of a die would at that rank', () => {
+  test('a worn status spends its worth in standard actions at the strike\'s damage, over what a Strength point gives: extra weapon damage pays weaponDuty of the same rate', () => {
     const sting: StatusDef = { label: 'Sting', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: { kind: 'number', value: 2 }, when: 'use' }] }] };
     const s = itemSpend(gear('rare', { worn: sting }), RULES)!;
     expect(s.points).toBeCloseTo(2 * 2.72, 1);
-    expect(s.points).toBeCloseTo(itemSpend(weapon('rare', '1d12 + 2'), RULES)!.points, 9);
+    expect(itemSpend(weapon('rare', '1d8 + 2'), RULES)!.points).toBeCloseTo(s.points * RULES.itemBudget.weaponDuty, 9);
     expect(s.unweighed).toEqual([]);
   });
 
-  test('a worn status\'s standing ops with no rule are named as not weighed, never counted; the Knight Killer\'s 5 Lethality is weighed: −0.7 for its die and Strength, and 5 at its rate', () => {
+  test('a worn status\'s standing ops with no rule are named as not weighed, never counted; the Knight Killer\'s 1d8 spends 0 weapon damage plus Strength 1 and 5 Lethality', () => {
     const kk = itemSpend(itemOf(RULES, def('Knight Killer')), RULES)!;
-    expect(kk.points).toBeCloseTo(-1 * 2.72 + 2 + 5 * penRate('armorPenFlat', 'C'), 1);
+    expect(kk.parts.weapon).toBeCloseTo(0, 9);
+    expect(kk.points).toBeCloseTo(1 + 5 * penRate('armorPenFlat', 'C'), 1);
     expect(kk.unweighed).toEqual([]);
     const hasted: StatusDef = { label: 'Hasted', desc: '', ops: [{ op: 'speed', pct: 10 }] };
-    expect(itemSpend(gear('rare', { worn: hasted }), RULES)).toEqual({ points: 0, unweighed: ['worn'] });
+    expect(itemSpend(gear('rare', { worn: hasted }), RULES)).toEqual({
+      points: 0, parts: { weapon: null, stats: 0, guard: 0, powers: 0 }, unweighed: ['worn'],
+    });
+  });
+
+  test('Spend.parts sums to Spend.points across weapons, armor, accessories and titles, with weapon null only on non-weapons', () => {
+    for (const name of ['Frost Giant Hammer', 'Spellblade', 'Knight Killer', "Kamish's Wrath", 'Thornmail', "Warden's Plate", 'Bulwark Ring', 'Ring of Vitality']) {
+      const it = itemOf(RULES, def(name)), s = itemSpend(it, RULES)!;
+      expect(s.parts.weapon === null, name).toBe(it.type !== 'weapon');
+      expect((s.parts.weapon ?? 0) + s.parts.stats + s.parts.guard + s.parts.powers, name).toBeCloseTo(s.points, 9);
+    }
+    const ts = titleSpend({ bonus: { str: 2 }, band: 'C' }, RULES);
+    expect(ts.parts.weapon).toBeNull();
+    expect(ts.parts.stats + ts.parts.guard + ts.parts.powers).toBeCloseTo(ts.points, 9);
   });
 
   test('an item nobody wears has no budget: a consumable, a material, a key spend nothing at all, not 0', () => {
@@ -311,7 +333,7 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
     const seventh: ItemDef = { name: 'Seventh Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { manaMax: 3 }, grade: 1, desc: 'Past its top.' };
     expect(breaches([...ALL, seventh], RULES)).toEqual(['Seventh Ring spends 6.0, past its tier\'s top']);
     const dagger = { ...def('Iron Dagger'), grade: 1 } as ItemDef;
-    expect(breaches([dagger], RULES)).toEqual(['Iron Dagger claims a grade above its spend -4.7 with nothing the budget cannot weigh']);
+    expect(breaches([dagger], RULES)).toEqual(['Iron Dagger claims a grade above its spend 0.0 with nothing the budget cannot weigh']);
   });
 
   test('the six of ruling 6 are each past their tier\'s top, graded plus, and priced as its plus: 1,875 at rare, 28,500 at legendary, 112,500 at mythic', () => {
@@ -324,29 +346,32 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
     }
   });
 
-  test('each built-in item spends what block [2.5] says, to one decimal', () => {
+  test('each built-in item spends what the unified weapon budget says, to one decimal', () => {
     const SPEND: Readonly<Record<string, number>> = {
-      'Iron Dagger': -4.7, 'Goblin Shortbow': -2.4, 'Steel Longsword': 0, 'Hunting Bow': 0, "Hunter's Leather": 0, 'Padded Cap': 0, 'Dented Tower Shield': 0, 'Worn Hunter Boots': 1,
-      "Orc Warrior's Cleaver": 1, 'Reinforced Hunter Vest': 0, 'Ironhide Gauntlets': 1, 'Swift Runner Greaves': 1, 'Mana Talisman': 2,
-      "Kasaka's Venom Fang": -6.2, "Ice Elf's Cloak": 1, 'Knight Killer': 2.6, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
-      'Ring of Vitality': 5, 'Frost Giant Hammer': 1.5, "Knight's Aegis": 1, 'Cloak of the Shadow Hunter': 2, 'Helm of the Iron Knight': 2,
-      'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 21.3, 'Orb of Avarice': 16,
-      'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 53.4, 'Armor of the Absolute Being': 45,
+      'Iron Dagger': 0, 'Goblin Shortbow': 0, 'Steel Longsword': 0, 'Hunting Bow': 0, "Hunter's Leather": 0, 'Padded Cap': 0, 'Dented Tower Shield': 0, 'Worn Hunter Boots': 1,
+      "Orc Warrior's Cleaver": 1.7, 'Reinforced Hunter Vest': 0, 'Ironhide Gauntlets': 1, 'Swift Runner Greaves': 1, 'Mana Talisman': 2,
+      "Kasaka's Venom Fang": 2, "Ice Elf's Cloak": 1, 'Knight Killer': 4.3, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
+      'Ring of Vitality': 5, 'Frost Giant Hammer': 6.5, "Knight's Aegis": 1, 'Cloak of the Shadow Hunter': 2, 'Helm of the Iron Knight': 2,
+      'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 10.1, 'Orb of Avarice': 16,
+      'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 32.5, 'Armor of the Absolute Being': 45,
     };
     const worn = OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory');
     expect(worn.map(d => d.name).sort()).toEqual(Object.keys(SPEND).sort());
     for (const d of worn) expect(Number(spendOf(d.name).toFixed(1)), d.name).toBe(SPEND[d.name]!);
   });
 
-  test('each built-in\'s grade is block [2.5]\'s: plain gear its tier\'s minus (the Knight Killer too, now its Lethality is weighed), the Worn Hunter Boots, the Mana Talisman and the Ring of the Monarch\'s Will plus', () => {
-    const PLUS = ['Worn Hunter Boots', 'Mana Talisman', "Ring of the Monarch's Will", ...KEPT];
-    for (const d of OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory')) expect(d.grade, d.name).toBe(PLUS.includes(d.name) ? 1 : -1);
+  test('each built-in\'s grade matches its spend: Orc Warrior\'s Cleaver middle, Knight Killer and Frost Giant Hammer plus beside the other plus items', () => {
+    const PLUS = ['Worn Hunter Boots', 'Mana Talisman', 'Knight Killer', 'Frost Giant Hammer', "Ring of the Monarch's Will", ...KEPT];
+    const MID = ["Orc Warrior's Cleaver"];
+    for (const d of OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory')) {
+      expect(d.grade, d.name).toBe(PLUS.includes(d.name) ? 1 : MID.includes(d.name) ? undefined : -1);
+    }
     for (const d of ALL.filter(d => d.type === 'consumable' || d.type === 'material')) expect(d.grade, `${d.name}: a thing used up or sold has no grade`).toBeUndefined();
   });
 
-  test('the shop after the budget (block [2.2]): Iron Dagger, Hunter\'s Leather and Steel Longsword 67, Knight Killer 833 (Rare−), Ring of Vitality 3,333', () => {
+  test('the shop after the budget (block [2.2]): Iron Dagger, Hunter\'s Leather and Steel Longsword 67, Knight Killer 1,875 (Rare+), Ring of Vitality 3,333', () => {
     const prices = ['Iron Dagger', "Hunter's Leather", 'Steel Longsword', 'Knight Killer', 'Ring of Vitality'].map(n => valueOf(itemOf(RULES, def(n)), RULES));
-    expect(prices).toEqual([67, 67, 67, 833, 3333]);
+    expect(prices).toEqual([67, 67, 67, 1875, 3333]);
   });
 });
 
@@ -375,6 +400,21 @@ group('the item maker\'s spend line (economy design 2.4)', () => {
     const hasted: StatusDef = { label: 'Hasted', desc: '', ops: [{ op: 'speed', pct: 10 }] };
     expect(line(gear('rare', { bonus: { ins: 4 }, worn: hasted }), 1)).toEqual({
       words: 'Uses 4.0 budget points. Rare+ range is 3.7 to 4.4. Does not include unestimated worn status effects. Test it in a fight.',
+      over: false,
+    });
+  });
+
+  test('a weapon\'s spend line prints the weapon damage and powers/stats breakdown using BUDGET_WORDS', () => {
+    expect(line(itemOf(RULES, def('Frost Giant Hammer')), 1)).toEqual({
+      words: `Uses 6.5 budget points (6.5 ${BUDGET_WORDS.weapon}). Epic+ range is 5.9 to 6.7.`,
+      over: false,
+    });
+    expect(line(itemOf(RULES, def('Spellblade')), 0)).toEqual({
+      words: `Uses 3.6 budget points (0.0 ${BUDGET_WORDS.weapon}, 3.6 ${BUDGET_WORDS.powers}). Rare range is 3.1 to 3.7.`,
+      over: false,
+    });
+    expect(line(itemOf(RULES, def('Knight Killer')), 1)).toEqual({
+      words: `Uses 4.3 budget points (0.0 ${BUDGET_WORDS.weapon}, 4.3 ${BUDGET_WORDS.stats}). Rare+ range is 3.7 to 4.4.`,
       over: false,
     });
   });
@@ -441,19 +481,19 @@ group('what a held thing\'s powers spend (item-stats 6.5)', () => {
 
   test('a worn `stat` op spends as a bonus of its size, and a `sheet` op on a share as that many hundredths of its bonus: 2 Discipline spend 2, crit size 0.1 ten points', () => {
     const steady: StatusDef = { label: 'Steady', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: 2 } }] };
-    expect(itemSpend(gear('rare', { worn: steady }), RULES)).toEqual({ points: 2, unweighed: [] });
+    expect(itemSpend(gear('rare', { worn: steady }), RULES)).toEqual({ points: 2, parts: { weapon: null, stats: 0, guard: 0, powers: 2 }, unweighed: [] });
     const keen: StatusDef = { label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'critSize', amount: { kind: 'number', value: 0.1 } }] };
     expect(itemSpend(gear('rare', { worn: keen }), RULES)!.points).toBeCloseTo(10 * onePoint('critSize', 'C'), 9);
   });
 
   test('a `sheet` op with no rule (range) is named as not weighed, and the rest of the status is still weighed', () => {
     const odd: StatusDef = { label: 'Odd', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: 2 } }, { op: 'sheet', key: 'range', amount: 1 }] };
-    expect(itemSpend(gear('rare', { worn: odd }), RULES)).toEqual({ points: 2, unweighed: ['worn'] });
+    expect(itemSpend(gear('rare', { worn: odd }), RULES)).toEqual({ points: 2, parts: { weapon: null, stats: 0, guard: 0, powers: 2 }, unweighed: ['worn'] });
   });
 
   test('a title\'s powers are weighed the same way at a rank: powersSpend at C is what a rare ring\'s active spends', () => {
     const p = { active: shieldActive('10 + 0.2 * hpmax') };
-    expect(powersSpend(p, 'C', RULES)).toEqual(itemSpend(gear('rare', p), RULES)!);
+    expect(itemSpend(gear('rare', p), RULES)!).toMatchObject(powersSpend(p, 'C', RULES));
   });
 
   test('the spend line names an active it cannot weigh, with the words to test it in a fight', () => {
@@ -489,7 +529,7 @@ group('what a title spends (item-stats 6.7)', () => {
   test('Still Standing, an E title of +1 Vitality, spends 1 of its band\'s 1 point; +10 max HP in its place would spend what the Vitality giving 10 max HP at E does, 16.7', () => {
     const still = BUILT_IN_TITLES.find(t => t.name === 'Still Standing')!;
     expect([still.band, still.bonus]).toEqual(['E', { vit: 1 }]);
-    expect(titleSpend(still, RULES)).toEqual({ points: 1, unweighed: [] });
+    expect(titleSpend(still, RULES)).toEqual({ points: 1, parts: { weapon: null, stats: 1, guard: 0, powers: 0 }, unweighed: [] });
     const hpPerVit = (wearer('E', { vit: 10 }).hpMax - wearer('E').hpMax) / 10;
     expect(hpPerVit).toBeCloseTo(0.6, 9);
     expect(titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES).points).toBeCloseTo(10 / hpPerVit, 9);
@@ -510,7 +550,7 @@ group('what a title spends (item-stats 6.7)', () => {
 
   test('a title\'s powers spend at its band what a held thing\'s do at that rank: the band, not the holder, sets the rates', () => {
     const p = { active: shieldActive('10 + 0.2 * hpmax') };
-    for (const band of RANKS) expect(titleSpend({ bonus: {}, band, ...p }, RULES), band).toEqual(powersSpend(p, band, RULES));
+    for (const band of RANKS) expect(titleSpend({ bonus: {}, band, ...p }, RULES), band).toMatchObject(powersSpend(p, band, RULES));
   });
 
   test('Last Light, a C title whose active heals 8 HP once a fight, spends 2.8 and its line says it fits rank C', () => {

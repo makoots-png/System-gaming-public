@@ -167,7 +167,7 @@ const POWERS = { worn: statusDef, active: ability } as const;
 /** An item: what its use does and its powers while worn. */
 export const item: Walk<ItemTemplate> = fields<ItemTemplate>({
   name: none, rar: none, grade: none, type: none, slot: none, qty: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
-  resist: none, attack: none, twoHanded: none, icon: none, effects: ops, target: none, tell: none, revive: none, rankCap: none, ...POWERS,
+  resist: none, attack: none, finesse: none, twoHanded: none, icon: none, effects: ops, target: none, tell: none, revive: none, rankCap: none, ...POWERS,
 });
 const SKILL_PARTS = { name: none, level: none, label: none, desc: none, type: none } as const;
 const activeSkill = fields<Extract<SkillTemplate, { type: 'active' }>>({ ...SKILL_PARTS, ability });

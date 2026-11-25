@@ -55,7 +55,7 @@ export type RowSkill = { readonly type: 'active'; readonly ability: Ability | nu
  * (`target: 'other'`) is an ability the hunter takes into the fight; a worn one gives its powers (`heldPowers`).
  */
 export type RowItem = SheetItem & {
-  readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack'];
+  readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack']; readonly finesse?: true;
   readonly type?: string; readonly rar?: string; readonly qty?: number; readonly target?: 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true;
 } & Readonly<Powers>;
 /** The fields of a schema 4 hunter a row reads, on this phone or from a parsed remote sheet. */
@@ -134,6 +134,10 @@ export function heldPowers(h: RowHunter, R: RowRules): Held[] {
   return [...(title ? [{ powers: title, tier }] : []), ...worn.map(i => ({ powers: i, tier: itemSource({ rar: i.rar ?? 'common' }).tier })), ...keystones];
 }
 
+/** A worn item as a `Weapon` when it has both `attack` and `dice`; passed through whole so weapon fields flow without re-listing. */
+const asWeapon = (i: RowItem | undefined): Weapon | null =>
+  (i && i.attack !== undefined && i.dice !== undefined ? i as RowItem & Weapon : null);
+
 /**
  * The worn weapon's attack, then each active skill's ability in the skill list's order, then the active of each held
  * thing (`heldPowers`) as `wornAbilityId` of its id, then each consumable in the bag that does something in a fight
@@ -141,8 +145,7 @@ export function heldPowers(h: RowHunter, R: RowRules): Held[] {
  * rank, as a skill's is, with its own cooldown and gates; it is never a bag item's use, so it spends nothing held.
  */
 export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
-  const w = h.items.find(i => i.id === h.equipped['weapon']);
-  const weapon: Weapon | null = w?.attack !== undefined && w.dice !== undefined ? { name: w.name, dice: w.dice, attack: w.attack } : null;
+  const weapon = asWeapon(h.items.find(i => i.id === h.equipped['weapon']));
   const thrown = h.items.flatMap(i => {
     // a bag item is spent by its id, so one whose id does not read as an item's (a player's sheet keeps ids as sent) is no use in a fight
     const id = parseSaveId<'i'>(i.id);

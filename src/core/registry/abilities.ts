@@ -42,7 +42,7 @@ export type SkillRules = KindRules & { readonly conditions: { readonly [K in Ski
 export const ATTACK_ID = abilityId('attack');
 
 /** What `weaponAttack` reads of an item. A bow shoots and anything else strikes (plan 3.3). */
-export type Weapon = { readonly name: string; readonly dice: string; readonly attack: 'strike' | 'shot' };
+export type Weapon = { readonly name: string; readonly dice: string; readonly attack: 'strike' | 'shot'; readonly finesse?: true };
 
 /** How one built-in differs from its kind. A field left out is the kind's. */
 type Differs = {
@@ -85,12 +85,6 @@ function withFinesse(f: Formula): Formula {
   }
 }
 
-/** Whether `dice` is a single light die (`1d4` to `1d6`, matching `weaponWeight === 1` in items.ts). */
-function isLightDice(dice: string, R: KindRules): boolean {
-  const parsed = parseFormula(dice, R);
-  return parsed.ok && parsed.formula.kind === 'dice' && parsed.formula.count === 1 && parsed.formula.sides <= 6;
-}
-
 /**
  * A built-in of `kind`: the kind's ability with the differences given. The formula is the kind's recommended one with
  * these dice (a text the rules' dice limits refuse keeps the kind's dice), times the pace's share over the kind's. It is
@@ -130,12 +124,12 @@ export const ARCHETYPE_ATTACKS: { readonly [A in Archetype]: (R: KindRules) => A
 
 /**
  * A hunter's default attack with this weapon: its kind's recommended formula with the weapon's dice. Bows (`shot`) and
- * light melee weapons (`1d4` to `1d6`, weight 1) scale with `finesse` so Agility builds deal growing weapon damage;
- * heavier melee weapons and unarmed strikes (`1d8 + phys`) scale with `phys`.
+ * melee weapons marked `finesse` scale with `finesse` (`max(phys, agi finesse)`) so Agility builds deal growing weapon
+ * damage; other melee weapons and unarmed strikes (`1d8 + phys`) scale with `phys`.
  */
 export function weaponAttack(item: Weapon | null, R: KindRules): Ability {
   if (item === null) return built('strike', ATTACK_ID, 'Strike', {}, R);
-  const finesse = item.attack === 'shot' || isLightDice(item.dice, R);
+  const finesse = item.attack === 'shot' || item.finesse === true;
   return built(item.attack, ATTACK_ID, item.name, { dice: item.dice, ...(finesse ? { finesse: true } : {}) }, R);
 }
 

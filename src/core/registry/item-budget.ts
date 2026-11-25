@@ -21,7 +21,8 @@ import type { Formula, Scope } from '../formula.ts';
 import { gradeLabel } from '../effects.ts';
 import { GRADES, KIT_SHARE, SAMPLE_WEARER, SLOTS, piece, weightOf } from './items.ts';
 import type { ArmorSlot, Grade, Item, Rarity } from './items.ts';
-import { KINDS } from './ability-kinds.ts';
+import { formulaOf, KINDS } from './ability-kinds.ts';
+import { weaponAttack } from './abilities.ts';
 import { abilityWorth, bestScope, BUILD_OF, hpRate, referenceBody, usesPerRound, wornWorth } from './worth.ts';
 import type { WorthRules } from './worth.ts';
 import type { Powers } from './powers.ts';
@@ -70,10 +71,21 @@ const UNBUDGETED_WORDS: { readonly [U in Unbudgeted]: string } = {
   worn: 'unestimated worn status effects',
   active: 'unestimated active ability effects',
 };
-/** An item's spend in points beyond its slot's free numbers, and what it carries that the budget cannot weigh. */
-export type Spend = { readonly points: number; readonly unweighed: readonly Unbudgeted[] };
+/** What an item's spend breaks into: extra weapon damage (null on non-weapons and titles), stat bonuses, extra guard, and powers. */
+export type SpendParts = {
+  readonly weapon: number | null;
+  readonly stats: number;
+  readonly guard: number;
+  readonly powers: number;
+};
+/** Player- and GM-facing words for each part of a weapon's budget breakdown (`spendLine`). */
+export const BUDGET_WORDS: Readonly<Record<keyof SpendParts, string>> = {
+  weapon: 'weapon damage', stats: 'stats', guard: 'armor', powers: 'powers',
+};
+/** An item's spend in points beyond its slot's free numbers, its parts, and what it carries that the budget cannot weigh. */
+export type Spend = { readonly points: number; readonly parts: SpendParts; readonly unweighed: readonly Unbudgeted[] };
 /** What a spend reads of an item. */
-export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'weight' | 'worn' | 'active'>>;
+export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'attack' | 'finesse' | 'weight' | 'worn' | 'active'>>;
 
 /** The points a conversion is read over: max HP and max mana are whole numbers, so one point's share is read off ten. */
 const READ_OVER = 10;
@@ -95,15 +107,28 @@ function ratesAt(rank: Rank, R: BudgetRules): Rates {
   const strike = strikeDie(body, R) + KINDS.strike.power * referenceBody(BUILD_OF.strike, rank, R).sheet.phys;
   return { rank, sheet, phys: per('str', 'phys'), mag: per('pow', 'mag'), armor: per('vit', 'armor'), body, strike };
 }
-/** The mean of dice text on `body`, or null when the rules refuse it. */
-function meanOf(text: string, body: Scope['user'], R: BudgetRules): number | null {
-  const p = parseFormula(text, R);
-  return p.ok ? average(p.formula, { user: body, target: body, charge: 0, kit: NO_KIT }) : null;
+/** The mean of the reference strike's own dice (`KINDS.strike`, 1d8): the free die of an unarmed strike. */
+function strikeDie(body: Scope['user'], R: BudgetRules): number {
+  const p = parseFormula(KINDS.strike.dice ?? '0', R);
+  return p.ok ? average(p.formula, { user: body, target: body, charge: 0, kit: NO_KIT }) : 0;
 }
-/** The mean of the reference strike's own dice (`KINDS.strike`, 1d8): the free die of the first tier. */
-const strikeDie = (body: Scope['user'], R: BudgetRules): number => meanOf(KINDS.strike.dice ?? '0', body, R) ?? 0;
-/** The mean of a weapon's dice as the fight rolls them: text the rules refuse rolls the strike's own (abilities.ts `weaponAttack`). */
-const dieMean = (text: string, body: Scope['user'], R: BudgetRules): number => meanOf(text, body, R) ?? strikeDie(body, R);
+/**
+ * What a weapon's attack formula spends above its kind's default die (`weaponAttack`), floored at 0 so a weaker die never
+ * refunds points. The extra damage is read on the paper build the attack favours (`bestScope`), divided by the kind's
+ * pace share (so a quick shot and a standard strike price the same), and weighed at `itemBudget.weaponDuty` of a
+ * standard action a round (`perAction = r.strike / r.phys`, which cancels `r.strike`).
+ */
+function weaponPoints(it: Spendable, rank: Rank, r: Rates, R: BudgetRules): number {
+  const attack = it.attack ?? 'strike', baseDice = KINDS[attack].dice ?? '1d8';
+  const finesse = it.finesse ? { finesse: true as const } : {};
+  const actual = weaponAttack({ name: 'w', dice: it.dice, attack, ...finesse }, R);
+  const base = weaponAttack({ name: 'w', dice: baseDice, attack, ...finesse }, R);
+  const fActual = formulaOf(actual, R), fBase = formulaOf(base, R);
+  if (!fActual || !fBase) return 0;
+  const s = bestScope(fActual, rank, R), paceShare = R.fight.cost[KINDS[attack].pace] / R.fight.cost.standard;
+  const extra = (average(fActual, s) - average(fBase, s)) / paceShare;
+  return Math.max(0, extra) / r.phys * R.itemBudget.weaponDuty;
+}
 
 /** The four penetrations, which no stat feeds alone (Control feeds the percent pair of both): each is weighed by `penCost`. */
 type PenKey = 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat';
@@ -235,7 +260,7 @@ function activeUses(a: Ability, rank: Rank, R: BudgetRules): number {
  * to it (`r.strike / r.phys`). What worth.ts cannot weigh of either is named, never counted as 0. An item's spend adds
  * it at its rarity's rank.
  */
-export function powersSpend(p: Powers, rank: Rank, R: BudgetRules): Spend {
+export function powersSpend(p: Powers, rank: Rank, R: BudgetRules): Pick<Spend, 'points' | 'unweighed'> {
   const r = ratesAt(rank, R), perAction = r.strike / r.phys, unweighed: Unbudgeted[] = [];
   let points = 0;
   if (p.worn) {
@@ -272,23 +297,21 @@ function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; rea
  * What a worn item spends, in points on the sample wearer at its rarity's rank (design 2.3); null for an item nobody
  * wears (a consumable, a material, a key), which has no budget. Each bonus point on a stat is one; any other bonus key
  * costs the stat points that would give it (`FED_BY`), a penetration the power points that add its damage (`penCost`),
- * lifesteal and ability haste their worth a round (`drainCost`, `hasteCost`); a weapon's mean die above its tier's free die (the strike's die plus
- * `weaponStep` a tier above the first; below it, less than nothing) costs the Strength whose `phys` would deal it; armor
- * or resist above the piece its weight carries costs the Vitality whose armor it is; its powers what `powersSpend`
+ * lifesteal and ability haste their worth a round (`drainCost`, `hasteCost`); a weapon's extra attack damage above its
+ * kind's default die (`weaponPoints`) draws on the same budget as its powers via `itemBudget.weaponDuty` (floored at 0);
+ * armor or resist above the piece its weight carries costs the Vitality whose armor it is; its powers what `powersSpend`
  * weighs them at its rarity's rank. Weight and the slot's own piece are free.
  */
 export function itemSpend(it: Spendable, R: BudgetRules): Spend | null {
   if (it.type !== 'weapon' && it.type !== 'armor' && it.type !== 'accessory') return null;
   const rank = R.rarities[it.rar].rank, r = ratesAt(rank, R);
-  let points = bonusPoints(it.bonus, r, R);
-  if (it.type === 'weapon') {
-    const free = strikeDie(r.body, R) + R.itemBudget.weaponStep * RANKS.indexOf(rank);
-    points += (dieMean(it.dice, r.body, R) - free) / r.phys;
-  }
-  const guard = freeGuard(it, R);
-  points += (Math.max(0, it.armor - guard.armor) + Math.max(0, it.resist - guard.resist)) / r.armor;
+  const stats = bonusPoints(it.bonus, r, R);
+  const weapon = it.type === 'weapon' ? weaponPoints(it, rank, r, R) : null;
+  const free = freeGuard(it, R);
+  const guard = (Math.max(0, it.armor - free.armor) + Math.max(0, it.resist - free.resist)) / r.armor;
   const powers = powersSpend(it, rank, R);
-  return { points: points + powers.points, unweighed: powers.unweighed };
+  const parts: SpendParts = { weapon, stats, guard, powers: powers.points };
+  return { points: (weapon ?? 0) + stats + guard + powers.points, parts, unweighed: powers.unweighed };
 }
 
 // ── what a title spends (item-stats 6.7) ──
@@ -302,8 +325,8 @@ export type TitleRules = BudgetRules & Pick<Rules, 'titleBudget'>;
  * so nothing of it is free. What the budget cannot weigh is named, as an item's is.
  */
 export function titleSpend(t: TitleSpendable, R: BudgetRules): Spend {
-  const rank = bandOf(t), powers = powersSpend(t, rank, R);
-  return { points: bonusPoints(t.bonus, ratesAt(rank, R), R) + powers.points, unweighed: powers.unweighed };
+  const rank = bandOf(t), stats = bonusPoints(t.bonus, ratesAt(rank, R), R), powers = powersSpend(t, rank, R);
+  return { points: stats + powers.points, parts: { weapon: null, stats, guard: 0, powers: powers.points }, unweighed: powers.unweighed };
 }
 /**
  * The lowest band a title fits: the first rank, E up, whose `titleBudget` holds the title weighed at that rank (a scaling
@@ -334,14 +357,24 @@ export function titleLine(t: TitleSpendable, R: TitleRules): { readonly words: s
   return { words: `${spent}. Over budget. ${where}.${without}`, over: true };
 }
 const held = (b: GradeBand): string => (b.low === null ? `up to ${one(b.high)}` : `${one(b.low)} to ${one(b.high)}`);
+/** The parts shown inside parentheses for a weapon's spend line; empty for non-weapons (`parts.weapon === null`). */
+function partsWords(parts: SpendParts): string {
+  if (parts.weapon === null) return '';
+  const bits = [`${one(parts.weapon)} ${BUDGET_WORDS.weapon}`];
+  if (Math.abs(parts.stats) >= 0.05) bits.push(`${one(parts.stats)} ${BUDGET_WORDS.stats}`);
+  if (Math.abs(parts.guard) >= 0.05) bits.push(`${one(parts.guard)} ${BUDGET_WORDS.guard}`);
+  if (Math.abs(parts.powers) >= 0.05) bits.push(`${one(parts.powers)} ${BUDGET_WORDS.powers}`);
+  return ` (${bits.join(', ')})`;
+}
 /**
- * The spend line under the item maker's preview: the points, what the chosen grade holds, the grade that holds the spend
- * when it is another, and what the budget cannot weigh. `over` when the chosen grade is under the spend (past the
- * tier's top, under any grade): a warning, never a refusal, since the price reads the chosen grade.
+ * The spend line under the item maker's preview: the points (with the weapon breakdown when `parts.weapon !== null`),
+ * what the chosen grade holds, the grade that holds the spend when it is another, and what the budget cannot weigh.
+ * `over` when the chosen grade is under the spend (past the tier's top, under any grade): a warning, never a refusal,
+ * since the price reads the chosen grade.
  */
 export function spendLine(s: Spend, R: BudgetRules, rar: Rarity, grade: Grade): { readonly words: string; readonly over: boolean } {
   const chosen = gradeBand(R, rar, grade), fit = gradeOfSpend(R, rar, s.points), label = (g: Grade): string => gradeLabel(rar, g);
-  const without = withoutWords(s), spent = `Uses ${one(s.points)} budget points`;
+  const without = withoutWords(s), spent = `Uses ${one(s.points)} budget points${partsWords(s.parts)}`;
   if (fit === null) return { words: `${spent}, above the ${label(1)} max (${one(gradeBand(R, rar, 1).high)}). Stronger than any ${label(0)} grade.${without}`, over: true };
   if (fit > grade) return { words: `${spent}, above ${label(grade)} (${held(chosen)}). Matches ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: true };
   if (fit < grade) return { words: `${spent}. ${label(grade)} range is ${held(chosen)}. Matches ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: false };

@@ -42,7 +42,7 @@ const CONDITIONS: SkillRules['conditions'] = {
 const R = { ...RULES, conditions: CONDITIONS };
 
 const WEAPONS: Weapon[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR) as ItemDef[]]
-  .flatMap(i => i.type === 'weapon' ? [{ name: i.name, dice: i.dice, attack: /bow\b/i.test(i.name) ? 'shot' as const : 'strike' as const }] : []);
+  .flatMap(i => i.type === 'weapon' ? [{ name: i.name, dice: i.dice, attack: i.attack, ...(i.finesse ? { finesse: true as const } : {}) }] : []);
 const SKILLS = Object.keys(SKILL_ABILITIES) as BuiltInSkill[];
 const ARCHETYPE_LIST = Object.keys(ARCHETYPES) as Archetype[];
 
@@ -246,17 +246,22 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
     ]);
   });
 
-  test('bows and light melee weapons (1d4 to 1d6) scale with finesse; heavier melee weapons and unarmed strikes scale with phys', () => {
+  test('bows and melee weapons marked finesse scale with finesse; other melee weapons and unarmed strikes scale with phys', () => {
     const of = (name: string): Ability => weaponAttack(WEAPONS.find(w => w.name === name)!, R);
     const dagger = of('Iron Dagger'), fang = of("Kasaka's Venom Fang"), shortbow = of('Goblin Shortbow'), bow = of('Hunting Bow');
-    const sword = of('Steel Longsword'), spellblade = of('Spellblade'), killer = of('Knight Killer'), fist = weaponAttack(null, R);
-    expect([dagger.name, dagger.kind, text(dagger), (dagger.effect?.by === 'hand')]).toEqual(['Iron Dagger', 'strike', '1d4 + finesse', true]);
-    expect([fang.kind, text(fang)]).toEqual(['strike', '1d6 + finesse']);
-    expect([shortbow.kind, text(shortbow)]).toEqual(['shot', '0.7 * (1d6 + finesse)']);
+    const sword = of('Steel Longsword'), spellblade = of('Spellblade'), killer = of('Knight Killer'), hammer = of('Frost Giant Hammer');
+    const kamish = of("Kamish's Wrath"), fist = weaponAttack(null, R);
+    const plainSmall = weaponAttack({ name: 'Plain Small', dice: '1d4', attack: 'strike' }, R);
+    expect([dagger.name, dagger.kind, text(dagger), (dagger.effect?.by === 'hand')]).toEqual(['Iron Dagger', 'strike', '1d8 + finesse', true]);
+    expect([fang.kind, text(fang)]).toEqual(['strike', '1d8 + finesse']);
+    expect([killer.kind, text(killer)]).toEqual(['strike', '1d8 + finesse']);
+    expect([kamish.kind, text(kamish)]).toEqual(['strike', '3d8 + finesse']);
+    expect([shortbow.kind, text(shortbow)]).toEqual(['shot', '0.7 * (1d8 + finesse)']);
     expect([bow.kind, text(bow)]).toEqual(['shot', '0.7 * (1d8 + finesse)']);
     expect([sword.kind, text(sword), (sword.effect?.by === 'hand')]).toEqual(['strike', '1d8 + phys', false]);
     expect([spellblade.kind, text(spellblade)]).toEqual(['strike', '1d8 + phys']);
-    expect([killer.kind, text(killer)]).toEqual(['strike', '1d10 + phys']);
+    expect([hammer.kind, text(hammer)]).toEqual(['strike', '3d12 + phys']);
+    expect(text(plainSmall)).toBe('1d4 + phys');
     expect([fist.name, fist.kind, text(fist)]).toEqual(['Strike', 'strike', '1d8 + phys']);
   });
 

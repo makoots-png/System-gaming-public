@@ -812,3 +812,5 @@ ts	phase	decision	why	evidence	result
 2026-11-25T00:52Z	arch	small-fixes landed on lead-backlog; single Approve uses approvalIdOf, e2e seeds on browser UTC date; 150 unit, 58 browser in the 22:00 window
 2026-11-25T01:08Z	ops	PR 120 (A4 role skills: Taunt, Stun, Shield Wall, Marked Shot, Ruler's shove, Shadow Exchange) merged to main
 2026-11-25T01:08Z	ops	PR 121 (point respec, staged take-backs paid at Confirm) merged to main
+2026-11-25T01:24Z	ops	PR 122 (small fixes: approve race, e2e local-midnight seeds) merged to main
+2026-11-25T01:56Z	arch	landed gear-slots part 2 (V2p2): weapon damage over basic costs budget (weaponDuty 0.15), finesse flag, unclipped GM edits with warnings; 0 fight-sim rows moved; unit 7038 pass on merged tree

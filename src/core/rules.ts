@@ -322,7 +322,7 @@ const SPEC = {
   // design 2.3: the points an item may spend beyond its slot's free numbers
   itemBudget: {
     share: real(0.5, 0, 2, 'share of a hunter\'s ability points that a full set of gear can add. 0 gives items no bonus budget, up to 2'), // half of what a hunter of the tier's rank holds at its first level, over the 10 slots
-    weaponStep: real(1, 0, 10, 'average damage gained by a weapon\'s base die per tier, from 0 to 10'), // the free die rises by 1 mean damage a tier from 1d8
+    weaponDuty: real(0.15, 0.05, 1, 'share of a hunter\'s actions that are its weapon attack, from 0.05 to 1'), // weighs extra weapon damage against powers on one budget
     // The foe a point of penetration is weighed against (balance plan section 9): a same-rank monster of this kind, a
     // brute's armor for the armor pair and a caster's resist for the resist pair. Penetration is worth more the thicker
     // the defence, so the foe is named; the elite sits between a pack's normal and a boss. One of `fight.kinds`

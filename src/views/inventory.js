@@ -194,7 +194,7 @@ export function register(app) {
   const chip = r => `<span class="rar rar-${esc(r)}">${esc(r)}</span>`;
   /** An item's picture (icon-defaults.ts `itemIcon`) in its rarity's colour, at the start of its line. */
   const pic = i => icon(itemIcon(i), `inv-ic rar-${esc(i.rar)}`);
-  const metaLine = i => [i.type, i.slot ? `slot: ${SLOT_LABELS[i.slot] || i.slot}` : '', i.twoHanded ? 'two-handed' : '', i.dice ? `${i.dice}${i.attack ? ` ${i.attack}` : ''}` : '', bonusText(i.bonus),
+  const metaLine = i => [i.type, i.slot ? `slot: ${SLOT_LABELS[i.slot] || i.slot}` : '', i.twoHanded ? 'two-handed' : '', i.finesse ? 'finesse' : '', i.dice ? `${i.dice}${i.attack ? ` ${i.attack}` : ''}` : '', bonusText(i.bonus),
     weightOf(i) ? `weight ${weightOf(i)}` : '', i.armor ? `armor ${i.armor}` : '', i.resist ? `resist ${i.resist}` : ''].filter(Boolean).map(esc).join(' · ');
   /** An item's name, which opens what it does and its description (app.api.detail) under its line. */
   const nameBtn = (list, key, i) => `<button type="button" class="i-name"${app.api.detail.control(list, key)}>${esc(i.name)}</button>`;

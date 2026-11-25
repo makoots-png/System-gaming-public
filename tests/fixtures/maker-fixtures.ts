@@ -163,6 +163,23 @@ export const WORST_ITEM_WORN: Item = {
   id: saveId('i', 911),
 };
 
+export const WORST_ITEM_FINESSE: Item = {
+  ...must(parseItem({
+    name: 'Viper Stiletto',
+    rar: 'rare',
+    grade: 1,
+    type: 'weapon',
+    slot: 'weapon',
+    qty: 1,
+    dice: '2d8 + 0.1 * agi',
+    attack: 'strike',
+    finesse: true,
+    bonus: { agi: 2, armorPenFlat: 3 },
+    desc: 'Finesse strike weapon with a formula-based weapon damage line.',
+  }), 'WORST_ITEM_FINESSE'),
+  id: saveId('i', 913),
+};
+
 export const WORST_ITEM_CONSUMABLE: Item = {
   ...must(parseItem({
     name: 'Phoenix Vial',

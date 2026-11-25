@@ -11,6 +11,8 @@ import { atLibrary } from '../core/save-step.ts';
 import { saveEntry, savedWords } from '../core/library.ts';
 import { oneOf } from '../core/one-of.ts';
 import { REVIVE_TEXT, effectsOf, gradeLabel } from '../core/effects.ts';
+import { weaponLines } from '../core/detail.ts';
+import { parseFormula } from '../core/formula.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import { wornWorth } from '../core/registry/worth.ts';
 import { itemSpend, spendLine } from '../core/registry/item-budget.ts';
@@ -77,29 +79,31 @@ export function register(app) {
       tag: '! Loot', title: was && was.name ? 'Edit item' : 'New item', save: 'Save item', cls: 'lf',
       build(el, shell) {
         el.innerHTML = `<div class="lf-cols"><div class="lf-col">
-          ${ui.field('Name', `<input type="text" id="lf-name" maxlength="60" autocomplete="off" value="${esc(was ? was.name : '')}">`)}
+          ${ui.field('Name', `<input type="text" id="lf-name" maxlength="${B.name}" autocomplete="off" value="${esc(was ? was.name : '')}">`)}
           <div data-icon></div>
           <div class="lbl">Type</div>
           ${M.chips('type', ITEM_TYPES.map(t => [t, TYPE_LABEL[t] || cap(t)]), type, { label: 'Type' })}
           <div class="lf-grid">
             ${ui.field('Rarity', `<select id="lf-rar">${TIERS.map(t => `<option value="${t}"${was && t === was.rar ? ' selected' : ''}>${cap(t)}</option>`).join('')}</select>`)}
-            ${ui.field('Quantity', `<input type="number" id="lf-qty" inputmode="numeric" min="1" max="${ITEM_BOUNDS.qty}" value="${esc(was ? was.qty : 1)}">`)}
-            <div class="wide">${ui.field('Value (gold)', `<input type="number" id="lf-value" inputmode="numeric" min="0" value="${esc(was && was.value !== undefined ? was.value : '')}">`)}</div>
+            ${ui.field('Quantity', `<input type="number" id="lf-qty" inputmode="numeric" min="1" max="${B.qty}" value="${esc(was ? was.qty : 1)}">`)}
+            <div class="wide">${ui.field('Value (gold)', `<input type="number" id="lf-value" inputmode="numeric" min="0" max="${B.value}" value="${esc(was && was.value !== undefined ? was.value : '')}">`)}</div>
             <div class="wide"><div class="lbl">Item grade</div>${M.chips('grade', GRADES.map(g => [String(g), gradeLabel(was ? was.rar : 'common', g)]), String(was && was.grade ? was.grade : 0), { label: 'Item grade' })}</div>
-            <div class="wide">${ui.field('Description', `<textarea id="lf-desc" maxlength="500">${esc(was ? was.desc : '')}</textarea>`)}</div>
+            <div class="wide">${ui.field('Description', `<textarea id="lf-desc" maxlength="${B.desc}">${esc(was ? was.desc : '')}</textarea>`)}</div>
           </div>
           <div class="lf-worn" data-weapon>
-            ${ui.field('Damage dice', `<input type="text" id="lf-dice" maxlength="30" placeholder="1d8" autocomplete="off" value="${esc(was ? was.dice : '')}">`)}
+            ${ui.field('Weapon damage', `<input type="text" id="lf-dice" maxlength="${B.dice}" placeholder="1d8" autocomplete="off" value="${esc(was ? was.dice : '')}">`)}
+            <p class="mk-fx-err" data-dice-err></p>
             <div class="lbl">Attacks with</div>
             ${M.chips('attack', ATTACKS.map(a => [a, ATTACK_LABEL[a]]), was && was.attack ? was.attack : 'strike', { label: 'Attacks with' })}
+            <label class="lf-chk" data-finesse-w><input type="checkbox" id="lf-finesse"${was && was.finesse ? ' checked' : ''}><span>Finesse (uses Agility if higher)</span></label>
             <label class="lf-chk" data-twohanded-w><input type="checkbox" id="lf-twohanded"${was && was.twoHanded ? ' checked' : ''}><span>Two-handed (uses both hands)</span></label>
           </div>
           <div class="lf-worn" data-worn>
             ${ui.field('Slot', `<select id="lf-slot"><option value="">None</option>${SLOTS.map(s => `<option value="${s}">${SLOT_LABELS[s] || s}</option>`).join('')}</select>`)}
             <div data-kit-w><div class="lbl">Fill with standard gear stats</div><div class="mk-chips" role="group" aria-label="Fill with standard gear stats">${KITS.map(([k, l]) => `<button type="button" class="mk-chip" data-kit="${k}">${esc(l)}</button>`).join('')}</div></div>
-            <div class="lf-gear">${GEAR.map(([k, l]) => ui.field(l, `<input type="number" inputmode="numeric" min="0" data-gear="${k}" value="${esc(was ? (was[k] ?? '') : k === 'weight' ? '' : 0)}">`)).join('')}</div>
+            <div class="lf-gear">${GEAR.map(([k, l]) => ui.field(l, `<input type="number" inputmode="numeric" min="0" max="${B[k]}" data-gear="${k}" value="${esc(was ? (was[k] ?? '') : k === 'weight' ? '' : 0)}">`)).join('')}</div>
             <div class="lbl">Stat bonuses while equipped</div>
-            ${M.bonus(was ? was.bonus : {})}
+            ${M.bonus(was ? was.bonus : {}, { min: -B.bonus, max: B.bonus })}
             <details class="mk-group" data-group="worn"><summary data-sum="worn"></summary><div class="mk-group-body">
               <label class="lf-chk"><input type="checkbox" data-worn-on${was && was.worn ? ' checked' : ''}><span>Grants a status while equipped in a fight</span></label>
               <div data-worn-f><div class="lbl">Status effects</div><div data-worn-fx></div><div data-worn-kit></div></div>
@@ -194,6 +198,7 @@ export function register(app) {
           if (grade()) out.grade = grade();
           if (weight !== undefined) out.weight = weight;
           if (weapon) out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike');
+          if (weapon && out.attack !== 'shot' && $('#lf-finesse').checked) out.finesse = true;
           if (weapon && out.slot === 'weapon' && $('#lf-twohanded').checked) out.twoHanded = true;
           const effects = fx.ops(); if (effects.length) out.effects = effects;
           if (effectsOf(out).length && M.picked(el, 'target') === 'other') out.target = 'other';
@@ -216,6 +221,14 @@ export function register(app) {
           thing: 'item', pick: was && was.icon ? was.icon : null,
           subject: () => { const it = formItem(); return { thing: 'item', item: { type: it.type, slot: it.slot, ...(it.attack ? { attack: it.attack } : {}), ...(it.revive ? { revive: true } : {}) } }; },
         });
+        /** Parse error on a non-empty weapon damage formula, or '' when empty or valid: blocks Save on typos. */
+        const diceError = () => {
+          if (type !== 'weapon') return '';
+          const raw = $('#lf-dice').value.trim();
+          if (!raw) return '';
+          const p = parseFormula(raw, rules());
+          return 'error' in p ? p.error : '';
+        };
         const sync = () => {
           if (wornOn()) wornEditors();
           $('[data-worn-f]').hidden = !wornOn();
@@ -231,8 +244,12 @@ export function register(app) {
             $('[data-rank-cap-w]').hidden = type !== 'consumable';
           }
           if (!slotDirty) slotSel.value = AUTO_SLOT[type] || '';
+          $('[data-finesse-w]').hidden = !(type === 'weapon' && M.picked(el, 'attack') !== 'shot');
           $('[data-twohanded-w]').hidden = !(type === 'weapon' && slotSel.value === 'weapon');
           $('[data-kit-w]').hidden = !Object.hasOwn(KIT_SHARE, slotSel.value);
+          const derr = diceError();
+          $('[data-dice-err]').textContent = derr;
+          $('#lf-dice').setAttribute('aria-invalid', String(!!derr));
           for (const b of el.querySelectorAll('[data-chips="grade"] [data-chip]')) b.textContent = gradeLabel(rarity(), oneOf(Number(b.dataset.chip), GRADES, 0));
           const revivesOn = type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive);
           $('#lf-value').placeholder = `Default: ${valueOf({ rar: rarity(), type, grade: grade(), effects: fx.ops(), ...(revivesOn ? { revive: true } : {}) }, rules())}`;
@@ -244,7 +261,7 @@ export function register(app) {
         for (const ev of ['input', 'change']) slotSel.addEventListener(ev, () => { slotDirty = true; });
         el.addEventListener('click', e => {
           if (e.target.closest('[data-chips="type"]')) { type = oneOf(M.picked(el, 'type'), ITEM_TYPES, type); sync(); }
-          if (e.target.closest('[data-chips="grade"]')) sync();
+          if (e.target.closest('[data-chips="grade"],[data-chips="attack"]')) sync();
           const kit = e.target.closest('[data-kit]');
           if (kit && Object.hasOwn(KIT_SHARE, slotSel.value)) {
             const p = piece(oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light'), slotSel.value, rules());
@@ -260,14 +277,14 @@ export function register(app) {
             drawWorth(it.worn && worn ? wornWorth(it.worn, rules()) : null);
             drawSpend(it);
             return [
-              it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}${it.twoHanded ? ' (two-handed)' : ''}` : it.twoHanded ? 'Two-handed' : '',
+              ...weaponLines(it, rules()),
               worn ? `Weight ${weightOf(it)} · Armor ${it.armor} · Resist ${it.resist}` : '',
               worn ? (sp => `Sample ${SAMPLE_WEARER.rank}-rank hunter in ${SAMPLE_WEARER.kit} gear: speed ${sp.bare} normally, ${sp.worn} with this equipped`)(wornSpeed({ ...it, weight: weightOf(it) }, rules())) : '',
               bonusText(it.bonus) && `Equipped: ${bonusText(it.bonus)}`, ...lines(it),
               ...(it.worn && worn ? describeStatus(it.worn, null, rules()).map(l => `In a fight: ${l}`) : []),
             ].filter(Boolean);
           },
-          blocked: () => fx.blocked() || (WORN.includes(type) && wornOn() && (wornFx.blocked() || wornKit.blocked())) || (WORN.includes(type) && activeOn() && (activeFx.blocked() || activeForm.blocked())),
+          blocked: () => !!diceError() || fx.blocked() || (WORN.includes(type) && wornOn() && (wornFx.blocked() || wornKit.blocked())) || (WORN.includes(type) && activeOn() && (activeFx.blocked() || activeForm.blocked())),
           save() {
             const form = formItem(), pick = iconRow.pick();
             if (pick) form.icon = pick;

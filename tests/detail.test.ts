@@ -57,6 +57,18 @@ describe('detailOf', () => {
     expect(detailOf({ kind: 'item', item }, RULES).lines).toEqual(['Shield: 10 + 20% of max HP']);
   });
 
+  test('a weapon says its amplified attack formula, and notes a fallback when lowered dice limits reject its saved dice', () => {
+    const hammer = { name: 'Frost Giant Hammer', rar: 'epic', grade: 1 as const, type: 'weapon', dice: '3d12', attack: 'strike' as const, twoHanded: true as const, desc: 'Heavy.' };
+    expect(detailOf({ kind: 'item', item: hammer }, RULES).lines[0]).toBe('Weapon attack: 3d12 + phys (two-handed).');
+    const dagger = { name: 'Knight Killer', rar: 'rare', grade: 1 as const, type: 'weapon', dice: '1d8', attack: 'strike' as const, finesse: true as const };
+    expect(detailOf({ kind: 'item', item: dagger }, RULES).lines[0]).toBe('Weapon attack: 1d8 + finesse (finesse).');
+    const tight = { ...RULES, dice: { ...RULES.dice, maxDice: 2 } };
+    expect(detailOf({ kind: 'item', item: hammer }, tight).lines.slice(0, 2)).toEqual([
+      'Weapon attack: 1d8 + phys (two-handed).',
+      'Dice "3d12" exceed current rules limits, so this weapon uses 1d8.',
+    ]);
+  });
+
   test('a zone says what its tone does, its rounds left, and its ops where the phone knows them', () => {
     expect(detailOf({ kind: 'zone', name: 'Fire', tone: 'harm', left: 3, ops: null, tier: 0 }, RULES)).toEqual({ title: 'Fire', about: 'Hurts whoever stands in it.', lines: ['3 rounds left.'] });
     expect(detailOf({ kind: 'zone', name: 'Fire', tone: 'harm', left: null, ops: BURNING.ops, tier: 1 }, RULES).lines).toEqual(opLines(BURNING.ops, 1, RULES));

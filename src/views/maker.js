@@ -65,9 +65,10 @@ function press(btn) {
 
 // ── the bonus fields ──
 /** An input for each bonus key (`BONUS_KEYS`: the eight stats, then the sheet's numbers), each empty when 0. */
-function bonus(values = {}) {
+function bonus(values = {}, o = {}) {
+  const lim = `${o.min !== undefined ? ` min="${esc(o.min)}"` : ''}${o.max !== undefined ? ` max="${esc(o.max)}"` : ''}`;
   return `<div class="mk-bonus" data-bonus-fields>${BONUS_KEYS.map(k => field(BONUS_LABEL[k],
-    `<input type="number" step="1" inputmode="numeric" data-bonus="${k}" placeholder="0" value="${values && Number(values[k]) ? esc(Math.trunc(Number(values[k]))) : ''}">`)).join('')}</div>`;
+    `<input type="number" step="1" inputmode="numeric"${lim} data-bonus="${k}" placeholder="0" value="${values && Number(values[k]) ? esc(Math.trunc(Number(values[k]))) : ''}">`)).join('')}</div>`;
 }
 /** What the bonus inputs under `root` hold: each whole number that is not 0. */
 function readBonus(root) {

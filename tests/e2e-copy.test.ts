@@ -728,7 +728,6 @@ export const ALLOWLIST: readonly AllowEntry[] = [
   { file: 'tests/e2e/kits.e2e.ts', chunk: 'When one inside it starts its turn', reason: 'Zone trigger line built from concatenated timing words in src/core/combat/effect-ops.ts.' },
   { file: 'tests/e2e/layout.e2e.ts', chunk: 'Kai · Longsword 1d8 = 6', reason: 'Dice feed entry combining test hunter Kai, weapon Longsword, and the rolled result.' },
   { file: 'tests/e2e/look.e2e.ts', chunk: 'Won a fight in The Drowned Cathedral of Saint Averno against 3 Goblins, Hobgoblin, Goblin Shaman, 2 Dire Wolves in 6 rounds, at 12% HP.', reason: 'Seeded chronicle log sentence with custom gate and monster names.' },
-  { file: 'tests/e2e/makers.e2e.ts', chunk: 'Shot (ranged) with 2d6', reason: 'Dynamic item summary joining ACTIVE_LABEL.shot, "with", and the weapon dice formula.' },
   { file: 'tests/e2e/makers.e2e.ts', chunk: 'Different values of title: 1, all time.', reason: 'Dynamic feat condition summary joining MEASURE_WORDS.distinct, field name, count, and window.' },
   { file: 'tests/e2e/map-extras.e2e.ts', chunk: 'Three Heads at', reason: 'Prefix of the omen landing template where "at" is too short to match with open holes.' },
   { file: 'tests/e2e/maps.e2e.ts', chunk: 'Leaves Healing light around the user for 2 rounds', reason: 'Dynamic zone summary joining "Leaves", zone name, placement phrase, and duration.' },

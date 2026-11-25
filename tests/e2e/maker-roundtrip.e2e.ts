@@ -15,6 +15,7 @@ import {
   WORST_IDENTITY,
   WORST_ITEM_BULWARK,
   WORST_ITEM_CONSUMABLE,
+  WORST_ITEM_FINESSE,
   WORST_ITEM_WORN,
   WORST_MAP,
   WORST_MONSTER_BOSS,
@@ -51,7 +52,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   await page.evaluate(f => hunterApp.store.update((d: any) => {
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
-    d.library.items.push(f.bulwark, f.worn, f.consumable);
+    d.library.items.push(f.bulwark, f.worn, f.finesse, f.consumable);
     d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.rewards.push(f.bundle);
@@ -64,6 +65,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     statusKits: WORST_STATUS_KITS,
     bulwark: WORST_ITEM_BULWARK,
     worn: WORST_ITEM_WORN,
+    finesse: WORST_ITEM_FINESSE,
     consumable: WORST_ITEM_CONSUMABLE,
     skillActive: WORST_SKILL_ACTIVE,
     skillReaction: WORST_SKILL_REACTION,
@@ -92,6 +94,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     { label: 'status (uncolored kits + long bounds + Reach most)', ws: 'status', id: 'rt-kits', overlay: '.fg-overlay', expected: WORST_STATUS_KITS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-kits']) },
     { label: 'item (Bulwark Ring active.name)', ws: 'item', id: WORST_ITEM_BULWARK.id, overlay: '.lf-overlay', expected: WORST_ITEM_BULWARK, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_BULWARK.id) },
     { label: 'item (worn weapon + worn icon/label + active)', ws: 'item', id: WORST_ITEM_WORN.id, overlay: '.lf-overlay', expected: WORST_ITEM_WORN, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_WORN.id) },
+    { label: 'item (finesse strike weapon with formula dice)', ws: 'item', id: WORST_ITEM_FINESSE.id, overlay: '.lf-overlay', expected: WORST_ITEM_FINESSE, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_FINESSE.id) },
     { label: 'item (consumable revive/rankCap/tell/target)', ws: 'item', id: WORST_ITEM_CONSUMABLE.id, overlay: '.lf-overlay', expected: WORST_ITEM_CONSUMABLE, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_CONSUMABLE.id) },
     { label: 'skill (active with null-duration zone + kits)', ws: 'skill', id: WORST_SKILL_ACTIVE.id, overlay: '.skm-overlay', expected: WORST_SKILL_ACTIVE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_ACTIVE.id) },
     { label: 'skill (reaction)', ws: 'skill', id: WORST_SKILL_REACTION.id, overlay: '.skm-overlay', expected: WORST_SKILL_REACTION, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_REACTION.id) },

@@ -76,6 +76,8 @@ export type Item = {
   weight?: number;
   desc: string; armor: number; resist: number;
   attack?: Attack;
+  /** Uses finesse power (`max(phys, agi finesse)`) instead of physical power alone; kept only on strike weapons (shots already use finesse). */
+  finesse?: true;
   /** Takes both hand slots (main hand and off hand); kept only on a weapon in the main-hand slot. */
   twoHanded?: true;
   effects?: Op[];
@@ -114,7 +116,7 @@ type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?:
  * orb or ring slot and a bonus; a consumable the ops it does when used. The rest is a thing to carry and sell.
  */
 export type ItemDef =
-  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; twoHanded?: true; bonus?: ItemBonus }
+  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; finesse?: true; twoHanded?: true; bonus?: ItemBonus }
   | Common & Powers & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
   | Common & Powers & { type: 'accessory'; slot: 'neck' | 'orb' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; rankCap?: true; tell?: true }
@@ -148,13 +150,12 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
     name: `Elixir of Life (${rank})`, rar, type: 'consumable', rankCap: true, effects: [heal(FULL_HEAL)],
     desc: `Fully restores HP. For hunters of rank ${rank} or lower.`,
   })),
-  { name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', desc: 'A plain iron dagger.' },
+  { name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, desc: 'A plain iron dagger.' },
   { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
   { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
-  // "Cruel to armored foes": 5 Lethality, 5 points of armor ignored on every hit (a resist is not armor). It was Rare+
-  // while the budget could not weigh the armor ignored (design 2.5); weighed (balance plan section 9: 0.66 points a point
-  // of Lethality at C), its d10, +2 Strength and 5 Lethality spend 2.6, under Rare−'s top.
-  { name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2, armorPenFlat: 5 }, desc: 'A dagger whose hits ignore 5 points of armor.' },
+  // "Cruel to armored foes": 5 Lethality (5 points of armor ignored on every hit; a resist is not armor) plus 1 Strength
+  // on a 1d8 finesse dagger spends 4.32 (0.0 weapon damage, 4.32 stats), inside Rare+'s 3.71 to 4.43.
+  { name: 'Knight Killer', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { str: 1, armorPenFlat: 5 }, desc: 'A finesse dagger that adds 1 Strength and ignores 5 points of armor.' },
   { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
   // raises up to, and its price `revivePrices` times that rank's `priceBase`. The GM tells the table how common they are; its use
@@ -204,18 +205,17 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
       ] }],
     },
   },
-  // Spellblade, Rare: the 1d8 is under a rare weapon's free die and refunds nothing (spend 0 on its own, as armor under its
-  // piece); the hit trigger `2 + 0.02 * str` is read on the build that favours Strength, at one hit a round (the trigger's
-  // rate, whatever the mark holds back): 3.43 against Rare's 3.10 to 3.71. The mark's stack has no rule worth reads.
-  // A GM tags a skill "spell" for it to ready the blade.
+  // Spellblade, Rare: 1d8 spends 0.0 weapon damage so the whole budget goes to its power; the hit trigger
+  // `1 + 0.005 * str` is read on the build that favours Strength at one hit a round: 3.58 against Rare's 3.10 to 3.71.
+  // The mark's stack has no rule worth reads. A GM tags a skill "spell" for it to ready the blade.
   {
     name: 'Spellblade', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
-    desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 2 + 2% of your Strength.',
+    desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 1 + 0.5% of your Strength.',
     worn: {
       label: 'Spellblade', desc: 'Using a spell adds bonus physical damage to your next hit.', ops: [],
       triggers: [
         { on: 'used', tag: tag('spell'), to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('spellblade-ready'), def: SPELLBLADE_READY, duration: null }] },
-        { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, need: { kind: 'holds', key: statusKey('spellblade-ready') }, ops: [{ op: 'damage', type: 'physical', amount: formula('2 + 0.02 * str'), when: 'use' }] },
+        { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, need: { kind: 'holds', key: statusKey('spellblade-ready') }, ops: [{ op: 'damage', type: 'physical', amount: formula('1 + 0.005 * str'), when: 'use' }] },
       ],
     },
   },
@@ -262,24 +262,24 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
 // map as dex Agility, con Vitality, int Power, wis Instinct, cha Presence; old max MP is a fifth as max mana.
 /** The items a gate's loot roll picks from by rarity (with the shop's stock). Priced by the rule unless they say otherwise. */
 export const LOOT_ITEMS: readonly ItemDef[] = [
-  { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
+  { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
   { name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
   { name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
   { name: 'Worn Hunter Boots', rar: 'common', grade: 1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
-  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 1 }, desc: 'A heavy cleaver that adds 1 Strength.' },
+  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '2d8', attack: 'strike', desc: 'A heavy cleaver built for raw damage.' },
   { name: 'Reinforced Hunter Vest', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
   { name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'light', icon: 'gauntlet', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
   { name: 'Mana Talisman', rar: 'uncommon', grade: 1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
   { name: 'Swift Runner Greaves', rar: 'uncommon', grade: -1, type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
-  { name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'strike', bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
+  { name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
   { name: "Ice Elf's Cloak", rar: 'rare', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
   { name: 'Mage Circlet', rar: 'rare', grade: 1, type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
   { name: "Baruka's Mana Ring", rar: 'rare', grade: 1, type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
-  { name: 'Frost Giant Hammer', rar: 'epic', grade: -1, type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', twoHanded: true, bonus: { str: 3 }, desc: 'A hammer with a head of ice. Adds 3 Strength.' },
+  { name: 'Frost Giant Hammer', rar: 'epic', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d12', attack: 'strike', twoHanded: true, desc: 'A massive two-handed hammer with a head of ice, built for raw damage.' },
   { name: "Knight's Aegis", rar: 'epic', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
   { name: 'Cloak of the Shadow Hunter', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
   { name: 'Helm of the Iron Knight', rar: 'epic', grade: -1, type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
-  { name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', twoHanded: true, bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
+  { name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', finesse: true, twoHanded: true, bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
   { name: 'Armor of the Black Knight', rar: 'legendary', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 3 }, desc: 'Heavy chest armor that adds 3 Vitality.' },
   { name: 'Orb of Avarice', rar: 'legendary', grade: 1, type: 'accessory', slot: 'orb', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb that adds 4 Power and 6 max mana.' },
   { name: 'Boots of Shadow Step', rar: 'legendary', grade: -1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 4 }, desc: 'Light boots that add 4 Agility.' },
@@ -390,9 +390,9 @@ export function wornSpeed(extra: GearPiece, R: DeriveRules): { bare: number; wor
   return { bare: speed(kit), worn: speed([...kit, extra]) };
 }
 
-/** A weapon's weight by its dice: 1 for one d4 or d6, 2 for one d8 to d12, 4 for two or more dice. */
+/** A weapon's weight by the first dice term in its formula: 1 for one d4 or d6, 2 for one d8 to d12, 4 for two or more dice. */
 export function weaponWeight(dice: string): number {
-  const m = /^(\d+)d(\d+)/.exec(dice);
+  const m = /(\d+)d(\d+)/.exec(dice);
   if (!m) return 1;
   return Number(m[1]) >= 2 ? 4 : Number(m[2]) <= 6 ? 1 : 2;
 }
@@ -409,7 +409,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
-      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def) };
+      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.finesse ? { finesse: true as const } : {}), ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def) };
     case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def) };
     case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.rankCap ? { rankCap: true } : {}), ...(def.tell ? { tell: true } : {}) };
@@ -419,7 +419,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
 
 // ── the one parser ──
 /** The bounds of every item, wherever it comes from. Weight is design 2.3's 0 to 50; an item does at most 12 things, as a status. */
-export const ITEM_BOUNDS = { name: 60, desc: 500, dice: 30, qty: 9999, value: 1e9, bonus: 999, weight: 50, armor: 999, resist: 999, effects: 12 } as const;
+export const ITEM_BOUNDS = { name: 60, desc: 500, dice: 120, qty: 9999, value: 1e9, bonus: 999, weight: 50, armor: 999, resist: 999, effects: 12 } as const;
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** A finite number cut to a whole one and clamped, or `d` when the value is not a number. */
@@ -444,6 +444,8 @@ export function parseItem(v: unknown): ItemTemplate | null {
   const B = ITEM_BOUNDS;
   const name = typeof v.name === 'string' ? v.name.trim().slice(0, B.name) : '';
   if (!name) return null;
+  // refuse an over-bound dice formula whole instead of cutting a valid expression into a broken or smaller one
+  if (typeof v.dice === 'string' && v.dice.trim().length > B.dice) return null;
   const bonus: ItemBonus = {};
   const rawBonus = isObj(v.bonus) ? v.bonus : {};
   for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
@@ -451,7 +453,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (oldPenFlat && bonus.armorPenFlat === undefined) bonus.armorPenFlat = oldPenFlat;
   const out: ItemTemplate = {
     name, rar: oneOf(v.rar, RARITIES, 'common'), type: oneOf(v.type, ITEM_TYPES, 'misc'), slot: oneOf(v.slot, SLOTS, null), qty: whole(v.qty, 1, B.qty, 1),
-    dice: text(v.dice, B.dice).trim(), bonus, desc: text(v.desc, B.desc),
+    dice: typeof v.dice === 'string' ? v.dice.trim() : '', bonus, desc: text(v.desc, B.desc),
     armor: whole(v.armor, 0, B.armor, 0), resist: whole(v.resist, 0, B.resist, 0),
   };
   // a price or weight that is not a number is the rule's (absent), a typed one kept inside its bound
@@ -462,6 +464,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (isIconKey(v.icon)) out.icon = v.icon;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
+  if (v.finesse === true && out.type === 'weapon' && out.attack !== 'shot') out.finesse = true;
   if (v.twoHanded === true && out.type === 'weapon' && out.slot === 'weapon') out.twoHanded = true;
   const effects = (Array.isArray(v.effects) ? v.effects : [])
     .flatMap(o => { const p = parseOp(o, RULES); return p && !(p.op === 'damage' && p.type === 'true') ? [p] : []; })
