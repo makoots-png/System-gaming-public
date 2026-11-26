@@ -842,3 +842,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T16:01Z	classes	PR 145 neon-fu-class merged (Neon follow-ups from its review of the Claude fallback units; CI 45852780310 8/8)
 2026-11-26T16:43Z	classes	PR 146 neon-fu-class2 merged (Neon answers Fable's post-merge review of PR 145; CI 45859268006 8/8)
 2026-11-26T18:07Z	balance	PR 147 Hemomancer balance pass merged (Neon, arena; solo rows 93.5/79.0/85.5/91.0 from 98.5/87.5/99.0/96.5; CI 45871675324 8/8)
+2026-11-26T19:06Z	act1	PR 148 Act 1 U1: scripted goblin chief/usher/head usher, filtered from spawnPool and solo spawns; unit 7404/0; CI 45879545580 8/8

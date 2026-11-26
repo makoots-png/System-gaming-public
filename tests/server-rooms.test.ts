@@ -256,6 +256,14 @@ describe('events', () => {
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'soloAnswer', payload: answer } })).status).toBe(200);
   });
 
+  test('a player cannot post capSet, and the GM can', async () => {
+    const { code, gm } = await newRoom();
+    const capEv = { eid: 'd-gm-cap1', to: [`${PLAYER}:h1`], cap: 'none' };
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'capSet', payload: capEv } })).toEqual({ status: 403, body: apiError('gmOnly') });
+    expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'capSet', payload: capEv } })).status).toBe(200);
+  });
+
   for (const [type, payload] of [['roll', roll], ['questUpdate', questUpdate], ['used', used], ['step', step], ['cast', cast], ['coinCall', coinCall], ['arm', arm], ['soloRun', soloRun], ['systemRaise', systemRaise]] as const) {
     test(`a player can send a ${type} event`, async () => {
       const { code } = await newRoom();

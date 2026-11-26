@@ -493,7 +493,7 @@ export function register(app) {
         const acts = !gm ? '' : [
           can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Mark as raiding</button>' : '',
           can(g, 'fightStarted') ? '<button type="button" data-act="encounter">Start fight</button>' : '',
-          g.classOffer && g.fought.length > 0 && !store.get().classOffer ? `<button type="button" data-act="class-offer">${esc(OFFER_WORDS.gmOpenButton)}</button>` : '',
+          g.classOffer && g.fought.length > 0 && !store.get().classOffer ? `<button type="button" data-act="class-offer">${esc(OFFER_WORDS.gmLiftAndOfferButton)}</button>` : '',
           can(g, 'clear') && g.preset.at !== 'paid' ? `<button type="button" data-act="preset">${esc(PRESET_WORDS.button)}</button>` : '',
           can(g, 'clear') ? '<button type="button" data-act="clear" class="primary">Clear gate</button>' : '',
           '<button type="button" data-act="edit">Edit</button>',
@@ -1009,7 +1009,7 @@ export function register(app) {
     /** @type {import('./ui.js').SystemAction[]} */
     const actions = [
       { label: 'Not yet', value: null, cancel: true },
-      ...(withOffer ? [{ label: OFFER_WORDS.gmOpenButton, value: 'offer' }] : []),
+      ...(withOffer ? [{ label: OFFER_WORDS.gmLiftAndOfferButton, value: 'offer' }] : []),
       { label: 'Mark gate cleared', value: 'clear', primary: true },
     ];
     const pick = await ui.system({ tag: '! Notification', kind: 'quest', title: 'Gate cleared?', body, actions });

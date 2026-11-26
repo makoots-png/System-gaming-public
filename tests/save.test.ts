@@ -258,6 +258,27 @@ describe('a current save', () => {
     const stored = { ...save, fight: { phase: 'running', rows: 'not rows' } } as unknown as Save;
     expect(repairSave(stored, env()).fight).toBeNull();
   });
+
+  test('old saves without capDisplay repair to null; valid capDisplay values round-trip and junk repairs to null', () => {
+    const oldSave: Raw = copy(samplePlayer());
+    delete oldSave.hunters[0].capDisplay;
+    const repaired = parseRaw(oldSave);
+    expect(repaired.hunters[0]!.capDisplay).toBeNull();
+
+    for (const valid of ['E', 'D', 'C', 'B', 'A', 'S', 'none', null] as const) {
+      const s: Raw = copy(samplePlayer());
+      s.hunters[0].capDisplay = valid;
+      expect(parseRaw(s).hunters[0]!.capDisplay).toBe(valid);
+      expect(parseSheetHunter(s.hunters[0])?.capDisplay).toBe(valid);
+    }
+
+    for (const junk of ['', 'X', 9, true, {}]) {
+      const s: Raw = copy(samplePlayer());
+      s.hunters[0].capDisplay = junk;
+      expect(parseRaw(s).hunters[0]!.capDisplay).toBeNull();
+      expect(parseSheetHunter(s.hunters[0])?.capDisplay).toBeNull();
+    }
+  });
 });
 
 describe('text that is not a save', () => {

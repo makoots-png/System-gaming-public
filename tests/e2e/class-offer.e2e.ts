@@ -59,7 +59,7 @@ test('starter Goblin Den first fight prompts Offer classes, local hunters claim 
 
     await expect(clearedDlg).toContainText(OFFER_WORDS.gatePromptNote);
     await expect(clearedDlg.locator('.sys-actions button.primary')).toHaveText('Mark gate cleared');
-    await clearedDlg.locator('.sys-actions button', { hasText: OFFER_WORDS.gmOpenButton }).tap();
+    await clearedDlg.locator('.sys-actions button', { hasText: OFFER_WORDS.gmLiftAndOfferButton }).tap();
     await expect(clearedDlg).toHaveCount(0);
   });
 
@@ -85,6 +85,11 @@ test('starter Goblin Den first fight prompts Offer classes, local hunters claim 
 
     await coModal.locator('[data-co-close-offer]').tap();
     await expect(coModal).toHaveCount(0);
+
+    // Combined Lift cap and offer classes set every local hunter's Status chip to Cap: none.
+    await go(gm, 'status');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toBeVisible();
+    await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: none');
 
     // GM panel still exposes Offer classes anytime.
     await go(gm, 'gm');
@@ -340,5 +345,72 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
     await expect(m.locator('[data-co-msg]')).toHaveText(pickRefusedLine('held', 'Seraph'), { timeout: 20_000 });
     await expect(m.locator('[data-co-picking]')).toHaveCount(0);
     await expect(m.locator('[data-co-pick="Seraph"]')).toBeEnabled();
+  });
+});
+
+test('capDisplay chip stays hidden on blank saves, updates via GM picker and rankLevels edits, and syncs to players via capSet', async ({ device }) => {
+  const gmDev = await device('gm-cap');
+  const p1Dev = await device('p1-cap', { viewport: SMALL_PHONE });
+  const gm = gmDev.page, p1 = p1Dev.page;
+
+  await onboardBlankGM(gm);
+  const code = await createRoom(gm);
+
+  await onboardPlayer(p1, 'Mira', code);
+  await dismissAll(p1);
+
+  await expect.poll(
+    () => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).map(r => r.data.name)),
+    { timeout: 20_000 },
+  ).toEqual(['Mira']);
+
+  await test.step('blank saves render no cap chip on either GM or player Status tab', async () => {
+    await go(gm, 'status');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toBeHidden();
+    await go(p1, 'status');
+    await expect(p1.locator('#view-status [data-cap-chip]')).toBeHidden();
+  });
+
+  await test.step('GM hunter editor picker sets Cap: 9 and a rankLevels edit updates the displayed number live', async () => {
+    const picker = gm.locator('#view-status [data-rawcap]');
+    await expect(picker).toBeVisible();
+    await picker.selectOption('E');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: 9');
+
+    await picker.selectOption('D');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: 19');
+
+    await picker.selectOption('E');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: 9');
+
+    // Edit rankLevels in GM Rules editor so D starts at level 12 -> E displays Cap: 11.
+    await go(gm, 'gm');
+    await openGmSection(gm, 'rules');
+    await gm.locator('#gm-r-text').fill('{"rankLevels":{"D":12}}');
+    await gm.locator('#gm-r-save').tap();
+
+    await go(gm, 'status');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: 11');
+  });
+
+  await test.step('GM Party board picker sends capSet to remote player and Lift cap and offer classes lifts the whole table', async () => {
+    await go(gm, 'gm');
+    await openGmSection(gm, 'party');
+    const remoteCard = gm.locator('#gm-board .gm-card.remote', { hasText: 'Mira' });
+    await expect(remoteCard).toBeVisible();
+    await remoteCard.locator('[data-gmcap]').selectOption('E');
+
+    await expect(p1.locator('#view-status [data-cap-chip]')).toHaveText('Cap: 9', { timeout: 20_000 });
+
+    // Trigger combined Lift cap and offer classes from a classOffer gate on the GM phone.
+    await gm.evaluate(() => {
+      hunterApp.api.classUi.openOffer('g1');
+    });
+    await expect(gm.locator('[data-co-modal]')).toBeVisible();
+    await expect(p1.locator('#view-status [data-cap-chip]')).toHaveText('Cap: none', { timeout: 20_000 });
+    await gm.locator('[data-co-close-offer]').tap();
+
+    await go(gm, 'status');
+    await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: none');
   });
 });

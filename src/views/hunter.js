@@ -14,7 +14,7 @@ import { AUTO_ALLOC_WORDS, JOB_NAMES, focusWeights, isJobName, jobFocus, matchin
 import {
   KEYSTONE_WORDS, keystoneAwakenedLine, keystoneConfirmLine, keystoneNextLine, keystoneShareAria, keystoneShareText, keystoneTierLabel,
 } from '../core/rules-text.ts';
-import { ALLOCATION_WORDS, allocated, available, hasPending, lower, plusPoint, raise, raiseMany, setPoints, setStat, takeAll, takenBack, undoableOn, undoableTotal } from '../core/hunter/progress.ts';
+import { ALLOCATION_WORDS, CAP_DISPLAY_CHOICES, CAP_DISPLAY_WORDS, allocated, available, capDisplayChip, capDisplayOptionLabel, hasPending, lower, parseCapDisplay, plusPoint, raise, raiseMany, setCapDisplay, setPoints, setStat, takeAll, takenBack, undoableOn, undoableTotal } from '../core/hunter/progress.ts';
 import { RESPEC_WORDS, confirmCostLine, confirmPoints, respecCost, respecRefusalWords, respecSaid, respecToast } from '../core/hunter/respec.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
@@ -74,6 +74,8 @@ const CSS = `
 .rest-row [data-rests-left]{margin:0}
 .reeval{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:13px;color:var(--gold);text-align:right}
 .reeval[hidden]{display:none}
+.cap-chip{display:inline-block;margin-top:4px;padding:1px 7px;border:1px solid var(--line-bright);background:rgba(17,42,70,.6);font-size:12px;color:var(--cyan);letter-spacing:.04em;white-space:nowrap}
+.cap-chip[hidden]{display:none}
 .death{border:1px solid var(--red);background:rgba(255,77,94,.08);padding:8px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .death[hidden]{display:none}
 .death b{color:#ff8a96;letter-spacing:.12em;text-transform:uppercase;font-size:13px}
@@ -533,7 +535,7 @@ export function register(app) {
           <div class="id-done"><button type="button" data-iddone>Done</button></div>
         </div>
         <div class="lv-block">
-          <div><div class="lv-tag">Level</div><div class="lv-num" data-lv>1</div></div>
+          <div><div class="lv-tag">Level</div><div class="lv-num" data-lv>1</div><div class="cap-chip" data-cap-chip hidden></div></div>
           <div class="xp-wrap">
             <div class="bar-head"><span class="lbl">Experience <span class="xp-pct" data-xppct>0%</span></span><span class="bar-nums" data-xpnums>0 / 100</span></div>
             <div class="bar bar-xp"><i data-xpbar></i></div>
@@ -655,6 +657,9 @@ export function register(app) {
     const sameHunter = shownHunter === h.id, levelled = sameHunter && shownLevel !== null && h.level > shownLevel;
     shownHunter = h.id; shownLevel = h.level;
     q('[data-lv]').textContent = h.level;
+    const capText = capDisplayChip(h.capDisplay, r), capEl = q('[data-cap-chip]');
+    capEl.hidden = !capText;
+    capEl.textContent = capText || '';
     if (levelled) { motion.pop(q('[data-lv]')); motion.burst('levelup', q('[data-lv]')); }
     if (app.api.identity) setHTML(q('[data-emb]'), app.api.identity.badge(h));
     setHTML(q('[data-rank]'), ui.rankBadge(h.rank));
@@ -1102,12 +1107,18 @@ export function register(app) {
 
   // ═══ Panel: GM raw edits ═══
   const RAW = [['level', 'Level', 1], ['xp', 'Current XP', 0], ['points', 'Ability points', 0], ['hpAdj', 'Max HP bonus', null], ['manaAdj', 'Max mana bonus', null], ['gold', 'Gold', 0], ['crystal', 'Mana crystal', 0]];
+  const capOptions = R => CAP_DISPLAY_CHOICES
+    .map(v => `<option value="${v === null ? '' : esc(v)}">${esc(capDisplayOptionLabel(v, R))}</option>`)
+    .join('');
   function rawRefresh(el) {
     const h = store.active();
     for (const [k] of RAW) setVal(el.querySelector(`[data-raw="${k}"]`), k === 'points' ? available(h, rules()) : h[k]);
     const put = allocated(h);
     for (const k of STAT_KEYS) setVal(el.querySelector(`[data-rawstat="${k}"]`), put[k]);
     setVal(el.querySelector('[data-rawrank]'), h.rank);
+    const capSel = el.querySelector('[data-rawcap]'), capHtml = capOptions(rules());
+    if (capSel && capSel.dataset.sig !== capHtml) { capSel.dataset.sig = capHtml; capSel.innerHTML = capHtml; }
+    setVal(capSel, h.capDisplay ?? '');
   }
   app.registerPanel({
     view: 'status', id: 'gm-edit', order: 35, title: 'GM: Edit hunter', gmOnly: true,
@@ -1116,6 +1127,7 @@ export function register(app) {
         ${RAW.map(([k, l]) => ui.field(l, `<input type="number" step="1" inputmode="numeric" data-raw="${k}">`)).join('')}
         ${STAT_KEYS.map(k => ui.field(`${STAT_SHORT[k]} (base)`, `<input type="number" step="1" min="1" inputmode="numeric" data-rawstat="${k}">`)).join('')}
         ${ui.field('Rank', `<select data-rawrank>${rules().rankLevels ? Object.keys(rules().rankLevels).map(r => `<option value="${r}">${r}</option>`).join('') : ''}</select>`)}
+        ${ui.field(CAP_DISPLAY_WORDS.label, `<select data-rawcap>${capOptions(rules())}</select>`)}
       </div><div class="bar-ctrl"><button type="button" data-raw-guild>${esc(GUILD_WORDS.button)}</button></div><p class="dv-note">Changes save immediately. Stat edits lock in right away and cannot be undone with the minus button.</p>`;
       el.addEventListener('click', e => {
         if (e.target.closest('[data-raw-guild]')) void app.api.guild.edit({ kind: 'local', hunterId: store.active().id }, null);
@@ -1124,7 +1136,8 @@ export function register(app) {
         const i = e.target, h = store.active(); let v = Math.trunc(Number(i.value));
         // a refused edit is told, and the fields are drawn again from the save
         const written = w => { if (!ui.wrote('! Hunter', w)) rawRefresh(el); };
-        if (i.dataset.rawrank) return written(onHunter(h.id, 'gm-edit', x => setRank(x, i.value)));
+        if ('rawcap' in i.dataset) return written(onHunter(h.id, 'gm-edit', x => setCapDisplay(x, parseCapDisplay(i.value))));
+        if ('rawrank' in i.dataset) return written(onHunter(h.id, 'gm-edit', x => setRank(x, i.value)));
         if (!Number.isFinite(v)) return rawRefresh(el);
         if (i.dataset.rawstat) return written(store.apply('gm-edit', atHunter(h.id, both(x => setStat(x, oneOf(i.dataset.rawstat, STAT_KEYS, 'str'), v), x => fitted(x, rules())))));
         const k = i.dataset.raw, R = rules();

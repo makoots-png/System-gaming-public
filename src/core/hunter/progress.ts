@@ -13,8 +13,8 @@
 //
 // A view changes these fields only through a function here (or respec.ts `confirmPoints`), in `store.apply` (src/core/save-step.ts).
 // The save repair reads a stored hunter's fields in src/core/save.ts.
-import { xpToNext } from '../rules.ts';
-import type { Rules } from '../rules.ts';
+import { RANKS, xpToNext } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import type { Role } from '../role.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -343,3 +343,87 @@ export const ALLOCATION_WORDS: { readonly [W in 'no-points' | 'nothing-spent' | 
   'nothing-spent': 'No spent points to take back on this stat.',
   'at-min': `A stat goes no lower than ${STAT_MIN}.`,
 };
+
+// ── display-only level cap chip (`capDisplay`): never enforced in `gainXp`, derived live from `RULES.rankLevels` ──
+
+/**
+ * What a hunter's Status window shows for its level cap: a `Rank` (`E`..`S`, derived live from `RULES.rankLevels`),
+ * `'none'` (`Cap: none`), or `null` (hidden, no chip rendered; default for blank campaigns and old saves).
+ * Display-only: `gainXp` never reads it, and `level.ts` stays the sole bound on levels.
+ */
+export type CapDisplay = Rank | 'none' | null;
+/** Ranks offered in the GM's Cap display picker (each caps one level below the next rank's threshold). */
+export const CAP_DISPLAY_RANKS = ['E', 'D', 'C', 'B', 'A'] as const;
+/** Ordered picker choices for the GM's Cap display select (`Hidden`, `E`..`A`, `None`). */
+export const CAP_DISPLAY_CHOICES: readonly CapDisplay[] = [null, ...CAP_DISPLAY_RANKS, 'none'];
+/** Every non-null value stored in `hunter.capDisplay`. */
+export const CAP_DISPLAY_VALUES = [...RANKS, 'none'] as const;
+
+/** Parses a stored or UI `capDisplay` value: a `Rank`, `'none'`, or `null` for anything else (including `''` or missing). */
+export const parseCapDisplay = (value: unknown): CapDisplay => {
+  if (value === 'none') return 'none';
+  if (typeof value === 'string' && (RANKS as readonly string[]).includes(value)) return value as Rank;
+  return null;
+};
+
+/** Strict wire parser for `capSet`: accepts `null`, `'none'`, or a `Rank`, and returns `undefined` for any invalid input. */
+export const parseCapDisplayStrict = (value: unknown): CapDisplay | undefined => {
+  if (value === null) return null;
+  if (value === 'none') return 'none';
+  if (typeof value === 'string' && (RANKS as readonly string[]).includes(value)) return value as Rank;
+  return undefined;
+};
+
+/**
+ * The numeric cap displayed for `cap` under `R.rankLevels`, or `null` when hidden (`null`) or uncapped (`'none'` or `'S'`).
+ * Derived live from the next rank's threshold minus one (at least `MIN_LEVEL`), so edits to `rankLevels` update immediately.
+ */
+export function capDisplayLevel(cap: CapDisplay, R: Pick<Rules, 'rankLevels'>): number | null {
+  if (cap === null || cap === 'none') return null;
+  const i = RANKS.indexOf(cap);
+  if (i < 0 || i + 1 >= RANKS.length) return null;
+  const nextRank = RANKS[i + 1]!;
+  return Math.max(MIN_LEVEL, R.rankLevels[nextRank] - 1);
+}
+
+/** The Status tab cap chip text for `cap` under `R.rankLevels`, or `null` when hidden (`cap === null`). */
+export function capDisplayChip(cap: CapDisplay, R: Pick<Rules, 'rankLevels'>): string | null {
+  if (cap === null) return null;
+  const n = capDisplayLevel(cap, R);
+  return n === null ? 'Cap: none' : `Cap: ${n}`;
+}
+
+/** Option label for the GM's Cap display picker (`Hidden`, `E (Cap: 9)`, ..., `None (Cap: none)`). */
+export function capDisplayOptionLabel(cap: CapDisplay, R: Pick<Rules, 'rankLevels'>): string {
+  if (cap === null) return CAP_DISPLAY_WORDS.hiddenOption;
+  if (cap === 'none') return CAP_DISPLAY_WORDS.noneOption;
+  const chip = capDisplayChip(cap, R);
+  return chip ? `${cap} (${chip})` : cap;
+}
+
+/** Plain-English copy for the Cap display controls (voice.md compliant). */
+export const CAP_DISPLAY_WORDS = {
+  label: 'Cap display',
+  hiddenOption: 'Hidden',
+  noneOption: 'None (Cap: none)',
+  chipNone: 'Cap: none',
+  updated: (name: string, chip: string | null): string => (chip ? `Set ${name} to ${chip}.` : `Hid the cap display for ${name}.`),
+  sent: (name: string, chip: string | null): string => (chip ? `Sent ${chip} to ${name}.` : `Sent hidden cap display to ${name}.`),
+  savedSync: (name: string, chip: string | null): string => (chip
+    ? `Saved. ${name} will get ${chip} once the room server confirms it.`
+    : `Saved. ${name}'s cap display will hide once the room server confirms it.`),
+} as const;
+
+/**
+ * The sole writer of a hunter's display-only `capDisplay`. Never enforced inside `gainXp`.
+ * When `opts.onlyIfNull` is true and the hunter already has a non-null `capDisplay`, returns the hunter unchanged.
+ */
+export function setCapDisplay<H extends { readonly capDisplay: CapDisplay }>(
+  h: H,
+  cap: CapDisplay,
+  opts?: { readonly onlyIfNull?: boolean },
+): H {
+  if (opts?.onlyIfNull && h.capDisplay !== null) return h;
+  if (h.capDisplay === cap) return h;
+  return { ...h, capDisplay: cap };
+}

@@ -5,7 +5,8 @@
 import { parseSaveId, parseSheetKey } from '../ids.ts';
 import type { EventId, GateId, HunterId, RoomCode, SheetKey } from '../ids.ts';
 import { newEvent } from '../protocol.ts';
-import type { ClassOfferDoc, ClassOfferTaken, ClassPickRefusal } from '../protocol.ts';
+import type { ClassOfferDoc, ClassOfferTaken, ClassPickRefusal, EventStamp } from '../protocol.ts';
+import { setCapDisplay } from './progress.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import type { Rules } from '../rules.ts';
 import type { Hunter, Save } from '../save.ts';
@@ -43,6 +44,8 @@ const makeOfferId = (seq: number, at: string): string => `co${seq}-${stamp36(at)
 /**
  * Opens (or replaces) the GM's unique-class offer in one atomic save step.
  * Clears `classOffer` on `gateId` (when opened from a gate) so the starter prompt does not repeat.
+ * When `liftCap` is true (defaulting to `Boolean(opts.gateId)`), also sets `capDisplay: 'none'` on every local hunter
+ * and queues a single `capSet` room event for `remoteKeys` in the same write.
  */
 export function openClassOffer(
   save: Save,
@@ -53,8 +56,11 @@ export function openClassOffer(
     readonly pool?: readonly UniqueClassName[];
     readonly hunters?: readonly string[];
     readonly gateId?: GateId | null;
+    readonly liftCap?: boolean;
+    readonly remoteKeys?: readonly SheetKey[];
+    readonly stamp?: EventStamp | null;
   },
-): { readonly save: Save; readonly offer: ClassOffer } {
+): { readonly save: Save; readonly offer: ClassOffer; readonly capPosted: boolean } {
   const nextSeq = save.seq + 1;
   const rawPool = opts.pool && opts.pool.length ? opts.pool : WAVE1_OFFER_POOL;
   const pool: UniqueClassName[] = [];
@@ -76,15 +82,32 @@ export function openClassOffer(
     pool: finalPool,
     hunters,
   };
+  const shouldLift = opts.liftCap ?? Boolean(opts.gateId);
+  const nextHunters = shouldLift ? save.hunters.map(h => setCapDisplay(h, 'none')) : save.hunters;
   const gates = opts.gateId
     ? save.gates.map(g => (g.id === opts.gateId && g.classOffer ? { ...g, classOffer: false } : g))
     : save.gates.map(g => (g.classOffer && g.fought.length > 0 ? { ...g, classOffer: false } : g));
-  const s = told(
-    { ...save, seq: nextSeq, gates, classOffer: offer },
+  let s = told(
+    { ...save, seq: nextSeq, hunters: nextHunters, gates, classOffer: offer },
     { at: opts.at, cap: opts.R.logCap },
-    { kind: 'system', hunterId: null, title: 'Class offer opened', text: `Offered ${finalPool.join(', ')}.` },
+    {
+      kind: 'system',
+      hunterId: null,
+      title: shouldLift ? 'Cap lifted and class offer opened' : 'Class offer opened',
+      text: shouldLift ? `Set Cap: none for the table and offered ${finalPool.join(', ')}.` : `Offered ${finalPool.join(', ')}.`,
+    },
   );
-  return { save: s, offer };
+  let capPosted = false;
+  if (shouldLift && opts.room && opts.stamp && opts.remoteKeys && opts.remoteKeys.length > 0) {
+    const to = [...new Set(opts.remoteKeys)];
+    const ev = newEvent('capSet', { to, cap: 'none' }, opts.stamp);
+    if (ev) {
+      const room = opts.room;
+      s = atOutbox(box => post(box, room, { kind: 'event', event: ev }, null).box)(s);
+      capPosted = true;
+    }
+  }
+  return { save: s, offer, capPosted };
 }
 
 /** Closes the GM's active unique-class offer in one atomic save step. */
@@ -318,6 +341,7 @@ export const OFFER_WORDS = {
   pickedBadge: 'Your class',
   alreadyPickedLine: (cls: string): string => `You hold ${cls}.`,
   gmOpenButton: 'Offer classes',
+  gmLiftAndOfferButton: 'Lift cap and offer classes',
   gmManageButton: 'Manage class offer',
   gmCloseButton: 'Close offer',
   gmOfferOpenBadge: 'Offer open',
@@ -327,11 +351,12 @@ export const OFFER_WORDS = {
   gmOfferRoomHint: 'Players in the room can pick one open class on their phones. You can also claim a class for a local hunter below, or release and reassign classes in the registry.',
   gmOfferLocalHint: 'Select a local hunter and pick one unique class for them. Only one hunter can hold each class.',
   gmOpenedToast: 'Class offer is open.',
+  gmLiftAndOpenedToast: 'Cap lifted and class offer is open.',
   gmClosedToast: 'Class offer closed.',
   gmPlayerClaimedToast: (who: string, cls: string): string => `${who} claimed ${cls}.`,
   playerBannerTitle: 'Class offer is open',
   playerBannerAction: 'Pick a class',
-  gatePromptNote: 'A carved altar awaits. Tap Offer classes to let each hunter pick a unique class, or mark the gate cleared.',
+  gatePromptNote: 'This gate grants a unique-class offer. Tap Lift cap and offer classes so each hunter can pick one class, or tap Mark gate cleared.',
   releasedNotice: (cls: string): string => `The GM released ${cls}. Pick a class.`,
   sendFailed: 'Could not send your class pick to the room. Try again.',
 } as const;

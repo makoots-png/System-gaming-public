@@ -228,6 +228,41 @@ describe('classOfferDocOf, DOCS.classOffer, classOfferFor & wire redaction', () 
     const otherRoom: Save = { ...sOpen, settings: { ...sOpen.settings, sync: { ...sOpen.settings.sync, room: room('ZZZZZZ') } } };
     expect(classOfferDocOf(otherRoom, AT)).toEqual({ active: false, at: AT });
   });
+
+  test('combined Lift cap and offer classes atomically sets capDisplay to none for local hunters and queues capSet for remote hunters', () => {
+    const s0 = gmSave();
+    const den = s0.gates.find(g => g.name === 'Goblin Den')!;
+    const capped: Save = {
+      ...s0,
+      hunters: s0.hunters.map(h => ({ ...h, capDisplay: 'E' as const })),
+    };
+
+    // Opening from GM panel (no gateId, no liftCap) leaves capDisplay untouched and posts no capSet.
+    const plain = openClassOffer(capped, { at: AT, room: ROOM, R: RULES, remoteKeys: [MIRA_KEY, KAEL_KEY], stamp: nextStamp() });
+    expect(plain.capPosted).toBe(false);
+    expect(plain.save.hunters.every(h => h.capDisplay === 'E')).toBe(true);
+    expect((plain.save.settings.sync.outbox ?? []).some(e => e.letter.kind === 'event' && e.letter.event.type === 'capSet')).toBe(false);
+
+    // Opening from a gate (gateId set) atomically sets local hunters to 'none' and queues one capSet for remote hunters.
+    const lifted = openClassOffer(capped, {
+      at: AT,
+      room: ROOM,
+      R: RULES,
+      gateId: den.id,
+      remoteKeys: [MIRA_KEY, KAEL_KEY, MIRA_KEY],
+      stamp: nextStamp(),
+    });
+    expect(lifted.capPosted).toBe(true);
+    expect(lifted.save.classOffer?.id).toBe(lifted.offer.id);
+    expect(lifted.save.hunters.every(h => h.capDisplay === 'none')).toBe(true);
+    const capEvents = (lifted.save.settings.sync.outbox ?? []).filter(e => e.letter.kind === 'event' && e.letter.event.type === 'capSet');
+    expect(capEvents).toHaveLength(1);
+    const ev = capEvents[0]!.letter;
+    expect(ev.kind === 'event' && ev.event.type === 'capSet' ? ev.event.payload : null).toMatchObject({
+      to: [MIRA_KEY, KAEL_KEY],
+      cap: 'none',
+    });
+  });
 });
 
 describe('pickClassFromOffer: races, 4+ Epics, 7th all-taken, stat fit, and copy', () => {

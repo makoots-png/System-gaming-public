@@ -19,6 +19,8 @@ import { RAISES } from './hunter/revive-standing.ts';
 import type { Raise } from './hunter/revive-standing.ts';
 import { GUILD_ARCHETYPES, parseGuild } from './hunter/guild.ts';
 import type { GuildMembership } from './hunter/guild.ts';
+import { parseCapDisplayStrict } from './hunter/progress.ts';
+import type { CapDisplay } from './hunter/progress.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
 import { RANKS, RULES, SOLO_BOUNDS, domainOf } from './rules.ts';
@@ -513,6 +515,12 @@ export type WordPayload = Base & { by: SheetKey; name: string; text: string };
 export type WordBackPayload = Base & { to: [SheetKey]; re: EventId; text: string };
 /** The GM assigns, updates, or removes a player hunter's guild membership (sealed to the GM and that hunter's phone). */
 export type GuildPayload = Base & { to: [SheetKey]; guild: GuildMembership | null };
+/**
+ * The GM sets a hunter's display-only level cap chip (`capDisplay`: a `Rank`, `'none'`, or `null` to hide it).
+ * When `onlyIfNull` is true, hunters that already hold a non-null `capDisplay` stay unchanged. Sealed to the GM and
+ * the hunters it names.
+ */
+export type CapSetPayload = Base & { to: SheetKey[]; cap: CapDisplay; onlyIfNull?: true };
 /** The GM grants a unique Epic or Mythic class to a player hunter (sealed to the GM and that hunter's phone). */
 export type ClassGrantPayload = Base & { to: [SheetKey]; className: UniqueClassName; at: string };
 /** The GM revokes a unique Epic or Mythic class from a player hunter (sealed to the GM and that hunter's phone). */
@@ -557,7 +565,7 @@ type Payloads = {
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; dodge: DodgePayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
-  systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
+  systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload; capSet: CapSetPayload;
   classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload; classPick: ClassPickPayload;
   classPickRefused: ClassPickRefusedPayload; classGrantRefused: ClassGrantRefusedPayload;
 };
@@ -769,6 +777,12 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     if (raw === null) return { ...base(o), to: [to[0]!], guild: null };
     return { ...base(o), to: [to[0]!], guild: need(parseGuild(raw)) };
   } },
+  capSet: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
+    const cap = parseCapDisplayStrict(own(o, 'cap'));
+    if (cap === undefined) return refuse();
+    const onlyIfNull = opt(own(o, 'onlyIfNull'), bool, false);
+    return { ...base(o), to: toList(own(o, 'to')), cap, ...(onlyIfNull ? { onlyIfNull: true as const } : {}) };
+  } },
   classGrant: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to')), cls = own(o, 'className');
     if (to.length !== 1 || !isUniqueClass(cls)) return refuse();
@@ -857,7 +871,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
-  systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
+  systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'), capSet: entry('capSet'),
   classGrant: entry('classGrant'), classRevoke: entry('classRevoke'), classSwap: entry('classSwap'), classNode: entry('classNode'), classPick: entry('classPick'),
   classPickRefused: entry('classPickRefused'), classGrantRefused: entry('classGrantRefused'),
 };

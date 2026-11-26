@@ -890,14 +890,26 @@ export function register(app) {
     const room = app.seat() === 'gm' ? A().sync.room() : null;
     const cur = store.get().classOffer;
     if (!cur || cur.room !== room) {
-      const w = store.apply('class-offer-open', s => openClassOffer(s, {
-        at: new Date().toISOString(),
-        room,
-        R: app.rules(),
-        gateId: gateId ?? null,
-      }).save);
+      const liftCap = Boolean(gateId);
+      const remoteKeys = liftCap && room ? A().sync.remoteSheets().map(r => r.key) : [];
+      const stamp = liftCap && room && remoteKeys.length ? A().sync.stamp() : null;
+      const out = { capPosted: false };
+      const w = store.apply('class-offer-open', s => {
+        const r = openClassOffer(s, {
+          at: new Date().toISOString(),
+          room,
+          R: app.rules(),
+          gateId: gateId ?? null,
+          liftCap,
+          remoteKeys,
+          stamp,
+        });
+        out.capPosted = r.capPosted;
+        return r.save;
+      });
       if (!ui.wrote('GM', w)) return;
-      ui.toast('GM', OFFER_WORDS.gmOpenedToast, { kind: 'good' });
+      if (out.capPosted && room) A().sync.flush();
+      ui.toast('GM', liftCap ? OFFER_WORDS.gmLiftAndOpenedToast : OFFER_WORDS.gmOpenedToast, { kind: 'good' });
     }
     offerUi.notice = '';
     openOfferModal('gm');

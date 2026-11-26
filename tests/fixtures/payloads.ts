@@ -180,6 +180,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], guild: { archetype: 'ironwake', standing: 'core', name: 'Ironwake Watch', goldCut: 0.2 } },
     { eid: EID, to: [KEY], guild: { archetype: 'ironwake', standing: 'core', name: 'Ironwake Watch', goldCut: 0.2 } },
   ],
+  capSet: [
+    { eid: EID, to: [KEY], cap: 'E', onlyIfNull: true },
+    { eid: EID, to: [KEY], cap: 'E', onlyIfNull: true },
+  ],
   classGrant: [
     { eid: EID, to: [KEY], className: 'Hemomancer', at: '2026-11-25T12:00:00.000Z' },
     { eid: EID, to: [KEY], className: 'Hemomancer', at: '2026-11-25T12:00:00.000Z' },

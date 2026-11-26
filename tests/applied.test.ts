@@ -170,6 +170,37 @@ describe('the GM\'s table weight reaches a player\'s phone', () => {
   });
 });
 
+describe('a capSet the GM sends to a player\'s phone', () => {
+  test('sets capDisplay silently once by its id and respects onlyIfNull', () => {
+    const p = phone();
+    expect(p.hunter.capDisplay).toBeNull();
+
+    p.receive(1, 'capSet', { to: ['d-player1:h1'], cap: 'E', onlyIfNull: true });
+    expect(p.hunter.capDisplay).toBe('E');
+    expect([p.windows, p.toasts]).toEqual([[], []]);
+
+    // onlyIfNull does not overwrite an existing capDisplay
+    p.receive(2, 'capSet', { to: ['d-player1:h1'], cap: 'D', onlyIfNull: true });
+    expect(p.hunter.capDisplay).toBe('E');
+
+    // unconditional lift sets 'none'
+    p.receive(3, 'capSet', { to: ['d-player1:h1'], cap: 'none' });
+    expect(p.hunter.capDisplay).toBe('none');
+
+    // replaying an old eid after a later change does not overwrite
+    p.receive(1, 'capSet', { to: ['d-player1:h1'], cap: 'E', onlyIfNull: true });
+    expect(p.hunter.capDisplay).toBe('none');
+    expect(p.applied).toEqual([e(1), e(2), e(3)]);
+    expect([p.windows, p.toasts]).toEqual([[], []]);
+  });
+
+  test('a capSet for another phone\'s hunter writes nothing here', () => {
+    const p = phone();
+    p.receive(1, 'capSet', { to: ['d-player2:h1'], cap: 'E' });
+    expect([p.hunter.capDisplay, p.applied]).toEqual([null, []]);
+  });
+});
+
 describe('a status the GM sends to a player\'s phone', () => {
   test('a weaker Burning does not replace a stronger one: the hunter keeps the C-rank source', () => {
     const p = phone({ conditions: [burning(2, 2)] });

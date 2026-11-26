@@ -53,7 +53,7 @@ export { RANKS };
 export type { Rank };
 import { newRewards, parseBundle } from './rewards.ts';
 import type { RewardBundle, Rewards } from './rewards.ts';
-import type { Progress } from './hunter/progress.ts';
+import type { CapDisplay, Progress } from './hunter/progress.ts';
 import { isStateChip } from './hunter/chips.ts';
 import { parseAsked } from './sync/asked.ts';
 import { parseStashAsk } from './trade/goods.ts';
@@ -113,6 +113,8 @@ export type LogKind = (typeof LOG_KINDS)[number];
 export type { StatusDef };
 /** A hunter's earned class locker and campaign unique-class registry types. */
 export type { ClassEntry, ClassHolder, ClassHolders, ClassLocker, ClassOffer };
+/** A hunter's display-only level cap chip value (`Rank | 'none' | null`): src/core/hunter/progress.ts. */
+export type { CapDisplay };
 /** A hunter and what it holds (quests, titles, boons, shadows, loadouts), its defaults and its repair: src/core/hunter/hunter.ts. */
 export {
   QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, jobOf, newBoon, newEquipped, newHunter, newLoadout, newQuest, newShadow, newStats,

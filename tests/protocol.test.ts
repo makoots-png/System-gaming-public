@@ -211,12 +211,12 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
+    expect(gmOnly).toEqual(['award', 'capSet', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
@@ -354,6 +354,33 @@ describe('a System window', () => {
     expect(payload('system', { ...valid('system'), to: ['no colon', 5, KEY] })!.to).toEqual([KEY]);
     expect(payload('system', { ...valid('system'), to: [] })).toBeNull();
     expect(payload('system', { ...valid('system'), to: KEY })).toBeNull();
+  });
+});
+
+describe('a capSet message', () => {
+  test('accepts a rank, none, or null, optional onlyIfNull, and refuses invalid caps or empty targets', () => {
+    expect(payload('capSet', { eid: EID, to: [KEY], cap: 'E' })).toEqual({ eid: EID, to: [KEY], cap: 'E' });
+    expect(payload('capSet', { eid: EID, to: [KEY, OTHER], cap: 'none' })).toEqual({ eid: EID, to: [KEY, OTHER], cap: 'none' });
+    expect(payload('capSet', { eid: EID, to: [KEY], cap: null })).toEqual({ eid: EID, to: [KEY], cap: null });
+    expect(payload('capSet', { eid: EID, to: [KEY], cap: 'E', onlyIfNull: true })).toEqual({ eid: EID, to: [KEY], cap: 'E', onlyIfNull: true });
+    expect(payload('capSet', { eid: EID, to: [KEY], cap: 'E', onlyIfNull: false })).toEqual({ eid: EID, to: [KEY], cap: 'E' });
+
+    for (const badCap of [undefined, '', 'X', 9, true, {}]) {
+      expect(payload('capSet', { eid: EID, to: [KEY], cap: badCap })).toBeNull();
+    }
+    expect(payload('capSet', { eid: EID, to: [], cap: 'none' })).toBeNull();
+    expect(payload('capSet', { eid: EID, to: [KEY], cap: 'E', onlyIfNull: 'yes' })).toBeNull();
+  });
+
+  test('is GM-only and sealed to the GM and named recipients, and sheet sync preserves capDisplay while hunterFace omits it', () => {
+    expect(EVENTS.capSet.gmOnly).toBe(true);
+    expect(EVENTS.capSet.ownSheet).toBe(false);
+    const ev = parseEvent('capSet', { eid: EID, to: [KEY], cap: 'none' })!;
+    expect(isSealed(ev)).toBe(true);
+    const h = { ...copy(newHunter()), name: 'Kai', capDisplay: 'E' as const };
+    const pushed = parseSheet(KEY as SheetKey, { hunter: h });
+    expect(pushed && 'hunter' in pushed ? pushed.hunter.capDisplay : null).toBe('E');
+    expect('capDisplay' in hunterFace(h, { bags: false }).face).toBe(false);
   });
 });
 

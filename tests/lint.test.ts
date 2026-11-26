@@ -3200,3 +3200,31 @@ test('all 36 built-in class names are disjoint from keystones, built-in items, a
   ];
   expect(itemNames.filter(n => classes.has(norm(n))), 'no class name collides with a built-in item').toEqual([]);
 });
+
+test('only src/core/hunter/progress.ts (and hunter.ts defaults/repair) writes hunter.capDisplay', async () => {
+  const owners = new Set(['src/core/hunter/progress.ts', 'src/core/hunter/hunter.ts']);
+  const stripComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
+  const write = /[\w$)\]!]\.capDisplay\s*(?:=(?![=>])|\?\?=|\|\|=)|\{\s*\.\.\.[^,{}]*,[^{}]*(?<![.\w$])capDisplay\s*[:,}]/g;
+  const hasWrite = (s: string): boolean => { write.lastIndex = 0; return write.test(s); };
+  for (const bad of [
+    'h.capDisplay = "none";',
+    'return { ...h, capDisplay: "E" };',
+  ]) expect(hasWrite(bad), `catches ${bad}`).toBe(true);
+  expect(hasWrite('const c = h.capDisplay;'), 'allows read').toBe(false);
+  const files = (await readdir(`${ROOT}/src`, { recursive: true }))
+    .filter(n => /\.(ts|js)$/.test(n))
+    .sort()
+    .map(n => `src/${n}`);
+  const hits: Line[] = [];
+  for (const file of files) {
+    if (owners.has(file)) continue;
+    const cleaned = stripComments(await Bun.file(`${ROOT}/${file}`).text());
+    write.lastIndex = 0;
+    for (const m of cleaned.matchAll(write)) {
+      const line = cleaned.slice(0, m.index).split('\n').length;
+      hits.push({ file, line, text: m[0].replace(/\s+/g, ' ').trim() });
+    }
+  }
+  expect(report(hits), 'write hunter.capDisplay only through setCapDisplay in src/core/hunter/progress.ts').toEqual([]);
+});

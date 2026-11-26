@@ -28,6 +28,7 @@ import { record } from '../core/hunter/chronicle.ts';
 import { chapterLanded, whoseLine } from '../core/story/story.ts';
 import { weightHeard } from '../core/table-weight.ts';
 import { GUILD_WORDS, guildStep } from '../core/hunter/guild.ts';
+import { setCapDisplay } from '../core/hunter/progress.ts';
 import type { ChapterGiven } from '../core/story/story.ts';
 import { deviceOf, hunterIdOf } from '../core/protocol.ts';
 import { rewardLines } from '../core/rewards.ts';
@@ -221,6 +222,11 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
       return { save: r.save, tell: () => app.toast('! Guild', GUILD_WORDS.playerToast(p.guild), { kind: 'info' }) };
     });
   } },
+  // the GM set or lifted this phone's hunter's display-only level cap chip (hunter/progress.ts `setCapDisplay`); silent
+  capSet: { once: true, land: (p, hids) => save => forEach(save, hids, (s, h) => ({
+    save: withHunter(s, setCapDisplay(h, p.cap, p.onlyIfNull ? { onlyIfNull: true } : undefined)),
+    tell: nothing,
+  })) },
   // unique class grants and revokes converge level-triggered from `DOCS.holders` in sync.ts `release()`
   classGrant: HOLDERS_DOC_READS,
   classRevoke: HOLDERS_DOC_READS,

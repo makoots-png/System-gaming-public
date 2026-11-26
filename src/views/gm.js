@@ -5,6 +5,7 @@ import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef, ofLife } from '../core/hunter/chips.ts';
 import { RAISE_CHIPS, debtChip, debtStep, paysDebt } from '../core/hunter/revive-standing.ts';
 import { GUILD_WORDS, clearPreviewLine, guildChip, guildGoldStep, takesGuildCut } from '../core/hunter/guild.ts';
+import { CAP_DISPLAY_CHOICES, CAP_DISPLAY_WORDS, capDisplayChip, capDisplayOptionLabel, parseCapDisplay, setCapDisplay } from '../core/hunter/progress.ts';
 import { gmSource } from '../core/effects.ts';
 import { playerHeld } from '../core/combat/fight-save.ts';
 import { parseSheetKey, sheetKeyOf } from '../core/ids.ts';
@@ -29,7 +30,7 @@ import { DEFAULT_GRIEVOUS_PCT, GRIEVOUS_MIN, grievousCapPct, grievousCutOf, hasT
 import { BUILT_IN_ABILITY_DAMAGE_ROWS, DAMAGING_STATUS_KEYS, DEFAULT_ATTACK_ROWS, KEYSTONE_DAMAGE_ROWS, isShippedStatusDef, statusDamageTypeOf, statusWithDamageType } from '../core/registry/damage-catalog.ts';
 import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { removeStatus, saveStatus } from '../core/library.ts';
-import { atLibrary } from '../core/save-step.ts';
+import { atHunter, atLibrary } from '../core/save-step.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
 import { BLANK_DRAFT, awardKeepsPending, awardSaid, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
 import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingEdited, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
@@ -196,6 +197,7 @@ export function register(app) {
 .gm-chip.pen[data-life-at]{border-color:var(--life);color:var(--life)}.gm-chip.pen[data-life-at=dead]{background:rgba(255,77,94,.16)}
 .gm-chip.ok{border-color:var(--green);color:var(--green)}
 .gm-hp{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.gm-cap{margin-top:6px;display:flex;align-items:center;gap:8px}.gm-cap .lbl{margin:0;white-space:nowrap}.gm-cap select{flex:1 1 0;min-width:0;min-height:40px}
 .gm-hp-lbl{flex:1 1 100%;margin-bottom:-2px}
 .gm-hp button{flex:1 1 44px;min-height:40px}
 .gm-hp [data-grevive]{flex:1 0 auto;padding-inline:14px} /* the life's one action keeps its whole word on a 390 px phone */
@@ -280,6 +282,11 @@ export function register(app) {
     const ladder = life && life.at === 'dead' && RAISE_CHIPS[h.reviveLeft] ? `<span class="gm-chip" data-raise-chip>${esc(RAISE_CHIPS[h.reviveLeft])}</span>` : '';
     const debtTag = debtChip(h.debt), debt = debtTag ? `<span class="gm-chip pen" data-debt-chip>${esc(debtTag)}</span>` : '';
     const guildTag = guildChip(h.guild), guild = guildTag ? `<span class="gm-chip" data-guild-chip>${esc(guildTag)}</span>` : '';
+    const capTag = capDisplayChip(h.capDisplay, app.rules()), capChip = capTag ? `<span class="gm-chip" data-cap-chip>${esc(capTag)}</span>` : '';
+    const capOpts = CAP_DISPLAY_CHOICES.map(v => {
+      const raw = v === null ? '' : v;
+      return `<option value="${esc(raw)}"${(h.capDisplay ?? '') === raw ? ' selected' : ''}>${esc(capDisplayOptionLabel(v, app.rules()))}</option>`;
+    }).join('');
     const revive = life && can(life, 'revive') ? `<button type="button" class="primary" data-grevive aria-label="Revive ${esc(h.name)}">Revive</button>` : '';
     const cond = drawn + (Array.isArray(h.conditions) ? h.conditions : []).filter(c => c && typeof c.key === 'string')
       .map(c => remote
@@ -298,7 +305,8 @@ export function register(app) {
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${remote ? ' · player phone' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
-      <div class="gm-chips">${ladder}${debt}${guild}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
+      <div class="gm-chips">${capChip}${ladder}${debt}${guild}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
+      <label class="gm-cap"><span class="lbl">${esc(CAP_DISPLAY_WORDS.label)}</span><select data-gmcap aria-label="${esc(CAP_DISPLAY_WORDS.label)} for ${esc(h.name)}">${capOpts}</select></label>
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <span class="lbl gm-hp-lbl">Quick HP</span>
@@ -466,6 +474,14 @@ export function register(app) {
     if (!p.ev) return say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true);
     if (!gmWrite('gm-revive', null, [p.ev], [line('system', 'Revive', name)])) return;
     say('#gm-board-msg', goesNow() ? `Sent Revive to ${name}.` : `Saved. ${name} will be revived once the room server confirms it.`);
+  }
+  /** Sets or hides a player hunter's display-only level cap chip through the room `capSet` event. */
+  function sendCap(key, cap) {
+    const name = remoteName(key), chip = capDisplayChip(cap, app.rules());
+    const p = postable('capSet', { to: [key], cap });
+    if (!p.ev) { say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true); renderBoard(); return; }
+    if (!gmWrite('gm-cap', null, [p.ev], [line('system', 'Cap display updated', `${name}: ${chip ?? CAP_DISPLAY_WORDS.hiddenOption}.`)])) { renderBoard(); return; }
+    say('#gm-board-msg', goesNow() ? CAP_DISPLAY_WORDS.sent(name, chip) : CAP_DISPLAY_WORDS.savedSync(name, chip));
   }
   /** One status put on (`add`) or taken off (`remove`) a player's hunter: on its row in this phone's fight, else posted. */
   function sendStatus(key, change, verb) { // verb(name) → confirmation line
@@ -1267,6 +1283,19 @@ export function register(app) {
       el.addEventListener('change', e => {
         const t = e.target;
         if (t.id === 'gm-all') { sel.clear(); if (t.checked) renderTargetsAll(); renderTargets(); return; }
+        if (t instanceof HTMLSelectElement && 'gmcap' in t.dataset) {
+          const card = t.closest('[data-hid]');
+          if (!card) return;
+          const hid = card.dataset.hid, cap = parseCapDisplay(t.value), chip = capDisplayChip(cap, app.rules());
+          if (card.classList.contains('remote')) { const key = parseSheetKey(hid); if (key) sendCap(key, cap); return; }
+          const name = nameOf(hid);
+          if (gmWrite('gm-cap', atHunter(hid, x => setCapDisplay(x, cap)), [], [line('system', 'Cap display updated', `${name}: ${chip ?? CAP_DISPLAY_WORDS.hiddenOption}.`, hid)])) {
+            say('#gm-board-msg', CAP_DISPLAY_WORDS.updated(name, chip));
+          } else {
+            renderBoard();
+          }
+          return;
+        }
         // a bundle picked in the Award form replaces what it held: a drop it held is no longer what it sends
         if (t.matches('#gm-rw [data-rw-bundle]') && t.value) { draft({ type: 'bundle' }); return; }
         if (t.dataset && t.dataset.sel) { t.checked ? sel.add(t.dataset.sel) : sel.delete(t.dataset.sel); renderTargets(); return; }

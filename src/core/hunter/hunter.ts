@@ -27,9 +27,9 @@ import { isIconKey } from '../registry/icons.ts';
 import type { Perk, Rank, Rules } from '../rules.ts';
 import { REWARD_BOUNDS, newRewards, parseBand, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
-import { newProgress, undoableOn } from './progress.ts';
+import { newProgress, parseCapDisplay, undoableOn } from './progress.ts';
 import { levelOf } from './level.ts';
-import type { Pending, Progress, StatPoints } from './progress.ts';
+import type { CapDisplay, Pending, Progress, StatPoints } from './progress.ts';
 import { newVitals, parseLife, parseUsed } from './vitals.ts';
 import { parseWorn } from './inventory.ts';
 import type { Vitals } from './vitals.ts';
@@ -132,7 +132,10 @@ export type Hunter = Progress & Vitals & {
   classes: ClassLocker;
   rank: Rank;
   /** Who set the rank: a rank set by the GM by hand stays when levels are lost (SMX-rules-7.2). */
-  rankBy: RankBy; gold: number;
+  rankBy: RankBy;
+  /** Display-only level cap chip shown on the Status tab (`Rank`, `'none'`, or `null` when hidden). Changed only through progress.ts `setCapDisplay`. */
+  capDisplay: CapDisplay;
+  gold: number;
   /** Whole-number mana crystal balance, distinct from Resurrection Crystals. Changed only through crystal.ts. */
   crystal: number;
   /** Guild contract and optional per-hunter GM cut overrides, or null when unsigned. Changed only through guild.ts. */
@@ -175,7 +178,7 @@ export const newShadow = (): Shadow => ({
 export const newHunter = (R: Rules = BASE_RULES): Hunter => {
   const stats = newStats(R);
   const h: Hunter = {
-    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, jobDone: null, classes: {}, rank: 'E', rankBy: 'level',
+    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, jobDone: null, classes: {}, rank: 'E', rankBy: 'level', capDisplay: null,
     gold: 0, crystal: 0, guild: null, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
@@ -244,6 +247,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   });
   h.classes = parsedClasses.classes; h.job = parsedClasses.job; h.jobDone = parsedClasses.jobDone;
   h.rank = oneOf(h.rank, RANKS, 'E'); h.rankBy = oneOf(h.rankBy, RANK_BY, 'level');
+  h.capDisplay = parseCapDisplay(h.capDisplay);
   h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold); h.crystal = int(h.crystal, 0, 0, CRYSTAL_MAX);
   h.guild = parseGuild(h.guild);
   h.peakLevel = Math.max(h.level, levelOf(h.peakLevel));
