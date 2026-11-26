@@ -198,6 +198,12 @@ export const UNFINISHED_ROWS = 'Finish or remove the reward rows marked in red.'
 export const isEmptyReward = (r: Rewards): boolean =>
   !r.xp && !r.points && !r.gold && !r.crystal && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;
 
+/** Returns a copy of `r` with `job` cleared to null (used when a unique class travels via `DOCS.holders` instead of `award`/`chapter`). */
+export function stripRewardJob(r: Rewards): Rewards {
+  const { job: _job, ...rest } = r;
+  return { ...newRewards(), ...rest };
+}
+
 /**
  * An amount of XP, gold or points in words, the one rule for how a reward says a gain and a cost, on the quest card, in
  * the log and in the window: "+50 XP", "Loses 40 gold", "Loses 1 ability point".

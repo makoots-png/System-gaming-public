@@ -2,6 +2,7 @@
 // The world day and the gates change only through the steps of src/core/gates/world.ts (a gate's status through `transition`).
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
 import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, presetStep, refKey } from '../core/gates/preset.ts';
+import { OFFER_WORDS } from '../core/hunter/class-offer.ts';
 import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLevel, parseDifficultyLevel, scaleMonsterForGate, withDifficulty } from '../core/gates/difficulty.ts';
 import { bossDifficultyHtml, difficultySliderHtml, readEditDifficultyEvents, wireDifficultyLive } from './difficulty-control.js';
 import { RANKS } from '../core/save.ts';
@@ -480,7 +481,7 @@ export function register(app) {
 
       /** The gates open to solo runs that the room's solo doc cannot hold (gates/solo.ts `soloDoc`), on the room's GM phone. */
       const soloLeft = () => (app.seat() === 'gm' ? soloShared().left : []);
-      const sigOf = g => JSON.stringify([g, day(), app.isGM(), app.rules().fight.difficulty, (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, soloLeft().includes(g.id)]);
+      const sigOf = g => JSON.stringify([g, day(), app.isGM(), app.rules().fight.difficulty, (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, soloLeft().includes(g.id), !!store.get().classOffer]);
       // the one countdown (gate.ts `countdown`), as a player's card reads it; a red gate open still adds its inside time
       const timer = g => { const c = countdown(g, day()); return g.type === 'red' && active(g) && g.status !== 'broken' ? `${c.words} · time inside runs 10x faster` : c.words; };
       const timerCls = g => countdown(g, day()).tone ?? '';
@@ -492,6 +493,7 @@ export function register(app) {
         const acts = !gm ? '' : [
           can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Mark as raiding</button>' : '',
           can(g, 'fightStarted') ? '<button type="button" data-act="encounter">Start fight</button>' : '',
+          g.classOffer && g.fought.length > 0 && !store.get().classOffer ? `<button type="button" data-act="class-offer">${esc(OFFER_WORDS.gmOpenButton)}</button>` : '',
           can(g, 'clear') && g.preset.at !== 'paid' ? `<button type="button" data-act="preset">${esc(PRESET_WORDS.button)}</button>` : '',
           can(g, 'clear') ? '<button type="button" data-act="clear" class="primary">Clear gate</button>' : '',
           '<button type="button" data-act="edit">Edit</button>',
@@ -795,6 +797,7 @@ export function register(app) {
         else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days to advance (use a negative number to go back)', value: 5, min: -30, max: 365 }); if (n) ui.wrote('Gates', advanceDay(n)); }
         else if (act === 'enter') enter(id);
         else if (act === 'encounter') startEncounter(id);
+        else if (act === 'class-offer') { const g = gate(id); if (g) api.classUi.openOffer(g.id); }
         else if (act === 'clear' || act === 'edit') { if (act === 'clear') clearDrafts.delete(id); openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }
         else if (act === 'preset') {
           const g = gate(id); if (!g || !can(g, 'clear') || g.preset.at === 'paid') return;
@@ -995,12 +998,22 @@ export function register(app) {
     update() { refreshView(); },
   });
 
-  // ── combat:end with a gateId offers to mark the gate cleared (GM only) ──
-  app.on('combat:end', async ({ fight, gateId }) => {
+  // ── combat:end with a gateId offers to mark the gate cleared (and Offer classes on a classOffer gate, GM only) ──
+  app.on('combat:end', async ({ fight, gateId, offerClasses }) => {
     const g = gateId ? gate(gateId) : null;
     if (!g || !can(g, 'clear') || !app.isGM()) return;
-    const pick = await ui.system({ tag: '! Notification', kind: 'quest', title: 'Gate cleared?', body: `Did the party clear "${g.name}" (${g.rank}-rank)?`,
-      actions: [{ label: 'Not yet', value: null, cancel: true }, { label: 'Mark gate cleared', value: 'clear', primary: true }] });
+    const withOffer = !!offerClasses && offerClasses === g.id;
+    const body = withOffer
+      ? `Did the party clear "${g.name}" (${g.rank}-rank)? ${OFFER_WORDS.gatePromptNote}`
+      : `Did the party clear "${g.name}" (${g.rank}-rank)?`;
+    /** @type {import('./ui.js').SystemAction[]} */
+    const actions = [
+      { label: 'Not yet', value: null, cancel: true },
+      ...(withOffer ? [{ label: OFFER_WORDS.gmOpenButton, value: 'offer' }] : []),
+      { label: 'Mark gate cleared', value: 'clear', primary: true },
+    ];
+    const pick = await ui.system({ tag: '! Notification', kind: 'quest', title: 'Gate cleared?', body, actions });
+    if (pick === 'offer') { api.classUi.openOffer(g.id); return; }
     if (pick !== 'clear') return;
     mounted.asked = { id: g.id, mode: 'clear' };
     app.go('gates');

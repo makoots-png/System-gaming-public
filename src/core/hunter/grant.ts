@@ -22,7 +22,9 @@ import type { Rank, Rules } from '../rules.ts';
 import type { Hunter, Quest, Save } from '../save.ts';
 import { told } from '../session-log.ts';
 import type { Said } from '../session-log.ts';
-import type { ChainJobName } from '../registry/jobs.ts';
+import { canonicalUniqueClass } from '../registry/jobs.ts';
+import type { ChainJobName, UniqueClassName } from '../registry/jobs.ts';
+import { roleOf } from '../role.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import type { SheetStatus } from '../combat/effect-ops.ts';
@@ -40,6 +42,8 @@ import { newEvent } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { giveBoons, giveTitle, holdsTitle, rankStep, titleNamed } from './record.ts';
 import { setJob } from './classes.ts';
+import { HOLDER_REFUSAL_WORDS, claimUniqueClass, holderOf } from './class-holders.ts';
+import type { HolderStepCtx, HolderTarget } from './class-holders.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
 import { healRestingShadows } from './shadows.ts';
@@ -132,6 +136,56 @@ export function levelEdit(save: Save, hid: string, level: number, xp: number, da
   return { save: told(next, { at: day.at, cap: day.R.logCap }, ...l.said), done: l.done };
 }
 
+/** Why a unique class named in `rewards.job` was not granted to a hunter. */
+export type UniqueJobRefusal = {
+  readonly className: UniqueClassName;
+  readonly why: 'class-taken' | 'held' | 'locker-full' | 'foreign-class' | 'not-gm' | 'no-hunter' | 'bad-target' | 'not-unique';
+  readonly holderName: string | null;
+};
+
+/** Plain-English GM/player notice when a unique `rewards.job` claim is refused (voice.md compliant). */
+export function uniqueJobRefusalText(ref: UniqueJobRefusal, targetName?: string | null): string {
+  const toPart = targetName ? ` to ${targetName}` : '';
+  if (ref.why === 'class-taken') {
+    return ref.holderName
+      ? `${ref.className} was not granted${toPart}. ${ref.holderName} holds it. Release or reassign it first.`
+      : `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS['class-taken']}`;
+  }
+  if (ref.why === 'held') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS.held}`;
+  if (ref.why === 'locker-full') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS['locker-full']}`;
+  if (ref.why === 'foreign-class') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS['foreign-class']}`;
+  if (ref.why === 'not-gm') return `${ref.className} was not granted${toPart}. Only the GM can grant a unique class.`;
+  return `${ref.className} was not granted${toPart}.`;
+}
+
+/**
+ * Routes a GM reward's unique `rewards.job` for a remote player hunter through `claimUniqueClass`.
+ * Leaves non-unique or empty jobs untouched (`claimed: null, refused: null`).
+ */
+export function claimRemoteRewardJob(
+  save: Save,
+  job: string | null,
+  target: Extract<HolderTarget, { kind: 'remote' }>,
+  ctx: HolderStepCtx,
+): { readonly save: Save; readonly claimed: UniqueClassName | null; readonly refused: UniqueJobRefusal | null } {
+  if (!job) return { save, claimed: null, refused: null };
+  const uniqueCls = canonicalUniqueClass(job);
+  if (!uniqueCls) return { save, claimed: null, refused: null };
+  const claimed = claimUniqueClass(save, uniqueCls, target, ctx);
+  if (isRefused(claimed)) {
+    return {
+      save,
+      claimed: null,
+      refused: {
+        className: uniqueCls,
+        why: claimed.why,
+        holderName: holderOf(save, uniqueCls)?.name ?? null,
+      },
+    };
+  }
+  return { save: claimed.save, claimed: uniqueCls, refused: null };
+}
+
 /** What one reward did to one hunter. */
 export type Granted = {
   save: Save;
@@ -151,8 +205,10 @@ export type Granted = {
   guildCut: GuildGoldCut | null;
   /** Earned XP reduced under System revive debt in this grant, or null when XP was not reduced. */
   debtXp: DebtXpCut | null;
-  /** Job actually granted by `r.job`, or null when no job was given or `setJob` refused it. */
+  /** Job actually granted by `r.job`, or null when no job was given or `setJob`/`claimUniqueClass` refused it. */
   job: string | null;
+  /** Refusal details when `r.job` named a unique class that could not be granted, or null. */
+  jobRefused: UniqueJobRefusal | null;
 };
 
 const sheetOf = (h: Hunter, R: Rules) => hunterSheet(h, R).sheet;
@@ -177,7 +233,41 @@ export const statusGiven = (s: RewardStatus, rank: Rank): StatusIn => ({ key: s.
 export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: VitalsAt; from?: RewardFrom | null | undefined }): Granted | Refused<'no-hunter'> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
-  const { R } = o, ids = idsFrom(save.seq), h0 = save.hunters[at]!;
+  const { R } = o;
+
+  // Route unique `r.job` through `claimUniqueClass` BEFORE allocating `idsFrom(baseSave.seq)` or mutating `h`,
+  // so `save.classHolders`, `save.log`, and `save.seq` stay atomic and disjoint.
+  let baseSave: Save = save;
+  let jobGranted: string | null = null;
+  let jobRefused: UniqueJobRefusal | null = null;
+  const uniqueCls = r.job ? canonicalUniqueClass(r.job) : null;
+  if (uniqueCls) {
+    if (roleOf(save.settings, save.settings.sync.room) === 'gm') {
+      const claimed = claimUniqueClass(
+        save,
+        uniqueCls,
+        { kind: 'local', hunterId: save.hunters[at]!.id },
+        {
+          at: o.at,
+          room: null,
+          stamp: null,
+          R,
+          heldLocal: id => id === save.hunters[at]!.id && o.vitals === 'fight',
+          heldRemote: () => false,
+        },
+      );
+      if (isRefused(claimed)) {
+        jobRefused = { className: uniqueCls, why: claimed.why, holderName: holderOf(save, uniqueCls)?.name ?? null };
+      } else {
+        baseSave = claimed.save;
+        jobGranted = uniqueCls;
+      }
+    } else if (!Object.hasOwn(save.hunters[at]!.classes, uniqueCls)) {
+      jobRefused = { className: uniqueCls, why: 'not-gm', holderName: null };
+    }
+  }
+
+  const ids = idsFrom(baseSave.seq), h0 = baseSave.hunters[at]!;
   let h = r.points ? grantPoints(h0, r.points, R) : h0;
   // what reached the sheet, for the window's lines: a cost takes no more than the hunter holds
   const points = h.bonusPoints - h0.bonusPoints;
@@ -185,10 +275,10 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   // the title it took the place of, by the name the hunter held it under; none when it was given as new
   const replaced = titleNew && r.title?.replaces ? titleNamed(h, r.title.replaces, R.titles) : undefined;
   if (r.title && titleNew) h = giveTitle(h, r.title, ids.next('t'), R.titles);
-  let jobGranted: string | null = null;
-  // a job refused because the hunter is held or down is told in the window; the other refusals are the GM's job name to fix
+  // a job refused because the hunter is held or down is told in the window; the other refusals are the GM's job name to fix.
+  // A unique class never reaches setJob: its refusal is `jobRefused`, which the caller tells.
   let jobWhy: 'held' | 'dead' | null = null;
-  if (r.job) {
+  if (r.job && !uniqueCls) {
     const j = setJob(h, r.job, { held: o.vitals === 'fight', dead: h.life.at === 'dead' });
     if (!isRefused(j)) { h = j; jobGranted = j.job; } else if (j.why === 'held' || j.why === 'dead') jobWhy = j.why;
   }
@@ -265,9 +355,9 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
     },
   );
   if (r.job && jobWhy) lines.push(jobWhy === 'held' ? `Job not taken: ${r.job} (you are in a fight)` : `Job not taken: ${r.job} (you are down)`);
-  const hunters = save.hunters.map((x, i) => (i === at ? h : x));
-  const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
-  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted };
+  const hunters = baseSave.hunters.map((x, i) => (i === at ? h : x));
+  const next = told({ ...baseSave, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
+  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted, jobRefused };
 }
 
 // ── a Job Change chain event ──

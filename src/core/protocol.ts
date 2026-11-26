@@ -6,7 +6,7 @@ import { GATE_STATUSES, GATE_TYPES, monsterId, shownGate } from './gates/gate.ts
 import { isStateChip } from './hunter/chips.ts';
 import type { GateFields, GateId, GateStatus, ShownGate } from './gates/gate.ts';
 import { QUEST_KINDS, QUEST_STATUSES, SHADOW_GRADES, parseSheetHunter } from './hunter/hunter.ts';
-import { CLASS_NAME_MAX } from './hunter/class-locker.ts';
+import { CLASS_NAME_MAX, CLASS_OFFER_MAX_HUNTERS, CLASS_OFFER_MAX_POOL, parseClassOfferId } from './hunter/class-locker.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, parseMonster } from './registry/monsters.ts';
 import type { MonsterTemplate } from './registry/monsters.ts';
 import { RUN_OUTCOMES } from './combat/odds.ts';
@@ -529,6 +529,8 @@ export type ClassNodePayload = Base & {
   fromId?: ClassNodeId;
   cost: number;
 };
+/** A player picks one unique class from the GM's open `DOCS.classOffer` (sealed to GM and sender). */
+export type ClassPickPayload = Base & { by: SheetKey; name: string; offerId: string; className: UniqueClassName };
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
@@ -536,7 +538,7 @@ type Payloads = {
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
-  classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload;
+  classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload; classPick: ClassPickPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -784,6 +786,18 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       cost: int(0, MAX_TOTAL)(own(o, 'cost')),
     };
   } },
+  classPick: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
+    const cls = own(o, 'className');
+    if (!isUniqueClass(cls)) return refuse();
+    const offerId = need(parseClassOfferId(own(o, 'offerId')));
+    return {
+      ...base(o),
+      by: sheetKey(own(o, 'by')),
+      name: opt(own(o, 'name'), text(NAME_MAX), ''),
+      offerId,
+      className: cls,
+    };
+  } },
 };
 
 type EventEntry<K extends EventType> = {
@@ -802,7 +816,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
   systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
-  classGrant: entry('classGrant'), classRevoke: entry('classRevoke'), classSwap: entry('classSwap'), classNode: entry('classNode'),
+  classGrant: entry('classGrant'), classRevoke: entry('classRevoke'), classSwap: entry('classSwap'), classNode: entry('classNode'), classPick: entry('classPick'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -1101,7 +1115,23 @@ export type StashDoc = { gold: number; items: Item[] };
 export type HoldersDocEntry = { readonly who: SheetKey | 'gm'; readonly grantId: string };
 /** Authoritative map of claimed unique classes published by the GM (`DOCS.holders`), filtered per viewer on poll. */
 export type HoldersDoc = { readonly registryId: string; readonly at: string; readonly held: Partial<Record<UniqueClassName, HoldersDocEntry>> };
-type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc; stash: StashDoc; holders: HoldersDoc };
+/** One claimed entry in `DOCS.classOffer`: who holds an offered class and the display name shown to other players (`''` hides NPC names). */
+export type ClassOfferTaken = { readonly who: SheetKey | 'gm'; readonly name: string };
+/** GM-published unique-class offer (`DOCS.classOffer`): pool, eligible hunters (empty = whole room), and pool-only claims. */
+export type ClassOfferDoc =
+  | { readonly active: false; readonly at: string }
+  | {
+      readonly active: true;
+      readonly id: string;
+      readonly at: string;
+      readonly pool: UniqueClassName[];
+      readonly hunters: SheetKey[];
+      readonly taken: Partial<Record<UniqueClassName, ClassOfferTaken>>;
+    };
+type Docs = {
+  fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc; stash: StashDoc;
+  holders: HoldersDoc; classOffer: ClassOfferDoc;
+};
 export type DocName = keyof Docs;
 export type DocOf<K extends DocName> = Docs[K];
 
@@ -1528,6 +1558,36 @@ function holdersDocOf(o: Rec): HoldersDoc {
   }
   return { registryId, at, held };
 }
+/** The room's unique-class offer doc (`DOCS.classOffer`). Emits `taken` in `pool` order so Postgres jsonb key sorting never disturbs comparison. */
+function classOfferDocOf(o: Rec): ClassOfferDoc {
+  const at = text(40)(own(o, 'at'));
+  const active = bool(own(o, 'active'));
+  if (!active) return { active: false, at };
+  const idVal = need(parseClassOfferId(own(o, 'id')));
+  const rawPool = own(o, 'pool');
+  if (!Array.isArray(rawPool) || rawPool.length === 0 || rawPool.length > CLASS_OFFER_MAX_POOL) return refuse();
+  const pool: UniqueClassName[] = [];
+  for (const item of rawPool) {
+    if (!isUniqueClass(item)) return refuse();
+    if (!pool.includes(item)) pool.push(item);
+  }
+  const hunters = opt(own(o, 'hunters'), v => listOf(v, CLASS_OFFER_MAX_HUNTERS, sheetKey), []);
+  const rawTaken = obj(own(o, 'taken'));
+  for (const k of Object.keys(rawTaken)) {
+    if (!isUniqueClass(k) || !pool.includes(k)) return refuse();
+  }
+  const taken: Partial<Record<UniqueClassName, ClassOfferTaken>> = {};
+  for (const cls of pool) {
+    const rawEntry = own(rawTaken, cls);
+    if (rawEntry === undefined) continue;
+    const e = obj(rawEntry);
+    const whoRaw = own(e, 'who');
+    const who: SheetKey | 'gm' = whoRaw === 'gm' ? 'gm' : sheetKey(whoRaw);
+    const name = opt(own(e, 'name'), text(NAME_MAX), '');
+    taken[cls] = { who, name };
+  }
+  return { active: true, id: idVal, at, pool, hunters, taken };
+}
 /** The room's rules doc: every field required and validated against its rule domain. */
 function roomRulesDoc(o: Rec): RoomRules {
   const so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), rdp = obj(own(o, 'reviveDebtPrices')), lo = obj(own(o, 'loot'));
@@ -1583,13 +1643,15 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
     return { gold: int(0, GOODS_GOLD_MAX)(own(o, 'gold')), items: listOf(own(o, 'items'), STASH_LINES, stashLine) };
   }),
   holders: data => attempt(() => holdersDocOf(obj(data))),
+  classOffer: data => attempt(() => classOfferDocOf(obj(data))),
 };
 /**
  * Each doc as it goes on the wire, which `DOCS` reads back: the fight's shorter shape (fight-doc.ts `fightWire`), the rest as
  * they are. The server stores and serves a doc in this shape, after `DOCS` read it.
  */
 export const WIRES: { readonly [K in DocName]: (doc: Docs[K]) => object } = {
-  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d, stash: d => d, holders: d => d,
+  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d, stash: d => d,
+  holders: d => d, classOffer: d => d,
 };
 /** The `holders` doc filtered for `v`: the GM sees every claim, a proven phone sees only its own hunters' claims, and an unproven viewer gets null so the wire omits `holders`. */
 export function holdersFor(doc: HoldersDoc, v: RoomViewer): HoldersDoc | null {
@@ -1601,6 +1663,18 @@ export function holdersFor(doc: HoldersDoc, v: RoomViewer): HoldersDoc | null {
   }
   return { registryId: doc.registryId, at: doc.at, held };
 }
+/**
+ * The `classOffer` doc filtered for `v`: the GM sees the whole doc; an unproven `anyone` viewer gets null;
+ * a targeted offer (`hunters.length > 0`) is served only to phones named in `hunters`, stripping other devices' keys.
+ */
+export function classOfferFor(doc: ClassOfferDoc, v: RoomViewer): ClassOfferDoc | null {
+  if (v.kind === 'gm') return doc;
+  if (v.kind === 'anyone') return null;
+  if (!doc.active || doc.hunters.length === 0) return doc;
+  const mine = doc.hunters.filter(k => deviceOf(k) === v.device);
+  if (!mine.length) return null;
+  return { ...doc, hunters: mine };
+}
 /** A room's docs as they go on the wire (`WIRES`), filtered for `viewer`, each with when and from whom. */
 export function wireDocs(docs: RoomDocs, viewer: RoomViewer): Partial<Record<DocName, Stored<unknown>>> {
   const out: Partial<Record<DocName, Stored<unknown>>> = {};
@@ -1609,6 +1683,12 @@ export function wireDocs(docs: RoomDocs, viewer: RoomViewer): Partial<Record<Doc
     if (!d) return;
     if (name === 'holders') {
       const filtered = holdersFor(d.data as HoldersDoc, viewer);
+      if (!filtered) return;
+      out[name] = { ...d, data: filtered };
+      return;
+    }
+    if (name === 'classOffer') {
+      const filtered = classOfferFor(d.data as ClassOfferDoc, viewer);
       if (!filtered) return;
       out[name] = { ...d, data: filtered };
       return;

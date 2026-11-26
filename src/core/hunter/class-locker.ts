@@ -2,8 +2,8 @@
 // Sits below `hunter.ts`, `save.ts`, and `protocol.ts` so `save.ts` never pulls `protocol.ts`, `outbox.ts`, `classes.ts`,
 // or `sheet.ts` underneath it, and `registry/class-trees.ts` stays pure static tables. Pure.
 import { timeOf } from '../day.ts';
-import { parseClassNodeId, parseSaveId, parseSheetKey } from '../ids.ts';
-import type { ClassNodeId, HunterId, MonsterId, SheetKey } from '../ids.ts';
+import { parseClassNodeId, parseRoomCode, parseSaveId, parseSheetKey } from '../ids.ts';
+import type { ClassNodeId, HunterId, MonsterId, RoomCode, SheetKey } from '../ids.ts';
 import { isObj } from '../repair.ts';
 import { canonicalUniqueClass, isUniqueClass } from '../registry/jobs.ts';
 import type { UniqueClassName } from '../registry/jobs.ts';
@@ -198,4 +198,61 @@ export function gmBackedClasses(
   }
 
   return changed ? { classes: next, job, jobDone, changed: true } : { classes: h.classes, job, jobDone, changed: false };
+}
+
+// ── first-mission & GM unique-class offer (leaf types & parser) ──
+
+/** Wave 1 Mythic classes listed at the top of the first-mission class offer. */
+export const WAVE1_MYTHIC_OFFER = ['Hemomancer', 'Bladefiend', 'Rifthunter'] as const satisfies readonly UniqueClassName[];
+/** Wave 1 Epic classes listed below the Mythics for leftover players (4th to 6th) or role picks. */
+export const WAVE1_EPIC_OFFER = ['Seraph', 'Ironclad', 'Stormcaller'] as const satisfies readonly UniqueClassName[];
+/** Default 6-class Wave 1 offer pool: 3 Mythics first, then 3 Epics. */
+export const WAVE1_OFFER_POOL: readonly UniqueClassName[] = [...WAVE1_MYTHIC_OFFER, ...WAVE1_EPIC_OFFER];
+
+export const CLASS_OFFER_MAX_POOL = 18;
+export const CLASS_OFFER_MAX_HUNTERS = 24;
+
+/** Active GM unique-class offer stored on `Save.classOffer` (`null` when closed). Claims live solely in `Save.classHolders`. */
+export type ClassOffer = {
+  readonly id: string;
+  readonly at: string;
+  /** Room code this offer was opened in (`null` when opened alone). Prevents leaking an offer across rooms. */
+  readonly room: RoomCode | null;
+  /** Unique classes offered, in display order (Mythics first, then Epics). */
+  readonly pool: readonly UniqueClassName[];
+  /** Eligible local hunter ids and/or remote sheet keys; empty means every hunter at the table may pick one. */
+  readonly hunters: readonly string[];
+};
+
+const OFFER_ID_RE = /^[\w-]{1,40}$/;
+
+/** Validates a class offer id (1 to 40 word/hyphen characters). */
+export const parseClassOfferId = (v: unknown): string | null =>
+  (typeof v === 'string' && OFFER_ID_RE.test(v) ? v : null);
+
+/** Parses and repairs `Save.classOffer` from stored JSON, returning null when absent or invalid. */
+export function parseClassOffer(raw: unknown, fallbackAt: string): ClassOffer | null {
+  if (!isObj(raw)) return null;
+  const id = parseClassOfferId(raw.id);
+  if (!id) return null;
+  const at = timeOf(raw.at) ?? fallbackAt;
+  const room = parseRoomCode(raw.room);
+  const pool: UniqueClassName[] = [];
+  if (Array.isArray(raw.pool)) {
+    for (const item of raw.pool) {
+      if (pool.length >= CLASS_OFFER_MAX_POOL) break;
+      if (isUniqueClass(item) && !pool.includes(item)) pool.push(item);
+    }
+  }
+  if (!pool.length) return null;
+  const hunters: string[] = [];
+  if (Array.isArray(raw.hunters)) {
+    for (const item of raw.hunters) {
+      if (hunters.length >= CLASS_OFFER_MAX_HUNTERS) break;
+      if (typeof item !== 'string') continue;
+      const ok = parseSaveId<'h'>(item) ?? parseSheetKey(item);
+      if (ok && !hunters.includes(ok)) hunters.push(ok);
+    }
+  }
+  return { id, at, room, pool, hunters };
 }

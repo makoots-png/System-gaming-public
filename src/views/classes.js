@@ -1,10 +1,10 @@
-// classes.js: player class locker, skill tree viewer/buyer, fork flip modal, GM unique-class registry, and GM room
-// logging for classSwap/classNode (PR 3). Every save mutation delegates to src/core/hunter/classes.ts or
-// src/core/hunter/class-holders.ts; every sentence comes from src/core/hunter/class-view.ts, classes.ts, or class-holders.ts.
+// classes.js: player class locker, skill tree viewer/buyer, fork flip modal, GM unique-class registry, first-mission
+// & GM class offer modal/banner, and GM room logging for classSwap/classNode/classPick. Every save mutation delegates to
+// src/core/hunter/classes.ts, class-holders.ts, or class-offer.ts; every sentence comes from core.
 import { parseClassNodeId, parseSaveId } from '../core/ids.ts';
 import { oneOf } from '../core/one-of.ts';
 import { CLASS_SIGNATURES } from '../core/registry/class-powers.ts';
-import { classTreeOf } from '../core/registry/class-trees.ts';
+import { CLASS_LOCKER_CAP, classTreeOf } from '../core/registry/class-trees.ts';
 import { activeClassTrees } from '../edge/store.ts';
 import { classDefOf, isUniqueClass } from '../core/registry/jobs.ts';
 import { CLASS_NAME_MAX } from '../core/hunter/class-locker.ts';
@@ -24,10 +24,21 @@ import {
 import {
   HOLDER_REFUSAL_WORDS,
   claimUniqueClass,
+  classesHeldBy,
   holderOf,
   reassignUniqueClass,
   releaseUniqueClass,
 } from '../core/hunter/class-holders.ts';
+import {
+  OFFER_REFUSAL_WORDS,
+  OFFER_WORDS,
+  classOfferDocOf,
+  classOfferView,
+  classTakenLine,
+  closeClassOffer,
+  openClassOffer,
+  pickClassFromOffer,
+} from '../core/hunter/class-offer.ts';
 import {
   CLASS_UI_WORDS as W,
   forkFlipPreview,
@@ -42,6 +53,8 @@ import {
 import { undoableTotal } from '../core/hunter/progress.ts';
 import { atHunter, isRefused } from '../core/save-step.ts';
 import { logLine, logged } from '../core/session-log.ts';
+import { enter } from './motion.ts';
+import { closeWindow, openWindow, trapTab } from './ui.js';
 
 const CSS = `
 .cls-active{border:1px solid var(--line-bright);background:rgba(10,26,46,.65);padding:10px 12px;margin-bottom:10px}
@@ -99,7 +112,34 @@ const CSS = `
 .cls-gm-form input,.cls-gm-form select{width:100%;box-sizing:border-box}
 .cls-gm-warn{margin:0;font-size:13px;color:#ff8a96;overflow-wrap:anywhere}
 .cls-gm-warn[hidden]{display:none}
-@media (max-width:720px){.cls-nodes,.cls-fork-grid{grid-template-columns:minmax(0,1fr)}.cls-row-acts button{flex:1 0 auto}}
+.co-banner{border:1px solid var(--line-bright);background:rgba(10,36,64,.7);padding:10px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.co-banner-main{flex:1 1 180px;min-width:0}
+.co-banner button{min-height:var(--control-h)}
+.co-gm-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px}
+.co-gm-bar button{min-height:var(--control-h)}
+.co-ov{align-items:stretch}
+.co-win.sys-window{display:flex;flex-direction:column;overflow:visible;text-align:left;padding:14px 14px 0;max-height:calc(100dvh - 32px - var(--sat) - var(--sab));width:min(620px,100%);margin:auto}
+.co-win .n-big.co-title{font-size:20px;letter-spacing:.1em;margin:0 0 6px;overflow-wrap:anywhere}
+.co-mid{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:10px;padding:2px 2px 10px}
+.co-mid p{margin:0;overflow-wrap:anywhere}
+.co-sec-h{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan-dim);margin:2px 0 0}
+.co-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.co-card{border:1px solid var(--line);background:rgba(10,26,46,.6);padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.co-card.r-mythic{border-color:rgba(255,107,61,.55)}
+.co-card.r-epic{border-color:rgba(199,155,255,.45)}
+.co-card.taken{opacity:.72;border-style:dashed}
+.co-card.mine{border-color:var(--green);background:rgba(14,48,46,.5)}
+.co-card-foot{margin-top:auto;padding-top:4px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.co-card-foot button{min-height:var(--control-h);width:100%}
+.co-msg{border:1px solid var(--red);background:rgba(70,16,24,.55);color:#ffb3bc;padding:8px 10px;font-size:13px;overflow-wrap:anywhere}
+.co-msg.good{border-color:var(--green);background:rgba(14,48,46,.55);color:var(--green)}
+.co-notice{border:1px solid var(--line-bright);background:rgba(10,26,46,.55);padding:10px 12px;font-size:13px;color:var(--ice);overflow-wrap:anywhere}
+.co-local-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.co-local-bar .field{flex:1 1 200px;min-width:0}
+.co-local-bar select{width:100%;min-height:var(--control-h);box-sizing:border-box}
+.co-actions{flex:0 0 auto;margin:0 -14px;padding:10px 14px calc(10px + var(--sab));border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.co-actions button{min-height:var(--control-h)}
+@media (max-width:720px){.cls-nodes,.cls-fork-grid,.co-grid{grid-template-columns:minmax(0,1fr)}.cls-row-acts button{flex:1 0 auto}}
 `;
 
 /** @param {import('./app.ts').App} app */
@@ -109,8 +149,19 @@ export function register(app) {
   const A = () => app.api;
   ui.css('classes', CSS);
 
-  /** Last drawn `DOCS.holders` snapshot so `sync:docs` redraws only when holders actually changed. */
+  /** Last drawn `DOCS.holders` + `DOCS.classOffer` snapshot so `sync:docs` redraws only on change. */
   let holdersSig = '';
+  /** Live class-offer window while open (GM or player): overlay handle, mode and focus trigger. */
+  let offerWin = null;
+  /** Ephemeral class-offer screen state in this tab: auto-open id, pending pick, inline notice, GM local pick and last room. */
+  let offerUi = {
+    seenId: '',
+    /** @type {{ offerId: string; className: string; outboxId: string } | null} */
+    pending: null,
+    notice: '',
+    localHid: '',
+    lastRoom: '',
+  };
 
   /** Whether a local (`{ hid }`) or remote (`{ key }`) hunter is currently held in a fight on save `s` (shared via `hunter.heldIn`). */
   const isHeld = (s, who) => A().hunter.heldIn(s, who) !== null;
@@ -437,7 +488,26 @@ export function register(app) {
           ? `<div class="lbl dv-sub">${esc(W.treeHeading)}</div><p class="empty" data-cls-tree-empty>${esc(W.treeNoActive)}</p>`
           : '';
 
-    const html = `${activeHtml}
+    const offerState = playerOfferState();
+    const offerBannerHtml = offerState
+      ? `<div class="co-banner" data-co-banner>
+          <div class="co-banner-main">
+            <div class="r-name">${esc(OFFER_WORDS.playerBannerTitle)}</div>
+            <div class="cls-meta">${esc(
+              offerState.vm.myPicked
+                ? OFFER_WORDS.alreadyPickedLine(offerState.vm.myPicked)
+                : offerState.vm.allTaken
+                  ? OFFER_WORDS.allTakenNotice
+                  : OFFER_WORDS.openBody,
+            )}</div>
+          </div>
+          <button type="button"${offerState.vm.myPicked || offerState.vm.allTaken ? '' : ' class="primary"'} data-co-open>${esc(
+            offerState.vm.myPicked || offerState.vm.allTaken ? 'View offer' : OFFER_WORDS.playerBannerAction,
+          )}</button>
+        </div>`
+      : '';
+
+    const html = `${offerBannerHtml}${activeHtml}
       <div class="lbl dv-sub">${esc(W.lockerHeading)}</div>
       <p class="cls-meta" data-cls-swap-line>${esc(vm.swapLine)}</p>
       ${lockerRows}
@@ -468,6 +538,7 @@ export function register(app) {
         if (b.dataset.clsSwap) { void doSwap(h.id, b.dataset.clsSwap); return; }
         if (b.dataset.clsBuy) { void doBuyNode(h.id, b.dataset.clsBuy); return; }
         if (b.dataset.clsFlipFrom && b.dataset.clsFlipTo) { void doFlipFork(h.id, b.dataset.clsFlipFrom, b.dataset.clsFlipTo); return; }
+        if ('coOpen' in b.dataset) { offerUi.notice = ''; openOfferModal('player'); return; }
         if ('clsJobSet' in b.dataset) {
           const inp = el.querySelector('[data-cls-job]');
           if (inp instanceof HTMLElement) inp.blur();
@@ -763,17 +834,352 @@ export function register(app) {
       if (b.dataset.cgGrant) { void gmClaim(box, b.dataset.cgGrant); return; }
       if (b.dataset.cgReassign) { void gmReassign(box, b.dataset.cgReassign); return; }
       if (b.dataset.cgRelease) { void gmRelease(box, b.dataset.cgRelease); return; }
+      if ('cgOfferOpen' in b.dataset) { openOffer(null); return; }
+      if ('cgOfferClose' in b.dataset) { closeOfferAction(); return; }
     });
     box.addEventListener('input', e => {
       if (e.target instanceof HTMLInputElement && e.target.matches('[data-cg-q]')) applyGmFilter(box);
     });
   }
 
+  // ── First-mission & GM class offer modal (live for GM pass-and-play and room players) ──
+
+  /** Returns the active player class-offer state if this phone is an eligible player in a room with an open offer. */
+  function playerOfferState() {
+    if (app.seat() !== 'player') return null;
+    const doc = A().sync.doc('classOffer');
+    if (!doc || !doc.active) return null;
+    const h = store.active();
+    if (!h) return null;
+    const myKey = A().sync.myKey(h.id);
+    if (doc.hunters.length > 0 && (!myKey || !doc.hunters.includes(myKey))) return null;
+    const myHeldFromPool = doc.pool.find(cls => Object.hasOwn(h.classes, cls)) ?? null;
+    const vm = classOfferView(doc, {
+      hunter: h,
+      myWho: myKey,
+      myHeldFromPool,
+      trees: activeClassTrees(),
+    });
+    return { doc, h, myKey, myHeldFromPool, vm };
+  }
+
+  /** Closes the live class-offer window if open and restores focus. */
+  function closeOfferModal() {
+    if (!offerWin) return;
+    const cur = offerWin;
+    offerWin = null;
+    closeWindow(cur.win);
+    if (cur.trigger instanceof HTMLElement && cur.trigger.isConnected) cur.trigger.focus();
+  }
+
+  /** Closes the GM's active class offer in the save. */
+  function closeOfferAction() {
+    if (!app.isGM() || !store.get().classOffer) return;
+    const w = store.apply('class-offer-close', s => closeClassOffer(s, { at: new Date().toISOString(), R: app.rules() }));
+    if (!ui.wrote('GM', w, OFFER_REFUSAL_WORDS)) return;
+    ui.toast('GM', OFFER_WORDS.gmClosedToast, { kind: 'info' });
+    if (offerWin?.kind === 'gm') closeOfferModal();
+  }
+
+  /** Opens the class offer (creating `save.classOffer` if none is open for the current room) and shows the live GM modal. */
+  function openOffer(gateId = null) {
+    if (!app.isGM()) return;
+    const room = app.seat() === 'gm' ? A().sync.room() : null;
+    const cur = store.get().classOffer;
+    if (!cur || cur.room !== room) {
+      const w = store.apply('class-offer-open', s => openClassOffer(s, {
+        at: new Date().toISOString(),
+        room,
+        R: app.rules(),
+        gateId: gateId ?? null,
+      }).save);
+      if (!ui.wrote('GM', w)) return;
+      ui.toast('GM', OFFER_WORDS.gmOpenedToast, { kind: 'good' });
+    }
+    offerUi.notice = '';
+    openOfferModal('gm');
+  }
+
+  /** Handles one local GM pick inside the live GM offer modal. */
+  function gmPickLocal(cls) {
+    const s0 = store.get();
+    const offer = s0.classOffer;
+    const hid = s0.hunters.find(x => x.id === offerUi.localHid)?.id ?? null;
+    if (!app.isGM() || !offer || !hid) return;
+    const out = {
+      /** @type {import('../core/hunter/class-locker.ts').ClassHolder | null} */
+      holder: null,
+      /** @type {import('../core/ids.ts').RoomCode | null} */
+      code: null,
+    };
+    const w = store.apply('class-offer-pick', s => {
+      const ctx = holderCtx(s);
+      out.code = ctx.room;
+      const r = pickClassFromOffer(s, { kind: 'local', hunterId: hid }, cls, offer.id, ctx);
+      if (isRefused(r)) return r;
+      out.holder = r.holder;
+      return r.save;
+    });
+    if (!ui.wrote('GM', w, OFFER_REFUSAL_WORDS)) {
+      if ('why' in w) {
+        offerUi.notice = w.why === 'class-taken'
+          ? classTakenLine(cls, holderOf(store.get(), cls)?.name)
+          : (OFFER_REFUSAL_WORDS[w.why] ?? OFFER_WORDS.sendFailed);
+      }
+      drawOfferModal();
+      return;
+    }
+    offerUi.notice = '';
+    if (out.code) A().sync.flush();
+    if (out.holder) ui.toast('GM', W.gmClaimedToast(cls, out.holder.name), { kind: 'good' });
+    drawOfferModal();
+  }
+
+  /** Handles one player phone pick inside the live Player offer modal. */
+  function playerPickClass(cls) {
+    const state = playerOfferState();
+    if (!state || offerUi.pending) return;
+    const s = store.get();
+    const { doc, h, myKey, myHeldFromPool } = state;
+    if (!isUniqueClass(cls) || !myKey) { offerUi.notice = OFFER_WORDS.sendFailed; drawOfferModal(); return; }
+    if (h.life.at === 'dead') { offerUi.notice = CLASS_REFUSAL_WORDS.dead; drawOfferModal(); return; }
+    if (isHeld(s, { hid: h.id })) { offerUi.notice = HOLDER_REFUSAL_WORDS.held; drawOfferModal(); return; }
+    if (myHeldFromPool) { offerUi.notice = OFFER_REFUSAL_WORDS['already-picked']; drawOfferModal(); return; }
+    const regId = activeRegistryId(s);
+    const existing = Object.hasOwn(h.classes, cls) ? h.classes[cls] : null;
+    if (existing?.registryId && regId && existing.registryId !== regId) {
+      offerUi.notice = HOLDER_REFUSAL_WORDS['foreign-class'];
+      drawOfferModal();
+      return;
+    }
+    if (!existing && Object.keys(h.classes).length >= CLASS_LOCKER_CAP) {
+      offerUi.notice = HOLDER_REFUSAL_WORDS['locker-full'];
+      drawOfferModal();
+      return;
+    }
+    const ev = A().sync.event('classPick', { by: myKey, name: h.name, className: cls, offerId: doc.id });
+    if (!ev) { offerUi.notice = OFFER_WORDS.sendFailed; drawOfferModal(); return; }
+    offerUi.notice = '';
+    offerUi.pending = { offerId: doc.id, className: cls, outboxId: ev.payload.eid };
+    drawOfferModal();
+    A().sync.post(ev);
+    A().sync.flush();
+  }
+
+  /** Renders one class card for either the GM or player live offer modal. */
+  function offerCardHtml(c, mode, opts) {
+    const gmHolderName = mode === 'gm' && c.takenAnonymous ? (opts.gmHolderNameOf(c.className) ?? null) : c.takenBy;
+    const isPendingThis = mode === 'player' && offerUi.pending?.className === c.className;
+    const badges = [
+      `<span class="cls-tag r-${esc(c.rarity)}">${esc(c.rarityLabel)}</span>`,
+      c.fitsStats ? `<span class="cls-tag ok" data-co-fits>${esc(OFFER_WORDS.fitsBadge)}</span>` : '',
+      !c.hasKit ? `<span class="cls-tag" data-co-nokit>${esc(W.noKitBadge)}</span>` : '',
+      c.heldByMe ? `<span class="tag-on">${esc(OFFER_WORDS.pickedBadge)}</span>` : '',
+    ].join('');
+    const foot = c.heldByMe
+      ? `<span class="cls-tag ok" data-co-yours>${esc(OFFER_WORDS.pickedBadge)}</span>`
+      : !c.open
+        ? `<span class="cls-tag" data-co-taken="${esc(c.className)}">${esc(OFFER_WORDS.takenBadge(gmHolderName))}</span>`
+        : isPendingThis
+          ? `<button type="button" class="primary" disabled aria-busy="true" data-co-picking="${esc(c.className)}">${esc(OFFER_WORDS.pickingAction(c.className))}</button>`
+          : mode === 'player'
+            ? `<button type="button" class="primary" data-co-pick="${esc(c.className)}"${opts.myPicked || offerUi.pending ? ' disabled' : ''}>${esc(OFFER_WORDS.pickAction)}</button>`
+            : `<button type="button" class="primary" data-co-pick="${esc(c.className)}"${!opts.canPickLocal ? ' disabled' : ''}>${esc(OFFER_WORDS.pickAction)}</button>`;
+    return `<article class="co-card r-${esc(c.rarity)}${!c.open && !c.heldByMe ? ' taken' : ''}${c.heldByMe ? ' mine' : ''}" data-co-card="${esc(c.className)}" data-co-rarity="${esc(c.rarity)}">
+      <div class="cls-head"><span class="r-name">${esc(c.className)}</span><span class="cls-badges">${badges}</span></div>
+      <div class="cls-meta">Stat pair: ${esc(c.pairLabel)}</div>
+      <div class="co-card-foot">${foot}</div>
+    </article>`;
+  }
+
+  /** Redraws the live class-offer window body in place (preserving scroll position). */
+  function drawOfferModal() {
+    if (!offerWin) return;
+    const win = offerWin.el.querySelector('.co-win');
+    if (!win) return;
+    const prevMid = win.querySelector('.co-mid');
+    const scrollTop = prevMid ? prevMid.scrollTop : 0;
+
+    if (offerWin.kind === 'player') {
+      const state = playerOfferState();
+      if (!state) { closeOfferModal(); return; }
+      const { vm } = state;
+      const msgHtml = offerUi.notice
+        ? `<div class="co-msg" data-co-msg role="alert">${esc(offerUi.notice)}</div>`
+        : vm.myPicked
+          ? `<div class="co-msg good" data-co-picked role="status">${esc(OFFER_WORDS.alreadyPickedLine(vm.myPicked))}</div>`
+          : '';
+      const allTakenHtml = !vm.myPicked && vm.allTaken
+        ? `<div class="co-notice" data-co-all-taken>${esc(OFFER_WORDS.allTakenNotice)}</div>`
+        : '';
+      const cardOpts = { myPicked: vm.myPicked, canPickLocal: false, gmHolderNameOf: () => null };
+      win.innerHTML = `<span class="cb"></span>
+        <div class="n-tag">${esc(OFFER_WORDS.tag)}</div>
+        <h2 class="n-big co-title" id="co-modal-title">${esc(OFFER_WORDS.title)}</h2>
+        <div class="co-mid">
+          <p class="cls-meta">${esc(OFFER_WORDS.openBody)}</p>
+          ${msgHtml}
+          ${allTakenHtml}
+          ${vm.mythics.length ? `<div class="co-sec-h">${esc(OFFER_WORDS.mythicHeading)}</div><div class="co-grid" data-co-mythics>${vm.mythics.map(c => offerCardHtml(c, 'player', cardOpts)).join('')}</div>` : ''}
+          ${vm.epics.length ? `<div class="co-sec-h">${esc(OFFER_WORDS.epicHeading)}</div><p class="cls-meta" data-co-epic-note>${esc(OFFER_WORDS.epicKeepNote)}</p><div class="co-grid" data-co-epics>${vm.epics.map(c => offerCardHtml(c, 'player', cardOpts)).join('')}</div>` : ''}
+        </div>
+        <div class="co-actions">
+          <button type="button" class="primary" data-co-dismiss>${esc(vm.myPicked || vm.allTaken ? 'Done' : 'Later')}</button>
+        </div>`;
+    } else {
+      const s = store.get();
+      const offer = s.classOffer;
+      if (!offer) { closeOfferModal(); return; }
+      const remotes = new Map(A().sync.remoteSheets().map(r => [r.key, r.data.name]));
+      const rawDoc = classOfferDocOf(s, offer.at, remotes);
+      const doc = rawDoc.active ? rawDoc : {
+        active: /** @type {const} */ (true),
+        id: offer.id,
+        at: offer.at,
+        pool: [...offer.pool],
+        hunters: [],
+        taken: {},
+      };
+      const eligibleLocal = s.hunters.filter(h => !classesHeldBy(s, { kind: 'local', hunterId: h.id }).some(c => offer.pool.includes(c)));
+      if (!eligibleLocal.some(h => h.id === offerUi.localHid)) offerUi.localHid = eligibleLocal[0]?.id ?? '';
+      const selectedLocal = eligibleLocal.find(h => h.id === offerUi.localHid) ?? null;
+      const vm = classOfferView(doc, {
+        hunter: selectedLocal,
+        myWho: 'gm',
+        myHeldFromPool: null,
+        trees: activeClassTrees(),
+      });
+      const inRoom = app.seat() === 'gm';
+      const localBarHtml = s.hunters.length
+        ? `<div class="co-local-bar">
+            ${eligibleLocal.length
+              ? ui.field(OFFER_WORDS.gmPickForLabel, `<select data-co-local>${eligibleLocal.map(h => `<option value="${esc(h.id)}"${h.id === offerUi.localHid ? ' selected' : ''}>${esc(h.name)} (${esc(h.rank)}-rank)</option>`).join('')}</select>`)
+              : `<p class="cls-meta">${esc(OFFER_WORDS.gmNoLocalHunters)}</p>`}
+          </div>`
+        : '';
+      const msgHtml = offerUi.notice ? `<div class="co-msg" data-co-msg role="alert">${esc(offerUi.notice)}</div>` : '';
+      const allTakenHtml = vm.allTaken ? `<div class="co-notice" data-co-all-taken>${esc(OFFER_WORDS.allTakenNotice)}</div>` : '';
+      const cardOpts = {
+        myPicked: null,
+        canPickLocal: !!selectedLocal,
+        gmHolderNameOf: cls => holderOf(s, cls)?.name ?? null,
+      };
+      win.innerHTML = `<span class="cb"></span>
+        <div class="n-tag">${esc(OFFER_WORDS.tag)}</div>
+        <h2 class="n-big co-title" id="co-modal-title">${esc(OFFER_WORDS.gmOfferTitle)} (${esc(vm.openCount)}/${esc(vm.totalCount)} open)</h2>
+        <div class="co-mid">
+          <p class="cls-meta">${esc(inRoom ? OFFER_WORDS.gmOfferRoomHint : OFFER_WORDS.gmOfferLocalHint)}</p>
+          ${localBarHtml}
+          ${msgHtml}
+          ${allTakenHtml}
+          ${vm.mythics.length ? `<div class="co-sec-h">${esc(OFFER_WORDS.mythicHeading)}</div><div class="co-grid" data-co-mythics>${vm.mythics.map(c => offerCardHtml(c, 'gm', cardOpts)).join('')}</div>` : ''}
+          ${vm.epics.length ? `<div class="co-sec-h">${esc(OFFER_WORDS.epicHeading)}</div><p class="cls-meta" data-co-epic-note>${esc(OFFER_WORDS.epicKeepNote)}</p><div class="co-grid" data-co-epics>${vm.epics.map(c => offerCardHtml(c, 'gm', cardOpts)).join('')}</div>` : ''}
+        </div>
+        <div class="co-actions">
+          <button type="button" class="danger" data-co-close-offer>${esc(OFFER_WORDS.gmCloseButton)}</button>
+          <button type="button" class="primary" data-co-dismiss>Done</button>
+        </div>`;
+    }
+
+    const nextMid = win.querySelector('.co-mid');
+    if (nextMid && scrollTop > 0) nextMid.scrollTop = scrollTop;
+  }
+
+  /** Opens the live GM or Player class-offer overlay window on the shared window stack. */
+  function openOfferModal(kind) {
+    if (offerWin) {
+      if (offerWin.kind === kind) { drawOfferModal(); return; }
+      closeOfferModal();
+    }
+    if (kind === 'player' && !playerOfferState()) return;
+    if (kind === 'gm' && !store.get().classOffer) return;
+    const trigger = document.activeElement;
+    const el = ui.h('<div class="overlay co-ov show" data-co-modal><div class="sys-window co-win" role="dialog" aria-modal="true" aria-labelledby="co-modal-title"></div></div>');
+    const winEl = el.firstElementChild;
+    const win = openWindow(
+      'shelf',
+      () => { document.body.appendChild(el); return { root: el, win: winEl }; },
+      e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeOfferModal(); }
+        else if (e.key === 'Tab') trapTab(e, winEl);
+      },
+    );
+    offerWin = { win, el, kind, trigger };
+    el.addEventListener('click', e => {
+      if (e.target === el) { closeOfferModal(); return; }
+      const b = e.target.closest('button');
+      if (!b || !el.contains(b)) return;
+      if ('coDismiss' in b.dataset) { closeOfferModal(); return; }
+      if ('coCloseOffer' in b.dataset) { closeOfferAction(); return; }
+      if (b.dataset.coPick) {
+        if (offerWin?.kind === 'gm') gmPickLocal(b.dataset.coPick);
+        else playerPickClass(b.dataset.coPick);
+      }
+    });
+    el.addEventListener('change', e => {
+      if (e.target instanceof HTMLSelectElement && e.target.matches('[data-co-local]')) {
+        offerUi.localHid = e.target.value;
+        offerUi.notice = '';
+        drawOfferModal();
+      }
+    });
+    drawOfferModal();
+    void enter(el, 'fade');
+    void enter(winEl);
+    const focusEl = winEl.querySelector('button:not([disabled]), select:not([disabled])');
+    if (focusEl instanceof HTMLElement) focusEl.focus();
+  }
+
+  /** Reconciles player pending picks, auto-open on new offers, room switches, and live modal redraws. */
+  function reconcileOfferUi() {
+    const curRoom = A().sync.room() ?? '';
+    if (curRoom !== offerUi.lastRoom) {
+      offerUi = { seenId: '', pending: null, notice: '', localHid: '', lastRoom: curRoom };
+      if (offerWin?.kind === 'player') closeOfferModal();
+    }
+
+    const state = playerOfferState();
+    const p = offerUi.pending;
+    if (p) {
+      if (!state || state.doc.id !== p.offerId) {
+        offerUi.pending = null;
+      } else {
+        const taken = state.doc.taken[p.className];
+        if (taken && taken.who !== state.myKey) {
+          offerUi.pending = null;
+          offerUi.notice = classTakenLine(p.className, taken.name);
+        } else if (state.myHeldFromPool === p.className) {
+          offerUi.pending = null;
+          offerUi.notice = '';
+          ui.toast('! Class', OFFER_WORDS.alreadyPickedLine(p.className), { kind: 'good' });
+        } else if (state.myHeldFromPool && state.myHeldFromPool !== p.className) {
+          offerUi.pending = null;
+        } else if (isHeld(store.get(), { hid: state.h.id })) {
+          offerUi.pending = null;
+          offerUi.notice = HOLDER_REFUSAL_WORDS.held;
+        }
+      }
+    }
+
+    if (state && offerUi.seenId !== state.doc.id) {
+      offerUi.seenId = state.doc.id;
+      offerUi.notice = '';
+      if (!state.myHeldFromPool && !offerWin) openOfferModal('player');
+    }
+
+    if (offerWin) {
+      if (offerWin.kind === 'player' && !state) closeOfferModal();
+      else if (offerWin.kind === 'gm' && !store.get().classOffer) closeOfferModal();
+      else drawOfferModal();
+    }
+  }
+
   /** Draws the GM's Unique classes section in `box`; returns the section header summary. */
   function paint(box) {
     if (!box.dataset.cg) {
       box.dataset.cg = '1';
-      box.innerHTML = `<p class="empty">${esc(W.gmHint)}</p>
+      box.innerHTML = `<div class="co-gm-bar" data-cg-offer-bar></div>
+        <p class="empty">${esc(W.gmHint)}</p>
         <div class="cls-gm-ctrl">
           <div class="seg" role="group" aria-label="${esc(W.gmFilterAria)}" data-cg-filter>
             <button type="button" data-f="all" aria-pressed="true">${esc(W.gmFilterAll)}</button>
@@ -790,6 +1196,18 @@ export function register(app) {
     }
 
     const s = store.get();
+    const offerBar = box.querySelector('[data-cg-offer-bar]');
+    if (offerBar) {
+      const offerHtml = s.classOffer
+        ? `<button type="button" class="primary" data-cg-offer-open>${esc(OFFER_WORDS.gmManageButton)}</button>
+           <button type="button" class="danger" data-cg-offer-close>${esc(OFFER_WORDS.gmCloseButton)}</button>
+           <span class="tag-on" data-cg-offer-live>${esc(OFFER_WORDS.gmOfferOpenBadge)}</span>`
+        : `<button type="button" class="primary" data-cg-offer-open>${esc(OFFER_WORDS.gmOpenButton)}</button>`;
+      if (offerBar.dataset.sig !== offerHtml) {
+        offerBar.dataset.sig = offerHtml;
+        offerBar.innerHTML = offerHtml;
+      }
+    }
     const inRoom = app.seat() === 'gm';
     const remotes = A().sync.remoteSheets().map(r => ({ key: r.key, name: r.data.name }));
     const vm = registryView(s, {
@@ -842,13 +1260,30 @@ export function register(app) {
     return vm.summary;
   }
 
-  // ── Room sync listeners: redraw only when DOCS.holders changed + log player classSwap / classNode on GM phone ──
+  // ── Room sync listeners: redraw only when DOCS.holders/classOffer changed + handle classSwap/classNode/classPick ──
 
   app.on('sync:docs', () => {
-    const sig = JSON.stringify(A().sync.doc('holders'));
+    const sig = JSON.stringify([A().sync.doc('holders'), A().sync.doc('classOffer')]);
+    reconcileOfferUi();
     if (sig !== holdersSig) {
       holdersSig = sig;
       app.redraw();
+    }
+  });
+
+  app.on('change', () => {
+    reconcileOfferUi();
+  });
+
+  app.on('sync:room', () => {
+    reconcileOfferUi();
+  });
+
+  app.on('sync:outbox', msg => {
+    if (offerUi.pending && msg.id === offerUi.pending.outboxId && (msg.at === 'refused' || msg.at === 'dropped')) {
+      offerUi.pending = null;
+      offerUi.notice = OFFER_WORDS.sendFailed;
+      drawOfferModal();
     }
   });
 
@@ -869,8 +1304,35 @@ export function register(app) {
         : classNodeSaid(p.name || 'Hunter', p.className, nameOf(p.nodeId), p.cost);
       // Log node buys and fork flips quietly without toast spam during multi-node spending.
       A().sync.once(p.eid, logged(logLine(store.id('l'), new Date().toISOString(), 'system', null, said.title, said.text), R));
+    } else if (ev.type === 'classPick') {
+      const p = ev.payload;
+      const out = {
+        /** @type {import('../core/hunter/class-locker.ts').ClassHolder | null} */
+        holder: null,
+        /** @type {import('../core/ids.ts').RoomCode | null} */
+        code: null,
+      };
+      const applied = A().sync.once(p.eid, s => {
+        const ctx = holderCtx(s);
+        out.code = ctx.room;
+        const r = pickClassFromOffer(
+          s,
+          { kind: 'remote', sheetKey: p.by, name: p.name || 'Hunter' },
+          p.className,
+          p.offerId,
+          ctx,
+        );
+        if (isRefused(r)) return s;
+        out.holder = r.holder;
+        return r.save;
+      });
+      if (applied && out.holder) {
+        if (out.code) A().sync.flush();
+        ui.toast('! Class', OFFER_WORDS.gmPlayerClaimedToast(out.holder.name, p.className), { kind: 'good' });
+        if (offerWin?.kind === 'gm') drawOfferModal();
+      }
     }
   });
 
-  app.api.classUi = { paint };
+  app.api.classUi = { paint, openOffer };
 }

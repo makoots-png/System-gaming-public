@@ -17,8 +17,9 @@ import { EARNED_WHAT_MAX, REWARD_FROM, approvalEvent, newEvent } from '../protoc
 import type { AskFrom, EventStamp, RewardFrom, RoomEvent } from '../protocol.ts';
 import { deviceOf, hunterIdOf, parseEventId, parseRoomCode, parseSheetKey, sheetKeyOf } from '../ids.ts';
 import type { EventId, HunterId, RoomCode, SheetKey } from '../ids.ts';
-import { isEmptyReward, newRewards, parseRewards, rewardLines } from '../rewards.ts';
+import { isEmptyReward, newRewards, parseRewards, rewardLines, stripRewardJob } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
+import { canonicalUniqueClass } from '../registry/jobs.ts';
 import { seatOf } from '../role.ts';
 import type { Seat } from '../role.ts';
 import type { Rules, Save } from '../save.ts';
@@ -29,8 +30,8 @@ import type { Said, Stamp } from '../session-log.ts';
 import { OUTBOX_MAX, atOutbox, post } from '../sync/outbox.ts';
 import { timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
-import { grant, idShare } from './grant.ts';
-import type { Day, Granted } from './grant.ts';
+import { claimRemoteRewardJob, grant, idShare } from './grant.ts';
+import type { Day, Granted, UniqueJobRefusal } from './grant.ts';
 
 /**
  * Where a reward the app pays by itself goes, by the phone's seat: paid at once (`pay`), asked of the GM's phone
@@ -165,6 +166,7 @@ export type ApproveAllCtx = {
   readonly day: Day;
   readonly heldLocals?: ReadonlySet<HunterId>;
   readonly heldRemotes?: ReadonlySet<SheetKey>;
+  readonly stamp?: EventStamp | null;
 };
 /** What `pendingApproveAll` wrote in one atomic step. */
 export type ApprovedAll = {
@@ -173,6 +175,8 @@ export type ApprovedAll = {
   readonly granted: readonly { readonly hid: HunterId; readonly g: Granted; readonly rec: PendingReward }[];
   readonly posted: readonly SheetKey[];
   readonly remoteStatuses: readonly { readonly key: SheetKey; readonly statuses: Rewards['statuses'] }[];
+  readonly remoteClaimed: readonly SheetKey[];
+  readonly remoteJobRefused: readonly { readonly key: SheetKey; readonly name: string; readonly refusal: UniqueJobRefusal }[];
   readonly remaining: number;
 };
 /**
@@ -203,6 +207,8 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
   const granted: { hid: HunterId; g: Granted; rec: PendingReward }[] = [];
   const posted: SheetKey[] = [];
   const remoteStatuses: { key: SheetKey; statuses: Rewards['statuses'] }[] = [];
+  const remoteClaimed: SheetKey[] = [];
+  const remoteJobRefused: { key: SheetKey; name: string; refusal: UniqueJobRefusal }[] = [];
   const events: RoomEvent[] = [];
   const logLines: Said[] = [];
 
@@ -210,7 +216,6 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
     const step = pendingStep(rec, { type: 'approve' });
     if (!step) continue;
     const hid = localHunter(next, rec);
-    const bits = rewardLines(ctx.day.R, rec.rewards).join(', ');
     if (hid) {
       const vitals = ctx.heldLocals?.has(hid) ? 'fight' : 'sheet';
       const g = grant(next, hid, rec.rewards, { ...ctx.day, vitals, from: rec.from });
@@ -218,16 +223,49 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
         next = g.save;
         granted.push({ hid, g, rec });
       }
+      const logRewards = !isRefused(g) && g.jobRefused ? stripRewardJob(rec.rewards) : rec.rewards;
+      const bits = rewardLines(ctx.day.R, logRewards).join(', ');
       approvedIds.add(rec.id);
       approved.push(step);
-      logLines.push({ kind: 'award', hunterId: hid, title: 'GM approved', text: `${PENDING_WORDS.earned(rec.from, rec.what)}: ${bits} → ${rec.name}` });
+      if (bits) logLines.push({ kind: 'award', hunterId: hid, title: 'GM approved', text: `${PENDING_WORDS.earned(rec.from, rec.what)}: ${bits} → ${rec.name}` });
     } else {
-      const held = !!ctx.heldRemotes?.has(rec.to) && rec.rewards.statuses.length > 0;
-      const { statuses: onRow, ...restFields } = rec.rewards;
-      const wireRewards: Rewards = held ? { ...newRewards(), ...restFields } : rec.rewards;
+      const uniqueJob = rec.rewards.job ? canonicalUniqueClass(rec.rewards.job) : null;
+      const baseWire = uniqueJob ? stripRewardJob(rec.rewards) : rec.rewards;
+      const held = !!ctx.heldRemotes?.has(rec.to) && baseWire.statuses.length > 0;
+      const { statuses: onRow, ...restFields } = baseWire;
+      const wireRewards: Rewards = held ? { ...newRewards(), ...restFields } : baseWire;
       const needsEvent = !isEmptyReward(wireRewards);
+      const slotsNeeded = (needsEvent ? 1 : 0) + (uniqueJob && ctx.stamp ? 1 : 0);
+      if (slotsNeeded > 0 && remotePosted + slotsNeeded > avail) { remaining++; continue; }
+
+      let claimedUnique = false;
+      if (uniqueJob) {
+        const res = claimRemoteRewardJob(
+          next,
+          rec.rewards.job,
+          { kind: 'remote', sheetKey: rec.to, name: rec.name },
+          {
+            at: ctx.day.at,
+            room,
+            stamp: ctx.stamp ? { ...ctx.stamp, seq: remotePosted } : null,
+            R: ctx.day.R,
+            heldLocal: () => false,
+            heldRemote: key => !!ctx.heldRemotes?.has(key),
+          },
+        );
+        if (res.claimed) {
+          next = res.save;
+          remoteClaimed.push(rec.to);
+          claimedUnique = true;
+          if (ctx.stamp) remotePosted++;
+        } else if (res.refused) {
+          remoteJobRefused.push({ key: rec.to, name: rec.name, refusal: res.refused });
+          // If the waiting reward was unique-job-only and refused, leave it waiting instead of discarding it.
+          if (!needsEvent && !held) continue;
+        }
+      }
+
       if (needsEvent) {
-        if (remotePosted >= avail) { remaining++; continue; }
         const ev = pendingAwardEvent(rec, wireRewards);
         if (!ev) { remaining++; continue; }
         events.push(ev);
@@ -235,13 +273,20 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
         posted.push(rec.to);
       }
       if (held) remoteStatuses.push({ key: rec.to, statuses: onRow });
+      const logRewards = uniqueJob && !claimedUnique ? stripRewardJob(rec.rewards) : rec.rewards;
+      const bits = rewardLines(ctx.day.R, logRewards).join(', ');
       approvedIds.add(rec.id);
       approved.push(step);
-      logLines.push({ kind: 'award', hunterId: null, title: 'GM approved', text: `${PENDING_WORDS.earned(rec.from, rec.what)}: ${bits} → ${rec.name}` });
+      if (bits) logLines.push({ kind: 'award', hunterId: null, title: 'GM approved', text: `${PENDING_WORDS.earned(rec.from, rec.what)}: ${bits} → ${rec.name}` });
     }
   }
 
-  if (!approved.length) return refuse('outbox-full');
+  if (!approved.length) {
+    if (remoteJobRefused.length && remaining === 0) {
+      return { save: next, approved, granted, posted, remoteStatuses, remoteClaimed, remoteJobRefused, remaining };
+    }
+    return refuse('outbox-full');
+  }
 
   const updated = pendingOf(next).map(p => (approvedIds.has(p.id) ? pendingStep(p, { type: 'approve' }) ?? p : p));
   next = withPending(next, kept(updated));
@@ -249,7 +294,7 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
     next = atOutbox(box => events.reduce((b, ev) => post(b, room, { kind: 'event', event: ev }).box, box))(next);
   }
   if (logLines.length) next = told(next, logStamp, ...logLines);
-  return { save: next, approved, granted, posted, remoteStatuses, remaining };
+  return { save: next, approved, granted, posted, remoteStatuses, remoteClaimed, remoteJobRefused, remaining };
 }
 
 // ── a reward the app pays by itself ──

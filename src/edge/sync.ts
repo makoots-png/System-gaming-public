@@ -43,8 +43,10 @@ import { upgradeRefused } from './upgrade.ts';
 import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
 import { backedRemoteHunter, pushedClasses } from '../core/hunter/classes.ts';
-import { holdersDocOf, releaseNoticeStep } from '../core/hunter/class-holders.ts';
+import { holdersDocOf } from '../core/hunter/class-holders.ts';
 import type { ReconcileResult } from '../core/hunter/class-holders.ts';
+import { releaseNoticeStep } from '../core/hunter/noticed.ts';
+import { classOfferDocOf } from '../core/hunter/class-offer.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
 import { fightHeard } from '../core/sync/fight-heard.ts';
 import type { TableSeen } from '../core/sync/fight-heard.ts';
@@ -117,8 +119,10 @@ const SAME: { [K in PublishedDoc]: (d: DocOf<K>) => unknown } = {
   solo: d => d,
   feats: d => d,
   stash: d => d,
-  holders: d => ({ ...d, at: '' }),
+  holders: d => ({ ...d, at: '', held: Object.fromEntries(Object.entries(d.held).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) }),
+  classOffer: d => (d.active ? { ...d, at: '', taken: Object.fromEntries(Object.entries(d.taken).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) } : { active: false, at: '' }),
 };
+const offerStamp = (docs: RoomDocs): string => `${docs.classOffer?.data.at ?? ''}|${docs.holders?.data.at ?? ''}`;
 const sameDoc = <K extends PublishedDoc>(name: K, a: DocOf<K>, b: DocOf<K>): boolean => {
   const same = SAME[name] as (d: DocOf<K>) => unknown;
   return JSON.stringify(same(a)) === JSON.stringify(same(b));
@@ -443,7 +447,11 @@ export function register(app: SyncHost): void {
           if (a.status !== 200) return one(failedOf(a, gen));
           const r = parseRoomState(a.data); if (!r) return one(failedServer);
           const fight = r.docs.fight?.data ?? null;
-          const events: LinkEvent[] = [{ type: 'polled', gen, cursor: Math.max(r.next, after), more: r.more, pace: paceOf(fight, call.key !== null, deviceId()), fightAt: fight ? fight.at : null }];
+          const offerActive = r.docs.classOffer?.data.active === true;
+          const events: LinkEvent[] = [{
+            type: 'polled', gen, cursor: Math.max(r.next, after), more: r.more,
+            pace: paceOf(fight, call.key !== null, deviceId(), offerActive), fightAt: fight ? fight.at : null, offerAt: offerStamp(r.docs),
+          }];
           if (call.key && !r.gm) events.push({ type: 'keyLost', gen });
           if (!call.key && removedSinceJoin(r, call.code)) events.push({ type: 'removed', gen });
           return { events, data: { kind: 'poll', r, after } };
@@ -759,8 +767,9 @@ export function register(app: SyncHost): void {
     // letter leaves the box (sync/asked.ts `askTaken`, trade/offer.ts `letterTaken`, sync/word.ts `wordTaken`); one on its
     // way was heard tried or sent in the write that sent it (the store's `lettersKept` and `asksKept`)
     else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => wordTaken(letterTaken(askTaken(s, e.id), e.id), e.id) : null);
-    // a player's own fight move: the link polls quickly until the fight doc it was sent from changes
+    // a player's own fight move or class pick: the link polls quickly until the doc it was sent from changes
     if (c.ok && e.letter.kind === 'event' && FIGHT_MOVES.has(e.letter.event.type)) linkDo({ type: 'sent', from: view().docs.fight?.data.at ?? null });
+    else if (c.ok && e.letter.kind === 'event' && e.letter.event.type === 'classPick') linkDo({ type: 'sent', kind: 'offer', from: offerStamp(view().docs) });
     if (ev.type === 'sent') app.emit('sync:outbox', { id: e.id, at: 'sent', seq: c.ok && isObj(c.data) && typeof c.data.seq === 'number' ? c.data.seq : null });
     if (ev.type === 'refused') {
       console.warn(`[sync] the room refused a ${e.letter.kind === 'event' ? e.letter.event.type : 'tombstone'}: ${ev.why}`);
@@ -784,7 +793,7 @@ export function register(app: SyncHost): void {
   /** A message as the player reads it when the room refuses it. */
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
     used: 'a use report', roll: 'a roll', questUpdate: 'quest progress', coinCall: 'a coin call', coinLand: 'a coin ruling',
-    classGrant: 'a unique class grant', classRevoke: 'a unique class release', classSwap: 'a class swap', classNode: 'a skill tree update',
+    classGrant: 'a unique class grant', classRevoke: 'a unique class release', classSwap: 'a class swap', classNode: 'a skill tree update', classPick: 'a class pick',
     step: 'a step', cast: 'an ability use', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash request', stashAnswer: 'a stash reply',
     word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward request', respec: 'a point respec report',
@@ -874,6 +883,7 @@ export function register(app: SyncHost): void {
     for (const cls of d.restored) ui.toast('! Class', `${cls} is active again.`, { kind: 'info' });
     for (const cls of d.revoked) ui.toast('! Class', `The GM released ${cls}.`, { kind: 'info' });
     for (const cls of d.parked) ui.toast('! Class', `${cls} is parked while you play in this room. Its tree progress stays saved.`, { kind: 'info' });
+    for (const cls of d.blockedForeign) ui.toast('Class', `${cls} was not replaced because you already have parked progress for it from another campaign.`, { kind: 'warning' });
   };
   /**
    * The players' sheets with their device, hunter and when the device last polled, on the room's GM phone; none on any
@@ -935,6 +945,7 @@ export function register(app: SyncHost): void {
    */
   const publishers = new Map<PublishedDoc, () => unknown>([
     ['holders', () => holdersDocOf(store.get(), new Date().toISOString())],
+    ['classOffer', () => classOfferDocOf(store.get(), new Date().toISOString(), new Map(remoteSheets().map(r => [r.key, r.data.name])))],
   ]);
   /** Each doc's publish machine (src/core/sync/publish.ts): at most one put of a doc out at a time. A doc not in it is idle. */
   const publishing = new Map<PublishedDoc, Publish>();
@@ -975,8 +986,10 @@ export function register(app: SyncHost): void {
       console.info(`[sync] the room refused the ${name} doc as too big; putting it again without its log`);
       put = await putDoc(name, short, gen);
     }
-    // a fight that began or ended, or a turn that came to a player or left one, sets how often this phone polls
-    if (put === 'stored' && name === 'fight' && link.gen === gen) linkDo({ type: 'paced', pace: paceOf(want as DocOf<'fight'>, true, deviceId()) });
+    // a fight or class offer that began or ended sets how often this phone polls
+    if (put === 'stored' && (name === 'fight' || name === 'classOffer') && link.gen === gen) {
+      linkDo({ type: 'paced', pace: paceOf(doc('fight'), true, deviceId(), doc('classOffer')?.active === true) });
+    }
     return put;
   }
   /** The GM removes a player's hunter. The player's phone is told on its next poll; its hunter stays on that phone. */

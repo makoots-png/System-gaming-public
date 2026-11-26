@@ -196,4 +196,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', act: 'buy', nodeId: 'crimson-root', cost: 45000 },
     { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', act: 'buy', nodeId: 'crimson-root', cost: 45000 },
   ],
+  classPick: [
+    { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', offerId: 'co1-abc' },
+    { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', offerId: 'co1-abc' },
+  ],
 };

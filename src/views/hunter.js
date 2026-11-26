@@ -19,7 +19,7 @@ import { RESPEC_WORDS, confirmCostLine, confirmPoints, respecCost, respecRefusal
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { CLASS_REFUSAL_WORDS, setJob } from '../core/hunter/classes.ts';
-import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
+import { grant, levelEdit, raisedLine, sheetEdit, systemRaise, uniqueJobRefusalText } from '../core/hunter/grant.ts';
 import { RAISE_REFUSED, RAISE_TITLE, canRaise, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
 import { setGold } from '../core/hunter/inventory.ts';
 import { setCrystal } from '../core/hunter/crystal.ts';
@@ -359,6 +359,7 @@ export function register(app) {
         popup = ui.system({ tag: opts.tag || '! Notification', title: opts.title || 'REWARDS ACQUIRED', kind: opts.kind || 'quest', body: opts.body ?? `${store.hunter(hid)?.name ?? ''} receives the System's rewards.`, lines: all });
       }
       if (levelup && !silent) levelPopup(levelup);
+      if (g.jobRefused) ui.toast('Class', uniqueJobRefusalText(g.jobRefused, store.hunter(hid)?.name), { kind: 'warning' });
       return { lines: all, levelup, popup };
     },
     gmHolds,

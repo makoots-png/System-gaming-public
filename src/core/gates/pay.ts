@@ -93,8 +93,12 @@ export const encounterAwards = (plan: EncounterPlan, choice: 'award' | 'skip'): 
 
 /** Where a settle step posts its players' awards, and the events it posts (made by the view from `encounterAwards`). */
 export type Posts = { readonly room: RoomCode | null; readonly events: readonly RoomEvent[] };
-/** What a settle did: the next save and each local hunter's grant (the view shows them with `hunter.granted`). */
-export type Settled = { readonly save: Save; readonly granted: readonly { readonly hid: string; readonly g: Granted }[] };
+/** What a settle did: the next save, each local hunter's grant (the view shows them with `hunter.granted`), and any gate whose first fight unlocked the class offer. */
+export type Settled = {
+  readonly save: Save;
+  readonly granted: readonly { readonly hid: string; readonly g: Granted }[];
+  readonly offerClasses?: GateId | null;
+};
 
 /** The local payees given `rewardsOf`, then the posts put in the outbox: one save. */
 function payAll(save: Save, locals: readonly { hid: string; rewards: Rewards }[], posts: Posts, day: Day, from: RewardFrom | null = null): Settled {
@@ -119,11 +123,13 @@ function payAll(save: Save, locals: readonly { hid: string; rewards: Rewards }[]
 export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award' | 'skip', posts: Posts, day: Day, drop: Omit<Dropped, 'fight'>): Settled | Refused<'no-fight'> {
   const f: Fight | null = save.fight ?? null;
   if (!f || f.id !== plan.fightId || f.phase !== 'ended') return refuse('no-fight');
+  const gateBefore = plan.gateId ? save.gates.find(g => g.id === plan.gateId) ?? null : null;
   const paid = pays(plan, choice);
   const text = `${plan.dead.length} foe${plan.dead.length === 1 ? '' : 's'} defeated, ${plan.xp} XP.${choice === 'award' ? ` Awarded ${plan.each} XP each.` : ''}`;
   const logged = encounterEnded(save, { gateId: plan.gateId, paid: paid ? plan.award : 0, text }, { at: day.at, cap: day.R.logCap });
   // who fought it stays on the gate, so its Clear offers them first after a reload too
   const fought = plan.payees.map(p => (p.kind === 'local' ? p.hid : p.key));
+  const offerClasses: GateId | null = gateBefore && gateBefore.classOffer && fought.length > 0 && !save.classOffer ? gateBefore.id : null;
   const ended = { ...logged, gates: logged.gates.map(g => (g.id === plan.gateId ? { ...g, fought } : g)) };
   const locals = paid ? plan.payees.flatMap(p => (p.kind === 'local' ? [{ hid: p.hid, rewards: { ...newRewards(), xp: plan.each } }] : [])) : [];
   const out = payAll(ended, locals, paid ? posts : { room: null, events: [] }, day);
@@ -132,7 +138,7 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
   const loot = drop.gold || drop.items.length ? lootStep(out.save.loot, { type: 'dropped', drop: { fight: plan.fightId, ...drop } }) ?? out.save.loot : out.save.loot;
   const cleared = { ...out.save, fight: reduce(out.save.fight, { type: 'clear' }, ctx).fight, loot };
   delete cleared.fightRefs;
-  return { save: cleared, granted: out.granted };
+  return { save: cleared, granted: out.granted, offerClasses };
 }
 
 // ── a fight's loot waiting for the GM ──

@@ -455,4 +455,50 @@ describe('sealed events and room projections hide GM-only data', () => {
       expect(ambushDoc.dodge!.left).toBeGreaterThan(0);
     }
   });
+
+  test('classPick stays sealed to the GM and DOCS.classOffer omits for anyone, hides targeted offers from other phones, and strips other devices\' keys', async () => {
+    const { code, gm, postPlayer, pollAs } = await setupRoom();
+    // 1. Sealed event: Mira's classPick never reaches Kai's phone.
+    await postPlayer(MIRA_DEV, 'classPick', {
+      eid: 'd-mira1-cp1',
+      by: MIRA_KEY,
+      name: 'Mira',
+      className: 'Hemomancer',
+      offerId: 'co1-abc',
+    });
+    const kaiEv = await pollAs(KAI_DEV, 0);
+    expect(kaiEv.events).toEqual([]);
+
+    // 2. Targeted classOffer doc: Mira sees it with only her own key in hunters; Kai sees { active: false }; unauthenticated poll omits it.
+    const offerWire = {
+      active: true,
+      id: 'co1-abc',
+      at: '2026-11-25T12:00:00.000Z',
+      pool: ['Hemomancer', 'Bladefiend', 'Rifthunter', 'Seraph', 'Ironclad', 'Stormcaller'],
+      hunters: [MIRA_KEY],
+      taken: {
+        Hemomancer: { who: MIRA_KEY, name: 'Mira' },
+        Seraph: { who: 'gm', name: '' },
+      },
+    };
+    const put = await call('PUT', `/api/rooms/${code}/sheets/_classOffer`, { headers: gm, body: { from: 'gm', data: offerWire } });
+    expect(put.status).toBe(200);
+
+    const miraPoll = await pollAs(MIRA_DEV, 0);
+    expect(miraPoll.docs.classOffer?.data).toEqual(offerWire);
+
+    const kaiPoll = await pollAs(KAI_DEV, 0);
+    expect(kaiPoll.docs.classOffer).toBeUndefined();
+
+    const anonPoll = await call('GET', `/api/rooms/${code}`);
+    expect(anonPoll.body.docs.classOffer).toBeUndefined();
+
+    // 3. Multi-target offer strips other devices' keys from `hunters`.
+    const bothWire = { ...offerWire, hunters: [MIRA_KEY, KAI_KEY] };
+    expect((await call('PUT', `/api/rooms/${code}/sheets/_classOffer`, { headers: gm, body: { from: 'gm', data: bothWire } })).status).toBe(200);
+    const miraBoth = await pollAs(MIRA_DEV, 0);
+    const kaiBoth = await pollAs(KAI_DEV, 0);
+    expect(miraBoth.docs.classOffer?.data.hunters).toEqual([MIRA_KEY]);
+    expect(kaiBoth.docs.classOffer?.data.hunters).toEqual([KAI_KEY]);
+  });
 });

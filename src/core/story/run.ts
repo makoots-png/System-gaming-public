@@ -10,7 +10,9 @@
 import { GIVE_HOLD_MS } from '../registry/bundles.ts';
 import { parseHunterRef, parseSaveId } from '../ids.ts';
 import type { HunterId, HunterRef, StoryId, StoryRunId } from '../ids.ts';
-import type { Day, VitalsAt } from '../hunter/grant.ts';
+import { claimRemoteRewardJob } from '../hunter/grant.ts';
+import type { Day, UniqueJobRefusal, VitalsAt } from '../hunter/grant.ts';
+import { canonicalUniqueClass } from '../registry/jobs.ts';
 import type { Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -20,7 +22,7 @@ import { pickables, sheetName } from '../party.ts';
 import type { Pickable } from '../party.ts';
 import { newEvent } from '../protocol.ts';
 import type { EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
-import { newRewards } from '../rewards.ts';
+import { newRewards, stripRewardJob } from '../rewards.ts';
 import { playerHeld } from '../combat/fight-save.ts';
 import type { HeldFor } from '../combat/fight-save.ts';
 import type { Rank } from '../rules.ts';
@@ -174,6 +176,8 @@ export type MoveCtx = { readonly day: Day; readonly vitals: (hid: HunterId) => V
 export type StoryMoved = {
   readonly save: Save; readonly run: StoryRun; readonly granted: readonly { readonly hid: HunterId; readonly g: ChapterGiven }[]; readonly skipped: readonly HunterRef[];
   readonly posted: readonly SheetKey[]; readonly onRow: readonly HeldFor[];
+  readonly remoteClaimed: readonly SheetKey[];
+  readonly remoteJobRefused: readonly { readonly key: SheetKey; readonly name: string; readonly refusal: UniqueJobRefusal }[];
 };
 
 /** The hunters at the table: this phone's, then the players' of the room's sheets the GM's phone holds. */
@@ -203,6 +207,8 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
   if (chapter && players.length && chapterSize(chapter) > CHAPTER_MAX) return refuse('too-large');
   let next: Save = { ...save, storyRuns: keptRuns(run ? save.storyRuns.map(x => (x.id === r.id ? r : x)) : [...save.storyRuns, r]) };
   const granted: { hid: HunterId; g: ChapterGiven }[] = [], events: RoomEvent[] = [];
+  const remoteClaimed: SheetKey[] = [];
+  const remoteJobRefused: { key: SheetKey; name: string; refusal: UniqueJobRefusal }[] = [];
   let onRow: StoryMoved['onRow'] = [];
   if (fx && chapter) {
     const body = chapterBody(chapter, ctx.day.at);
@@ -214,20 +220,43 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
     }
     const room = ctx.room;
     if (room && players.length) {
-      const held = body.rewards.statuses.length ? players.filter(room.onRow) : [], free = players.filter(k => !held.includes(k));
-      const { statuses: _onRow, ...kept } = body.rewards, rest: ChapterBody = { ...body, rewards: { ...newRewards(), ...kept } };
-      const groups = [{ to: free, body }, { to: held, body: rest }].filter(g => g.to.length);
+      const hasUniqueJob = !!(body.rewards.job && canonicalUniqueClass(body.rewards.job));
+      if (hasUniqueJob) {
+        for (let i = 0; i < players.length; i++) {
+          const key = players[i]!;
+          const name = sheetName(room.sheets, key, "a player's hunter");
+          const res = claimRemoteRewardJob(
+            next,
+            body.rewards.job,
+            { kind: 'remote', sheetKey: key, name },
+            {
+              at: ctx.day.at,
+              room: room.code,
+              stamp: { ...room.stamp, seq: i },
+              R: ctx.day.R,
+              heldLocal: () => false,
+              heldRemote: room.onRow,
+            },
+          );
+          if (res.claimed) { next = res.save; remoteClaimed.push(key); }
+          else if (res.refused) remoteJobRefused.push({ key, name, refusal: res.refused });
+        }
+      }
+      const wireBody: ChapterBody = hasUniqueJob ? { ...body, rewards: stripRewardJob(body.rewards) } : body;
+      const held = wireBody.rewards.statuses.length ? players.filter(room.onRow) : [], free = players.filter(k => !held.includes(k));
+      const { statuses: _onRow, ...kept } = wireBody.rewards, rest: ChapterBody = { ...wireBody, rewards: { ...newRewards(), ...kept } };
+      const groups = [{ to: free, body: wireBody }, { to: held, body: rest }].filter(g => g.to.length);
       groups.forEach((g, i) => {
         const made = newEvent('chapter', { to: g.to, ...g.body }, { ...room.stamp, now: room.stamp.now + i });
         if (!made) throw new Error('the room would refuse a chapter the library has');
         events.push(made);
       });
-      onRow = playerHeld(room.sheets, held, body.rewards.statuses);
+      onRow = playerHeld(room.sheets, held, wireBody.rewards.statuses);
     }
   }
   const names = (refs: readonly HunterRef[]) => refs.map(x => nameOf(save, sheets, x));
   const said = moveLine(r, ev, chapter ?? null, names);
-  return { save: sent(next, { room: ctx.room ? ctx.room.code : null, events, said: [said] }, { at: ctx.day.at, cap: ctx.day.R.logCap }), run: r, granted, skipped, posted: players, onRow };
+  return { save: sent(next, { room: ctx.room ? ctx.room.code : null, events, said: [said] }, { at: ctx.day.at, cap: ctx.day.R.logCap }), run: r, granted, skipped, posted: players, onRow, remoteClaimed, remoteJobRefused };
 }
 
 /** A hunter's name for the GM's words: this phone's by its id; a player's by its sheet in the room. */

@@ -76,8 +76,17 @@ describe('one put of a doc at a time', () => {
       expect([s.state.at, s.fx.filter(x => x.type !== 'status')]).toEqual(['waiting', [{ type: 'setTimer', gen: G }]]);
     }
   });
-  test('the fight doc follows a change in 200 ms, every other doc in 800 ms', () => {
-    expect([publishWait('fight'), publishWait('world'), publishWait('rules'), publishWait('codex'), publishWait('solo'), publishWait('feats')]).toEqual([200, 800, 800, 800, 800, 800]);
+  test('the fight, classOffer, and holders docs follow a change in 200 ms, every other doc in 800 ms', () => {
+    expect([
+      publishWait('fight'),
+      publishWait('classOffer'),
+      publishWait('holders'),
+      publishWait('world'),
+      publishWait('rules'),
+      publishWait('codex'),
+      publishWait('solo'),
+      publishWait('feats'),
+    ]).toEqual([200, 200, 200, 800, 800, 800, 800, 800]);
   });
 });
 

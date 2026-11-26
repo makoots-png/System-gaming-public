@@ -225,6 +225,8 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // a player's report of a class swap or skill-tree node buy/flip (classes.ts): the GM's phone logs it
   classSwap: GM_ONLY_READS,
   classNode: GM_ONLY_READS,
+  // a player's pick from the GM's open class offer (classes.js): the GM's phone claims via claimUniqueClass
+  classPick: GM_ONLY_READS,
 };
 
 /**

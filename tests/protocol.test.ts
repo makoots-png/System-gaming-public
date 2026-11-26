@@ -210,7 +210,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'classGrant', 'classNode', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'classGrant', 'classNode', 'classPick', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -219,8 +219,8 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classNode', 'classSwap', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classNode', 'classPick', 'classSwap', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode', 'classPick'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -1282,7 +1282,7 @@ describe('the fight doc', () => {
 
 describe('the other room docs', () => {
   test('every doc the GM publishes has a parser, and no other name does', () => {
-    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'feats', 'fight', 'holders', 'kicked', 'rules', 'solo', 'stash', 'world']);
+    expect(Object.keys(DOCS).sort()).toEqual(['classOffer', 'codex', 'feats', 'fight', 'holders', 'kicked', 'rules', 'solo', 'stash', 'world']);
     for (const name of ['nope', '__proto__', 'toString']) expect(parseDocName(name)).toBeNull();
   });
 

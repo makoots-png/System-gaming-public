@@ -17,6 +17,7 @@ import { stepTime } from '../core/day.ts';
 import { postNews } from '../core/sync/connection.ts';
 import { cryptoRandom } from '../edge/roll.ts';
 import { isRefused } from '../core/save-step.ts';
+import { uniqueJobRefusalText } from '../core/hunter/grant.ts';
 import { storyMaker } from './story-maker.js';
 
 css('stories', `
@@ -84,8 +85,9 @@ export function register(app) {
       return isRefused(m) ? m : { ...m, held: [...m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...m.onRow] };
     });
     if (isRefused(out)) return out;
-    if (out.posted.length) A().sync.flush();
+    if (out.posted.length || out.remoteClaimed.length) A().sync.flush();
     for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whoseLine(g.window.body, S().hunters, hid), kind: 'quest' });
+    for (const ref of out.remoteJobRefused) ui.toast('Class', uniqueJobRefusalText(ref.refusal, ref.name), { kind: 'warning' });
     return out;
   }
   /** What the GM is told after a move: who got the chapter, who gets it when the room answers, and who was skipped. */

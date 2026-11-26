@@ -48,8 +48,8 @@ export const PREGENS: readonly { name: string; job: string; stats: StatPoints; s
 ];
 
 /** The two gates the view rolls (`gates.roll`) and hands in. */
-export const STARTER_GATES: readonly { name: string; rank: Rank; type: GateType }[] = [
-  { name: 'Goblin Den', rank: 'E', type: 'normal' },
+export const STARTER_GATES: readonly { name: string; rank: Rank; type: GateType; classOffer?: true }[] = [
+  { name: 'Goblin Den', rank: 'E', type: 'normal', classOffer: true },
   { name: 'Double Dungeon (hidden)', rank: 'D', type: 'double' },
 ];
 
@@ -100,7 +100,11 @@ export function starterCampaign(save: Save, made: StarterMade, stamp: Stamp, R: 
     hunters: [...save.hunters.filter(h => h !== seed), ...pregens],
     settings: chooseMode({ ...save.settings, activeHunterId: pregens[0]!.id }, 'gm'),
   };
-  for (const g of made.gates) s = spawnGate(s, g.gate, g.monsters, stamp);
+  for (let i = 0; i < made.gates.length; i++) {
+    const g = made.gates[i]!;
+    const gate: Gate = { ...g.gate, classOffer: STARTER_GATES[i]?.classOffer === true };
+    s = spawnGate(s, gate, g.monsters, stamp);
+  }
   return told(s, stamp, ...said, { kind: 'system', hunterId: null, title: 'Campaign begun',
     text: 'Starter campaign loaded with 3 hunters, the Goblin Den (E), a hidden Double Dungeon (D), and 3 linked quests.' });
 }

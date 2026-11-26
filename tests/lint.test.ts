@@ -1431,7 +1431,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/takeover.js': { count: 1, why: 'the blocking takeover window\'s open handle and cause while shown (read-only or stuck update)' },
     'src/views/skills.js': { count: 2, why: 'the skill maker\'s type and kind on screen' },
     'src/views/coin.js': { count: 1, why: 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design' },
-    'src/views/classes.js': { count: 1, why: 'the last DOCS.holders snapshot drawn (holdersSig), so sync:docs redraws only on a change' },
+    'src/views/classes.js': { count: 3, why: 'the last DOCS.holders/classOffer snapshot drawn (holdersSig), the live class-offer window while open (offerWin), and ephemeral class-offer modal UI state (offerUi: auto-open id, pending pick, inline notice, GM local pick, last room)' },
     'src/views/custom.js': { count: 1, why: 'the HP last felt, so a buzz follows only a change' },
     'src/views/inventory.js': { count: 1, why: 'the bag\'s tab on screen' },
     'src/views/loot.js': { count: 1, why: 'the item maker\'s type on screen and whether its slot was set by hand' },
@@ -1606,6 +1606,8 @@ test('every let a view keeps for the page is named here with what it holds, and 
   const named: Record<string, string> = {
     'bestiary.js lastHtml': what.drawn,
     'classes.js holdersSig': what.drawn,
+    'classes.js offerWin': what.handle,
+    'classes.js offerUi': 'ephemeral class-offer modal UI state in this tab (auto-open offer id, pending player pick, inline notice, GM local hunter selection, last room): ' + what.shown,
     'coin.js prompt': 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design',
     'combat.js surprised': 'the side the GM marked surprised before the start; the fight takes it at its start',
     'combat.js tableRefusal': 'the last refusal of a player\'s move for the fight doc, its count inside it (`n`), so a repeat is told again',
@@ -2156,7 +2158,7 @@ test('a solo run\'s odds and its run are played by the rules soloFight gave its 
 const FIGHT_ASKS: Readonly<Record<string, number>> = {
   'src/views/quests.js': 3, 'src/views/custom.js': 1, 'src/views/coin.js': 1, 'src/views/trade.js': 1, 'src/views/effects.js': 1,
   'src/views/hunter.js': 11, 'src/views/stories.js': 2, 'src/views/gates.js': 1, 'src/views/inventory.js': 2, 'src/views/gm.js': 3,
-  'src/views/classes.js': 17,
+  'src/views/classes.js': 19,
 };
 test('a view adds no new question of whether a fight holds a hunter: the step in core refuses, and the view only draws it', async () => {
   const counts: Record<string, number> = {};
@@ -2464,7 +2466,7 @@ test('every test in tests/fight-sim.test.ts uses simTest with deterministic work
   expect(modelSrc, 'report each fight to sim-budget.ts from playFight').toContain('beginFight(');
   expect(modelSrc, 'report each playStep to sim-budget.ts from playFight').toContain('recordFightStep(');
 
-  const soloSimFiles = (await readdir(`${ROOT}/tests`)).filter(n => /-solo-sim\.test\.ts$/.test(n)).sort().map(n => `tests/${n}`);
+  const soloSimFiles = (await readdir(`${ROOT}/tests`)).filter(n => /-(?:solo|smoke)-sim\.test\.ts$/.test(n)).sort().map(n => `tests/${n}`);
   const simFiles = ['tests/fight-sim.test.ts', ...soloSimFiles];
   for (const rel of simFiles) {
     const simSrc = await Bun.file(`${ROOT}/${rel}`).text();
@@ -3112,6 +3114,36 @@ test('only src/core/hunter/class-holders.ts (and save.ts defaults/repair) writes
     }
   }
   expect(report(hits), 'write Save.classHolders only through src/core/hunter/class-holders.ts').toEqual([]);
+});
+
+test('only src/core/hunter/class-offer.ts (and save.ts defaults/repair/export) writes Save.classOffer', async () => {
+  const owners = new Set(['src/core/hunter/class-offer.ts', 'src/core/save.ts']);
+  const stripComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
+  const write = /[\w$)\]!]\.classOffer\s*(?:=(?![=>])|\?\?=|\|\|=)|\{\s*\.\.\.[^,{}]*save[^,{}]*,[^{}]*(?<![.\w$])classOffer\s*[:,}]/g;
+  const hasWrite = (s: string): boolean => { write.lastIndex = 0; return write.test(s); };
+  for (const bad of [
+    'save.classOffer = null;',
+    'return { ...save, classOffer: offer };',
+    'return {\n  ...save,\n  classOffer: null,\n};',
+  ]) expect(hasWrite(bad), `catches ${bad}`).toBe(true);
+  expect(hasWrite('const o = save.classOffer;'), 'allows read').toBe(false);
+  expect(hasWrite('const g = { ...gate, classOffer: true };'), 'allows gate.classOffer').toBe(false);
+  const files = (await readdir(`${ROOT}/src`, { recursive: true }))
+    .filter(n => /\.(ts|js)$/.test(n))
+    .sort()
+    .map(n => `src/${n}`);
+  const hits: Line[] = [];
+  for (const file of files) {
+    if (owners.has(file)) continue;
+    const cleaned = stripComments(await Bun.file(`${ROOT}/${file}`).text());
+    write.lastIndex = 0;
+    for (const m of cleaned.matchAll(write)) {
+      const line = cleaned.slice(0, m.index).split('\n').length;
+      hits.push({ file, line, text: m[0].replace(/\s+/g, ' ').trim() });
+    }
+  }
+  expect(report(hits), 'write Save.classOffer only through src/core/hunter/class-offer.ts').toEqual([]);
 });
 
 test('only classPowers reads class tree nodes for combat and the sheet', async () => {

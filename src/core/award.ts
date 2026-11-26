@@ -6,9 +6,10 @@
 // the outbox, src/core/sync/outbox.ts, which sends each until the room takes it, once) and its log lines are one answer,
 // written by one `store.apply` or not at all, as a fight's end and a gate's Clear are (src/core/gates/pay.ts). What a
 // running fight holds (a status on a row) is the fight's command, after this write, as a grant's fight parts are.
-import { grant } from './hunter/grant.ts';
-import type { Day, Granted, VitalsAt } from './hunter/grant.ts';
-import type { GivenBundle, RewardFrom, RoomCode, RoomEvent } from './protocol.ts';
+import { claimRemoteRewardJob, grant } from './hunter/grant.ts';
+import type { Day, Granted, UniqueJobRefusal, VitalsAt } from './hunter/grant.ts';
+import type { EventStamp, GivenBundle, RewardFrom, RoomCode, RoomEvent, SheetKey } from './protocol.ts';
+import { canonicalUniqueClass } from './registry/jobs.ts';
 import { record } from './hunter/chronicle.ts';
 import type { Rewards } from './rewards.ts';
 import type { Save } from './save.ts';
@@ -35,16 +36,38 @@ export function sent(save: Save, s: Sends, stamp: Stamp): Save {
   return told(posted, stamp, ...s.said);
 }
 
-/** What the GM's award did: the next save and each local hunter's grant (the view shows each with `hunter.granted`). */
-export type Awarded = { readonly save: Save; readonly granted: readonly { readonly hid: string; readonly g: Granted }[] };
+/** What the GM's award did: the next save, each local hunter's grant, and any remote unique-class claims or refusals. */
+export type Awarded = {
+  readonly save: Save;
+  readonly granted: readonly { readonly hid: string; readonly g: Granted }[];
+  readonly remoteClaimed: readonly SheetKey[];
+  readonly remoteJobRefused: readonly { readonly key: SheetKey; readonly name: string; readonly refusal: UniqueJobRefusal }[];
+};
+
+/** Optional remote unique-class claim context passed to `gmAward` when `rewards.job` names a unique class. */
+export type RemoteJobCtx = {
+  readonly targets: readonly { readonly key: SheetKey; readonly name: string }[];
+  readonly heldRemote: (key: SheetKey) => boolean;
+  readonly stamp: EventStamp | null;
+};
 
 /**
  * The GM's Send award, in one step: each hunter of this phone in `locals` granted `rewards` (with its vitals where its
- * fight holds them, `vitals`), then `s`: each player's award posted and the log line. A hunter no longer here is left out.
- * An award given from a bundle by hand (`given`, the GM's awards for roleplay) is a fact of each local hunter's chronicle,
- * in the same write; a player's phone records it when its award lands (room-events.ts).
+ * fight holds them, `vitals`), any remote unique `rewards.job` claimed via `claimUniqueClass`, then `s`: each player's
+ * award posted and the log line. A hunter no longer here is left out. An award given from a bundle by hand (`given`,
+ * the GM's awards for roleplay) is a fact of each local hunter's chronicle, in the same write; a player's phone records
+ * it when its award lands (room-events.ts).
  */
-export function gmAward(save: Save, locals: readonly { readonly hid: string; readonly vitals: VitalsAt }[], rewards: Rewards, s: Sends, day: Day, given: GivenBundle | null = null, from: RewardFrom | null = null): Awarded {
+export function gmAward(
+  save: Save,
+  locals: readonly { readonly hid: string; readonly vitals: VitalsAt }[],
+  rewards: Rewards,
+  s: Sends,
+  day: Day,
+  given: GivenBundle | null = null,
+  from: RewardFrom | null = null,
+  remoteJobs: RemoteJobCtx | null = null,
+): Awarded {
   let next = save;
   const granted: { hid: string; g: Granted }[] = [];
   for (const { hid, vitals } of locals) {
@@ -53,7 +76,33 @@ export function gmAward(save: Save, locals: readonly { readonly hid: string; rea
     next = given ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: given.key, name: given.name }) : h)) } : g.save;
     granted.push({ hid, g: { ...g, save: next } });
   }
-  return { save: sent(next, s, { at: day.at, cap: day.R.logCap }), granted };
+  const remoteClaimed: SheetKey[] = [];
+  const remoteJobRefused: { key: SheetKey; name: string; refusal: UniqueJobRefusal }[] = [];
+  if (remoteJobs && rewards.job && canonicalUniqueClass(rewards.job)) {
+    for (let i = 0; i < remoteJobs.targets.length; i++) {
+      const t = remoteJobs.targets[i]!;
+      const res = claimRemoteRewardJob(
+        next,
+        rewards.job,
+        { kind: 'remote', sheetKey: t.key, name: t.name },
+        {
+          at: day.at,
+          room: s.room,
+          stamp: remoteJobs.stamp ? { ...remoteJobs.stamp, seq: i } : null,
+          R: day.R,
+          heldLocal: () => false,
+          heldRemote: remoteJobs.heldRemote,
+        },
+      );
+      if (res.claimed) {
+        next = res.save;
+        remoteClaimed.push(t.key);
+      } else if (res.refused) {
+        remoteJobRefused.push({ key: t.key, name: t.name, refusal: res.refused });
+      }
+    }
+  }
+  return { save: sent(next, s, { at: day.at, cap: day.R.logCap }), granted, remoteClaimed, remoteJobRefused };
 }
 
 // ── the Award form's tie to what its send settles ──

@@ -7,7 +7,7 @@ import type { Ended } from './combat/fight-types.ts';
 import type { RoomCode, RoomDocs, ServedSheet, SheetKey, Stored, StoredEvent } from './protocol.ts';
 import type { Quest } from './save.ts';
 import type { Connection } from './sync/connection.ts';
-import type { RollEntryId } from './ids.ts';
+import type { GateId, RollEntryId } from './ids.ts';
 
 /** A store change: the reason passed to `store.update`. `replaced`: the whole save was swapped (import, restore, reset). */
 export type Change = { reason: string; replaced?: true };
@@ -37,8 +37,8 @@ export type AppEvents = {
   'combat:turn': { hunterId: string | null };
   /** combat.js when a monster or shadow goes down (the fight's `defeated` effect), with its row. The bestiary records the kill. */
   'combat:defeated': { body: Body };
-  /** combat.js when a fight ends (the fight's `ended` effect), and the gate it was started from. The bestiary records the fallen; a gate's fight offers to clear the gate. */
-  'combat:end': { fight: Ended; gateId: string | null };
+  /** combat.js when a fight ends (the fight's `ended` effect), and the gate it was started from. The bestiary records the fallen; a gate's fight offers to clear the gate or open its class offer. */
+  'combat:end': { fight: Ended; gateId: string | null; offerClasses?: GateId | null };
   /** sync.ts for each room event another phone sent. The GM's quest and table views show replies and rolls. */
   'sync:event': { event: StoredEvent };
   /** sync.ts when the room's hunter sheets change. Views that list the party redraw. */

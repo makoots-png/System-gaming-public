@@ -42,6 +42,8 @@ export type GateFields = {
   preset: ClearPreset;
   /** The gate's difficulty and optional boss override (gates/difficulty.ts), never exposed to players in `shownOf`. */
   difficulty: GateDifficulty;
+  /** Whether settling a fight in this gate prompts the GM to open the Wave 1 unique-class offer (GM-only, never in `shownOf`). */
+  classOffer: boolean;
 };
 /** Only a cleared gate has the day it was cleared. */
 export type Gate =
@@ -51,7 +53,7 @@ export type Gate =
 /** A detected gate on day 1 with nothing in it. The save repair fills a stored gate from it. */
 export const newGate = (): Gate => ({
   id: 'g0' as GateId, name: '', rank: 'E', type: 'normal', status: 'detected', breakDay: 1, monsters: [], bossId: null, notes: '',
-  createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY,
+  createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY, classOffer: false,
 });
 
 // ── events ──
@@ -78,7 +80,7 @@ type Row = { readonly [T in GateEventType]: Step<T> | null };
 const fieldsOf = (gate: Gate): GateFields => ({
   id: gate.id, name: gate.name, rank: gate.rank, type: gate.type, breakDay: gate.breakDay, monsters: gate.monsters, bossId: gate.bossId,
   notes: gate.notes, createdDay: gate.createdDay, xpPaid: gate.xpPaid, mapId: gate.mapId, fought: gate.fought, solo: gate.solo, preset: gate.preset,
-  difficulty: gate.difficulty,
+  difficulty: gate.difficulty, classOffer: gate.classOffer,
 });
 /** Leaving cleared drops the cleared day. Entering it stamps the day. */
 const uncleared = (gate: Gate, status: Exclude<GateStatus, 'cleared'>): Gate => ({ ...fieldsOf(gate), status });
@@ -173,6 +175,7 @@ export function parseGate(value: unknown): Gate | null {
     solo: value.solo === true,
     preset: parseClearPreset(value.preset),
     difficulty: parseGateDifficulty(value.difficulty),
+    classOffer: value.classOffer === true,
   };
   const status = oneOf(value.status, GATE_STATUSES, 'detected');
   return status === 'cleared' ? { ...fields, status, clearedDay: int(value.clearedDay, 1, createdDay) } : { ...fields, status };

@@ -34,8 +34,9 @@ export const CHASE_POLLS = 10;
 /** How often a page in a room polls: no fight, a fight runs, or (a GM's phone) a player's hunter has the turn. */
 export type PollPace = 'table' | 'fight' | 'turn';
 export const PACE_MS: Record<PollPace, number> = { table: POLL_MS, fight: POLL_FAST_MS, turn: POLL_TURN_MS };
-/** The pace of a room whose fight doc is `fight`, for this `device`: a GM's phone waits on a player's move while a hunter of another device has the turn. */
-export function paceOf(fight: FightDoc | null, gm: boolean, device: string): PollPace {
+/** The pace of a room whose fight doc is `fight`, for this `device`: a GM's phone waits on a player's move while a hunter of another device has the turn or while a class offer is open. */
+export function paceOf(fight: FightDoc | null, gm: boolean, device: string, offerActive = false): PollPace {
+  if (gm && offerActive) return 'turn';
   if (!fight || fight.ended || !fight.active) return 'table';
   if (gm && fight.dodge) {
     const dodger = fight.rows.find(r => r.id === fight.dodge!.who);
@@ -80,10 +81,10 @@ export type LinkHealth = 'connecting' | 'ok' | { failed: number };
 /** Idle and live always poll: either the poll timer is set or one poll is out. */
 export type Next = 'timer' | 'polling';
 /**
- * A player's phone waits for the answer to its own fight move: the fight doc's `at` the move was sent from (null when
- * the phone held no fight doc), and the quick polls left (CHASE_POLLS at most).
+ * A player's phone waits for the answer to its own fight move or class pick: the doc stamp (`from`) the move was sent
+ * from, the quick polls left (CHASE_POLLS at most), and which stamp (`fight` vs `offer`) stops the chase.
  */
-export type Chase = { from: string | null; left: number };
+export type Chase = { from: string | null; left: number; kind?: 'fight' | 'offer' };
 
 /** This page has no room server. */
 export type LinkOff = { at: 'off'; gen: Gen };
@@ -118,8 +119,8 @@ export type LinkEvent =
   | { type: 'forget' }
   /** Try now. */
   | { type: 'retry' }
-  /** A player's own fight move (a step, a cast, End turn) reached the room, sent from the fight doc of `at` `from`. */
-  | { type: 'sent'; from: string | null }
+  /** A player's own fight move or class pick reached the room, sent from the doc stamp `from`. */
+  | { type: 'sent'; from: string | null; kind?: 'fight' | 'offer' }
   /** The GM's phone put a fight doc whose pace is `pace` (a fight began or ended, a player's turn came or went). */
   | { type: 'paced'; pace: PollPace }
   /** The whole save was replaced (import, restore, reset): the link starts again from the room it now holds, as at boot. */
@@ -138,8 +139,8 @@ export type LinkEvent =
   | { type: 'timerFired'; name: LinkTimer }
   // replies, each for the gen of the request
   | { type: 'healthOk'; gen: Gen }
-  /** A poll page. `cursor` is the last seq in it, `more` that the page was full, `pace` the room's, `fightAt` its fight doc's `at`. */
-  | { type: 'polled'; gen: Gen; cursor: number; more: boolean; pace: PollPace; fightAt: string | null }
+  /** A poll page. `cursor` is the last seq in it, `more` that the page was full, `pace` the room's, `fightAt` its fight doc's `at`, and `offerAt` its classOffer/holders stamp. */
+  | { type: 'polled'; gen: Gen; cursor: number; more: boolean; pace: PollPace; fightAt: string | null; offerAt?: string | null }
   | { type: 'created'; gen: Gen; code: RoomCode; key: GmKey }
   | { type: 'peeked'; gen: Gen; exists: boolean }
   /** The head of the room: where its events end, whether the key sent is its GM key, whether our sheet was removed lately. */
@@ -392,7 +393,7 @@ function inRoom(link: Live, event: LinkEvent): Step {
     case 'offline': return typeof link.health === 'object' ? same(link) : { state: { ...link, health: { failed: 1 } }, effects: [] };
     case 'sent': {
       if (!player) return same(link);
-      const state: Live = { ...link, chase: { from: event.from, left: CHASE_POLLS } };
+      const state: Live = { ...link, chase: { from: event.from, left: CHASE_POLLS, ...(event.kind ? { kind: event.kind } : {}) } };
       return state.next === 'polling' ? { state, effects: [] } : wake(state);
     }
     case 'paced': {
@@ -404,8 +405,10 @@ function inRoom(link: Live, event: LinkEvent): Step {
     }
     case 'polled': {
       if (link.next !== 'polling') return same(link);
-      // the chase goes on while the fight doc is the one the move was sent from and quick polls are left
-      const c = link.chase, chase = c && c.left > 1 && event.fightAt === c.from ? { from: c.from, left: c.left - 1 } : null;
+      // the chase goes on while the watched doc stamp is unchanged and quick polls are left
+      const c = link.chase;
+      const watched = c?.kind === 'offer' ? (event.offerAt ?? null) : event.fightAt;
+      const chase = c && c.left > 1 && watched === c.from ? { ...c, left: c.left - 1 } : null;
       const state: Live = { ...link, cursor: event.cursor, health: 'ok', next: 'timer', pace: event.pace, chase };
       const fx: LinkEffect[] = [{ type: 'apply' }, ...(player ? [news({ type: 'pollOk', gen: link.gen })] : [])];
       if (event.more) { const out = pollNow(state); return { state: out.state, effects: [...fx, ...out.effects] }; }

@@ -27,7 +27,7 @@ import type { IconItem } from './registry/icon-defaults.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
-import type { Gate, GateType } from './gates/gate.ts';
+import type { Gate, GateId, GateType } from './gates/gate.ts';
 import type { DifficultyLevel, DifficultyScale } from './gates/difficulty.ts';
 import type { WorldWhy } from './gates/world.ts';
 import type { NewRow, Running, Setup } from './combat/fight-types.ts';
@@ -840,10 +840,12 @@ export type GuildApi = {
   edit(who: HunterRef, sheet: Hunter | null): Promise<void>;
 };
 
-/** The player class locker / skill tree panel and GM unique-class registry (src/views/classes.js). */
+/** The player class locker / skill tree panel, class offer window, and GM unique-class registry (src/views/classes.js). */
 export type ClassesApi = {
   /** Draws the GM view's "Unique classes" section in `box`; answers its head summary (for example, "2 of 18 held"). */
   paint(box: HTMLElement): string;
+  /** Opens the GM unique-class offer (or manages the active one), optionally clearing the starter offer flag on `gateId`. */
+  openOffer(gateId?: GateId | null): void;
 };
 
 /** Every `app.api` name and the type of what its module registers. */

@@ -552,7 +552,7 @@ export function register(app) {
     sel = null;
     // the rewards window is queued before combat:end, so a gate's "Encounter over" question comes after it
     const party = settled.granted.length ? showParty(settled.granted, { title: 'Fight rewards', body }) : null;
-    app.emit('combat:end', { fight: ended, gateId: links.gate });
+    app.emit('combat:end', { fight: ended, gateId: links.gate, offerClasses: settled.offerClasses ?? null });
     const remote = done.payees.filter(p => p.kind === 'remote');
     if (pays(done, v) && remote.length && !settled.granted.length) {
       const names = remote.map(x => x.name).join(', '), s = remote.length === 1 ? 's' : '';

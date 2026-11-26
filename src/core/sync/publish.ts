@@ -20,8 +20,9 @@ import type { Gen } from './link.ts';
 export const PUBLISH_MS = 800;
 /** The fight doc follows sooner: a player's phone waits on it to see its own move (link.ts `CHASE_MS`), and a fight's changes come one tap at a time. */
 export const PUBLISH_FIGHT_MS = 200;
-/** The wait from a change of doc `name` to its put. */
-export const publishWait = (name: string): number => (name === 'fight' ? PUBLISH_FIGHT_MS : PUBLISH_MS);
+/** The wait from a change of doc `name` to its put: fight, classOffer, and holders publish fast for live table interaction. */
+export const publishWait = (name: string): number =>
+  (name === 'fight' || name === 'classOffer' || name === 'holders' ? PUBLISH_FIGHT_MS : PUBLISH_MS);
 
 // ── the machine ──
 /**

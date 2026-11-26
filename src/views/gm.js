@@ -13,7 +13,9 @@ import { standsFor } from '../core/protocol.ts';
 import { weighed, weighsFor, weightOf, weightOn, weightStep, weightsJoined } from '../core/table-weight.ts';
 import { cheatSheet } from './rulesref.js';
 import { bundleMaker } from './reward-editor.js';
-import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
+import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines, stripRewardJob } from '../core/rewards.ts';
+import { canonicalUniqueClass } from '../core/registry/jobs.ts';
+import { uniqueJobRefusalText } from '../core/hunter/grant.ts';
 import { GIVE_HOLD_MS, SHELF_WORDS, readRecent, recentGives } from '../core/registry/bundles.ts';
 import { giveShelf } from './give-shelf.js';
 import { LOG_KINDS } from '../core/save.ts';
@@ -565,10 +567,11 @@ export function register(app) {
     const bits = bundle ? bundle.name : [...rewardLines(app.rules(), rw)].join(', '), approves = sendApproves(form), w = waitingOf(form);
     if (approves && !w) { say(msg, PENDING_WORDS.refusals.answered, true); return false; }
     const earned = w ? { from: w.from, what: w.what } : null;
-    // a player's hunter in this phone's fight: the row holds its statuses, so the reward's go on the row (in the award's write) and the award posted holds the rest
-    const held = remote.length && rw.statuses.length ? remote.filter(k => fightRowOf(k) !== null) : [], free = remote.filter(k => !held.includes(k));
-    const { statuses: _onRow, ...kept } = rw, rest = { ...newRewards(), ...kept };
-    const awards = [{ to: free, rewards: rw }, { to: held, rewards: rest }].filter(a => a.to.length && (bundle || !isEmptyReward(a.rewards)))
+    const hasUniqueJob = !!(rw.job && canonicalUniqueClass(rw.job));
+    const wireBase = hasUniqueJob ? stripRewardJob(rw) : rw;
+    const held = remote.length && wireBase.statuses.length ? remote.filter(k => fightRowOf(k) !== null) : [], free = remote.filter(k => !held.includes(k));
+    const { statuses: _onRow, ...kept } = wireBase, rest = { ...newRewards(), ...kept };
+    const awards = [{ to: free, rewards: wireBase }, { to: held, rewards: rest }].filter(a => a.to.length && (bundle || !isEmptyReward(a.rewards)))
       .map(a => ({ to: a.to, p: w ? postableEvent(pendingAwardEvent(w, a.rewards)) : postable('award', { ...a, ...(bundle ? { bundle } : {}) }) }));
     const lost = remote.filter(k => awards.some(a => !a.p.ev && a.to.includes(k))), posted = remote.filter(k => !lost.includes(k));
     const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room. Create or reopen one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}. The room server rejected this award.`;
@@ -582,23 +585,37 @@ export function register(app) {
     // (each local hunter's fight parts, a held player's statuses) on the rows: one write (src/core/award.ts, hunter.grantWrite)
     const locals = local.map(hid => ({ hid, vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet') }));
     const day = { ...stepTime(S(), new Date()), R: app.rules() }, events = awards.flatMap(a => (a.p.ev ? [a.p.ev] : [])), code = room();
-    const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), rw.statuses);
+    const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), wireBase.statuses);
+    const remoteJobTargets = hasUniqueJob ? posted.map(key => ({ key, name: remoteName(key) })) : [];
+    const jobStamp = remoteJobTargets.length && code ? A().sync.stamp() : null;
+    const jobOnlyRemote = hasUniqueJob && !bundle && isEmptyReward(wireBase) && local.length === 0;
     const out = A().hunter.grantWrite(bundle ? 'gm-give' : 'gm-award', sv => {
-      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle, earned ? earned.from : null), dealt = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
-      const save = approves && !isRefused(dealt) ? pendingApproved(dealt, approves, rw) : dealt;
+      const a = gmAward(
+        sv, locals, rw, { room: code, events, said }, day, bundle, earned ? earned.from : null,
+        remoteJobTargets.length ? { targets: remoteJobTargets, heldRemote: k => fightRowOf(k) !== null, stamp: jobStamp } : null,
+      );
+      const dealt = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
+      // Leave a unique-job-only waiting reward pending if the remote claim was refused.
+      const keepPending = approves && jobOnlyRemote && a.remoteClaimed.length === 0 && a.remoteJobRefused.length > 0;
+      const save = approves && !keepPending && !isRefused(dealt) ? pendingApproved(dealt, approves, rw) : dealt;
       if (isRefused(save)) return save;
       return { ...a, save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
     });
     if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : out.why === 'answered' || out.why === 'no-reward' ? PENDING_WORDS.refusals[out.why] : 'Could not save. Nothing was sent.', true); return false; }
-    if (events.length) A().sync.flush();
+    if (events.length || out.remoteClaimed.length) A().sync.flush();
     // one System popup per hunter, queued by ui.system; a bundle's in its own words
     /** @type {import('../core/api.ts').RewardWindow | undefined} */
     const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' }
       : earned ? { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(earned.from, earned.what), tag: '! Reward', kind: 'quest' } : undefined;
     for (const { hid, g } of out.granted) A().hunter.granted(hid, g, words);
+    const refusalNotes = out.remoteJobRefused.map(r => uniqueJobRefusalText(r.refusal, r.name));
+    for (const note of refusalNotes) ui.toast('Class', note, { kind: 'warning' });
+    const localRefusalNotes = out.granted.flatMap(({ hid, g }) => (g.jobRefused ? [uniqueJobRefusalText(g.jobRefused, nameOf(hid))] : []));
+    const awayReached = jobOnlyRemote ? out.remoteClaimed.map(remoteName) : away;
     const sentTo = names => (names.length ? (earned ? PENDING_WORDS.approved(andList(names)) : `${bundle ? `Gave ${bundle.name} to` : 'Sent to'} ${andList(names)}.`) : '');
-    const waiting = away.length && !goesNow() ? `Saved. ${andList(away)} will get it once the room server confirms it.` : '';
-    say(msg, [waiting ? sentTo(here) : sentTo([...here, ...away]), waiting, failed].filter(Boolean).join(' '), !!lost.length);
+    const waiting = awayReached.length && !goesNow() ? `Saved. ${andList(awayReached)} will get it once the room server confirms it.` : '';
+    const allNotes = [waiting ? sentTo(here) : sentTo([...here, ...awayReached]), waiting, failed, ...localRefusalNotes, ...refusalNotes].filter(Boolean);
+    say(msg, allNotes.join(' '), !!lost.length || refusalNotes.length > 0 || localRefusalNotes.length > 0);
     return true;
   }
   /** The keys of the last awards given from this phone, newest first (bundles.ts `readRecent`, `recentGives`). */
@@ -681,8 +698,9 @@ export function register(app) {
     const heldLocals = new Set(S().hunters.filter(h => heldRow({ hid: h.id })).map(h => h.id));
     const heldRemotes = new Set(remotes().filter(r => fightRowOf(r.key) !== null).map(r => r.key));
     const day = { ...stepTime(S(), new Date()), R: app.rules() };
+    const stamp = A().sync.stamp();
     const out = A().hunter.grantWrite('gm-approve-all', sv => {
-      const res = pendingApproveAll(sv, code, { day, heldLocals, heldRemotes });
+      const res = pendingApproveAll(sv, code, { day, heldLocals, heldRemotes, stamp });
       if (isRefused(res)) return res;
       const remoteHeld = res.remoteStatuses.flatMap(x => playerHeld(remotes(), [x.key], x.statuses));
       return { ...res, held: [...res.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...remoteHeld] };
@@ -691,15 +709,18 @@ export function register(app) {
       say('#gm-pw-msg', out.why === 'no-reward' || out.why === 'outbox-full' ? PENDING_WORDS.refusals[out.why] : 'Could not save. Nothing was sent.', true);
       return;
     }
-    if (out.posted.length) A().sync.flush();
+    if (out.posted.length || out.remoteClaimed.length) A().sync.flush();
     for (const { hid, g, rec } of out.granted) {
       A().hunter.granted(hid, g, { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(rec.from, rec.what), tag: '! Reward', kind: 'quest' });
     }
+    const refusalNotes = out.remoteJobRefused.map(r => uniqueJobRefusalText(r.refusal, r.name));
+    for (const note of refusalNotes) ui.toast('Class', note, { kind: 'warning' });
     const n = out.approved.length;
-    const msg = out.remaining > 0 ? PENDING_WORDS.approvedAllPartial(n, out.remaining)
-      : out.posted.length && !goesNow() ? PENDING_WORDS.approvedAllSaved(n)
+    const msg = n === 0 && refusalNotes.length ? refusalNotes.join(' ')
+      : out.remaining > 0 ? PENDING_WORDS.approvedAllPartial(n, out.remaining)
+      : (out.posted.length || out.remoteClaimed.length) && !goesNow() ? PENDING_WORDS.approvedAllSaved(n)
       : PENDING_WORDS.approvedAll(n);
-    say('#gm-pw-msg', msg, out.remaining > 0);
+    say('#gm-pw-msg', refusalNotes.length && n > 0 ? `${msg} ${refusalNotes.join(' ')}` : msg, out.remaining > 0 || refusalNotes.length > 0);
   }
   /**
    * The GM's answer to waiting reward `id`: approved as it stands (Send award's one path, tied to the record), opened in

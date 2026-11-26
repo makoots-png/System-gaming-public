@@ -17,7 +17,6 @@ import type { UniqueClassName } from '../registry/jobs.ts';
 import { CLASS_LOCKER_CAP } from '../registry/class-trees.ts';
 import { dropClass, earnClass, parkClass } from './classes.ts';
 import type { ClassHolder, ClassHolders } from './class-locker.ts';
-import { released } from './noticed.ts';
 
 export type { ClassHolder, ClassHolders };
 
@@ -406,28 +405,6 @@ export function reconcileLocalUniqueClasses(
   }
 
   return { save: changed ? { ...save, hunters } : save, granted, reset, revoked, parked, restored, blockedForeign };
-}
-
-/**
- * Pure release step for a player phone (`sync.ts` `release()`): flushes waiting chronicle facts (`released`)
- * and reconciles local unique classes against the GM's `DOCS.holders` in one save step.
- * Passes `refuse('unchanged')` through whenever neither part changes `save`, ensuring zero save writes on
- * mid-fight or idle polls (including when a held hunter has a waiting chronicle inbox).
- */
-export function releaseNoticeStep(
-  save: Save,
-  holders: HoldersDoc | null,
-  hasInbox: boolean,
-  isHeld: (s: Save, hid: HunterId) => boolean,
-  R: Rules,
-): { readonly save: Save; readonly diff: ReconcileResult | null } | Refused<'unchanged'> {
-  const r = hasInbox ? released(save, isHeld) : null;
-  const inboxReady = r !== null && !isRefused(r);
-  const base: Save = inboxReady ? r : save;
-  const recon = holders ? reconcileLocalUniqueClasses(base, holders, { isHeld: hid => isHeld(base, hid), R }) : null;
-  const next: Save = recon ? recon.save : base;
-  if (!inboxReady && next === save) return refuse('unchanged');
-  return { save: next, diff: recon && recon.save !== base ? recon : null };
 }
 
 /** Plain-English refusal messages for GM unique-class claim, release, and reassign actions (voice.md compliant). */
