@@ -100,6 +100,17 @@ export function approvalIdOf(id: EventId): EventId {
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
   return `${id.slice(0, 30)}-${(h >>> 0).toString(36).padStart(7, '0')}-a` as EventId;
 }
+/**
+ * The deterministic event id of a player's phone's report that it could not take unique class grant `grantId`
+ * (protocol.ts `classGrantRefused`): the same on every poll, so the room keeps one report a grant however often the phone
+ * reads the holders doc. Always an event id of at most 40 characters, never ending in `-e`.
+ */
+export function grantRefusalIdOf(grantId: string): EventId {
+  if (grantId.length <= 38) return `${grantId}-g` as EventId;
+  let h = 2166136261;
+  for (let i = 0; i < grantId.length; i++) h = Math.imul(h ^ grantId.charCodeAt(i), 16777619);
+  return `${grantId.slice(0, 30)}-${(h >>> 0).toString(36).padStart(7, '0')}-g` as EventId;
+}
 /** A feat's key, as a status has one: a built-in's is reserved; the GM's own is made from its name and kept through renames (hunter/feats.ts). */
 export type FeatKey = Id<'FeatKey'>;
 const FEAT_KEY_RE = /^[a-z0-9-]{1,40}$/;

@@ -9,7 +9,7 @@ import type { Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { newEvent } from '../protocol.ts';
-import type { EventStamp, HoldersDoc, HoldersDocEntry } from '../protocol.ts';
+import type { ClassGrantRefusal, ClassGrantRefusedPayload, EventStamp, HoldersDoc, HoldersDocEntry } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { told } from '../session-log.ts';
 import { isUniqueClass } from '../registry/jobs.ts';
@@ -47,7 +47,11 @@ export type ReconcileResult = {
   readonly parked: readonly UniqueClassName[];
   readonly restored: readonly UniqueClassName[];
   readonly blockedForeign: readonly UniqueClassName[];
+  /** The grants of the doc this phone could not take, each with why, for its report to the GM (noticed.ts `releaseNoticeStep`). */
+  readonly refused: readonly GrantNotTaken[];
 };
+/** A grant of the holders doc a hunter of this phone could not take (statechart rule 4). */
+export type GrantNotTaken = { readonly hid: HunterId; readonly className: UniqueClassName; readonly grantId: string; readonly why: ClassGrantRefusal };
 
 const HOLDER_NAME_MAX = 60;
 const cleanHolderName = (v: unknown): string =>
@@ -289,23 +293,26 @@ export function reassignUniqueClass(
   return { save: s, from: old, to: nextHolder };
 }
 
-/** Builds the GM's authoritative `holders` room document from `save.classHolders`. */
-export function holdersDocOf(save: Pick<Save, 'classHolders'>, at: string): HoldersDoc {
+/**
+ * Builds the GM's authoritative `holders` room document from `save.classHolders`. A player holder the GM's fight holds
+ * (`heldRemote`, sync.ts passes `fightHold`) is marked `wait`, so its phone changes none of that hunter's classes while
+ * the fight lasts, whichever of the holders and fight docs reaches it first (statechart rule 6).
+ */
+export function holdersDocOf(save: Pick<Save, 'classHolders'>, at: string, heldRemote: (key: SheetKey) => boolean = () => false): HoldersDoc {
   const held: Partial<Record<UniqueClassName, HoldersDocEntry>> = {};
   for (const [cls, holder] of Object.entries(save.classHolders.held) as [UniqueClassName, ClassHolder | undefined][]) {
     if (!holder) continue;
-    held[cls] = {
-      who: holder.kind === 'remote' ? holder.sheetKey : 'gm',
-      grantId: holder.grantId,
-    };
+    held[cls] = holder.kind === 'remote'
+      ? { who: holder.sheetKey, grantId: holder.grantId, ...(heldRemote(holder.sheetKey) ? { wait: true as const } : {}) }
+      : { who: 'gm', grantId: holder.grantId };
   }
   return { registryId: save.classHolders.registryId, at, held };
 }
 
 /**
  * Level-triggered reconciliation of a player phone's local hunters against the GM's filtered `DOCS.holders`.
- * - Skips any hunter held by a fight (`isHeld`, unified on `fightHold`) for both grants and revokes, returning the
- *   unchanged `save` reference so idle/mid-fight polls perform zero writes.
+ * - Skips any hunter held by a fight (`isHeld`, unified on `fightHold`, or an entry of the doc marked `wait`) for both
+ *   grants and revokes, returning the unchanged `save` reference so idle/mid-fight polls perform zero writes.
  * - Pass 1 revokes unbacked same-registry entries (no refund) and parks foreign-registry entries (nodes preserved).
  * - Pass 2 reactivates a previously parked same-registry entry for free when `!h.job` (`restored`), skips granting
  *   over a foreign-campaign entry (`blockedForeign`, protecting parked nodes), resets nodes on a fresh same-registry
@@ -316,13 +323,14 @@ export function reconcileLocalUniqueClasses(
   doc: HoldersDoc | null,
   opts: { readonly isHeld: (hid: HunterId) => boolean; readonly R: Rules },
 ): ReconcileResult {
-  if (!doc) return { save, granted: [], reset: [], revoked: [], parked: [], restored: [], blockedForeign: [] };
+  if (!doc) return { save, granted: [], reset: [], revoked: [], parked: [], restored: [], blockedForeign: [], refused: [] };
   const granted: UniqueClassName[] = [];
   const reset: UniqueClassName[] = [];
   const revoked: UniqueClassName[] = [];
   const parked: UniqueClassName[] = [];
   const restored: UniqueClassName[] = [];
   const blockedForeign: UniqueClassName[] = [];
+  const refused: GrantNotTaken[] = [];
   let hunters = save.hunters;
   let changed = false;
 
@@ -331,6 +339,8 @@ export function reconcileLocalUniqueClasses(
     if (opts.isHeld(h.id)) continue; // defer both grants and revokes until fight closes
 
     const key = sheetKeyOf(save.settings.deviceId, h.id);
+    // the GM's doc says its fight holds this hunter (`wait`), whatever this phone has heard of the fight yet
+    if (Object.values(doc.held).some(e => e?.who === key && e.wait)) continue;
     const localUniques = Object.keys(h.classes).filter(isUniqueClass);
 
     // 1. Pass 1: revoke unbacked same-registry uniques and park foreign-campaign uniques first,
@@ -357,13 +367,15 @@ export function reconcileLocalUniqueClasses(
     }
 
     // 2. Pass 2: restore parked same-registry uniques for free when `!h.job`, skip foreign collisions,
-    // reset nodes on a fresh same-registry `grantId`, and grant missing entries.
+    // reset nodes on a fresh same-registry `grantId`, and grant missing entries. A downed hunter takes no class
+    // (statechart rule 2): its grants wait for the revive.
     for (const [cls, docEntry] of Object.entries(doc.held) as [UniqueClassName, HoldersDocEntry | undefined][]) {
-      if (!docEntry || docEntry.who !== key) continue;
+      if (!docEntry || docEntry.who !== key || h.life.at === 'dead') continue;
       const existing = Object.hasOwn(h.classes, cls) ? h.classes[cls] : undefined;
       if (existing && existing.registryId && existing.registryId !== doc.registryId) {
         // Protect parked foreign-campaign tree progress: never overwrite with another campaign's grant.
         blockedForeign.push(cls);
+        refused.push({ hid: h.id, className: cls, grantId: docEntry.grantId, why: 'foreign-class' });
         continue;
       }
       if (existing && existing.registryId === doc.registryId && existing.grantId === docEntry.grantId) {
@@ -399,6 +411,8 @@ export function reconcileLocalUniqueClasses(
         h = earned;
         changed = true;
         (isReset ? reset : granted).push(cls);
+      } else if (earned.why === 'locker-full') {
+        refused.push({ hid: h.id, className: cls, grantId: docEntry.grantId, why: 'locker-full' });
       }
     }
 
@@ -407,8 +421,49 @@ export function reconcileLocalUniqueClasses(
     }
   }
 
-  return { save: changed ? { ...save, hunters } : save, granted, reset, revoked, parked, restored, blockedForeign };
+  return { save: changed ? { ...save, hunters } : save, granted, reset, revoked, parked, restored, blockedForeign, refused };
 }
+
+/**
+ * The GM's phone hears that hunter `p.by` could not take unique class `p.className` of grant `p.grantId`
+ * (`classGrantRefused`, statechart rule 4): when the registry still names that hunter under that grant, the hold is
+ * removed, a `classRevoke` posted and the log says so, in one step. A report of an older grant or of another hunter
+ * is refused (`stale`). No fight check: the phone never took the class, so no fight row has it.
+ */
+export function grantRefused(
+  save: Save,
+  p: Pick<ClassGrantRefusedPayload, 'by' | 'className' | 'grantId' | 'why'>,
+  ctx: HolderStepCtx,
+): { readonly save: Save; readonly released: ClassHolder } | Refused<'stale'> {
+  const old = save.classHolders.held[p.className];
+  if (!old || old.kind !== 'remote' || old.sheetKey !== p.by || old.grantId !== p.grantId) return refuse('stale');
+  const held: Partial<Record<UniqueClassName, ClassHolder>> = { ...save.classHolders.held };
+  delete held[p.className];
+  const afterRevoke = applyRevokeToSave({ ...save, classHolders: { registryId: save.classHolders.registryId, held } }, p.className, old, ctx);
+  const s = told(
+    afterRevoke,
+    { at: ctx.at, cap: ctx.R.logCap },
+    { kind: 'system', hunterId: null, title: 'Unique class not taken', text: grantRefusedLine(old.name, p.className, p.why) },
+  );
+  return { save: s, released: old };
+}
+
+/** Why a hunter could not take a unique class, said to the GM (`grantRefusedLine`) and on the hunter's phone (`grantNotTakenLine`). */
+const GRANT_REFUSED_WHY: Readonly<Record<ClassGrantRefusal, { readonly gm: (cls: string) => string; readonly mine: (cls: string) => string }>> = {
+  'foreign-class': {
+    gm: cls => `They already have parked progress for ${cls} from another campaign.`,
+    mine: cls => `${cls} was not replaced because you already have parked progress for it from another campaign.`,
+  },
+  'locker-full': {
+    gm: () => `Their class locker is full (${CLASS_LOCKER_CAP} classes).`,
+    mine: cls => `${cls} was not added because your class locker is full (${CLASS_LOCKER_CAP} classes).`,
+  },
+};
+/** The GM's log line and toast when hunter `name` could not take `cls`. */
+export const grantRefusedLine = (name: string, cls: string, why: ClassGrantRefusal): string =>
+  `${name || 'A hunter'} could not take ${cls}. ${GRANT_REFUSED_WHY[why].gm(cls)} ${cls} is open again.`;
+/** The toast on the hunter's own phone when it could not take `cls`. */
+export const grantNotTakenLine = (cls: string, why: ClassGrantRefusal): string => GRANT_REFUSED_WHY[why].mine(cls);
 
 /** Plain-English refusal messages for GM unique-class claim, release, and reassign actions (voice.md compliant). */
 export const HOLDER_REFUSAL_WORDS = {

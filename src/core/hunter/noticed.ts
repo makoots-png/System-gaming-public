@@ -15,7 +15,8 @@
 // (`released`).
 import type { Hunter, Quest, Save } from '../save.ts';
 import type { DayKey } from '../day.ts';
-import type { HunterId } from '../ids.ts';
+import { sheetKeyOf } from '../ids.ts';
+import type { HunterId, RoomCode } from '../ids.ts';
 import type { Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -32,9 +33,12 @@ import { ALONE, selfPaid } from './pending.ts';
 import type { RewardSeat } from './pending.ts';
 import { COMPLETER, completerOf, reportsProgress } from './quest-rights.ts';
 import { record } from './chronicle.ts';
+import { grantRefusalEvent } from '../protocol.ts';
 import type { HoldersDoc } from '../protocol.ts';
 import { reconcileLocalUniqueClasses } from './class-holders.ts';
-import type { ReconcileResult } from './class-holders.ts';
+import type { GrantNotTaken, ReconcileResult } from './class-holders.ts';
+import { appliedOnce } from '../applied.ts';
+import { atOutbox, post } from '../sync/outbox.ts';
 
 /**
  * What the notice step reads besides the save: the write's moment (its time, today's day key, the session it belongs
@@ -228,9 +232,11 @@ export function released(save: Save, held: (save: Save, hid: HunterId) => boolea
 
 /**
  * Pure release step for a player phone (`sync.ts` `release()`): flushes waiting chronicle facts (`released`)
- * and reconciles local unique classes against the GM's `DOCS.holders` in one save step.
- * Passes `refuse('unchanged')` through whenever neither part changes `save`, ensuring zero save writes on
- * mid-fight or idle polls (including when a held hunter has a waiting chronicle inbox).
+ * and reconciles local unique classes against the GM's `DOCS.holders` in one save step. Each grant the phone could not
+ * take is reported to the GM in room `room` (`classGrantRefused`, statechart rule 4) once: its deterministic id is
+ * recorded with it (`appliedOnce`), so a later poll that reads the same grant queues nothing; `reported` names the ones
+ * queued in this step. Passes `refuse('unchanged')` through whenever no part changes `save`, ensuring zero save writes
+ * on mid-fight or idle polls (including when a held hunter has a waiting chronicle inbox).
  */
 export function releaseNoticeStep(
   save: Save,
@@ -238,12 +244,23 @@ export function releaseNoticeStep(
   hasInbox: boolean,
   isHeld: (s: Save, hid: HunterId) => boolean,
   R: Rules,
-): { readonly save: Save; readonly diff: ReconcileResult | null } | Refused<'unchanged'> {
+  room: RoomCode | null = null,
+): { readonly save: Save; readonly diff: ReconcileResult | null; readonly reported: readonly GrantNotTaken[] } | Refused<'unchanged'> {
   const r = hasInbox ? released(save, isHeld) : null;
   const inboxReady = r !== null && !isRefused(r);
   const base: Save = inboxReady ? r : save;
   const recon = holders ? reconcileLocalUniqueClasses(base, holders, { isHeld: hid => isHeld(base, hid), R }) : null;
-  const next: Save = recon ? recon.save : base;
+  let next: Save = recon ? recon.save : base;
+  const reported: GrantNotTaken[] = [];
+  for (const g of room && recon ? recon.refused : []) {
+    const h = next.hunters.find(x => x.id === g.hid);
+    const ev = h && room ? grantRefusalEvent({ by: sheetKeyOf(next.settings.deviceId, h.id), name: h.name, className: g.className, grantId: g.grantId, why: g.why }) : null;
+    if (!ev || !room) continue;
+    const queued = appliedOnce(ev.payload.eid, atOutbox(box => post(box, room, { kind: 'event', event: ev }, null).box))(next);
+    if (isRefused(queued)) continue;
+    next = queued;
+    reported.push(g);
+  }
   if (!inboxReady && next === save) return refuse('unchanged');
-  return { save: next, diff: recon && recon.save !== base ? recon : null };
+  return { save: next, diff: recon && recon.save !== base ? recon : null, reported };
 }

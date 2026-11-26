@@ -3,8 +3,10 @@
 // `Save.classHolders` (zero duplicate claim state), handling local and remote `classPick` claims atomically through
 // `claimUniqueClass`, stat-fit matching, and voice.md-compliant copy. Pure.
 import { parseSaveId, parseSheetKey } from '../ids.ts';
-import type { GateId, HunterId, RoomCode, SheetKey } from '../ids.ts';
-import type { ClassOfferDoc, ClassOfferTaken } from '../protocol.ts';
+import type { EventId, GateId, HunterId, RoomCode, SheetKey } from '../ids.ts';
+import { newEvent } from '../protocol.ts';
+import type { ClassOfferDoc, ClassOfferTaken, ClassPickRefusal } from '../protocol.ts';
+import { atOutbox, post } from '../sync/outbox.ts';
 import type { Rules } from '../rules.ts';
 import type { Hunter, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -15,7 +17,7 @@ import { BUILT_IN_CLASSES, classDefOf, isUniqueClass } from '../registry/jobs.ts
 import type { UniqueClassName } from '../registry/jobs.ts';
 import { CLASS_SIGNATURES } from '../registry/class-powers.ts';
 import type { ClassSignatureMap } from '../registry/class-powers.ts';
-import { CLASS_TREES } from '../registry/class-trees.ts';
+import { CLASS_LOCKER_CAP, CLASS_TREES } from '../registry/class-trees.ts';
 import type { ClassTreeMap } from '../registry/class-trees.ts';
 import {
   CLASS_OFFER_MAX_HUNTERS,
@@ -140,20 +142,8 @@ export function classOfferDocOf(
 }
 
 export type OfferPickTarget = Extract<HolderTarget, { kind: 'local' | 'remote' }>;
-export type OfferPickRefusal =
-  | 'no-offer'
-  | 'wrong-offer'
-  | 'not-in-pool'
-  | 'not-eligible'
-  | 'already-picked'
-  | 'not-unique'
-  | 'class-taken'
-  | 'no-hunter'
-  | 'locker-full'
-  | 'bad-target'
-  | 'held'
-  | 'dead'
-  | 'foreign-class';
+/** Why a pick is refused: the wire's list (protocol.ts `CLASS_PICK_REFUSALS`), so every refusal can be told to the player. */
+export type OfferPickRefusal = ClassPickRefusal;
 
 /**
  * Processes one hunter's pick from the open class offer (local or remote) atomically through `claimUniqueClass`.
@@ -177,6 +167,28 @@ export function pickClassFromOffer(
   const heldByTarget = classesHeldBy(save, target);
   if (heldByTarget.some(c => offer.pool.includes(c))) return refuse('already-picked');
   return claimUniqueClass(save, cls, target, ctx);
+}
+
+/**
+ * A player's pick `pick` (its event id) from the offer, answered in the same write: `pickClassFromOffer`, and on a
+ * refusal a `classPickRefused` to that phone in the outbox with why, so it leaves "Claiming" (statechart rule 5). Nothing
+ * is queued without a room. Answers the save, the holder on success and the refusal.
+ */
+export function pickAnswered(
+  save: Save,
+  by: { readonly sheetKey: SheetKey; readonly name: string },
+  cls: string,
+  offerId: string,
+  pick: EventId,
+  ctx: HolderStepCtx,
+): { readonly save: Save; readonly holder: ClassHolder | null; readonly why: OfferPickRefusal | null } {
+  const r = pickClassFromOffer(save, { kind: 'remote', ...by }, cls, offerId, ctx);
+  if (!isRefused(r)) return { save: r.save, holder: r.holder, why: null };
+  const ev = ctx.room && ctx.stamp && isUniqueClass(cls)
+    ? newEvent('classPickRefused', { to: [by.sheetKey], pick, className: cls, why: r.why }, ctx.stamp)
+    : null;
+  const room = ctx.room;
+  return { save: ev && room ? atOutbox(box => post(box, room, { kind: 'event', event: ev }, null).box)(save) : save, holder: null, why: r.why };
 }
 
 /**
@@ -231,13 +243,16 @@ export type ClassOfferViewModel = {
   readonly totalCount: number;
 };
 
-/** Builds the pure view-model for one hunter against an active `ClassOfferDoc` (or local GM offer doc). */
+/**
+ * Builds the pure view-model for one hunter against an active `ClassOfferDoc` (or local GM offer doc). Which class is
+ * the hunter's comes from the doc alone (`taken[cls].who === myWho`), never from its locker, which follows the holders
+ * doc and may be a poll behind, or hold a parked copy from another campaign (statechart rule 7).
+ */
 export function classOfferView(
   doc: Extract<ClassOfferDoc, { active: true }>,
   opts: {
     readonly hunter: Pick<Hunter, 'stats' | 'classes'> | null;
     readonly myWho: SheetKey | 'gm' | null;
-    readonly myHeldFromPool: UniqueClassName | null;
     readonly signatures?: ClassSignatureMap;
     readonly trees?: ClassTreeMap;
   },
@@ -250,7 +265,7 @@ export function classOfferView(
   const cards: OfferCardView[] = doc.pool.map(cls => {
     const def = BUILT_IN_CLASSES[cls];
     const t = doc.taken[cls];
-    const heldByMe = opts.myHeldFromPool === cls || (!!t && opts.myWho !== null && opts.myWho !== 'gm' && t.who === opts.myWho);
+    const heldByMe = !!t && opts.myWho !== null && opts.myWho !== 'gm' && t.who === opts.myWho;
     const open = !t;
     if (open) openCount++;
     return {
@@ -269,7 +284,7 @@ export function classOfferView(
 
   const mythics = cards.filter(c => c.rarity === 'mythic');
   const epics = cards.filter(c => c.rarity === 'epic');
-  const myPicked = opts.myHeldFromPool ?? cards.find(c => c.heldByMe)?.className ?? null;
+  const myPicked = cards.find(c => c.heldByMe)?.className ?? null;
   return {
     offerId: doc.id,
     mythics,
@@ -319,6 +334,20 @@ export const OFFER_WORDS = {
   gatePromptNote: 'A carved altar awaits. Tap Offer classes to let each hunter pick a unique class, or mark the gate cleared.',
   sendFailed: 'Could not send your class pick to the room. Try again.',
 } as const;
+
+/**
+ * What a player's phone says when the GM's phone refused its pick (`classPickRefused`), in the player's own terms:
+ * the offer's refusals, with the hunter's own state told as theirs.
+ */
+export const pickRefusedLine: (why: OfferPickRefusal, cls: string) => string = (why, cls) => ({
+  ...OFFER_REFUSAL_WORDS,
+  'class-taken': classTakenLine(cls, null),
+  held: 'Your hunter is in the GM\'s fight. Pick a class after the fight ends.',
+  dead: 'Your hunter is down. Pick a class after the GM revives your hunter.',
+  'locker-full': `Your class locker is full (${CLASS_LOCKER_CAP} classes).`,
+  'foreign-class': `You already have parked progress for ${cls} from another campaign.`,
+  'no-hunter': 'Your hunter is not in the GM\'s list for this room. Ask the GM to check the room.',
+} satisfies Record<OfferPickRefusal, string>)[why];
 
 /** Plain-English refusal messages for `pickClassFromOffer` (voice.md compliant). */
 export const OFFER_REFUSAL_WORDS: Readonly<Record<OfferPickRefusal, string>> = {

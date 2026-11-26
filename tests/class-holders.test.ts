@@ -11,6 +11,7 @@ import { earnClass, swapClass } from '../src/core/hunter/classes.ts';
 import {
   claimUniqueClass,
   classesHeldBy,
+  grantRefused,
   holderOf,
   holdersDocOf,
   reassignUniqueClass,
@@ -430,5 +431,96 @@ describe('a downed hunter takes no unique class (statechart rule 2)', () => {
     const moved = reassignUniqueClass(s, 'Hemomancer', { kind: 'local', hunterId: hid('h2') }, ctx);
     if (isRefused(moved)) throw new Error(moved.why);
     expect(holderOf(moved.save, 'Hemomancer')).toMatchObject({ kind: 'local', hunterId: 'h2' });
+  });
+});
+
+describe('the holders doc says when its holder is in the GM\'s fight (statechart rule 6)', () => {
+  const player = () => { const s = freshSave({ ...env, newDeviceId: () => dev('d-pl1') }, { onboarded: true }); return { ...s, settings: { ...s.settings, mode: 'player' as const } }; };
+  test('holdersDocOf marks wait only on a player holder the GM\'s fight holds', () => {
+    const MIRA = skey('d-mira:h1'), KAEL = skey('d-kael:h1');
+    const ctx = { at: AT, room: null, stamp: null, R: RULES, ...NOT_HELD };
+    let s: Save = twoHunterSave();
+    for (const [cls, target] of [['Hemomancer', { kind: 'remote', sheetKey: MIRA, name: 'Mira' }], ['Seraph', { kind: 'remote', sheetKey: KAEL, name: 'Kael' }], ['Ironclad', { kind: 'local', hunterId: hid('h1') }]] as const) {
+      const c = claimUniqueClass(s, cls, target, ctx);
+      if (isRefused(c)) throw new Error(c.why);
+      s = c.save;
+    }
+    const doc = holdersDocOf(s, AT, k => k === MIRA);
+    expect(doc.held.Hemomancer).toEqual({ who: MIRA, grantId: s.classHolders.held.Hemomancer!.grantId, wait: true });
+    expect(doc.held.Seraph!.wait).toBeUndefined();
+    expect(doc.held.Ironclad!.wait).toBeUndefined();
+    expect(Object.values(holdersDocOf(s, AT).held).some(e => e?.wait)).toBe(false);
+  });
+
+  test('reconcile leaves a hunter whose entry says wait as it is (the same save), and grants once the flag is gone', () => {
+    const s0 = player(), key = sheetKeyOf(s0.settings.deviceId, s0.hunters[0]!.id);
+    const waiting = { registryId: 'reg-1', at: AT, held: { Hemomancer: { who: key, grantId: 'cg1', wait: true as const } } };
+    const held = reconcileLocalUniqueClasses(s0, waiting, { isHeld: () => false, R: RULES });
+    expect(held.save).toBe(s0);
+    expect([held.granted, held.refused]).toEqual([[], []]);
+    const free = reconcileLocalUniqueClasses(s0, { ...waiting, held: { Hemomancer: { who: key, grantId: 'cg1' } } }, { isHeld: () => false, R: RULES });
+    expect(free.granted).toEqual(['Hemomancer']);
+    expect(free.save.hunters[0]!.job).toBe('Hemomancer');
+  });
+
+  test('a wait on another hunter\'s entry does not hold this one, and a revoke waits too', () => {
+    const s0 = player(), h = s0.hunters[0]!, key = sheetKeyOf(s0.settings.deviceId, h.id);
+    const got = reconcileLocalUniqueClasses(s0, { registryId: 'reg-1', at: AT, held: { Hemomancer: { who: key, grantId: 'cg1' } } }, { isHeld: () => false, R: RULES }).save;
+    // the GM's doc still marks the hunter held under another class it holds, while dropping Hemomancer: nothing changes yet
+    const revokeWaits = reconcileLocalUniqueClasses(got, { registryId: 'reg-1', at: AT_LATER, held: { Seraph: { who: key, grantId: 'cg2', wait: true as const } } }, { isHeld: () => false, R: RULES });
+    expect(revokeWaits.save).toBe(got);
+    const other = skey('d-other:h1');
+    const notMine = reconcileLocalUniqueClasses(got, { registryId: 'reg-1', at: AT_LATER, held: { Seraph: { who: other, grantId: 'cg2', wait: true as const } } }, { isHeld: () => false, R: RULES });
+    expect(notMine.revoked).toEqual(['Hemomancer']);
+  });
+});
+
+describe('a phone that cannot take a grant says so, and the registry lets the class go (statechart rule 4)', () => {
+  const player = () => { const s = freshSave({ ...env, newDeviceId: () => dev('d-pl1') }, { onboarded: true }); return { ...s, settings: { ...s.settings, mode: 'player' as const } }; };
+
+  test('reconcile answers refused for a parked foreign entry and for a full locker', () => {
+    const s0 = player(), h = s0.hunters[0]!, key = sheetKeyOf(s0.settings.deviceId, h.id);
+    const foreign = earnClass(h, 'Hemomancer', { at: AT, activate: false, awaken: true, registryId: 'reg-old', grantId: 'cg9', resetNodes: true, R: RULES });
+    if (isRefused(foreign)) throw new Error(foreign.why);
+    const sF = { ...s0, hunters: [foreign] };
+    const doc = { registryId: 'reg-1', at: AT, held: { Hemomancer: { who: key, grantId: 'cg1' } } };
+    const rF = reconcileLocalUniqueClasses(sF, doc, { isHeld: () => false, R: RULES });
+    expect(rF.refused).toEqual([{ hid: h.id, className: 'Hemomancer', grantId: 'cg1', why: 'foreign-class' }]);
+
+    const full = { ...h, classes: Object.fromEntries(Array.from({ length: CLASS_LOCKER_CAP }, (_, i) => [`Filler ${i}`, { unlockedAt: AT, nodes: [] }])) };
+    const rL = reconcileLocalUniqueClasses({ ...s0, hunters: [full] }, doc, { isHeld: () => false, R: RULES });
+    expect(rL.refused).toEqual([{ hid: h.id, className: 'Hemomancer', grantId: 'cg1', why: 'locker-full' }]);
+    expect(rL.granted).toEqual([]);
+  });
+
+  test('Pass 2 skips a downed hunter: its grant waits for the revive', () => {
+    const s0 = player(), h = s0.hunters[0]!, key = sheetKeyOf(s0.settings.deviceId, h.id);
+    const down = { ...s0, hunters: [{ ...h, life: { at: 'dead' as const } }] };
+    const doc = { registryId: 'reg-1', at: AT, held: { Hemomancer: { who: key, grantId: 'cg1' } } };
+    const r = reconcileLocalUniqueClasses(down, doc, { isHeld: () => false, R: RULES });
+    expect(r.save).toBe(down);
+    expect([r.granted, r.refused]).toEqual([[], []]);
+    expect(reconcileLocalUniqueClasses(s0, doc, { isHeld: () => false, R: RULES }).granted).toEqual(['Hemomancer']);
+  });
+
+  test('grantRefused removes a matching hold, posts classRevoke and logs; a stale grantId or another sheet changes nothing; a held holder is let go too', () => {
+    const MIRA = skey('d-mira:h1'), R1 = room('ABC234');
+    const ctx = { at: AT, room: R1, stamp: STAMP, R: RULES, ...NOT_HELD };
+    const c = claimUniqueClass(twoHunterSave(), 'Hemomancer', { kind: 'remote', sheetKey: MIRA, name: 'Mira' }, ctx);
+    if (isRefused(c)) throw new Error(c.why);
+    const grantId = c.holder.grantId;
+    expect(grantRefused(c.save, { by: MIRA, className: 'Hemomancer', grantId: 'cg0-old', why: 'locker-full' }, ctx)).toEqual({ ok: false, why: 'stale' });
+    expect(grantRefused(c.save, { by: skey('d-kael:h1'), className: 'Hemomancer', grantId, why: 'locker-full' }, ctx)).toEqual({ ok: false, why: 'stale' });
+    expect(grantRefused(c.save, { by: MIRA, className: 'Seraph', grantId, why: 'locker-full' }, ctx)).toEqual({ ok: false, why: 'stale' });
+
+    const heldCtx = { ...ctx, stamp: { ...STAMP, rand: 0.77 }, heldRemote: () => true };
+    const r = grantRefused(c.save, { by: MIRA, className: 'Hemomancer', grantId, why: 'foreign-class' }, heldCtx);
+    if (isRefused(r)) throw new Error(r.why);
+    expect(holderOf(r.save, 'Hemomancer')).toBeNull();
+    expect(r.released).toMatchObject({ kind: 'remote', sheetKey: MIRA });
+    const sent = (r.save.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' ? e.letter.event : null));
+    expect(sent.at(-1)).toMatchObject({ type: 'classRevoke', payload: { to: [MIRA], className: 'Hemomancer' } });
+    expect(r.save.log[0]!.text).toBe('Mira could not take Hemomancer. They already have parked progress for Hemomancer from another campaign. Hemomancer is open again.');
+    expect(grantRefused(r.save, { by: MIRA, className: 'Hemomancer', grantId, why: 'foreign-class' }, heldCtx), 'a second report finds no hold').toEqual({ ok: false, why: 'stale' });
   });
 });

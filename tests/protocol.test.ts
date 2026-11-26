@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
-import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, newEvent, newEventId, onDodge, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
+import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, grantRefusalEvent, newEvent, newEventId, onDodge, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, WORD_MAX, holdersFor, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor, wireDocs } from '../src/core/protocol.ts';
 import type { EventAudience, PayloadOf, RoomEvent, RoomViewer } from '../src/core/protocol.ts';
@@ -10,6 +10,7 @@ import type { Item } from '../src/core/registry/items.ts';
 import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { BONUS_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
+import { grantRefusalIdOf } from '../src/core/ids.ts';
 import { newHunter } from '../src/core/save.ts';
 import { RULES, domainOf } from '../src/core/rules.ts';
 import { MYTHIC_IDS, mythicScriptOf, omensOf } from '../src/core/registry/mythics.ts';
@@ -210,17 +211,17 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'classGrant', 'classNode', 'classPick', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'classGrant', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
+    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classNode', 'classPick', 'classSwap', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode', 'classPick'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classGrantRefused', 'classNode', 'classPick', 'classSwap', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode', 'classPick', 'classGrantRefused'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -263,7 +264,7 @@ describe('a new event, as a phone sends one', () => {
   const stamp = { device: 'd-gm1', now: Date.parse('2026-11-12T12:00:00.000Z'), rand: 0.5 };
   const body = (type: EventType): Raw => { const { eid: _, ...rest } = VALID[type][1]; return rest; };
 
-  for (const type of (Object.keys(VALID) as EventType[]).filter(t => t !== 'offerEnd' && t !== 'offerStop')) {
+  for (const type of (Object.keys(VALID) as EventType[]).filter(t => t !== 'offerEnd' && t !== 'offerStop' && t !== 'classGrantRefused')) {
     test(`a ${type} is what the server's parser reads it as, with an id made from the phone, the time and a random part`, () => {
       const ev = newEvent(type, body(type) as never, stamp)!;
       expect(ev.type).toBe(type);
@@ -1933,5 +1934,41 @@ describe('wire error codes (API_ERRORS, apiError, parseApiError)', () => {
     for (const healthCode of ['opening', 'closed', 'unreachable', 'ERR_POSTGRES_CONNECTION_REFUSED', 'ECONNREFUSED']) {
       expect(parseApiError({ ok: false, db: 'postgres', error: healthCode })).toEqual({ code: null, text: healthCode });
     }
+  });
+});
+
+describe('the class flow\'s answers on the wire (statechart rules 4, 5 and 6)', () => {
+  test('a classPickRefused with a bad why, pick or class is refused', () => {
+    const ok = valid('classPickRefused');
+    expect(parseEvent('classPickRefused', ok)).not.toBeNull();
+    expect(parseEvent('classPickRefused', { ...ok, why: 'nope' })).toBeNull();
+    expect(parseEvent('classPickRefused', { ...ok, pick: 'bad id!' })).toBeNull();
+    expect(parseEvent('classPickRefused', { ...ok, pick: 'o1-e' }), 'an offer end id is no pick').toBeNull();
+    expect(parseEvent('classPickRefused', { ...ok, className: 'Fighter' })).toBeNull();
+    expect(parseEvent('classPickRefused', { ...ok, to: [KEY, OTHER] })).toBeNull();
+  });
+
+  test('a classGrantRefused carries its grant\'s id, and a bad grantId or why is refused', () => {
+    const ok = valid('classGrantRefused');
+    expect(parseEvent('classGrantRefused', ok)).not.toBeNull();
+    expect(parseEvent('classGrantRefused', { ...ok, why: 'held' })).toBeNull();
+    expect(parseEvent('classGrantRefused', { ...ok, grantId: 'bad id!' })).toBeNull();
+    expect(parseEvent('classGrantRefused', { ...ok, grantId: 'cg4-abc' }), 'an id that is not its grant\'s').toBeNull();
+    expect(parseEvent('classGrantRefused', { ...ok, eid: 'd-mira1-x1' })).toBeNull();
+    const ev = grantRefusalEvent({ by: KEY as SheetKey, name: 'Mira', className: 'Hemomancer', grantId: 'cg4-abc', why: 'locker-full' });
+    expect(ev?.payload.eid).toBe(grantRefusalIdOf('cg4-abc'));
+    const long = 'cg' + '9'.repeat(38);
+    expect(grantRefusalIdOf(long)).toHaveLength(40);
+    expect(grantRefusalIdOf(long)).toBe(grantRefusalIdOf(long));
+    expect(grantRefusalEvent({ by: KEY as SheetKey, name: 'Mira', className: 'Hemomancer', grantId: long, why: 'locker-full' })).not.toBeNull();
+  });
+
+  test('the holders doc reads and keeps wait, and refuses a wait that is not true or that names the GM', () => {
+    const base = { registryId: 'reg-1', at: '2026-11-25T12:00:00.000Z' };
+    const doc = { ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1', wait: true } } };
+    expect(DOCS.holders(doc)).toEqual(doc);
+    expect(DOCS.holders({ ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1' } } })).toEqual({ ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1' } } });
+    expect(DOCS.holders({ ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1', wait: 1 } } })).toBeNull();
+    expect(DOCS.holders({ ...base, held: { Hemomancer: { who: 'gm', grantId: 'cg1', wait: true } } })).toBeNull();
   });
 });

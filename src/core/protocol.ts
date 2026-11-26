@@ -59,7 +59,7 @@ import { deviceOf, fightId, hunterIdOf, parseClassNodeId, parseDeviceId, parseEv
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
 import type { ClassNodeId, DeviceId, EventId, FightId, ItemId, RoomCode, SheetKey } from './ids.ts';
-import { OFFER_ID_MAX, approvalIdOf, endIdOf, isEndId, parseOfferId } from './ids.ts';
+import { OFFER_ID_MAX, approvalIdOf, endIdOf, grantRefusalIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
 import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods, parseStashAsk } from './trade/goods.ts';
 import type { BagPick, Goods, StashAsk } from './trade/goods.ts';
@@ -531,6 +531,26 @@ export type ClassNodePayload = Base & {
 };
 /** A player picks one unique class from the GM's open `DOCS.classOffer` (sealed to GM and sender). */
 export type ClassPickPayload = Base & { by: SheetKey; name: string; offerId: string; className: UniqueClassName };
+/** Why the GM's phone refused a player's class pick (class-offer.ts `pickClassFromOffer`). */
+export const CLASS_PICK_REFUSALS = [
+  'no-offer', 'wrong-offer', 'not-in-pool', 'not-eligible', 'already-picked', 'not-unique', 'class-taken', 'no-hunter',
+  'locker-full', 'bad-target', 'held', 'dead', 'foreign-class',
+] as const;
+export type ClassPickRefusal = (typeof CLASS_PICK_REFUSALS)[number];
+/**
+ * The GM's phone refused the class pick `pick` (its event id) of the hunter of `to`, for `why` (class-offer.ts
+ * `pickAnswered`), so that phone leaves "Claiming" and says why (statechart rule 5). Sealed to the GM and that phone.
+ */
+export type ClassPickRefusedPayload = Base & { to: [SheetKey]; pick: EventId; className: UniqueClassName; why: ClassPickRefusal };
+/** Why a player's phone could not take a unique class the holders doc gave it (class-holders.ts `reconcileLocalUniqueClasses`). */
+export const CLASS_GRANT_REFUSALS = ['foreign-class', 'locker-full'] as const;
+export type ClassGrantRefusal = (typeof CLASS_GRANT_REFUSALS)[number];
+/**
+ * Hunter `by` (`name`) could not take unique class `className` of grant `grantId`, for `why`, so the GM's registry lets
+ * it go (class-holders.ts `grantRefused`, statechart rule 4). Its id is `grantRefusalIdOf(grantId)`, so the room keeps
+ * one report a grant. Sealed to the GM and the sender.
+ */
+export type ClassGrantRefusedPayload = Base & { by: SheetKey; name: string; className: UniqueClassName; grantId: string; why: ClassGrantRefusal };
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
@@ -539,6 +559,7 @@ type Payloads = {
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload;
   classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload; classPick: ClassPickPayload;
+  classPickRefused: ClassPickRefusedPayload; classGrantRefused: ClassGrantRefusedPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -798,6 +819,27 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       className: cls,
     };
   } },
+  classPickRefused: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
+    const to = toList(own(o, 'to')), cls = own(o, 'className');
+    if (to.length !== 1 || !isUniqueClass(cls)) return refuse();
+    return { ...base(o), to: [to[0]!], pick: plainEid(own(o, 'pick')), className: cls, why: choiceOf(CLASS_PICK_REFUSALS)(own(o, 'why')) };
+  } },
+  classGrantRefused: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
+    const cls = own(o, 'className'), g = own(o, 'grantId');
+    if (!isUniqueClass(cls)) return refuse();
+    const grantId = typeof g === 'string' && WORD_RE.test(g) ? g : refuse();
+    const b = base(o);
+    // one report a grant: its id is the grant's (ids.ts `grantRefusalIdOf`)
+    if (b.eid !== grantRefusalIdOf(grantId)) return refuse();
+    return {
+      ...b,
+      by: sheetKey(own(o, 'by')),
+      name: opt(own(o, 'name'), text(NAME_MAX), ''),
+      className: cls,
+      grantId,
+      why: choiceOf(CLASS_GRANT_REFUSALS)(own(o, 'why')),
+    };
+  } },
 };
 
 type EventEntry<K extends EventType> = {
@@ -817,6 +859,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
   systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'),
   classGrant: entry('classGrant'), classRevoke: entry('classRevoke'), classSwap: entry('classSwap'), classNode: entry('classNode'), classPick: entry('classPick'),
+  classPickRefused: entry('classPickRefused'), classGrantRefused: entry('classGrantRefused'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -906,6 +949,10 @@ export function endEvent(type: 'offerEnd' | 'offerStop', body: EventBody<'offerE
  */
 export function approvalEvent(recId: EventId, body: EventBody<'award'>): RoomEvent | null {
   return parseEvent('award', { ...body, eid: approvalIdOf(recId) });
+}
+/** The one constructor of a phone's report that it could not take a unique class grant: `body` under the grant's id (`grantRefusalIdOf`). */
+export function grantRefusalEvent(body: EventBody<'classGrantRefused'>): RoomEvent | null {
+  return parseEvent('classGrantRefused', { ...body, eid: grantRefusalIdOf(body.grantId) });
 }
 
 /**
@@ -1111,8 +1158,12 @@ export const FEATS_DOC_MAX = 100;
 export const STASH_LINES = 40;
 /** The party stash as the GM's phone publishes it (trade/stash.ts `stashDoc`): its gold and its lines, each item whole with its id. */
 export type StashDoc = { gold: number; items: Item[] };
-/** One entry in the GM's `holders` room document (`DOCS.holders`). */
-export type HoldersDocEntry = { readonly who: SheetKey | 'gm'; readonly grantId: string };
+/**
+ * One entry in the GM's `holders` room document (`DOCS.holders`). `wait`: the GM's fight holds its player hunter, so
+ * that phone leaves the hunter's classes as they are until a doc without it (statechart rule 6). The grant and the hold
+ * travel in one doc, so the order of the holders and fight puts does not matter. An older phone ignores it.
+ */
+export type HoldersDocEntry = { readonly who: SheetKey | 'gm'; readonly grantId: string; readonly wait?: true };
 /** Authoritative map of claimed unique classes published by the GM (`DOCS.holders`), filtered per viewer on poll. */
 export type HoldersDoc = { readonly registryId: string; readonly at: string; readonly held: Partial<Record<UniqueClassName, HoldersDocEntry>> };
 /** One claimed entry in `DOCS.classOffer`: who holds an offered class and the display name shown to other players (`''` hides NPC names). */
@@ -1554,7 +1605,9 @@ function holdersDocOf(o: Rec): HoldersDoc {
     const who: SheetKey | 'gm' = whoRaw === 'gm' ? 'gm' : sheetKey(whoRaw);
     const gRaw = own(e, 'grantId');
     const grantId = typeof gRaw === 'string' && WORD_RE.test(gRaw) ? gRaw : refuse();
-    held[k] = { who, grantId };
+    const wait = own(e, 'wait');
+    if (wait !== undefined && (wait !== true || who === 'gm')) return refuse();
+    held[k] = { who, grantId, ...(wait === true ? { wait: true as const } : {}) };
   }
   return { registryId, at, held };
 }

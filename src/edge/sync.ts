@@ -43,8 +43,8 @@ import { upgradeRefused } from './upgrade.ts';
 import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
 import { backedRemoteHunter, pushedClasses } from '../core/hunter/classes.ts';
-import { holdersDocOf } from '../core/hunter/class-holders.ts';
-import type { ReconcileResult } from '../core/hunter/class-holders.ts';
+import { grantNotTakenLine, holdersDocOf } from '../core/hunter/class-holders.ts';
+import type { GrantNotTaken, ReconcileResult } from '../core/hunter/class-holders.ts';
 import { releaseNoticeStep } from '../core/hunter/noticed.ts';
 import { classOfferDocOf } from '../core/hunter/class-offer.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
@@ -794,6 +794,7 @@ export function register(app: SyncHost): void {
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
     used: 'a use report', roll: 'a roll', questUpdate: 'quest progress', coinCall: 'a coin call', coinLand: 'a coin ruling',
     classGrant: 'a unique class grant', classRevoke: 'a unique class release', classSwap: 'a class swap', classNode: 'a skill tree update', classPick: 'a class pick',
+    classPickRefused: 'the answer to a class pick', classGrantRefused: 'a report that you could not take a class',
     step: 'a step', cast: 'an ability use', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash request', stashAnswer: 'a stash reply',
     word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward request', respec: 'a point respec report',
@@ -861,21 +862,25 @@ export function register(app: SyncHost): void {
     s: Save,
     holders: DocOf<'holders'> | null,
     hasInbox: boolean,
-    onDiff: (d: ReconcileResult | null) => void,
+    onDiff: (d: ReconcileResult | null, reported: readonly GrantNotTaken[]) => void,
   ): Save | Refused<'unchanged'> => {
-    const out = releaseNoticeStep(s, holders, hasInbox, noticeHeld, app.rules());
+    const out = releaseNoticeStep(s, holders, hasInbox, noticeHeld, app.rules(), playerRoom());
     if (isRefused(out)) return out;
-    onDiff(out.diff);
+    onDiff(out.diff, out.reported);
     return out.save;
   };
-  /** The release write: once the room's fight doc lets a hunter go, flush waiting facts and reconcile unique classes in one write. */
+  /**
+   * The release write: once the room's fight doc lets a hunter go, flush waiting facts, reconcile unique classes and
+   * report each grant this phone could not take, in one write. A grant not taken is told once, when it is reported.
+   */
   const release = (): void => {
     const cur = store.get(), holders = doc('holders');
     const hasInbox = cur.hunters.some(h => h.chronicle.inbox.length);
-    const preview = releaseNoticeStep(cur, holders, hasInbox, noticeHeld, app.rules());
+    const preview = releaseNoticeStep(cur, holders, hasInbox, noticeHeld, app.rules(), playerRoom());
     if (isRefused(preview)) return;
-    const did: { diff: ReconcileResult | null } = { diff: null };
-    store.apply('noticed', s => releaseStep(s, holders, hasInbox, d => { did.diff = d; }));
+    const did: { diff: ReconcileResult | null; reported: readonly GrantNotTaken[] } = { diff: null, reported: [] };
+    store.apply('noticed', s => releaseStep(s, holders, hasInbox, (d, reported) => { did.diff = d; did.reported = reported; }));
+    for (const g of did.reported) ui.toast('Class', grantNotTakenLine(g.className, g.why), { kind: 'warning' });
     const d = did.diff;
     if (!d) return;
     for (const cls of d.granted) ui.toast('! Class', `You received the unique class ${cls}.`, { kind: 'levelup' });
@@ -883,7 +888,6 @@ export function register(app: SyncHost): void {
     for (const cls of d.restored) ui.toast('! Class', `${cls} is active again.`, { kind: 'info' });
     for (const cls of d.revoked) ui.toast('! Class', `The GM released ${cls}.`, { kind: 'info' });
     for (const cls of d.parked) ui.toast('! Class', `${cls} is parked while you play in this room. Its tree progress stays saved.`, { kind: 'info' });
-    for (const cls of d.blockedForeign) ui.toast('Class', `${cls} was not replaced because you already have parked progress for it from another campaign.`, { kind: 'warning' });
   };
   /**
    * The players' sheets with their device, hunter and when the device last polled, on the room's GM phone; none on any
@@ -944,7 +948,8 @@ export function register(app: SyncHost): void {
    * the next change or poll, and nothing is put before this stretch of the link has read the room's docs.
    */
   const publishers = new Map<PublishedDoc, () => unknown>([
-    ['holders', () => holdersDocOf(store.get(), new Date().toISOString())],
+    // a player hunter the GM's fight holds is marked `wait` in the same doc as its grant (class-holders.ts `holdersDocOf`)
+    ['holders', () => { const s = store.get(); return holdersDocOf(s, new Date().toISOString(), key => fightHold(s.fight, { key }, { seat: app.seat(), key: null, ...table(s) }) !== null); }],
     ['classOffer', () => classOfferDocOf(store.get(), new Date().toISOString(), new Map(remoteSheets().map(r => [r.key, r.data.name])))],
   ]);
   /** Each doc's publish machine (src/core/sync/publish.ts): at most one put of a doc out at a time. A doc not in it is idle. */

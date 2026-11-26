@@ -200,4 +200,12 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', offerId: 'co1-abc' },
     { eid: EID, by: KEY, name: 'Mira', className: 'Hemomancer', offerId: 'co1-abc' },
   ],
+  classPickRefused: [
+    { eid: EID, to: [KEY], pick: 'd-mira1-cp1', className: 'Hemomancer', why: 'held' },
+    { eid: EID, to: [KEY], pick: 'd-mira1-cp1', className: 'Hemomancer', why: 'held' },
+  ],
+  classGrantRefused: [
+    { eid: 'cg3-abc-g', by: KEY, name: 'Mira', className: 'Hemomancer', grantId: 'cg3-abc', why: 'foreign-class' },
+    { eid: 'cg3-abc-g', by: KEY, name: 'Mira', className: 'Hemomancer', grantId: 'cg3-abc', why: 'foreign-class' },
+  ],
 };

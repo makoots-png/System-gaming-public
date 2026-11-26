@@ -1,7 +1,8 @@
 // First-mission & GM unique-class offer, deterministic two-phone race, 4+ Epic / 7th all-taken notice,
 // GM award unique-job refusal notice, and 360px phone layout (PR 6).
 import type { Page } from '@playwright/test';
-import { OFFER_WORDS, classTakenLine } from '../../src/core/hunter/class-offer.ts';
+import { OFFER_WORDS, classTakenLine, pickRefusedLine } from '../../src/core/hunter/class-offer.ts';
+import { CLASS_UI_WORDS } from '../../src/core/hunter/class-view.ts';
 import { uniqueJobRefusalText } from '../../src/core/hunter/grant.ts';
 import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER } from '../../src/core/hunter/class-locker.ts';
 import { test, expect, openApp, tapIfShown, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, SMALL_PHONE } from './helpers.ts';
@@ -233,5 +234,81 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
     await expect(gm.locator('#toasts .toast-warning').last()).toContainText(expectedRefusal, { timeout: 15_000 });
     await expect.poll(() => p2.evaluate(() => hunterApp.store.active().gold), { timeout: 20_000 }).toBe(goldBefore + 45);
     expect(await p2.evaluate(() => Object.hasOwn(hunterApp.store.active().classes, 'Hemomancer'))).toBe(false);
+  });
+});
+
+test('a pick the GM undoes or refuses takes the player off Claiming: a grant released at once, and a pick refused during a fight that ended unseen (statechart rule 5)', async ({ device }) => {
+  const gm = (await device('gm-answer', { blockServiceWorker: true })).page;
+  const mira = (await device('mira-answer', { blockServiceWorker: true })).page;
+  await onboardBlankGM(gm);
+  await chooseList(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(mira, 'Mira', code);
+  await dismissAll(mira);
+  await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).map(r => r.data.name)), { timeout: 20_000 }).toEqual(['Mira']);
+  await go(gm, 'gm');
+  await openGmSection(gm, 'classes');
+  await gm.locator('#gm-classes [data-cg-offer-open]').tap();
+  await gm.locator('[data-co-modal] [data-co-dismiss]').tap();
+  const m = mira.locator('[data-co-modal]');
+  await expect(m).toBeVisible({ timeout: 20_000 });
+
+  await test.step('the GM gives Hemomancer and releases it before either doc goes out: Mira leaves Claiming and can pick again', async () => {
+    // the GM's doc puts wait, so Mira reads neither the grant nor the release from a doc
+    let putDocs!: () => void;
+    const docsHeld = new Promise<void>(resolve => { putDocs = resolve; });
+    const docPattern = new RegExp(`/api/rooms/${code}/sheets/_(holders|classOffer)`);
+    await gm.route(docPattern, async route => { await docsHeld; await route.continue(); });
+
+    await m.locator('[data-co-pick="Hemomancer"]').tap();
+    await expect(m.locator('[data-co-picking="Hemomancer"]')).toHaveText(OFFER_WORDS.pickingAction('Hemomancer'));
+    const hemoRow = gm.locator('#gm-classes [data-cg-row="Hemomancer"]');
+    await expect(hemoRow).toContainText('Held by Mira', { timeout: 20_000 });
+    await hemoRow.locator('[data-cg-release="Hemomancer"]').tap();
+    const conf = modalWin(gm, CLASS_UI_WORDS.gmReleaseTitle('Hemomancer'));
+    await conf.locator('button', { hasText: CLASS_UI_WORDS.gmReleaseConfirm }).tap();
+    await expect(conf).toHaveCount(0);
+
+    await expect(m.locator('[data-co-picking]')).toHaveCount(0, { timeout: 20_000 });
+    putDocs();
+    await gm.unroute(docPattern);
+    await expect(m.locator('[data-co-pick="Hemomancer"]')).toBeEnabled({ timeout: 20_000 });
+    expect(await mira.evaluate(() => Object.hasOwn(hunterApp.store.active().classes, 'Hemomancer'))).toBe(false);
+  });
+
+  await test.step('Mira picks while the GM\'s fight holds her, and the fight ends before her phone reads it: she sees the reason and can pick again', async () => {
+    // Mira's phone reads nothing from the room until the fight has ended
+    let letPoll!: () => void;
+    const pollHeld = new Promise<void>(resolve => { letPoll = resolve; });
+    const pollPattern = `**/api/rooms/${code}*`;
+    let caught!: () => void;
+    const pollCaught = new Promise<void>(resolve => { caught = resolve; });
+    await mira.route(pollPattern, async route => { if (route.request().method() === 'GET') { caught(); await pollHeld; } await route.continue(); });
+    // a poll already out before the route answers first: the fight starts only once the next one is caught
+    await pollCaught;
+
+    await go(gm, 'combat');
+    const combat = gm.locator('#view-combat');
+    await combat.locator('[data-hsel]').selectOption({ label: 'Mira (player phone)' });
+    await combat.locator('[data-addh]').tap();
+    await combat.locator('[data-qline]').fill('Cave Rat, E, brute');
+    await combat.locator('[data-qadd]').tap();
+    await combat.locator('[data-start]').tap();
+    await expect(gm.locator('#view-combat [data-end]')).toBeVisible();
+
+    const posted = mira.waitForResponse(r => r.url().includes(`/api/rooms/${code}/events`) && r.request().method() === 'POST' && r.status() === 200);
+    await m.locator('[data-co-pick="Seraph"]').tap();
+    const pick = (await posted).request().postDataJSON().payload.eid as string;
+    // the GM's phone reads the pick and answers it refused; then the fight ends
+    await expect.poll(() => gm.evaluate(eid => (hunterApp.store.get().settings.sync.applied ?? []).includes(eid), pick), { timeout: 20_000 }).toBe(true);
+    expect(await gm.evaluate(() => hunterApp.store.get().classHolders.held.Seraph ?? null)).toBeNull();
+    await gm.locator('#view-combat [data-end]').tap();
+    await dismissAll(gm);
+
+    letPoll();
+    await mira.unroute(pollPattern);
+    await expect(m.locator('[data-co-msg]')).toHaveText(pickRefusedLine('held', 'Seraph'), { timeout: 20_000 });
+    await expect(m.locator('[data-co-picking]')).toHaveCount(0);
+    await expect(m.locator('[data-co-pick="Seraph"]')).toBeEnabled();
   });
 });

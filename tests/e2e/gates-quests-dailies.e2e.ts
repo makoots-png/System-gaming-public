@@ -1,6 +1,7 @@
 import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, gateByName, ROOM_CODE, chooseList, type DeviceOptions } from './helpers.ts';
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
+import { CHAIN_WORDS } from '../../src/core/hunter/job-chain.ts';
 
 /**
  * Each of `n` hunters' share of what a world gate pays, by the rule (design 4.1): a pot of `gateParty` times the
@@ -816,6 +817,52 @@ test('a failed Job Change shows on the Quests tab: the player is told the GM can
     await expect(job(page, 'Job Change 2/3')).toHaveCount(1);
     await completeQuest(page, 'active', 'Job Change 2/3');
     await dismissAll(page);
+    await completeQuest(page, 'active', 'Job Change 3/3');
+    await expect(topWindow(page)).toContainText('You are now a Fighter');
+    await dismissAll(page);
+    expect((await activeHunter(page)).job).toBe('Fighter');
+  });
+});
+
+test('the Job Change\'s last step tapped during a fight is refused in words, and completes once the fight is over (statechart rule 1)', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await chooseList(page);
+  await page.evaluate(() => hunterApp.store.update(() => { const h = hunterApp.store.active(); h.level = 10; h.peakLevel = 10; h.xp = 0; }, 'test-setup'));
+  const { name: hunterName, job: jobBefore } = await activeHunter(page);
+  await go(page, 'quests');
+  await page.locator('#view-quests [data-chain]').tap();
+  await sys(page, hunterName);
+  await sys(page, 'Fighter');
+  await dismissAll(page);
+  await completeQuest(page, 'active', 'Job Change 2/3');
+  await dismissAll(page);
+
+  await test.step('in the Goblin Den fight, Complete on step 3 says the job cannot change, and nothing changes', async () => {
+    await go(page, 'gates');
+    const den = page.locator('#view-gates .gate', { hasText: 'Goblin Den' });
+    await den.locator('[data-act="encounter"]').tap();
+    await page.locator('[aria-modal="true"] [data-apply]').tap();
+    await expect(page.locator('#view-combat [data-end]').first()).toBeVisible();
+    expect(await page.evaluate(n => hunterApp.store.get().fight.rows.some((r: any) => r.name === n), hunterName)).toBe(true);
+    await go(page, 'quests');
+    await page.locator('#view-quests [data-tab="active"]').tap();
+    const done = page.locator('#view-quests .qc', { hasText: 'Job Change 3/3' }).locator('[data-done]').first();
+    await done.evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
+    await done.tap();
+    await expect(windowTitle(page)).toHaveText('Complete quest?');
+    await topWindow(page).locator('.sys-actions button.primary', { hasText: 'Complete' }).tap();
+    await expect(page.locator('#toasts .toast', { hasText: CHAIN_WORDS.held! })).toHaveCount(1);
+    const h = await activeHunter(page);
+    expect([h.job, h.jobChain?.step, h.quests.find((q: any) => q.id === h.jobChain?.questId)?.status]).toEqual([jobBefore, 3, 'active']);
+  });
+
+  await test.step('after the fight ends, the same Complete makes the hunter a Fighter', async () => {
+    await go(page, 'combat');
+    await page.evaluate(() => hunterApp.store.update((d: any) => { for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' }; }, 'test-setup'));
+    await page.locator('#view-combat [data-end]').first().tap();
+    await dismissAll(page);
+    await expect.poll(() => page.evaluate(() => { const f = hunterApp.store.get().fight; return !f || f.phase === 'ended'; })).toBe(true);
     await completeQuest(page, 'active', 'Job Change 3/3');
     await expect(topWindow(page)).toContainText('You are now a Fighter');
     await dismissAll(page);

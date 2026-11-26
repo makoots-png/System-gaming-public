@@ -24,7 +24,9 @@ import {
   classTakenLine,
   closeClassOffer,
   openClassOffer,
+  pickAnswered,
   pickClassFromOffer,
+  pickRefusedLine,
 } from '../src/core/hunter/class-offer.ts';
 import { grant, uniqueJobRefusalText } from '../src/core/hunter/grant.ts';
 import { gmAward } from '../src/core/award.ts';
@@ -278,7 +280,7 @@ describe('pickClassFromOffer: races, 4+ Epics, 7th all-taken, stat fit, and copy
     const doc = classOfferDocOf(s, AT);
     expect(doc.active).toBe(true);
     if (!doc.active) return;
-    const vm = classOfferView(doc, { hunter: newHunter(RULES), myWho: D7_KEY, myHeldFromPool: null });
+    const vm = classOfferView(doc, { hunter: newHunter(RULES), myWho: D7_KEY });
     expect(vm.allTaken).toBe(true);
     expect(vm.openCount).toBe(0);
     expect(vm.mythics.map(c => c.className)).toEqual([...WAVE1_MYTHIC_OFFER]);
@@ -511,5 +513,68 @@ describe('a downed hunter takes no unique class (statechart rule 2)', () => {
     if (isRefused(g)) throw new Error(g.why);
     expect([g.job, g.jobRefused, holderOf(g.save, 'Hemomancer')]).toEqual([null, { className: 'Hemomancer', why: 'dead', holderName: null }, null]);
     expect(uniqueJobRefusalText(g.jobRefused!, h0.name)).toBe(`Hemomancer was not granted to ${h0.name}. That hunter is down. Revive them before giving them a unique class.`);
+  });
+});
+
+describe('the offer view reads the offer doc, never the locker (statechart rule 7)', () => {
+  const doc = (taken: Partial<Record<'Hemomancer' | 'Seraph', { who: SheetKey | 'gm'; name: string }>>) => ({
+    active: true as const, id: 'co1-abc', at: AT, pool: [...WAVE1_OFFER_POOL], hunters: [], taken,
+  });
+  const withHemo = (registryId: string) => {
+    const h = newHunter(RULES);
+    return { ...h, classes: { Hemomancer: { unlockedAt: AT, nodes: [], registryId, grantId: 'cg1' } } };
+  };
+
+  test('Hemomancer in the locker while the doc names another hunter is not mine, and every other card can be picked', () => {
+    const vm = classOfferView(doc({ Hemomancer: { who: KAEL_KEY, name: 'Kael' } }), { hunter: withHemo('reg-1'), myWho: MIRA_KEY });
+    expect(vm.myPicked).toBeNull();
+    expect(vm.mythics.find(c => c.className === 'Hemomancer')).toMatchObject({ heldByMe: false, open: false, takenBy: 'Kael' });
+  });
+
+  test('the doc naming me makes the card mine, whatever the locker holds yet', () => {
+    const vm = classOfferView(doc({ Seraph: { who: MIRA_KEY, name: 'Mira' } }), { hunter: newHunter(RULES), myWho: MIRA_KEY });
+    expect(vm.myPicked).toBe('Seraph');
+    expect(vm.epics.find(c => c.className === 'Seraph')?.heldByMe).toBe(true);
+  });
+
+  test('a parked copy of a pool class from another campaign is not mine and blocks no pick', () => {
+    const vm = classOfferView(doc({}), { hunter: withHemo('reg-old'), myWho: MIRA_KEY });
+    expect(vm.myPicked).toBeNull();
+    expect(vm.mythics.find(c => c.className === 'Hemomancer')).toMatchObject({ heldByMe: false, open: true });
+  });
+});
+
+describe('the GM answers a pick it refuses (statechart rule 5)', () => {
+  const PICK = 'd-mira-cp1' as EventId;
+  const opened = () => openClassOffer(gmSave(), { at: AT, room: ROOM, R: RULES });
+  const answers = (s: Save) => (s.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' && e.letter.event.type === 'classPickRefused' ? [e.letter.event.payload] : []));
+
+  test('a refused pick queues classPickRefused to that phone with the pick\'s id and why, in the same write', () => {
+    const { save, offer } = opened();
+    const r = pickAnswered(save, { sheetKey: MIRA_KEY, name: 'Mira' }, 'Hemomancer', offer.id, PICK, holderCtx(ROOM, () => false, k => k === MIRA_KEY));
+    expect([r.holder, r.why]).toEqual([null, 'held']);
+    expect(holderOf(r.save, 'Hemomancer')).toBeNull();
+    expect(answers(r.save)).toHaveLength(1);
+    expect(answers(r.save)[0]).toMatchObject({ to: [MIRA_KEY], pick: PICK, className: 'Hemomancer', why: 'held' });
+    expect(pickRefusedLine('held', 'Hemomancer')).toBe('Your hunter is in the GM\'s fight. Pick a class after the fight ends.');
+    const late = pickAnswered(save, { sheetKey: MIRA_KEY, name: 'Mira' }, 'Hemomancer', 'co9-old', PICK, holderCtx());
+    expect(answers(late.save).map(a => a.why)).toEqual(['wrong-offer']);
+  });
+
+  test('an accepted pick queues no answer, and nothing is queued without a room', () => {
+    const { save, offer } = opened();
+    const ok = pickAnswered(save, { sheetKey: MIRA_KEY, name: 'Mira' }, 'Hemomancer', offer.id, PICK, holderCtx());
+    expect(ok.why).toBeNull();
+    expect(ok.holder).toMatchObject({ kind: 'remote', sheetKey: MIRA_KEY });
+    expect(answers(ok.save)).toEqual([]);
+    const alone = pickAnswered(save, { sheetKey: MIRA_KEY, name: 'Mira' }, 'Hemomancer', 'co9-old', PICK, holderCtx(null));
+    expect(alone.why).toBe('wrong-offer');
+    expect(alone.save).toBe(save);
+  });
+
+  test('every refusal has words for the player', () => {
+    for (const why of ['no-offer', 'wrong-offer', 'not-in-pool', 'not-eligible', 'already-picked', 'not-unique', 'class-taken', 'no-hunter', 'locker-full', 'bad-target', 'held', 'dead', 'foreign-class'] as const) {
+      expect(pickRefusedLine(why, 'Seraph')).toMatch(/\.$/);
+    }
   });
 });

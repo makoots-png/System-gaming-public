@@ -27,6 +27,8 @@ import {
   classesHeldBy,
   holderOf,
   reassignUniqueClass,
+  grantRefused,
+  grantRefusedLine,
   releaseUniqueClass,
 } from '../core/hunter/class-holders.ts';
 import {
@@ -37,7 +39,9 @@ import {
   classTakenLine,
   closeClassOffer,
   openClassOffer,
+  pickAnswered,
   pickClassFromOffer,
+  pickRefusedLine,
 } from '../core/hunter/class-offer.ts';
 import {
   CLASS_UI_WORDS as W,
@@ -853,14 +857,13 @@ export function register(app) {
     if (!h) return null;
     const myKey = A().sync.myKey(h.id);
     if (doc.hunters.length > 0 && (!myKey || !doc.hunters.includes(myKey))) return null;
-    const myHeldFromPool = doc.pool.find(cls => Object.hasOwn(h.classes, cls)) ?? null;
+    // the hunter's pick is read from the offer doc, never the locker (class-offer.ts `classOfferView`)
     const vm = classOfferView(doc, {
       hunter: h,
       myWho: myKey,
-      myHeldFromPool,
       trees: activeClassTrees(),
     });
-    return { doc, h, myKey, myHeldFromPool, vm };
+    return { doc, h, myKey, myPicked: vm.myPicked, vm };
   }
 
   /** Closes the live class-offer window if open and restores focus. */
@@ -940,11 +943,11 @@ export function register(app) {
     const state = playerOfferState();
     if (!state || offerUi.pending) return;
     const s = store.get();
-    const { doc, h, myKey, myHeldFromPool } = state;
+    const { doc, h, myKey, myPicked } = state;
     if (!isUniqueClass(cls) || !myKey) { offerUi.notice = OFFER_WORDS.sendFailed; drawOfferModal(); return; }
     if (h.life.at === 'dead') { offerUi.notice = CLASS_REFUSAL_WORDS.dead; drawOfferModal(); return; }
     if (isHeld(s, { hid: h.id })) { offerUi.notice = HOLDER_REFUSAL_WORDS.held; drawOfferModal(); return; }
-    if (myHeldFromPool) { offerUi.notice = OFFER_REFUSAL_WORDS['already-picked']; drawOfferModal(); return; }
+    if (myPicked) { offerUi.notice = OFFER_REFUSAL_WORDS['already-picked']; drawOfferModal(); return; }
     const regId = activeRegistryId(s);
     const existing = Object.hasOwn(h.classes, cls) ? h.classes[cls] : null;
     if (existing?.registryId && regId && existing.registryId !== regId) {
@@ -1046,7 +1049,6 @@ export function register(app) {
       const vm = classOfferView(doc, {
         hunter: selectedLocal,
         myWho: 'gm',
-        myHeldFromPool: null,
         trees: activeClassTrees(),
       });
       const inRoom = app.seat() === 'gm';
@@ -1148,11 +1150,11 @@ export function register(app) {
         if (taken && taken.who !== state.myKey) {
           offerUi.pending = null;
           offerUi.notice = classTakenLine(p.className, taken.name);
-        } else if (state.myHeldFromPool === p.className) {
+        } else if (state.myPicked === p.className) {
           offerUi.pending = null;
           offerUi.notice = '';
           ui.toast('! Class', OFFER_WORDS.alreadyPickedLine(p.className), { kind: 'good' });
-        } else if (state.myHeldFromPool && state.myHeldFromPool !== p.className) {
+        } else if (state.myPicked && state.myPicked !== p.className) {
           offerUi.pending = null;
         } else if (isHeld(store.get(), { hid: state.h.id })) {
           offerUi.pending = null;
@@ -1164,7 +1166,7 @@ export function register(app) {
     if (state && offerUi.seenId !== state.doc.id) {
       offerUi.seenId = state.doc.id;
       offerUi.notice = '';
-      if (!state.myHeldFromPool && !offerWin) openOfferModal('player');
+      if (!state.myPicked && !offerWin) openOfferModal('player');
     }
 
     if (offerWin) {
@@ -1288,6 +1290,24 @@ export function register(app) {
   });
 
   app.on('sync:event', ({ event: ev }) => {
+    // a player's phone: the GM refused its pick, or let go of the class it was claiming (statechart rule 5)
+    if (app.seat() === 'player') {
+      const p = offerUi.pending;
+      if (!p) return;
+      if (ev.type === 'classPickRefused' && ev.payload.pick === p.outboxId) {
+        // a class another hunter took is told with the holder's name from the offer doc; a doc not yet showing it settles
+        // the pick itself when it lands (reconcileOfferUi), with the name
+        const doc = A().sync.doc('classOffer'), taken = doc && doc.active ? doc.taken[p.className] : undefined;
+        if (ev.payload.why === 'class-taken' && !taken) return;
+        offerUi.pending = null;
+        offerUi.notice = ev.payload.why === 'class-taken' && taken ? classTakenLine(p.className, taken.name) : pickRefusedLine(ev.payload.why, p.className);
+        drawOfferModal();
+      } else if (ev.type === 'classRevoke' && ev.payload.className === p.className) {
+        offerUi.pending = null;
+        drawOfferModal();
+      }
+      return;
+    }
     if (app.seat() !== 'gm') return;
     const R = app.rules();
     if (ev.type === 'classSwap') {
@@ -1312,23 +1332,39 @@ export function register(app) {
         /** @type {import('../core/ids.ts').RoomCode | null} */
         code: null,
       };
+      // the pick and, on a refusal, its answer to the player's phone in one write (class-offer.ts `pickAnswered`)
       const applied = A().sync.once(p.eid, s => {
         const ctx = holderCtx(s);
         out.code = ctx.room;
-        const r = pickClassFromOffer(
-          s,
-          { kind: 'remote', sheetKey: p.by, name: p.name || 'Hunter' },
-          p.className,
-          p.offerId,
-          ctx,
-        );
-        if (isRefused(r)) return s;
+        const r = pickAnswered(s, { sheetKey: p.by, name: p.name || 'Hunter' }, p.className, p.offerId, p.eid, ctx);
         out.holder = r.holder;
         return r.save;
       });
+      if (applied && out.code) A().sync.flush();
       if (applied && out.holder) {
-        if (out.code) A().sync.flush();
         ui.toast('! Class', OFFER_WORDS.gmPlayerClaimedToast(out.holder.name, p.className), { kind: 'good' });
+        if (offerWin?.kind === 'gm') drawOfferModal();
+      }
+    } else if (ev.type === 'classGrantRefused') {
+      // a player's phone could not take a unique class: the registry lets it go (class-holders.ts `grantRefused`)
+      const p = ev.payload;
+      const out = {
+        /** @type {import('../core/hunter/class-locker.ts').ClassHolder | null} */
+        released: null,
+        /** @type {import('../core/ids.ts').RoomCode | null} */
+        code: null,
+      };
+      const applied = A().sync.once(p.eid, s => {
+        const ctx = holderCtx(s);
+        out.code = ctx.room;
+        const r = grantRefused(s, p, ctx);
+        if (isRefused(r)) return s;
+        out.released = r.released;
+        return r.save;
+      });
+      if (applied && out.released) {
+        if (out.code) A().sync.flush();
+        ui.toast('Class', grantRefusedLine(out.released.name, p.className, p.why), { kind: 'warning' });
         if (offerWin?.kind === 'gm') drawOfferModal();
       }
     }

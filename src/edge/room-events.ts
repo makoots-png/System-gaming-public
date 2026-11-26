@@ -86,6 +86,8 @@ const OFFER_FOLD_READS = null;
  * in `sync.ts` `release()` (with toasts driven by the reconcile diff), avoiding outbox-vs-`publishWait` races.
  */
 const HOLDERS_DOC_READS = null;
+/** Nothing to write on a player's phone: a view reads it from the `sync:event` signal (classes.js, a refused class pick). */
+const VIEW_READS = null;
 
 const money = (n: number): string => (n < 0 ? '-' : '+') + Math.abs(n);
 const nothing = (): void => undefined;
@@ -227,6 +229,10 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   classNode: GM_ONLY_READS,
   // a player's pick from the GM's open class offer (classes.js): the GM's phone claims via claimUniqueClass
   classPick: GM_ONLY_READS,
+  // the GM's refusal of this phone's class pick: the offer window leaves "Claiming" and says why (classes.js)
+  classPickRefused: VIEW_READS,
+  // a player's report that it could not take a unique class: the GM's phone lets the class go (class-holders.ts `grantRefused`)
+  classGrantRefused: GM_ONLY_READS,
 };
 
 /**

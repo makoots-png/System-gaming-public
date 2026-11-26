@@ -2,17 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave } from '../src/core/save.ts';
 import { parseEvent } from '../src/core/protocol.ts';
-import { sheetKeyOf } from '../src/core/ids.ts';
+import { grantRefusalIdOf, sheetKeyOf } from '../src/core/ids.ts';
 import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
 import { CLASS_SIGNATURES } from '../src/core/registry/class-powers.ts';
 import { CLASS_TREES } from '../src/core/registry/class-trees.ts';
 import { landAll } from '../src/edge/room-events.ts';
 import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { reconcileLocalUniqueClasses } from '../src/core/hunter/class-holders.ts';
+import { earnClass } from '../src/core/hunter/classes.ts';
 import { releaseNoticeStep } from '../src/core/hunter/noticed.ts';
 import { record } from '../src/core/hunter/chronicle.ts';
 import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
-import { day, dev } from './fixtures/ids.ts';
+import { day, dev, room } from './fixtures/ids.ts';
 
 const ROOT = import.meta.dir + '/..';
 const AT = '2026-11-25T12:00:00.000Z';
@@ -123,6 +124,37 @@ describe('level-triggered unique class convergence and releaseNoticeStep (Blocke
     // Next idle poll (inbox drained, class converged) refuses 'unchanged' (zero writes at rest)
     const drained = { ...releasedOut.save, hunters: [{ ...releasedOut.save.hunters[0]!, chronicle: { ...releasedOut.save.hunters[0]!.chronicle, inbox: [] } }] };
     expect(releaseNoticeStep(drained, grantDoc, false, () => false, RULES)).toEqual({ ok: false, why: 'unchanged' });
+  });
+});
+
+describe('a phone reports a grant it could not take once (statechart rule 4)', () => {
+  const env = { now: new Date(AT), newDeviceToken: () => 'tok-0123456789abcdef0123456789ab', newDeviceId: () => dev('d-pl1') };
+  const ROOM = room('ABCD23');
+  function parked() {
+    const s0 = freshSave(env, { onboarded: true });
+    const h = s0.hunters[0]!;
+    const foreign = earnClass(h, 'Hemomancer', { at: AT, activate: false, awaken: true, registryId: 'reg-old', grantId: 'cg9', resetNodes: true, R: RULES });
+    if (isRefused(foreign)) throw new Error(foreign.why);
+    const s = { ...s0, hunters: [foreign] };
+    const key = sheetKeyOf(s.settings.deviceId, h.id);
+    return { s, key, doc: { registryId: 'reg-1', at: AT, held: { Hemomancer: { who: key, grantId: 'cg1-abc' } } } };
+  }
+  const reports = (s: ReturnType<typeof parked>['s']) => (s.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' && e.letter.event.type === 'classGrantRefused' ? [e.letter.event] : []));
+
+  test('the report is queued once under the grant\'s id, and the next poll answers unchanged', () => {
+    const { s, key, doc } = parked();
+    const first = releaseNoticeStep(s, doc, false, () => false, RULES, ROOM);
+    if (isRefused(first)) throw new Error(first.why);
+    expect(first.reported).toEqual([{ hid: s.hunters[0]!.id, className: 'Hemomancer', grantId: 'cg1-abc', why: 'foreign-class' }]);
+    expect(reports(first.save).map(e => e.payload)).toEqual([{ eid: grantRefusalIdOf('cg1-abc'), by: key, name: s.hunters[0]!.name, className: 'Hemomancer', grantId: 'cg1-abc', why: 'foreign-class' }]);
+    expect(first.save.hunters[0]!.classes.Hemomancer).toEqual(s.hunters[0]!.classes.Hemomancer);
+    expect(releaseNoticeStep(first.save, doc, false, () => false, RULES, ROOM)).toEqual({ ok: false, why: 'unchanged' });
+  });
+
+  test('nothing is queued without a room, and nothing while the fight holds the hunter', () => {
+    const { s, doc } = parked();
+    expect(releaseNoticeStep(s, doc, false, () => false, RULES, null)).toEqual({ ok: false, why: 'unchanged' });
+    expect(releaseNoticeStep(s, doc, false, () => true, RULES, ROOM)).toEqual({ ok: false, why: 'unchanged' });
   });
 });
 

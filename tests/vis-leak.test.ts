@@ -501,4 +501,23 @@ describe('sealed events and room projections hide GM-only data', () => {
     expect(miraBoth.docs.classOffer?.data.hunters).toEqual([MIRA_KEY]);
     expect(kaiBoth.docs.classOffer?.data.hunters).toEqual([KAI_KEY]);
   });
+  test('classPickRefused reaches only the GM and the picking phone, classGrantRefused only the GM and the sender, and a holders wait only its holder\'s phone', async () => {
+    const { code, gm, postGm, postPlayer, pollAs } = await setupRoom();
+    await postGm('classPickRefused', { eid: 'd-gm-cpr1', to: [MIRA_KEY], pick: 'd-mira1-cp1', className: 'Hemomancer', why: 'held' });
+    await postPlayer(MIRA_DEV, 'classGrantRefused', { eid: 'cg5-abc-g', by: MIRA_KEY, name: 'Mira', className: 'Seraph', grantId: 'cg5-abc', why: 'locker-full' });
+    // a player cannot send the GM's answer, nor report for another phone's hunter
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: token(KAI_DEV), body: { from: KAI_DEV, type: 'classPickRefused', payload: { eid: 'd-kai1-x', to: [MIRA_KEY], pick: 'd-mira1-cp1', className: 'Hemomancer', why: 'held' } } })).status).not.toBe(200);
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: token(KAI_DEV), body: { from: KAI_DEV, type: 'classGrantRefused', payload: { eid: 'cg6-abc-g', by: MIRA_KEY, name: 'Mira', className: 'Seraph', grantId: 'cg6-abc', why: 'locker-full' } } })).status).not.toBe(200);
+
+    expect((await pollAs(KAI_DEV, 0)).events).toEqual([]);
+    expect((await pollAs(MIRA_DEV, 0)).events.map(e => e.type).sort()).toEqual(['classGrantRefused', 'classPickRefused']);
+    const gmRes = await call('GET', `/api/rooms/${code}?after=0&d=d-gm`, { headers: gm });
+    expect((gmRes.body.events as StoredEvent[]).map(e => e.type).sort()).toEqual(['classGrantRefused', 'classPickRefused']);
+
+    const at = '2026-11-25T12:00:00.000Z';
+    const put = await call('PUT', `/api/rooms/${code}/sheets/_holders`, { headers: gm, body: { from: 'd-gm', data: { registryId: 'reg-1', at, held: { Hemomancer: { who: MIRA_KEY, grantId: 'cg1', wait: true }, Seraph: { who: KAI_KEY, grantId: 'cg2' } } } } });
+    expect(put.status).toBe(200);
+    expect((await pollAs(MIRA_DEV, 0)).docs.holders?.data).toEqual({ registryId: 'reg-1', at, held: { Hemomancer: { who: MIRA_KEY, grantId: 'cg1', wait: true } } });
+    expect((await pollAs(KAI_DEV, 0)).docs.holders?.data).toEqual({ registryId: 'reg-1', at, held: { Seraph: { who: KAI_KEY, grantId: 'cg2' } } });
+  });
 });

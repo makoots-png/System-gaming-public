@@ -1,7 +1,7 @@
 // Class locker, skill tree buyer, fork flip, GM unique-class registry, two-tab room uniqueness, and phone layout (PR 3).
 import type { Page } from '@playwright/test';
 import { CLASS_REFUSAL_WORDS, classNodeSaid, classSwapSaid } from '../../src/core/hunter/classes.ts';
-import { HOLDER_REFUSAL_WORDS } from '../../src/core/hunter/class-holders.ts';
+import { HOLDER_REFUSAL_WORDS, grantNotTakenLine, grantRefusedLine } from '../../src/core/hunter/class-holders.ts';
 import { CLASS_UI_WORDS, forkRefusalWords, nodeRefusalWords, swapRefusalWords } from '../../src/core/hunter/class-view.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
 
@@ -458,3 +458,38 @@ for (const vp of [SMALL_PHONE, PHONE]) {
     expect(await page.evaluate(() => document.scrollingElement!.scrollWidth <= window.innerWidth), `gm overflow at ${vp.width}px`).toBe(true);
   });
 }
+
+test('a grant onto a class the player keeps from another campaign is reported, and the GM\'s registry opens it again with a toast (statechart rule 4)', async ({ device }) => {
+  const gm = (await device('gm-foreign')).page;
+  const p1 = (await device('p1-foreign')).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(p1, 'Mira Parked', code);
+  await dismissAll(p1, 4);
+  await expect.poll(() => p1.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  // Mira's phone keeps Hemomancer, parked, from another campaign's registry
+  await p1.evaluate(() => hunterApp.store.update((d: any) => {
+    d.hunters[0].classes.Hemomancer = { unlockedAt: new Date().toISOString(), nodes: [], registryId: 'reg-elsewhere', grantId: 'cg1-old' };
+  }, 'test-setup'));
+
+  await go(gm, 'gm');
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Mira Parked' })).toHaveCount(1);
+  const clsTog = gm.locator('[data-tog="classes"]');
+  if ((await clsTog.getAttribute('aria-expanded')) !== 'true') await clsTog.tap();
+  const hemoRow = gm.locator('#gm-classes [data-cg-row="Hemomancer"]');
+  await hemoRow.locator('[data-cg-grant="Hemomancer"]').tap();
+  const dlg = modalWin(gm, CLASS_UI_WORDS.gmGrantTitle('Hemomancer'));
+  await dlg.locator('[data-cg-hsel]').selectOption({ label: 'Mira Parked (E-rank, Player phone)' });
+  await dlg.locator('.sys-actions button.primary').tap();
+  await expect(dlg).toHaveCount(0);
+
+  await expect(p1.locator('#toasts .toast-warning', { hasText: grantNotTakenLine('Hemomancer', 'foreign-class') })).toHaveCount(1, { timeout: 20_000 });
+  await expect(gm.locator('#toasts .toast-warning', { hasText: grantRefusedLine('Mira Parked', 'Hemomancer', 'foreign-class') })).toHaveCount(1, { timeout: 20_000 });
+  await expect(hemoRow).toContainText(CLASS_UI_WORDS.gmUnclaimed);
+  await expect(gm.locator('#gm-hsum-classes')).toHaveText('0 of 18 held');
+  expect(await p1.evaluate(() => hunterApp.store.active().classes.Hemomancer.registryId)).toBe('reg-elsewhere');
+  // the report went once: a later poll writes nothing and the toast is not repeated
+  await p1.waitForTimeout(3000);
+  expect(await p1.locator('#toasts .toast-warning', { hasText: grantNotTakenLine('Hemomancer', 'foreign-class') }).count()).toBeLessThanOrEqual(1);
+  expect(await p1.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).filter((e: any) => e.letter.kind === 'event' && e.letter.event.type === 'classGrantRefused').length)).toBeLessThanOrEqual(1);
+});
