@@ -417,6 +417,7 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
 
   await test.step('GM claims Seraph for an NPC and releases it back to Open', async () => {
     const seraphRow = regBox.locator('[data-cg-row="Seraph"]');
+    await expect(seraphRow.locator('[data-cg-nokit]')).toHaveCount(0);
     await seraphRow.locator('[data-cg-grant="Seraph"]').tap();
     const dlg = modalWin(gm, CLASS_UI_WORDS.gmGrantTitle('Seraph'));
     await dlg.locator('[data-cg-kind] button[data-kind="npc"]').tap();

@@ -12,6 +12,9 @@ import type { ClassTreeMap, ClassWorn } from './class-trees.ts';
 import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
 import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
+import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
+import { SERAPH_SIGNATURE } from './class-seraph.ts';
+import { STORMCALLER_SIGNATURE } from './class-stormcaller.ts';
 import type { ClassLocker } from '../hunter/class-locker.ts';
 
 /** Rule slice accepted by `classPowers` (satisfied by `Rules`, `SheetRules`, and `RowRules`). */
@@ -49,6 +52,9 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Hemomancer: HEMOMANCER_SIGNATURE,
   Bladefiend: BLADEFIEND_SIGNATURE,
   Rifthunter: RIFTHUNTER_SIGNATURE,
+  Seraph: SERAPH_SIGNATURE,
+  Ironclad: IRONCLAD_SIGNATURE,
+  Stormcaller: STORMCALLER_SIGNATURE,
 };
 
 const EMPTY_CLASS_POWERS: ClassPowersResult = { bonus: {}, scalers: [], worn: null, actives: [] };

@@ -293,16 +293,20 @@ describe('registryView', () => {
     expect(hemo.synced).toBe(true);
 
     const seraph = vm.rows.find(r => r.className === 'Seraph')!;
-    expect(seraph.hasKit).toBe(false);
+    expect(seraph.hasKit).toBe(true);
     expect(seraph.holderName).toBe(h0.name);
     expect(seraph.holderKindLabel).toBe('Local');
     expect(seraph.inFight).toBe(true);
     expect(seraph.synced).toBe(true);
 
     const iron = vm.rows.find(r => r.className === 'Ironclad')!;
+    expect(iron.hasKit).toBe(true);
     expect(iron.holderKindLabel).toBe('NPC');
     expect(iron.inFight).toBe(false);
     expect(iron.synced).toBe(true);
+
+    const unbuilt = vm.rows.find(r => r.className === 'Voidstalker')!;
+    expect(unbuilt.hasKit).toBe(false);
 
     // Deleted local holder is flagged with "(removed)" while staying held per t135u
     const removedSave = removeHunter({ ...c3.save, hunters: [...c3.save.hunters, { ...h0, id: 'h999' as typeof h0.id, name: 'Spare' }] }, h0.id, null);
