@@ -31,10 +31,10 @@ import { parseObjectiveCount } from './hunter/counts.ts';
 import { questReaches } from './hunter/quest-secret.ts';
 import { oneOf } from './one-of.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestStatus, Rank, Rewards } from './save.ts';
-import { CLASS_RARITIES, isClassName, isJobName, isUniqueClass } from './registry/jobs.ts';
+import { CLASS_RARITIES, isChainJob, isClassName, isUniqueClass } from './registry/jobs.ts';
 import { isIconKey } from './registry/icons.ts';
 import type { IconKey } from './registry/icons.ts';
-import type { ClassName, ClassRarity, JobName, UniqueClassName } from './registry/jobs.ts';
+import type { ChainJobName, ClassName, ClassRarity, UniqueClassName } from './registry/jobs.ts';
 import { parseDamageTypes } from './combat/damage-type.ts';
 import type { DamageTypeMap } from './combat/damage-type.ts';
 import { GRIEVOUS_LEGACY_MAX, GRIEVOUS_MAX, grievousCutOf, hasTieredGrievousCut, isGrievousKey, readLegacyGrievousCut, withGrievousCut } from './combat/grievous.ts';
@@ -424,7 +424,7 @@ export type DodgePayload = Base & { by: SheetKey; n: number; place: { x: number;
  * The GM's Job Change chain on a player's phone (src/core/hunter/job-chain.ts): `issue` starts one for `job`; `reissue`
  * and `abandon` act on the hunter's failed chain (`job` is the chain's, for the words).
  */
-export type ChainPayload = Base & { to: SheetKey[]; job: JobName; kind: ChainKind };
+export type ChainPayload = Base & { to: SheetKey[]; job: ChainJobName; kind: ChainKind };
 /**
  * A player's call on a natural 1 or 20 (src/core/coin.ts): the hunter of `by` (`who`) rolled `face` for `what` and calls
  * `call`. Only the GM's phone acts on it, once per `roll`.
@@ -669,7 +669,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   }) },
   chain: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const job = own(o, 'job');
-    return { ...base(o), to: toList(own(o, 'to')), job: isJobName(job) ? job : refuse(), kind: choiceOf(CHAIN_KINDS)(own(o, 'kind')) };
+    return { ...base(o), to: toList(own(o, 'to')), job: isChainJob(job) ? job : refuse(), kind: choiceOf(CHAIN_KINDS)(own(o, 'kind')) };
   } },
   used: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), who: opt(own(o, 'who'), text(60), ''), what: choiceOf(USED_WHAT)(own(o, 'what')), name: filled(60)(own(o, 'name')),

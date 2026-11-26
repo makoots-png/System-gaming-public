@@ -17,6 +17,9 @@ import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
 import { IRONCLAD_TREE } from './class-ironclad.ts';
 import { SERAPH_TREE } from './class-seraph.ts';
 import { STORMCALLER_TREE } from './class-stormcaller.ts';
+import { BRAMBLEGUARD_TREE } from './class-brambleguard.ts';
+import { PYROMANCER_TREE } from './class-pyromancer.ts';
+import { SNIPER_TREE } from './class-sniper.ts';
 
 /** A class worn passive stored with its registry status key for fight-doc references. */
 export type ClassWorn = { readonly key: StatusKey; readonly def: StatusDef };
@@ -95,6 +98,9 @@ export const CLASS_TREES: ClassTreeMap = {
   Seraph: SERAPH_TREE,
   Ironclad: IRONCLAD_TREE,
   Stormcaller: STORMCALLER_TREE,
+  Brambleguard: BRAMBLEGUARD_TREE,
+  Pyromancer: PYROMANCER_TREE,
+  Sniper: SNIPER_TREE,
 };
 
 /** Returns the skill tree for `name`, or null for custom GM jobs and classes without a tree yet. */

@@ -22,7 +22,7 @@ import type { Rank, Rules } from '../rules.ts';
 import type { Hunter, Quest, Save } from '../save.ts';
 import { told } from '../session-log.ts';
 import type { Said } from '../session-log.ts';
-import type { JobName } from '../registry/jobs.ts';
+import type { ChainJobName } from '../registry/jobs.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import type { SheetStatus } from '../combat/effect-ops.ts';
@@ -68,7 +68,7 @@ export function idsFrom(seq: number): { next: <P extends string>(prefix: P) => I
 /** When a step happens: its time, today's day key (src/core/rules.ts `dayKey`) and the rules. */
 export type Day = { at: string; today: DayKey; R: Rules };
 /** A Job Change step a change completed: the quest as it was before, and the job it granted (the last step's). */
-export type StepDone = { quest: Quest; job: JobName | null };
+export type StepDone = { quest: Quest; job: ChainJobName | null };
 /** A hunter after a step, the log lines it says, and the Job Change steps it completed. */
 export type Levelled = { hunter: Hunter; said: Said[]; done: StepDone[] };
 

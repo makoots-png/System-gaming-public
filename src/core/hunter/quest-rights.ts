@@ -6,7 +6,7 @@
 import type { Role, Seat } from '../role.ts';
 import type { Quest, QuestKind } from '../save.ts';
 import type { JobChain } from './job-chain.ts';
-import { BUILT_IN_JOBS } from '../registry/jobs.ts';
+import { chainStepsOf } from '../registry/jobs.ts';
 
 /**
  * The kinds the GM's quest forms offer: every kind but the Penalty Zone's, which only the penalty issues. In the order a
@@ -36,7 +36,7 @@ export const reportsProgress = (q: Pick<Quest, 'from'>, seat: Seat): boolean => 
 /** Whether the System counts this quest's objectives: the open step of a Job Change chain that asks for a level. */
 export function systemCounts(q: Pick<Quest, 'id' | 'chainId'>, chain: JobChain | null): boolean {
   if (!q.chainId || !chain || chain.id !== q.chainId || chain.questId !== q.id) return false;
-  return BUILT_IN_JOBS[chain.job].steps[(chain.step - 1) as 0 | 1 | 2].goal === 'level';
+  return chainStepsOf(chain.job)[(chain.step - 1) as 0 | 1 | 2].goal === 'level';
 }
 /**
  * Who completes a quest, read from its objectives (feature 1's notes 17.14): `system` when every one is counted from the

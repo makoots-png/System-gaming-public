@@ -4,6 +4,9 @@ import { saveId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import { CHAIN_EVENT_TYPES, chainAfter, parseJobChain, stepQuest } from '../src/core/hunter/job-chain.ts';
 import type { ChainEffect, ChainEvent, ChainQuestRef, ChainResult, JobChain } from '../src/core/hunter/job-chain.ts';
+import { systemCounts } from '../src/core/hunter/quest-rights.ts';
+import { earnClass } from '../src/core/hunter/classes.ts';
+import { RARE_CHAIN_LEVEL } from '../src/core/registry/jobs.ts';
 import type { Quest, Save } from '../src/core/save.ts';
 import { freshSave } from '../src/core/save.ts';
 import { grant, levelEdit, levelled } from '../src/core/hunter/grant.ts';
@@ -259,5 +262,71 @@ describe('every short run of events', () => {
     walk({ chain: null, quests: new Map(), level: 1, n: 1 }, 5);
     // 11 events, depth 5: 1 + 11 + 121 + 1,331 + 14,641 + 161,051 states.
     expect(checked).toBe(1 + 11 + 121 + 1331 + 14641 + 161051);
+  });
+});
+
+describe('level-20 Rare Job Change chains (settled.md)', () => {
+  const AT_RARE = '2026-11-25T12:00:00.000Z';
+  const DAY = { at: AT_RARE, today: day(AT_RARE.slice(0, 10)), R: RULES };
+
+  test('issuing a Rare chain at level 19 starts at step 1 asking for Level 20, refuses hand completion below 20, and is System-counted', () => {
+    for (const rare of ['Brambleguard', 'Pyromancer', 'Sniper'] as const) {
+      const r = step(null, { type: 'issued', id: jcid('jc2'), job: rare, questId: qid('q1'), level: 19, at: AT_RARE });
+      expect(r.jobChain).toEqual({ id: jcid('jc2'), job: rare, step: 1, status: 'active', questId: qid('q1') });
+      const q = issuedQuest(r);
+      expect(q.title).toBe('Rare Job Change 1/3: Requirements');
+      expect(progressOf(q)).toEqual([`Reach Level ${RARE_CHAIN_LEVEL} 19/${RARE_CHAIN_LEVEL}`]);
+      expect(systemCounts(q, r.jobChain)).toBe(true);
+      expect(step(r.jobChain, completed('q1', 19))).toEqual({ jobChain: r.jobChain, effects: [{ type: 'refused', reason: 'belowLevel' }] });
+    }
+  });
+
+  test('reaching level 20 auto-completes step 1 and completing step 3 grants the Rare class while keeping the prior Common class in the locker', () => {
+    const s0 = freshSave({ now: new Date(AT_RARE), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+    const withCommon = earnClass({ ...s0.hunters[0]!, ...setLevel(s0.hunters[0]!, 19, 0, RULES).progress }, 'Tanker', { at: AT_RARE, R: RULES });
+    if (isRefused(withCommon)) throw new Error(withCommon.why);
+
+    const started = chained(withCommon, { type: 'issued', id: jcid('jc2'), job: 'Brambleguard', questId: qid('q1'), level: 19, at: AT_RARE });
+    const s1: Save = { ...s0, hunters: [started.hunter] };
+
+    // GM raises level to 20 -> step 1 completes and step 2 opens in one step
+    const raised = levelEdit(s1, 'h1', 20, 0, DAY);
+    if (isRefused(raised)) throw new Error(raised.why);
+    const h2 = raised.save.hunters[0]!;
+    expect(h2.jobChain).toMatchObject({ job: 'Brambleguard', step: 2, status: 'active' });
+    expect(h2.quests.find(q => q.id === 'q1')?.status).toBe('done');
+    expect(h2.quests.find(q => q.id === h2.jobChain!.questId)?.title).toBe('Rare Job Change 2/3: The Briar Labyrinth');
+
+    // Step 2 -> Step 3 -> Grant Brambleguard, keeping Tanker in hunter.classes
+    const step2Done = chained(h2, { type: 'stepCompleted', questId: h2.jobChain!.questId, level: 20, nextQuestId: qid('q3'), at: AT_RARE });
+    expect(step2Done.hunter.jobChain).toMatchObject({ job: 'Brambleguard', step: 3, status: 'active' });
+    expect(step2Done.hunter.quests.find(q => q.id === 'q3')?.objectives[0]?.label).toContain('Thornbound Warden');
+    const step3Done = chained(step2Done.hunter, { type: 'stepCompleted', questId: qid('q3'), level: 20, nextQuestId: qid('q4'), at: AT_RARE });
+    expect(step3Done.hunter.jobChain).toBeNull();
+    expect(step3Done.hunter.job).toBe('Brambleguard');
+    expect(step3Done.hunter.jobDone).toBe('Brambleguard');
+    expect(Object.keys(step3Done.hunter.classes).sort()).toEqual(['Brambleguard', 'Tanker']);
+  });
+
+  test('Pyromancer and Sniper chains carry bespoke step 2 trials and step 3 trial champions', () => {
+    const s0 = freshSave({ now: new Date(AT_RARE), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+    const hLv20 = { ...s0.hunters[0]!, ...setLevel(s0.hunters[0]!, 20, 0, RULES).progress };
+    for (const [job, trial, champion] of [
+      ['Pyromancer', 'Rare Job Change 2/3: The Caldera Trial', 'Cinder Archon'],
+      ['Sniper', 'Rare Job Change 2/3: Hold the Watchtower', 'Watchtower Marksman'],
+    ] as const) {
+      const s1 = chained(hLv20, { type: 'issued', id: jcid('jc3'), job, questId: qid('q1'), level: 20, at: AT_RARE });
+      const s2 = chained(s1.hunter, { type: 'stepCompleted', questId: qid('q1'), level: 20, nextQuestId: qid('q2'), at: AT_RARE });
+      expect(s2.hunter.quests.find(q => q.id === 'q2')?.title).toBe(trial);
+      const s3 = chained(s2.hunter, { type: 'stepCompleted', questId: qid('q2'), level: 20, nextQuestId: qid('q3'), at: AT_RARE });
+      expect(s3.hunter.quests.find(q => q.id === 'q3')?.objectives[0]?.label).toContain(champion);
+    }
+  });
+
+  test('parseJobChain accepts saved Rare chains and rejects unique Epic/Mythic names', () => {
+    const activeRare: JobChain = { id: jcid('jc2'), job: 'Pyromancer', step: 2, status: 'active', questId: qid('q2') };
+    expect(parseJobChain(activeRare, [{ id: qid('q2'), status: 'active' }])).toEqual(activeRare);
+    expect(parseJobChain({ ...activeRare, job: 'Hemomancer' }, [{ id: qid('q2'), status: 'active' }])).toBeNull();
+    expect(parseJobChain({ ...activeRare, job: 'Seraph' }, [{ id: qid('q2'), status: 'active' }])).toBeNull();
   });
 });

@@ -5,15 +5,15 @@
 // quest, set a level step's progress, complete it, grant the job). src/views/quests.js sends the events.
 import type { Quest, QuestStatus } from '../save.ts';
 import type { Role } from '../role.ts';
-import { BUILT_IN_JOBS, isJobName } from '../registry/jobs.ts';
-import type { JobName, StepDef } from '../registry/jobs.ts';
+import { chainStepsOf, isChainJob } from '../registry/jobs.ts';
+import type { ChainJobName, StepDef } from '../registry/jobs.ts';
 import { parseSaveId } from '../ids.ts';
 import type { ChainId, QuestId } from '../ids.ts';
 
 export type ChainStep = 1 | 2 | 3;
 export type ChainStatus = 'active' | 'failed';
 /** A chain: its id (the step quests' `chainId`), the job it grants, the open step and that step's quest. */
-export type JobChain = { id: ChainId; job: JobName; step: ChainStep; status: ChainStatus; questId: QuestId };
+export type JobChain = { id: ChainId; job: ChainJobName; step: ChainStep; status: ChainStatus; questId: QuestId };
 
 /**
  * `issued`: the GM starts a chain; `questId` is the id step 1's quest takes. `levelChanged`: the hunter's level is now
@@ -22,7 +22,7 @@ export type JobChain = { id: ChainId; job: JobName; step: ChainStep; status: Cha
  * `level` is the hunter's level when the event happens; `at` is when.
  */
 export type ChainEvent =
-  | { type: 'issued'; id: ChainId; job: JobName; questId: QuestId; level: number; at: string }
+  | { type: 'issued'; id: ChainId; job: ChainJobName; questId: QuestId; level: number; at: string }
   | { type: 'levelChanged'; level: number }
   | { type: 'stepCompleted'; questId: QuestId; level: number; nextQuestId: QuestId; at: string }
   | { type: 'stepFailed'; questId: QuestId }
@@ -47,17 +47,17 @@ export type ChainEffect =
   | { type: 'issueQuest'; quest: Quest }
   | { type: 'progress'; questId: QuestId; value: number }
   | { type: 'completeQuest'; questId: QuestId }
-  | { type: 'grantJob'; job: JobName }
+  | { type: 'grantJob'; job: ChainJobName }
   | { type: 'closed' }
   | { type: 'refused'; reason: ChainRefusal };
 /** The next chain, named as the hunter's field so a caller can assign it, and what the app must do. */
 export type ChainResult = { jobChain: JobChain | null; effects: ChainEffect[] };
 
-const stepDef = (job: JobName, step: ChainStep): StepDef => BUILT_IN_JOBS[job].steps[(step - 1) as 0 | 1 | 2];
+const stepDef = (job: ChainJobName, step: ChainStep): StepDef => chainStepsOf(job)[(step - 1) as 0 | 1 | 2];
 const isStep = (n: unknown): n is ChainStep => n === 1 || n === 2 || n === 3;
 
 /** The quest a step issues. A level step's objective already shows the level reached, up to the level it asks for. */
-export function stepQuest(job: JobName, step: ChainStep, o: { chainId: ChainId; questId: QuestId; at: string; level: number }): Quest {
+export function stepQuest(job: ChainJobName, step: ChainStep, o: { chainId: ChainId; questId: QuestId; at: string; level: number }): Quest {
   const def = stepDef(job, step);
   const objectives = def.goal === 'level'
     ? [{ label: `Reach Level ${def.level}`, target: def.level, progress: Math.max(0, Math.min(def.level, Math.trunc(o.level))) }]
@@ -138,7 +138,7 @@ export type ChainQuestRef = { id: QuestId; status: QuestStatus; chainId?: unknow
 export function parseJobChain(value: unknown, quests: readonly ChainQuestRef[]): JobChain | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const o = value as Record<string, unknown>;
-  if (!isJobName(o.job) || !isStep(o.step)) return null;
+  if (!isChainJob(o.job) || !isStep(o.step)) return null;
   if (o.status !== 'active' && o.status !== 'failed') return null;
   const id = parseSaveId<'jc'>(o.id), questId = parseSaveId<'q'>(o.questId);
   if (!id || !questId) return null;

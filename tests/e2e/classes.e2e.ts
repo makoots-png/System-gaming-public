@@ -3,44 +3,8 @@ import type { Page } from '@playwright/test';
 import { CLASS_REFUSAL_WORDS, classNodeSaid, classSwapSaid } from '../../src/core/hunter/classes.ts';
 import { HOLDER_REFUSAL_WORDS } from '../../src/core/hunter/class-holders.ts';
 import { CLASS_UI_WORDS, forkRefusalWords, nodeRefusalWords, swapRefusalWords } from '../../src/core/hunter/class-view.ts';
-import { parseClassNodeId } from '../../src/core/ids.ts';
-import type { ClassNodeDef, ClassTree, ClassTreeMap, TreeDepth } from '../../src/core/registry/class-trees.ts';
-import type { ClassName, ClassRarity } from '../../src/core/registry/jobs.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
 
-const mkNode = (
-  id: string,
-  depth: TreeDepth,
-  parents: string[],
-  extra?: Partial<Pick<ClassNodeDef, 'parentMode' | 'forkGroup' | 'capstone' | 'name' | 'desc'>>,
-): ClassNodeDef => ({
-  id: parseClassNodeId(id)!,
-  depth,
-  name: extra?.name ?? `Node ${id}`,
-  desc: extra?.desc ?? `Unlocks ${id} mastery.`,
-  parents: parents.map(p => parseClassNodeId(p)!),
-  gifts: [{ kind: 'bonus', bonus: { pow: 1 } }],
-  ...extra,
-});
-
-/** Builds a valid Rare skill tree matching TREE_SHAPE.rare (18 nodes, 16 buyable, Depth 5 forks) for browser tests before PR 2 populates CLASS_TREES. */
-function makeRareTestTree(className: ClassName): ClassTree {
-  const nodes: ClassNodeDef[] = [mkNode('root', 1, [], { name: 'Ember Root', desc: 'Opens the class tree.' })];
-  for (const b of ['a', 'b']) {
-    nodes.push(mkNode(`${b}2`, 2, ['root'], { name: `Branch ${b.toUpperCase()} Core` }));
-    nodes.push(mkNode(`${b}3x`, 3, [`${b}2`]), mkNode(`${b}3y`, 3, [`${b}2`]));
-    nodes.push(mkNode(`${b}4x`, 4, [`${b}3x`]), mkNode(`${b}4y`, 4, [`${b}3y`]));
-    nodes.push(
-      mkNode(`${b}5-l`, 5, [`${b}4x`, `${b}4y`], { forkGroup: `${b}5`, name: `${b.toUpperCase()} Fork Left` }),
-      mkNode(`${b}5-r`, 5, [`${b}4x`, `${b}4y`], { forkGroup: `${b}5`, name: `${b.toUpperCase()} Fork Right` }),
-    );
-    nodes.push(mkNode(`${b}6`, 6, [`${b}5-l`, `${b}5-r`], { parentMode: 'any', name: `Branch ${b.toUpperCase()} Apex` }));
-  }
-  nodes.push(mkNode('cap', 7, ['a6', 'b6'], { parentMode: 'any', capstone: true, name: 'Grand Capstone' }));
-  return { className, rarity: 'rare' as ClassRarity, nodes };
-}
-
-const RARE_TREES: ClassTreeMap = { Pyromancer: makeRareTestTree('Pyromancer') };
 const modalWin = (page: Page, title: string) => page.locator('.sys-overlay.show', { hasText: title });
 
 test('player class locker enforces setJob refusals, free vs paid swapClass, short-gold refusal, and mid-fight refusal', async ({ device }) => {
@@ -140,7 +104,6 @@ test('player class locker enforces setJob refusals, free vs paid swapClass, shor
 
 test('skill tree buyer and fork flip deduct gold, unlock capstone early, preserve convergence on flip, and refuse mid-fight', async ({ device }) => {
   const dev = await device('solo-tree');
-  await dev.ctx.addInitScript(trees => { (globalThis as any).__e2eClassTrees = trees; }, RARE_TREES);
   const page = dev.page;
   await onboardPlayer(page, 'Sora Tree');
   await dismissAll(page);
@@ -165,51 +128,51 @@ test('skill tree buyer and fork flip deduct gold, unlock capstone early, preserv
     await expect(tree).not.toHaveAttribute('open', '');
     await tree.locator('summary').tap();
     await expect(tree).toHaveAttribute('open', '');
-    await expect(tree.locator('[data-cls-node="root"]')).toHaveAttribute('data-cls-status', 'buyable');
-    await expect(tree.locator('[data-cls-node="a2"]')).toHaveAttribute('data-cls-status', 'locked');
-    await expect(tree.locator('[data-cls-node="a2"]')).toContainText('Needs: Ember Root');
-    await expect(tree.locator('[data-cls-fork="a5"]')).toContainText(CLASS_UI_WORDS.forkPickOne);
+    await expect(tree.locator('[data-cls-node="pyro-root"]')).toHaveAttribute('data-cls-status', 'buyable');
+    await expect(tree.locator('[data-cls-node="pyro-a2"]')).toHaveAttribute('data-cls-status', 'locked');
+    await expect(tree.locator('[data-cls-node="pyro-a2"]')).toContainText('Needs: Kindled Focus');
+    await expect(tree.locator('[data-cls-fork="pyro-a5"]')).toContainText(CLASS_UI_WORDS.forkPickOne);
 
-    await tree.locator('[data-cls-buy="root"]').tap();
+    await tree.locator('[data-cls-buy="pyro-root"]').tap();
     const warn = page.locator('.sys-overlay.show .sys-window.sys-warn');
-    await expect(warn).toContainText(CLASS_UI_WORDS.nodeWarnTitle('Ember Root'));
+    await expect(warn).toContainText(CLASS_UI_WORDS.nodeWarnTitle('Kindled Focus'));
     await warn.locator('button', { hasText: CLASS_UI_WORDS.payAction(15) }).tap();
     await expect(warn).toHaveCount(0);
 
-    await expect(tree.locator('[data-cls-node="root"]')).toHaveAttribute('data-cls-status', 'owned');
-    await expect(tree.locator('[data-cls-node="a2"]')).toHaveAttribute('data-cls-status', 'buyable');
+    await expect(tree.locator('[data-cls-node="pyro-root"]')).toHaveAttribute('data-cls-status', 'owned');
+    await expect(tree.locator('[data-cls-node="pyro-a2"]')).toHaveAttribute('data-cls-status', 'buyable');
     expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(1985);
   });
 
   await test.step('buying down branch A reaches Depth 5 fork, locks its twin, unlocks Capstone, and flips fork keeping convergence', async () => {
-    for (const id of ['a2', 'a3x', 'a3y', 'a4x', 'a4y', 'a5-l']) {
+    for (const id of ['pyro-a2', 'pyro-a3x', 'pyro-a3y', 'pyro-a4x', 'pyro-a4y', 'pyro-a5-l']) {
       await tree.locator(`[data-cls-buy="${id}"]`).tap();
       const warn = page.locator('.sys-overlay.show .sys-window.sys-warn');
       await warn.locator('button.primary').tap();
       await expect(warn).toHaveCount(0);
     }
 
-    await expect(tree.locator('[data-cls-node="a5-l"]')).toHaveAttribute('data-cls-status', 'owned');
-    await expect(tree.locator('[data-cls-node="a5-r"]')).toHaveAttribute('data-cls-status', 'fork-taken');
-    await expect(tree.locator('[data-cls-node="a6"]')).toHaveAttribute('data-cls-status', 'buyable');
+    await expect(tree.locator('[data-cls-node="pyro-a5-l"]')).toHaveAttribute('data-cls-status', 'owned');
+    await expect(tree.locator('[data-cls-node="pyro-a5-r"]')).toHaveAttribute('data-cls-status', 'fork-taken');
+    await expect(tree.locator('[data-cls-node="pyro-a6"]')).toHaveAttribute('data-cls-status', 'buyable');
 
-    // Buy branch A penultimate convergence node a6 -> unlocks Capstone early.
-    await tree.locator('[data-cls-buy="a6"]').tap();
+    // Buy branch A penultimate convergence node pyro-a6 -> unlocks Capstone early.
+    await tree.locator('[data-cls-buy="pyro-a6"]').tap();
     await page.locator('.sys-overlay.show .sys-window.sys-warn button.primary').tap();
     await expect(tree.locator('[data-cls-capstone-ready]')).toHaveText(CLASS_UI_WORDS.capstoneReady);
-    await expect(tree.locator('[data-cls-node="cap"]')).toHaveAttribute('data-cls-status', 'buyable');
+    await expect(tree.locator('[data-cls-node="pyro-cap"]')).toHaveAttribute('data-cls-status', 'buyable');
 
-    // Flip fork from a5-l to a5-r for 25 gold: a6 convergence survives.
+    // Flip fork from pyro-a5-l to pyro-a5-r for 25 gold: pyro-a6 convergence survives.
     const goldBeforeFlip = await page.evaluate(() => hunterApp.store.active().gold);
-    await tree.locator('[data-cls-flip-from="a5-l"][data-cls-flip-to="a5-r"]').tap();
+    await tree.locator('[data-cls-flip-from="pyro-a5-l"][data-cls-flip-to="pyro-a5-r"]').tap();
     const flipWarn = page.locator('.sys-overlay.show .sys-window.sys-warn');
-    await expect(flipWarn).toContainText(CLASS_UI_WORDS.flipWarnTitle('A Fork Left', 'A Fork Right'));
+    await expect(flipWarn).toContainText(CLASS_UI_WORDS.flipWarnTitle('Molten Basin', 'Cinder Pit'));
     await flipWarn.locator('button', { hasText: CLASS_UI_WORDS.payAction(25) }).tap();
     await expect(flipWarn).toHaveCount(0);
 
-    await expect(tree.locator('[data-cls-node="a5-r"]')).toHaveAttribute('data-cls-status', 'owned');
-    await expect(tree.locator('[data-cls-node="a5-l"]')).toHaveAttribute('data-cls-status', 'fork-taken');
-    await expect(tree.locator('[data-cls-node="a6"]')).toHaveAttribute('data-cls-status', 'owned');
+    await expect(tree.locator('[data-cls-node="pyro-a5-r"]')).toHaveAttribute('data-cls-status', 'owned');
+    await expect(tree.locator('[data-cls-node="pyro-a5-l"]')).toHaveAttribute('data-cls-status', 'fork-taken');
+    await expect(tree.locator('[data-cls-node="pyro-a6"]')).toHaveAttribute('data-cls-status', 'owned');
     expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(goldBeforeFlip - 25);
   });
 
@@ -217,10 +180,10 @@ test('skill tree buyer and fork flip deduct gold, unlock capstone early, preserv
     await page.evaluate(() => {
       hunterApp.store.update((d: any) => { d.hunters[0].gold = 5; }, 'test-setup');
     });
-    await tree.locator('[data-cls-buy="cap"]').tap();
+    await tree.locator('[data-cls-buy="pyro-cap"]').tap();
     await expect(page.locator('#toasts .toast-warning').last()).toContainText(nodeRefusalWords(180, 5).gold);
 
-    await tree.locator('[data-cls-flip-from="a5-r"][data-cls-flip-to="a5-l"]').tap();
+    await tree.locator('[data-cls-flip-from="pyro-a5-r"][data-cls-flip-to="pyro-a5-l"]').tap();
     await expect(page.locator('#toasts .toast-warning').last()).toContainText(forkRefusalWords(25, 5).gold);
 
     // Fund hunter and put them in an active fight (GM mode on solo device): both buy and flip refuse 'held'.
@@ -239,9 +202,9 @@ test('skill tree buyer and fork flip deduct gold, unlock capstone early, preserv
 
     await go(page, 'status');
     if ((await tree.getAttribute('open')) === null) await tree.locator('summary').tap();
-    await tree.locator('[data-cls-buy="cap"]').tap();
+    await tree.locator('[data-cls-buy="pyro-cap"]').tap();
     await expect(page.locator('#toasts .toast-warning').last()).toContainText(CLASS_REFUSAL_WORDS.held);
-    await tree.locator('[data-cls-flip-from="a5-r"][data-cls-flip-to="a5-l"]').tap();
+    await tree.locator('[data-cls-flip-from="pyro-a5-r"][data-cls-flip-to="pyro-a5-l"]').tap();
     await expect(page.locator('#toasts .toast-warning').last()).toContainText(CLASS_REFUSAL_WORDS.held);
 
     // Mid-fight Identity Edit Job change is also refused by setJob in core.
@@ -258,8 +221,6 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
   const gmDev = await device('gm-reg');
   const p1Dev = await device('p1-reg');
   const p2Dev = await device('p2-reg');
-  await gmDev.ctx.addInitScript(trees => { (globalThis as any).__e2eClassTrees = trees; }, RARE_TREES);
-  await p2Dev.ctx.addInitScript(trees => { (globalThis as any).__e2eClassTrees = trees; }, RARE_TREES);
   const gm = gmDev.page, p1 = p1Dev.page, p2 = p2Dev.page;
 
   await onboardGM(gm);
@@ -459,12 +420,12 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
 
     const p2Tree = p2Panel.locator('[data-cls-tree-fold]');
     await p2Tree.locator('summary').tap();
-    await p2Panel.locator('[data-cls-buy="root"]').tap();
+    await p2Panel.locator('[data-cls-buy="pyro-root"]').tap();
     await p2.locator('.sys-overlay.show .sys-window.sys-warn button.primary').tap();
-    await expect(p2Panel.locator('[data-cls-node="root"]')).toHaveAttribute('data-cls-status', 'owned');
+    await expect(p2Panel.locator('[data-cls-node="pyro-root"]')).toHaveAttribute('data-cls-status', 'owned');
 
     const wantSwap = classSwapSaid('Kael Unique', 'Hemomancer', 'Pyromancer', 0).text;
-    const wantBuy = classNodeSaid('Kael Unique', 'Pyromancer', 'Ember Root', 15).text;
+    const wantBuy = classNodeSaid('Kael Unique', 'Pyromancer', 'Kindled Focus', 15).text;
     await expect.poll(() => gm.evaluate(() => hunterApp.store.get().log.map((l: any) => l.text)), { timeout: 20_000 }).toContain(wantSwap);
     await expect.poll(() => gm.evaluate(() => hunterApp.store.get().log.map((l: any) => l.text)), { timeout: 20_000 }).toContain(wantBuy);
   });
@@ -473,7 +434,6 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
 for (const vp of [SMALL_PHONE, PHONE]) {
   test(`Classes panel and GM Unique classes section fit cleanly at ${vp.width}px with no horizontal overflow`, async ({ device }) => {
     const dev = await device(`cls-vp-${vp.width}`, { viewport: vp });
-    await dev.ctx.addInitScript(trees => { (globalThis as any).__e2eClassTrees = trees; }, RARE_TREES);
     const page = dev.page;
     await onboardGM(page);
     await dismissAll(page);
@@ -481,7 +441,7 @@ for (const vp of [SMALL_PHONE, PHONE]) {
       hunterApp.store.update((d: any) => {
         const h = d.hunters[0];
         const at = new Date().toISOString();
-        h.classes = { Pyromancer: { unlockedAt: at, nodes: ['root'] }, Fighter: { unlockedAt: at, nodes: [] } };
+        h.classes = { Pyromancer: { unlockedAt: at, nodes: ['pyro-root'] }, Fighter: { unlockedAt: at, nodes: [] } };
         h.job = 'Pyromancer';
         h.jobDone = 'Pyromancer';
       }, 'test-setup');

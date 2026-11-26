@@ -5,7 +5,9 @@ import { CHAIN_WORDS, canReissue } from '../core/hunter/job-chain.ts';
 import { COMPLETER, completerOf, mayChangeQuest, reportsProgress, systemCounts } from '../core/hunter/quest-rights.ts';
 import { SECRET_WORDS } from '../core/hunter/quest-secret.ts';
 import { pickables, pickedRef } from '../core/party.ts';
-import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
+import { JOB_NAMES, RARE_CHAIN_LEVEL, RARE_CLASS_NAMES, isChainJob } from '../core/registry/jobs.ts';
+import { CLASS_SIGNATURES } from '../core/registry/class-powers.ts';
+import { CLASS_TREES } from '../core/registry/class-trees.ts';
 import { isEmptyReward, newRewards, rewardLines as linesOf } from '../core/rewards.ts';
 import { PENDING_WORDS, rewardWaits } from '../core/hunter/pending.ts';
 import { atHunter } from '../core/save-step.ts';
@@ -118,10 +120,10 @@ export function register(app) {
       if (!to.length || !ui.wrote('! Quest', store.apply('quest-issue', s => to.reduce((x, { hid, id }) => { const n = withTold(x, hid, stamp(), h => issueQuest(h, partial, id, at)); return 'ok' in n ? x : n; }, s)))) return [];
       return to.map(x => x.id);
     },
-    /** Starts a Job Change chain (a job in src/core/registry/jobs.ts). Answers step 1's quest id, or the refusal whole. */
+    /** Starts a Job Change chain (a Common job or Rare class in src/core/registry/jobs.ts). Answers step 1's quest id, or the refusal whole. */
     issueJobChain(hid, job) {
       const h = store.hunter(hid); if (!h) return refuse('no-hunter');
-      if (!isJobName(job)) return refuse('no-job');
+      if (!isChainJob(job)) return refuse('no-job');
       let questId = null;
       const w = chainEvent(hid, next => { const id = next('jc'); questId = next('q'); return { type: 'issued', id, job, questId, level: h.level, at: iso() }; });
       return isRefused(w) ? w : { ok: /** @type {const} */ (true), questId };
@@ -161,8 +163,13 @@ export function register(app) {
       actions: [...hs.map(x => ({ label: `${x.name} (Lv ${x.level})`, value: x.id })), ...rem.map(r => ({ label: `${r.name} (player)`, value: r.key })),
         { label: 'Cancel', value: null, cancel: true }] });
     if (!hid) return;
+    const shippedRares = RARE_CLASS_NAMES.filter(r => CLASS_SIGNATURES[r] && CLASS_TREES[r]);
     const job = await ui.system({ tag: '! Job Change', title: 'Choose the job', body: 'Granted when the final step is complete.', layout: 'list',
-      actions: [...JOB_NAMES.map(j => ({ label: j, value: j })), { label: 'Cancel', value: null, cancel: true }] });
+      actions: [
+        ...JOB_NAMES.map(j => ({ label: j, value: j })),
+        ...shippedRares.map(j => ({ label: `${j} (Rare, Lv ${RARE_CHAIN_LEVEL})`, value: j })),
+        { label: 'Cancel', value: null, cancel: true },
+      ] });
     if (!job) return;
     const ref = pickedRef(pickables(hs, rem.map(r => ({ key: r.key, data: { name: r.name } }))), hid);
     if (ref && ref.kind === 'remote') return sendChain(ref.remote, job, 'issue');
@@ -518,7 +525,7 @@ export function register(app) {
       }
       // a player's failed Job Change: the GM reissues or abandons it with the `chain` message
       const c = sh && sh.data.jobChain;
-      if (c && c.status === 'failed' && isJobName(c.job)) {
+      if (c && c.status === 'failed' && isChainJob(c.job)) {
         rows.push(`<li class="failed"><span><span class="who">${esc(r.name)}</span> · Job Change failed: ${esc(c.job)}, step ${esc(c.step)} of 3</span>
           <span class="qa"><button type="button" data-rchain="${esc(r.key)}" data-kind="reissue" data-job="${esc(c.job)}">Reissue</button><button type="button" class="danger" data-rchain="${esc(r.key)}" data-kind="abandon" data-job="${esc(c.job)}">Abandon</button></span></li>`);
       }

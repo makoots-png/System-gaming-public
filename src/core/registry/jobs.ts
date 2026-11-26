@@ -27,14 +27,52 @@ export type StepDef =
  */
 export type JobDef = { steps: readonly [StepDef, StepDef, StepDef]; pair: StatPair; alloc: StatWeights };
 
-/** The level the standard chain asks for before the Job Change dungeon. */
+/** The level the standard Common chain asks for before the Job Change dungeon. */
 export const CHAIN_LEVEL = 10;
+/** The level the Rare Job Change chain asks for before the Rare trial dungeon (`RULES.rankLevels.C`). */
+export const RARE_CHAIN_LEVEL = 20;
 /** The chain every starter job runs: reach level 10, survive the dungeon's 3 waves, defeat the Knight Captain. */
 const STANDARD: JobDef['steps'] = [
   { goal: 'level', level: CHAIN_LEVEL, title: 'Job Change 1/3: Requirements', desc: `Reach Level ${CHAIN_LEVEL} to qualify for the Job Change quest.` },
   { goal: 'task', title: 'Job Change 2/3: The Job Change Dungeon', desc: 'Enter the Job Change dungeon and survive.', objectives: [{ label: 'Survive dungeon waves', target: 3 }] },
   { goal: 'task', title: 'Job Change 3/3: Knight Captain', desc: 'Defeat the Knight Captain.', objectives: [{ label: 'Defeat the Knight Captain', target: 1 }] },
 ];
+/** Builds a 3-step level-20 Rare Job Change chain with optional branch-specific trial steps. */
+const rareSteps = (
+  step2Title: string,
+  step2Desc: string,
+  step2Obj: string,
+  champion: string,
+): JobDef['steps'] => [
+  { goal: 'level', level: RARE_CHAIN_LEVEL, title: 'Rare Job Change 1/3: Requirements', desc: `Reach Level ${RARE_CHAIN_LEVEL} to qualify for the Rare Job Change quest.` },
+  { goal: 'task', title: `Rare Job Change 2/3: ${step2Title}`, desc: step2Desc, objectives: [{ label: step2Obj, target: 3 }] },
+  { goal: 'task', title: `Rare Job Change 3/3: ${champion}`, desc: `Defeat the ${champion} to claim your Rare class.`, objectives: [{ label: `Defeat the ${champion}`, target: 1 }] },
+];
+/** Default level-20 3-step chain for Rare classes without a bespoke branch trial yet. */
+const RARE_STEPS: JobDef['steps'] = rareSteps(
+  'The Trial Dungeon',
+  'Enter the Rare Job Change dungeon and survive the trial.',
+  'Survive trial waves',
+  'Trial Champion',
+);
+const BRAMBLEGUARD_STEPS = rareSteps(
+  'The Briar Labyrinth',
+  'Hold the line inside the Briar Labyrinth and endure three waves.',
+  'Survive labyrinth waves',
+  'Thornbound Warden',
+);
+const PYROMANCER_STEPS = rareSteps(
+  'The Caldera Trial',
+  'Cross the burning floor of the Caldera Trial and clear three waves.',
+  'Survive caldera waves',
+  'Cinder Archon',
+);
+const SNIPER_STEPS = rareSteps(
+  'Hold the Watchtower',
+  'Hold your perch atop the Watchtower through three siege waves.',
+  'Survive siege waves',
+  'Watchtower Marksman',
+);
 
 // Six Common starters (settled.md: Necromancer moved to unique Mythic).
 const COMMON_JOBS_RAW = {
@@ -75,19 +113,19 @@ export type ClassDef = {
 };
 
 const RARER_CLASSES_RAW = {
-  // Rare (12, not unique, two branches per Common starter)
-  Berserker:    { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+vit', alloc: { str: 2, vit: 1 } },
-  Runeknight:   { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+pow', alloc: { str: 2, pow: 1 } },
-  Nightblade:   { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
-  Duelist:      { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'str+agi', alloc: { agi: 2, str: 1 } },
-  Pyromancer:   { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 } },
-  Artificer:    { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 } },
-  Brambleguard: { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },
-  Bastion:      { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'str+vit', alloc: { vit: 2, str: 1 } },
-  Cleric:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'dis+pre', alloc: { dis: 2, pre: 1 } },
-  Oracle:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'ins+pre', alloc: { pre: 2, ins: 1 } },
-  Sniper:       { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+ctl', alloc: { agi: 2, ctl: 1 } },
-  Strider:      { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+vit', alloc: { agi: 2, vit: 1 } },
+  // Rare (12, not unique, two branches per Common starter, level-20 3-step chain)
+  Berserker:    { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+vit', alloc: { str: 2, vit: 1 }, steps: RARE_STEPS },
+  Runeknight:   { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+pow', alloc: { str: 2, pow: 1 }, steps: RARE_STEPS },
+  Nightblade:   { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'agi+ins', alloc: { agi: 2, ins: 1 }, steps: RARE_STEPS },
+  Duelist:      { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'str+agi', alloc: { agi: 2, str: 1 }, steps: RARE_STEPS },
+  Pyromancer:   { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 }, steps: PYROMANCER_STEPS },
+  Artificer:    { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 }, steps: RARE_STEPS },
+  Brambleguard: { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'vit+dis', alloc: { vit: 2, dis: 1 }, steps: BRAMBLEGUARD_STEPS },
+  Bastion:      { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'str+vit', alloc: { vit: 2, str: 1 }, steps: RARE_STEPS },
+  Cleric:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'dis+pre', alloc: { dis: 2, pre: 1 }, steps: RARE_STEPS },
+  Oracle:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'ins+pre', alloc: { pre: 2, ins: 1 }, steps: RARE_STEPS },
+  Sniper:       { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+ctl', alloc: { agi: 2, ctl: 1 }, steps: SNIPER_STEPS },
+  Strider:      { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+vit', alloc: { agi: 2, vit: 1 }, steps: RARE_STEPS },
   // Epic (8, unique, in ship order)
   Chronokeeper: { rarity: 'epic', unique: true, recRank: 'A', pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 } },
   Grimreaper:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+pow', alloc: { agi: 2, pow: 1 } },
@@ -128,6 +166,37 @@ export type ClassName = keyof typeof ALL_CLASSES_RAW;
 /** All 36 built-in classes across Common, Rare, Epic, and Mythic. */
 export const BUILT_IN_CLASSES: Readonly<Record<ClassName, ClassDef>> = ALL_CLASSES_RAW;
 export const CLASS_NAMES = Object.keys(ALL_CLASSES_RAW) as readonly ClassName[];
+
+export type RareClassName = {
+  [K in RarerClassName]: (typeof RARER_CLASSES_RAW)[K]['rarity'] extends 'rare' ? K : never;
+}[RarerClassName];
+/** The 12 Rare built-in classes (two level-20 branches per Common starter). */
+export const RARE_CLASS_NAMES = CLASS_NAMES.filter(
+  (name): name is RareClassName => ALL_CLASSES_RAW[name].rarity === 'rare',
+);
+export const isRareClass = (v: unknown): v is RareClassName =>
+  typeof v === 'string' && Object.hasOwn(RARER_CLASSES_RAW, v) && RARER_CLASSES_RAW[v as RarerClassName].rarity === 'rare';
+
+/** Any built-in class earned through a 3-step Job Change chain (6 Common at Lv.10 + 12 Rare at Lv.20). */
+export type ChainJobName = JobName | RareClassName;
+/** All 18 chainable classes (Common starters followed by Rare branches). */
+export const CHAIN_JOB_NAMES: readonly ChainJobName[] = [...JOB_NAMES, ...RARE_CLASS_NAMES];
+export const isChainJob = (v: unknown): v is ChainJobName => isJobName(v) || isRareClass(v);
+
+/** The 3 Job Change steps for any Common (level 10) or Rare (level 20) chainable class. */
+export function chainStepsOf(job: ChainJobName): JobDef['steps'] {
+  return isJobName(job) ? COMMON_JOBS_RAW[job].steps : RARER_CLASSES_RAW[job].steps;
+}
+
+/** The two Rare branches that advance from Common starter `parent`. */
+export function rareBranchesOf(parent: CommonClassName): readonly RareClassName[] {
+  return RARE_CLASS_NAMES.filter(name => RARER_CLASSES_RAW[name].parent === parent);
+}
+
+/** The Common starter job that Rare class `job` branches from. */
+export function rareParentOf(job: RareClassName): CommonClassName {
+  return RARER_CLASSES_RAW[job].parent;
+}
 
 export type UniqueClassName = {
   [K in RarerClassName]: (typeof RARER_CLASSES_RAW)[K]['unique'] extends true ? K : never;

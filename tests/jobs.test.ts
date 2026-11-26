@@ -1,6 +1,6 @@
 // Every job in src/core/registry/jobs.ts must pass these. A new job is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { AUTO_ALLOC_WORDS, BUILT_IN_CLASSES, BUILT_IN_JOBS, CLASS_NAMES, JOB_NAMES, RARER_CLASSES, UNIQUE_CLASS_NAMES, canonicalUniqueClass, classDefOf, classRarityOf, focusWeights, isClassName, isJobName, isUniqueClass, jobAlloc, jobFocus, matchingJob, parseStatFocus } from '../src/core/registry/jobs.ts';
+import { AUTO_ALLOC_WORDS, BUILT_IN_CLASSES, BUILT_IN_JOBS, CHAIN_JOB_NAMES, CLASS_NAMES, JOB_NAMES, RARE_CHAIN_LEVEL, RARE_CLASS_NAMES, RARER_CLASSES, UNIQUE_CLASS_NAMES, canonicalUniqueClass, chainStepsOf, classDefOf, classRarityOf, focusWeights, isChainJob, isClassName, isJobName, isRareClass, isUniqueClass, jobAlloc, jobFocus, matchingJob, parseStatFocus, rareBranchesOf, rareParentOf } from '../src/core/registry/jobs.ts';
 import { statsOfPair } from '../src/core/hunter/keystones.ts';
 import { chainAfter, stepQuest } from '../src/core/hunter/job-chain.ts';
 import type { ChainResult, JobChain } from '../src/core/hunter/job-chain.ts';
@@ -141,6 +141,32 @@ group('36-class roster metadata', () => {
       expect(pairStats).toContain(focus!.main);
       expect(pairStats).toContain(focus!.second!);
       expect(jobAlloc(name)).toEqual({ [focus!.main]: 2, [focus!.second!]: 1 });
+    }
+  });
+
+  test('all 12 Rare classes carry the level-20 3-step chain with 2 branches per Common starter, while unique classes are not chainable', () => {
+    expect(RARE_CHAIN_LEVEL).toBe(20);
+    expect(RARE_CLASS_NAMES).toHaveLength(12);
+    expect(CHAIN_JOB_NAMES).toHaveLength(18);
+    for (const parent of JOB_NAMES) {
+      const branches = rareBranchesOf(parent);
+      expect(branches).toHaveLength(2);
+      for (const b of branches) expect(rareParentOf(b)).toBe(parent);
+    }
+    expect(rareBranchesOf('Tanker')).toEqual(['Brambleguard', 'Bastion']);
+    expect(rareBranchesOf('Mage')).toEqual(['Pyromancer', 'Artificer']);
+    expect(rareBranchesOf('Ranger')).toEqual(['Sniper', 'Strider']);
+    for (const rare of RARE_CLASS_NAMES) {
+      expect(isRareClass(rare)).toBe(true);
+      expect(isChainJob(rare)).toBe(true);
+      expect(isJobName(rare)).toBe(false);
+      const steps = chainStepsOf(rare);
+      expect(steps).toHaveLength(3);
+      expect(steps[0]).toMatchObject({ goal: 'level', level: 20 });
+    }
+    for (const uniq of UNIQUE_CLASS_NAMES) {
+      expect(isRareClass(uniq)).toBe(false);
+      expect(isChainJob(uniq)).toBe(false);
     }
   });
 });

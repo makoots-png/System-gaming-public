@@ -790,11 +790,14 @@ describe('quest progress', () => {
 describe('a Job Change chain', () => {
   const chain = (fields: Raw) => payload('chain', { ...valid('chain'), ...fields });
 
-  test('names a job the jobs table has, and one of issue, reissue or abandon', () => {
+  test('names a chainable Common or Rare class, and one of issue, reissue or abandon (refusing unique and unknown names)', () => {
     expect(chain({ job: 'Pirate' })).toBeNull();
     expect(chain({ job: 'ranger' })).toBeNull();
+    expect(chain({ job: 'Hemomancer' })).toBeNull();
+    expect(chain({ job: 'Seraph' })).toBeNull();
     expect(chain({ job: 7 })).toBeNull();
     expect(chain({ kind: 'finish' })).toBeNull();
+    for (const job of ['Fighter', 'Brambleguard', 'Pyromancer', 'Sniper']) expect(chain({ job })!.job).toBe(job);
     for (const kind of ['issue', 'reissue', 'abandon']) expect(chain({ kind })!.kind).toBe(kind);
   });
 
