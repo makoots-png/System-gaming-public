@@ -6,7 +6,7 @@
 // these steps. Pure: the caller passes the time, today's day key, the ids a new quest takes and the rules.
 import { soloWake } from '../gates/personal.ts';
 import { chainAfter } from './job-chain.ts';
-import type { ChainEffect, ChainEvent } from './job-chain.ts';
+import type { ChainEffect, ChainEvent, ChainStepRefusal } from './job-chain.ts';
 import { systemCounts } from './quest-rights.ts';
 import { missedDays, penaltyAfter, penaltyQuest } from './penalty.ts';
 import type { PenaltyEffect, PenaltyEvent } from './penalty.ts';
@@ -127,16 +127,23 @@ export function questOffer(d: QuestDraft, dueAt: string | null): QuestOffer {
 /** A hunter step that also says what to log and what effects happened. */
 export type Told<T> = { hunter: Hunter; said: Said[]; effects: T[] };
 const questLine = (h: Hunter, title: string, text: string): Said => ({ kind: 'quest', hunterId: h.id, title, text });
-/** A chain event on `h` and what it answers applied: the chain, the step quest it issues, a level step's progress, the job it grants. */
-export function chained(h: Hunter, event: ChainEvent): Told<ChainEffect> {
+/**
+ * A chain event on `h` and what it answers applied: the chain, the step quest it issues, a level step's progress, the job
+ * it grants. The job lands or the event is refused: a downed hunter (`dead`), one a fight holds (`o.held`, `held`) or a
+ * full class locker (`locker-full`) answers `h` as it was with one `refused` effect, so the chain stays at its last step.
+ */
+export function chained(h: Hunter, event: ChainEvent, o: { held?: boolean } = {}): Told<ChainEffect> {
   const { effects, jobChain } = chainAfter(h.jobChain, event), said: Said[] = [];
   let next: Hunter = { ...h, jobChain };
   for (const fx of effects) {
     if (fx.type === 'issueQuest') { next = { ...next, quests: [...next.quests, fx.quest] }; said.push(questLine(h, 'Quest issued', fx.quest.title)); }
     if (fx.type === 'progress') next = { ...next, quests: next.quests.map(q => (q.id === fx.questId && q.objectives[0] ? { ...q, objectives: [{ ...q.objectives[0], progress: fx.value }, ...q.objectives.slice(1)] } : q)) };
     if (fx.type === 'grantJob') {
+      if (h.life.at === 'dead') return { hunter: h, said: [], effects: [{ type: 'refused', reason: 'dead' }] };
+      if (o.held) return { hunter: h, said: [], effects: [{ type: 'refused', reason: 'held' }] };
       const earned = earnClass(next, fx.job, { at: event.type === 'stepCompleted' ? event.at : '', activate: true, awaken: true });
-      if (!isRefused(earned)) next = earned;
+      if (isRefused(earned)) return { hunter: h, said: [], effects: [{ type: 'refused', reason: earned.why }] };
+      next = earned;
     }
   }
   return { hunter: next, said, effects };
@@ -242,17 +249,20 @@ export type Completed = Told<ChainEffect | PenaltyEffect> & { streak: number | n
 export type QuestCompletedBy = 'hand' | 'system';
 /**
  * Active quest `qid` completed by `by` (a tap when not given) at `at` on day `today`: its objectives full, the penalty asked whether it lifts, the
- * chain told (a level step below its level is refused, `belowLevel`), and, when it was the last daily of the day,
- * the streak counted (one more after yesterday, else 1) with a bonus point every `streakBonusEvery` days.
+ * chain told (refused by the chain's own reason: a level step below its level, `belowLevel`, or a last step whose job
+ * cannot land, `dead`, `held` when `o.held` says a fight holds the hunter, `locker-full`), and, when it was the last
+ * daily of the day, the streak counted (one more after yesterday, else 1) with a bonus point every `streakBonusEvery` days.
  */
-export function completeQuest(h: Hunter, qid: string, o: { at: string; today: DayKey; nextQuestId: QuestId; streakBonusEvery: number; by?: QuestCompletedBy }): Completed | Refused<QuestWhy | 'belowLevel'> {
+export function completeQuest(h: Hunter, qid: string, o: { at: string; today: DayKey; nextQuestId: QuestId; streakBonusEvery: number; by?: QuestCompletedBy; held?: boolean }): Completed | Refused<QuestWhy | ChainStepRefusal> {
   const q = h.quests[atQuest(h, qid)];
   if (!q) return refuse('missing');
   if (q.status !== 'active') return refuse('not-now');
   let next = h, said: Said[] = [], effects: (ChainEffect | PenaltyEffect)[] = [];
   if (q.chainId) {
-    const c = chained(next, { type: 'stepCompleted', questId: q.id, level: h.level, nextQuestId: o.nextQuestId, at: o.at });
-    if (c.effects.some(fx => fx.type === 'refused')) return refuse('belowLevel');
+    const c = chained(next, { type: 'stepCompleted', questId: q.id, level: h.level, nextQuestId: o.nextQuestId, at: o.at }, { held: !!o.held });
+    const no = c.effects.find(fx => fx.type === 'refused');
+    // `stepCompleted` is refused only by `advance` (belowLevel) and by `chained` at the grant
+    if (no) return refuse(no.reason as ChainStepRefusal);
     next = c.hunter; said = c.said; effects = c.effects;
   }
   const finished = questStep(next.quests[atQuest(next, qid)]!, o.by === 'system' ? 'counted' : 'complete', o.at);

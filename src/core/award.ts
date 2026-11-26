@@ -11,7 +11,9 @@ import type { Day, Granted, UniqueJobRefusal, VitalsAt } from './hunter/grant.ts
 import type { EventStamp, GivenBundle, RewardFrom, RoomCode, RoomEvent, SheetKey } from './protocol.ts';
 import { canonicalUniqueClass } from './registry/jobs.ts';
 import { record } from './hunter/chronicle.ts';
+import { jobLine, rewardLines, stripRewardJob } from './rewards.ts';
 import type { Rewards } from './rewards.ts';
+import type { Rules } from './rules.ts';
 import type { Save } from './save.ts';
 import { isRefused, refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
@@ -44,6 +46,44 @@ export type Awarded = {
   readonly remoteJobRefused: readonly { readonly key: SheetKey; readonly name: string; readonly refusal: UniqueJobRefusal }[];
 };
 
+/** Who took an award's job: this phone's hunters by id, the players by sheet key. */
+export type JobTook = { readonly local: readonly string[]; readonly remote: readonly SheetKey[] };
+/** An award's log lines, built once `gmAward` knows who took its job (statechart rule 3: a refused job is never logged as given). */
+export type AwardSaid = (took: JobTook) => readonly Said[];
+/** What the GM's Send award sends and says: as `Sends`, with its lines built from who took the job when they depend on it. */
+export type AwardSends = Omit<Sends, 'said'> & { readonly said: readonly Said[] | AwardSaid };
+
+/**
+ * The Send award's log lines once its grants are known, for `rewards` (or bundle `bundle`, by name) given to `to`:
+ * `line(bits, names)` once with the whole reward to everyone when every one took its job or it names none. Otherwise
+ * the reward without its job to everyone (left out when that gives nothing and it is not a bundle), and `Job: X` to
+ * those who took it when any did, as a waiting reward's approval logs it (hunter/pending.ts `pendingApproveAll`). A player
+ * takes a unique job only by its claim (`took.remote`); a plain job goes in the player's award, so each player sent it
+ * counts as taking it. No recipient, no line.
+ */
+export function awardSaid(o: {
+  readonly R: Rules;
+  readonly rewards: Rewards;
+  readonly bundle: string | null;
+  readonly to: JobTook;
+  readonly names: { readonly local: (hid: string) => string; readonly remote: (key: SheetKey) => string };
+  readonly line: (bits: string, names: readonly string[]) => Said;
+}): AwardSaid {
+  return took => {
+    const all = [...o.to.local.map(o.names.local), ...o.to.remote.map(o.names.remote)];
+    if (!all.length) return [];
+    const job = o.rewards.job;
+    const remote = job && canonicalUniqueClass(job) ? took.remote : o.to.remote;
+    const tookNames = [...o.to.local.filter(h => took.local.includes(h)).map(o.names.local), ...o.to.remote.filter(k => remote.includes(k)).map(o.names.remote)];
+    if (!job || tookNames.length === all.length) return [o.line(o.bundle ?? rewardLines(o.R, o.rewards).join(', '), all)];
+    const rest = o.bundle ?? rewardLines(o.R, stripRewardJob(o.rewards)).join(', ');
+    return [
+      ...(rest ? [o.line(rest, all)] : []),
+      ...(tookNames.length ? [o.line(jobLine(job), tookNames)] : []),
+    ];
+  };
+}
+
 /** Optional remote unique-class claim context passed to `gmAward` when `rewards.job` names a unique class. */
 export type RemoteJobCtx = {
   readonly targets: readonly { readonly key: SheetKey; readonly name: string }[];
@@ -54,7 +94,8 @@ export type RemoteJobCtx = {
 /**
  * The GM's Send award, in one step: each hunter of this phone in `locals` granted `rewards` (with its vitals where its
  * fight holds them, `vitals`), any remote unique `rewards.job` claimed via `claimUniqueClass`, then `s`: each player's
- * award posted and the log line. A hunter no longer here is left out. An award given from a bundle by hand (`given`,
+ * award posted and the log line, built from who took the job when `s.said` is a builder (`awardSaid`). A hunter no longer
+ * here is left out. An award given from a bundle by hand (`given`,
  * the GM's awards for roleplay) is a fact of each local hunter's chronicle, in the same write; a player's phone records
  * it when its award lands (room-events.ts).
  */
@@ -62,7 +103,7 @@ export function gmAward(
   save: Save,
   locals: readonly { readonly hid: string; readonly vitals: VitalsAt }[],
   rewards: Rewards,
-  s: Sends,
+  s: AwardSends,
   day: Day,
   given: GivenBundle | null = null,
   from: RewardFrom | null = null,
@@ -102,7 +143,10 @@ export function gmAward(
       }
     }
   }
-  return { save: sent(next, s, { at: day.at, cap: day.R.logCap }), granted, remoteClaimed, remoteJobRefused };
+  const said = typeof s.said === 'function'
+    ? s.said({ local: rewards.job ? granted.filter(({ g }) => g.job !== null).map(({ hid }) => hid) : [], remote: remoteClaimed })
+    : s.said;
+  return { save: sent(next, { ...s, said }, { at: day.at, cap: day.R.logCap }), granted, remoteClaimed, remoteJobRefused };
 }
 
 // ── the Award form's tie to what its send settles ──

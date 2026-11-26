@@ -31,7 +31,7 @@ import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { removeStatus, saveStatus } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
-import { BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
+import { BLANK_DRAFT, awardSaid, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
 import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
 import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
@@ -564,7 +564,7 @@ export function register(app) {
    * @param {import('../core/protocol.ts').GivenBundle | null} bundle @param {string} msg @param {import('../core/award.ts').AwardDraft} [form]
    */
   function sendAward(local, remote, rw, bundle, msg, form = BLANK_DRAFT) {
-    const bits = bundle ? bundle.name : [...rewardLines(app.rules(), rw)].join(', '), approves = sendApproves(form), w = waitingOf(form);
+    const approves = sendApproves(form), w = waitingOf(form);
     if (approves && !w) { say(msg, PENDING_WORDS.refusals.answered, true); return false; }
     const earned = w ? { from: w.from, what: w.what } : null;
     const hasUniqueJob = !!(rw.job && canonicalUniqueClass(rw.job));
@@ -580,7 +580,9 @@ export function register(app) {
     // a waiting reward is approved only with its award: one the room would not take stays waiting, never lost
     if (approves && lost.length) { say(msg, `${failed} Nothing was sent, and the reward is still pending.`, true); return false; }
     const here = local.map(nameOf), away = posted.map(remoteName);
-    const said = here.length || away.length ? [line('award', bundle ? 'GM gave' : earned ? 'GM approved' : 'GM award', `${earned ? `${PENDING_WORDS.earned(earned.from, earned.what)}: ` : ''}${bits} → ${[...here, ...away].join(', ')}`, local[0] || null)] : [];
+    // the log line says only the job that landed: built once the grants and claims are known (award.ts `awardSaid`)
+    const said = awardSaid({ R: app.rules(), rewards: rw, bundle: bundle ? bundle.name : null, to: { local, remote: posted }, names: { local: nameOf, remote: remoteName },
+      line: (bits, names) => line('award', bundle ? 'GM gave' : earned ? 'GM approved' : 'GM award', `${earned ? `${PENDING_WORDS.earned(earned.from, earned.what)}: ` : ''}${bits} → ${names.join(', ')}`, local[0] || null) });
     // every hunter of this phone granted, every player's award posted, the log line, and what this phone's fight holds
     // (each local hunter's fight parts, a held player's statuses) on the rows: one write (src/core/award.ts, hunter.grantWrite)
     const locals = local.map(hid => ({ hid, vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet') }));

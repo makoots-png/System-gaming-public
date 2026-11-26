@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave, parseSave } from '../src/core/save.ts';
+import type { Save } from '../src/core/save.ts';
 import { parseClassNodeId, parseSheetKey, sheetKeyOf } from '../src/core/ids.ts';
 import type { ClassNodeId, SheetKey } from '../src/core/ids.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -403,5 +404,31 @@ describe('claimUniqueClass, releaseUniqueClass, reassignUniqueClass', () => {
     if (parsed.kind === 'save') {
       expect(parsed.save.classHolders).toEqual(c3.save.classHolders);
     }
+  });
+});
+
+describe('a downed hunter takes no unique class (statechart rule 2)', () => {
+  const ctx = { at: AT, room: null, stamp: null, R: RULES, ...NOT_HELD };
+  const down = (s: Save, i: number): Save => ({ ...s, hunters: s.hunters.map((h, k) => (k === i ? { ...h, life: { at: 'dead' as const } } : h)) });
+
+  test('a claim and a reassign onto a downed local hunter are refused "dead" and change nothing', () => {
+    const s = down(twoHunterSave(), 1), sera = s.hunters[1]!.id;
+    expect(claimUniqueClass(s, 'Hemomancer', { kind: 'local', hunterId: sera }, ctx)).toEqual({ ok: false, why: 'dead' });
+    const c = claimUniqueClass(s, 'Hemomancer', { kind: 'local', hunterId: s.hunters[0]!.id }, ctx);
+    if (isRefused(c)) throw new Error(c.why);
+    expect(reassignUniqueClass(c.save, 'Hemomancer', { kind: 'local', hunterId: sera }, ctx)).toEqual({ ok: false, why: 'dead' });
+    expect(Object.keys(s.hunters[1]!.classes)).toEqual([]);
+  });
+
+  test('a downed holder can still be released, and its class reassigned away', () => {
+    const c = claimUniqueClass(twoHunterSave(), 'Hemomancer', { kind: 'local', hunterId: hid('h1') }, ctx);
+    if (isRefused(c)) throw new Error(c.why);
+    const s = down(c.save, 0);
+    const r = releaseUniqueClass(s, 'Hemomancer', ctx);
+    if (isRefused(r)) throw new Error(r.why);
+    expect([holderOf(r.save, 'Hemomancer'), Object.keys(r.save.hunters[0]!.classes)]).toEqual([null, []]);
+    const moved = reassignUniqueClass(s, 'Hemomancer', { kind: 'local', hunterId: hid('h2') }, ctx);
+    if (isRefused(moved)) throw new Error(moved.why);
+    expect(holderOf(moved.save, 'Hemomancer')).toMatchObject({ kind: 'local', hunterId: 'h2' });
   });
 });

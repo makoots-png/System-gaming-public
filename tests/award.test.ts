@@ -1,10 +1,15 @@
 // What one of the GM view's actions writes (src/core/award.ts): its change, its posts and its log line in one answer.
 import { describe, expect, test } from 'bun:test';
-import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../src/core/award.ts';
+import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, awardSaid, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../src/core/award.ts';
 import type { AwardDraft, AwardDraftEvent } from '../src/core/award.ts';
 import { dropDealt } from '../src/core/gates/pay.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { newRewards } from '../src/core/rewards.ts';
+import type { Rewards } from '../src/core/rewards.ts';
+import { claimUniqueClass } from '../src/core/hunter/class-holders.ts';
+import { grant } from '../src/core/hunter/grant.ts';
+import { CLASS_LOCKER_CAP } from '../src/core/registry/class-trees.ts';
+import type { SheetKey } from '../src/core/ids.ts';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { ParseEnv, Save } from '../src/core/save.ts';
@@ -119,5 +124,59 @@ describe('the Award form\'s tie to a fight\'s drop (SMX-gates-1, SMX-views-11)',
   test('a send of the loot that would leave a picked player without it (no room) is refused whole, so nothing is written and the loot waits (SMX-gates-1.1)', () => {
     expect(sendDeals(STATES.tied, 1)).toEqual({ ok: false, why: 'unreached' });
     expect(sendDeals(BLANK_DRAFT, 1), 'an award that is not the loot goes to whom it reaches, as before').toEqual({ deals: null });
+  });
+});
+
+describe('the award\'s log line says the job that landed (statechart rule 3)', () => {
+  const KAI = 'd-p1:h1' as SheetKey;
+  /** The GM's save alone (mode gm), h1 Mira and h2 Brakk; `edit` changes it first. */
+  const gmAlone = (edit: (s: Save) => Save = s => s): Save => { const s = gm(); return edit({ ...s, settings: { ...s.settings, mode: 'gm' } }); };
+  const names = { local: (h: string) => (h === 'h1' ? 'Mira' : 'Brakk'), remote: () => 'Kai' };
+  const line = (bits: string, to: readonly string[]) => ({ kind: 'award' as const, hunterId: null, title: 'GM award', text: `${bits} → ${to.join(', ')}` });
+  /** Send award of `rewards` to `local` and `remote` with the builder the GM view uses; answers the award lines written. */
+  function sendJob(s: Save, local: { hid: string; vitals: 'sheet' | 'fight' }[], remote: SheetKey[], rewards: Rewards, heldRemote = false) {
+    const said = awardSaid({ R: RULES, rewards, bundle: null, to: { local: local.map(l => l.hid), remote }, names, line });
+    const r = gmAward(s, local, rewards, { room: null, events: [], said }, DAY, null, null,
+      remote.length ? { targets: remote.map(key => ({ key, name: 'Kai' })), heldRemote: () => heldRemote, stamp: null } : null);
+    return r.save.log.filter(l => l.kind === 'award').map(l => l.text).slice(0, r.save.log.length - s.log.length);
+  }
+  const down = (s: Save): Save => ({ ...s, hunters: s.hunters.map(h => (h.id === 'h1' ? { ...h, life: { at: 'dead' as const } } : h)) });
+  const full = (s: Save): Save => ({ ...s, hunters: s.hunters.map(h => (h.id === 'h1' ? { ...h, classes: Object.fromEntries(Array.from({ length: CLASS_LOCKER_CAP }, (_, i) => [`Filler ${i}`, { unlockedAt: AT, nodes: [] }])) } : h)) });
+  const taken = (s: Save): Save => { const c = claimUniqueClass(s, 'Seraph', { kind: 'npc', name: 'Warden' }, { at: AT, room: null, stamp: null, R: RULES, heldLocal: () => false, heldRemote: () => false }); if (isRefused(c)) throw new Error(c.why); return c.save; };
+  const SERAPH = { ...newRewards(), gold: 10, job: 'Seraph' };
+
+  for (const [why, s, vitals] of [['held', gmAlone(), 'fight'], ['locker-full', gmAlone(full), 'sheet'], ['class-taken', gmAlone(taken), 'sheet'], ['dead', gmAlone(down), 'sheet']] as const) {
+    test(`a unique job refused "${why}" to this phone's hunter leaves no "Job:" in the log`, () => {
+      expect(sendJob(s, [{ hid: 'h1', vitals }], [], SERAPH)).toEqual(['+10 gold → Mira']);
+    });
+  }
+  for (const [why, s, held] of [['held', gmAlone(), true], ['class-taken', gmAlone(taken), false]] as const) {
+    test(`a unique job refused "${why}" to a player leaves no "Job:" in the log`, () => {
+      expect(sendJob(s, [], [KAI], SERAPH, held)).toEqual(['+10 gold → Kai']);
+    });
+  }
+
+  test('one of two taking the job logs the reward without it to both and "Job: X" to the one; both taking it logs today\'s line', () => {
+    expect(sendJob(gmAlone(), [{ hid: 'h1', vitals: 'fight' }, { hid: 'h2', vitals: 'sheet' }], [], SERAPH)).toEqual(['Job: Seraph → Brakk', '+10 gold → Mira, Brakk']);
+    expect(sendJob(gmAlone(), [{ hid: 'h1', vitals: 'sheet' }, { hid: 'h2', vitals: 'sheet' }], [], { ...newRewards(), gold: 10, job: 'Fighter' })).toEqual(['+10 gold, Job: Fighter → Mira, Brakk']);
+    expect(sendJob(gmAlone(), [{ hid: 'h1', vitals: 'sheet' }], [KAI], { ...newRewards(), gold: 10, job: 'Fighter' })).toEqual(['+10 gold, Job: Fighter → Mira, Kai']);
+  });
+
+  test('a job-only award that every recipient refused writes no award line', () => {
+    expect(sendJob(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], { ...newRewards(), job: 'Seraph' })).toEqual([]);
+    expect(sendJob(gmAlone(), [], [KAI], { ...newRewards(), job: 'Seraph' }, true)).toEqual([]);
+  });
+
+  test('a unique job granted to a downed hunter answers its refusal "dead"', () => {
+    const g = grant(gmAlone(down), 'h1', SERAPH, { ...DAY, vitals: 'sheet' });
+    if (isRefused(g)) throw new Error(g.why);
+    expect(g.job).toBeNull();
+    expect(g.jobRefused?.why).toBe('dead');
+    expect(g.save.classHolders ?? {}).toEqual(gmAlone(down).classHolders ?? {});
+  });
+
+  test('a list of lines is still taken as it is', () => {
+    const r = gmAward(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], SERAPH, { room: null, events: [], said }, DAY);
+    expect(r.save.log[0]!.text).toBe(said[0]!.text);
   });
 });

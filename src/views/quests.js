@@ -252,7 +252,7 @@ export function register(app) {
       return { ...r, post, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
     });
     // the fight's own refusal of a part it holds was told by the fight (combat.js `command`), and answers `TOLD`
-    if (isRefused(out)) { ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.` }); return false; }
+    if (isRefused(out)) { ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.`, dead: CHAIN_WORDS.dead, held: CHAIN_WORDS.held, 'locker-full': CHAIN_WORDS['locker-full'] }); return false; }
     if (out.post) app.api.sync.flush();
     app.emit('quest:done', { hunterId: hid, quest: out.quest });
     const { completed: c, granted: g, job } = out;

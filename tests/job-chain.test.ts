@@ -2,14 +2,15 @@
 // level 10 (CHAIN_LEVEL), step 2 for 3 dungeon waves, step 3 for 1 Knight Captain.
 import { saveId } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
-import { CHAIN_EVENT_TYPES, chainAfter, parseJobChain, stepQuest } from '../src/core/hunter/job-chain.ts';
+import { CHAIN_EVENT_TYPES, CHAIN_WORDS, chainAfter, parseJobChain, stepQuest } from '../src/core/hunter/job-chain.ts';
 import type { ChainEffect, ChainEvent, ChainQuestRef, ChainResult, JobChain } from '../src/core/hunter/job-chain.ts';
 import { systemCounts } from '../src/core/hunter/quest-rights.ts';
 import { earnClass } from '../src/core/hunter/classes.ts';
-import { RARE_CHAIN_LEVEL } from '../src/core/registry/jobs.ts';
+import { CHAIN_JOB_NAMES, RARE_CHAIN_LEVEL, chainStepsOf } from '../src/core/registry/jobs.ts';
+import { CLASS_LOCKER_CAP } from '../src/core/registry/class-trees.ts';
 import type { Quest, Save } from '../src/core/save.ts';
 import { freshSave } from '../src/core/save.ts';
-import { grant, levelEdit, levelled } from '../src/core/hunter/grant.ts';
+import { finishQuest, grant, levelEdit, levelled } from '../src/core/hunter/grant.ts';
 import { setLevel } from '../src/core/hunter/progress.ts';
 import { chained } from '../src/core/hunter/quests.ts';
 import { newRewards } from '../src/core/rewards.ts';
@@ -328,5 +329,59 @@ describe('level-20 Rare Job Change chains (settled.md)', () => {
     expect(parseJobChain(activeRare, [{ id: qid('q2'), status: 'active' }])).toEqual(activeRare);
     expect(parseJobChain({ ...activeRare, job: 'Hemomancer' }, [{ id: qid('q2'), status: 'active' }])).toBeNull();
     expect(parseJobChain({ ...activeRare, job: 'Seraph' }, [{ id: qid('q2'), status: 'active' }])).toBeNull();
+  });
+});
+
+describe('the last step grants its job or is refused (statechart rules 1 to 3)', () => {
+  const AT3 = '2026-11-26T09:00:00.000Z';
+  const DAY3 = { at: AT3, today: day(AT3.slice(0, 10)), R: RULES };
+  /** A level-10 hunter whose Fighter chain is at `step` (2 or 3), its quest q2 or q3 active; `edit` changes the hunter first. */
+  function onStep(step: 2 | 3, edit: (h: Save['hunters'][number]) => Save['hunters'][number] = h => h): Save {
+    const s = freshSave({ now: new Date(AT3), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+    let h = chained({ ...s.hunters[0]!, ...setLevel(s.hunters[0]!, 10, 0, RULES).progress }, { type: 'issued', id: jcid('jc1'), job: 'Fighter', questId: qid('q1'), level: 10, at: AT3 }).hunter;
+    for (let n = 1; n < step; n++) h = chained(h, { type: 'stepCompleted', questId: qid(`q${n}`), level: 10, nextQuestId: qid(`q${n + 1}`), at: AT3 }).hunter;
+    expect(h.jobChain).toMatchObject({ step, status: 'active', questId: `q${step}` });
+    return { ...s, hunters: [edit(h)] };
+  }
+  const dead = (h: Save['hunters'][number]) => ({ ...h, life: { at: 'dead' as const } });
+  /** A locker of CLASS_LOCKER_CAP made-up classes, so a new class does not fit. */
+  const full = (h: Save['hunters'][number]) => ({ ...h, classes: Object.fromEntries(Array.from({ length: CLASS_LOCKER_CAP }, (_, i) => [`Filler ${i}`, { unlockedAt: AT3, nodes: [] }])) });
+
+  for (const [why, edit, vitals] of [
+    ['held', (h: Save['hunters'][number]) => h, 'fight'],
+    ['dead', dead, 'sheet'],
+    ['locker-full', full, 'sheet'],
+  ] as const) {
+    test(`completing step 3 is refused "${why}" and leaves the job, the chain and the quest as they were`, () => {
+      const s = onStep(3, edit), h = s.hunters[0]!;
+      const r = finishQuest(s, 'h1', 'q3', { ...DAY3, vitals, by: 'hand' });
+      expect(isRefused(r) && r.why).toBe(why);
+      const c = chained(h, { type: 'stepCompleted', questId: qid('q3'), level: 10, nextQuestId: qid('q4'), at: AT3 }, { held: vitals === 'fight' });
+      expect(c).toEqual({ hunter: h, said: [], effects: [{ type: 'refused', reason: why }] });
+      expect(CHAIN_WORDS[why]).toBeTruthy();
+    });
+  }
+
+  test('the same completion lands once the fight is over, the hunter revived or a class dropped', () => {
+    for (const [edit, vitals] of [[(h: Save['hunters'][number]) => h, 'sheet'], [dead, 'sheet'], [full, 'sheet']] as const) {
+      const blocked = onStep(3, edit);
+      const freed: Save = { ...blocked, hunters: [{ ...blocked.hunters[0]!, life: { at: 'up', hp: 10 }, classes: {} }] };
+      const r = finishQuest(freed, 'h1', 'q3', { ...DAY3, vitals, by: 'hand' });
+      if (isRefused(r)) throw new Error(r.why);
+      const h = r.save.hunters[0]!;
+      expect([h.job, h.jobChain, r.quest.status, r.job]).toEqual(['Fighter', null, 'done', 'Fighter']);
+    }
+  });
+
+  test('step 2 completes while the hunter is held or down', () => {
+    for (const [edit, vitals] of [[(h: Save['hunters'][number]) => h, 'fight'], [dead, 'sheet']] as const) {
+      const r = finishQuest(onStep(2, edit), 'h1', 'q2', { ...DAY3, vitals, by: 'hand' });
+      if (isRefused(r)) throw new Error(r.why);
+      expect(r.save.hunters[0]!.jobChain).toMatchObject({ step: 3, status: 'active' });
+    }
+  });
+
+  test('every chain\'s step 3 is a task step, so `stepsReached` never completes it and never grants', () => {
+    for (const job of CHAIN_JOB_NAMES) expect(chainStepsOf(job)[2].goal).toBe('task');
   });
 });

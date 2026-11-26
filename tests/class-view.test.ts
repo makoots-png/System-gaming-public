@@ -45,10 +45,11 @@ describe('PR 3 unique class parsing and refusal copy', () => {
     });
   });
 
-  test('HOLDER_REFUSAL_WORDS covers all 9 GM registry refusal codes and follows voice.md', () => {
+  test('HOLDER_REFUSAL_WORDS covers all 10 GM registry refusal codes and follows voice.md', () => {
     expect(Object.keys(HOLDER_REFUSAL_WORDS).sort()).toEqual([
       'bad-target',
       'class-taken',
+      'dead',
       'foreign-class',
       'held',
       'locker-full',

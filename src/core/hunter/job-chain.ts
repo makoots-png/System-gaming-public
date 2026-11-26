@@ -31,12 +31,21 @@ export type ChainEvent =
 export type ChainEventType = ChainEvent['type'];
 export const CHAIN_EVENT_TYPES = ['issued', 'levelChanged', 'stepCompleted', 'stepFailed', 'reissued', 'abandoned'] as const satisfies readonly ChainEventType[];
 
-/** Why an event was refused: a chain is already running, a level step completed below its level, a player acting for the GM. */
-export type ChainRefusal = 'running' | 'belowLevel' | 'gmOnly';
+/**
+ * Why an event was refused: a chain is already running, a level step completed below its level, a player acting for the
+ * GM. The last three refuse the job the last step grants (quests.ts `chained`): the hunter is down, held by a fight, or
+ * has a full class locker. The chain then stays at its last step with its quest active.
+ */
+export type ChainRefusal = 'running' | 'belowLevel' | 'gmOnly' | 'dead' | 'held' | 'locker-full';
+/** Why completing a step quest was refused: below its level, or the last step's job could not land. */
+export type ChainStepRefusal = Exclude<ChainRefusal, 'running' | 'gmOnly'>;
 /** What a refused chain event says (`ui.wrote`'s words). A player's phone never offers the GM's events, so `gmOnly` has none. */
 export const CHAIN_WORDS: Readonly<Partial<Record<ChainRefusal, string>>> = {
   running: 'This hunter already has a Job Change quest running.',
   belowLevel: 'This step completes at a higher level.',
+  dead: 'A downed hunter cannot change jobs. Complete this step after the revive.',
+  held: 'The job cannot change during a fight. Complete this step after the fight.',
+  'locker-full': 'The class locker is full. Drop a class, then complete this step.',
 };
 /**
  * `issueQuest`: add `quest` to the hunter's quests. `progress`: set a level step's objective. `completeQuest`: complete

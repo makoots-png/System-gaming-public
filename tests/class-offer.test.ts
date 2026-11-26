@@ -500,3 +500,16 @@ describe('grant.ts, gmAward, storyMove, and pendingApproveAll unique rewards.job
     expect(holderOf(res.save, 'Bladefiend')).toMatchObject({ kind: 'remote', sheetKey: KAEL_KEY });
   });
 });
+
+describe('a downed hunter takes no unique class (statechart rule 2)', () => {
+  test('the GM\'s local offer pick for a downed hunter is refused "dead", and so is a reward\'s unique job', () => {
+    const s0 = openClassOffer(gmSave(), { at: AT, room: null, R: RULES }).save;
+    const h0 = s0.hunters[0]!;
+    const s: Save = { ...s0, hunters: s0.hunters.map(h => (h.id === h0.id ? { ...h, life: { at: 'dead' as const } } : h)) };
+    expect(pickClassFromOffer(s, { kind: 'local', hunterId: h0.id }, 'Ironclad', s.classOffer!.id, holderCtx(null))).toEqual({ ok: false, why: 'dead' });
+    const g = grant(s, h0.id, { ...newRewards(), gold: 5, job: 'Hemomancer' }, { at: AT, today: day('2026-11-25'), R: RULES, vitals: 'sheet' });
+    if (isRefused(g)) throw new Error(g.why);
+    expect([g.job, g.jobRefused, holderOf(g.save, 'Hemomancer')]).toEqual([null, { className: 'Hemomancer', why: 'dead', holderName: null }, null]);
+    expect(uniqueJobRefusalText(g.jobRefused!, h0.name)).toBe(`Hemomancer was not granted to ${h0.name}. That hunter is down. Revive them before giving them a unique class.`);
+  });
+});

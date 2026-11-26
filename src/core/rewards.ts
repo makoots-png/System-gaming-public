@@ -198,6 +198,8 @@ export const UNFINISHED_ROWS = 'Finish or remove the reward rows marked in red.'
 export const isEmptyReward = (r: Rewards): boolean =>
   !r.xp && !r.points && !r.gold && !r.crystal && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;
 
+/** A reward's job as its lines name it (`rewardLines`), for a line that tells the job alone (award.ts `awardSaid`). */
+export const jobLine = (job: string): string => `Job: ${job}`;
 /** Returns a copy of `r` with `job` cleared to null (used when a unique class travels via `DOCS.holders` instead of `award`/`chapter`). */
 export function stripRewardJob(r: Rewards): Rewards {
   const { job: _job, ...rest } = r;
@@ -240,7 +242,7 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
   if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));
   for (const i of r.items) out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (r.title) out.push(`Title: ${titleWords(r.title)}`);
-  if (r.job) out.push(`Job: ${r.job}`);
+  if (r.job) out.push(jobLine(r.job));
   for (const s of r.skills) out.push(`Skill: ${s.name}`);
   for (const s of r.statuses) out.push(`Status: ${labelOf(R, s)}${rounds(s.rounds)}`);
   for (const b of r.boons) out.push(`Boon: ${b.name}`);
@@ -277,7 +279,7 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (r.title) out.push(`Title acquired: ${titleWords(r.title)}`);
-  if (r.job) out.push(`Job: ${r.job}`);
+  if (r.job) out.push(jobLine(r.job));
   for (const s of r.skills) out.push(`Skill acquired: ${s.name}`);
   for (const s of r.statuses) out.push(`Status: ${labelOf(R, s)}${rounds(s.rounds)}`);
   for (const b of r.boons) out.push(`Boon: ${b.name}`);

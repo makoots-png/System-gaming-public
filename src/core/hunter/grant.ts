@@ -34,7 +34,7 @@ import type { StatusIn } from './conditions.ts';
 import { addGold, putItem, stackOf } from './inventory.ts';
 import { addCrystal } from './crystal.ts';
 import { addXp, atLevel, gainXp, grantPoints, raisedLevels } from './progress.ts';
-import type { ChainEffect, ChainEvent, ChainRefusal } from './job-chain.ts';
+import type { ChainEffect, ChainEvent, ChainRefusal, ChainStepRefusal } from './job-chain.ts';
 import { chained, completeQuest, failQuest, rollover } from './quests.ts';
 import type { Completed, QuestCompletedBy, QuestWhy, Rollover, Told } from './quests.ts';
 import { reportsProgress } from './quest-rights.ts';
@@ -139,7 +139,7 @@ export function levelEdit(save: Save, hid: string, level: number, xp: number, da
 /** Why a unique class named in `rewards.job` was not granted to a hunter. */
 export type UniqueJobRefusal = {
   readonly className: UniqueClassName;
-  readonly why: 'class-taken' | 'held' | 'locker-full' | 'foreign-class' | 'not-gm' | 'no-hunter' | 'bad-target' | 'not-unique';
+  readonly why: 'class-taken' | 'held' | 'dead' | 'locker-full' | 'foreign-class' | 'not-gm' | 'no-hunter' | 'bad-target' | 'not-unique';
   readonly holderName: string | null;
 };
 
@@ -152,6 +152,7 @@ export function uniqueJobRefusalText(ref: UniqueJobRefusal, targetName?: string 
       : `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS['class-taken']}`;
   }
   if (ref.why === 'held') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS.held}`;
+  if (ref.why === 'dead') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS.dead}`;
   if (ref.why === 'locker-full') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS['locker-full']}`;
   if (ref.why === 'foreign-class') return `${ref.className} was not granted${toPart}. ${HOLDER_REFUSAL_WORDS['foreign-class']}`;
   if (ref.why === 'not-gm') return `${ref.className} was not granted${toPart}. Only the GM can grant a unique class.`;
@@ -400,7 +401,7 @@ export type Finished = {
  * quest of a chain gives no job of its own: the chain grants the job. Refused as `completeQuest` refuses, and when the
  * hunter is not there (`no-hunter`).
  */
-export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt; by?: QuestCompletedBy }): Finished | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
+export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt; by?: QuestCompletedBy }): Finished | Refused<'no-hunter' | ChainStepRefusal | QuestWhy> {
   const d = questDone(save, hid, qid, o);
   if (isRefused(d)) return d;
   const g = grant(d.save, hid, d.rewards, o);
@@ -412,14 +413,15 @@ export type QuestDone = Omit<Finished, 'granted'> & { rewards: Rewards };
 /**
  * `finishQuest` up to its reward: the quest done with everything but its reward, and the reward it earned (the quest's,
  * with the streak's bonus points). The System's completion of a counted quest (noticed.ts `countQuests`) routes that
- * reward by the seat (hunter/pending.ts `selfPaid`): in a room it waits for the GM (ruling 20).
+ * reward by the seat (hunter/pending.ts `selfPaid`): in a room it waits for the GM (ruling 20). `o.vitals` of 'fight'
+ * says a fight holds the hunter, and a Job Change's last step is then refused (`held`): its job waits for the fight's end.
  */
-export function questDone(save: Save, hid: string, qid: string, o: Day & { by?: QuestCompletedBy }): QuestDone | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
+export function questDone(save: Save, hid: string, qid: string, o: Day & { by?: QuestCompletedBy; vitals?: VitalsAt }): QuestDone | Refused<'no-hunter' | ChainStepRefusal | QuestWhy> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const h = save.hunters[at]!, quest = h.quests.find(q => q.id === qid), ids = idsFrom(save.seq), R = o.R;
   if (!quest) return refuse('missing');
-  const c = completeQuest(h, qid, { at: o.at, today: o.today, nextQuestId: ids.next('q'), streakBonusEvery: R.streakBonusEvery, ...(o.by ? { by: o.by } : {}) });
+  const c = completeQuest(h, qid, { at: o.at, today: o.today, nextQuestId: ids.next('q'), streakBonusEvery: R.streakBonusEvery, ...(o.by ? { by: o.by } : {}), held: o.vitals === 'fight' });
   if (isRefused(c)) return c;
   const finished = c.hunter.quests.find(q => q.id === qid);
   if (!finished || finished.status !== 'done') return refuse('not-now');

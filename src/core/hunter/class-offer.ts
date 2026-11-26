@@ -152,6 +152,7 @@ export type OfferPickRefusal =
   | 'locker-full'
   | 'bad-target'
   | 'held'
+  | 'dead'
   | 'foreign-class';
 
 /**

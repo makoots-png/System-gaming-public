@@ -123,10 +123,12 @@ function applyGrantToSave(
   holder: ClassHolder,
   ctx: HolderStepCtx,
   seqOffset = 0,
-): Save | Refused<'no-hunter' | 'locker-full' | 'foreign-class'> {
+): Save | Refused<'no-hunter' | 'dead' | 'locker-full' | 'foreign-class'> {
   if (holder.kind === 'local') {
     const idx = save.hunters.findIndex(h => h.id === holder.hunterId);
     if (idx < 0) return refuse('no-hunter');
+    // a downed hunter's class does not change (statechart rule 2): every local grant comes through here
+    if (save.hunters[idx]!.life.at === 'dead') return refuse('dead');
     if (hasForeignEntry(save, holder.hunterId, cls)) return refuse('foreign-class');
     const earned = earnClass(save.hunters[idx]!, cls, {
       at: ctx.at,
@@ -172,15 +174,15 @@ function applyRevokeToSave(
 /**
  * Claims unique class `cls` for `target` in one atomic save step.
  * Enforces the one-holder-per-campaign rule with `Refused<'class-taken'>` and no GM bypass (the owner t132u).
- * Refuses `'held'` when claiming onto a local or remote hunter currently in the GM's fight, and refuses
- * `'foreign-class'` if a local target already holds parked tree progress for `cls` from another campaign.
+ * Refuses `'held'` when claiming onto a local or remote hunter currently in the GM's fight, `'dead'` onto a downed
+ * local hunter, and `'foreign-class'` if a local target already holds parked tree progress for `cls` from another campaign.
  */
 export function claimUniqueClass(
   save: Save,
   cls: string,
   target: HolderTarget,
   ctx: HolderStepCtx,
-): { readonly save: Save; readonly holder: ClassHolder } | Refused<'not-unique' | 'class-taken' | 'no-hunter' | 'locker-full' | 'bad-target' | 'held' | 'foreign-class'> {
+): { readonly save: Save; readonly holder: ClassHolder } | Refused<'not-unique' | 'class-taken' | 'no-hunter' | 'dead' | 'locker-full' | 'bad-target' | 'held' | 'foreign-class'> {
   if (!isUniqueClass(cls)) return refuse('not-unique');
   if (save.classHolders.held[cls]) return refuse('class-taken');
   if (isTargetHeld(target, ctx)) return refuse('held');
@@ -236,14 +238,15 @@ export function releaseUniqueClass(
 /**
  * Reassigns unique class `cls` from its current holder to `nextTarget` in ONE atomic save step.
  * Validates both sides before mutating anything and refuses `'held'` if either affected local or remote hunter
- * is in this GM's fight, or `'foreign-class'` if a local target holds parked progress from another campaign.
+ * is in this GM's fight, `'dead'` onto a downed local hunter, or `'foreign-class'` if a local target holds parked
+ * progress from another campaign. A downed holder may still be released or reassigned away from.
  */
 export function reassignUniqueClass(
   save: Save,
   cls: string,
   nextTarget: HolderTarget,
   ctx: HolderStepCtx,
-): { readonly save: Save; readonly from: ClassHolder; readonly to: ClassHolder } | Refused<'not-unique' | 'not-held' | 'same-holder' | 'no-hunter' | 'locker-full' | 'bad-target' | 'held' | 'foreign-class'> {
+): { readonly save: Save; readonly from: ClassHolder; readonly to: ClassHolder } | Refused<'not-unique' | 'not-held' | 'same-holder' | 'no-hunter' | 'dead' | 'locker-full' | 'bad-target' | 'held' | 'foreign-class'> {
   if (!isUniqueClass(cls)) return refuse('not-unique');
   const old = save.classHolders.held[cls];
   if (!old) return refuse('not-held');
@@ -417,5 +420,6 @@ export const HOLDER_REFUSAL_WORDS = {
   'locker-full': `That hunter's class locker is full (${CLASS_LOCKER_CAP} classes).`,
   'bad-target': 'Enter an NPC name or select a hunter.',
   held: 'You cannot change a unique class while its hunter is in a fight.',
+  dead: 'That hunter is down. Revive them before giving them a unique class.',
   'foreign-class': 'That hunter already has parked progress for this class from another campaign.',
 } as const;

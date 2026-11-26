@@ -836,3 +836,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T07:09Z	class-rarity	PR 139 merged (eedd9f0c): wave 1 PR 7, Brambleguard + Pyromancer + Sniper kits (Claude Opus finished after Neon quota); unit 7295 merged, CI 45771412563 8/8
 2026-11-26T07:47Z	fable	PR 140 merged (0b6a31bb): Fable post-merge follow-ups for PRs 132-134 + Fable ff-check items; CI 45775090449 8/8
 2026-11-26T10:18Z	class-rarity	PR 141 merged (e0097d5b): wave 1 PR 6, class offer; wave 1 (PRs 2-7) fully landed; unit 7322, CI 45797828247 8/8
+2026-11-26T10:33Z	class-rarity	PR 142 merged (3c191825): Kindle Burst uses Living Furnace's Cinder II blast; unit 7324 merged, CI 45800136493 8/8
