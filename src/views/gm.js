@@ -197,7 +197,7 @@ export function register(app) {
 .gm-chip.pen[data-life-at]{border-color:var(--life);color:var(--life)}.gm-chip.pen[data-life-at=dead]{background:rgba(255,77,94,.16)}
 .gm-chip.ok{border-color:var(--green);color:var(--green)}
 .gm-hp{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-.gm-cap{margin-top:6px;display:flex;align-items:center;gap:8px}.gm-cap .lbl{margin:0;white-space:nowrap}.gm-cap select{flex:1 1 0;min-width:0;min-height:40px}
+.gm-cap{margin-top:8px}
 .gm-hp-lbl{flex:1 1 100%;margin-bottom:-2px}
 .gm-hp button{flex:1 1 44px;min-height:40px}
 .gm-hp [data-grevive]{flex:1 0 auto;padding-inline:14px} /* the life's one action keeps its whole word on a 390 px phone */
@@ -306,7 +306,7 @@ export function register(app) {
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${remote ? ' · player phone' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
       <div class="gm-chips">${capChip}${ladder}${debt}${guild}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
-      <label class="gm-cap"><span class="lbl">${esc(CAP_DISPLAY_WORDS.label)}</span><select data-gmcap aria-label="${esc(CAP_DISPLAY_WORDS.label)} for ${esc(h.name)}">${capOpts}</select></label>
+      <div class="gm-cap">${ui.field(CAP_DISPLAY_WORDS.label, `<select data-gmcap aria-label="${esc(CAP_DISPLAY_WORDS.label)} for ${esc(h.name)}">${capOpts}</select>`)}</div>
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <span class="lbl gm-hp-lbl">Quick HP</span>
