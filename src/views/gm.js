@@ -32,7 +32,7 @@ import { removeStatus, saveStatus } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
 import { BLANK_DRAFT, awardKeepsPending, awardSaid, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
-import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
+import { PENDING_WORDS, localHunter, pendingApproveAll, pendingApproved, pendingAwardEvent, pendingEdited, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
 import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
 import { DIFFICULTY_WORDS, parseDifficultyLevel } from '../core/gates/difficulty.ts';
@@ -590,37 +590,48 @@ export function register(app) {
     const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), wireBase.statuses);
     const remoteJobTargets = hasUniqueJob ? posted.map(key => ({ key, name: remoteName(key) })) : [];
     const jobStamp = remoteJobTargets.length && code ? A().sync.stamp() : null;
-    const jobOnlyUnique = hasUniqueJob && !bundle && isEmptyReward(wireBase);
-    const jobOnlyRemote = jobOnlyUnique && local.length === 0;
+    const jobOnly = !!(rw.job && isEmptyReward(stripRewardJob(rw)));
+    const jobOnlyUnique = hasUniqueJob && jobOnly;
     const out = A().hunter.grantWrite(bundle ? 'gm-give' : 'gm-award', sv => {
       const a = gmAward(
         sv, locals, rw, { room: code, events, said }, day, bundle, earned ? earned.from : null,
         remoteJobTargets.length ? { targets: remoteJobTargets, heldRemote: k => fightRowOf(k) !== null, stamp: jobStamp } : null,
       );
       const dealt = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
-      // Leave a unique-job-only waiting reward pending if every recipient's claim was refused (remote or local).
-      const keepPending = approves && awardKeepsPending(rw, a, bundle);
-      const save = approves && !keepPending && !isRefused(dealt) ? pendingApproved(dealt, approves, rw) : dealt;
+      // Leave a job-only waiting reward pending if every recipient's job was refused (unique refusal or local held/down),
+      // while saving any GM edit made in the Award form.
+      const keepPending = !!(approves && !bundle && awardKeepsPending(rw, a));
+      const save = approves && !isRefused(dealt)
+        ? (keepPending ? pendingEdited(dealt, approves, rw) : pendingApproved(dealt, approves, rw))
+        : dealt;
       if (isRefused(save)) return save;
-      return { ...a, save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
+      return { ...a, save, keepPending, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
     });
     if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : out.why === 'answered' || out.why === 'no-reward' ? PENDING_WORDS.refusals[out.why] : 'Could not save. Nothing was sent.', true); return false; }
     if (events.length || out.remoteClaimed.length) A().sync.flush();
-    // one System popup per hunter, queued by ui.system; a bundle's in its own words
+    // one System popup per hunter, queued by ui.system; a bundle's in its own words.
+    // Skip the popup when the reward stayed pending or when a unique-job-only award/bundle was refused (no empty window).
     /** @type {import('../core/api.ts').RewardWindow | undefined} */
     const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' }
       : earned ? { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(earned.from, earned.what), tag: '! Reward', kind: 'quest' } : undefined;
-    for (const { hid, g } of out.granted) A().hunter.granted(hid, g, words);
+    for (const { hid, g } of out.granted) {
+      const hidePopup = out.keepPending || (jobOnly && g.job === null && !!g.jobRefused);
+      A().hunter.granted(hid, g, hidePopup ? { ...(words ?? {}), popup: false } : words);
+    }
     const refusalNotes = out.remoteJobRefused.map(r => uniqueJobRefusalText(r.refusal, r.name));
     for (const note of refusalNotes) ui.toast('Class', note, { kind: 'warning' });
-    const localRefusalNotes = out.granted.flatMap(({ hid, g }) => (g.jobRefused ? [uniqueJobRefusalText(g.jobRefused, nameOf(hid))] : []));
-    const awayReached = jobOnlyRemote ? out.remoteClaimed.map(remoteName) : away;
-    const hereReached = jobOnlyUnique ? out.granted.filter(({ g }) => g.job !== null).map(({ hid }) => nameOf(hid)) : here;
+    const plainJobRefusal = (job, who, why) => `${job} was not granted to ${who}. ${why === 'held' ? 'That hunter is in a fight.' : 'That hunter is down.'}`;
+    const localRefusalNotes = out.granted.flatMap(({ hid, g }) => (
+      g.jobRefused ? [uniqueJobRefusalText(g.jobRefused, nameOf(hid))]
+        : g.jobWhy && rw.job ? [plainJobRefusal(rw.job, nameOf(hid), g.jobWhy)] : []
+    ));
+    const awayReached = jobOnlyUnique ? out.remoteClaimed.map(remoteName) : away;
+    const hereReached = jobOnly ? out.granted.filter(({ g }) => g.job !== null).map(({ hid }) => nameOf(hid)) : here;
     const sentTo = names => (names.length ? (earned ? PENDING_WORDS.approved(andList(names)) : `${bundle ? `Gave ${bundle.name} to` : 'Sent to'} ${andList(names)}.`) : '');
     const waiting = awayReached.length && !goesNow() ? `Saved. ${andList(awayReached)} will get it once the room server confirms it.` : '';
     const allNotes = [waiting ? sentTo(hereReached) : sentTo([...hereReached, ...awayReached]), waiting, failed, ...localRefusalNotes, ...refusalNotes].filter(Boolean);
     say(msg, allNotes.join(' '), !!lost.length || refusalNotes.length > 0 || localRefusalNotes.length > 0);
-    return true;
+    return !out.keepPending;
   }
   /** The keys of the last awards given from this phone, newest first (bundles.ts `readRecent`, `recentGives`). */
   const recentMemory = store.device('give-recent');
@@ -717,8 +728,16 @@ export function register(app) {
     for (const { hid, g, rec } of out.granted) {
       A().hunter.granted(hid, g, { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(rec.from, rec.what), tag: '! Reward', kind: 'quest' });
     }
-    const refusalNotes = out.remoteJobRefused.map(r => uniqueJobRefusalText(r.refusal, r.name));
-    for (const note of refusalNotes) ui.toast('Class', note, { kind: 'warning' });
+    const remoteRefusalNotes = out.remoteJobRefused.map(r => uniqueJobRefusalText(r.refusal, r.name));
+    for (const note of remoteRefusalNotes) ui.toast('Class', note, { kind: 'warning' });
+    const toastedLocal = new Set(out.granted.filter(({ g }) => !!g.jobRefused).map(({ hid, g }) => `${hid}:${g.jobRefused.className}`));
+    const localRefusalNotes = out.localJobRefused.map(r => {
+      const note = uniqueJobRefusalText(r.refusal, r.name);
+      if (!toastedLocal.has(`${r.hid}:${r.refusal.className}`)) ui.toast('Class', note, { kind: 'warning' });
+      return note;
+    });
+    const localHeldNotes = out.localJobHeld.map(r => `${r.job} was not granted to ${r.name}. ${r.why === 'held' ? 'That hunter is in a fight.' : 'That hunter is down.'}`);
+    const refusalNotes = [...localRefusalNotes, ...localHeldNotes, ...remoteRefusalNotes];
     const n = out.approved.length;
     const msg = n === 0 && refusalNotes.length ? refusalNotes.join(' ')
       : out.remaining > 0 ? PENDING_WORDS.approvedAllPartial(n, out.remaining)

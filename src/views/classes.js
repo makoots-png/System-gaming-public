@@ -160,7 +160,7 @@ export function register(app) {
   /** Ephemeral class-offer screen state in this tab: auto-open id, pending pick, inline notice, GM local pick and last room. */
   let offerUi = {
     seenId: '',
-    /** @type {{ offerId: string; className: string; outboxId: string } | null} */
+    /** @type {{ offerId: string; className: string; outboxId: string; by: import('../core/ids.ts').SheetKey } | null} */
     pending: null,
     notice: '',
     localHid: '',
@@ -963,7 +963,7 @@ export function register(app) {
     const ev = A().sync.event('classPick', { by: myKey, name: h.name, className: cls, offerId: doc.id });
     if (!ev) { offerUi.notice = OFFER_WORDS.sendFailed; drawOfferModal(); return; }
     offerUi.notice = '';
-    offerUi.pending = { offerId: doc.id, className: cls, outboxId: ev.payload.eid };
+    offerUi.pending = { offerId: doc.id, className: cls, outboxId: ev.payload.eid, by: myKey };
     drawOfferModal();
     A().sync.post(ev);
     A().sync.flush();
@@ -1147,16 +1147,16 @@ export function register(app) {
         offerUi.pending = null;
       } else {
         const taken = state.doc.taken[p.className];
-        if (taken && taken.who !== state.myKey) {
+        if (taken && taken.who !== p.by) {
           offerUi.pending = null;
           offerUi.notice = classTakenLine(p.className, taken.name);
-        } else if (state.myPicked === p.className) {
+        } else if (taken && taken.who === p.by) {
           offerUi.pending = null;
           offerUi.notice = '';
-          ui.toast('! Class', OFFER_WORDS.alreadyPickedLine(p.className), { kind: 'good' });
-        } else if (state.myPicked && state.myPicked !== p.className) {
+          if (state.myKey === p.by) ui.toast('! Class', OFFER_WORDS.alreadyPickedLine(p.className), { kind: 'good' });
+        } else if (state.myKey === p.by && state.myPicked && state.myPicked !== p.className) {
           offerUi.pending = null;
-        } else if (isHeld(store.get(), { hid: state.h.id })) {
+        } else if (state.myKey === p.by && isHeld(store.get(), { hid: state.h.id })) {
           offerUi.pending = null;
           offerUi.notice = HOLDER_REFUSAL_WORDS.held;
         }
@@ -1303,8 +1303,7 @@ export function register(app) {
         offerUi.notice = ev.payload.why === 'class-taken' && taken ? classTakenLine(p.className, taken.name) : pickRefusedLine(ev.payload.why, p.className);
         drawOfferModal();
       } else if (ev.type === 'classRevoke' && ev.payload.className === p.className) {
-        const state = playerOfferState();
-        if (!state?.myKey || !ev.payload.to.includes(state.myKey)) return;
+        if (!ev.payload.to.includes(p.by)) return;
         offerUi.pending = null;
         offerUi.notice = OFFER_WORDS.releasedNotice(p.className);
         drawOfferModal();

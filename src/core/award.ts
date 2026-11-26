@@ -86,20 +86,22 @@ export function awardSaid(o: {
 }
 
 /**
- * Whether an approved waiting reward should stay pending because it was unique-job-only (not a bundle) and every
- * recipient's unique-class claim was refused (remote or local).
+ * Whether an approved waiting reward should stay pending because it was job-only and every recipient's job was refused
+ * on this phone (any unique-class claim refusal, or a local plain job refused because the hunter is held or down).
  */
 export function awardKeepsPending(
   rewards: Rewards,
   awarded: Pick<Awarded, 'granted' | 'remoteClaimed' | 'remoteJobRefused'>,
-  bundle: GivenBundle | null = null,
 ): boolean {
-  if (bundle || !rewards.job || !canonicalUniqueClass(rewards.job) || !isEmptyReward(stripRewardJob(rewards))) return false;
+  if (!rewards.job || !isEmptyReward(stripRewardJob(rewards))) return false;
   const anyTaken = awarded.remoteClaimed.length > 0 || awarded.granted.some(x => x.g.job !== null);
   if (anyTaken) return false;
-  const remoteRefused = awarded.remoteClaimed.length === 0 && awarded.remoteJobRefused.length > 0;
-  const localRefused = awarded.granted.length > 0 && awarded.granted.every(x => !x.g.job && !!x.g.jobRefused);
-  return remoteRefused || localRefused;
+  if (canonicalUniqueClass(rewards.job)) {
+    const remoteRefused = awarded.remoteJobRefused.length > 0;
+    const localRefused = awarded.granted.length > 0 && awarded.granted.every(x => !!x.g.jobRefused);
+    return remoteRefused || localRefused;
+  }
+  return awarded.granted.length > 0 && awarded.granted.every(x => x.g.jobWhy === 'held' || x.g.jobWhy === 'dead');
 }
 
 /** Optional remote unique-class claim context passed to `gmAward` when `rewards.job` names a unique class. */
@@ -129,10 +131,12 @@ export function gmAward(
 ): Awarded {
   let next = save;
   const granted: { hid: string; g: Granted }[] = [];
+  const jobOnly = !!(rewards.job && isEmptyReward(stripRewardJob(rewards)));
   for (const { hid, vitals } of locals) {
     const g = grant(next, hid, rewards, { ...day, vitals, from });
     if (isRefused(g)) continue;
-    next = given ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: given.key, name: given.name }) : h)) } : g.save;
+    const recordGiven = given && !(jobOnly && g.job === null);
+    next = recordGiven ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: given.key, name: given.name }) : h)) } : g.save;
     granted.push({ hid, g: { ...g, save: next } });
   }
   const remoteClaimed: SheetKey[] = [];

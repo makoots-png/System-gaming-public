@@ -31,7 +31,7 @@ import {
 import { grant, uniqueJobRefusalText } from '../src/core/hunter/grant.ts';
 import { gmAward } from '../src/core/award.ts';
 import { storyMove } from '../src/core/story/run.ts';
-import { pendingApproveAll, pendingHeard } from '../src/core/hunter/pending.ts';
+import { pendingApproveAll, pendingEdited, pendingHeard } from '../src/core/hunter/pending.ts';
 import { DOCS, classOfferFor, parseEvent, wireDocs } from '../src/core/protocol.ts';
 import { boot, paceOf, reduce as linkReduce } from '../src/core/sync/link.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -500,6 +500,76 @@ describe('grant.ts, gmAward, storyMove, and pendingApproveAll unique rewards.job
     const waiting = (res.save.settings.sync.pending ?? []).filter(p => p.at === 'waiting');
     expect(waiting.map(p => p.id)).toEqual(['d-kael-e1' as EventId]);
     expect(holderOf(res.save, 'Bladefiend')).toMatchObject({ kind: 'remote', sheetKey: KAEL_KEY });
+  });
+
+  test('pendingApproveAll local branch keeps refused unique-job-only and held/down plain-job-only rewards pending without logging or outbox-full', () => {
+    let s = gmSave();
+    const h0 = s.hunters[0]!;
+    const localKey = `${s.settings.deviceId}:${h0.id}` as SheetKey;
+    const c = claimUniqueClass(s, 'Hemomancer', { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, holderCtx());
+    if (isRefused(c)) throw new Error(c.why);
+    s = c.save;
+
+    const logStamp = { at: AT, cap: RULES.logCap };
+    // 1. Local unique-job-only (taken) -> stays pending, no granted entry, no log, no outbox-full
+    const onlyTaken = pendingHeard(s, {
+      eid: 'd-gm-loc1' as EventId,
+      by: localKey,
+      name: h0.name,
+      from: 'quest',
+      what: 'Blood Trial',
+      rewards: { ...newRewards(), job: 'Hemomancer' },
+    }, ROOM, logStamp);
+    const res1 = pendingApproveAll(onlyTaken, ROOM, { day: { at: AT, today: day('2026-11-25'), R: RULES }, stamp: nextStamp() });
+    expect(isRefused(res1)).toBe(false);
+    if (isRefused(res1)) return;
+    expect(res1.approved).toHaveLength(0);
+    expect(res1.granted).toHaveLength(0);
+    expect(res1.localJobRefused).toEqual([{ hid: h0.id, name: h0.name, refusal: { className: 'Hemomancer', why: 'class-taken', holderName: 'Mira' } }]);
+    expect((res1.save.settings.sync.pending ?? []).filter(p => p.at === 'waiting').map(p => p.id)).toEqual(['d-gm-loc1' as EventId]);
+    expect(res1.save.log.length).toBe(onlyTaken.log.length);
+
+    // 2. Local plain-job-only while held in a fight -> stays pending, populates localJobHeld, no log; mixed gold + plain job approves gold without logging Job:
+    const withPlainAndMixed = pendingHeard(
+      pendingHeard(s, {
+        eid: 'd-gm-loc2' as EventId,
+        by: localKey,
+        name: h0.name,
+        from: 'quest',
+        what: 'Fighter Trial',
+        rewards: { ...newRewards(), job: 'Fighter' },
+      }, ROOM, logStamp),
+      {
+        eid: 'd-gm-loc3' as EventId,
+        by: localKey,
+        name: h0.name,
+        from: 'quest',
+        what: 'Mixed Trial',
+        rewards: { ...newRewards(), gold: 25, job: 'Fighter' },
+      },
+      ROOM,
+      logStamp,
+    );
+    const res2 = pendingApproveAll(withPlainAndMixed, ROOM, {
+      day: { at: AT, today: day('2026-11-25'), R: RULES },
+      heldLocals: new Set([h0.id]),
+      stamp: nextStamp(),
+    });
+    expect(isRefused(res2)).toBe(false);
+    if (isRefused(res2)) return;
+    expect(res2.approved.map(p => p.id)).toEqual(['d-gm-loc3' as EventId]);
+    expect(res2.granted.map(g => g.rec.id)).toEqual(['d-gm-loc3' as EventId]);
+    expect(res2.localJobHeld).toEqual([{ hid: h0.id, name: h0.name, job: 'Fighter', why: 'held' }]);
+    expect((res2.save.settings.sync.pending ?? []).filter(p => p.at === 'waiting').map(p => p.id)).toEqual(['d-gm-loc2' as EventId]);
+    expect(res2.save.log[0]?.text).toBe(`Quest complete: Mixed Trial: +25 gold → ${h0.name}`);
+
+    // 3. pendingEdited saves GM edits on a waiting record without consuming it
+    const edited = pendingEdited(onlyTaken, 'd-gm-loc1' as EventId, { ...newRewards(), job: 'Bladefiend' });
+    expect(isRefused(edited)).toBe(false);
+    if (isRefused(edited)) return;
+    const rec = (edited.settings.sync.pending ?? []).find(p => p.id === ('d-gm-loc1' as EventId));
+    expect(rec?.at).toBe('waiting');
+    expect(rec?.rewards.job).toBe('Bladefiend');
   });
 });
 

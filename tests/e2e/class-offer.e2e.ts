@@ -263,7 +263,15 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
     await m.locator('[data-co-pick="Hemomancer"]').tap();
     await expect(m.locator('[data-co-picking="Hemomancer"]')).toHaveText(OFFER_WORDS.pickingAction('Hemomancer'));
 
-    // A classRevoke for another hunter on the same device must not clear Mira's pending Claiming state.
+    // A classRevoke for another hunter on the same device must not clear Mira's pending Claiming state,
+    // even if the player switches active hunters while waiting.
+    const miraHid = await mira.evaluate(() => {
+      const s = hunterApp.store.get();
+      const orig = s.hunters[0];
+      const alt = { ...structuredClone(orig), id: 'h-alt', name: 'Bram' };
+      hunterApp.store.update((d: any) => { d.hunters.push(alt); d.activeHunterId = 'h-alt'; }, 'test-switch-hunter');
+      return orig.id;
+    });
     await mira.evaluate(() => {
       const devId = hunterApp.store.get().settings.deviceId;
       hunterApp.emit('sync:event', {
@@ -283,8 +291,15 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
     await conf.locator('button', { hasText: CLASS_UI_WORDS.gmReleaseConfirm }).tap();
     await expect(conf).toHaveCount(0);
 
+    // Even while Bram is active on the phone, Mira's real classRevoke matches pending.by and clears Claiming.
     await expect(m.locator('[data-co-picking]')).toHaveCount(0, { timeout: 20_000 });
     await expect(m.locator('[data-co-msg]')).toHaveText(OFFER_WORDS.releasedNotice('Hemomancer'));
+    await mira.evaluate(hid => {
+      hunterApp.store.update((d: any) => {
+        d.hunters = d.hunters.filter((h: any) => h.id !== 'h-alt');
+        d.activeHunterId = hid;
+      }, 'test-restore-hunter');
+    }, miraHid);
     putDocs();
     await gm.unroute(docPattern);
     await expect(m.locator('[data-co-pick="Hemomancer"]')).toBeEnabled({ timeout: 20_000 });

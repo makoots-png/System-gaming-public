@@ -167,32 +167,42 @@ describe('the award\'s log line says the job that landed (statechart rule 3)', (
     expect(sendJob(gmAlone(), [], [KAI], { ...newRewards(), job: 'Seraph' }, true)).toEqual([]);
   });
 
-  test('a job-only bundle logs no "GM gave" line when nobody took the job, and logs only "Job: X" when one of two took it', () => {
-    const sendBundle = (s: Save, local: { hid: string; vitals: 'sheet' | 'fight' }[], remote: SheetKey[], rewards: Rewards, bundle: string, heldRemote = false) => {
+  test('a job-only bundle logs no "GM gave" line and records no chronicle fact when nobody took the job, and logs only "Job: X" when one of two took it', () => {
+    const runBundle = (s: Save, local: { hid: string; vitals: 'sheet' | 'fight' }[], remote: SheetKey[], rewards: Rewards, bundle: string, heldRemote = false) => {
       const said = awardSaid({
         R: RULES, rewards, bundle, to: { local: local.map(l => l.hid), remote }, names,
         line: (bits, to) => ({ kind: 'award' as const, hunterId: null, title: 'GM gave', text: `${bits} → ${to.join(', ')}` }),
       });
-      const r = gmAward(s, local, rewards, { room: null, events: [], said }, DAY, { key: 'b1', name: bundle, window: null }, null,
+      return gmAward(s, local, rewards, { room: null, events: [], said }, DAY, { key: 'b1', name: bundle, window: null }, null,
         remote.length ? { targets: remote.map(key => ({ key, name: 'Kai' })), heldRemote: () => heldRemote, stamp: null } : null);
+    };
+    const sendBundle = (s: Save, local: { hid: string; vitals: 'sheet' | 'fight' }[], remote: SheetKey[], rewards: Rewards, bundle: string, heldRemote = false) => {
+      const r = runBundle(s, local, remote, rewards, bundle, heldRemote);
       return r.save.log.filter(l => l.kind === 'award').map(l => `${l.title}: ${l.text}`).slice(0, r.save.log.length - s.log.length);
     };
     const jobOnly = { ...newRewards(), job: 'Seraph' };
-    // Job-only bundle where every recipient refuses: writes no GM gave line at all
+    // Job-only bundle where every recipient refuses: writes no GM gave line and records no chronicle `given` fact
+    const refusedHeld = runBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], jobOnly, 'Seraph Gift');
+    expect(refusedHeld.save.hunters[0]!.chronicle.inbox).toEqual([]);
     expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
     expect(sendBundle(gmAlone(down), [{ hid: 'h1', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
     expect(sendBundle(gmAlone(taken), [{ hid: 'h1', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
     expect(sendBundle(gmAlone(full), [{ hid: 'h1', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
     expect(sendBundle(gmAlone(), [], [KAI], jobOnly, 'Seraph Gift', true)).toEqual([]);
-    // Job-only bundle where 1 of 2 takes it: logs only "Job: Seraph → Brakk", not the bundle to both
+    // Job-only bundle where 1 of 2 takes it: logs only "Job: Seraph → Brakk", records `given` only on Brakk
+    const partial = runBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }, { hid: 'h2', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift');
+    expect(partial.save.hunters[0]!.chronicle.inbox).toEqual([]);
+    expect(partial.save.hunters[1]!.chronicle.inbox).toEqual([{ kind: 'given', key: 'b1', name: 'Seraph Gift' }]);
     expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }, { hid: 'h2', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual(['GM gave: Job: Seraph → Brakk']);
-    // Bundle with non-job reward + refused job: still logs the bundle for the landed reward
+    // Bundle with non-job reward + refused job: still logs the bundle and records `given` for the landed reward
+    const mixed = runBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], SERAPH, 'Seraph Pack');
+    expect(mixed.save.hunters[0]!.chronicle.inbox).toEqual([{ kind: 'given', key: 'b1', name: 'Seraph Pack' }]);
     expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], SERAPH, 'Seraph Pack')).toEqual(['GM gave: Seraph Pack → Mira']);
     // Flavor-only bundle with no job: still logs the bundle name
     expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'sheet' }], [], newRewards(), 'Straight Face')).toEqual(['GM gave: Straight Face → Mira']);
   });
 
-  test('awardKeepsPending keeps a unique-job-only waiting reward pending when local or remote claims are all refused', () => {
+  test('awardKeepsPending keeps a job-only waiting reward pending on unique refusal or local plain-job held/down', () => {
     const jobOnly = { ...newRewards(), job: 'Seraph' };
     const plainJob = { ...newRewards(), job: 'Fighter' };
     const runLocal = (s: Save, vitals: 'sheet' | 'fight', rewards: Rewards) =>
@@ -213,10 +223,12 @@ describe('the award\'s log line says the job that landed (statechart rule 3)', (
     expect(awardKeepsPending(jobOnly, runRemote(gmAlone(), false, jobOnly))).toBe(false);
     // Reward with gold + refused unique job is approved (gold landed)
     expect(awardKeepsPending(SERAPH, runLocal(gmAlone(down), 'sheet', SERAPH))).toBe(false);
-    // Plain (non-unique) job-only reward is not held pending by unique-job refusal
-    expect(awardKeepsPending(plainJob, runLocal(gmAlone(down), 'sheet', plainJob))).toBe(false);
-    // Bundle give is never treated as a waiting reward approval
-    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(down), 'sheet', jobOnly), { key: 'b1', name: 'Seraph Gift', window: null })).toBe(false);
+    // Plain local job-only reward refused because the hunter is held or down stays pending (matches no log line)
+    expect(awardKeepsPending(plainJob, runLocal(gmAlone(down), 'sheet', plainJob))).toBe(true);
+    expect(awardKeepsPending(plainJob, runLocal(gmAlone(), 'fight', plainJob))).toBe(true);
+    expect(awardKeepsPending(plainJob, runLocal(gmAlone(), 'sheet', plainJob))).toBe(false);
+    // Plain remote job-only reward is sent to the player phone and approved
+    expect(awardKeepsPending(plainJob, runRemote(gmAlone(), true, plainJob))).toBe(false);
   });
 
   test('a unique job granted to a downed hunter answers its refusal "dead"', () => {

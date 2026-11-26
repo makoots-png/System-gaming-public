@@ -208,6 +208,8 @@ export type Granted = {
   debtXp: DebtXpCut | null;
   /** Job actually granted by `r.job`, or null when no job was given or `setJob`/`claimUniqueClass` refused it. */
   job: string | null;
+  /** Why a plain (non-unique) `r.job` was not taken because of combat or death, or null. */
+  jobWhy: 'held' | 'dead' | null;
   /** Refusal details when `r.job` named a unique class that could not be granted, or null. */
   jobRefused: UniqueJobRefusal | null;
 };
@@ -358,7 +360,7 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   if (r.job && jobWhy) lines.push(jobWhy === 'held' ? `Job not taken: ${r.job} (you are in a fight)` : `Job not taken: ${r.job} (you are down)`);
   const hunters = baseSave.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...baseSave, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
-  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted, jobRefused };
+  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted, jobWhy, jobRefused };
 }
 
 // ── a Job Change chain event ──

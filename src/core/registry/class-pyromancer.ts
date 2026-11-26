@@ -289,15 +289,15 @@ const UP_LANCE_FLASH = makeIgnitionLance({
   cooldownRounds: 1,
 });
 
-// D5 Fork B-Right (instant Cinder flare): 3-round cooldown, base lance direct hit, applies Ember Mark plus 2 stacks of
-// Cinder on hit for an immediate mag-scaled flare. Tuned so Flash Detonation stays ahead on sustained single-target
-// while Kindle Burst + Living Furnace (`upgrade-status` -> Cinder II) leads opener and clustered AoE burst.
+// D5 Fork B-Right (instant Cinder flare): keeps base lance hit and 2-round cooldown, adds 2 stacks of Cinder on hit for
+// an immediate mag-scaled flare. Pre-capstone it cleanly upgrades base lance at every HP threshold while Flash Detonation
+// stays ahead on sustained single-target; post-capstone (`upgrade-status` -> Cinder II) it leads clustered AoE burst.
 const UP_LANCE_KINDLE = makeIgnitionLance({
   name: 'Ignition Lance: Kindle Burst',
   markKey: KEY_EMBER,
   markDef: BASE_EMBER_MARK,
   formula: '1d8 + 0.65 * mag',
-  cooldownRounds: 3,
+  cooldownRounds: 2,
   extraOps: [{ op: 'applyStatus', key: KEY_CINDER, def: PYRO_CINDER, duration: rounds(2), stacks: 2 }],
 });
 
@@ -393,7 +393,7 @@ export const PYROMANCER_TREE: ClassTree = {
     node('pyro-b5-l', 5, 'Flash Detonation', 'Upgrade Ignition Lance to a 1-round cooldown, higher blast damage, and an Ember Mark that detonates if cured.', ['pyro-b4x', 'pyro-b4y'], [
       replaceActive(ID_LANCE, UP_LANCE_FLASH),
     ], { forkGroup: 'pyro-b5' }),
-    node('pyro-b5-r', 5, 'Kindle Burst', 'Upgrade Ignition Lance to trigger an immediate Cinder flare on hit (3-round cooldown). Deal up to 15% more damage against foes above half HP.', ['pyro-b4x', 'pyro-b4y'], [
+    node('pyro-b5-r', 5, 'Kindle Burst', 'Upgrade Ignition Lance to trigger an immediate Cinder flare on hit and deal up to 15% more damage against foes above half HP.', ['pyro-b4x', 'pyro-b4y'], [
       replaceActive(ID_LANCE, UP_LANCE_KINDLE),
       scaler({ measure: 'target', dir: 'over', start: 0.5, scale: 0.15 }),
     ], { forkGroup: 'pyro-b5' }),

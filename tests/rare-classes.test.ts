@@ -25,7 +25,7 @@ import { rowHp } from '../src/core/combat/row-hp.ts';
 import { FORMULA_PARTS, partsOf } from '../src/core/formula.ts';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { scalersOf } from '../src/core/registry/scalers.ts';
-import { SKILL_ABILITIES, wornAbilityId } from '../src/core/registry/abilities.ts';
+import { ATTACK_ID, SKILL_ABILITIES, wornAbilityId } from '../src/core/registry/abilities.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { LOOT_ITEMS, SHOP_ITEMS, STARTER_GEAR } from '../src/core/registry/items.ts';
 import { KEYSTONES, keystoneOf } from '../src/core/registry/keystones.ts';
@@ -44,7 +44,8 @@ import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
 import { onCooldown, payCost } from '../src/core/combat/charge.ts';
-import { abilities, playFight } from './models/fight-sim.ts';
+import { inRange } from '../src/core/combat/resolve.ts';
+import { playFight } from './models/fight-sim.ts';
 
 const ROOT = import.meta.dir + '/..';
 const AT = '2026-11-25T12:00:00.000Z';
@@ -712,19 +713,22 @@ describe('Rare class combat mechanics', () => {
     expect(damageShare(foe, bh, RULES)).toBeCloseTo(0.85, 4);
   });
 
-  test('Pyromancer: Flash Detonation leads sustained single-target while Kindle Burst + Living Furnace leads clustered AoE without crowding out Flash', () => {
+  test('Pyromancer: Kindle Burst beats base lance pre-capstone, Flash Detonation leads sustained single-target, and Kindle + Living Furnace leads clustered AoE', () => {
     const spec = RARE_SPECS[1]!;
-    const bolt = abilities(RULES).bolt;
     const magmaId = wornAbilityId(abilityId('pyro-magma-floor'));
     const lanceId = wornAbilityId(abilityId('pyro-ignition-lance'));
-    const emberII = statusKey('pyro-ember-mark-ii');
     const dummy = () => ({ type: 'pass' as const });
+    const preCapNodes = (forkB: 'none' | 'pyro-b5-l' | 'pyro-b5-r'): readonly ClassNodeId[] => {
+      const ids = ['pyro-root', 'pyro-a2', 'pyro-b2', 'pyro-a3x', 'pyro-a3y', 'pyro-b3x', 'pyro-b3y', 'pyro-a4x', 'pyro-a4y', 'pyro-b4x', 'pyro-b4y', 'pyro-a5-l'];
+      if (forkB !== 'none') ids.push(forkB);
+      return ids.map(nid);
+    };
 
-    const measure = (forkB: 'pyro-b5-l' | 'pyro-b5-r', foeCount: number, useMagma: boolean, startHalfHp: boolean, runs = 40) => {
-      const h = makeRareHunter(spec, fullNodesFor(spec.tree, ['pyro-a5-l', forkB]), 'C');
+    const measure = (nodes: readonly ClassNodeId[], foeCount: number, useMagma: boolean, startHalfHp: boolean, runs = 40) => {
+      const h = makeRareHunter(spec, nodes, 'C');
       const row = hunterRow(h, combatantId('h1'), RULES);
       const hero = {
-        row: { ...row, abilities: [...row.abilities, bolt], place: place(2, 2) },
+        row: { ...row, place: place(2, 2) },
         policy: (f: Running, me: Running['rows'][number]) => {
           const foes = f.rows.filter(r => r.side !== me.side && r.life.at !== 'dead');
           const target = foes[0];
@@ -732,23 +736,21 @@ describe('Rare class combat mechanics', () => {
           const tryCast = (id: string, aimPlace: boolean) => {
             const ab = me.abilities.find(a => a.id === id);
             if (!ab || onCooldown(ab, me, f.now) || !payCost(ab, me)) return null;
+            if (!inRange(ab, me, target.place)) return null;
             return { type: 'act' as const, ability: ab, aim: aimPlace ? target.place : target.id };
           };
           if (useMagma) {
             const m = tryCast(magmaId, true);
             if (m) return m;
           }
-          // Flash Detonation lets Ember Mark II expire and pop rather than refreshing it prematurely.
-          const waitPop = forkB === 'pyro-b5-l' && target.statuses.some(s => s.key === emberII);
-          if (!waitPop) {
-            const l = tryCast(lanceId, false);
-            if (l) return l;
-          }
-          return tryCast(bolt.id, false) ?? { type: 'pass' as const };
+          // Cast Ignition Lance off cooldown (Flash uses its 1-round cooldown; filler is the kit's own weapon/unarmed attack).
+          const l = tryCast(lanceId, false);
+          if (l) return l;
+          return tryCast(ATTACK_ID, false) ?? { type: 'pass' as const };
         },
       };
       let total = 0;
-      const spots = [place(6, 2), place(7, 2), place(6, 3)];
+      const spots = useMagma ? [place(6, 2), place(7, 2), place(6, 3)] : [place(3, 2), place(4, 2), place(3, 3)];
       for (let i = 1; i <= runs; i++) {
         const ids = Array.from({ length: foeCount }, (_, k) => combatantId(`m${k + 1}`));
         const foes = monsterRows({ name: 'Target', rank: 'C', archetype: 'brute', kind: 'boss', tweak: { hp: 20 }, abilities: [], statuses: [] }, ids, RULES)
@@ -760,17 +762,27 @@ describe('Rare class combat mechanics', () => {
       return total / runs;
     };
 
-    // Single target (Lance + Bolt): Flash stays ahead on sustained damage (especially below half HP)
-    const flashSingleHalf = measure('pyro-b5-l', 1, false, true);
-    const kindleSingleHalf = measure('pyro-b5-r', 1, false, true);
-    const flashSingleFull = measure('pyro-b5-l', 1, false, false);
-    const kindleSingleFull = measure('pyro-b5-r', 1, false, false);
+    // Pre-capstone (Depth 5, no Living Furnace) with kit Strike filler: Kindle beats base lance at all HP levels while Flash leads sustained single-target
+    const basePreFull = measure(preCapNodes('none'), 1, false, false);
+    const basePreHalf = measure(preCapNodes('none'), 1, false, true);
+    const kindlePreFull = measure(preCapNodes('pyro-b5-r'), 1, false, false);
+    const kindlePreHalf = measure(preCapNodes('pyro-b5-r'), 1, false, true);
+    const flashPreFull = measure(preCapNodes('pyro-b5-l'), 1, false, false);
+    expect(kindlePreFull / basePreFull, `PreCap Kindle/Base full = ${(kindlePreFull / basePreFull).toFixed(3)}`).toBeGreaterThan(1.0);
+    expect(kindlePreHalf / basePreHalf, `PreCap Kindle/Base <50% = ${(kindlePreHalf / basePreHalf).toFixed(3)}`).toBeGreaterThan(1.0);
+    expect(kindlePreFull / flashPreFull, `PreCap Kindle/Flash full = ${(kindlePreFull / flashPreFull).toFixed(3)}`).toBeLessThan(1.0);
+
+    // Post-capstone single target (Lance + kit Strike): Flash stays strictly ahead on sustained damage at both full and <50% HP
+    const flashSingleHalf = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-l']), 1, false, true);
+    const kindleSingleHalf = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-r']), 1, false, true);
+    const flashSingleFull = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-l']), 1, false, false);
+    const kindleSingleFull = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-r']), 1, false, false);
     expect(kindleSingleHalf / flashSingleHalf, `Kindle/Flash 1T<50% = ${(kindleSingleHalf / flashSingleHalf).toFixed(3)}`).toBeLessThan(1.0);
-    expect(kindleSingleFull / flashSingleFull, `Kindle/Flash 1T full = ${(kindleSingleFull / flashSingleFull).toFixed(3)}`).toBeLessThanOrEqual(1.02);
+    expect(kindleSingleFull / flashSingleFull, `Kindle/Flash 1T full = ${(kindleSingleFull / flashSingleFull).toFixed(3)}`).toBeLessThan(1.0);
 
     // Three clustered foes (full rotation with Molten Basin + Living Furnace): Kindle leads AoE burst without runaway dominance
-    const flashAoe = measure('pyro-b5-l', 3, true, false);
-    const kindleAoe = measure('pyro-b5-r', 3, true, false);
+    const flashAoe = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-l']), 3, true, false);
+    const kindleAoe = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-r']), 3, true, false);
     expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeGreaterThan(1.0);
     expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeLessThan(1.15);
   });

@@ -136,6 +136,14 @@ function stepped(s: Save, id: string, events: readonly PendingEvent[]): { save: 
   return { save: withPending(s, kept(list.map((p, i) => (i === at ? rec : p)))), rec };
 }
 /**
+ * Record `id` edited in place with `rewards` while staying `waiting` (e.g. when a job-only approval was refused and kept
+ * pending, so the GM's edits are preserved).
+ */
+export function pendingEdited(s: Save, id: string, rewards: Rewards): Save | Refused<PendingRefusal> {
+  const r = stepped(s, id, [{ type: 'edit', rewards }]);
+  return isRefused(r) ? r : r.save;
+}
+/**
  * Record `id` approved with `rewards` as the GM left them (edited, then approved). Only the record: the GM view writes it
  * in the write of its award (gm.js `sendAward`), so a refusal here writes no reward either.
  */
@@ -177,6 +185,8 @@ export type ApprovedAll = {
   readonly remoteStatuses: readonly { readonly key: SheetKey; readonly statuses: Rewards['statuses'] }[];
   readonly remoteClaimed: readonly SheetKey[];
   readonly remoteJobRefused: readonly { readonly key: SheetKey; readonly name: string; readonly refusal: UniqueJobRefusal }[];
+  readonly localJobRefused: readonly { readonly hid: HunterId; readonly name: string; readonly refusal: UniqueJobRefusal }[];
+  readonly localJobHeld: readonly { readonly hid: HunterId; readonly name: string; readonly job: string; readonly why: 'held' | 'dead' }[];
   readonly remaining: number;
 };
 /**
@@ -209,6 +219,8 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
   const remoteStatuses: { key: SheetKey; statuses: Rewards['statuses'] }[] = [];
   const remoteClaimed: SheetKey[] = [];
   const remoteJobRefused: { key: SheetKey; name: string; refusal: UniqueJobRefusal }[] = [];
+  const localJobRefused: { hid: HunterId; name: string; refusal: UniqueJobRefusal }[] = [];
+  const localJobHeld: { hid: HunterId; name: string; job: string; why: 'held' | 'dead' }[] = [];
   const events: RoomEvent[] = [];
   const logLines: Said[] = [];
 
@@ -220,10 +232,20 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
       const vitals = ctx.heldLocals?.has(hid) ? 'fight' : 'sheet';
       const g = grant(next, hid, rec.rewards, { ...ctx.day, vitals, from: rec.from });
       if (!isRefused(g)) {
+        const jobOnly = !!(rec.rewards.job && isEmptyReward(stripRewardJob(rec.rewards)));
+        if (g.jobRefused) {
+          localJobRefused.push({ hid, name: rec.name, refusal: g.jobRefused });
+          // If the waiting reward was unique-job-only and refused, leave it waiting instead of consuming it.
+          if (jobOnly) continue;
+        } else if (g.jobWhy && jobOnly) {
+          // A plain local job-only reward refused because the hunter is held or down stays waiting too.
+          localJobHeld.push({ hid, name: rec.name, job: rec.rewards.job!, why: g.jobWhy });
+          continue;
+        }
         next = g.save;
         granted.push({ hid, g, rec });
       }
-      const logRewards = !isRefused(g) && g.jobRefused ? stripRewardJob(rec.rewards) : rec.rewards;
+      const logRewards = !isRefused(g) && rec.rewards.job && g.job === null ? stripRewardJob(rec.rewards) : rec.rewards;
       const bits = rewardLines(ctx.day.R, logRewards).join(', ');
       approvedIds.add(rec.id);
       approved.push(step);
@@ -282,8 +304,8 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
   }
 
   if (!approved.length) {
-    if (remoteJobRefused.length && remaining === 0) {
-      return { save: next, approved, granted, posted, remoteStatuses, remoteClaimed, remoteJobRefused, remaining };
+    if ((remoteJobRefused.length || localJobRefused.length || localJobHeld.length) && remaining === 0) {
+      return { save: next, approved, granted, posted, remoteStatuses, remoteClaimed, remoteJobRefused, localJobRefused, localJobHeld, remaining };
     }
     return refuse('outbox-full');
   }
@@ -294,7 +316,7 @@ export function pendingApproveAll(save: Save, room: RoomCode, ctx: ApproveAllCtx
     next = atOutbox(box => events.reduce((b, ev) => post(b, room, { kind: 'event', event: ev }).box, box))(next);
   }
   if (logLines.length) next = told(next, logStamp, ...logLines);
-  return { save: next, approved, granted, posted, remoteStatuses, remoteClaimed, remoteJobRefused, remaining };
+  return { save: next, approved, granted, posted, remoteStatuses, remoteClaimed, remoteJobRefused, localJobRefused, localJobHeld, remaining };
 }
 
 // ── a reward the app pays by itself ──

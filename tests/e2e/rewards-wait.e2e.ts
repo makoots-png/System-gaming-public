@@ -216,3 +216,70 @@ test('single-row Approve on one GM phone racing Approve all on a second GM phone
   expect(awards.map((e: any) => e.payload.eid)).toContain(approvalIdOf(rec1Id));
   expect(await gold(player)).toBe(before + RULE_GOLD + GOLD_TWO);
 });
+
+test('a refused local unique-job-only waiting reward stays pending on Approve and Approve all, shows no empty REWARD RECEIVED window, and keeps GM edits', async ({ device }) => {
+  const gm = (await device('gm-local-job')).page;
+  await onboardGM(gm);
+  await dismissAll(gm, 4);
+  const code = await createRoom(gm);
+
+  await gm.evaluate(roomCode => {
+    hunterApp.store.update((d: any) => {
+      const h = d.hunters[0];
+      h.life = { at: 'dead' };
+      const key = `${d.settings.deviceId}:${h.id}`;
+      d.settings.sync.pending = [
+        {
+          id: `${d.settings.deviceId}-pw-seraph`,
+          room: roomCode,
+          to: key,
+          name: h.name,
+          from: 'quest',
+          what: 'Seraph Trial',
+          rewards: { xp: 0, gold: 0, crystal: 0, points: 0, title: null, job: 'Seraph', skills: [], boons: [], items: [], statuses: [] },
+          heard: new Date().toISOString(),
+          at: 'waiting',
+        },
+        {
+          id: `${d.settings.deviceId}-pw-gold`,
+          room: roomCode,
+          to: key,
+          name: h.name,
+          from: 'quest',
+          what: 'Gold Trial',
+          rewards: { xp: 0, gold: 15, crystal: 0, points: 0, title: null, job: null, skills: [], boons: [], items: [], statuses: [] },
+          heard: new Date().toISOString(),
+          at: 'waiting',
+        },
+      ];
+    }, 'test-setup');
+  }, code);
+
+  await go(gm, 'gm');
+  const row = await waitingRow(gm, 'Seraph Trial');
+
+  // Single Approve on refused local unique-job-only reward: stays pending and pops NO empty REWARD RECEIVED window.
+  await row.locator('[data-pw-approve]').tap();
+  await expect(gm.locator('#gm-pw [data-pw]', { hasText: 'Seraph Trial' })).toHaveCount(1);
+  await expect(gm.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' })).toHaveCount(0);
+  await expect(gm.locator('#gm-pw-msg')).toContainText('Seraph was not granted');
+
+  // Approve all: approves Gold Trial and keeps Seraph Trial pending.
+  await gm.locator('#gm-pw-all').tap();
+  await expect(gm.locator('#gm-pw [data-pw]', { hasText: 'Gold Trial' })).toHaveCount(0);
+  await expect(gm.locator('#gm-pw [data-pw]', { hasText: 'Seraph Trial' })).toHaveCount(1);
+  const goldWin = gm.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
+  await expect(goldWin).toBeVisible();
+  await expect(goldWin).toContainText('+15 gold');
+  await dismissAll(gm, 4);
+
+  // Edit Seraph -> Bladefiend while downed and tap Approve: edit is saved on the still-waiting record with no empty window.
+  const remaining = gm.locator('#gm-pw [data-pw]', { hasText: 'Seraph Trial' });
+  await remaining.locator('[data-pw-edit]').tap();
+  const rw = gm.locator('#gm-rw');
+  await rw.locator('[data-row] input').first().fill('Bladefiend');
+  await gm.locator('#gm-award-go').tap();
+  await expect(gm.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' })).toHaveCount(0);
+  await expect(gm.locator('#gm-pw [data-pw]', { hasText: 'Seraph Trial' })).toContainText('Job: Bladefiend');
+  await expect(gm.locator('#gm-award-msg')).toContainText('Bladefiend was not granted');
+});
