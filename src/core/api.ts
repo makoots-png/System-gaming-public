@@ -200,6 +200,8 @@ export type EffectsApi = {
   sanitizeDef(def: unknown, key?: string | null): StatusDef | null;
   /** The def of a status: the one it carries, else the rules' for its key, else a bare label. */
   statusDef(x: string | { key: string; def?: StatusDef }): StatusDef;
+  /** Resolves `follow: true` `applyStatus` ops inside `def` against the current rules starting at `depth` (1 for a stored `applyStatus` op's `def`). */
+  liveStatusDef(def: StatusDef, depth?: number): StatusDef;
   /** What a status does, one line per op: at `tier` (its source's), or every rank's value with null or no tier. */
   describe(def: StatusDef, tier?: number | null, key?: string | null): string[];
   /** The lines an item's card shows for its ops (all of them, or `ops`), each at the item's rarity's tier. */

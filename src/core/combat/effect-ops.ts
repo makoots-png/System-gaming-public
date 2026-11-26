@@ -29,6 +29,7 @@ import { asLevel } from './sight-levels.ts';
 import type { Level } from './sight-levels.ts';
 import { rowLifeAfter } from './row-life.ts';
 import type { FoeLife } from './row-life.ts';
+import { liveOps, liveStatusDef } from './live-status.ts';
 import type { Life } from '../hunter/vitals.ts';
 import type { Stack } from './stacks.ts';
 import type { HunterRef, Id, ShadowId } from '../ids.ts';
@@ -142,8 +143,10 @@ export type Op =
   /**
    * `duration` null lasts until removed. The def travels with the op, so a status the rules do not know still works.
    * `stacks` (1 to `RULES.fight.kit.stackAdd`; absent, 1) is what it adds to a stacking status (kits design 1.1).
+   * `follow: true` means readers resolve the status live from `R.conditions[key]` (falling back to `def` when absent),
+   * so GM edits to a status (such as Grievous Wounds) reach existing items and skills automatically.
    */
-  | { readonly op: 'applyStatus'; readonly key: StatusKey; readonly def: StatusDef; readonly duration: Tiered<Tick> | null; readonly stacks?: number }
+  | { readonly op: 'applyStatus'; readonly key: StatusKey; readonly def: StatusDef; readonly duration: Tiered<Tick> | null; readonly stacks?: number; readonly follow?: true }
   /** `stacks` (1 to `stackAdd`) takes that many from a stacking status; absent, the whole status goes. */
   | { readonly op: 'cureStatus'; readonly key: StatusKey; readonly stacks?: number }
   | { readonly op: 'note'; readonly text: string }
@@ -959,7 +962,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     }
     case 'applyStatus': {
       const lasts = o.duration === null ? null : num(o.duration, n => roundsText(roundsOf(n, R, 'near')));
-      const inner = opLines(o.def.ops, tier, R, null, o.key);
+      const inner = rawOpLines(o.def.ops, tier, R, null, o.key);
       return `Applies ${o.def.label}${lasts ? ` (${lasts.text}${rank(lasts)})` : ''}${inner.length ? `: ${inner.join(', ')}` : ''}`;
     }
     case 'cureStatus': return `Cures ${o.stacks === undefined ? '' : `${o.stacks} of `}${R.conditions[o.key]?.label ?? o.key}`;
@@ -1037,20 +1040,27 @@ const STEALTH_END_TEXT: { readonly [E in StealthEnd]: string } = { hurt: 'is hur
 const HIDE_START_TEXT: { readonly [S in HideStart]: string } = { unseen: 'Can only hide while out of foes\' sight', anywhere: 'Can hide even in foes\' sight' };
 const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received', shielded: 'Shields received' };
 
+/** Inner walker over already-resolved ops: recurses on `o.def` with no `R.conditions` lookup so status cycles terminate. */
+const rawOpLines = (ops: readonly Op[], tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null, statusKey: string | null = null): string[] =>
+  ops.map(o => opLine(o, tier, R, wearer, statusKey)).filter(Boolean);
+
 /**
  * Ops in words, one line each, read at `tier` (the source's rank or an item's rarity, 0 to 5), or every rank with null.
  * With a `wearer`, an amount that reads the wearer's numbers ends with what it comes to on them: `(now 34)`. When
  * `statusKey` is `'grievous'`, negative `healed` shares display up to `GRIEVOUS_MAX` (90%); otherwise `shareCap`.
+ * Resolves `follow: true` ops once at entry through `live-status.ts` so cyclic statuses stay bounded.
  */
 export const opLines = (ops: readonly Op[], tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null, statusKey: string | null = null): string[] =>
-  ops.map(o => opLine(o, tier, R, wearer, statusKey)).filter(Boolean);
+  rawOpLines(liveOps(ops, R.conditions), tier, R, wearer, statusKey);
 
 /**
  * What a status does, one line per op: on a body, at its source's tier; on the status card of a picker or the rules, with
  * `tier` null, every rank's number E to S. Pass `statusKey` so Grievous Wounds displays up to 90% and other statuses clamp to `shareCap`.
+ * Resolves `follow: true` ops once at entry through `live-status.ts` so cyclic statuses stay bounded.
  */
 export function describeStatus(def: StatusDef, tier: number | null, R: DescribeRules, statusKey: string | null = null): string[] {
-  return [...describeStack(def, tier, R, statusKey), ...(def.triggers ?? []).map(t => triggerLine(t, tier, R)), ...(def.end ? [endLine(def.end, tier, R)] : [])];
+  const live = liveStatusDef(def, R.conditions);
+  return [...describeStack(live, tier, R, statusKey), ...(live.triggers ?? []).map(t => triggerLine(t, tier, R)), ...(live.end ? [endLine(live.end, tier, R)] : [])];
 }
 /** A land op in words: time back, or the op's own line. */
 const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string => (o.op === 'refund' ? `${o.pct}% of an action's time back` : opLine(o, tier, R));
@@ -1080,9 +1090,9 @@ const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
   `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join(', ')}.${e.sourceHealShare ? ` Heals the caster for ${Math.round(e.sourceHealShare * 100)}% of the damage dealt.` : ''} ${e.cleanse === 'cancel' ? 'Curing this status cancels it.' : 'Curing this status triggers it right away.'}`;
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */
 function describeStack(def: StatusDef, tier: number | null, R: DescribeRules, statusKey: string | null = null): string[] {
-  if (!isStacking(def)) return opLines(def.ops, tier, R, null, statusKey);
+  if (!isStacking(def)) return rawOpLines(def.ops, tier, R, null, statusKey);
   const st = def.stack, t = st.threshold, out = [`Stacks to ${st.cap}.${worded(LEAVE_TEXT[st.leave.kind === 'event' ? st.leave.event : st.leave.kind], R)}`];
-  out.push(...opLines(def.ops, tier, R, null, statusKey).map(l => `Each stack: ${l}`));
+  out.push(...rawOpLines(def.ops, tier, R, null, statusKey).map(l => `Each stack: ${l}`));
   if (t) {
     const at = t.at.kind === 'count' ? `${t.at.n} stack${t.at.n === 1 ? '' : 's'}` : `${printFormula(t.at.formula)} stacks`;
     const where = reachText(t.to);

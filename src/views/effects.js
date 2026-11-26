@@ -4,6 +4,7 @@ import { rules } from '../edge/rules.ts';
 import { rollSettle } from '../edge/roll.ts';
 import { describeStatus, freeStatusKey } from '../core/combat/effect-ops.ts';
 import { parseStatusDef } from '../core/combat/fight-parse.ts';
+import { liveStatusDef } from '../core/combat/live-status.ts';
 import { describeItem } from '../core/effects.ts';
 import { useDice, useOn } from '../core/hunter/use.ts';
 import { TOLD, atHunter, isRefused, refuse } from '../core/save-step.ts';
@@ -36,6 +37,7 @@ export function register(app) {
 
   app.api.effects = {
     applyOps, statusDef,
+    liveStatusDef: (def, depth = 0) => liveStatusDef(def, rules().conditions, depth),
     sanitizeDef: (def, key = undefined) => parseStatusDef(def, rules(), key ?? undefined),
     describe: (def, tier = null, key = null) => describeStatus(def, tier, rules(), key),
     describeItem: (item, ops) => describeItem(rules(), item, ops),

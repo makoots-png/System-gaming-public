@@ -1102,7 +1102,7 @@ export function register(app) {
           </div>
           <div class="gm-dt" id="gm-gw">
             <span class="lbl">Grievous Wounds</span>
-            <p class="empty">Default healing cut (%) for built-in Grievous Wounds and new sources (such as newly created Thornmails and monster start statuses). Saved items and skills keep their current cut. When several sources hit one target, the strongest cut wins.</p>
+            <p class="empty">Default healing cut (%) for built-in Grievous Wounds. Items, skills, and monster statuses set to the default use this cut. Sources with a custom cut stay at their set value. When several sources hit one target, the strongest cut wins.</p>
             <div class="gm-dt-list" id="gm-gw-list"></div>
           </div>
           <p class="empty">Enter JSON overrides for the default rules, such as {"pointsPerLevel":5}. Unknown rules and invalid values are rejected.</p>

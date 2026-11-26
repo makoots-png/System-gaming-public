@@ -68,6 +68,33 @@ test('GM sets Grievous Wounds up to 90% in the Skill maker (refusing 91%), sees 
     await expect(dlg).toHaveCount(0);
   });
 
+  await test.step('a cut pinned at today\'s rule default (40%) reopens showing 40 and stays pinned instead of switching to follow', async () => {
+    await go(page, 'gm');
+    await page.locator('#gm-make [data-make="skill"]').tap();
+    const dlg = page.locator('.skm-overlay [role=dialog]');
+    await expect(dlg).toBeVisible();
+    await dlg.locator('#skm-name').fill('Pinned Forty');
+    await dlg.locator('[data-quick] [data-q="apply"]').tap();
+    await dlg.locator('[data-row="0"] [data-f="status"]').selectOption('grievous');
+    await dlg.locator('[data-row="0"] [data-f="gwCut"]').fill('40');
+    await dlg.locator('[data-apply]').tap();
+    await expect(dlg).toHaveCount(0);
+
+    await go(page, 'workshop');
+    const row = page.locator('#view-workshop [data-ws="skill"] li', { hasText: 'Pinned Forty' });
+    await expect(row).toBeVisible();
+    await row.locator('[data-act="edit"]').tap();
+    const editDlg = page.locator('.skm-overlay [role=dialog]');
+    await expect(editDlg).toBeVisible();
+    await expect(editDlg.locator('[data-row="0"] [data-f="gwCut"]')).toHaveValue('40');
+    await editDlg.locator('[data-apply]').tap();
+    await expect(editDlg).toHaveCount(0);
+
+    const saved = await page.evaluate(() => hunterApp.store.get().library.skills.find((k: any) => k.name === 'Pinned Forty'));
+    expect(saved.ability.ops[0].follow).toBeUndefined();
+    expect(saved.ability.ops[0].def.ops).toEqual([{ op: 'share', on: 'healed', pct: -40 }]);
+  });
+
   await test.step('legacy stored 95% Grievous Wounds opens clamped to 90%, and non-Grievous custom status still enforces shareCap (50%)', async () => {
     await page.evaluate(() => {
       const s = hunterApp.store.get();

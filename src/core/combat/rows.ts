@@ -42,14 +42,15 @@ import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
 import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
 import { isDamage, typed } from './damage-type.ts';
+import { liveAbility, liveStatusDef } from './live-status.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { mythicStart } from './mythic.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
 import type { NewRow } from './fight-types.ts';
 
-/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, and rarities (for rank-capped consumables). */
-export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities'>;
+/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, rarities (for rank-capped consumables), and live conditions for `follow: true` ops. */
+export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities'> & { readonly conditions: StatusDefs };
 /** The statuses a monster may start with, by key: the built-ins with the GM's laid over them (`rulesOf`). */
 export type StatusDefs = Readonly<Partial<Record<string, StatusDef>>>;
 
@@ -114,10 +115,14 @@ const JOINS = tick(0);
 const starting = (key: string, def: StatusDef, source: Status['source'], rounds: number | null, now: Tick, R: RowRules, stacks = 1): Status => statusOn(def, {
   key: statusKey(key), source, until: rounds === null ? null : tick(now + Math.round(rounds * R.fight.round)), since: now, settledAt: now,
 }, stacks);
-/** The first ability of each id, at most `MAX_ABILITIES`, stamped with `typed(a, R)` so learned by-value copies follow GM overrides. */
+/** The first ability of each id, at most `MAX_ABILITIES`, stamped with `typed(a, R)` and live `follow: true` status defs. */
 function distinct(list: readonly Ability[], R: RowRules): Ability[] {
   const out: Ability[] = [];
-  for (const a of list) if (out.length < MAX_ABILITIES && !out.some(b => b.id === a.id)) out.push(typed(a, R));
+  for (const a of list) {
+    if (out.length < MAX_ABILITIES && !out.some(b => b.id === a.id)) {
+      out.push(liveAbility(typed(a, R), R.conditions));
+    }
+  }
   return out;
 }
 
@@ -218,7 +223,9 @@ function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
   const keys = new Set(taken), out: Status[] = [];
-  const put = (def: StatusDef, source: Status['source'], preferredKey?: Status['key']): void => { out.push(wornOn(def, source, keys, now, preferredKey)); };
+  const put = (def: StatusDef, source: Status['source'], preferredKey?: Status['key']): void => {
+    out.push(wornOn(liveStatusDef(def, R.conditions), source, keys, now, preferredKey));
+  };
   const tier = rankIdx(h.rank);
   for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier });
   for (const { powers, tier: heldTier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier: heldTier });
@@ -314,7 +321,7 @@ export function staggerOf(on: BarBody, R: RowRules): Stagger | null {
  * phase's share of its kind's, wearing that phase's statuses after its start statuses (one whose key a start status holds
  * is left out). With the switch off, and on every other monster, its standing is null and its HP its seed's.
  */
-export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
+export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'>): NewRow[] {
   const now = JOINS;
   const script = R.fight.mythic.scripts ? monsterScript(m) : null, first = script === null ? null : mythicScriptOf(script).phases[0];
   const seeded = tweakOfMonster(m.tweak), tweak = script === null ? seeded : { ...seeded, hp: seeded.hp * mythicScriptOf(script).hp };
@@ -371,7 +378,7 @@ export function shadowRow(s: RowShadow, owner: string, id: CombatantId, R: RowRu
  * itself their source. It keeps a threat table on the foes' side, as a monster does, and holds no sheet, so it writes
  * nothing back and gives no XP.
  */
-export function summonRow(user: Pick<Body, 'id' | 'side' | 'tier'>, s: Summon, id: CombatantId, now: Tick, R: RowRules & { readonly conditions: StatusDefs }): NewRow {
+export function summonRow(user: Pick<Body, 'id' | 'side' | 'tier'>, s: Summon, id: CombatantId, now: Tick, R: RowRules): NewRow {
   const rank = RANKS[Math.max(0, Math.min(RANKS.length - 1, user.tier))]!;
   const origin: Origin = { kind: 'monster', name: cut(s.name), rank, archetype: s.archetype, monsterKind: 'normal', tweak: NO_TWEAK };
   const rounds = Math.max(1, Math.min(R.fight.kit.summonRounds, s.rounds));

@@ -244,7 +244,7 @@ const typed = (kind, v) => String(NUMBERS[kind].rounds ? roundsOf(v, rules(), 'n
 /** A row of the editor from an op. An op of a kind the editor has no row for is a row that keeps the op as it is. */
 function rowOf(o) {
   const r = {
-    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, gwCut: '', text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
+    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, follow: false, gwCut: '', text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
     addStacks: o.stacks === undefined ? '' : String(o.stacks), sheetKey: o.op === 'sheet' ? o.key : 'armor', shareOn: o.op === 'share' ? o.on : 'taken', side: o.side || 'attack',
     edgeKeep: o.op === 'edge' ? o.keep : 'better', tag: o.op === 'edge' && o.tag ? o.tag : '', spend: o.op === 'edge' ? !!o.spend : true, dieMode: o.op === 'boost' ? o.die.kind : 'die',
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
@@ -263,10 +263,9 @@ function rowOf(o) {
   } else if (o.op === 'applyStatus') {
     const rounds = d => (d ? String(roundsOf(d, rules(), 'near')) : '');
     r.status = o.key || ''; r.def = o.def || null;
-    const cond = r.status && Object.hasOwn(rules().conditions, r.status) ? rules().conditions[r.status] : null;
+    r.follow = o.follow === true || (!o.def && !!r.status);
     const defCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
-    const condCut = cond && !hasTieredGrievousCut(cond) ? grievousCutOf(cond) : null;
-    r.gwCut = defCut !== null && defCut !== condCut ? String(defCut) : '';
+    r.gwCut = !r.follow && defCut !== null ? String(defCut) : '';
     if (isTiers(o.duration)) { r.mode = 'rank'; r.tiers = o.duration.map(rounds); r.rounds = r.tiers[0]; } else r.rounds = rounds(o.duration);
   } else if (o.op === 'cureStatus') r.status = o.key || '';
   else if (o.op === 'note') r.text = o.text || '';
@@ -303,7 +302,7 @@ function checkLasting(r, amount, item, fail, ok) {
  * The op a row holds, or what is wrong with it: `err` the words on the row, `bad` the values by rank that are wrong. A
  * formula is read by `parseFormula` with the rules' dice limits, and its error is the row's.
  */
-function checkRow(r, item, statusKey = null) {
+function checkRow(app, r, item, statusKey = null) {
   const R = rules(), when = r.when ? { when: r.when } : {};
   const fail = (err, bad = []) => ({ op: null, err, bad });
   const ok = op => ({ op, err: '', bad: [] });
@@ -408,11 +407,13 @@ function checkRow(r, item, statusKey = null) {
   if (stacks === null) return fail(`Stacks go from 1 to ${K.stackAdd}. Leave it empty for ${r.kind === 'cureStatus' ? 'all of them' : 'one'}.`);
   const more = stacks === undefined ? {} : { stacks };
   if (r.kind === 'cureStatus') return ok({ op: 'cureStatus', key: r.status, ...more });
-  const baseDef = r.def || (Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null);
+  const rawCondDef = Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null;
+  const condDef = rawCondDef ? app.api.effects.liveStatusDef(rawCondDef, 1) : null;
+  const baseDef = (r.follow ? condDef : null) || r.def || condDef;
   if (!baseDef) return fail('Pick a status.');
   const canCut = !hasTieredGrievousCut(baseDef) && grievousCutOf(baseDef) !== null;
   const baseCut = canCut ? grievousCutOf(baseDef) : null;
-  const savedCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+  const savedCut = !r.follow && r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
   const isGw = isGrievousKey(r.status);
   const gwCap = isGw ? grievousCapPct() : shareCapPct(R);
   const gwHi = !isGw && savedCut !== null ? Math.max(gwCap, Math.floor(savedCut)) : gwCap;
@@ -426,29 +427,31 @@ function checkRow(r, item, statusKey = null) {
         ? `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap), or no higher than its current ${gwHi}%.`
         : `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap).`);
   }
-  const condDef = Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null;
   const condCut = condDef && !hasTieredGrievousCut(condDef) ? grievousCutOf(condDef) : null;
   const maxCut = isGw ? GRIEVOUS_MAX : GRIEVOUS_LEGACY_MAX;
-  const def = !canCut || keptCut ? baseDef
+  const follow = condDef !== null && (canCut ? rawCut === '' : r.follow);
+  const def = follow ? condDef
+    : !canCut || keptCut ? baseDef
     : cut !== null ? (cut === baseCut ? baseDef : withGrievousCut(baseDef, cut, maxCut))
     : condCut !== null && condCut !== baseCut ? withGrievousCut(baseDef, condCut, maxCut) : baseDef;
+  const live = follow ? { follow: true } : {};
   if (r.mode === 'rank') {
     const all = r.tiers.map(x => { const t = String(x).trim(), n = Number(t); return t !== '' && Number.isInteger(n) && n >= 1 && n <= 999 ? n * R.fight.round : null; });
     const bad = all.flatMap((n, i) => (n === null ? [i] : []));
     if (bad.length) return fail(`At ${tierName(bad[0], item)}: rounds go from 1 to 999.`, bad);
-    return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more });
+    return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more, ...live });
   }
   const t = r.rounds.trim(), n = Number(t);
   if (t !== '' && !(Number.isInteger(n) && n >= 1 && n <= 999)) return fail('Rounds must be from 1 to 999. Leave empty so it lasts until removed.');
-  return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more });
+  return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more, ...live });
 }
 
 /**
  * The effects editor in `box`: one row per op. `kind` picks the ops a row may be and the quick chips; 'item' labels the
  * six values of "By rank" with the rarities. It raises an `input` event on `box` after each change of its own, so a shell redraws.
- * @param {HTMLElement} box @param {{ ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; event?: string | null; statusKey?: string | null; newStatus?: () => Promise<{ key: string; def?: unknown } | null> }} o
+ * @param {import('./app.ts').App} app @param {HTMLElement} box @param {{ ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; event?: string | null; statusKey?: string | null; newStatus?: () => Promise<{ key: string; def?: unknown } | null> }} o
  */
-function effects(box, o) {
+function effects(app, box, o) {
   const item = o.kind === 'item', defaultWhen = item || o.kind === 'land' ? 'use' : null, statusKey = o.statusKey ?? null;
   /** The ops a new row may be here (core's `opsOffered`): an echo only in a trigger on a status gained or imposed. */
   const offered = () => opsOffered(ROW_KINDS[o.kind], o.event ?? null);
@@ -486,12 +489,12 @@ function effects(box, o) {
     const group = (label, inner) => `<div class="field"><span class="lbl">${esc(label)}</span>${inner}</div>`;
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
       ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks added' : 'Stacks removed', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
-    const gwDef = r.kind === 'applyStatus' ? (r.def || defOf(r.status)) : null;
+    const gwDef = r.kind === 'applyStatus' ? ((r.follow ? defOf(r.status) : null) || r.def || defOf(r.status)) : null;
     const gwBaseCut = gwDef && !hasTieredGrievousCut(gwDef) ? grievousCutOf(gwDef) : null;
     const gwCond = r.kind === 'applyStatus' ? defOf(r.status) : null;
     const gwCondCut = gwCond && !hasTieredGrievousCut(gwCond) ? grievousCutOf(gwCond) : null;
     const gwIsGw = isGrievousKey(r.status);
-    const gwSavedCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+    const gwSavedCut = !r.follow && r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
     const gwCap = gwIsGw ? grievousCapPct() : shareCapPct(rules());
     const gwHi = !gwIsGw && gwSavedCut !== null ? Math.max(gwCap, Math.floor(gwSavedCut)) : gwCap;
     const gwPlaceholder = gwBaseCut !== null ? Math.min(gwCondCut ?? gwBaseCut, gwCap) : null;
@@ -551,7 +554,7 @@ function effects(box, o) {
   /** Shows a row's error and marks the values that are wrong; a formula's average at E, C and S on a sample bearer. */
   function mark(i) {
     const el = box.querySelector(`[data-row="${i}"]`); if (!el) return;
-    const c = checkRow(rows[i], item, statusKey);
+    const c = checkRow(app, rows[i], item, statusKey);
     el.querySelector('[data-err]').textContent = c.err;
     el.classList.toggle('bad', !!c.err);
     el.querySelectorAll('[data-t]').forEach(inp => inp.setAttribute('aria-invalid', String(c.bad.includes(Number(inp.dataset.t)))));
@@ -648,12 +651,12 @@ function effects(box, o) {
     if (t.dataset.f === 'spend') { r.spend = t.checked; mark(i); return; }
     if (t.dataset.f === 'status') {
       if (t.value !== NEW_STATUS) {
-        r.status = t.value; r.def = null; r.gwCut = '';
+        r.status = t.value; r.def = null; r.gwCut = ''; r.follow = true;
         render(); raise(); return;
       }
       const made = o.newStatus ? await o.newStatus() : null;
       if (made && made.key) {
-        r.status = made.key; r.def = made.def || null; r.gwCut = '';
+        r.status = made.key; r.def = made.def || null; r.gwCut = ''; r.follow = true;
       }
       render(); raise();
     }
@@ -672,8 +675,8 @@ function effects(box, o) {
   render();
   return {
     /** The ops the rows hold (a row with an error is left out; `blocked` is then true). */
-    ops: () => rows.map(r => checkRow(r, item, statusKey)).flatMap(c => (c.op ? [c.op] : [])),
-    blocked: () => rows.some(r => !!checkRow(r, item, statusKey).err),
+    ops: () => rows.map(r => checkRow(app, r, item, statusKey)).flatMap(c => (c.op ? [c.op] : [])),
+    blocked: () => rows.some(r => !!checkRow(app, r, item, statusKey).err),
     /** The event of the trigger this list lands for changed: the list offers what that event allows, and keeps a row it no longer offers. */
     setEvent(ev) { o.event = ev; render(); },
   };
@@ -866,10 +869,11 @@ const WHERE_LABEL = [['lands', 'Where it lands'], ['user', 'Around the user']];
  * The ability form in `box`: the kind fills everything (`abilityOf`), the formula field, then what the GM may change,
  * each group collapsed until opened: cost, reach, how it is avoided, and the channel. The skill maker holds it, and the
  * enemy maker's abilities are edited in the skill maker.
+ * @param {import('./app.ts').App} app
  * @param {HTMLElement} box
  * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; ability?: import('../core/combat/ability-types.ts').Ability | null; typed?: { text: string; type: import('../core/combat/ability-types.ts').AbilityEffectType } | null; kit?: any }} o
  */
-function buildAbility(box, o) {
+function buildAbility(app, box, o) {
   const R = rules(), round = R.fight.round;
   /** The fields the groups edit; a new kind starts them from the kind's. */
   let kind = o.kind, a = o.ability && o.ability.kind === kind ? o.ability : abilityOf(kind, { id: abilityId('x'), name: '' }, R);
@@ -921,16 +925,16 @@ function buildAbility(box, o) {
     <div class="mk-kit-ability" data-kit-ability></div></div>`;
   const $ = s => box.querySelector(s), val = k => $(`[data-a="${k}"]`).value, on = k => $(`[data-a="${k}"]`).checked;
   // the field's ops through the effects editor, a burn of 1d6 a round to start (what Burning deals at E)
-  const zfx = effects($('[data-zone-fx]'), { ops: a.zone ? a.zone.ops : [{ op: 'damage', type: 'arcane', amount: dice(1, 6) }], kind: 'status' });
+  const zfx = effects(app, $('[data-zone-fx]'), { ops: a.zone ? a.zone.ops : [{ op: 'damage', type: 'arcane', amount: dice(1, 6) }], kind: 'status' });
   // what lands when the field ends (zones.ts `ZoneKit.end`), drawn when its box is first ticked and empty until the GM adds to it
   const NO_END = { ops: () => [], blocked: () => false };
   let zendFx = NO_END;
-  const zendEditor = () => { if (zendFx === NO_END) zendFx = effects($('[data-zend-fx]'), { ops: a.zone && a.zone.end ? a.zone.end : [], kind: 'land' }); };
+  const zendEditor = () => { if (zendFx === NO_END) zendFx = effects(app, $('[data-zend-fx]'), { ops: a.zone && a.zone.end ? a.zone.end : [], kind: 'land' }); };
   if (a.zone && a.zone.end) zendEditor();
   /** What is wrong with the field's end, or '' (a ticked end with nothing in it lands nothing). */
   const zendErr = () => (!on('zone') || !on('zend') ? '' : zendFx.blocked() ? 'Fix the effect above.' : zendFx.ops().length ? '' : 'Add at least one effect for when the field ends.');
   // the field's triggers (zones.ts `ZoneKit.triggers`): its hold carries them, so they fire for whoever stands in it
-  const ztrig = triggerList($('[data-ztrig]'), a.zone && a.zone.triggers ? a.zone.triggers : [], { chips, picked, effects }, 'zt', 'one inside it');
+  const ztrig = triggerList($('[data-ztrig]'), a.zone && a.zone.triggers ? a.zone.triggers : [], { chips, picked, effects: (b, opts) => effects(app, b, opts) }, 'zt', 'one inside it');
   const ztrigErr = () => (on('zone') ? ztrig.read().err : '');
   const kitA = abilityBlocks($('[data-kit-ability]'), o.kit || (o.ability && o.ability.kind === kind ? a : null), null);
   const ff = formulaField($('[data-formula-box]'), { kind, effect: o.ability && o.ability.kind === kind ? a.effect : undefined, ticks: ticks0, typed: o.typed || null });
@@ -1005,12 +1009,13 @@ function buildAbility(box, o) {
 /**
  * The ability form in `box` (see `buildAbility`). A new kind (`setKind`) draws it again from the kind's defaults, with
  * the groups that were open still open, and a formula the GM typed kept as typed (Reset gives the new kind's).
+ * @param {import('./app.ts').App} app
  * @param {HTMLElement} box
  * @param {{ kind: import('../core/combat/ability-types.ts').AbilityKind; ability?: import('../core/combat/ability-types.ts').Ability | null }} o
  */
-function abilityForm(box, o) {
+function abilityForm(app, box, o) {
   let kind = o.kind, cur = null;
-  const draw = (ability, typed = null, kit = null) => { const root = document.createElement('div'); box.replaceChildren(root); cur = buildAbility(root, { kind, ability, typed, kit }); };
+  const draw = (ability, typed = null, kit = null) => { const root = document.createElement('div'); box.replaceChildren(root); cur = buildAbility(app, root, { kind, ability, typed, kit }); };
   draw(o.ability || null);
   return {
     value: (id, name) => cur.value(id, name),
@@ -1335,7 +1340,7 @@ export function register(app) {
   rewardEditorCss(css);
   css('kit-parts', kitPartsCss);
   app.api.maker = {
-    open: openMaker, chips, picked, bonus, readBonus, effects, ability: abilityForm, rewards: (box, o) => rewardEditor(app, box, o),
+    open: openMaker, chips, picked, bonus, readBonus, effects: (box, o) => effects(app, box, o), ability: (box, o) => abilityForm(app, box, o), rewards: (box, o) => rewardEditor(app, box, o),
     statusBlocks: (box, def, name) => statusBlocks(box, def, app.api.maker, name), worth: worthBar,
   };
 }

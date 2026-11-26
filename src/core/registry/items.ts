@@ -18,7 +18,9 @@ import type { BonusKey, Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
-import type { ItemId } from '../ids.ts';
+import { builtInItemId } from '../ids.ts';
+import type { ItemDefId, ItemId } from '../ids.ts';
+import { liveAbility, liveOps, liveStatusDef } from '../combat/live-status.ts';
 import { DAMAGE_TYPES, defenceOf } from '../combat/damage-type.ts';
 import type { DamageType } from '../combat/damage-type.ts';
 import { abilityId, tag } from '../combat/ability-types.ts';
@@ -113,8 +115,8 @@ export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 15, feet: 15 
 export type ArmorSlot = keyof typeof KIT_SHARE;
 const ARMOR_SLOTS = Object.keys(KIT_SHARE) as ArmorSlot[];
 
-/** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. Without `grade`, the middle. */
-type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
+/** Every built-in item has a name, rarity and description; shipped seeds also carry an immutable `defId` (`BuiltInItemDef`). Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand (including 0). Without `grade`, the middle. */
+type Common = { readonly defId?: ItemDefId; name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
 /**
  * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks (and may be two-handed);
  * armor has a slot and the kit it is a piece of (`piece` works out its weight, armor and resist); an accessory a neck,
@@ -126,6 +128,8 @@ export type ItemDef =
   | Common & Powers & { type: 'accessory'; slot: 'neck' | 'orb' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; rankCap?: true; tell?: true }
   | Common & { type: 'material' | 'key' | 'misc' };
+/** A shipped built-in item seed, guaranteed to carry an immutable `b:*` `defId`. */
+export type BuiltInItemDef = ItemDef & { readonly defId: ItemDefId };
 
 // What a consumable does when used: a Health Potion heals 50% of max HP (`HALF_HP`), Mana Potion restores 4 mana,
 // Stamina Tonic removes 25 fatigue, and Elixir of Life heals fully (`FULL_HEAL`).
@@ -134,38 +138,43 @@ const HALF_HP: Formula = { kind: 'binary', op: '*', left: num(0.5), right: { kin
 const heal = (amount: number | Formula): Op => ({ op: 'heal', amount: typeof amount === 'number' ? num(amount) : amount, when: 'use' });
 const mana = (n: number): Op => ({ op: 'mana', amount: num(n), when: 'use' });
 const rest = (fatigue: number): Op => ({ op: 'fatigue', amount: num(-fatigue), when: 'use' });
-const rankedConsumables = (make: (rar: Rarity, rank: string) => ItemDef): ItemDef[] =>
+const rankedConsumables = (make: (rar: Rarity, rank: string) => BuiltInItemDef): BuiltInItemDef[] =>
   RARITIES.map(rar => make(rar, RULES.rarities[rar].rank));
 
 /** The shop's stock until the GM edits the shop. Each is priced by the rule (`valueOf`). */
-export const SHOP_ITEMS: readonly ItemDef[] = [
+export const SHOP_ITEMS: readonly BuiltInItemDef[] = [
   ...rankedConsumables((rar, rank) => ({
+    defId: builtInItemId(`health-potion-${rank.toLowerCase()}`),
     name: `Health Potion (${rank})`, rar, type: 'consumable', rankCap: true, effects: [heal(HALF_HP)],
     desc: `Restores 50% of max HP. For hunters of rank ${rank} or lower.`,
   })),
   ...rankedConsumables((rar, rank) => ({
+    defId: builtInItemId(`mana-potion-${rank.toLowerCase()}`),
     name: `Mana Potion (${rank})`, rar, type: 'consumable', rankCap: true, effects: [mana(4)],
     desc: `Restores 4 mana. For hunters of rank ${rank} or lower.`,
   })),
   ...rankedConsumables((rar, rank) => ({
+    defId: builtInItemId(`stamina-tonic-${rank.toLowerCase()}`),
     name: `Stamina Tonic (${rank})`, rar, type: 'consumable', rankCap: true, effects: [rest(25)],
     desc: `Removes 25 fatigue. For hunters of rank ${rank} or lower.`,
   })),
   ...rankedConsumables((rar, rank) => ({
+    defId: builtInItemId(`elixir-of-life-${rank.toLowerCase()}`),
     name: `Elixir of Life (${rank})`, rar, type: 'consumable', rankCap: true, effects: [heal(FULL_HEAL)],
     desc: `Fully restores HP. For hunters of rank ${rank} or lower.`,
   })),
-  { name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, desc: 'A plain iron dagger.' },
-  { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
-  { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
+  { defId: builtInItemId('iron-dagger'), name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, desc: 'A plain iron dagger.' },
+  { defId: builtInItemId('hunters-leather'), name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
+  { defId: builtInItemId('steel-longsword'), name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
   // "Cruel to armored foes": 5 Lethality (5 points of armor ignored on every hit; a resist is not armor) plus 1 Strength
   // on a 1d8 finesse dagger spends 4.32 (0.0 weapon damage, 4.32 stats), inside Rare−'s top 5.17.
-  { name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { str: 1, armorPenFlat: 5 }, desc: 'A finesse dagger that adds 1 Strength and ignores 5 points of armor.' },
-  { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
+  { defId: builtInItemId('knight-killer'), name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { str: 1, armorPenFlat: 5 }, desc: 'A finesse dagger that adds 1 Strength and ignores 5 points of armor.' },
+  { defId: builtInItemId('ring-of-vitality'), name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
   // raises up to, and its price `revivePrices` times that rank's `priceBase`. The GM tells the table how common they are; its use
   // is told to the GM. A crystal has no grade.
   ...rankedConsumables((rar, rank) => ({
+    defId: builtInItemId(`resurrection-crystal-${rank.toLowerCase()}`),
     name: `Resurrection Crystal (${rank})`, rar, type: 'consumable', effects: [], revive: true, tell: true,
     desc: 'Use from your bag outside a fight while dead to come back to life, if your rank is this rank or lower.',
   })),
@@ -195,18 +204,19 @@ const BULWARK: Ability = abilityOf('support', {
 }, RULES);
 
 /** The recipe items: the library holds them with the other loot, and a gate may drop them by rarity. */
-export const RECIPE_ITEMS: readonly ItemDef[] = [
+export const RECIPE_ITEMS: readonly BuiltInItemDef[] = [
   // Thornmail, Epic+: a struck trigger reflects `0.03 * armor` arcane damage (6.72, read on the build with the most
   // armor, one strike a round) and applies Grievous Wounds (-40% healing, 2 rounds so it covers the attacker's next
-  // turn and regen tick: 3.83), spending 10.54 inside Epic+'s 9.76..11.22.
+  // turn and regen tick: 3.83), spending 10.54 inside Epic+'s 9.76..11.22. `follow: true` tracks GM Grievous Wounds edits.
   {
+    defId: builtInItemId('thornmail'),
     name: 'Thornmail', rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: {},
     desc: 'Heavy chest armor. When a foe strikes you, it takes magic damage equal to 3% of your armor and gets Grievous Wounds for 2 rounds.',
     worn: {
       label: 'Thornmail', desc: 'Foes that strike you take magic damage and get Grievous Wounds.', ops: [],
       triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [
         { op: 'damage', type: 'arcane', amount: formula('0.03 * armor'), when: 'use' },
-        { op: 'applyStatus', key: statusKey('grievous'), def: BUILT_IN_STATUSES.grievous, duration: rounds(2) },
+        { op: 'applyStatus', key: statusKey('grievous'), def: BUILT_IN_STATUSES.grievous, duration: rounds(2), follow: true },
       ] }],
     },
   },
@@ -214,6 +224,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // `0.1 * phys` is read on the build with the most physical power at one hit a round: 7.11 inside Rare+'s 6.18..7.39.
   // The mark's stack has no rule worth reads. A GM tags a skill "spell" for it to ready the blade.
   {
+    defId: builtInItemId('spellblade'),
     name: 'Spellblade', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
     desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 10% of your physical power.',
     worn: {
@@ -227,6 +238,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // Healer's Charm, Rare+: Presence 2 (2.00), 4% heal and shield power (3.33), and a kill heal of `0.05 * sup` (1.24,
   // rate 0.35 a round on the support build), spending 6.58 inside Rare+'s 6.18..7.39.
   {
+    defId: builtInItemId('healers-charm'),
     name: "Healer's Charm", rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: { pre: 2, healPower: 4 },
     desc: 'A charm that adds 2 Presence and 4% heal and shield power. When you defeat a foe, you heal for 5% of your support power.',
     worn: {
@@ -238,6 +250,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // support's standard shield, times its uses a round (one in 8, its cooldown) times the rate a worn worth pays: 5.68
   // inside Rare's 5.17..6.18.
   {
+    defId: builtInItemId('bulwark-ring'),
     name: 'Bulwark Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: {},
     desc: 'While worn, you can use Bulwark in a fight to gain a shield equal to 10 + 10% of your max HP. 8-round cooldown.',
     active: BULWARK,
@@ -246,6 +259,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // `lowHp` event, `kit.lowHpAt`). Read on the build with the most max HP, an HP of shield weighed as an HP healed
   // (`hpRate`), at `lowHp`'s rate of once a fight: 6.59 inside Rare+'s 6.18..7.39.
   {
+    defId: builtInItemId('lifeline-locket'),
     name: 'Lifeline Locket', rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: {},
     desc: 'The first time you drop under 30% HP in a fight, you gain a shield equal to 16% of your max HP.',
     worn: {
@@ -256,6 +270,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // Warden's Plate, Epic+: the heavy chest piece is free; Vitality 1 (1.00) plus the `sheet` armor op `0.03 * hpmax`
   // read on the build with the most max HP (9.84, item-budget.ts `SHEET_OP_COST`): 10.84 inside Epic+'s 9.76..11.22.
   {
+    defId: builtInItemId('wardens-plate'),
     name: "Warden's Plate", rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
     desc: 'Heavy chest armor that adds 1 Vitality. While worn, you gain extra armor equal to 3% of your max HP.',
     worn: { label: "Warden's Plate", desc: 'Adds armor equal to 3% of max HP.', ops: [{ op: 'sheet', key: 'armor', amount: formula('0.03 * hpmax') }] },
@@ -265,42 +280,71 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
 // A piece of armour's kit is the old AC it gave: 0 or 1 light, 2 medium, 3 or more heavy (plan section 3.3). Old stats
 // map as dex Agility, con Vitality, int Power, wis Instinct, cha Presence; old max MP is a fifth as max mana.
 /** The items a gate's loot roll picks from by rarity (with the shop's stock). Priced by the rule unless they say otherwise. */
-export const LOOT_ITEMS: readonly ItemDef[] = [
-  { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
-  { name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
-  { name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
-  { name: 'Worn Hunter Boots', rar: 'common', type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
-  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', desc: 'A heavy cleaver built for raw damage.' },
-  { name: 'Reinforced Hunter Vest', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
-  { name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'light', icon: 'gauntlet', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
-  { name: 'Mana Talisman', rar: 'uncommon', grade: -1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
-  { name: 'Swift Runner Greaves', rar: 'uncommon', grade: -1, type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
-  { name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
-  { name: "Ice Elf's Cloak", rar: 'rare', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
-  { name: 'Mage Circlet', rar: 'rare', type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
-  { name: "Baruka's Mana Ring", rar: 'rare', type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
-  { name: 'Frost Giant Hammer', rar: 'epic', grade: 1, type: 'weapon', slot: 'weapon', dice: '2d12', attack: 'strike', twoHanded: true, desc: 'A massive two-handed hammer with a head of ice, built for raw damage.' },
-  { name: "Knight's Aegis", rar: 'epic', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
-  { name: 'Cloak of the Shadow Hunter', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
-  { name: 'Helm of the Iron Knight', rar: 'epic', grade: -1, type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
-  { name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', finesse: true, twoHanded: true, bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
-  { name: 'Armor of the Black Knight', rar: 'legendary', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 3 }, desc: 'Heavy chest armor that adds 3 Vitality.' },
-  { name: 'Orb of Avarice', rar: 'legendary', grade: 1, type: 'accessory', slot: 'orb', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb that adds 4 Power and 6 max mana.' },
-  { name: 'Boots of Shadow Step', rar: 'legendary', grade: -1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 4 }, desc: 'Light boots that add 4 Agility.' },
-  { name: "Monarch's Scepter", rar: 'mythic', grade: 1, type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', twoHanded: true, bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
-  { name: 'Crown of the Shadow Sovereign', rar: 'mythic', grade: -1, type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
-  { name: 'Armor of the Absolute Being', rar: 'mythic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
-  { name: "Ring of the Monarch's Will", rar: 'mythic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
+export const LOOT_ITEMS: readonly BuiltInItemDef[] = [
+  { defId: builtInItemId('goblin-shortbow'), name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
+  { defId: builtInItemId('padded-cap'), name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
+  { defId: builtInItemId('mana-crystal-shard'), name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
+  { defId: builtInItemId('worn-hunter-boots'), name: 'Worn Hunter Boots', rar: 'common', type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
+  { defId: builtInItemId('orc-warriors-cleaver'), name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', desc: 'A heavy cleaver built for raw damage.' },
+  { defId: builtInItemId('reinforced-hunter-vest'), name: 'Reinforced Hunter Vest', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
+  { defId: builtInItemId('ironhide-gauntlets'), name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'light', icon: 'gauntlet', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
+  { defId: builtInItemId('mana-talisman'), name: 'Mana Talisman', rar: 'uncommon', grade: -1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
+  { defId: builtInItemId('swift-runner-greaves'), name: 'Swift Runner Greaves', rar: 'uncommon', grade: -1, type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
+  { defId: builtInItemId('kasakas-venom-fang'), name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', finesse: true, bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
+  { defId: builtInItemId('ice-elfs-cloak'), name: "Ice Elf's Cloak", rar: 'rare', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
+  { defId: builtInItemId('mage-circlet'), name: 'Mage Circlet', rar: 'rare', type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
+  { defId: builtInItemId('barukas-mana-ring'), name: "Baruka's Mana Ring", rar: 'rare', type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
+  { defId: builtInItemId('frost-giant-hammer'), name: 'Frost Giant Hammer', rar: 'epic', grade: 1, type: 'weapon', slot: 'weapon', dice: '2d12', attack: 'strike', twoHanded: true, desc: 'A massive two-handed hammer with a head of ice, built for raw damage.' },
+  { defId: builtInItemId('knights-aegis'), name: "Knight's Aegis", rar: 'epic', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
+  { defId: builtInItemId('cloak-of-the-shadow-hunter'), name: 'Cloak of the Shadow Hunter', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
+  { defId: builtInItemId('helm-of-the-iron-knight'), name: 'Helm of the Iron Knight', rar: 'epic', grade: -1, type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
+  { defId: builtInItemId('kamishs-wrath'), name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', finesse: true, twoHanded: true, bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
+  { defId: builtInItemId('armor-of-the-black-knight'), name: 'Armor of the Black Knight', rar: 'legendary', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 3 }, desc: 'Heavy chest armor that adds 3 Vitality.' },
+  { defId: builtInItemId('orb-of-avarice'), name: 'Orb of Avarice', rar: 'legendary', grade: 1, type: 'accessory', slot: 'orb', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb that adds 4 Power and 6 max mana.' },
+  { defId: builtInItemId('boots-of-shadow-step'), name: 'Boots of Shadow Step', rar: 'legendary', grade: -1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 4 }, desc: 'Light boots that add 4 Agility.' },
+  { defId: builtInItemId('monarchs-scepter'), name: "Monarch's Scepter", rar: 'mythic', grade: 1, type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', twoHanded: true, bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
+  { defId: builtInItemId('crown-of-the-shadow-sovereign'), name: 'Crown of the Shadow Sovereign', rar: 'mythic', grade: -1, type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
+  { defId: builtInItemId('armor-of-the-absolute-being'), name: 'Armor of the Absolute Being', rar: 'mythic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
+  { defId: builtInItemId('ring-of-the-monarchs-will'), name: "Ring of the Monarch's Will", rar: 'mythic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
   ...RECIPE_ITEMS,
 ];
 
 /** The item each of the starter campaign's three hunters begins with (src/views/starter.js). It is given as is: no price. */
 export const STARTER_GEAR = {
   // A tower shield is not light, whatever its old AC of 1 said: a heavy kit's offhand.
-  towerShield: { name: 'Dented Tower Shield', rar: 'common', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', desc: 'A dented, heavy tower shield.' },
-  huntingBow: { name: 'Hunting Bow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'A worn hunting bow.' },
-  manaPotion: { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(2)], desc: 'Restores 2 mana.' },
-} as const satisfies Record<string, ItemDef>;
+  towerShield: { defId: builtInItemId('dented-tower-shield'), name: 'Dented Tower Shield', rar: 'common', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', desc: 'A dented, heavy tower shield.' },
+  huntingBow: { defId: builtInItemId('hunting-bow'), name: 'Hunting Bow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'A worn hunting bow.' },
+  manaPotion: { defId: builtInItemId('starter-mana-potion'), name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(2)], desc: 'Restores 2 mana.' },
+} as const satisfies Record<string, BuiltInItemDef>;
+
+/** Built-in items awarded by roleplay bundles (src/core/registry/bundles.ts), kept in the one built-in registry so GM edits reach them too. */
+export const BUNDLE_ITEMS = {
+  /** A31's item: worn, a status that gives its bearer a shield of a quarter of its max HP as each fight begins. */
+  punchline: {
+    defId: builtInItemId('the-punchline'),
+    name: 'The Punchline', rar: 'legendary', type: 'accessory', slot: 'neck', bonus: {}, value: 0,
+    desc: 'Given for a long-running joke that mattered in a serious scene. While worn, you get a shield at the start of each fight.',
+    worn: { label: 'The Punchline', desc: 'Gain a shield equal to a quarter of your max HP at the start of the fight.', ops: [{ op: 'shield', amount: { kind: 'binary', op: '/', left: { kind: 'sheet', whose: 'user', key: 'hpMax' }, right: { kind: 'number', value: 4 } } }] },
+  },
+  /** A46's item: a thing exchanged at a goodbye, worth nothing to the shop. */
+  keepsake: {
+    defId: builtInItemId('keepsake'),
+    name: 'Keepsake', rar: 'common', type: 'material', value: 0,
+    desc: 'Something given at a goodbye. Name it and write what it is.',
+  },
+} as const satisfies Record<string, BuiltInItemDef>;
+
+/** Every built-in item seed indexed by its immutable `ItemDefId` (`SHOP_ITEMS`, `LOOT_ITEMS`, `STARTER_GEAR`, `BUNDLE_ITEMS`). */
+export const BUILT_IN_ITEMS: ReadonlyMap<ItemDefId, BuiltInItemDef> = (() => {
+  const map = new Map<ItemDefId, BuiltInItemDef>();
+  for (const d of [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR), ...Object.values(BUNDLE_ITEMS)]) {
+    if (map.has(d.defId)) throw new Error(`duplicate built-in item defId: ${d.defId}`);
+    map.set(d.defId, d);
+  }
+  return map;
+})();
+/** All shipped built-in item definition ids, in registry order. */
+export const BUILT_IN_ITEM_IDS: readonly ItemDefId[] = Object.freeze([...BUILT_IN_ITEMS.keys()]);
 
 /** An item as a hunter would hold it, before it has an id. */
 export type ItemTemplate = Omit<Item, 'id'>;
@@ -401,35 +445,29 @@ export function weaponWeight(dice: string): number {
   return Number(m[1]) >= 2 ? 4 : Number(m[2]) <= 6 ? 1 : 2;
 }
 
-/** The powers a built-in def holds, copied as they are (a def without any gives `{}`). */
-const powersOf = (def: Powers): Powers => ({ ...(def.worn ? { worn: def.worn } : {}), ...(def.active ? { active: def.active } : {}) });
-
-/** Builds Thornmail's Grievous Wounds op from `R.conditions.grievous` so new copies follow the GM's status rule. */
-function withThornmailGrievous(def: ItemDef, R: Rules): ItemDef {
-  if (def.name !== 'Thornmail' || def.type !== 'armor' || !def.worn?.triggers) return def;
-  const live = R.conditions.grievous;
-  if (!live || live === BUILT_IN_STATUSES.grievous) return def;
-  const triggers = def.worn.triggers.map(t => ({
-    ...t,
-    ops: t.ops.map(o => (o.op === 'applyStatus' && o.key === statusKey('grievous') ? { ...o, def: live } : o)),
-  }));
-  return { ...def, worn: { ...def.worn, triggers } };
-}
+/** The powers a built-in def holds, with any `follow: true` status ops resolved against `conditions`. */
+const powersOf = (def: Powers, conditions: Pick<Rules, 'conditions'>['conditions']): Powers => ({
+  ...(def.worn ? { worn: liveStatusDef(def.worn, conditions) } : {}),
+  ...(def.active ? { active: liveAbility(def.active, conditions) } : {}),
+});
 
 /**
- * A built-in item as an item a hunter can hold (no id yet): a price only when it sets one (else the rule's, `valueOf`),
- * a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it).
+ * A built-in item as an item a hunter can hold (no id yet): a price only when it sets one (including 0, else the rule's
+ * `valueOf`), a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it), and every
+ * `applyStatus` op marked `follow: true` resolved against `R.conditions`.
  */
-export function itemOf(R: Rules, rawDef: ItemDef): ItemTemplate {
-  const def = withThornmailGrievous(rawDef, R);
-  const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), ...(def.icon ? { icon: def.icon } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
+export function itemOf(R: Pick<Rules, 'conditions' | 'fight'>, def: ItemDef): ItemTemplate {
+  const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value !== undefined ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), ...(def.icon ? { icon: def.icon } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
-      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.damageType && defenceOf(def.damageType) !== 'armor' ? { damageType: def.damageType } : {}), ...(def.finesse ? { finesse: true as const } : {}), ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def) };
-    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def) };
-    case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def) };
-    case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.rankCap ? { rankCap: true } : {}), ...(def.tell ? { tell: true } : {}) };
+      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.damageType && defenceOf(def.damageType) !== 'armor' ? { damageType: def.damageType } : {}), ...(def.finesse ? { finesse: true as const } : {}), ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def, R.conditions) };
+    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def, R.conditions) };
+    case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def, R.conditions) };
+    case 'consumable': {
+      const effects = def.effects.length ? [...liveOps(def.effects, R.conditions)] : [];
+      return { ...base, slot: null, bonus: {}, ...(effects.length ? { effects } : {}), ...(def.revive ? { revive: true } : {}), ...(def.rankCap ? { rankCap: true } : {}), ...(def.tell ? { tell: true } : {}) };
+    }
     default: return { ...base, slot: null, bonus: {} };
   }
 }
