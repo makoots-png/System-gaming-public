@@ -35,17 +35,17 @@ import { staggerOf } from './rows.ts';
 import { channelStep } from './fight-channel.ts';
 import { anchorOf, oldEnough, payUpkeep, zoneStep, zoneSync } from './zones.ts';
 import type { Zone } from './zones.ts';
-import { fire, raised } from './triggers.ts';
+import { armyKillOf, fire, raised } from './triggers.ts';
 import { NO_PEN, afterDefence, alive, held, landedWords, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
 export { held };
-import { dismissed, isSummon, timeUp } from './summons.ts';
+import { dismissed, isSummon, ownerOf, summonStep, timeUp } from './summons.ts';
 import { damageShare, given, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
 import { reactState, reactStep, restored, turnReaction, withReact } from './fight-react.ts';
 import { gateUsed } from './uses.ts';
 import { ARMED, endStep } from './delayed.ts';
 import type { Raised } from './triggers.ts';
-import { dist, sees, seenBy } from './space.ts';
-import type { Side } from './space.ts';
+import { dist, place, sees, seenBy, TERRAIN } from './space.ts';
+import type { Place, Side } from './space.ts';
 import { line, LOG_CAP, LOG_LINE_MAX, MAX_PENDING, MAX_SPREAD, MAX_STATUSES, spreadKey } from './fight-types.ts';
 import type { Ctx, Effect, Ended, Fight, LogLine, Running, Spread, Summary } from './fight-types.ts';
 
@@ -191,7 +191,8 @@ export function fightRested(rows: readonly Body[], R: Pick<Rules, 'fight'>): { r
  */
 export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): Ended {
   const now = f.phase === 'setup' ? tick(0) : f.now;
-  const after = f.phase === 'running' ? fightRested(f.rows, R) : { rows: f.rows, rested: {} as Readonly<Record<CombatantId, number>> };
+  const keptRows = f.rows.filter(r => !(isSummon(r) && summonStep('present', { type: 'fightEnds' }) === 'gone'));
+  const after = f.phase === 'running' ? fightRested(keptRows, R) : { rows: keptRows, rested: {} as Readonly<Record<CombatantId, number>> };
   const restedIds = Object.keys(after.rested) as CombatantId[];
   const down = after.rows.filter(r => !isUp(r));
   const xp = down.reduce((n, r) => r.side === 'foe' ? n + r.xp : n, f.banked);
@@ -206,11 +207,56 @@ export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): En
 }
 
 /**
- * Turns the difference between `before` and `after` rows into effects, and keeps what follows from it: a row that went
- * down loses its channel, a row that came back up waits no less than `now`. Rows only in `after` (new) are skipped.
+ * Fires `minionDown` on the owner of any minion that went from up in `prev` to down in `curr` (before `dismissed`
+ * sweeps dead summons), so a `reform` trigger can lift it in the same step. If a reformed minion's tile was taken
+ * by a shove in the same use, nudges it to the nearest free walkable tile.
+ */
+function handleMinionDown(prev: readonly Body[], curr: Running, ctx: Ctx): Running {
+  const events: Raised[] = [];
+  const fellIds = new Set<CombatantId>();
+  for (const b of prev) {
+    if (!isUp(b)) continue;
+    const owner = ownerOf(b);
+    if (owner === null) continue;
+    const a = rowOf(curr, b.id);
+    if (a && !isUp(a)) {
+      events.push(raised(owner, 'minionDown', a.id));
+      fellIds.add(a.id);
+    }
+  }
+  if (!events.length) return curr;
+  let next = triggered(curr, events, ctx);
+  // Nudge any reformed minion whose tile was occupied in the same use (e.g. a shove onto its tile before reform).
+  for (const id of fellIds) {
+    const r = rowOf(next, id);
+    if (!r || !isUp(r)) continue;
+    const clash = next.rows.some(o => o.id !== r.id && alive(o) && o.place.x === r.place.x && o.place.y === r.place.y);
+    if (!clash) continue;
+    const spots: Place[] = [];
+    for (let y = 0; y < next.grid.h; y++) for (let x = 0; x < next.grid.w; x++) {
+      if (!TERRAIN[next.grid.tiles?.[y * next.grid.w + x] ?? 'floor'].walk) continue;
+      if (next.rows.some(o => o.id !== r.id && alive(o) && o.place.x === x && o.place.y === y)) continue;
+      spots.push(place(x, y));
+    }
+    const free = spots.sort((p, q) => dist(p, r.place) - dist(q, r.place) || p.y - q.y || p.x - q.x)[0];
+    if (free) next = withRow(next, { ...r, place: free });
+  }
+  return next;
+}
+
+/**
+ * Turns the difference between `before` and `after` rows into effects, and keeps what follows from it: fires
+ * `minionDown` before `dismissed` sweeps dead summons (and again if `grounded` downs a minion), a row that went down
+ * loses its channel, a row that came back up waits no less than `now`. Rows only in `after` (new) are skipped.
  */
 export function consequences(before: readonly Body[], after: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<string>): Running {
-  let f = grounded(sentAway(after, dismissed(after.rows), 'fades', ctx), ctx, fx, forced);
+  const reformed = handleMinionDown(before, after, ctx);
+  const swept = sentAway(reformed, dismissed(reformed.rows), 'fades', ctx);
+  let f = grounded(swept, ctx, fx, forced);
+  if (f.rows !== swept.rows) {
+    const reformed2 = handleMinionDown(swept.rows, f, ctx);
+    f = sentAway(reformed2, dismissed(reformed2.rows), 'fades', ctx);
+  }
   f = { ...f, rows: tallied(f.rows, { type: 'changed', before }) };
   for (const b of before) {
     let a = rowOf(f, b.id);
@@ -473,6 +519,16 @@ function settleRow(f: Running, row: Body, ctx: Ctx, fx: Fx): { fight: Running; e
   for (const gone of s.expired) g = logged(g, line(`${row.name}: ${gone.def.label} ends.`, [row.id]), R);
   for (const gone of s.spent) g = logged(g, line(`${row.name}: the last ${gone.def.label} wears off.`, [row.id]), R);
   g = owe(g, withStatuses(row, s.statuses, f.now, R), s.due, fx, R, row.statuses);
+  const afterOwe = rowOf(g, row.id)!;
+  if (isUp(row) && !isUp(afterOwe)) {
+    const killDue = s.due.find(d => d.op.op === 'damage' && !diceOf(atTier(d.op.amount, d.tier)).length);
+    const st = killDue ? row.statuses.find(x => x.key === killDue.key) : undefined;
+    const srcId = st?.source.id ?? null, src = srcId === null ? undefined : rowOf(g, srcId);
+    if (srcId !== null) ended.push(raised(srcId, 'kill', afterOwe.id));
+    const ak = armyKillOf(src, afterOwe);
+    if (ak) ended.push(ak);
+    ended.push(raised(afterOwe.id, 'down', srcId));
+  }
   // the settle's S2 (kits design 1.6, table 2.2): a delayed effect whose time ran out lands its end on its bearer
   const due = s.expired.filter(x => x.def.end !== undefined && x.zone === undefined && endStep(ARMED, { type: 'due' }, x.def.end).lands);
   if (due.length && isUp(rowOf(g, row.id)!)) {
@@ -483,6 +539,12 @@ function settleRow(f: Running, row: Body, ctx: Ctx, fx: Fx): { fight: Running; e
       const parts = [...(e.dealt ? [`${e.dealt}`] : []), ...(e.sourceHealed && srcName ? [`${srcName} heals ${e.sourceHealed}`] : [])];
       g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${row.name}: ${x.def.label} lands${parts.length ? ` (${parts.join(', ')})` : ''}.`, [row.id]), R);
       if (e.dealt > 0) ended.push(raised(row.id, 'struck', x.source.id));
+      if (e.down) {
+        if (x.source.id !== null) ended.push(raised(x.source.id, 'kill', row.id));
+        const ak = armyKillOf(x.source.id === null ? undefined : rows.get(x.source.id), rows.get(row.id));
+        if (ak) ended.push(ak);
+        ended.push(raised(row.id, 'down', x.source.id));
+      }
     }
   }
   const pending = [...g.pending];
@@ -574,14 +636,22 @@ export function grounded(f: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<stri
  */
 export function zoneEnds(f: Running, ending: readonly Zone[], stood: readonly Body[], ctx: Ctx): Running {
   let g = f;
+  const events: Raised[] = [];
   for (const z of ending) {
     const inside = stood.filter(b => b.statuses.some(s => s.zone === z.id && s.until === null)).map(b => b.id);
     const rows = new Map(g.rows.map(b => [b.id, b] as const)), owner = z.owner === null ? null : rows.get(z.owner) ?? null;
     const r = landOps(rows, (z.end ?? []).filter(o => o.op !== 'refund'), owner, inside, { id: z.owner, tier: z.tier }, g.now, ctx.rules);
     const parts = landedWords(r.landed, id => rows.get(id)?.name ?? id);
     g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${z.name} ends${parts.length ? ` (${parts.join(', ')})` : ''}.`, [...r.landed.filter(l => l.dealt || l.healed).map(l => l.target)], [z.id]), ctx.rules);
+    for (const l of r.landed) {
+      if (!l.down) continue;
+      if (z.owner !== null) events.push(raised(z.owner, 'kill', l.target));
+      const ak = armyKillOf(owner ?? undefined, rows.get(l.target));
+      if (ak) events.push(ak);
+      events.push(raised(l.target, 'down', z.owner));
+    }
   }
-  return g;
+  return events.length ? triggered(g, events, ctx) : g;
 }
 
 /**
@@ -654,7 +724,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (standing(g).length < 2) { g = consequences(before, g, ctx, fx); continue; }
     const who = next(g.rows.filter(isUp))!;
     // the settle's S0 (kits table 2.4): a summon whose time is up leaves before it acts
-    if (timeUp(who, g.now)) { g = sentAway(g, [who], 'leaves because its time is up', ctx); continue; }
+    if (timeUp(who, g.now)) { g = consequences(before, sentAway(g, [who], 'leaves because its time is up', ctx), ctx, fx); continue; }
     g = { ...g, currentId: who.id };
     const settled = settleRow(g, who, ctx, fx);
     g = consequences(before, settled.fight, ctx, fx);

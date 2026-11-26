@@ -36,6 +36,8 @@ import type { ChargeRefusal } from './charge.ts';
 import { beforeReactions } from './fight-react.ts';
 import type { Reacted } from './fight-react.ts';
 import { taunter } from './threat.ts';
+import { canRiseFor } from './rise.ts';
+import { isMinionOf } from './summons.ts';
 
 /** Where a use is aimed: a tile, or a combatant. */
 export type Aim = Place | CombatantId;
@@ -107,10 +109,13 @@ const rollsReaction = (a: Ability): boolean => againstFoes(a) && a.delivery.kind
 const rolled = (o: UseOp, tier: number): Formula | null => o.op === 'shield' ? o.amount : o.op === 'mana' || o.op === 'fatigue' ? atTier(o.amount, tier) : null;
 const extraDice = (ops: readonly UseOp[], tier: number): Dice[] => ops.flatMap(o => { const f = rolled(o, tier); return f ? diceOf(f) : []; });
 /**
- * The dice one target of `a` needs, in order: its effect's, then a shield, mana or fatigue op's, at the user's tier. A
- * player's phone rolls them for a `cast`.
+ * The dice one target of `a` needs, in order: its effect's, then a shield, mana or fatigue op's, at the user's tier,
+ * and a d20 when `a.raise` is set (Arise's Presence check). A player's phone rolls them for a `cast`.
  */
-export const diceFor = (a: Ability, tier: number, R: KindRules): Dice[] => { const f = formulaOf(a, R); return [...(f ? diceOf(f) : []), ...extraDice(a.ops, tier)]; };
+export const diceFor = (a: Ability, tier: number, R: KindRules): Dice[] => {
+  const f = formulaOf(a, R);
+  return [...(f ? diceOf(f) : []), ...extraDice(a.ops, tier), ...(a.raise ? [ONE_D20_DIE] : [])];
+};
 
 /** Whether `a` aimed at `at` from `user` covers `src`'s tile (hit or ring). */
 export function coversBody(a: Pick<Ability, 'shape'>, user: Pick<Body, 'place'>, at: Place, src: Pick<Body, 'place'>, grid: Grid): boolean {
@@ -406,7 +411,7 @@ const refundRolls = (user: Body, now: Tick): boolean => opsOf(user).some(({ op }
  */
 export function needs(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules): Needs {
   const ok = a.channel ? channelReady(user, bodies, aim) : ready(a, user, bodies, aim, grid, now, R);
-  const f = ok === null || typeof ok === 'string' ? null : field(a, user, ok.paid, bodies, ok.at, grid, now, R);
+  const f = ok === null || typeof ok === 'string' ? null : field(a, user, ok.paid, bodies, aim, ok.at, grid, now, R);
   return f === null || typeof f === 'string' ? { dice: {}, react: [], refund: false } : asked(a, f, now, R);
 }
 /** A channel's release as `needs` asks it: the tile it was aimed at, its user as it stands, which paid at the begin. */
@@ -436,12 +441,20 @@ function asked(a: Ability, f: Field, now: Tick, R: KindRules): Needs {
  * are the dice read.
  */
 type Field = { readonly from: Body; readonly bodies: readonly Body[]; readonly hit: readonly Body[]; readonly ring: readonly Body[]; readonly answers: Answers; readonly reacted: Reacted };
-function field(a: Ability, user: Body, paid: Body, bodies: readonly Body[], at: Place, grid: Grid, now: Tick, R: ResolveRules): Field | 'rooted' | 'blocked' {
+function field(a: Ability, user: Body, paid: Body, bodies: readonly Body[], aim: Aim, at: Place, grid: Grid, now: Tick, R: ResolveRules): Field | 'rooted' | 'blocked' {
+  if (a.aim === 'corpse') {
+    const corpse = typeof aim === 'string' ? bodies.find(b => b.id === aim) : undefined;
+    const hit = corpse && a.raise && canRiseFor(corpse, bodies, a.raise) ? [corpse] : [];
+    const stood = bodies.map(b => b.id === user.id ? paid : b);
+    return { from: paid, bodies: stood, hit, ring: [], answers: {}, reacted: { said: [], about: [], lethal: [], bursts: [], count: { n: 0 } } };
+  }
   // Rule 5b (kits design 8.3.5): a blink stands its user on the tile it aims at before rule 6; a swap checks standing before cost is kept.
   const blink = a.move?.kind === 'blink' ? blinked(user, paid, bodies, at, grid) : null;
   if (typeof blink === 'string') return blink;
   if (a.move?.kind === 'swap') {
-    const swapTarget = a.aim === 'ally' ? (catchable(bodies, user).find(b => b.id !== user.id && samePlace(b.place, at)) ?? null) : null;
+    const swapTarget = a.aim === 'ally'
+      ? (typeof aim === 'string' ? catchable(bodies, user).find(b => b.id === aim) ?? null : catchable(bodies, user).find(b => b.id !== user.id && samePlace(b.place, at)) ?? null)
+      : null;
     const bad = swapStands(user, swapTarget, grid);
     if (bad) return bad;
   }
@@ -471,6 +484,7 @@ function keptFace(a: Ability, user: Body, target: Body, rolls: Rolls): number | 
   return Math.max(1, Math.min(D20_FACES, face));
 }
 const D20_FACES = 20;
+const ONE_D20_DIE: Dice = { count: 1, sides: D20_FACES };
 const ONE_D20: Formula = { kind: 'dice', count: 1, sides: D20_FACES };
 /**
  * What a use's edges and held dice spend once it resolved (table 8.9.2): an edge with `spend` that reached a die loses a
@@ -518,9 +532,19 @@ export type Ready = { readonly at: Place; readonly paid: Body; readonly spent: n
  * so a channel pays what a use pays. `fog` is the fight's (null: none, so eyes look over the whole map).
  */
 export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules, fog: Fog | null = null): Ready | UseRefusal {
+  const seen: Lookout = { rows: bodies, grid, fog };
+  if (a.aim === 'corpse') {
+    if (typeof aim !== 'string' || !a.raise) return 'noTarget';
+    const corpse = bodies.find(b => b.id === aim);
+    if (!corpse || !canRiseFor(corpse, bodies, a.raise) || !perceivedBy(user.side, corpse, seen)) return 'noTarget';
+    if (extraTaken(a, user, now, R)) return 'extra';
+    const priced = charged(a, user, bodies, corpse.place, now, R);
+    if (typeof priced === 'string') return priced;
+    if (!inRange(a, user, corpse.place, rangeFor(a, user, R))) return 'range';
+    return { at: corpse.place, paid: priced.user, spent: priced.spent };
+  }
   const at = placeOf(aim, bodies);
   if (at === null) return 'noTarget';
-  const seen: Lookout = { rows: bodies, grid, fog };
   if (typeof aim === 'string') {
     const target = bodies.find(b => b.id === aim)!;
     if (!pickable(target, user, seen) || !swapWith(a, user, target)) return 'noTarget';
@@ -535,21 +559,23 @@ export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim,
 
 /**
  * Rule 2: whether a body can be aimed at by an ability: only a body that is up. A dead body is never offered as a target
- * and a pick aimed at one is refused (no ability raises the dead; only the GM's `revive` command does, row-life.ts). The
- * one rule for `pickable` here and `aims` in fight-view.ts.
+ * for non-corpse abilities and a pick aimed at one is refused (corpse abilities use `aim: 'corpse'`, and the GM's
+ * `revive` stands dead rows up). The one rule for `pickable` here and `aims` in fight-view.ts.
  */
 export const canAimAt = (target: { readonly life: { readonly at: LifeState } } | { readonly down: boolean }): boolean =>
   'life' in target ? isUp(target) : !target.down;
 
 /**
- * Rule 2: whether `user` may pick `target` for a swap move: never itself, and only a shadow when `only === 'shadow'`.
- * The one predicate for `ready` here and `aims` in fight-view.ts.
+ * Rule 2: whether `user` may pick `target` for a swap move: never itself, only a shadow when `only === 'shadow'`, and
+ * only a minion owned by `user` when `only === 'minion'`. The one predicate for `ready` here and `aims` in fight-view.ts.
  */
 export const swapWith = (
   a: Pick<Ability, 'move'>,
   user: { readonly id: CombatantId },
-  target: { readonly id: CombatantId; readonly kind: Body['kind'] },
-): boolean => a.move?.kind !== 'swap' || (target.id !== user.id && (a.move.only !== 'shadow' || target.kind === 'shadow'));
+  target: { readonly id: CombatantId; readonly kind: Body['kind']; readonly owner?: CombatantId | null },
+): boolean => a.move?.kind !== 'swap'
+  || (target.id !== user.id
+    && (a.move.only === 'shadow' ? target.kind === 'shadow' : a.move.only === 'minion' ? isMinionOf(target, user.id) : true));
 
 /**
  * Rule 2: whether `user` may pick `t` as its target: `t` can be aimed at (`canAimAt`), is not warded from it (standing.ts
@@ -566,6 +592,7 @@ const pickable = (t: Body, user: Body, seen: Lookout): boolean => canAimAt(t) &&
 export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules, fog: Fog | null = null): boolean {
   const r = ready(a, user, bodies, aim, grid, now, R, fog);
   if (typeof r === 'string') return false;
+  if (a.aim === 'corpse') return true;
   if (a.aim !== 'ally' && typeof aim !== 'string') return true;
   const { hit, ring } = whoIsIn(a, r.paid, catchable(bodies, r.paid), r.at, grid);
   return hit.length + ring.length > 0;
@@ -592,7 +619,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
 export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null, picks: DodgePick): ResolvedOrAsk;
 export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null, picks?: DodgePick): ResolvedOrAsk {
   const { at } = ok, hiding = hides(a);
-  const f = field(a, user, ok.paid, bodies, at, grid, now, R);
+  const f = field(a, user, ok.paid, bodies, aim, at, grid, now, R);
   if (typeof f === 'string') return { ok: false, reason: f };
   const { from, hit, ring, answers } = f;
   if ((a.aim === 'ally' || typeof aim === 'string') && hit.length + ring.length === 0) return { ok: false, reason: 'noTarget' };

@@ -17,9 +17,9 @@ import { isUp, rowHp } from './row-hp.ts';
 import { applyStatus, modified, removeStatus, statusOn, statusShield, withMoved, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
-import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
+import { diceFor, landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive, drainWords, landedWords, putBy, stealthAfter } from './land.ts';
-import type { DodgeAsked, DodgePick, Resolved } from './resolve.ts';
+import type { DodgeAsked, DodgePick, Resolved, Rolls } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { hides, hideStarts, holds } from './standing.ts';
 import { watched } from './sight.ts';
@@ -29,13 +29,14 @@ import { isDamage } from './damage-type.ts';
 import { combatantId } from './ability-types.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
-import { eventsOf, raised } from './triggers.ts';
+import { armyKillOf, eventsOf, raised } from './triggers.ts';
 import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, omenMove, overIf, partyView, phasedRow, giverOf, payDue, retaunted, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unscriptedRow, untaunted, unwarded, withRow, zoneEnds } from './fight-turn.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { mythicJoined, mythicStepped, playsScript, scriptOf } from './mythic.ts';
 import { isRefused } from '../save-step.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
+import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseStep } from './rise.ts';
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from './extraction.ts';
@@ -235,7 +236,7 @@ function actWith(f: Running, cmd: Extract<Command, { type: 'act' }>, picks: Dodg
   // table 2.3: a use that resolved is one more spent of an ability limited a fight or a gate
   const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
   const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
-  return landed(f, { a, u, rows, aim: cmd.aim, at, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
+  return landed(f, { a, u, rows, aim: cmd.aim, at, rolls: cmd.rolls, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
 }
 const act: Step<'running', 'act'> = (f, cmd, ctx) => actWith(f, cmd, {}, ctx);
 
@@ -244,19 +245,19 @@ const landingOf = (taken: readonly Zone[], now: Tick, R: Rules): Zone[] => taken
 
 /**
  * A use that landed, as `act` and a channel's `release` hand it on: the ability, its user and the rows as the use found
- * them, its aim (a body it picked, or a tile) and the tile that is, what `landUse` answered (with what the command does to its user: a use counted, a channel
+ * them, its aim (a body it picked, or a tile) and the tile that is, its rolls, what `landUse` answered (with what the command does to its user: a use counted, a channel
  * gone off; and the reactions it set off), the zones its price takes now, the start of its log line, and who acted (none
  * for a broken channel going off out of its user's turn, which is no turn's action).
  */
 type Landed = {
   readonly a: Ability; readonly u: Body; readonly rows: readonly Body[]; readonly aim: Aim; readonly at: Place;
-  readonly r: Extract<Resolved, { readonly ok: true }>; readonly taken: readonly Zone[];
+  readonly rolls: Rolls; readonly r: Extract<Resolved, { readonly ok: true }>; readonly taken: readonly Zone[];
   readonly head: string; readonly by: string;
 };
 /**
  * What follows a use that landed, the one path of `act` and `release`, so a rule added here holds for both: acting on a
  * foe or a place ends its user's untargetable ward (kits design 8.1); its stealth events (`useStealth`); one log line
- * naming each target's outcome and what the user's lifesteal and damage to shield gave it (rule 20, `drainWords`); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
+ * naming each target's outcome and what the user's lifesteal and damage to shield gave it (rule 20, `drainWords`); the zones its price took end and its own goes down (rule 18b); a summon (18d); a corpse rise (`risen`); a zone act (kits 8.5.4),
  * whose bodies, as a shove's, pay no entry (8.3.4, 8.5.5); the tally; its triggers (19b); the `after` reactions (19c);
  * then the next turn.
  */
@@ -268,9 +269,10 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const warded = ends ? use.r.bodies.map(b => b.id === u.id ? unwarded(b, f.now, R) : b) : use.r.bodies;
   const r = { ...use.r, bodies: useStealth(a, u, aim, use.r.outcomes, warded, f.now, R) };
   const drank = drainWords({ healed: r.drained, stored: r.stored });
+  const quietCorpse = a.aim === 'corpse' && !a.effect && !a.ops.length;
   const said = [
     ...reacted.said, ...reacted.lethal,
-    ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? AVOID_WORDS.out : `${AVOID_WORDS[o.avoid]}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
+    ...(quietCorpse ? [] : r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? AVOID_WORDS.out : `${AVOID_WORDS[o.avoid]}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`)),
     ...(drank ? [`${u.name} ${drank}`] : []),
     ...r.bursts.map(b => { const p = landedWords(b.landed, id => rowOf(f, id)?.name ?? id); return `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${p.length ? ` (${p.join(', ')})` : ''}`; }),
   ];
@@ -280,7 +282,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const placed = left ? placeZone(rest, left, R) : { zones: rest, evicted: [] };
   const useLine = `${use.head}${said.length ? `: ${said.join(', ')}` : ''}.${left ? ` ${left.name} covers the ground.` : ''}${placed.evicted.length ? ` ${placed.evicted.map(z => z.name).join(', ')} ends.` : ''}`;
   const about = [u.id, ...reacted.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])];
-  const used0 = summoned(zoneEnds(logged({ ...f, rows: r.bodies, zones: placed.zones }, line(useLine, about, [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landingOf(taken, f.now, R), rows, ctx), a, u.id, ctx);
+  const used0 = risen(summoned(zoneEnds(logged({ ...f, rows: r.bodies, zones: placed.zones }, line(useLine, about, [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landingOf(taken, f.now, R), rows, ctx), a, u.id, ctx), a, u.id, aim, use.rolls, ctx);
   // a zone act (kits design 8.5.4): a zone moved or widened onto a body pays it no entry, as a forced move pays none (8.5.5)
   const z = a.zoneAct ? zoneActed(used0.zones, u.id, a.zoneAct, at, used0.rows, used0.grid, used0.now, R) : null;
   const used = z?.acted ? logged({ ...used0, zones: z.zones }, line(`${z.acted.name} ${a.zoneAct!.act === 'shift' ? 'moves' : 'widens'}.`, [], [z.acted.id]), R) : used0;
@@ -300,7 +302,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
 function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
   const R = ctx.rules, u = rowOf(f, by);
   if (!a.summon || !u || !isUp(u)) return f;
-  const g = sentAway(f, crowded(f.rows, u.id, R), 'leaves because a newer summon took its place', ctx);
+  const g = sentAway(f, crowded(f.rows, u.id, 'timed', R.fight.kit.summons), 'leaves because a newer summon took its place', ctx);
   if (g.rows.length >= MAX_ROWS) return g;
   const d = Math.max(g.grid.w, g.grid.h), spots: Place[] = [];
   for (let y = 0; y < g.grid.h; y++) for (let x = 0; x < g.grid.w; x++) if (Math.max(Math.abs(x - u.place.x), Math.abs(y - u.place.y)) <= d) spots.push(place(x, y));
@@ -311,6 +313,47 @@ function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
   const nr = summonRow(u, a.summon, combatantId(`${u.id}~${g.now}-${n}`), g.now, R);
   const base = rowFrom(nr, at, tick(0), 0, R), row = { ...base, at: tick(g.now + interval(base.speed, paceCost('standard', R.fight), R.fight)) };
   return logged({ ...g, rows: [...g.rows, row] }, line(`${u.name} calls ${row.name}.`, [u.id, row.id]), R);
+}
+
+/**
+ * Mid-fight corpse raising (Arise, Wave 2 PR 2): rolls Presence check + `raise.bonus` against `riseDc` using the
+ * trailing d20 in `rolls.dice[corpse.id]`. On fail, logs the miss without changing `corpse.rose` or `corpse.extraction`.
+ * On pass, evicts the oldest risen row past `maxRisen`, places the risen row on the corpse's tile if free else nearest
+ * free tile to it, and marks `corpse.rose = true`.
+ */
+function risen(f: Running, a: Ability, by: CombatantId, aim: Aim, rolls: Rolls, ctx: Ctx): Running {
+  const R = ctx.rules;
+  if (!a.raise || typeof aim !== 'string') return f;
+  const u = rowOf(f, by), corpse = rowOf(f, aim);
+  if (!u || !isUp(u) || !corpse || !canRiseFor(corpse, f.rows, a.raise)) return f;
+  const d20 = rolls.dice[corpse.id]?.[diceFor(a, u.tier, R).length - 1];
+  if (d20 === undefined) return f;
+  const dc = riseDc(u, corpse, R), bonus = riseBonus(u, a.raise, R), ok = risePassed(d20, bonus, dc);
+  const checkText = `${d20}${bonus >= 0 ? ` + ${bonus}` : ` - ${-bonus}`} vs DC ${dc}`;
+  const nextState = riseStep(riseState(corpse), { type: ok ? 'succeed' : 'fail' });
+  if (!ok || nextState !== 'risen') {
+    return logged(f, line(`${u.name}'s ${a.name} fails on ${corpse.name} (rolled ${checkText}).`, [u.id, corpse.id]), R);
+  }
+  const g = sentAway(f, crowded(f.rows, u.id, 'risen', a.raise.maxRisen), 'leaves because a newer risen took its place', ctx);
+  if (g.rows.length >= MAX_ROWS) return g;
+  const at = freeAt(g, corpse.place, null) ? corpse.place : nearestFreeTile(g, corpse.place);
+  if (!at) return g;
+  let n = 1;
+  while (rowOf(g, `${u.id}~r${g.now}-${n}`)) n++;
+  const nr = risenRow(u, corpse, combatantId(`${u.id}~r${g.now}-${n}`), R);
+  const base = rowFrom(nr, at, tick(0), 0, R), row = { ...base, at: tick(g.now + interval(base.speed, paceCost('standard', R.fight), R.fight)) };
+  const markedRows = g.rows.map(r => r.id === corpse.id && r.kind === 'monster' ? { ...r, rose: true as const } : r);
+  return logged({ ...g, rows: [...markedRows, row] }, line(`${u.name} raises ${row.name} (rolled ${checkText}).`, [u.id, corpse.id, row.id]), R);
+}
+
+/** Nearest walkable free tile to `anchor` on `f.grid` (distance, then `y`, then `x`), or null when none is free. */
+function nearestFreeTile(f: Fight, anchor: Place): Place | null {
+  const spots: Place[] = [];
+  for (let y = 0; y < f.grid.h; y++) for (let x = 0; x < f.grid.w; x++) {
+    const p = place(x, y);
+    if (freeAt(f, p, null)) spots.push(p);
+  }
+  return spots.sort((p, q) => dist(p, anchor) - dist(q, anchor) || p.y - q.y || p.x - q.x)[0] ?? null;
 }
 
 /**
@@ -422,7 +465,7 @@ function releaseWith(f: Running, cmd: Extract<Command, { type: 'release' }>, pic
   if ('ask' in r) return askDodge(f, cmd, picks, r);
   if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
   const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: off.channel, ...(turn ? {} : { at: u.at }) };
-  return landed(f, { a, u, rows: f.rows, aim: c.aim, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
+  return landed(f, { a, u, rows: f.rows, aim: c.aim, at, rolls: cmd.rolls, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
 }
 const release: Step<'running', 'release'> = (f, cmd, ctx) => releaseWith(f, cmd, {}, ctx);
 
@@ -601,8 +644,19 @@ const settleDue: Step<'running', 'settle'> = (f, cmd, ctx) => {
   }
   if (cmd.dice.length !== diceOf(atTier(p.due.op.amount, p.due.tier)).length) return refused(f, 'needsRoll');
   const row = rowOf(f, cmd.id)!;
-  const g = { ...withRow(f, payDue(row, p.due, cmd.dice, f.now, ctx.rules, giverOf(f, row.statuses, p.due.key))), pending: rest };
-  const what = row.statuses.find(s => s.key === cmd.key || entryKey(s.key) === cmd.key)?.def.label ?? cmd.key;
+  const paid = payDue(row, p.due, cmd.dice, f.now, ctx.rules, giverOf(f, row.statuses, p.due.key));
+  let g: Running = { ...withRow(f, paid), pending: rest };
+  const st = row.statuses.find(s => s.key === cmd.key || entryKey(s.key) === cmd.key);
+  const what = st?.def.label ?? cmd.key;
+  if (isUp(row) && !isUp(paid)) {
+    const srcId = p.due.sourceId ?? st?.source.id ?? null, src = srcId === null ? undefined : rowOf(g, srcId);
+    const killEvents = [
+      ...(srcId === null ? [] : [raised(srcId, 'kill', paid.id)]),
+      ...(armyKillOf(src, paid) ? [armyKillOf(src, paid)!] : []),
+      raised(paid.id, 'down', srcId),
+    ];
+    g = triggered(g, killEvents, ctx);
+  }
   return after(f, g, '', line(`${row.name}: ${what} takes effect.`, [row.id]), ctx, []);
 };
 
@@ -652,7 +706,7 @@ function landOmenWith(f: Running, cmd: Extract<Command, { type: 'act' }>, picks:
   const self = m.move.self;
   const me = self ? withStatuses(stood, applyStatus(stood.statuses, statusOn(self.def, { key: self.key, source: { id: u.id, tier: u.tier }, until: null, since: f.now, settledAt: f.now })), f.now, R) : stood;
   const at = placeOf(m.aim, f.rows)!;
-  return landed(f, { a: m.ability, u, rows: f.rows, aim: m.aim, at, r: { ...r, bodies: r.bodies.map(b => b.id === u.id ? me : b) }, taken: [], head: `${u.name} uses ${m.ability.name}`, by: u.id }, ctx);
+  return landed(f, { a: m.ability, u, rows: f.rows, aim: m.aim, at, rolls: cmd.rolls, r: { ...r, bodies: r.bodies.map(b => b.id === u.id ? me : b) }, taken: [], head: `${u.name} uses ${m.ability.name}`, by: u.id }, ctx);
 }
 const landOmen: Step<'running', 'act'> = (f, cmd, ctx) => landOmenWith(f, cmd, {}, ctx);
 

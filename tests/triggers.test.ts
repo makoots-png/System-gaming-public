@@ -24,7 +24,7 @@ import type { Limit, Trigger, Trip } from '../src/core/combat/triggers.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { LIMITS, WALK_EVENTS } from './models/trip-events.ts';
-import { rowHp } from '../src/core/combat/row-hp.ts';
+import { isUp, rowHp } from '../src/core/combat/row-hp.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 
@@ -442,5 +442,213 @@ describe('a fall under the low share and a status imposed (item-stats design 3)'
     const shield = parseStatusDef({ label: 'Lifeline', desc: '', ops: [], triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: f('0.3 * hpmax') }] }] }, RULES)!;
     expect(describeStatus(shield, 0, RULES)[0]?.startsWith(`When its bearer falls under ${Math.round(RULES.fight.kit.lowHpAt * 100)}% HP: `)).toBe(true);
     expect(describeStatus(worn('Strings', { on: 'imposed', tag: null, to: 'other', limit: { kind: 'round' }, ops: [addPain()] }), 0, RULES)[0]?.startsWith('When its bearer puts a harmful status on a foe: ')).toBe(true);
+  });
+});
+
+describe('armyKill, minionDown, and reform (Wave 2 PR 2)', () => {
+  const step = (fight: Fight, ...commands: Command[]): Fight => {
+    let cur = fight;
+    for (const cmd of commands) {
+      const r = reduce(cur, cmd, ctx);
+      const no = r.effects.find(e => e.type === 'refused');
+      if (no) throw new Error(`${cmd.type} refused: ${JSON.stringify(no)}`);
+      cur = r.fight!;
+    }
+    return cur;
+  };
+  const hiManaOrigin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: { manaMax: 100 } } };
+  const ownerRow = (name: string, statuses: Status[] = [], o: RowPatch<NewRow> = {}): NewRow =>
+    row(name, 'party', statuses, { origin: hiManaOrigin, ...o });
+  const harvest = worn('Mana Harvest', { on: 'armyKill', tag: null, to: 'self', limit: { kind: 'round' }, ops: [{ op: 'mana', amount: f('10'), when: 'use' }] });
+  const undying = (hpShare = 0.5, mana = 15, extra: LandOp[] = []): StatusDef => worn('Undying Legion', {
+    on: 'minionDown', tag: null, to: 'other', limit: { kind: 'round' }, ops: [{ op: 'reform', hpShare, mana }, ...extra],
+  });
+  const summonOf = (name: string, owner: string, opts: { hp?: number; place?: ReturnType<typeof place>; statuses?: Status[]; abilities?: Ability[] } = {}): NewRow => {
+    const statuses = opts.statuses ?? [];
+    const hpMax = modified(origin, statuses, RULES).sheet.hpMax;
+    return {
+      id: id(name), name, side: 'party', kind: 'summon', life: { at: 'up', hp: opts.hp ?? hpMax }, origin, tier: 0, place: opts.place ?? null,
+      mana: 10, fatigue: 0, shield: null, stagger: null, channel: null, threat: null, statuses, readyAt: {},
+      abilities: opts.abilities ?? [HIT, SWORD, BIG], intent: null, holder: null, xp: 0, mythic: null,
+      owner: id(owner), until: null, rose: id('corpse-x'),
+    };
+  };
+  const foeRow = (name: string, opts: { hp?: number; place?: ReturnType<typeof place>; statuses?: Status[]; abilities?: Ability[] } = {}): NewRow => {
+    const patch: RowPatch<NewRow> = {
+      kind: 'monster',
+      ...(opts.hp !== undefined ? { hp: opts.hp } : {}),
+      ...(opts.place !== undefined ? { place: opts.place } : {}),
+      ...(opts.abilities !== undefined ? { abilities: opts.abilities } : {}),
+    };
+    return row(name, 'foe', opts.statuses ?? [], patch);
+  };
+
+  test('armyKill fires on owner kills, minion kills, trigger kills, landEnd kills, diceless/diced DoT kills, and zone end kills (monsters only)', () => {
+    // 1. Owner kills monster -> mana +10
+    const ownerKill = play(...duel(ownerRow('A', [on('harvest', harvest)], { mana: 5 }), foeRow('M', { hp: 1 }), foeRow('Keep', { place: place(9, 9) })), use('A', 'M'));
+    expect(body(ownerKill, 'A').mana).toBe(15);
+
+    // 2. Minion kills monster -> owner mana +10
+    const minionKill = play(...duel(
+      ownerRow('A', [on('harvest', harvest)], { mana: 5 }),
+      summonOf('S', 'A', { place: place(0, 3) }),
+      foeRow('M', { hp: 1 }),
+      foeRow('Keep', { place: place(9, 9) }),
+    ), { type: 'endTurn', by: id('A') }, use('S', 'M'));
+    expect(body(minionKill, 'A').mana).toBe(15);
+
+    // 3. Minion trigger hit (Pack Fang style, depth 2) kills monster -> owner mana +10
+    const packFang = worn('Pack Fang', { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'true', amount: f('50'), when: 'use' }] });
+    const ping = ability('ping', '1');
+    const trigKill = play(...duel(
+      ownerRow('A', [on('harvest', harvest)], { mana: 5 }),
+      summonOf('S', 'A', { place: place(0, 3), statuses: [on('pack-fang', packFang)], abilities: [ping] }),
+      foeRow('M', { hp: 20 }),
+      foeRow('Keep', { place: place(9, 9) }),
+    ), { type: 'endTurn', by: id('A') }, use('S', 'M', ping));
+    expect(isUp(body(trigKill, 'M'))).toBe(false);
+    expect(body(trigKill, 'A').mana).toBe(15);
+
+    // 4. Delayed end (landEnd in settleRow) kills monster -> owner mana +10
+    const doom: Status = { key: statusKey('doom'), def: { label: 'Doom', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'true', amount: f('50'), when: 'use' }], cleanse: 'cancel' } }, source: { id: id('A'), tier: 0 }, until: tick(1), since: tick(0), settledAt: tick(0) };
+    const endKill = play(...duel(
+      ownerRow('A', [on('harvest', harvest)], { mana: 5 }),
+      foeRow('M', { hp: 10, statuses: [doom] }),
+      foeRow('ZKeep', { place: place(9, 9) }),
+    ), { type: 'endTurn', by: id('A') });
+    expect(isUp(body(endKill, 'M'))).toBe(false);
+    expect(body(endKill, 'A').mana).toBe(15);
+
+    // 5. Diceless DoT kills monster -> owner mana +10
+    const rot: Status = { key: statusKey('rot'), def: { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'true', amount: f('100'), when: 'turn' }] }, source: { id: id('A'), tier: 0 }, until: tick(500), since: tick(0), settledAt: tick(0) };
+    const dotKill = play(...duel(
+      ownerRow('A', [on('harvest', harvest)], { mana: 5 }),
+      foeRow('M', { hp: 10, statuses: [rot] }),
+      foeRow('ZKeep', { place: place(9, 9) }),
+    ), { type: 'endTurn', by: id('A') });
+    expect(isUp(body(dotKill, 'M'))).toBe(false);
+    expect(body(dotKill, 'A').mana).toBe(15);
+
+    // 6. Diced DoT kills monster on settle -> owner mana +10
+    const burn: Status = { key: statusKey('burn'), def: { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'true', amount: f('10d6'), when: 'turn' }] }, source: { id: id('A'), tier: 0 }, until: tick(500), since: tick(0), settledAt: tick(0) };
+    const fBurn = play(...duel(
+      ownerRow('A', [on('harvest', harvest)], { mana: 5 }),
+      foeRow('M', { hp: 10, statuses: [burn] }),
+      foeRow('ZKeep', { place: place(9, 9) }),
+    ), { type: 'endTurn', by: id('A') }, { type: 'settle', id: id('M'), key: statusKey('burn'), dice: [60] });
+    expect(isUp(body(fBurn, 'M'))).toBe(false);
+    expect(body(fBurn, 'A').mana).toBe(15);
+
+    // 7. Zone end kills monster -> owner mana +10
+    const popZone: Ability = {
+      ...ability('pop', '1'),
+      aim: 'place', delivery: { kind: 'sure' }, effect: null,
+      zone: { name: 'Ruin', duration: tick(RULES.fight.round), ops: [], endsWithOwner: false, around: null, grow: null, end: [{ op: 'damage', type: 'true', amount: f('50'), when: 'use' }] },
+      shape: { kind: 'radius', radius: tiles(1), ring: null },
+    };
+    const fZone0 = play(...duel(
+      ownerRow('A', [on('harvest', harvest)], { mana: 5, abilities: [popZone] }),
+      foeRow('M', { hp: 10, place: place(2, 2) }),
+      foeRow('ZKeep', { place: place(9, 9) }),
+    ), { type: 'act', by: id('A'), ability: popZone.id, aim: place(2, 2), rolls: { dice: {}, react: {} } });
+    // Advance past zone end
+    let fZone = fZone0;
+    for (let i = 0; i < 6 && isUp(body(fZone, 'M')); i++) fZone = step(fZone, { type: 'endTurn', by: fZone.phase === 'running' ? fZone.currentId : id('A') });
+    expect(isUp(body(fZone, 'M'))).toBe(false);
+    expect(body(fZone, 'A').mana).toBe(15);
+  });
+
+  test('minionDown + reform lifts minion before dismissed, respects mana/round/owner-up guards, and supports Capstone shield', () => {
+    const nuke = ability('nuke', '500');
+    const shieldOp: LandOp = { op: 'shield', amount: f('0.15 * target.hpmax') };
+
+    // Attack kills minion -> reforms at 50% HP, costs 15 mana, and Capstone shields for 15% of minion hpMax
+    const f0 = play(...duel(
+      ownerRow('A', [on('undying', undying(0.5, 15, [shieldOp]))], { mana: 30 }),
+      summonOf('S1', 'A', { place: place(0, 3) }),
+      summonOf('S2', 'A', { place: place(0, 4) }),
+      foeRow('M', { abilities: [nuke] }),
+    ), { type: 'endTurn', by: id('A') }, use('M', 'S1', nuke));
+    const s1 = body(f0, 'S1');
+    expect(isUp(s1)).toBe(true);
+    expect(rowHp(s1)).toBe(Math.round(0.5 * s1.sheet.hpMax));
+    expect(s1.shield?.amount).toBe(Math.round(0.15 * s1.sheet.hpMax));
+    expect(body(f0, 'A').mana).toBe(15);
+
+    // Second minion killed in the same round is NOT reformed (limit: round) and is swept by dismissed
+    const f1 = step(f0, use('M', 'S2', nuke));
+    expect(f1.rows.some(r => r.id === id('S2'))).toBe(false);
+    expect(body(f1, 'A').mana).toBe(15);
+
+    // Insufficient mana: does not reform, spends 0 mana, does not trip round limit, minion is swept
+    const fNoMana = play(...duel(
+      ownerRow('A', [on('undying', undying(0.5, 15, [shieldOp]))], { mana: 10 }),
+      summonOf('S1', 'A', { place: place(0, 3) }),
+      foeRow('M', { abilities: [nuke] }),
+    ), { type: 'endTurn', by: id('A') }, use('M', 'S1', nuke));
+    expect(fNoMana.rows.some(r => r.id === id('S1'))).toBe(false);
+    expect(body(fNoMana, 'A').mana).toBe(10);
+    expect(body(fNoMana, 'A').trips).toBeUndefined();
+
+    // Simultaneous AoE kills owner and minion: owner is down so reform does not fire
+    const aoeNuke: Ability = { ...nuke, aim: 'place', delivery: { kind: 'sure' }, shape: { kind: 'radius', radius: tiles(2), ring: null } };
+    const fSimul = play(...duel(
+      ownerRow('A', [on('undying', undying(0.5, 15))], { hp: 1, mana: 50, place: place(0, 2) }),
+      row('B', 'party', [], { place: place(8, 8) }),
+      summonOf('S1', 'A', { hp: 1, place: place(0, 3) }),
+      foeRow('M', { abilities: [aoeNuke] }),
+    ), { type: 'endTurn', by: id('A') }, { type: 'act', by: id('M'), ability: aoeNuke.id, aim: place(0, 2), rolls: { dice: {}, react: {} }, force: true });
+    expect(isUp(body(fSimul, 'A'))).toBe(false);
+    expect(fSimul.rows.some(r => r.id === id('S1'))).toBe(false);
+  });
+
+  test('minionDown + reform works across DoT, delayed end, zone entry, and trigger deaths, and nudges on tile clash', () => {
+    // 1. Diceless DoT death on minion's turn reforms before dismissed
+    const rot: Status = { key: statusKey('rot'), def: { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'true', amount: f('500'), when: 'turn' }] }, source: { id: id('M'), tier: 0 }, until: tick(500), since: tick(0), settledAt: tick(0) };
+    const fDot = play(...duel(
+      ownerRow('A', [on('undying', undying(0.5, 10))], { mana: 40 }),
+      summonOf('S1', 'A', { hp: 10, place: place(0, 3), statuses: [rot] }),
+      foeRow('M'),
+    ), { type: 'endTurn', by: id('A') }, { type: 'endTurn', by: id('M') });
+    expect(isUp(body(fDot, 'S1'))).toBe(true);
+    expect(body(fDot, 'A').mana).toBe(30);
+
+    // 2. Zone entry (when: 'use') death reforms before dismissed
+    const fireZone: Command = {
+      type: 'zoneAdd',
+      zone: { id: 'z-fire' as never, name: 'Lava', tiles: [place(1, 3)], spares: 'foe', tier: 0, duration: null, ops: [{ op: 'damage', type: 'true', amount: f('500'), when: 'use' }] },
+    };
+    const fZone = play(...duel(
+      summonOf('S1', 'A', { hp: 10, place: place(0, 3) }),
+      ownerRow('A', [on('undying', undying(0.5, 10))], { mana: 40 }),
+      foeRow('M'),
+    ), fireZone, { type: 'move', by: id('S1'), to: place(1, 3) });
+    expect(isUp(body(fZone, 'S1'))).toBe(true);
+    expect(body(fZone, 'A').mana).toBe(30);
+
+    // 3. Trigger damage (Thorns) killing minion reforms before dismissed
+    const thorns = worn('Thorns', { on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'true', amount: f('500'), when: 'use' }] });
+    const fThorns = play(...duel(
+      ownerRow('A', [on('undying', undying(0.5, 10))], { mana: 40 }),
+      summonOf('S1', 'A', { hp: 10, place: place(0, 3) }),
+      foeRow('M', { statuses: [on('thorns', thorns)] }),
+    ), { type: 'endTurn', by: id('A') }, use('S1', 'M'));
+    expect(isUp(body(fThorns, 'S1'))).toBe(true);
+    expect(body(fThorns, 'A').mana).toBe(30);
+
+    // 4. Shove onto dying minion's tile in the same AoE use -> reformed minion nudges to a free tile
+    const slam: Ability = {
+      ...ability('slam', '100'),
+      aim: 'place', delivery: { kind: 'sure' }, shape: { kind: 'radius', radius: tiles(2), ring: null },
+      ops: [{ op: 'shove', dir: 'toward', from: 'aim', tiles: 1 }],
+    };
+    const fClash = play(...duel(
+      ownerRow('A', [on('undying', undying(0.5, 10))], { mana: 40, place: place(0, 0) }),
+      row('B', 'party', [], { place: place(4, 3) }),
+      summonOf('S1', 'A', { hp: 1, place: place(3, 3) }),
+      foeRow('M', { place: place(1, 3), abilities: [slam] }),
+    ), { type: 'act', by: id('M'), ability: slam.id, aim: place(3, 3), rolls: { dice: {}, react: {} }, force: true });
+    expect(isUp(body(fClash, 'S1'))).toBe(true);
+    expect(body(fClash, 'S1').place).not.toEqual(body(fClash, 'B').place);
   });
 });

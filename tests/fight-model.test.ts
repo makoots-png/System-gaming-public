@@ -226,9 +226,12 @@ function kitsWrong(before: Fight | null, cmd: Command, after: Fight, effects: re
   for (const r of after.rows) {
     if (r.hurtFrom !== undefined) return `${r.id} ends ${cmd.type} holding damage from ${r.hurtFrom} HP no trigger read`;
     for (const s of r.statuses) if (stacked(s) && (s.stacks < 1 || s.stacks > s.def.stack.cap)) return `${r.id} holds ${s.stacks} of ${s.key}, cap ${s.def.stack.cap}`;
-    const summons = after.rows.filter(x => x.kind === 'summon' && x.owner === r.id);
-    if (summons.length > K.summons) return `${r.id} holds ${summons.length} summons`;
-    if (summons.some(x => x.side !== r.side || x.until === undefined || x.until - ('now' in after ? after.now : 0) > K.summonRounds * RULES.fight.round)) return `${r.id} holds a summon off its side or past its rounds`;
+    const summons = after.rows.flatMap(x => (x.kind === 'summon' && x.owner === r.id ? [x] : []));
+    const timed = summons.filter(x => x.rose === undefined);
+    const risen = summons.filter(x => x.rose !== undefined);
+    if (timed.length > K.summons) return `${r.id} holds ${timed.length} timed summons`;
+    if (timed.some(x => x.side !== r.side || x.until === null || x.until - ('now' in after ? after.now : 0) > K.summonRounds * RULES.fight.round)) return `${r.id} holds a summon off its side or past its rounds`;
+    if (risen.some(x => x.side !== r.side || x.until !== null)) return `${r.id} holds a risen summon off its side or with an end time`;
     const zones = after.zones.filter(z => z.owner === r.id && !(z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.status !== null));
     if (zones.length > K.zonesPerOwner) return `${r.id} holds ${zones.length} zones`;
     for (const a of r.abilities) for (const g of usesGates(a)) if ((r.used?.[a.id] ?? 0) > K.fightUses || (g.per === 'fight' && (r.used?.[a.id] ?? 0) > g.n)) return `${r.id} spent ${r.used?.[a.id]} of ${a.id}, ${g.n} a ${g.per}`;

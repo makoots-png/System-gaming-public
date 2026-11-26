@@ -753,6 +753,8 @@ const SPEC = {
         statusGained: of(1, EVENT_RATE), statusEnded: of(1, EVENT_RATE), used: of(1, EVENT_RATE),
         lowHp: of(0.17, EVENT_RATE), // once a fight, as `down`
         imposed: of(1, EVENT_RATE), // `statusGained`'s, of which it is the user's side: a curse build puts a status on every action
+        armyKill: of(0.5, EVENT_RATE), // owner or a minion kills a monster
+        minionDown: of(0.35, EVENT_RATE), // a minion owned by the bearer drops to 0 HP
       },
       // The conditional scalers that replace the execute (design 8.0): the owner, Nov 14, "execute just does more dmg the lower
       // health people are". A scaler's bonus is 0 at its start and its scale at its end, linear between.

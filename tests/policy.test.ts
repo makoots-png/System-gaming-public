@@ -17,8 +17,11 @@ import { autoMonsterTurn, sensible } from '../src/core/combat/policy.ts';
 import { openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
 import type { Place, Terrain } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
+import { cost } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
-import { statusOn } from '../src/core/combat/effect-ops.ts';
+import type { Ability } from '../src/core/combat/ability-types.ts';
+import { parseFormula } from '../src/core/formula.ts';
+import { statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, StatusKey } from '../src/core/combat/effect-ops.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -358,5 +361,91 @@ describe('autoMonsterTurn builds a legal command and its dice needs for a monste
     expect(free.plan.kind).toBe('roll');
     expect(free.cmd.type === 'act' && free.cmd.aim).toBe(C);
     expect(free.result.effects.some(e => e.type === 'refused')).toBe(false);
+  });
+});
+
+describe('policy Wave 2 PR 2 updates (timed summon lane, corpse aim, and kitOf/spent in damageOf)', () => {
+  const H = combatantId('H'), M = combatantId('M');
+  const brute = (id = M, at = place(5, 5), kind: 'normal' | 'elite' = 'normal'): Extract<NewRow, { kind: 'monster' }> => ({
+    ...(monsterRows(statBlock(ON, 'C', { name: 'Goblin', archetype: 'brute', kind }), [id], ON)[0]! as Extract<NewRow, { kind: 'monster' }>),
+    place: at,
+  });
+
+  test('calls up to kit.summons timed summons even when 1 timed summon or a risen row is up, and stops at kit.summons', () => {
+    const call: Ability = {
+      ...abilityOf('support', { id: abilityId('call-pack'), name: 'Call the Pack', range: tiles(0), shape: { kind: 'self' } }, ON),
+      cost: { fatigue: 2, mana: 4, time: cost(ON.fight.cost.standard), cooldown: tick(0) },
+      aim: 'self', delivery: { kind: 'sure' }, effect: null, ops: [],
+      summon: { name: 'Spirit Hound', archetype: 'brute', rounds: 5, statuses: [] },
+    };
+    const h = { ...party('support', 'H', place(2, 2)), abilities: [call, ...party('support', 'H', place(2, 2)).abilities] };
+    const b0 = brute(combatantId('R1'), place(2, 3));
+    const risen: NewRow = {
+      id: b0.id, name: b0.name, side: 'party', kind: 'summon', origin: b0.origin, tier: b0.tier, place: b0.place,
+      life: b0.life, mana: b0.mana, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+      statuses: [], readyAt: {}, abilities: b0.abilities, intent: null, holder: null, xp: 0, mythic: null,
+      owner: H, until: null, rose: combatantId('dead-0'),
+    };
+    const f0 = begun('H', h, risen, brute(M, place(10, 10)));
+    // With 1 risen row and 0 timed summons -> calls first hound
+    const c1 = sensible(f0, body(f0, 'H'), ON);
+    expect(c1.type === 'act' && c1.ability.id).toBe(call.id);
+    const f1 = sent(f0, { type: 'act', by: H, ability: call.id, aim: H, rolls: { dice: {}, react: {} } });
+    // Advance back to H's turn -> 1 timed summon < kit.summons (2) -> calls second hound
+    let f2 = f1;
+    while (f2.currentId !== H) f2 = sent(f2, { type: 'endTurn', by: f2.currentId });
+    const c2 = sensible(f2, body(f2, 'H'), ON);
+    expect(c2.type === 'act' && c2.ability.id).toBe(call.id);
+    const f3 = sent(f2, { type: 'act', by: H, ability: call.id, aim: H, rolls: { dice: {}, react: {} } });
+    // Advance back to H's turn -> 2 timed summons === kit.summons -> stops calling
+    let f4 = f3;
+    while (f4.currentId !== H) f4 = sent(f4, { type: 'endTurn', by: f4.currentId });
+    const c3 = sensible(f4, body(f4, 'H'), ON);
+    expect(c3.type === 'act' && c3.ability.id === call.id).toBe(false);
+  });
+
+  test('aims Arise at an eligible corpse by id (elites first) while under maxRisen and stops at maxRisen', () => {
+    const arise: Ability = {
+      id: abilityId('arise'), name: 'Arise', kind: 'support',
+      cost: { fatigue: 4, mana: 10, time: cost(ON.fight.cost.standard), cooldown: tick(0) },
+      aim: 'corpse', range: tiles(6), shape: { kind: 'touch', reach: tiles(6) },
+      delivery: { kind: 'sure' }, foesOnly: false, effect: null, ops: [], channel: null,
+      raise: { bonus: 4, maxRisen: 1, elitePerFight: 1 },
+    };
+    const h = { ...party('support', 'H', place(2, 2)), abilities: [arise, ...party('support', 'H', place(2, 2)).abilities] };
+    const norm: NewRow = { ...brute(combatantId('C1'), place(3, 2), 'normal'), life: { at: 'dead' } };
+    const elite: NewRow = { ...brute(combatantId('C2'), place(5, 2), 'elite'), life: { at: 'dead' } };
+    const f0 = begun('H', h, norm, elite, brute(M, place(10, 10)));
+    // Picks elite corpse C2 ahead of closer normal corpse C1
+    const c1 = sensible(f0, body(f0, 'H'), ON);
+    expect(c1.type === 'act' && [c1.ability.id, c1.aim]).toEqual([arise.id, combatantId('C2')]);
+
+    // Raise C2 -> at maxRisen (1), sensible no longer picks Arise on C1
+    const f1 = sent(f0, { type: 'act', by: H, ability: arise.id, aim: combatantId('C2'), rolls: { dice: { [combatantId('C2')]: [20] }, react: {} } });
+    let f2 = f1;
+    while (f2.currentId !== H) f2 = sent(f2, { type: 'endTurn', by: f2.currentId });
+    const c2 = sensible(f2, body(f2, 'H'), ON);
+    expect(c2.type === 'act' && c2.ability.id === arise.id).toBe(false);
+  });
+
+  test('damageOf reads kitOf and spent stacks so an execute finisher beats a plain strike on a wounded marked target', () => {
+    const markDef = { label: 'Mark', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'never' as const }, keep: 'fight' as const, threshold: null } };
+    const pf = (src: string) => { const r = parseFormula(src, ON); if (!r.ok) throw new Error(r.error); return r.formula; };
+    const plain: Ability = {
+      ...abilityOf('strike', { id: abilityId('reap'), name: 'Reap', range: tiles(1) }, ON),
+      effect: { type: 'physical', by: 'hand', formula: pf('10') },
+    };
+    const finisher: Ability = {
+      ...abilityOf('strike', { id: abilityId('guillotine'), name: 'Guillotine', range: tiles(1) }, ON),
+      effect: { type: 'true', by: 'hand', formula: pf('(5 + 10 * spent) * (1 + target.missing)') },
+      gates: [{ kind: 'holds', key: statusKey('mark'), on: 'target', atLeast: 1 }],
+      prices: [{ kind: 'stacks', key: statusKey('mark'), from: 'target', take: { kind: 'all' } }],
+    };
+    const h: NewRow = { ...party('bruiser', 'H', place(5, 4)), abilities: [plain, finisher] };
+    const marked = statusOn(markDef, { key: statusKey('mark'), source: { id: H, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) }, 3);
+    const foe: NewRow = atHp({ ...brute(M, place(5, 5)), statuses: [marked] }, 10);
+    const f = begun('H', h, foe);
+    const choice = sensible(f, body(f, 'H'), ON);
+    expect(choice.type === 'act' && choice.ability.id).toBe(finisher.id);
   });
 });

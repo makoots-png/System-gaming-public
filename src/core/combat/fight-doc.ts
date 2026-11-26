@@ -41,6 +41,7 @@ import { dodgeAsk } from './fight.ts';
 import type { DodgeAsked } from './resolve.ts';
 import { MYTHIC_STATES } from './mythic.ts';
 import type { MythicStanding } from './mythic-types.ts';
+import { canRiseInFight } from './rise.ts';
 
 // ── bounds (the doc's reader uses the same numbers) ──
 /**
@@ -173,6 +174,8 @@ export type FightDocRow = DocRowBase & (
     readonly suggest: CombatantId | null;
     /** The standing of a mythic's row in its script (`DocStanding`); absent on a row that plays no script (and on the wire). */
     readonly standing?: DocStanding;
+    /** Set when this dead monster corpse is currently eligible for Arise (`canRiseInFight`). */
+    readonly canRise?: true;
   }
   | (DocBody & { readonly kind: 'hunter'; readonly life: { readonly at: LifeState } })
   | (DocBody & { readonly kind: 'shadow'; readonly life: { readonly at: FoeLifeState } })
@@ -303,7 +306,7 @@ export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | n
   const zones = docZones(f, lit, ids, now, R), shownZones = new Set(zones.map(z => z.id as string));
   const hiddenRows = new Set(f.rows.filter(b => !ids.has(b.id)).map(b => b.id)), hiddenZones = new Set(f.zones.filter(z => !shownZones.has(z.id)).map(z => z.id));
   const currentId = f.phase === 'running' && ids.has(f.currentId) ? f.currentId : null;
-  const carried = shown(seen, currentId), scripted = new Set(carried.filter(b => b.mythic).slice(0, DOC_MYTHICS).map(b => b.id));
+  const carried = shown(seen, currentId, f.rows), scripted = new Set(carried.filter(b => b.mythic).slice(0, DOC_MYTHICS).map(b => b.id));
   const ask = f.phase === 'running' && f.dodge ? dodgeAsk(f, R) : null;
   // Earlier hunters who already picked in this same use render at their chosen tile for party clarity (all party rows are perceived).
   const moved = f.phase === 'running' && f.dodge ? f.dodge.to : null;
@@ -448,13 +451,14 @@ function readyOf(b: Body | undefined, now: Tick): Record<string, Tick> {
   return out;
 }
 
+const SHOWN_RANK = { current: 0, alive: 1, rise: 2, spent: 3 } as const;
 /**
  * The rows the doc carries, in the fight's order: all of them up to `DOC_ROWS`; past it the current row first, then those
- * on the map, then those gone from it (a monster or shadow down).
+ * on the map, then dead corpses eligible for Arise (`canRiseInFight`), then spent corpses and down shadows.
  */
-function shown(rows: readonly Body[], currentId: CombatantId | null): readonly Body[] {
+function shown(rows: readonly Body[], currentId: CombatantId | null, allRows: readonly Body[]): readonly Body[] {
   if (rows.length <= DOC_ROWS) return rows;
-  const rank = (b: Body): number => b.id === currentId ? 0 : alive(b) ? 1 : 2;
+  const rank = (b: Body): number => b.id === currentId ? SHOWN_RANK.current : alive(b) ? SHOWN_RANK.alive : canRiseInFight(b, allRows) ? SHOWN_RANK.rise : SHOWN_RANK.spent;
   const keep = new Set([...rows].sort((a, b) => rank(a) - rank(b)).slice(0, DOC_ROWS).map(b => b.id));
   return rows.filter(b => keep.has(b.id));
 }
@@ -485,14 +489,18 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext, shownIds:
   const body: DocBody = { hp: rowHp(b), hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
   if (b.kind === 'hunter') return { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
   const life = { at: b.life.at };
-  if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner, left: Math.max(0, roundsOf(b.until - now, R, 'up')) };
+  if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner, left: b.until === null ? null : Math.max(0, roundsOf(b.until - now, R, 'up')) };
   if (b.kind === 'shadow') return { ...base, ...body, kind: 'shadow', life };
   const i = intentOf(b, R);
   const intent = i && {
     name: i.name, target: aimOf(i.target),
     reveal: i.revealed ? { lines: i.lines.map(l => l.slice(0, INTENT_LINE_MAX)).slice(0, DOC_INTENT_LINES), radius: i.area?.radius ?? null, outer: i.area?.outer ?? null } : null,
   };
-  return { ...base, kind: 'monster', life, intent, stagger: k.stagger, suggest: k.threat?.suggest ?? null, ...(b.mythic && scripted.has(b.id) ? { standing: docStanding(b.mythic, b.sheet.hpMax, shownIds) } : {}) };
+  return {
+    ...base, kind: 'monster', life, intent, stagger: k.stagger, suggest: k.threat?.suggest ?? null,
+    ...(b.mythic && scripted.has(b.id) ? { standing: docStanding(b.mythic, b.sheet.hpMax, shownIds) } : {}),
+    ...(canRiseInFight(b, f.rows) ? { canRise: true as const } : {}),
+  };
 }
 /** A mythic's standing for the party: an omen's aim on a row the doc does not carry is left out, and its HP at the announce is a band. */
 function docStanding(s: MythicStanding, hpMax: number, shownIds: ReadonlySet<string>): DocStanding {
@@ -648,6 +656,7 @@ function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string
     return {
       ...base, ...unlessNull('u', r.suggest),
       ...(r.standing ? { my: standingWire(r.standing) } : {}),
+      ...(r.canRise ? { cr: 1 } : {}),
       ...(g ? { g: { f: g.fill, m: g.max, ...unlessNull('s', g.staggered) } } : {}),
       ...(i ? { in: { n: i.name, t: typeof i.target === 'string' ? i.target : [i.target.x, i.target.y], ...(v ? { r: { l: v.lines, ...unlessNull('r', v.radius), ...unlessNull('o', v.outer) } } : {}) } } : {}),
     };

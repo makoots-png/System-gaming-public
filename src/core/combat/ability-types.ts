@@ -60,7 +60,7 @@ export type Ability = {
   readonly name: string;
   readonly kind: AbilityKind;
   readonly cost: AbilityCost;
-  readonly aim: 'foe' | 'ally' | 'self' | 'place';
+  readonly aim: 'foe' | 'ally' | 'self' | 'place' | 'corpse';
   readonly range: Tiles;
   readonly shape: Shape;
   readonly delivery: Delivery;
@@ -79,6 +79,8 @@ export type Ability = {
   readonly gates?: readonly AbilityGate[];
   /** A body it calls to its user's side for a few rounds (kits design 1.9); absent when it calls none. */
   readonly summon?: Summon;
+  /** Mid-fight corpse raise (`Arise`, rise.ts): raises a fallen normal or elite monster until the fight ends; absent when none. */
+  readonly raise?: RiseSpec;
   /** How it moves its user (kits design 8.3): a blink to a tile it aims at, or a swap with the body it aims at; absent, none. */
   readonly move?: AbilityMove;
   /** It is a reaction (kits design 8.4): armed ahead, it fires by rule at its moment; absent, it is used on a turn. */
@@ -96,8 +98,8 @@ export type Ability = {
    */
   readonly maxTier?: number;
 };
-/** A blink to a free tile the user sees within the ability's range (at most `kit.blinkMax`), or a swap of places with the body aimed at (restricted to shadows when `only: 'shadow'`). */
-export type AbilityMove = { readonly kind: 'blink' } | { readonly kind: 'swap'; readonly only?: 'shadow' };
+/** A blink to a free tile the user sees within the ability's range (at most `kit.blinkMax`), or a swap of places with the body aimed at (restricted to shadows when `only: 'shadow'`, or owned minions when `only: 'minion'`). */
+export type AbilityMove = { readonly kind: 'blink' } | { readonly kind: 'swap'; readonly only?: 'shadow' | 'minion' };
 /**
  * When an armed reaction fires (kits design 8.4): a foe's use is about to land on the reactor or an ally within `reach`
  * (`before`, rule 7c), a hit is about to take one of them to 0 (`lethal`, rule 13b), a foe's use landed on one of them
@@ -139,6 +141,12 @@ export type Summon = {
   readonly archetype: Archetype;
   readonly rounds: number;
   readonly statuses: readonly { readonly key: StatusKey; readonly rounds: number }[];
+};
+/** Mid-fight corpse raise (`Arise`, rise.ts): Presence check bonus vs `extractDc`, concurrent risen cap, and elites risen per fight. */
+export type RiseSpec = {
+  readonly bonus: number;
+  readonly maxRisen: number;
+  readonly elitePerFight: number;
 };
 
 /** Where a target ended against a use: in its shape, in its ring, out of it, or, with no travel, resisted by Will. */

@@ -17,9 +17,13 @@ export type FoeLifeState = (typeof FOE_LIFE_STATES)[number];
 /** A monster's, shadow's or summon's life: up with its HP (at least 1), or dead, which is defeated. */
 export type FoeLife = { readonly at: 'up'; readonly hp: number } | { readonly at: 'dead' };
 
-type FoeStep<T extends LifeEventType> = (life: FoeLife, event: Extract<LifeEvent, { type: T }>, hpMax: number, floor: number) => FoeLife;
+/** What can change a foe's (monster, shadow or summon) life: any hunter life event, or a mid-fight minion `reform`. */
+export type FoeLifeEvent = LifeEvent | { readonly type: 'reform'; readonly hp: number };
+export type FoeLifeEventType = FoeLifeEvent['type'];
+
+type FoeStep<T extends FoeLifeEventType> = (life: FoeLife, event: Extract<FoeLifeEvent, { type: T }>, hpMax: number, floor: number) => FoeLife;
 /** For one state: what each event does there. `null` means the event does not apply, and the life stays as it is. */
-type FoeRow = { readonly [T in LifeEventType]: FoeStep<T> | null };
+type FoeRow = { readonly [T in FoeLifeEventType]: FoeStep<T> | null };
 
 /** A whole number of at least 1, or null for anything else. */
 const amountOf = (n: number): number | null => (Number.isFinite(n) && Math.trunc(n) >= 1 ? Math.trunc(n) : null);
@@ -36,25 +40,27 @@ const damage: FoeStep<'damage'> = (life, e, max, floor) => { const n = amountOf(
 const heal: FoeStep<'heal'> = (life, e, max) => { const n = amountOf(e.amount); return n === null ? life : foeAt(hpIn(life) + n, max); };
 const setHp: FoeStep<'setHp'> = (life, e, max, floor) => (Number.isFinite(e.hp) ? foeAt(heldAt(life, Math.trunc(e.hp), floor), max) : life);
 const revive: FoeStep<'revive'> = () => ({ at: 'up', hp: REVIVE_HP });
+const reform: FoeStep<'reform'> = (_life, e, max) => { const n = amountOf(e.hp); return n === null ? { at: 'up', hp: REVIVE_HP } : foeAt(n, max); };
 const maxChanged: FoeStep<'maxChanged'> = (life, _e, max) => (life.at === 'up' && life.hp > max ? foeAt(max, max) : life);
 
 /**
  * A foe's life, the small table beside the hunter's: up takes damage, a heal, the GM's set and a lower maximum, and goes
- * dead at 0 HP; dead takes only `revive` (the GM's Revive), back up at `REVIVE_HP`. Damage and the GM's set stop at the
- * floor; a heal, a revive and a lower maximum do not read it.
+ * dead at 0 HP; dead takes `revive` (the GM's Revive, back up at `REVIVE_HP`) or `reform` (a minion reformed by its
+ * owner's trigger, back up at the reformed HP). Damage and the GM's set stop at the floor; a heal, a revive, a reform
+ * and a lower maximum do not read it.
  */
 const FOE_TABLE: { readonly [S in FoeLifeState]: FoeRow } = {
-  up: { damage, heal, setHp, revive: null, maxChanged },
-  dead: { damage: null, heal: null, setHp: null, revive, maxChanged: null },
+  up: { damage, heal, setHp, revive: null, reform: null, maxChanged },
+  dead: { damage: null, heal: null, setHp: null, revive, reform, maxChanged: null },
 };
 
 /**
  * The foe life after `event`, at `hpMax` maximum HP, never pushed under `floor` (a mythic's gate, mythic.ts `gateOf`; 0
  * for every other row). The same life when the event does not apply.
  */
-export function foeLifeAfter(life: FoeLife, event: LifeEvent, hpMax: number, floor: number): FoeLife {
+export function foeLifeAfter(life: FoeLife, event: FoeLifeEvent, hpMax: number, floor: number): FoeLife {
   // The table's type pairs each key with the step for that event, so the step for `event.type` takes `event`.
-  const step = FOE_TABLE[life.at][event.type] as FoeStep<LifeEventType> | null;
+  const step = FOE_TABLE[life.at][event.type] as FoeStep<FoeLifeEventType> | null;
   return step ? step(life, event as never, hpMax, floor) : life;
 }
 /** Whether `type` applies to a foe in this state. */
@@ -100,8 +106,13 @@ export function sameLife(a: Life | FoeLife, b: Life | FoeLife): boolean {
  * A mythic's damage and the GM's set stop at its gate (`gateOf`, the HP its phase holds; 0 in its last phase and on every
  * other row). A row at its gate takes no damage, so what follows from the HP lost (lifesteal) gets nothing.
  */
-export function rowLifeAfter<T extends Body>(b: T, event: LifeEvent): T {
+export function rowLifeAfter<T extends Body>(b: T, event: FoeLifeEvent): T {
   const row: Body = b, max = row.sheet.hpMax;
+  if (event.type === 'reform') {
+    if (row.kind === 'hunter') return b;
+    const life = foeLifeAfter(row.life, event, max, gateOf(row));
+    return sameLife(row.life, life) ? b : { ...b, life };
+  }
   const life = row.kind === 'hunter' ? lifeAfter(row.life, event, max) : foeLifeAfter(row.life, event, max, gateOf(row));
   if (sameLife(row.life, life)) return b;
   return event.type === 'damage' ? { ...b, life, hurtFrom: row.hurtFrom ?? rowHp(row) } : { ...b, life };

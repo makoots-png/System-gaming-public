@@ -8,6 +8,7 @@
 // that slows, lava and an aura are zones; terrain (space.ts) is what a tile is, a zone what the ground does.
 import type { Tick } from './timeline.ts';
 import { isUp } from './row-hp.ts';
+import { isMinionOf } from './summons.ts';
 import { amountOp, perRound, statusKey, statusOn, withStatuses } from './effect-ops.ts';
 import type { AuraOn, Body, Due, LandOp, Op, OpRules, Status, StatusKey } from './effect-ops.ts';
 import type { Trigger } from './triggers.ts';
@@ -59,6 +60,8 @@ export type Zone = {
   readonly ground: Ground;
   readonly owner: CombatantId | null;
   readonly spares: Side | null;
+  /** When true, only minions owned by `owner` stand in this zone (`aura` with `on: 'minions'`). */
+  readonly minionsOnly?: true;
   readonly tier: number;
   readonly until: Tick | null;
   readonly endsWithOwner: boolean;
@@ -123,11 +126,13 @@ const holdKey = (z: ZoneId, at: Tick): StatusKey => statusKey(`zone-${z}@${at}`)
 /** The key an entry's own payment goes by (its `settle`), apart from the hold's per-round payments, which pay by time. */
 export const entryKey = (hold: StatusKey): StatusKey => statusKey(`${hold}-in`);
 /**
- * Whether `b` stands in `z`, laid on `at` (`zoneTiles`): on one of its tiles, of a side it does not spare, and not the
- * bearer of the status the aura comes from.
+ * Whether `b` stands in `z`, laid on `at` (`zoneTiles`): on one of its tiles, of a side it does not spare, owned by
+ * `z.owner` when `z.minionsOnly` is set, and not the bearer of the status the aura comes from.
  */
-export const standsIn = (z: Zone, at: readonly Place[], b: Pick<Body, 'id' | 'place' | 'side'>): boolean =>
-  z.spares !== b.side && !(z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.status !== null && z.ground.anchor.id === b.id)
+export const standsIn = (z: Zone, at: readonly Place[], b: Pick<Body, 'id' | 'place' | 'side'> & { readonly owner?: CombatantId | null }): boolean =>
+  z.spares !== b.side
+  && !(z.minionsOnly && (z.owner === null || !isMinionOf(b, z.owner)))
+  && !(z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.status !== null && z.ground.anchor.id === b.id)
   && at.some(p => p.x === b.place.x && p.y === b.place.y);
 /** The hold a body takes as it enters `z` at `now`: the zone's ops as a status from its owner at its tier, open while inside. */
 const hold = (z: Zone, now: Tick): Status => ({
@@ -147,8 +152,8 @@ function closed(s: Status, at: Tick): Status | null {
 /** What `zoneSync` gives back: the rows with their holds, the zones still on the ground, and what each entry pays at once. */
 export type Synced = { readonly rows: Body[]; readonly zones: Zone[]; readonly entries: { readonly id: CombatantId; readonly due: Due }[] };
 
-/** The side a status's aura spares: none, the bearer's other side (it helps allies), or the bearer's own (it hits foes). */
-const sparedBy = (on: AuraOn, side: Side): Side | null => on === 'all' ? null : on === 'allies' ? (side === 'party' ? 'foe' : 'party') : side;
+/** The side a status's aura spares: none, the bearer's other side (it helps allies or its minions), or the bearer's own (it hits foes). */
+const sparedBy = (on: AuraOn, side: Side): Side | null => on === 'all' ? null : on === 'allies' || on === 'minions' ? (side === 'party' ? 'foe' : 'party') : side;
 /** The first zone id `<prefix><now>-<n>` that no zone in `zones` has. */
 export function freeZoneId(prefix: string, now: Tick, zones: readonly Zone[]): ZoneId {
   let n = 1;
@@ -176,14 +181,15 @@ function withAuras(rows: readonly Body[], zones: readonly Zone[], now: Tick, R: 
       const op = s.zone === undefined && liveAt(s, now) ? s.def.ops.find(o => o.op === 'aura') : undefined;
       if (op?.op !== 'aura') continue;
       const radius = tiles(Math.min(op.radius, R.fight.fieldRadiusMax)), spares = sparedBy(op.on, b.side);
+      const minionsOnly = op.on === 'minions', owner = minionsOnly ? (s.source.id ?? b.id) : s.source.id;
       const at = out.findIndex(z => z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.id === b.id && z.ground.anchor.status === s.key);
       const was = out[at], ops = was && sameOps(was.ops, auraOps(s.def.ops)) ? was.ops : auraOps(s.def.ops);
-      if (was && was.ground.kind === 'around' && was.name === s.def.label && was.owner === s.source.id && was.tier === s.source.tier && was.spares === spares
-        && was.ground.radius === radius && was.ops === ops) continue;
+      if (was && was.ground.kind === 'around' && was.name === s.def.label && was.owner === owner && was.tier === s.source.tier && was.spares === spares
+        && !!was.minionsOnly === minionsOnly && was.ground.radius === radius && was.ops === ops) continue;
       if (!was && out.length >= MAX_ZONES) continue;
       const zone: Zone = {
         id: was?.id ?? freeZoneId('a', now, out), name: s.def.label, ground: { kind: 'around', anchor: { kind: 'body', id: b.id, status: s.key }, radius, grow: null },
-        owner: s.source.id, spares, tier: s.source.tier, until: null, endsWithOwner: false, ops,
+        owner, spares, ...(minionsOnly ? { minionsOnly: true as const } : {}), tier: s.source.tier, until: null, endsWithOwner: false, ops,
       };
       if (was) out[at] = zone; else out.push(zone);
     }
@@ -240,7 +246,7 @@ export function zoneSync(rows: readonly Body[], zones: readonly Zone[], grid: Gr
       // left and entered again at the same moment: the hold goes on as it was, with nothing between to pay
       if (at >= 0) list[at] = { ...h, since: list[at]!.since, settledAt: list[at]!.settledAt }; else list.push(h);
       // a forced entry (a push, a pull, a zone moved onto a body) pays no on-entry part: an entry is a body's own step (kits 8.3.4, 8.5.5)
-      if (!forced.has(b.id)) for (const op of z.ops) if (amountOp(op) && op.when === 'use') entries.push({ id: b.id, due: { key: entryKey(h.key), op, tier: z.tier, before: 0, share: 1, stacks: 1 } });
+      if (!forced.has(b.id)) for (const op of z.ops) if (amountOp(op) && op.when === 'use') entries.push({ id: b.id, due: { key: entryKey(h.key), op, tier: z.tier, before: 0, share: 1, stacks: 1, ...(z.owner === null ? {} : { sourceId: z.owner }) } });
     }
     return changed ? withStatuses(b, list, now, R) : b;
   });

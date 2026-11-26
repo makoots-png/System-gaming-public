@@ -15,6 +15,7 @@ import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
 import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
 import { SERAPH_SIGNATURE } from './class-seraph.ts';
 import { STORMCALLER_SIGNATURE } from './class-stormcaller.ts';
+import { GRIMREAPER_SIGNATURE } from './class-grimreaper.ts';
 import { BRAMBLEGUARD_SIGNATURE } from './class-brambleguard.ts';
 import { PYROMANCER_SIGNATURE } from './class-pyromancer.ts';
 import { SNIPER_SIGNATURE } from './class-sniper.ts';
@@ -58,6 +59,7 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Seraph: SERAPH_SIGNATURE,
   Ironclad: IRONCLAD_SIGNATURE,
   Stormcaller: STORMCALLER_SIGNATURE,
+  Grimreaper: GRIMREAPER_SIGNATURE,
   Brambleguard: BRAMBLEGUARD_SIGNATURE,
   Pyromancer: PYROMANCER_SIGNATURE,
   Sniper: SNIPER_SIGNATURE,

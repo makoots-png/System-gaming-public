@@ -22,10 +22,10 @@ import type { Tick } from './timeline.ts';
 import { DAMAGE_TYPES } from './damage-type.ts';
 import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-types.ts';
 import { fightId, parseSaveId, parseSheetKey } from '../ids.ts';
-import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
+import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RiseSpec, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
-import { amountOp, AURA_ON, HIDE_STARTS, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
+import { amountOp, AURA_ON, HIDE_STARTS, REACH_ON, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isFormulaKey, isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import { sheetOpCap } from './standing.ts';
 import type { HeldDieId } from './standing.ts';
@@ -136,12 +136,13 @@ export function parseZone(v: unknown, grid: Grid, R: Rules): Zone | null {
   const spares = v.spares === null ? null : oneOf(v.spares, SIDES, undefined), tier = whole(v.tier, 0, 5);
   const until = v.until === null ? null : tickOf(v.until), ends = bool(v.endsWithOwner), ops = all(v.ops, 12, x => opOf(x, R, 0));
   const kit = zoneKitOf(v, R);
+  const minionsOnly = v.minionsOnly === undefined ? undefined : v.minionsOnly === true ? true as const : null;
   if (!id || !name || !ground || (v.owner !== null && owner === null) || spares === undefined || tier === null
-    || (v.until !== null && until === null) || ends === null || !ops || !kit) return null;
+    || (v.until !== null && until === null) || ends === null || !ops || !kit || minionsOnly === null) return null;
   const laid = v.laid === undefined ? undefined : tickOf(v.laid), paid = v.paid === undefined ? undefined : tickOf(v.paid);
   if (laid === null || paid === null) return null;
   return {
-    id: zoneId(id), name, ground, owner: owner === null ? null : combatantId(owner), spares, tier, until, endsWithOwner: ends, ops, ...kit,
+    id: zoneId(id), name, ground, owner: owner === null ? null : combatantId(owner), spares, ...(minionsOnly ? { minionsOnly } : {}), tier, until, endsWithOwner: ends, ops, ...kit,
     ...(laid === undefined ? {} : { laid }), ...(paid === undefined ? {} : { paid }),
   };
 }
@@ -382,17 +383,22 @@ function defOf(v: unknown, R: Rules, depth: number, key?: string): StatusDef | n
 const LEAVES = ['never', 'round', 'event'] as const;
 const KEEPS = ['fight', 'sheet'] as const;
 const THENS = ['spend', 'keep'] as const;
+const REFORM_SHARE_MIN = 0.01;
 /** Where a threshold, a trigger or an end lands: the bearer, or an area of 1 to `fieldRadiusMax` tiles reaching a side. */
 function reachOf(v: unknown, R: Rules): Reach | null {
   if (!isObj(v)) return null;
   if (v.kind === 'bearer') return { kind: 'bearer' };
-  const on = oneOf(v.on, AURA_ON, null), radius = tiles(clamped(v.radius, 1, R.fight.fieldRadiusMax));
+  const on = oneOf(v.on, REACH_ON, null), radius = tiles(clamped(v.radius, 1, R.fight.fieldRadiusMax));
   if (v.kind === 'most') return on && v.of === 'hp' ? { kind: 'most', of: 'hp', radius, on } : null;
   return v.kind === 'area' && on ? { kind: 'area', radius, on } : null;
 }
-/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone (a reveal and a stagger among them), a hit or a heal, an echo, or time back (`refund`, 1 to 100%). */
+/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone (a reveal and a stagger among them), a hit or a heal, an echo, time back (`refund`, 1 to 100%), or reforming a fallen minion (`reform`). */
 function landOpOf(v: unknown, R: Rules, depth: number): LandOp | null {
   if (isObj(v) && v.op === 'refund') { const pct = num(v.pct, 1, 100); return pct === null ? null : { op: 'refund', pct }; }
+  if (isObj(v) && v.op === 'reform') {
+    const hpShare = num(v.hpShare, REFORM_SHARE_MIN, 1), mana = whole(v.mana, 0, R.fight.kit.hpFlat);
+    return hpShare === null || mana === null ? null : { op: 'reform', hpShare, mana };
+  }
   const o = opOf(v, R, depth);
   return o && (o.op === 'damage' || o.op === 'heal' || o.op === 'echo' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
 }
@@ -512,7 +518,8 @@ export function parseSheetStatus(v: unknown, R: Rules): SheetStatus | null {
 }
 
 const KINDS = ['strike', 'shot', 'blast', 'curse', 'support'] as const;
-const AIMS = ['foe', 'ally', 'self', 'place'] as const;
+const AIMS = ['foe', 'ally', 'self', 'place', 'corpse'] as const;
+const RAISE_BONUS_MAX = 30;
 const tileCount = (v: unknown) => { const n = whole(v, 0, 64); return n === null ? null : tiles(n); };
 function shapeOf(v: unknown): Shape | null {
   if (!isObj(v)) return null;
@@ -594,27 +601,34 @@ function abilityOf(v: unknown, R: Rules): Ability | null {
   const prices = v.prices === undefined ? undefined : all(v.prices, K.prices, x => priceOf(x, R));
   const gates = v.gates === undefined ? undefined : all(v.gates, K.gates, x => gateOf(x, R));
   const summon = v.summon === undefined ? undefined : summonOf(v.summon, R);
+  const raise = v.raise === undefined ? undefined : raiseOf(v.raise);
   const w2 = abilityWave2(v, R), item = v.item === undefined ? undefined : parseSaveId<'i'>(v.item);
   const maxTier = v.maxTier === undefined ? undefined : whole(v.maxTier, 0, RANKS.length - 1);
   if (!id || name === null || !kind || !aim || fatigue === null || mana === null || time === null || cooldown === null || range === null
-    || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || !w2 || item === null || maxTier === null) return null;
+    || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || raise === null || !w2 || item === null || maxTier === null) return null;
   if (w2.react && !ops.every(reactionMayHold)) return null;
   if (w2.move && channel) return null;
   return {
     id: abilityId(id), name, kind, cost: { fatigue, mana, time: cost(time), cooldown }, aim, range, shape, delivery, foesOnly, effect, ops,
     channel, ...(zone ? { zone } : {}), ...(tags ? { tags } : {}), ...(prices ? { prices } : {}), ...(gates ? { gates } : {}),
-    ...(summon ? { summon } : {}), ...w2, ...(item ? { item } : {}), ...(maxTier === undefined ? {} : { maxTier }),
+    ...(summon ? { summon } : {}), ...(raise ? { raise } : {}), ...w2, ...(item ? { item } : {}), ...(maxTier === undefined ? {} : { maxTier }),
   };
+}
+/** Corpse-raising spec (Arise): check bonus, risen cap per caster, and elite corpse cap per fight. */
+function raiseOf(v: unknown): RiseSpec | null {
+  if (!isObj(v)) return null;
+  const bonus = whole(v.bonus, 0, RAISE_BONUS_MAX), maxRisen = whole(v.maxRisen, 1, MAX_ROWS), elitePerFight = whole(v.elitePerFight, 0, MAX_ROWS);
+  return bonus === null || maxRisen === null || elitePerFight === null ? null : { bonus, maxRisen, elitePerFight };
 }
 /**
  * An ability's wave 2 parts (kits design 8.3 to 8.5), each left out when absent: a blink or a swap (optionally
- * restricted to `only: 'shadow'`); a reaction's moment and its reach (0 to `fieldRadiusMax` tiles); a zone act (shift
+ * restricted to `only: 'shadow' | 'minion'`); a reaction's moment and its reach (0 to `fieldRadiusMax` tiles); a zone act (shift
  * by 1 to `zoneMove`, grow by 1 to `zoneGrow`, a zone name or null for any). Null when one is there and does not read.
  */
 function abilityWave2(v: Rec, R: Rules): Pick<Ability, 'move' | 'react' | 'zoneAct'> | null {
   const K = R.fight.kit;
   const moveKind = isObj(v.move) ? oneOf(v.move.kind, ['blink', 'swap'] as const, null) : null;
-  const moveOnly = isObj(v.move) && v.move.only !== undefined ? oneOf(v.move.only, ['shadow'] as const, null) : undefined;
+  const moveOnly = isObj(v.move) && v.move.only !== undefined ? oneOf(v.move.only, ['shadow', 'minion'] as const, null) : undefined;
   const move: Ability['move'] | null = v.move === undefined ? undefined
     : moveKind === 'blink' && moveOnly === undefined ? { kind: 'blink' }
     : moveKind === 'swap' && moveOnly !== null ? (moveOnly ? { kind: 'swap', only: moveOnly } : { kind: 'swap' })
@@ -795,9 +809,9 @@ type OwnIn = { readonly v: Rec; readonly grid: Grid; readonly hpMax: number };
 /** The fields of another kind a kind holds as null (`HunterRow` and the rest, effect-ops.ts): each must be stored as null. */
 const NULLS = (v: Rec, keys: readonly ('holder' | 'threat' | 'stagger' | 'intent' | 'mythic')[]): boolean => keys.every(k => v[k] === null);
 /** The fields of another kind a kind holds absent: each must be absent from the stored row. */
-const ABSENT = (v: Rec, keys: readonly ('moved' | 'owner' | 'until' | 'extraction')[]): boolean => keys.every(k => v[k] === undefined);
+const ABSENT = (v: Rec, keys: readonly ('moved' | 'owner' | 'until' | 'extraction' | 'rose')[]): boolean => keys.every(k => v[k] === undefined);
 /** The fields a row's kind decides (effect-ops.ts `HunterRow` and the rest), one kind's at a time. */
-type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'moved' | 'owner' | 'until' | 'extraction';
+type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'moved' | 'owner' | 'until' | 'extraction' | 'rose';
 type OwnOf = Pick<HunterRow, OwnKey> | Pick<MonsterRow, OwnKey> | Pick<ShadowRow, OwnKey> | Pick<SummonRow, OwnKey>;
 /**
  * A row's own fields, read by its kind (SMX-rules-8): each kind reads its own and requires another kind's to be null or
@@ -810,28 +824,31 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
     const holder = holderOf(v.holder), life = parseLife(v.life, Math.max(1, hpMax));
     const moved = v.moved === undefined ? undefined : whole(v.moved, 1, BIG);
     if (holder === undefined || holder?.kind === 'shadow' || !life || v.xp !== 0 || moved === null) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction', 'rose'])) return null;
     return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null, ...(moved === undefined ? {} : { moved }) };
   },
   monster: ({ v, grid, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), stagger = staggerOf(v.stagger);
     const intent = intentOf(v.intent, grid), xp = whole(v.xp, 0, BIG), extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
-    const mythic = mythicOf(v.mythic, grid);
-    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null || mythic === undefined) return null;
+    const mythic = mythicOf(v.mythic, grid), rose = v.rose === undefined ? undefined : v.rose === true ? true as const : null;
+    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null || mythic === undefined || rose === null) return null;
     if (!NULLS(v, ['holder']) || !ABSENT(v, ['moved', 'owner', 'until'])) return null;
-    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }) };
+    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }), ...(rose ? { rose } : {}) };
   },
   shadow: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), holder = read === null ? null : read?.kind === 'shadow' ? read : undefined;
     if (!life || holder === undefined || v.xp !== 0) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'owner', 'until', 'extraction'])) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'owner', 'until', 'extraction', 'rose'])) return null;
     return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null };
   },
   summon: ({ v, hpMax }) => {
-    const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), owner = idText(v.owner), until = tickOf(v.until);
-    if (!life || threat === undefined || !owner || until === null || v.xp !== 0) return null;
+    const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), owner = idText(v.owner);
+    const until = v.until === null ? null : tickOf(v.until);
+    const rose = v.rose === undefined ? undefined : idText(v.rose);
+    if (!life || threat === undefined || !owner || (v.until !== null && until === null) || rose === null || v.xp !== 0) return null;
+    if ((until === null) !== (rose !== undefined)) return null;
     if (!NULLS(v, ['holder', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'extraction'])) return null;
-    return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner), until };
+    return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner), until, ...(rose !== undefined ? { rose: combatantId(rose) } : {}) };
   },
 };
 function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
@@ -907,8 +924,9 @@ function pendingOf(v: unknown, R: Rules): DueTurn | null {
   if (!isObj(v) || !isObj(v.due)) return null;
   const id = idText(v.id), d = v.due, key = idText(d.key), op = opOf(d.op, R, 0), tier = whole(d.tier, 0, 5);
   const before = num(d.before, 0, BIG), share = num(d.share, 0, BIG);
-  if (!id || !key || !op || !amountOp(op) || tier === null || before === null || share === null) return null;
-  const due: Due = { key: statusKey(key), op, tier, before, share, stacks: clamped(d.stacks, 1, R.fight.kit.stackCap) };
+  const sourceId = d.sourceId === undefined ? undefined : idText(d.sourceId);
+  if (!id || !key || !op || !amountOp(op) || tier === null || before === null || share === null || sourceId === null) return null;
+  const due: Due = { key: statusKey(key), op, tier, before, share, stacks: clamped(d.stacks, 1, R.fight.kit.stackCap), ...(sourceId !== undefined ? { sourceId: combatantId(sourceId) } : {}) };
   return { id: combatantId(id), due };
 }
 function summaryOf(v: unknown): Summary | null {

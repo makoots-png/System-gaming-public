@@ -128,7 +128,7 @@ const RARER_CLASSES_RAW = {
   Strider:      { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+vit', alloc: { agi: 2, vit: 1 }, steps: RARE_STEPS },
   // Epic (8, unique, in ship order)
   Chronokeeper: { rarity: 'epic', unique: true, recRank: 'A', pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 } },
-  Grimreaper:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+pow', alloc: { agi: 2, pow: 1 } },
+  Grimreaper:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'str+ins', alloc: { str: 2, ins: 1 } },
   Stormcaller:  { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+pow', alloc: { pow: 2, agi: 1 } },
   Seraph:       { rarity: 'epic', unique: true, recRank: 'A', pair: 'dis+pre', alloc: { dis: 2, pre: 1 } },
   Voidstalker:  { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },

@@ -8,6 +8,7 @@
 import type { StatusKey, LandOp } from './effect-ops.ts';
 import type { Body, OpRules, Reach } from './effect-ops.ts';
 import { isUp, rowHp } from './row-hp.ts';
+import { isMinionOf, ownerOf } from './summons.ts';
 import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
 import { isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
@@ -23,15 +24,17 @@ import type { Tick } from './timeline.ts';
 
 /**
  * What can happen to a bearer: it deals a hit, is struck, deals or takes a crit, kills, avoids, starts or ends a turn,
- * moves, goes down, falls under `kit.lowHpAt` of its max HP (`fellLow`), or puts a harmful status on a foe (`imposed`).
+ * moves, goes down, falls under `kit.lowHpAt` of its max HP (`fellLow`), puts a harmful status on a foe (`imposed`),
+ * kills a monster itself or through one of its minions (`armyKill`), or has one of its minions drop to 0 HP (`minionDown`).
  */
-export type BearerEvent = 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'turnStart' | 'turnEnd' | 'moved' | 'down' | 'lowHp' | 'imposed';
-/** The events with another body in them: the one hit, the striker, the one killed, the one whose use was avoided, the foe a status was put on. */
-export type Party = Extract<BearerEvent, 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'imposed'>;
+export type BearerEvent = 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'turnStart' | 'turnEnd' | 'moved' | 'down' | 'lowHp' | 'imposed' | 'armyKill' | 'minionDown';
+/** The events with another body in them: the one hit, the striker, the one killed, the one whose use was avoided, the foe a status was put on, the slain monster, or the fallen minion. */
+export type Party = Extract<BearerEvent, 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'imposed' | 'armyKill' | 'minionDown'>;
 /** Each bearer event, whether it has another body in it (`Party`) or none: the typecheck asks a new event for its cell. */
 const BEARER_EVENT_BODIES: { readonly [E in BearerEvent]: E extends Party ? 'party' : 'alone' } = {
   hitDealt: 'party', struck: 'party', critDealt: 'party', critTaken: 'party', kill: 'party', avoided: 'party',
   turnStart: 'alone', turnEnd: 'alone', moved: 'alone', down: 'alone', lowHp: 'alone', imposed: 'party',
+  armyKill: 'party', minionDown: 'party',
 };
 /** Every bearer event, once: what a parser reads a stack's leave or a trigger's event against. */
 export const BEARER_EVENTS = Object.keys(BEARER_EVENT_BODIES) as readonly BearerEvent[];
@@ -132,10 +135,18 @@ function readHurt(rows: Map<CombatantId, Body>, R: OpRules): Raised[] {
 const imposes = (user: Body | undefined, target: Body | undefined, key: StatusKey): boolean =>
   user !== undefined && target !== undefined && target.side !== user.side && target.statuses.some(s => s.key === key && harmful(s.def));
 
+/** Raises `armyKill` on `killer` (or `killer`'s owner when `killer` is a minion) whenever an opposing monster dies. */
+export function armyKillOf(killer: Body | undefined, killed: Body | undefined, tags: readonly Tag[] = []): Raised | null {
+  if (!killer || !killed || killed.kind !== 'monster' || killer.side === killed.side) return null;
+  const owner = ownerOf(killer) ?? killer.id;
+  return raised(owner, 'armyKill', killed.id, tags);
+}
+
 /**
  * The events a use of `a` by `by` raised (design 1.3.5): by outcome, in the order resolve took the targets, and in each
  * the user's before the target's. A hit is a damaging outcome that was not dodged and dealt something: the user deals a
- * hit, the target is struck; a crit adds a crit dealt and taken; a target taken to 0 is the user's kill; a target out of
+ * hit, the target is struck; a crit adds a crit dealt and taken; a target taken to 0 is the user's kill (and an
+ * `armyKill` on the killer's owner when the fallen row is a monster); a target out of
  * the shape or that resisted avoided the use; each status the use put on is gained, and imposed by the user when the
  * target is a foe and the status harmful; each a cure took whole has ended (from the rows `before` and `after` the use).
  * Last, the use itself. Each event carries the ability's tags as `tagsOf` reads them: its kind, `spell`, `channel` and
@@ -149,10 +160,15 @@ export function eventsOf(a: Pick<Ability, 'ops' | 'kind' | 'channel' | 'tags'>, 
   for (const o of outcomes) {
     const mine: Raised[] = [], theirs: Raised[] = [];
     const hit = isDamage(o.type) && o.avoid !== 'out' && o.dealt > 0;
+    const now = rowIn(after, o.target);
     if (hit) { mine.push(raised(by, 'hitDealt', o.target, tags)); theirs.push(raised(o.target, 'struck', by, tags)); }
     if (o.crit) { mine.push(raised(by, 'critDealt', o.target, tags)); theirs.push(raised(o.target, 'critTaken', by, tags)); }
-    if (o.down) { mine.push(raised(by, 'kill', o.target, tags)); theirs.push(raised(o.target, 'down', by, tags)); }
-    const now = rowIn(after, o.target);
+    if (o.down) {
+      mine.push(raised(by, 'kill', o.target, tags));
+      const ak = armyKillOf(user, now, tags);
+      if (ak) mine.push(ak);
+      theirs.push(raised(o.target, 'down', by, tags));
+    }
     if (o.avoid === 'out' || o.avoid === 'resisted') theirs.push(raised(o.target, 'avoided', by, tags));
     for (const k of o.statuses) {
       if (o.target !== by && imposes(user, now, k)) mine.push(raised(by, 'imposed', o.target, tags, k));
@@ -243,6 +259,15 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           if (!matches(t, e) || !needMet(t, b)) return;
           const cur = rows.get(b.id)!, key = tripKey(s.key, i);
           if (fires >= K.fires) return;
+          const to = targetsOf(rows, cur, t.to, e);
+          if (t.ops.some(o => o.op === 'reform')) {
+            const reformMana = t.ops.reduce((n, o) => (o.op === 'reform' ? n + o.mana : n), 0);
+            const canReform = isUp(cur) && cur.mana >= reformMana && to.some(id => {
+              const target = rows.get(id);
+              return target !== undefined && !isUp(target) && isMinionOf(target, cur.id);
+            });
+            if (!canReform) return;
+          }
           const step = tripStep(cur.trips?.[key] ?? READY, { type: 'event', round }, t.limit);
           if (!step.fires) return;
           fires++;
@@ -254,18 +279,22 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           if (pct > 0) bearer = refunded(bearer, now, tick(Math.max(0, bearer.at - now)), pct);
           rows.set(bearer.id, bearer);
           // an echo reads the status gained or imposed that set it off (land.ts `echoed`); what it puts on is neither, so it never chains
-          const g = gainedOf(e), to = targetsOf(rows, bearer, t.to, e);
+          const g = gainedOf(e);
           const r = landOps(rows, t.ops, bearer, to, s.source, now, R, { cross: true, event: e.key ?? s.key, ...(g ? { gained: g } : {}) });
           for (const f of r.fired) landThreshold(rows, f, now, R);
           const parts = landedWords(r.landed, id => rows.get(id)?.name ?? id);
-          about.push(bearer.id, ...r.landed.filter(l => l.dealt || l.healed).map(l => l.target));
+          about.push(bearer.id, ...r.landed.filter(l => l.dealt || l.healed || l.reformed).map(l => l.target));
           said.push(`${bearer.name}'s ${s.def.label}${parts.length ? ` (${parts.join(', ')})` : ''}`);
           for (const l of r.landed) {
             if (l.down) withKill(rows, bearer.id, l.target);
             if (depth >= K.depth) continue;
             const targetNow = rows.get(l.target);
             if (l.dealt > 0) next.push(raised(bearer.id, 'hitDealt', l.target), raised(l.target, 'struck', bearer.id));
-            if (l.down) next.push(raised(bearer.id, 'kill', l.target), raised(l.target, 'down', bearer.id));
+            if (l.down) {
+              next.push(raised(bearer.id, 'kill', l.target), raised(l.target, 'down', bearer.id));
+              const ak = armyKillOf(rows.get(bearer.id), targetNow);
+              if (ak) next.push(ak);
+            }
             for (const k of l.gained) {
               if (l.target !== bearer.id && imposes(rows.get(bearer.id), targetNow, k)) next.push(raised(bearer.id, 'imposed', l.target, [], k));
               next.push(raised(l.target, 'statusGained', bearer.id, [], k));

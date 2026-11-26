@@ -1309,7 +1309,7 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
       fill: int(0, MAX_TOTAL)(own(obj(st), 'f')), max: int(0, MAX_TOTAL)(own(obj(st), 'm')), staggered: opt(own(obj(st), 's'), num(0, MAX_TOTAL), null),
     };
     const standing = opt(own(o, 'my'), docStanding, null);
-    return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null), ...(standing ? { standing } : {}) };
+    return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null), ...(standing ? { standing } : {}), ...(own(o, 'cr') === 1 ? { canRise: true as const } : {}) };
   }
   const hpMax = int(1, MAX_TOTAL)(own(o, 'hm'));
   const body = { hp: int(0, hpMax)(own(o, 'h')), hpMax, stride: int(0, MAX_TILE + 1)(own(o, 'r')), move: int(0, MAX_TILE + 1)(own(o, 'm')) };

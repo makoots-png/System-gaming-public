@@ -30,6 +30,8 @@ import type { Fight, ForcedFace, StatusGrant } from './fight-types.ts';
 import { fudgeOf } from './fudge.ts';
 import { taunter, threatOf } from './threat.ts';
 import type { ThreatView } from './threat.ts';
+import { ownerOf } from './summons.ts';
+import { canRiseCorpse } from './rise.ts';
 
 // ── the order ahead ──
 
@@ -113,7 +115,7 @@ export function cardOf(f: Fight, row: Body, R: OpRules & KindRules): Card {
     intent: intentOf(row, R),
     threat: threatOf(f, row),
     taunt: tauntOf(row, timeOf(f), R),
-    summon: row.kind === 'summon' ? roundsLeft(row.until, timeOf(f), R) : null,
+    summon: row.kind === 'summon' && row.until !== null ? roundsLeft(row.until, timeOf(f), R) : null,
     fudge: f.phase === 'ended' ? 0 : fudgeOf(f.fudge, row),
     fudgeOwn: f.phase === 'ended' ? 0 : f.fudge.rows[row.id] ?? 0,
     forced: f.phase === 'ended' ? null : f.fudge.forced[row.id] ?? null,
@@ -225,8 +227,18 @@ export const statusGrant = (key: string, def: StatusDef, rounds: number | null, 
 // ── aims and steps, on spots ──
 
 /** A row as aims and steps read it: the GM's from `spotOf`, a player's from the room doc. */
-export type Spot = { readonly id: CombatantId; readonly side: Side; readonly kind: CombatantKind; readonly place: Place; readonly down: boolean };
-export const spotOf = (b: Body): Spot => ({ id: b.id, side: b.side, kind: b.kind, place: b.place, down: !isUp(b) });
+export type Spot = {
+  readonly id: CombatantId; readonly side: Side; readonly kind: CombatantKind; readonly place: Place; readonly down: boolean;
+  readonly owner?: CombatantId | null; readonly canRise?: boolean;
+};
+export const spotOf = (b: Body): Spot => {
+  const owner = ownerOf(b);
+  return {
+    id: b.id, side: b.side, kind: b.kind, place: b.place, down: !isUp(b),
+    ...(owner !== null ? { owner } : {}),
+    ...(canRiseCorpse(b) ? { canRise: true } : {}),
+  };
+};
 /** The room fight doc's rows as spots (a doc's tile is plain numbers on the wire, and down is its life's), each keeping its other fields. */
 export const docSpots = <T extends Omit<Spot, 'place' | 'down'> & { readonly place: { readonly x: number; readonly y: number }; readonly life: { readonly at: LifeState } }>(rows: readonly T[]): (T & Spot)[] =>
   rows.map(r => ({ ...r, place: place(r.place.x, r.place.y), down: !isUp(r) }));
@@ -266,6 +278,11 @@ export type Aiming = Pick<Ability, 'aim' | 'range' | 'shape' | 'foesOnly' | 'mov
 export function aims<T extends Spot>(spots: readonly T[], by: CombatantId, a: Aiming, grid: Grid): AimAt<T>[] {
   const user = spots.find(s => s.id === by);
   if (!user) return [];
+  if (a.aim === 'corpse') {
+    return spots.filter(s => s.canRise === true)
+      .map(t => ({ target: t, dist: dist(user.place, t.place), inRange: inRange(a, user, t.place), inShape: true }))
+      .sort((x, y) => x.dist - y.dist);
+  }
   const map = spots.filter(onMap);
   const candidates = (a.aim === 'self' ? [user] : map.filter(s => (a.aim === 'ally') === (s.side === user.side)))
     .filter(s => canAimAt(s) && swapWith(a, user, s));

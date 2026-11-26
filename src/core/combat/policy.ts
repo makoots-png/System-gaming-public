@@ -32,6 +32,10 @@ import { omenMove, omenNeeds } from './fight-turn.ts';
 import { ANSWERS, aimedBody, answerOutcome, scriptOf } from './mythic.ts';
 import type { Answer } from './mythic.ts';
 import type { MythicStanding, Omen } from './mythic-types.ts';
+import { kitOf } from './land.ts';
+import { stacksOn } from './charge.ts';
+import { canRiseFor } from './rise.ts';
+import { isRisen, isTimedSummon } from './summons.ts';
 
 /** What a row does on its turn: a use, a move (a dash when `dash`), End turn, or a holding channel's release. */
 export type TurnChoice =
@@ -76,14 +80,27 @@ function caught(f: Running, me: Body, a: Ability, t: Body): { foes: number; alli
   const all = [...hit, ...ring];
   return { foes: all.filter(b => b.side !== me.side && isUp(b)).length, allies: !a.foesOnly && all.some(b => b.side === me.side && b.id !== me.id) };
 }
-/** What one use of a damaging `a` on `t` is worth: its formula's average, once for each foe it catches. 0 for any other. */
+/** Stacks `a`'s prices would spend from `me` and `t`, so `damageOf` sees real `spent` scalers (e.g. Guillotine). */
+function spentBy(a: Ability, me: Body, t: Body): number {
+  let spent = 0;
+  for (const p of a.prices ?? []) {
+    if (p.kind !== 'stacks') continue;
+    const held = stacksOn(p.from === 'self' ? me : t, p.key);
+    spent += Math.min(held, p.take.kind === 'all' ? held : p.take.n);
+  }
+  return spent;
+}
+/** What one use of a damaging `a` on `t` is worth: its formula's average with `kitOf` and `spent`, once for each foe it catches. 0 for any other. */
 function damageOf(f: Running, me: Body, a: Ability, t: Body, R: Rules): number {
+  if (a.aim === 'corpse') return 0;
   const type = a.effect?.type;
   if (!isDamage(type)) return 0;
   const formula = formulaOf(a, R);
   if (!formula) return 0;
   const { foes, allies } = caught(f, me, a, t);
-  return allies ? 0 : Math.max(1, foes) * average(formula, { user: me, target: t, charge: 0 });
+  if (allies) return 0;
+  const kit = { ...kitOf(me, t, R), spent: spentBy(a, me, t) };
+  return Math.max(1, foes) * average(formula, { user: me, target: t, charge: 0, kit });
 }
 /** The status keys a use puts on its target. */
 const putsOn = (a: Ability): string[] => a.ops.flatMap(o => (o.op === 'applyStatus' ? [o.key as string] : []));
@@ -141,16 +158,27 @@ function partyChoice(f: Running, me: Body, uses: readonly Ability[], foes: reado
   const hurt = alliesOf(f, me).filter(b => rowHp(b) < HURT * b.sheet.hpMax && !(b.shield && b.shield.until > f.now))
     .sort((a, b) => rowHp(a) / a.sheet.hpMax - rowHp(b) / b.sheet.hpMax || byId(a, b));
   for (const b of hurt) for (const a of uses) {
-    if (!mends(a) || (a.aim === 'self' && b.id !== me.id) || a.aim === 'foe') continue;
+    if (!mends(a) || (a.aim === 'self' && b.id !== me.id) || a.aim === 'foe' || a.aim === 'corpse') continue;
     const aim = aimAt(a, me, b);
     if (fits(f, me, a, aim, R)) return { type: 'act', ability: a, aim };
   }
-  const mine = f.rows.some(r => r.owner === me.id && isUp(r));
-  const call = !mine && uses.find(a => a.summon && fits(f, me, a, aimAt(a, me, me), R));
+  const timedCount = f.rows.filter(r => isTimedSummon(r) && r.owner === me.id && isUp(r)).length;
+  const call = timedCount < R.fight.kit.summons ? uses.find(a => a.summon && fits(f, me, a, aimAt(a, me, me), R)) : undefined;
   if (call) return { type: 'act', ability: call, aim: aimAt(call, me, me) };
+  const riser = uses.find(a => a.aim === 'corpse' && a.raise !== undefined);
+  if (riser?.raise) {
+    const risenCount = f.rows.filter(r => isRisen(r) && r.owner === me.id && isUp(r)).length;
+    if (risenCount < riser.raise.maxRisen) {
+      const corpses = f.rows
+        .filter(r => canRiseFor(r, f.rows, riser.raise!) && fits(f, me, riser, r.id, R))
+        .sort((a, b) => Number(b.origin.kind === 'monster' && b.origin.monsterKind === 'elite') - Number(a.origin.kind === 'monster' && a.origin.monsterKind === 'elite')
+          || dist(me.place, a.place) - dist(me.place, b.place) || byId(a, b));
+      if (corpses[0]) return { type: 'act', ability: riser, aim: corpses[0].id };
+    }
+  }
   const forced = forcedOf(me, foes);
   const target = forced || nearest(me, foes)!;
-  const curse = uses.find(a => a.aim !== 'self' && a.aim !== 'ally' && !a.effect && lacks(target, a) && fits(f, me, a, aimAt(a, me, target), R));
+  const curse = uses.find(a => a.aim !== 'self' && a.aim !== 'ally' && a.aim !== 'corpse' && !a.effect && lacks(target, a) && fits(f, me, a, aimAt(a, me, target), R));
   if (curse) return { type: 'act', ability: curse, aim: aimAt(curse, me, target) };
   const hit = strongest(f, me, uses, [target], R) ?? (forced ? null : strongest(f, me, uses, foes, R));
   if (hit) return hit;

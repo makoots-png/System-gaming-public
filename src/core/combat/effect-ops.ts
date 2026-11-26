@@ -101,9 +101,9 @@ export type Threshold = {
   readonly then: 'spend' | 'keep';
 };
 /** Where a threshold's, a trigger's or an end's ops land: on the bearer, or on the bodies `on` its side within `radius`. */
-export type Reach = { readonly kind: 'bearer' } | { readonly kind: 'area'; readonly radius: Tiles; readonly on: AuraOn }
+export type Reach = { readonly kind: 'bearer' } | { readonly kind: 'area'; readonly radius: Tiles; readonly on: ReachOn }
   /** The one body `on` the bearer's side, the other or either within `radius` with the most HP (kits design 8.5: The Cycle Continues). */
-  | { readonly kind: 'most'; readonly of: 'hp'; readonly radius: Tiles; readonly on: AuraOn };
+  | { readonly kind: 'most'; readonly of: 'hp'; readonly radius: Tiles; readonly on: ReachOn };
 /** A delayed effect (kits design 1.6): ops that land on the bearer when the time runs out; a cure cancels it or sets it off. */
 export type End = {
   readonly ops: readonly LandOp[];
@@ -113,11 +113,15 @@ export type End = {
 };
 /**
  * What a threshold, a trigger or an end lands: an ability's own ops that land on one body at a time (`LAND_USE_OPS`), a
- * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright; a reveal among them), and time
- * back on the bearer's turn (`pct` of its last action), and an echo of a status gained. A push or pull needs the map and an anchor, an extra action is the user's
+ * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright; a reveal among them), time
+ * back on the bearer's turn (`pct` of its last action), reforming a fallen minion (`reform`), and an echo of a status gained. A push or pull needs the map and an anchor, an extra action is the user's
  * own turn, and a guard or a negate answers a use: a use's rules, which nothing lands outside one, so none is a land op.
  */
-export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' | 'echo' }> | { readonly op: 'refund'; readonly pct: number };
+export type LandOp =
+  | Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }>
+  | Extract<Op, { readonly op: 'damage' | 'heal' | 'echo' }>
+  | { readonly op: 'refund'; readonly pct: number }
+  | { readonly op: 'reform'; readonly hpShare: number; readonly mana: number };
 /** The use ops a land op may be (land.ts `landOne` lands each). */
 export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', 'move', 'hasten', 'dispel', 'reveal', 'stagger'] as const satisfies readonly UseOp['op'][];
 /** Whether a use op is one a land op may be. */
@@ -285,8 +289,11 @@ export type StealthEnds = { readonly [E in StealthEnd]: boolean };
 /** Where a hide may start: only out of every foe's sight that is up (`unseen`, the kits' rule), or in the open too (`anywhere`, Invisible). */
 export const HIDE_STARTS = ['unseen', 'anywhere'] as const;
 export type HideStart = (typeof HIDE_STARTS)[number];
-/** Whom a status's aura reaches, from its bearer's side: everyone, its allies, or its foes. */
-export const AURA_ON = ['all', 'allies', 'foes'] as const;
+/** Whom a threshold, trigger or end `Reach` lands on, from its bearer's side: everyone, its allies, or its foes. */
+export const REACH_ON = ['all', 'allies', 'foes'] as const;
+export type ReachOn = (typeof REACH_ON)[number];
+/** Whom a status's aura reaches, from its bearer's side: everyone, its allies, its foes, or only its owner's minions. */
+export const AURA_ON = ['all', 'allies', 'foes', 'minions'] as const;
 export type AuraOn = (typeof AURA_ON)[number];
 export type OpKind = Op['op'];
 /** Every kind of op, once: the status maker offers each (the typecheck asks for a new kind here). */
@@ -495,22 +502,26 @@ type HunterOwn = {
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
   /** Movement tiles spent since this hunter's last turn started (walk, dash, dodge). Absent when 0. */
   readonly moved?: number;
-  readonly owner?: never; readonly until?: never; readonly extraction?: never;
+  readonly owner?: never; readonly until?: never; readonly extraction?: never; readonly rose?: never;
 };
 type MonsterOwn = {
   readonly kind: 'monster'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable; readonly stagger: Stagger | null; readonly intent: Intent | null; readonly xp: number;
   readonly mythic: MythicStanding | null; readonly moved?: never; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
+  /** Set once Arise succeeds on this dead monster row, so each corpse rises at most once. */
+  readonly rose?: true;
 };
 type ShadowOwn = {
   readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly owner?: never; readonly until?: never; readonly extraction?: never;
+  readonly moved?: never; readonly owner?: never; readonly until?: never; readonly extraction?: never; readonly rose?: never;
 };
 type SummonOwn = {
   readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly owner: CombatantId; readonly until: Tick; readonly extraction?: never;
+  readonly moved?: never; readonly owner: CombatantId; readonly until: Tick | null; readonly extraction?: never;
+  /** Present on a risen corpse (`until: null`): the dead monster row it rose from. Absent on timed summons. */
+  readonly rose?: CombatantId;
 };
 /** A hunter's row: its life is the life machine's (vitals.ts). */
 export type HunterRow = BodyCommon & HunterOwn;
@@ -735,6 +746,8 @@ export type Due = {
   readonly before: number; readonly share: number;
   /** The count it pays at: a stacking status's stacks when its bearer settles (kits design 1.1 rule 7), else 1. */
   readonly stacks: number;
+  /** Combatant that applied the status or zone, kept for kill attribution when the status expires before its dice settle. */
+  readonly sourceId?: CombatantId;
 };
 
 /** Whether an op pays an amount from its formula: damage, a heal, mana or fatigue, each round or once. */
@@ -761,7 +774,7 @@ export function settle(statuses: readonly Status[], now: Tick, R: OpRules): { st
     const span = Math.max(0, end - s.settledAt);
     const before = (s.settledAt - s.since) / R.fight.round;
     const count = stacked(s) ? s.stacks : 1;
-    if (span > 0) for (const op of s.def.ops) if (perRound(op)) due.push({ key: s.key, op, tier: s.source.tier, before, share: span / R.fight.round, stacks: count });
+    if (span > 0) for (const op of s.def.ops) if (perRound(op)) due.push({ key: s.key, op, tier: s.source.tier, before, share: span / R.fight.round, stacks: count, ...(s.source.id === null ? {} : { sourceId: s.source.id }) });
     const settledAt = tick(Math.max(s.settledAt, end)), next: Status = { ...s, settledAt };
     if (statusStep(statusLife(s), { type: 'settle', past: s.until !== null && now >= s.until }) === 'gone') { expired.push(next); continue; }
     if (!stacked(s)) { kept.push(next); continue; }
@@ -981,7 +994,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
       const p = num(o.pct, n => `${n}%`);
       return `${o.chance}% chance to get ${p.text} of an action's time back${rank(p)}`;
     }
-    case 'aura': return `Applies its other effects to ${o.on === 'all' ? 'everyone' : o.on} within ${o.radius} tile${o.radius === 1 ? '' : 's'}`;
+    case 'aura': return `Applies its other effects to ${o.on === 'all' ? 'everyone' : o.on === 'minions' ? 'its minions' : o.on} within ${o.radius} tile${o.radius === 1 ? '' : 's'}`;
     case 'spread': return `Spreads each round to anyone within ${o.range} tile${o.range === 1 ? '' : 's'} who fails to resist it, once a fight`;
     case 'sheet': {
       if (isFormulaSheetOp(o)) { const a = amount(o.amount); return `${SHEET_ADD_TEXT[o.key]}: ${signedWords(a.text)}${rank(a)}`; }
@@ -1062,8 +1075,11 @@ export function describeStatus(def: StatusDef, tier: number | null, R: DescribeR
   const live = liveStatusDef(def, R.conditions);
   return [...describeStack(live, tier, R, statusKey), ...(live.triggers ?? []).map(t => triggerLine(t, tier, R)), ...(live.end ? [endLine(live.end, tier, R)] : [])];
 }
-/** A land op in words: time back, or the op's own line. */
-const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string => (o.op === 'refund' ? `${o.pct}% of an action's time back` : opLine(o, tier, R));
+/** A land op in words: time back, minion reform, or the op's own line. */
+const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string =>
+  o.op === 'refund' ? `${o.pct}% of an action's time back`
+    : o.op === 'reform' ? `Reforms a fallen minion at ${Math.round(o.hpShare * 100)}% HP for ${o.mana} mana`
+      : opLine(o, tier, R);
 const reachText = (to: Reach): string => (to.kind === 'bearer' ? ''
   : `${to.kind === 'most' ? ' on the one with the most HP of' : ' on'} ${to.on === 'all' ? 'everyone' : to.on} within ${to.radius} tile${to.radius === 1 ? '' : 's'}`);
 /** The event `lowHp` in words, its share read off the rule (`kit.lowHpAt`): "falls under 30% HP". */
@@ -1074,7 +1090,7 @@ const worded = (w: Words, R: DescribeRules): string => (typeof w === 'string' ? 
 const EVENT_TEXT: { readonly [K in Trigger['on']]: Words } = {
   hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills', avoided: 'avoids an ability', down: 'drops to 0 HP',
   turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', statusGained: 'gains', statusEnded: 'loses', used: 'uses an ability tagged',
-  lowHp: lowHpText, imposed: 'puts a harmful status on a foe',
+  lowHp: lowHpText, imposed: 'puts a harmful status on a foe', armyKill: 'or a minion kills a monster', minionDown: 'has a minion drop to 0 HP',
 };
 /** A trigger in words (kits design 5.1): "When its bearer deals a hit with a sword: Applies Corruption on the other, every time." */
 function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string {
@@ -1108,4 +1124,5 @@ const LEAVE_TEXT: { readonly [K in 'never' | 'round' | BearerEvent]: Words } = {
   avoided: ' All stacks expire when the bearer avoids an ability.', turnStart: ' All stacks expire at the bearer\'s turn start.', turnEnd: ' All stacks expire at the bearer\'s turn end.',
   moved: ' All stacks expire when the bearer moves.', down: ' All stacks expire when the bearer drops to 0 HP.',
   lowHp: R => ` All stacks expire when the bearer ${lowHpText(R)}.`, imposed: ' All stacks expire when the bearer puts a harmful status on a foe.',
+  armyKill: ' All stacks expire when the bearer or a minion kills a monster.', minionDown: ' All stacks expire when a minion of the bearer drops to 0 HP.',
 };

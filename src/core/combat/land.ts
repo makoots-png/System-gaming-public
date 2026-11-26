@@ -16,6 +16,7 @@ import { defenceOf } from './damage-type.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
+import { isMinionOf } from './summons.ts';
 import { applyStatus, cureStatus, dispelled, lasting, liveShield, removeStatus, shieldGrown, shieldOn, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { admitted, counting, damageShare, dealtBy, given, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
@@ -245,19 +246,21 @@ export function reached(rows: ReadonlyMap<CombatantId, Body>, bearer: Body, reac
 
 /**
  * What landing did to one body: its HP damage dealt (after defence, before the shield), any HP healed on a detonated
- * status's source, whether it went down, and the status keys it gained or had cured (for the triggers' events, design 1.3).
+ * status's source, any HP a fallen minion reformed at, whether it went down, and the status keys it gained or had cured
+ * (for the triggers' events, design 1.3).
  */
-export type Landed = { readonly target: CombatantId; readonly dealt: number; readonly healed?: number; readonly down: boolean; readonly gained: readonly StatusKey[]; readonly cured: readonly StatusKey[] };
+export type Landed = { readonly target: CombatantId; readonly dealt: number; readonly healed?: number; readonly reformed?: number; readonly down: boolean; readonly gained: readonly StatusKey[]; readonly cured: readonly StatusKey[] };
 
-/** The log parts for landed entries (damage dealt and detonation source heals), e.g. `["Monster 80", "Hemomancer heals 32"]`. */
+/** The log parts for landed entries (damage dealt, detonation source heals, and reformed minions), e.g. `["Monster 80", "Hemomancer heals 32"]`. */
 export function landedWords(
-  entries: readonly { readonly target: CombatantId; readonly dealt: number; readonly healed?: number }[],
+  entries: readonly { readonly target: CombatantId; readonly dealt: number; readonly healed?: number; readonly reformed?: number }[],
   name: (id: CombatantId) => string,
 ): string[] {
   const out: string[] = [];
   for (const l of entries) {
     if (l.dealt) out.push(`${name(l.target)} ${l.dealt}`);
     if (l.healed) out.push(`${name(l.target)} heals ${l.healed}`);
+    if (l.reformed) out.push(`${name(l.target)} reforms at ${l.reformed} HP`);
   }
   return out;
 }
@@ -278,14 +281,29 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
   const taken: Record<CombatantId, StatusKey[]> = {};
   // what a cure/dispel detonation healed a status's source, told after the targets
   const sourceHealed = new Map<CombatantId, number>();
+  const hasReform = ops.some(op => op.op === 'reform');
   for (const id of targets) {
-    let t = rows.get(id);
-    if (!t || !alive(t)) continue;
+    const start = rows.get(id);
+    if (!start) continue;
+    const canAdmitDead = hasReform && !isUp(start) && hitter !== null && isMinionOf(start, hitter.id);
+    if (!alive(start) && !canAdmitDead) continue;
+    let t: Body = start;
     const before = rowHp(t);
-    let dealt = 0;
+    let dealt = 0, reformed = 0;
     const gained: StatusKey[] = [], cured: StatusKey[] = [];
     for (const op of ops) {
       const user = hitter ? rows.get(hitter.id) ?? hitter : t;
+      if (op.op === 'reform') {
+        if (!isUp(t) && hitter && isUp(user) && isMinionOf(t, user.id) && user.mana >= op.mana) {
+          const hp = Math.max(1, Math.round(op.hpShare * t.sheet.hpMax));
+          rows.set(user.id, { ...user, mana: clamp(user.mana - op.mana, 0, user.sheet.manaMax) });
+          const raised = rowLifeAfter(t, { type: 'reform', hp });
+          t = { ...raised, at: tick(Math.max(raised.at, now)) };
+          reformed = rowHp(t);
+        }
+        continue;
+      }
+      if (!alive(t)) continue;
       if (op.op === 'move') {
         // a move changes two bodies, and the one that receives is the one that gained (kits design 8.5.2)
         rows.set(t.id, t);
@@ -310,7 +328,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
       }
     }
     rows.set(t.id, t);
-    landed.push({ target: t.id, dealt, down: before > 0 && rowHp(t) === 0, gained, cured });
+    landed.push({ target: t.id, dealt, down: before > 0 && rowHp(t) === 0, ...(reformed > 0 ? { reformed } : {}), gained, cured });
   }
   for (const [id, keys] of Object.entries(taken) as [CombatantId, StatusKey[]][]) landed.push({ target: id, dealt: 0, down: false, gained: keys, cured: [] });
   for (const [id, amt] of sourceHealed) landed.push({ target: id, dealt: 0, healed: amt, down: false, gained: [], cured: [] });
@@ -497,6 +515,8 @@ function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Sou
     case 'move': return { target: t, dealt: 0, ...none };
     // an echo picks its own body, so `landOps` lands it once after the targets
     case 'echo': return { target: t, dealt: 0, ...none };
+    // a reform changes both user (mana) and dead minion (life), so `landOps` lands it before asking here
+    case 'reform': return { target: t, dealt: 0, ...none };
     default: return o satisfies never;
   }
 }
