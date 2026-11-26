@@ -40,8 +40,9 @@ numbers disagree.
    conflict.
 8. Every human has a System window. A Resident's reads level 0. A hunter levels up to the cap of the rank they
    awakened with and then stops. A higher level slows ageing, and an S-rank may live to about 240.
-9. A trial gate removes a cap. Almost nobody knows this. The players' hunters pass one early in the campaign and
-   can then rise through every rank. A very few other hunters have done the same and hide it.
+9. A trial gate removes a cap. Almost nobody knows this. The players' party clears an off-books trial in Mission 1
+   (`The Empty Seat`), lifting their cap and opening Wave 1 unique classes while still registered E-ranks, and must
+   hide both until Act 2's Network Audit. A very few other hunters have passed a trial and hide it.
 10. The System has never stated a purpose. `story.md` tells the GM what the game is, who runs it and how the
     party ends it. The tone is bleak, with horror in every act.
 
@@ -58,7 +59,8 @@ numbers disagree.
 
 ## The owner's rulings
 
-the owner answered the folder's five questions on Nov 20, and the files follow his answers.
+the owner answered the folder's five questions on Nov 20 and added rulings in follow-up passes (including the Act 1
+redesign). The files follow his answers.
 
 1. Every human has the System, and the game was forced on them. Every hunter levels up to a cap set by their
    rank, and a special dungeon removes the cap. The party grows strongest, fights what the game was preparing them
@@ -72,6 +74,10 @@ the owner answered the folder's five questions on Nov 20, and the files follow h
    one or the hunter uses a revive item bought before death (gold held after death does not help).
 7. Dailies do not recover a hunter (completing the daily quest does not heal HP, restore mana, or clear fatigue).
 8. Every System message and every reward must be editable and approved by the GM before players see it.
+9. First-mission trial (Act 1 redesign): the unique horror trial happens in Mission 1 (`The Empty Seat`), granting
+   Wave 1 Mythic/Epic unique class access and lifting the level cap (`Cap: none`). Hard level caps stay out of app XP
+   math (each hunter carries a per-hunter display-only cap chip), and the Hosts' worst-hour memory room moves to Act 2
+   (Level 20) as a Network Audit.
 
 ## Keeping the folder correct
 

@@ -1,9 +1,45 @@
 import { describe, expect, test } from 'bun:test';
 import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER, createdLine, nextSteps } from '../src/core/first-run.ts';
 import type { FirstRunFacts } from '../src/core/first-run.ts';
-import { STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER } from '../src/core/starter.ts';
+import { STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER, starterStory } from '../src/core/starter.ts';
 import { RULES } from '../src/core/rules.ts';
 import { room } from './fixtures/ids.ts';
+
+const ROOT = `${import.meta.dir}/..`;
+
+/** Parses the blockquote paragraphs from `docs/world/seeds.md` section `## 3. The primer`. */
+function extractSeedsPrimer(markdown: string): string[] {
+  const start = markdown.indexOf('## 3. The primer');
+  if (start < 0) throw new Error('missing "## 3. The primer" in docs/world/seeds.md');
+  const after = markdown.slice(start);
+  const nextHeading = after.slice(1).search(/\n##\s+/);
+  const section = nextHeading >= 0 ? after.slice(0, nextHeading + 1) : after;
+  const paragraphs: string[] = [];
+  let cur: string[] = [];
+  for (const line of section.split('\n')) {
+    if (!line.startsWith('>')) {
+      if (cur.length) { paragraphs.push(cur.join(' ')); cur = []; }
+      continue;
+    }
+    const text = line.replace(/^>\s?/, '').trim();
+    if (!text) {
+      if (cur.length) { paragraphs.push(cur.join(' ')); cur = []; }
+    } else {
+      cur.push(text);
+    }
+  }
+  if (cur.length) paragraphs.push(cur.join(' '));
+  return paragraphs;
+}
+
+/** Applies the documented American-spelling and voice-lint adaptations from docs/world/seeds.md to WORLD_PRIMER. */
+const adaptPrimerForApp = (p: string): string => p
+  .replace(/\blabourer\b/g, 'laborer')
+  .replace(/\blicence\b/g, 'license')
+  .replace(
+    "A hunter's window shows a level, quests and a rank. It also shows a cap.",
+    "A hunter's window lists a level, quests, and a rank. It also lists a cap.",
+  );
 
 const CODE = room('ABC234');
 const player = (o: Partial<Extract<FirstRunFacts, { role: 'player' }>> = {}): FirstRunFacts =>
@@ -117,6 +153,52 @@ describe('the sentences a new person reads', () => {
     expect(full).toContain('license');
     expect(full).not.toMatch(/\b(labourer|licence)\b/i);
     expect(WORLD_PRIMER[WORLD_PRIMER.length - 1]).toBe('What do you do?');
+  });
+
+  test('WORLD_PRIMER matches docs/world/seeds.md section 3 paragraph for paragraph', async () => {
+    const seeds = await Bun.file(`${ROOT}/docs/world/seeds.md`).text();
+    const expected = extractSeedsPrimer(seeds).map(adaptPrimerForApp);
+    expect(expected).toHaveLength(9);
+    expect(WORLD_PRIMER).toEqual(expected);
+  });
+
+  test('every button and drawer label named in onboarding copy and starter GM notes exists in live UI source', async () => {
+    const [onboardSrc, gatesSrc, combatSrc, storyRunSrc, classOfferSrc, rulesTextSrc] = await Promise.all([
+      Bun.file(`${ROOT}/src/views/onboard.js`).text(),
+      Bun.file(`${ROOT}/src/views/gates.js`).text(),
+      Bun.file(`${ROOT}/src/views/combat.js`).text(),
+      Bun.file(`${ROOT}/src/core/story/run.ts`).text(),
+      Bun.file(`${ROOT}/src/core/hunter/class-offer.ts`).text(),
+      Bun.file(`${ROOT}/src/core/rules-text.ts`).text(),
+    ]);
+    const notes = starterStory(RULES).chapters.map(c => c.note).join('\n');
+    const stepText = [
+      ...nextSteps(player(), RULES).map(s => s.words),
+      ...nextSteps(gm({ starterPoints: { name: STARTER_UNSPENT_HUNTER, points: 12 } }), RULES).map(s => s.words),
+      LOADED.starter,
+      LOADED.blank,
+      ...TIPS.gm,
+      ...TIPS.player,
+      notes,
+    ].join('\n');
+
+    const checks: readonly { readonly label: string; readonly referencedIn: string; readonly uiSource: string; readonly uiFile: string }[] = [
+      { label: 'Read aloud: Carrow primer', referencedIn: LOADED.starter, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
+      { label: 'Start a story', referencedIn: LOADED.starter, uiSource: storyRunSrc, uiFile: 'src/core/story/run.ts' },
+      { label: 'Confirm allocation', referencedIn: stepText, uiSource: rulesTextSrc, uiFile: 'src/core/rules-text.ts' },
+      { label: 'Mark as raiding', referencedIn: notes, uiSource: gatesSrc, uiFile: 'src/views/gates.js' },
+      { label: 'Start fight', referencedIn: notes, uiSource: gatesSrc, uiFile: 'src/views/gates.js' },
+      { label: 'Award XP', referencedIn: notes, uiSource: combatSrc, uiFile: 'src/views/combat.js' },
+      { label: 'Lift cap and offer classes', referencedIn: notes, uiSource: classOfferSrc, uiFile: 'src/core/hunter/class-offer.ts' },
+      { label: 'Close offer', referencedIn: notes, uiSource: classOfferSrc, uiFile: 'src/core/hunter/class-offer.ts' },
+      { label: 'Clear gate', referencedIn: notes, uiSource: gatesSrc, uiFile: 'src/views/gates.js' },
+      { label: 'Start blank', referencedIn: onboardSrc, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
+      { label: 'Create room', referencedIn: onboardSrc, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
+    ];
+    for (const c of checks) {
+      expect(c.referencedIn, `expected copy to reference "${c.label}"`).toContain(c.label);
+      expect(c.uiSource, `expected "${c.label}" to exist in ${c.uiFile}`).toContain(c.label);
+    }
   });
 
   test('the guide\'s room tips use each role\'s verb, and no line a person reads says "open a room"', () => {

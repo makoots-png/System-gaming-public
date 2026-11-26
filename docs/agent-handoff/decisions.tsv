@@ -846,3 +846,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T20:19Z	act1	PR 149 Act 1 U3: per-hunter display-only capDisplay chip, GM pickers, capSet event, Lift cap and offer classes; unit 7423/0; browser 22/22; CI 45888699815 8/8
 2026-11-26T20:46Z	act1	PR 150 Act 1 U2: gate waves, bossFell, offer gated on boss; unit 7428/0; browser 75/75; CI 45892051123 8/8
 2026-11-26T21:10Z	act1	PR 151 Act 1 U0 (legacy e2e fixture) + flake-timeouts (5s unit flake); unit 7428/0; browser 42/42; CI 45894725251 8/8
+2026-11-26T22:24Z	act1	PR 152 Act 1 U4: The Empty Seat starter (Tidewall Cannery Gate, 5-chapter story, 4 optional samples) and first-run rewrite; unit 7439/0; browser 58/58; CI 45903276294 8/8

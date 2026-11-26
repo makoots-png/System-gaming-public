@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, noonDate, ROOM_CODE } from './helpers.ts';
-import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS } from '../../src/core/first-run.ts';
+import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER } from '../../src/core/first-run.ts';
+import { PREGENS, STARTER_GATE, STARTER_STORY_NAME } from '../../src/core/starter.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
@@ -206,10 +207,14 @@ test('a GM who left a room can open it again from the GM tab and the players are
   });
 });
 
-test('the Welcome window shows what the site is below the window, without scrolling on a small phone', async ({ device }) => {
+test('the Welcome window shows Day Zero copy and what the site is below the window, without scrolling on a small phone', async ({ device }) => {
   const phone = (await device('phone', { viewport: { width: 360, height: 640 } })).page;
   await openApp(phone);
-  const win = await windowTitled(phone, 'Welcome');
+  const win = await windowTitled(phone, 'Window active');
+  await expect(win).toContainText('Every person has had a System window since Day Zero. Choose whether you are a player or the GM for this table.');
+  await expect(win.locator('[data-yes]')).toHaveText('Set up');
+  await expect(win.locator('[data-skip]')).toHaveText('Skip setup');
+  await expect(win.locator('[data-no]')).toHaveCount(0);
   const about = phone.locator(`${OB} .ob-about`);
   await expect(about).toHaveText(ABOUT);
   await expect(win.locator('[role=dialog]')).toHaveAttribute('aria-describedby', (await about.getAttribute('id')) ?? 'none');
@@ -433,4 +438,79 @@ test('the ? guide closes with Escape and gives the focus back to the ? button', 
   await phone.keyboard.press('Escape');
   await expect(phone.locator(OB)).toHaveCount(0);
   await expect(phone.locator('#help-btn')).toBeFocused();
+});
+
+test('GM setup includes 4 sample hunters by default and lets a live table uncheck them before loading the starter campaign', async ({ device }) => {
+  const gm = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
+  await openApp(gm);
+  await gm.locator(`${OB} [data-yes]`).tap();
+  await gm.locator(`${OB} [data-gm]`).tap();
+  const win = await windowTitled(gm, 'Run the game');
+
+  const toggle = win.getByRole('checkbox', { name: 'Include 4 sample hunters' });
+  await expect(toggle).toBeChecked();
+  const labelBox = await win.locator('label.ob-check').boundingBox();
+  expect(labelBox && labelBox.height >= 44).toBe(true);
+
+  await win.locator('label.ob-check').tap();
+  await expect(toggle).not.toBeChecked();
+  await win.locator('[data-starter]').tap();
+
+  const ready = await windowTitled(gm, 'Campaign ready');
+  await ready.locator('[data-oblater]').tap();
+  await expect(gm.locator(OB)).toHaveCount(0);
+
+  const state = await gm.evaluate(() => {
+    const s = hunterApp.store.get();
+    return {
+      hunters: s.hunters.map((h: any) => h.name),
+      activeValid: s.hunters.some((h: any) => h.id === s.settings.activeHunterId),
+      gates: s.gates.map((g: any) => g.name),
+      stories: s.library.stories.map((st: any) => st.name),
+      mode: s.settings.mode,
+    };
+  });
+  expect(state.mode).toBe('gm');
+  expect(state.activeValid).toBe(true);
+  expect(state.hunters).toHaveLength(1);
+  for (const p of PREGENS) expect(state.hunters).not.toContain(p.name);
+  expect(state.gates).toEqual([STARTER_GATE.name]);
+  expect(state.stories).toContain(STARTER_STORY_NAME);
+});
+
+test('Read aloud: Carrow primer is collapsible inside Campaign ready and the ? Quick Start guide', async ({ device }) => {
+  const gm = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
+  await openApp(gm);
+  for (const b of ['[data-yes]', '[data-gm]', '[data-starter]']) await gm.locator(`${OB} ${b}`).tap();
+
+  await test.step('Campaign ready renders the primer collapsed by default and opens it on tap', async () => {
+    const ready = await windowTitled(gm, 'Campaign ready');
+    const drawer = ready.locator('[data-primer]');
+    const summary = drawer.locator('summary');
+    await expect(summary).toHaveText('Read aloud: Carrow primer');
+    await expect(drawer).not.toHaveAttribute('open', '');
+    const box = await summary.boundingBox();
+    expect(box && box.height >= 44).toBe(true);
+    await summary.tap();
+    await expect(drawer).toHaveAttribute('open', '');
+    await expect(drawer).toContainText(WORLD_PRIMER[0]!);
+    await expect(drawer).toContainText(WORLD_PRIMER[WORLD_PRIMER.length - 1]!);
+    await ready.locator('[data-oblater]').tap();
+    await expect(gm.locator(OB)).toHaveCount(0);
+  });
+
+  await test.step('? Quick Start also renders the primer collapsed by default and opens it on tap', async () => {
+    await gm.locator('#help-btn').tap();
+    const guide = await windowTitled(gm, 'How it works');
+    const drawer = guide.locator('[data-primer]');
+    const summary = drawer.locator('summary');
+    await expect(summary).toHaveText('Read aloud: Carrow primer');
+    await expect(drawer).not.toHaveAttribute('open', '');
+    await summary.tap();
+    await expect(drawer).toHaveAttribute('open', '');
+    await expect(drawer).toContainText(WORLD_PRIMER[0]!);
+    await expect(drawer).toContainText(WORLD_PRIMER[WORLD_PRIMER.length - 1]!);
+    await guide.locator('[data-ok]').tap();
+    await expect(gm.locator(OB)).toHaveCount(0);
+  });
 });

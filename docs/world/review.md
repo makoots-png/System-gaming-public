@@ -284,3 +284,51 @@ R26 are real and the fixes stand, with three exceptions that the owner has now r
 Still open for the owner: item 8 (Neon's new story canon and faction hooks, marked in `story.md`, `factions.md` and
 `seeds.md`), and the daily quest's stat point against the points a level gives.
 
+## Act 1 first-mission redesign (Nov 26)
+
+the owner ruled (t174u, t175u) that the unique horror trial happens in Mission 1, replacing Goblin Den and granting both
+access to the Mythic/Epic unique class offer and the lifted level cap (`Cap: none`).
+
+**Settled updates applied across `docs/world/`:**
+
+- **Mission 1 (`The Empty Seat` inside `Tidewall Cannery Gate`, `story.md` Act 1 and section 5, `power.md` section 5,
+  `README.md`):** a rogue sponsor pays a Season 12 Host off the books to stage an unscheduled, old-format open trial
+  inside a routine E-rank gate, prepaying a Wave 1 vault package (three Mythic and three Epic unique classes plus an
+  early cap waiver). Clearing Fight 2 (`Head Usher` and `Ushers`, archived-season casts) lifts the cap with a brief
+  second fever, opens the Wave 1 class offer, awards the `Guest` title (`+1 Discipline`), and leaves one blank line
+  below `Cap: none` (no `Viewers` count yet). Sabine Okoro, Marek Osei, and Pavel Dunmore remain rare because the
+  trial is an off-schedule exception paid for by one buyer.
+- **Act 1 continuation and Act 2 Network Audit (`story.md` Acts 1 and 2, `power.md` section 5, `machines.ts`,
+  `machines.md`):** Levels 3 to 9 follow broke Level 3 E-ranks hiding `Cap: none` and impossible classes through
+  Session 2's second-fever scrutiny, Session 3's quiet warren, the crying man, and street-break witness risk. Crossing
+  into D-rank at Level 10 triggers an Act 1 cover-up choice. Crossing into C-rank at Level 20 breaks the single
+  re-awakening cover story and triggers the Hosts' wrong-colored gate and worst-hour memory room as a formal **Network
+  Audit** that ratifies the off-books grant onto the public Season 12 feed (`Viewers` and `Value: XX XP`).
+- **Display-only cap in app (`story.md` section 4, `power.md` section 5, `README.md`):** hard level caps remain out of
+  XP math (`gainXp` ignores `capDisplay`, and `src/core/hunter/level.ts` stays the sole owner of `MIN_LEVEL` and
+  `MAX_LEVEL`). Each hunter holds a per-hunter, rank-derived display chip (`Cap: 9`, `Cap: 19`, `Cap: none`, or
+  hidden).
+- **World state charts (`machines.ts`, `machines.md`):** added the off-books sponsor trial transition from
+  `Hunter, below the cap` to `Uncapped` (`A person and the System`), added `Off-books grant` before `Watched` in
+  `Sponsor patronage` so Mission 1 does not turn on `Viewers` before Act 2's Network Audit, and updated `The season`
+  to reference the Act 2 Network Audit.
+- **Read-aloud primer sync (`seeds.md` section 3):** updated British spellings (`labourer` to `laborer`, `licence` to
+  `license`) so the primer matches the app's American spelling lint rules.
+
+**Open for the owner from the Act 1 redesign:**
+
+1. **Buyer handle (`story.md` Act 1 and section 7):** settled default is `The Bettor` (ties Mission 1 directly to
+   Soren Kalt's Act 2 arc without adding a seventh viewer and keeps `The Patron` for a friend-player in Act 3). Open
+   for the owner to switch to `The Underwriter` or override `The Patron`.
+2. **Session 1 closing line (`story.md` section 2 and Act 1):** settled default ends on one blank line below
+   `Cap: none` (preserving Act 2's broadcast reveal) rather than displaying `Viewers: 1` at the end of Mission 1.
+3. **Display-only per-hunter `capDisplay` (`power.md` section 5):** settled default keeps `gainXp` uncapped and shows
+   a per-hunter rank-derived chip. Open for the owner only if he wants hard XP enforcement or prefers no cap chip at
+   all.
+4. **Act 2 Network Audit side-door penalty (`story.md` Act 2):** taking the side door at Level 20 must carry a real
+   cost, never a free pass off camera (proposed: restores a cap at the top of the current rank with a later re-offer,
+   or exacts collateral or sponsor debt).
+5. **Unique classes GM lore (`power.md` section 7):** player screens stay literal (`"Six classes are open"`). Open for
+   the owner: (a) whether unique classes are windows vacated by earlier seasons' hunters, and (b) what a Bureau crystal
+   reading shows for a hunter holding a Mythic or Epic class.
+

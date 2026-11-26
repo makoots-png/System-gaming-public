@@ -218,6 +218,7 @@ stateDiagram-v2
   s2 --> s4 : the fever breaks
   s2 --> s3 : the fever kills
   s4 --> s5 : the level reaches the rank's top
+  s4 --> s7 : the hunter clears an off-books sponsor trial [brief second fever follows (Mission 1: The Empty Seat)]
   s5 --> s6 : the System opens a trial gate, which the GM decides
   s6 --> s7 : the hunter passes an open trial [brief second fever follows]
   s6 --> s4 : the hunter passes a step trial [cap rises by one rank with a second fever (recorded re-awakening)]
@@ -244,6 +245,7 @@ stateDiagram-v2
 | In the fever | the fever breaks |  | Hunter, below the cap |
 | In the fever | the fever kills |  | Dead of the fever |
 | Hunter, below the cap | the level reaches the rank's top |  | Hunter, at the cap |
+| Hunter, below the cap | the hunter clears an off-books sponsor trial | brief second fever follows (Mission 1: The Empty Seat) | Uncapped |
 | Hunter, at the cap | the System opens a trial gate, which the GM decides |  | Offered a trial |
 | Offered a trial | the hunter passes an open trial | brief second fever follows | Uncapped |
 | Offered a trial | the hunter passes a step trial | cap rises by one rank with a second fever (recorded re-awakening) | Hunter, below the cap |
@@ -706,23 +708,27 @@ One uncapped hunter's relationship with viewers and a Patron (`story.md` Act 3 a
 ```mermaid
 stateDiagram-v2
   state "Unwatched" as s1
-  state "Watched" as s2
-  state "Sponsored" as s3
-  state "Private quest active" as s4
-  state "Dropped" as s5
+  state "Off-books grant" as s2
+  state "Watched" as s3
+  state "Sponsored" as s4
+  state "Private quest active" as s5
+  state "Dropped" as s6
   [*] --> s1
-  s1 --> s2 : the hunter passes an open trial
-  s2 --> s3 : a Patron adopts the hunter
-  s3 --> s4 : the Patron offers a private quest [approved by the GM]
-  s4 --> s3 : the hunter completes it
-  s4 --> s3 : the hunter refuses it [the Patron stays amused]
-  s4 --> s5 : the hunter refuses it [the Patron loses patience]
-  s5 --> s3 : another Patron steps in
+  s1 --> s3 : the hunter passes a standard Host open trial
+  s1 --> s2 : the hunter clears an off-books sponsor trial
+  s2 --> s3 : the hunter passes the Act 2 Network Audit
+  s3 --> s4 : a Patron adopts the hunter
+  s4 --> s5 : the Patron offers a private quest [approved by the GM]
+  s5 --> s4 : the hunter completes it
+  s5 --> s4 : the hunter refuses it [the Patron stays amused]
+  s5 --> s6 : the hunter refuses it [the Patron loses patience]
+  s6 --> s4 : another Patron steps in
 ```
 
 | State | What a person sees |
 |---|---|
 | Unwatched (start) | The hunter is capped. No viewer count appears. |
+| Off-books grant | The hunter is uncapped from an unscheduled sponsor trial (Mission 1). A blank line sits below Cap: none, and no public Viewers count appears yet. |
 | Watched | The window shows a Viewers count. Named viewers may send tips through GM review. |
 | Sponsored | One Patron has adopted the hunter and sends regular gold and gear. |
 | Private quest active | The Patron has offered a private quest (GM-approved) with a Shop reward. |
@@ -730,7 +736,9 @@ stateDiagram-v2
 
 | From | When this happens | Only if | To |
 |---|---|---|---|
-| Unwatched | the hunter passes an open trial |  | Watched |
+| Unwatched | the hunter passes a standard Host open trial |  | Watched |
+| Unwatched | the hunter clears an off-books sponsor trial |  | Off-books grant |
+| Off-books grant | the hunter passes the Act 2 Network Audit |  | Watched |
 | Watched | a Patron adopts the hunter |  | Sponsored |
 | Sponsored | the Patron offers a private quest | approved by the GM | Private quest active |
 | Private quest active | the hunter completes it |  | Sponsored |
@@ -815,7 +823,7 @@ stateDiagram-v2
   state "The seat is empty" as s7
   state "The party holds the seat" as s8
   [*] --> s1
-  s1 --> s2 : the party passes a trial gate and hits the viewer threshold
+  s1 --> s2 : the party passes the Act 2 Network Audit and hits the viewer threshold
   s2 --> s3 : the Tide's countdown ends
   s3 --> s4 : Earth's hunters win
   s3 --> s5 : Earth's hunters lose
@@ -840,7 +848,7 @@ stateDiagram-v2
 
 | From | When this happens | Only if | To |
 |---|---|---|---|
-| First half | the party passes a trial gate and hits the viewer threshold |  | Second half |
+| First half | the party passes the Act 2 Network Audit and hits the viewer threshold |  | Second half |
 | Second half | the Tide's countdown ends |  | Finale |
 | Finale | Earth's hunters win |  | Season complete |
 | Finale | Earth's hunters lose |  | Earth is lost |

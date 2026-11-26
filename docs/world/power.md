@@ -105,23 +105,34 @@ then read one rank higher. The Bureau calls this a re-awakening and cannot expla
 
 ## 5. The trial gate and the party
 
-In the app the players' hunters have no level cap. The cap and the trial gate are lore that the GM runs
+In the app, XP math never enforces a level cap (`gainXp` never reads `capDisplay`, and `src/core/hunter/level.ts` keeps
+only `MIN_LEVEL` and `MAX_LEVEL`). Instead, each hunter carries a per-hunter, display-only cap chip (`Cap: 9`,
+`Cap: 19`, `Cap: none`, or hidden) derived from `RULES.rankLevels` so the screen reflects the story state the GM runs
 (`story.md`, section 4).
 
 
 This section is for the GM.
 
-A cap can be removed or raised. The System sometimes opens a personal gate of an unusual colour for a hunter who is
+A cap can be removed or raised. Normally, the System opens a personal gate of an unusual color for a hunter who is
 at their cap. Hunters have no name for it, because almost nobody has seen one. This file calls it a trial gate.
-Passing any trial gate triggers a brief second fever as the body's mana ceiling breaks,
-which is why clinics and guild scouts watch for second fevers.
+Passing any trial triggers a brief second fever as the body's mana ceiling breaks, which is why clinics and guild
+scouts watch for second fevers.
 
-The Hosts run two kinds of trial:
+The Hosts run two kinds of scheduled trial:
 
 - **A step trial** raises the hunter's cap by one rank. The fewer than thirty recorded re-awakenings were step trials
   (such as Pavel Dunmore of the Lantern Company, `factions.md`, section 2).
-- **An open trial** removes the cap completely so the window reads "Cap: none". The players' party passes an open
-  trial early in the campaign (`story.md`, act 2) and can then rise through every rank.
+- **An open trial** removes the cap completely so the window reads `"Cap: none"`. Sabine Okoro and Marek Osei passed
+  scheduled open trials.
+
+**The party's off-schedule trial (Mission 1):** the players' party does not wait until level 9 for a Host-scheduled
+open trial. In Mission 1 (`The Empty Seat`, `story.md`, Act 1), a rogue sponsor (`The Bettor`, `story.md`, section 7)
+pays a Season 12 Host off the books to stage an old-format open trial inside a routine E-rank Bureau gate (`Tidewall
+Cannery Gate`). Clearing it lifts the party's cap (`Cap: none`) with a brief second fever at level 3 and grants Wave 1
+unique class access. Because this trial is an off-schedule exception paid for by one buyer rather than routine Host
+casting, Sabine Okoro, Marek Osei, and Pavel Dunmore remain rare. Crossing into D-rank at level 10 forces an Act 1
+cover-up, and crossing into C-rank at level 20 breaks the single re-awakening story (`no recorded hunter has
+re-awakened twice`), triggering the Hosts' formal wrong-colored gate as a **Network Audit** (`story.md`, Act 2).
 
 **Who else has passed an open trial.** A very few hunters are fully uncapped and hide it. Two are named in this
 folder: Sabine Okoro (`fame.md`, section 7) and Marek Osei of the Stair (`factions.md`, section 6).
@@ -187,6 +198,15 @@ years, and they plan further ahead than any elected government.
 one hunter in eight is a Healer. Every party wants one, so guilds pay a healer one and a half times the retainer.
 About one hunter in three hundred is a Necromancer.
 
+**Unique classes (Epic and Mythic).** Beyond the seven standard jobs sit unique classes held by only one hunter at a
+time. In Mission 1 (`The Empty Seat`, `story.md`, Act 1), the buyer prepays a Wave 1 seed package from the Hosts'
+vault: three Mythic classes (`Hemomancer`, `Bladefiend`, `Rifthunter`) and three Epic classes (`Seraph`, `Ironclad`,
+`Stormcaller`). High-depth nodes on Mythic and Epic trees cost heavy gold (`src/core/hunter/classes.ts`), so level-3
+E-ranks holding unique classes still have E-rank HP, E-rank gear, and an E-rank Bureau license. *GM lore notes
+(proposed, needs the owner):* player screens stay literal (`"Six classes are open"`, never `"vacant"`), preserving
+Act 4's reveal. The owner still needs to rule on (1) whether unique classes are windows vacated by earlier seasons'
+hunters, and (2) what a Bureau crystal reading shows for a hunter holding a Mythic or Epic class.
+
 **Shadows.** A Necromancer can extract a shadow from a monster they have killed. The shadow then fights for them.
 A Necromancer gets three attempts on each corpse. Extraction is harder when the monster outranks the Necromancer,
 and harder again for a boss. The law sets three rules:
@@ -247,12 +267,12 @@ window what it is. It has never answered.
 Every hunter knows these things from experience:
 
 - Its numbers are always correct and its payments are never late.
-- A quest pays exactly the reward it named, and a penalty is exactly the penalty it named.
+- A quest pays exactly the reward it named, and a penalty is exactly the penalty it named. Every System rule is
+  honored literally.
 - It speaks in plain words, in the person's first language, with no sign of emotion.
 - It pays more for risk. A smaller party gets more gold and more XP for each hunter.
 - It has never said why anyone is capped.
 - Hunters who have returned from death often develop small blank spots in their memory, failing to recognise a
-  childhood song, a recipe, or a familiar photograph. Doctors call it first-return amnesia and blame oxygen loss
- .
+  childhood song, a recipe, or a familiar photograph. Doctors call it first-return amnesia and blame oxygen loss.
 
 `story.md` has the truth, the order in which the party learns it, and the clues to plant.

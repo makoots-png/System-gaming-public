@@ -19,9 +19,10 @@ import type { TapKind } from './sync/taps.ts';
 export const ONBOARD_STEPS = ['shut', 'quickstart', 'welcome', 'role', 'invite', 'player', 'gm', 'hunterCreated', 'campaignReady'] as const;
 /**
  * `shut`: no window (before setup, after it, between reads of the ? guide). `quickstart`: the ? guide. `welcome`: the
- * System's "Accept?". `role`: Player or GM. `invite`: join the room of the invite link with a name. `player`: name the
- * hunter, a job, a room code. `gm`: the starter campaign or a blank one. `hunterCreated`: the player's confirmation and
- * next steps. `campaignReady`: the GM's confirmation, what a room is, and the offer to create one.
+ * Day Zero "Window active" screen (Set up or Skip setup). `role`: Player or GM. `invite`: join the room of the invite
+ * link with a name. `player`: name the hunter, a job, a room code. `gm`: the starter campaign or a blank one.
+ * `hunterCreated`: the player's confirmation and next steps. `campaignReady`: the GM's confirmation, what a room is,
+ * and the offer to create one.
  */
 export type OnboardStep = (typeof ONBOARD_STEPS)[number];
 
@@ -54,8 +55,8 @@ export type OnboardingAt<B> =
   | { readonly at: 'campaignReady'; readonly create: OnboardingCreate };
 
 /**
- * `start`: the app is ready and the save is not onboarded. `help`: the ? button. `gotIt`: the ? guide's Got it, Skip or
- * Escape. `accept`: Yes (or the fourth No). `player`, `gm`: the role. `back`: Back. `skip`: Skip, or Escape on a setup
+ * `start`: the app is ready and the save is not onboarded. `help`: the ? button. `gotIt`: the ? guide's Close or
+ * Escape. `accept`: Set up. `player`, `gm`: the role. `back`: Back. `skip`: Skip setup, Skip, or Escape on a setup
  * step. `more`: the invite's other options (or Continue without a room, or Escape). `try`: a Join or a Begin with a room
  * code checks the room. `missed`: that check found no room. `joined`: the invite's room is there. `begun`: the player's
  * Begin (with no code, or the code's room there). `refused`: the save refused the write of the tap just made. `starter`,

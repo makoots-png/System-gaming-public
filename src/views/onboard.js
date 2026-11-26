@@ -9,7 +9,7 @@ import { ownSeed } from '../core/starter.ts';
 import { onboarded } from '../core/settings.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { chooseMode } from '../core/role.ts';
-import { ABOUT, LOADED, ROOM_IS, TIPS, createdLine, nextSteps } from '../core/first-run.ts';
+import { ABOUT, LOADED, ROOM_IS, TIPS, WORLD_PRIMER, createdLine, nextSteps } from '../core/first-run.ts';
 import { available } from '../core/hunter/progress.ts';
 import { enter } from './motion.ts';
 import { closeWindow, openWindow, trapTab } from './ui.js';
@@ -26,7 +26,18 @@ export function register(app) {
     .ob-win .n-tag{font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--cyan);margin-bottom:10px}
     .ob-act{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:14px}
     .ob-act button{min-height:46px;min-width:120px;flex:1 1 120px}
-    .ob-no{text-decoration:line-through;opacity:.7}
+    .ob-opt{text-align:left;margin:0 0 12px}
+    .ob-check{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 12px;box-sizing:border-box;border:1px solid var(--line);background:rgba(10,26,46,.45);color:var(--ice);font-size:14px;line-height:1.35;cursor:pointer}
+    .ob-check input{width:20px;height:20px;min-height:20px;margin:0;flex:none;accent-color:var(--cyan)}
+    .ob-steps{text-align:left;margin:0 0 12px}
+    .ob-steps p{color:var(--ice);font-size:14px;line-height:1.45;margin:0 0 6px}
+    .ob-primer{text-align:left;margin:12px 0;border:1px solid var(--line);background:rgba(10,26,46,.45)}
+    .ob-primer summary{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;box-sizing:border-box;cursor:pointer;font-size:14px;font-weight:600;color:var(--gold);list-style:none}
+    .ob-primer summary::-webkit-details-marker{display:none}
+    .ob-primer summary::before{content:'▸';flex:none;color:var(--cyan)}
+    .ob-primer[open] summary::before{content:'▾'}
+    .ob-primer-body{padding:4px 12px 12px;border-top:1px solid var(--line)}
+    .ob-primer-body p{color:var(--ice);font-size:14px;line-height:1.5;margin:10px 0 0}
     .ob-form{text-align:left;display:grid;gap:12px}
     .ob-form .field{display:block}.ob-form input,.ob-form select{width:100%;min-height:44px;box-sizing:border-box;font-size:16px}
     .ob-tips{text-align:left;margin:0 0 12px;padding-left:20px;color:var(--ice);font-size:14px;line-height:1.45}
@@ -155,21 +166,13 @@ export function register(app) {
   app.on('sync:room', freshen);
   app.on('sync:status', freshen);
 
+  /** Collapsible 3-minute Carrow primer read aloud before Session 1 (src/core/first-run.ts `WORLD_PRIMER`). */
+  const primerHtml = () => `<details class="ob-primer" data-primer><summary>Read aloud: Carrow primer</summary><div class="ob-primer-body">${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details>`;
+
   function welcome() {
-    const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Welcome</h2>
-      <p>[SYSTEM] You have been chosen as a Player.<br>Accept?</p>
-      <div class="ob-act"><button type="button" class="primary" data-focus data-yes>Yes</button>
-      <button type="button" class="ob-no" data-no aria-label="No (the System does not allow it)">No</button></div>
-      <p class="ob-err" role="status" data-msg></p>
-      <button type="button" class="ob-skip" data-skip>Skip intro</button>`, ABOUT);
-    const no = w.querySelector('[data-no]'), msg = w.querySelector('[data-msg]'); let n = 0;
-    const dodge = () => {
-      n++; no.style.transform = `translate(${(n % 2 ? -1 : 1) * (6 + (n % 3) * 4)}px, ${(n % 3 - 1) * 4}px)`;
-      msg.style.color = 'var(--gold)';
-      msg.textContent = n < 3 ? '[SYSTEM] Declining is not an option.' : '[SYSTEM] The System does not accept "No".';
-      if (n >= 4) go({ type: 'accept' }); // returns: the choice was never yours
-    };
-    no.addEventListener('click', dodge); no.addEventListener('pointerenter', () => { no.style.transform = `translate(${n % 2 ? 8 : -8}px, 0)`; });
+    const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Window active</h2>
+      <p>Every person has had a System window since Day Zero. Choose whether you are a player or the GM for this table.</p>
+      <div class="ob-act"><button type="button" class="primary" data-focus data-yes>Set up</button><button type="button" data-skip>Skip setup</button></div>`, ABOUT);
     w.querySelector('[data-yes]').addEventListener('click', () => go({ type: 'accept' }));
     w.querySelector('[data-skip]').addEventListener('click', skip);
   }
@@ -262,6 +265,10 @@ export function register(app) {
   function gm() {
     const w = step(`<div class="n-tag">! GM</div><h2 id="{id}">Run the game</h2>
       <p>GM mode unlocks XP grants, free stat edits, and GM tools on this device. How do you want to start?</p>
+      <div class="ob-opt">
+        <label class="ob-check"><input type="checkbox" data-pregens checked aria-describedby="ob-pregens-help"><span>Include 4 sample hunters</span></label>
+        <small class="ob-help" id="ob-pregens-help">Uncheck if players will make hunters on their phones.</small>
+      </div>
       <div class="ob-act"><button type="button" class="primary" data-focus data-starter>Load starter campaign</button><button type="button" data-blank>Start blank</button></div>
       <p class="ob-err" data-msg></p>
       <div class="ob-act"><button type="button" data-back>Back</button></div>
@@ -269,7 +276,8 @@ export function register(app) {
     const q = s => w.querySelector(s);
     q('[data-starter]').addEventListener('click', () => {
       // a read-only tab's refusal is told by go; any other is the starter pack's own
-      const g = go({ type: 'starter' }, starterStep(app));
+      const includePregens = !!q('[data-pregens]').checked;
+      const g = go({ type: 'starter' }, starterStep(app, { includePregens }));
       if ('why' in g && g.why !== READ_ONLY) q('[data-msg]').textContent = 'Could not load the starter campaign. Choose Start blank instead.';
     });
     q('[data-blank]').addEventListener('click', () => { go({ type: 'blank' }, both(owned('Hunter'), atSettings(st => chooseMode(st, 'gm')))); });
@@ -303,8 +311,13 @@ export function register(app) {
   // offer: it confirms the campaign and Continue ends setup.
   function campaignReady(event) {
     const sy = app.api.sync, offer = sy.conn() !== 'off' && !invited(), f = facts('gm', offer);
+    const loaded = (event === 'starter' ? LOADED.starter : LOADED.blank).split('\n');
+    const loadedHtml = loaded.length > 1
+      ? `<p>${esc(loaded[0])}</p><div class="ob-steps">${loaded.slice(1).map(l => `<p>${esc(l)}</p>`).join('')}</div>`
+      : `<p>${esc(loaded[0])}</p>`;
     const w = step(`<div class="n-tag">! GM</div><h2 id="{id}">Campaign ready</h2>
-      <p>${esc(event === 'starter' ? LOADED.starter : LOADED.blank)}</p>
+      ${loadedHtml}
+      ${primerHtml()}
       ${offer ? `<p>${esc(ROOM_IS)}</p>` : ''}
       <div data-role="gm" data-rooms="${offer ? 'yes' : 'no'}">${nextHtml(f)}</div>
       <div class="ob-act">${offer ? '<button type="button" class="primary" data-focus data-obcreate>Create room</button><button type="button" data-oblater>Later</button>' : '<button type="button" class="primary" data-focus data-oblater>Continue</button>'}</div>
@@ -327,6 +340,7 @@ export function register(app) {
       <p>${esc(ABOUT)}</p>
       <div data-role="${role}">${nextHtml(facts(role))}</div>
       <div class="ob-h3">Tips</div><ol class="ob-tips">${TIPS[role].map(t => `<li>${esc(t)}</li>`).join('')}</ol>
+      ${primerHtml()}
       <div class="ob-act"><button type="button" class="primary" data-focus data-ok>Close</button></div>`);
     w.querySelector('[data-ok]').addEventListener('click', gotIt);
   }
