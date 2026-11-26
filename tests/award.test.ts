@@ -1,6 +1,6 @@
 // What one of the GM view's actions writes (src/core/award.ts): its change, its posts and its log line in one answer.
 import { describe, expect, test } from 'bun:test';
-import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, awardSaid, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../src/core/award.ts';
+import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, awardKeepsPending, awardSaid, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../src/core/award.ts';
 import type { AwardDraft, AwardDraftEvent } from '../src/core/award.ts';
 import { dropDealt } from '../src/core/gates/pay.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -165,6 +165,58 @@ describe('the award\'s log line says the job that landed (statechart rule 3)', (
   test('a job-only award that every recipient refused writes no award line', () => {
     expect(sendJob(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], { ...newRewards(), job: 'Seraph' })).toEqual([]);
     expect(sendJob(gmAlone(), [], [KAI], { ...newRewards(), job: 'Seraph' }, true)).toEqual([]);
+  });
+
+  test('a job-only bundle logs no "GM gave" line when nobody took the job, and logs only "Job: X" when one of two took it', () => {
+    const sendBundle = (s: Save, local: { hid: string; vitals: 'sheet' | 'fight' }[], remote: SheetKey[], rewards: Rewards, bundle: string, heldRemote = false) => {
+      const said = awardSaid({
+        R: RULES, rewards, bundle, to: { local: local.map(l => l.hid), remote }, names,
+        line: (bits, to) => ({ kind: 'award' as const, hunterId: null, title: 'GM gave', text: `${bits} → ${to.join(', ')}` }),
+      });
+      const r = gmAward(s, local, rewards, { room: null, events: [], said }, DAY, { key: 'b1', name: bundle, window: null }, null,
+        remote.length ? { targets: remote.map(key => ({ key, name: 'Kai' })), heldRemote: () => heldRemote, stamp: null } : null);
+      return r.save.log.filter(l => l.kind === 'award').map(l => `${l.title}: ${l.text}`).slice(0, r.save.log.length - s.log.length);
+    };
+    const jobOnly = { ...newRewards(), job: 'Seraph' };
+    // Job-only bundle where every recipient refuses: writes no GM gave line at all
+    expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
+    expect(sendBundle(gmAlone(down), [{ hid: 'h1', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
+    expect(sendBundle(gmAlone(taken), [{ hid: 'h1', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
+    expect(sendBundle(gmAlone(full), [{ hid: 'h1', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual([]);
+    expect(sendBundle(gmAlone(), [], [KAI], jobOnly, 'Seraph Gift', true)).toEqual([]);
+    // Job-only bundle where 1 of 2 takes it: logs only "Job: Seraph → Brakk", not the bundle to both
+    expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }, { hid: 'h2', vitals: 'sheet' }], [], jobOnly, 'Seraph Gift')).toEqual(['GM gave: Job: Seraph → Brakk']);
+    // Bundle with non-job reward + refused job: still logs the bundle for the landed reward
+    expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'fight' }], [], SERAPH, 'Seraph Pack')).toEqual(['GM gave: Seraph Pack → Mira']);
+    // Flavor-only bundle with no job: still logs the bundle name
+    expect(sendBundle(gmAlone(), [{ hid: 'h1', vitals: 'sheet' }], [], newRewards(), 'Straight Face')).toEqual(['GM gave: Straight Face → Mira']);
+  });
+
+  test('awardKeepsPending keeps a unique-job-only waiting reward pending when local or remote claims are all refused', () => {
+    const jobOnly = { ...newRewards(), job: 'Seraph' };
+    const plainJob = { ...newRewards(), job: 'Fighter' };
+    const runLocal = (s: Save, vitals: 'sheet' | 'fight', rewards: Rewards) =>
+      gmAward(s, [{ hid: 'h1', vitals }], rewards, { room: null, events: [], said: [] }, DAY);
+    const runRemote = (s: Save, heldRemote: boolean, rewards: Rewards) =>
+      gmAward(s, [], rewards, { room: null, events: [], said: [] }, DAY, null, null, { targets: [{ key: KAI, name: 'Kai' }], heldRemote: () => heldRemote, stamp: null });
+
+    // Local unique-job-only refusals stay pending
+    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(down), 'sheet', jobOnly))).toBe(true);
+    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(), 'fight', jobOnly))).toBe(true);
+    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(full), 'sheet', jobOnly))).toBe(true);
+    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(taken), 'sheet', jobOnly))).toBe(true);
+    // Remote unique-job-only refusals stay pending
+    expect(awardKeepsPending(jobOnly, runRemote(gmAlone(), true, jobOnly))).toBe(true);
+    expect(awardKeepsPending(jobOnly, runRemote(gmAlone(taken), false, jobOnly))).toBe(true);
+    // Taken unique-job-only reward is approved (not kept pending)
+    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(), 'sheet', jobOnly))).toBe(false);
+    expect(awardKeepsPending(jobOnly, runRemote(gmAlone(), false, jobOnly))).toBe(false);
+    // Reward with gold + refused unique job is approved (gold landed)
+    expect(awardKeepsPending(SERAPH, runLocal(gmAlone(down), 'sheet', SERAPH))).toBe(false);
+    // Plain (non-unique) job-only reward is not held pending by unique-job refusal
+    expect(awardKeepsPending(plainJob, runLocal(gmAlone(down), 'sheet', plainJob))).toBe(false);
+    // Bundle give is never treated as a waiting reward approval
+    expect(awardKeepsPending(jobOnly, runLocal(gmAlone(down), 'sheet', jobOnly), { key: 'b1', name: 'Seraph Gift', window: null })).toBe(false);
   });
 
   test('a unique job granted to a downed hunter answers its refusal "dead"', () => {

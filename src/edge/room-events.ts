@@ -395,7 +395,7 @@ function landChain(p: PayloadOf<'chain'>, hids: string[], app: ApplyDeps): Land 
   return save => {
     const day = { at: app.now(), today: app.today(), R: app.rules() }, at = day.at;
     return forEach(save, hids, (s, h) => {
-      const c = chainStep(s, h.id, (next): ChainEvent => (p.kind === 'issue' ? { type: 'issued', id: next('jc'), job: p.job, questId: next('q'), level: h.level, at }
+      const c = chainStep(s, h.id, (next): Exclude<ChainEvent, { type: 'stepCompleted' }> => (p.kind === 'issue' ? { type: 'issued', id: next('jc'), job: p.job, questId: next('q'), level: h.level, at }
         : p.kind === 'reissue' ? { type: 'reissued', by: 'gm', questId: next('q'), level: h.level, at } : { type: 'abandoned', by: 'gm' }), day);
       if (isRefused(c)) return { save: s, tell: nothing };
       const r = c;

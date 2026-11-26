@@ -332,6 +332,7 @@ export const OFFER_WORDS = {
   playerBannerTitle: 'Class offer is open',
   playerBannerAction: 'Pick a class',
   gatePromptNote: 'A carved altar awaits. Tap Offer classes to let each hunter pick a unique class, or mark the gate cleared.',
+  releasedNotice: (cls: string): string => `The GM released ${cls}. Pick a class.`,
   sendFailed: 'Could not send your class pick to the room. Try again.',
 } as const;
 

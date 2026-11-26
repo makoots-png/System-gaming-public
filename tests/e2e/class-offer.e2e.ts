@@ -253,7 +253,7 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
   const m = mira.locator('[data-co-modal]');
   await expect(m).toBeVisible({ timeout: 20_000 });
 
-  await test.step('the GM gives Hemomancer and releases it before either doc goes out: Mira leaves Claiming and can pick again', async () => {
+  await test.step('the GM gives Hemomancer and releases it before either doc goes out: another hunter\'s revoke is ignored, Mira\'s revoke clears Claiming with a plain notice, and she can pick again', async () => {
     // the GM's doc puts wait, so Mira reads neither the grant nor the release from a doc
     let putDocs!: () => void;
     const docsHeld = new Promise<void>(resolve => { putDocs = resolve; });
@@ -262,6 +262,20 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
 
     await m.locator('[data-co-pick="Hemomancer"]').tap();
     await expect(m.locator('[data-co-picking="Hemomancer"]')).toHaveText(OFFER_WORDS.pickingAction('Hemomancer'));
+
+    // A classRevoke for another hunter on the same device must not clear Mira's pending Claiming state.
+    await mira.evaluate(() => {
+      const devId = hunterApp.store.get().settings.deviceId;
+      hunterApp.emit('sync:event', {
+        event: {
+          type: 'classRevoke',
+          payload: { eid: `${devId}-cr-other`, to: [`${devId}:h999`], className: 'Hemomancer', at: new Date().toISOString() },
+        },
+      });
+    });
+    await expect(m.locator('[data-co-picking="Hemomancer"]')).toHaveText(OFFER_WORDS.pickingAction('Hemomancer'));
+    await expect(m.locator('[data-co-msg]')).toHaveCount(0);
+
     const hemoRow = gm.locator('#gm-classes [data-cg-row="Hemomancer"]');
     await expect(hemoRow).toContainText('Held by Mira', { timeout: 20_000 });
     await hemoRow.locator('[data-cg-release="Hemomancer"]').tap();
@@ -270,6 +284,7 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
     await expect(conf).toHaveCount(0);
 
     await expect(m.locator('[data-co-picking]')).toHaveCount(0, { timeout: 20_000 });
+    await expect(m.locator('[data-co-msg]')).toHaveText(OFFER_WORDS.releasedNotice('Hemomancer'));
     putDocs();
     await gm.unroute(docPattern);
     await expect(m.locator('[data-co-pick="Hemomancer"]')).toBeEnabled({ timeout: 20_000 });

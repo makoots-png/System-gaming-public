@@ -43,6 +43,8 @@ import { SNIPER_SIGNATURE, SNIPER_TREE } from '../src/core/registry/class-sniper
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
+import { onCooldown, payCost } from '../src/core/combat/charge.ts';
+import { abilities, playFight } from './models/fight-sim.ts';
 
 const ROOT = import.meta.dir + '/..';
 const AT = '2026-11-25T12:00:00.000Z';
@@ -708,5 +710,68 @@ describe('Rare class combat mechanics', () => {
     expect(bh.statuses.find(s => s.key === statusKey('sniper-sighted'))?.stacks).toBe(1);
     expect(bh.statuses.some(s => s.key === statusKey('sniper-braced-perch'))).toBe(true);
     expect(damageShare(foe, bh, RULES)).toBeCloseTo(0.85, 4);
+  });
+
+  test('Pyromancer: Flash Detonation leads sustained single-target while Kindle Burst + Living Furnace leads clustered AoE without crowding out Flash', () => {
+    const spec = RARE_SPECS[1]!;
+    const bolt = abilities(RULES).bolt;
+    const magmaId = wornAbilityId(abilityId('pyro-magma-floor'));
+    const lanceId = wornAbilityId(abilityId('pyro-ignition-lance'));
+    const emberII = statusKey('pyro-ember-mark-ii');
+    const dummy = () => ({ type: 'pass' as const });
+
+    const measure = (forkB: 'pyro-b5-l' | 'pyro-b5-r', foeCount: number, useMagma: boolean, startHalfHp: boolean, runs = 40) => {
+      const h = makeRareHunter(spec, fullNodesFor(spec.tree, ['pyro-a5-l', forkB]), 'C');
+      const row = hunterRow(h, combatantId('h1'), RULES);
+      const hero = {
+        row: { ...row, abilities: [...row.abilities, bolt], place: place(2, 2) },
+        policy: (f: Running, me: Running['rows'][number]) => {
+          const foes = f.rows.filter(r => r.side !== me.side && r.life.at !== 'dead');
+          const target = foes[0];
+          if (!target) return { type: 'pass' as const };
+          const tryCast = (id: string, aimPlace: boolean) => {
+            const ab = me.abilities.find(a => a.id === id);
+            if (!ab || onCooldown(ab, me, f.now) || !payCost(ab, me)) return null;
+            return { type: 'act' as const, ability: ab, aim: aimPlace ? target.place : target.id };
+          };
+          if (useMagma) {
+            const m = tryCast(magmaId, true);
+            if (m) return m;
+          }
+          // Flash Detonation lets Ember Mark II expire and pop rather than refreshing it prematurely.
+          const waitPop = forkB === 'pyro-b5-l' && target.statuses.some(s => s.key === emberII);
+          if (!waitPop) {
+            const l = tryCast(lanceId, false);
+            if (l) return l;
+          }
+          return tryCast(bolt.id, false) ?? { type: 'pass' as const };
+        },
+      };
+      let total = 0;
+      const spots = [place(6, 2), place(7, 2), place(6, 3)];
+      for (let i = 1; i <= runs; i++) {
+        const ids = Array.from({ length: foeCount }, (_, k) => combatantId(`m${k + 1}`));
+        const foes = monsterRows({ name: 'Target', rank: 'C', archetype: 'brute', kind: 'boss', tweak: { hp: 20 }, abilities: [], statuses: [] }, ids, RULES)
+          .map(foe => (startHalfHp ? { ...foe, life: { at: 'up' as const, hp: Math.floor(rowHp(foe) * 0.45) } } : foe));
+        const foeHp0 = foes.reduce((s, foe) => s + rowHp(foe), 0);
+        const rec = playFight({ rows: [hero, ...foes.map((foe, idx) => ({ row: { ...foe, place: spots[idx]! }, policy: dummy }))], rules: RULES, tallyDamage: false, endAtRounds: 6 }, i);
+        total += foeHp0 - ids.reduce((s, id) => s + (rec.end[id]?.hp ?? 0), 0);
+      }
+      return total / runs;
+    };
+
+    // Single target (Lance + Bolt): Flash stays ahead on sustained damage (especially below half HP)
+    const flashSingleHalf = measure('pyro-b5-l', 1, false, true);
+    const kindleSingleHalf = measure('pyro-b5-r', 1, false, true);
+    const flashSingleFull = measure('pyro-b5-l', 1, false, false);
+    const kindleSingleFull = measure('pyro-b5-r', 1, false, false);
+    expect(kindleSingleHalf / flashSingleHalf, `Kindle/Flash 1T<50% = ${(kindleSingleHalf / flashSingleHalf).toFixed(3)}`).toBeLessThan(1.0);
+    expect(kindleSingleFull / flashSingleFull, `Kindle/Flash 1T full = ${(kindleSingleFull / flashSingleFull).toFixed(3)}`).toBeLessThanOrEqual(1.02);
+
+    // Three clustered foes (full rotation with Molten Basin + Living Furnace): Kindle leads AoE burst without runaway dominance
+    const flashAoe = measure('pyro-b5-l', 3, true, false);
+    const kindleAoe = measure('pyro-b5-r', 3, true, false);
+    expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeGreaterThan(1.0);
+    expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeLessThan(1.15);
   });
 });

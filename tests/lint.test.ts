@@ -2153,8 +2153,8 @@ test('a solo run\'s odds and its run are played by the rules soloFight gave its 
 // naming the step's test:
 // - hunter.js (+5 `heldIn` calls): `systemRaise` (`tests/revive-standing.test.ts`), `setJob` (`tests/classes.test.ts`,
 //   `tests/class-view.test.ts`), `confirmPoints` (`tests/respec.test.ts`).
-// - classes.js (17 calls, the `holderInFight` wrapper's two callers among them): `setJob`, `swapClass`, `buyClassNode`, `flipClassFork` (`tests/classes.test.ts`,
-//   `tests/class-view.test.ts`), `claimUniqueClass`, `releaseUniqueClass`, `reassignUniqueClass` (`tests/class-holders.test.ts`).
+// - classes.js (19 calls, the `holderInFight` wrapper's two callers among them): `setJob`, `swapClass`, `buyClassNode`, `flipClassFork` (`tests/classes.test.ts`,
+//   `tests/class-view.test.ts`), `claimUniqueClass`, `releaseUniqueClass`, `reassignUniqueClass` (`tests/class-holders.test.ts`), `pickClassFromOffer` (`tests/class-offer.test.ts`).
 const FIGHT_ASKS: Readonly<Record<string, number>> = {
   'src/views/quests.js': 3, 'src/views/custom.js': 1, 'src/views/coin.js': 1, 'src/views/trade.js': 1, 'src/views/effects.js': 1,
   'src/views/hunter.js': 11, 'src/views/stories.js': 2, 'src/views/gates.js': 1, 'src/views/inventory.js': 2, 'src/views/gm.js': 3,

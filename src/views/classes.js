@@ -1303,7 +1303,10 @@ export function register(app) {
         offerUi.notice = ev.payload.why === 'class-taken' && taken ? classTakenLine(p.className, taken.name) : pickRefusedLine(ev.payload.why, p.className);
         drawOfferModal();
       } else if (ev.type === 'classRevoke' && ev.payload.className === p.className) {
+        const state = playerOfferState();
+        if (!state?.myKey || !ev.payload.to.includes(state.myKey)) return;
         offerUi.pending = null;
+        offerUi.notice = OFFER_WORDS.releasedNotice(p.className);
         drawOfferModal();
       }
       return;

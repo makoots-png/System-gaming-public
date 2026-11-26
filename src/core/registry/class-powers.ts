@@ -131,7 +131,8 @@ export function classPowers(
     }
   }
 
-  // Status upgrades apply after every replacement, so they reach whichever active a fork or later node folded in.
+  // Status upgrades apply after every replacement, rewriting top-level `applyStatus` ops on folded `actives` only
+  // (never recursing into `zone.ops`, `zone.end`, or nested status triggers).
   for (const up of upgrades) {
     for (let i = 0; i < actives.length; i++) {
       const a = actives[i]!;

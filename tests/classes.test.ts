@@ -348,6 +348,11 @@ describe('setJob, earnClass, swapClass, buyClassNode, flipClassFork, pushedClass
     if (isRefused(held)) throw new Error(held.why);
     expect(held.job).toBeNull();
     expect(held.lines).toContain('Job not taken: Fighter (you are in a fight)');
+    const downSave = { ...s, hunters: s.hunters.map(x => (x.id === h.id ? { ...x, life: { at: 'dead' as const } } : x)) };
+    const down = grant(downSave, h.id, r, { at: AT, today: day('2026-11-25'), R: RULES, vitals: 'sheet' });
+    if (isRefused(down)) throw new Error(down.why);
+    expect(down.job).toBeNull();
+    expect(down.lines).toContain('Job not taken: Fighter (you are down)');
     const free = grant(s, h.id, r, { at: AT, today: day('2026-11-25'), R: RULES, vitals: 'sheet' });
     if (isRefused(free)) throw new Error(free.why);
     expect(free.lines.some(l => l.startsWith('Job not taken'))).toBe(false);

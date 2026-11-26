@@ -145,7 +145,7 @@ export function register(app) {
    * A chain event (made with the save's next ids) and the step quests it completes (a level step already reached), in
    * one write (src/core/hunter/grant.ts `chainStep`); then those steps' windows. Answers the write's Applied whole, for
    * the caller's `ui.wrote` with `CHAIN_WORDS`.
-   * @param {string} hid @param {(next: <P extends string>(prefix: P) => import('../core/ids.ts').IdOf<P>) => import('../core/hunter/job-chain.ts').ChainEvent} make
+   * @param {string} hid @param {(next: <P extends string>(prefix: P) => import('../core/ids.ts').IdOf<P>) => Exclude<import('../core/hunter/job-chain.ts').ChainEvent, { type: 'stepCompleted' }>} make
    */
   function chainEvent(hid, make) {
     const day = { ...stepTime(store.get(), new Date()), R: app.rules() }, out = chainStep(store.get(), hid, make, day);

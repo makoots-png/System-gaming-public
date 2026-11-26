@@ -368,9 +368,10 @@ export type Chained = { save: Save; effects: ChainEffect[]; done: StepDone[] };
  * Hunter `hid`'s Job Change chain told the event `make` builds with the save's next ids, the step quests it asks to
  * complete completed (`stepsReached`, a level step its level already reaches), and its log lines, in one step. Refused
  * when the hunter is not there (`no-hunter`), by the chain's own reason when it refuses the event (`CHAIN_WORDS` says
- * it), or when the event changes nothing (`unchanged`).
+ * it), or when the event changes nothing (`unchanged`). `stepCompleted` goes through `finishQuest`, which supplies
+ * fight-hold context so the final step's job cannot land during a fight.
  */
-export function chainStep(save: Save, hid: string, make: (next: <P extends string>(prefix: P) => IdOf<P>) => ChainEvent, day: Day): Chained | Refused<'no-hunter' | 'unchanged' | ChainRefusal> {
+export function chainStep(save: Save, hid: string, make: (next: <P extends string>(prefix: P) => IdOf<P>) => Exclude<ChainEvent, { type: 'stepCompleted' }>, day: Day): Chained | Refused<'no-hunter' | 'unchanged' | ChainRefusal> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const ids = idsFrom(save.seq), t = chained(save.hunters[at]!, make(ids.next));

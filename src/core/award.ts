@@ -11,7 +11,7 @@ import type { Day, Granted, UniqueJobRefusal, VitalsAt } from './hunter/grant.ts
 import type { EventStamp, GivenBundle, RewardFrom, RoomCode, RoomEvent, SheetKey } from './protocol.ts';
 import { canonicalUniqueClass } from './registry/jobs.ts';
 import { record } from './hunter/chronicle.ts';
-import { jobLine, rewardLines, stripRewardJob } from './rewards.ts';
+import { isEmptyReward, jobLine, rewardLines, stripRewardJob } from './rewards.ts';
 import type { Rewards } from './rewards.ts';
 import type { Rules } from './rules.ts';
 import type { Save } from './save.ts';
@@ -56,7 +56,7 @@ export type AwardSends = Omit<Sends, 'said'> & { readonly said: readonly Said[] 
 /**
  * The Send award's log lines once its grants are known, for `rewards` (or bundle `bundle`, by name) given to `to`:
  * `line(bits, names)` once with the whole reward to everyone when every one took its job or it names none. Otherwise
- * the reward without its job to everyone (left out when that gives nothing and it is not a bundle), and `Job: X` to
+ * the reward without its job to everyone (left out when that gives nothing, even for a bundle), and `Job: X` to
  * those who took it when any did, as a waiting reward's approval logs it (hunter/pending.ts `pendingApproveAll`). A player
  * takes a unique job only by its claim (`took.remote`); a plain job goes in the player's award, so each player sent it
  * counts as taking it. No recipient, no line.
@@ -76,12 +76,30 @@ export function awardSaid(o: {
     const remote = job && canonicalUniqueClass(job) ? took.remote : o.to.remote;
     const tookNames = [...o.to.local.filter(h => took.local.includes(h)).map(o.names.local), ...o.to.remote.filter(k => remote.includes(k)).map(o.names.remote)];
     if (!job || tookNames.length === all.length) return [o.line(o.bundle ?? rewardLines(o.R, o.rewards).join(', '), all)];
-    const rest = o.bundle ?? rewardLines(o.R, stripRewardJob(o.rewards)).join(', ');
+    const stripped = stripRewardJob(o.rewards);
+    const rest = isEmptyReward(stripped) ? '' : (o.bundle ?? rewardLines(o.R, stripped).join(', '));
     return [
       ...(rest ? [o.line(rest, all)] : []),
       ...(tookNames.length ? [o.line(jobLine(job), tookNames)] : []),
     ];
   };
+}
+
+/**
+ * Whether an approved waiting reward should stay pending because it was unique-job-only (not a bundle) and every
+ * recipient's unique-class claim was refused (remote or local).
+ */
+export function awardKeepsPending(
+  rewards: Rewards,
+  awarded: Pick<Awarded, 'granted' | 'remoteClaimed' | 'remoteJobRefused'>,
+  bundle: GivenBundle | null = null,
+): boolean {
+  if (bundle || !rewards.job || !canonicalUniqueClass(rewards.job) || !isEmptyReward(stripRewardJob(rewards))) return false;
+  const anyTaken = awarded.remoteClaimed.length > 0 || awarded.granted.some(x => x.g.job !== null);
+  if (anyTaken) return false;
+  const remoteRefused = awarded.remoteClaimed.length === 0 && awarded.remoteJobRefused.length > 0;
+  const localRefused = awarded.granted.length > 0 && awarded.granted.every(x => !x.g.job && !!x.g.jobRefused);
+  return remoteRefused || localRefused;
 }
 
 /** Optional remote unique-class claim context passed to `gmAward` when `rewards.job` names a unique class. */
