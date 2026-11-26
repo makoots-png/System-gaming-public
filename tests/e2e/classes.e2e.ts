@@ -315,7 +315,7 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
       }, 'test-spoof');
     });
     await expect.poll(() => p2.evaluate(() => hunterApp.store.active().job), { timeout: 20_000 }).toBeNull();
-    expect(await gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).filter(r => r.data.job === 'Hemomancer').map(r => r.data.name))).toEqual(['Mira Unique']);
+    await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).filter(r => r.data.job === 'Hemomancer').map(r => r.data.name)), { timeout: 20_000 }).toEqual(['Mira Unique']);
 
     // Kael cannot type Hemomancer as free text.
     await go(p2, 'status');
