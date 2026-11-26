@@ -830,3 +830,4 @@ ts	phase	decision	why	evidence	result
 2026-11-25T23:40Z	class-rarity	PR 133 merged (bb66e04c): wave 1 PR 2, classes in fights + Hemomancer; two-way with Fable; unit 7190 on merged tree, browser 632 + 122 targeted, CI 45721427198 8/8 (first run one flake). Hemomancer solo rows run hot.
 2026-11-26T00:21Z	class-rarity	PR 134 merged (9eb510bd): wave 1 PR 3, class screens + GM registry; two-way with Fable; unit 7211 merged tree; 2 test fixes after PR 2 merge; CI 45726240619 8/8.
 2026-11-26T03:25Z	boss	PR 135 merged (d93feff3): boss retune for geared parties; CI 45747115985 green
+2026-11-26T05:26Z	item-sync	PR 136 merged (ed460612): item-sync PR 1 + Fable fix-up (B1, B2, should-fix); unit 7236 merged, CI 45760024810 8/8

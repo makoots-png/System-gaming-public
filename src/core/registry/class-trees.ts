@@ -12,6 +12,8 @@ import type { Ability, AbilityId } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName, ClassRarity } from './jobs.ts';
 import { HEMOMANCER_TREE } from './class-hemomancer.ts';
+import { BLADEFIEND_TREE } from './class-bladefiend.ts';
+import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
 
 /** A class worn passive stored with its registry status key for fight-doc references. */
 export type ClassWorn = { readonly key: StatusKey; readonly def: StatusDef };
@@ -85,6 +87,8 @@ export type ClassTree = {
 export type ClassTreeMap = Readonly<Partial<Record<ClassName, ClassTree>>>;
 export const CLASS_TREES: ClassTreeMap = {
   Hemomancer: HEMOMANCER_TREE,
+  Bladefiend: BLADEFIEND_TREE,
+  Rifthunter: RIFTHUNTER_TREE,
 };
 
 /** Returns the skill tree for `name`, or null for custom GM jobs and classes without a tree yet. */

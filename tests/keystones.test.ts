@@ -310,8 +310,8 @@ describe('the registry of keystones (design A.6)', () => {
     expect(rows.filter(r => !r.unweighed.length && r.points < r.budget * (1 - BAND)).map(r => [r.name, r.points])).toEqual([]);
   });
 
-  test('every pair a job names (plus Mythic Necromancer\'s Shadowbound and Hemomancer\'s Blood Magic) is awakened, and no other keystone is', () => {
-    const named = new Set([...JOB_NAMES.map(j => BUILT_IN_JOBS[j].pair), 'pre+pow', 'vit+pow']);
+  test('every pair a job names (plus awakened Mythic confluences) is awakened, and no other keystone is', () => {
+    const named = new Set([...JOB_NAMES.map(j => BUILT_IN_JOBS[j].pair), 'pre+pow', 'vit+pow', 'str+agi', 'ins+ctl']);
     for (const { key, keystone: k } of EVERY) {
       const awakens = key.tier === 'confluence' && named.has(key.pair);
       expect([k.name, k.awakened !== null]).toEqual([k.name, awakens]);

@@ -24,6 +24,8 @@ export const KEYSTONE_DAMAGE_ROWS: readonly ReservedDamageRow[] = [
   { key: 'keystone-executioner', label: 'Executioner', shipped: 'physical' },
   { key: 'keystone-spellblade', label: 'Spellblade', shipped: 'arcane' },
   { key: 'keystone-riposte', label: 'Riposte', shipped: 'physical' },
+  { key: 'keystone-momentum', label: 'Momentum', shipped: 'physical' },
+  { key: 'keystone-deadeye', label: 'Deadeye', shipped: 'physical' },
 ];
 
 /** Default attack rows edited in `RULES.fight.damageTypes` (each shares `ATTACK_ID` at runtime). */

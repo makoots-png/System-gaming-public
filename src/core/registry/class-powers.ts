@@ -10,6 +10,8 @@ import type { ClassName } from './jobs.ts';
 import { CLASS_ACTIVES_MAX, CLASS_TREES, repairNodes } from './class-trees.ts';
 import type { ClassTreeMap, ClassWorn } from './class-trees.ts';
 import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
+import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
+import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
 import type { ClassLocker } from '../hunter/class-locker.ts';
 
 /** Rule slice accepted by `classPowers` (satisfied by `Rules`, `SheetRules`, and `RowRules`). */
@@ -45,6 +47,8 @@ export type ClassSignatureMap = Readonly<Partial<Record<ClassName, ClassSignatur
 /** Shipped class signatures. */
 export const CLASS_SIGNATURES: ClassSignatureMap = {
   Hemomancer: HEMOMANCER_SIGNATURE,
+  Bladefiend: BLADEFIEND_SIGNATURE,
+  Rifthunter: RIFTHUNTER_SIGNATURE,
 };
 
 const EMPTY_CLASS_POWERS: ClassPowersResult = { bonus: {}, scalers: [], worn: null, actives: [] };

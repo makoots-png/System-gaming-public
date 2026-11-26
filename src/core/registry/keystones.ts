@@ -207,11 +207,16 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
 const awake = (k: Keystone, awakened: Powers, awakenedLine?: string): Keystone =>
   ({ ...k, awakened, ...(awakenedLine ? { awakenedLine } : {}) });
 const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
-  'str+agi': () => {
+  'str+agi': R => {
+    const momType = damageTypeOf('keystone-momentum', 'physical', R);
+    const word = DAMAGE_WORD[momType].toLowerCase();
     const line = 'Each move gives you 1 Momentum (up to 3). Your next hit deals 10% more damage per stack, then all stacks are spent.';
     const momentum: StatusDef = { label: 'Momentum', desc: 'Each stack adds 10% damage to its next hit.', ops: [{ op: 'share', on: 'dealt', pct: 10 }], stack: stacking(3, { kind: 'event', event: 'hitDealt' }) };
-    return plain('Momentum', line, { worn: worn('Momentum', line, [], [
+    const slash = `Your critical strikes deal extra ${word} equal to 4.2 times your physical power.`;
+    return awake(plain('Momentum', line, { worn: worn('Momentum', line, [], [
       { on: 'moved', to: 'self', limit: EACH, ops: [apply('momentum', momentum, null)] },
+    ]) }), { worn: worn('Momentum, awakened', slash, [], [
+      { on: 'critDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: momType, amount: formula('4.2 * phys', R) }] },
     ]) });
   },
   'str+vit': R => {
@@ -386,9 +391,16 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
       { on: 'hitDealt', tag: SPELL, to: 'other', limit: EACH, ops: [apply('seared', seared, rounds(2, R))] },
     ]) });
   },
-  'ins+ctl': () => {
+  'ins+ctl': R => {
+    const deadeyeType = damageTypeOf('keystone-deadeye', 'physical', R);
+    const word = DAMAGE_WORD[deadeyeType].toLowerCase();
     const line = 'Your ranged abilities reach 2 tiles farther, and you crit on one more die face.';
-    return plain('Deadeye', line, { worn: worn('Deadeye', line, [{ op: 'sheet', key: 'range', amount: 2 }, { op: 'sheet', key: 'critFaces', amount: { kind: 'number', value: 1 } }]) });
+    const pierce = `Your critical shots deal extra ${word} equal to 4.2 times your Accuracy.`;
+    return awake(plain('Deadeye', line, { worn: worn('Deadeye', line, [{ op: 'sheet', key: 'range', amount: 2 }, { op: 'sheet', key: 'critFaces', amount: { kind: 'number', value: 1 } }]) }), {
+      worn: worn('Deadeye, awakened', pierce, [], [
+        { on: 'critDealt', tag: KIND_TAG.shot, to: 'other', limit: EACH, ops: [{ op: 'damage', type: deadeyeType, amount: formula('4.2 * aim', R) }] },
+      ]),
+    });
   },
   'dis+pre': () => {
     const line = 'Allies within 2 tiles of you have 10 more Discipline.';

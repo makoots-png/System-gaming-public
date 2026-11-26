@@ -7,10 +7,10 @@ import { RULES } from '../src/core/rules.ts';
 import type { ClassNodeId } from '../src/core/ids.ts';
 import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
 import { CLASS_ACTIVES_MAX, TREE_SHAPE, canBuyNode, classTreeOf, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
+import { classPowers } from '../src/core/registry/class-powers.ts';
+import { heldKeystones } from '../src/core/hunter/sheet.ts';
 import { gradeOfSpend, itemSpend, titleSpend } from '../src/core/registry/item-budget.ts';
 import { WEAR_LIMIT } from '../src/core/registry/items.ts';
-import { statusKey } from '../src/core/combat/effect-ops.ts';
-import { abilityId } from '../src/core/combat/ability-types.ts';
 import { wornAbilityId } from '../src/core/registry/abilities.ts';
 import { runSoloMythic, scriptsOn } from './models/fight-sim.ts';
 import { simTest, workBudget } from './models/sim-budget.ts';
@@ -55,13 +55,18 @@ describe('Mythic solo-sim hunter fixtures are 100% legal under shipped rules', (
       // Real Hunter -> hunterRow loads awakened Confluence, Apex, capstone worn, and 4 class actives
       const h = buildMythicSoloHunter(spec, SOLO_MYTHIC_RULES);
       const sim = buildMythicSoloRow(spec, SOLO_MYTHIC_RULES);
+      const cp = classPowers(h, SOLO_MYTHIC_RULES);
+      const ks = heldKeystones(h, SOLO_MYTHIC_RULES);
       expect(h.job).toBe(spec.className);
       expect(h.jobDone).toBe(spec.className);
-      expect(sim.row.statuses.some(s => s.worn && s.key === statusKey('hemo-crimson-pact-lord'))).toBe(true);
-      expect(sim.row.statuses.some(s => s.worn && s.def.label.includes('Blood Magic'))).toBe(true);
-      expect(sim.row.abilities.some(a => a.id === wornAbilityId(abilityId('keystone-cataclysm')))).toBe(true);
-      const hemoActives = sim.row.abilities.filter(a => (a.id as string).startsWith('worn-hemo-'));
-      expect(hemoActives.length).toBe(CLASS_ACTIVES_MAX);
+      expect(cp.worn).not.toBeNull();
+      expect(sim.row.statuses.some(s => s.worn && s.key === cp.worn!.key)).toBe(true);
+      expect(ks.some(k => k.awakened !== null)).toBe(true);
+      expect(ks.length).toBeGreaterThanOrEqual(4);
+      expect(cp.actives.length).toBe(CLASS_ACTIVES_MAX);
+      for (const a of cp.actives) {
+        expect(sim.row.abilities.some(x => x.id === wornAbilityId(a.id)), `${spec.className} missing active ${a.name}`).toBe(true);
+      }
     }, workBudget(0));
   }
 });

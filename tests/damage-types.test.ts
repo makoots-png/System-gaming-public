@@ -283,6 +283,8 @@ describe('GM overrides, weapons, keystones, running fight snapshots, and RoomRul
           'keystone-executioner': 'true',
           'keystone-spellblade': 'physical',
           'keystone-riposte': 'arcane',
+          'keystone-momentum': 'arcane',
+          'keystone-deadeye': 'true',
         },
       },
     });
@@ -314,6 +316,16 @@ describe('GM overrides, weapons, keystones, running fight snapshots, and RoomRul
     const riposteAwakeOp = riposteKs.awakened!.worn!.triggers![0]!.ops[0]!;
     expect(riposteBaseOp.op === 'damage' && riposteBaseOp.type).toBe('arcane');
     expect(riposteAwakeOp.op === 'damage' && riposteAwakeOp.type).toBe('arcane');
+
+    const momKs = keystoneOf({ tier: 'confluence', pair: 'str+agi' }, R);
+    expect(momKs.awakened!.worn!.desc).toContain('arcane damage');
+    const momAwakeOp = momKs.awakened!.worn!.triggers![0]!.ops[0]!;
+    expect(momAwakeOp.op === 'damage' && momAwakeOp.type).toBe('arcane');
+
+    const deadeyeKs = keystoneOf({ tier: 'confluence', pair: 'ins+ctl' }, R);
+    expect(deadeyeKs.awakened!.worn!.desc).toContain('true damage');
+    const deadeyeAwakeOp = deadeyeKs.awakened!.worn!.triggers![0]!.ops[0]!;
+    expect(deadeyeAwakeOp.op === 'damage' && deadeyeAwakeOp.type).toBe('true');
   });
 
   test('every damaging keystone or Confluence op and active ability is GM-editable through RULES.fight.damageTypes', () => {

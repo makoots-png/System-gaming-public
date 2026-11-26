@@ -45,6 +45,8 @@ export const RESERVED_DAMAGE_KEYS = [
   'keystone-executioner',
   'keystone-spellblade',
   'keystone-riposte',
+  'keystone-momentum',
+  'keystone-deadeye',
 ] as const;
 export type ReservedDamageKey = (typeof RESERVED_DAMAGE_KEYS)[number];
 
