@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, go, startGoblinDenFight, chooseList, PHONE } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, startGoblinDenFight, chooseList, PHONE } from './helpers.ts';
 import { ODDS_RUNS, ODDS_WORDS } from '../../src/core/combat/odds.ts';
 
 const odds = (page: Page) => page.locator('#view-combat [data-odds]');
@@ -11,7 +11,7 @@ const kept = (page: Page) => page.evaluate(() => {
 
 /** The GM's fight in setup (tests/e2e/look.e2e.ts builds the same): the starter party and two of the bestiary's first monster, added through the builder. */
 async function buildFight(page: Page) {
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'combat');
   await page.locator('#view-combat [data-addparty]').tap();
   await page.locator('#view-combat [data-mcount]').fill('2');
@@ -64,7 +64,7 @@ test('the GM stops a run of the odds and the control comes back', async ({ devic
 
 test('while a fight runs on the map, the Fight tools play it out from where it stands', async ({ device }) => {
   const page = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await startGoblinDenFight(page);
   await page.locator('#view-combat [data-fview="map"]').tap();

@@ -7,7 +7,7 @@ import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { OUTBOX_MAX, OUTBOX_WORDS } from '../../src/core/sync/outbox.ts';
 import { TABLE_REFUSAL_WORDS } from '../../src/core/combat/refusal-words.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -18,7 +18,7 @@ const lowestDice = (page: Page) => page.evaluate(() => Object.defineProperty(cry
 /** A GM and a player in one room, the player's card on the GM's party board. `carry` goes in the player's bag first (setup). */
 async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page: Page }>, carry: Record<string, unknown>[] = [], gmOptions: DeviceOptions = {}, playerOptions: DeviceOptions = {}): Promise<{ gm: Page; player: Page }> {
   const gm = (await device('gm', gmOptions)).page, player = (await device('player', playerOptions)).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);

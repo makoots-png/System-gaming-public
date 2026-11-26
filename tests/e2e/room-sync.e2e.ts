@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, editIdentity, go, activeHunter, answerWindow, chooseList, roomHeaders, startGoblinDenFight, type Page } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, editIdentity, go, activeHunter, answerWindow, chooseList, roomHeaders, startGoblinDenFight, type Page } from './helpers.ts';
 
 /** The day of room `code`'s world doc, as the server holds it. */
 const worldDay = async (page: Page, code: string): Promise<number | null> =>
@@ -23,7 +23,7 @@ test('a GM and a player in one room see each other\'s changes', async ({ device 
   const kaiCard = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
 
   await test.step('the GM creates a room and the player joins with the code', async () => {
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     const code = await createRoom(gm);
     await onboardPlayer(player, 'Kai Test', code);
     await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -78,7 +78,7 @@ test('a GM and a player in one room see each other\'s changes', async ({ device 
 
 test('a player who left the room and came back gets the award the GM sent meanwhile, once, told in one window', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Kai Test', code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -137,7 +137,7 @@ test('a player who left the room and came back gets the award the GM sent meanwh
 
 test('a GM who leaves a room while it is slow to take the world doc has it put in the next room at once', async ({ device }) => {
   const gm = (await device('gm', { blockServiceWorker: true })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const roomA = await createRoom(gm);
   await expect.poll(() => worldDay(gm, roomA)).toBe(1);
   const slow = held();
@@ -167,7 +167,7 @@ test('a GM who leaves a room while it is slow to take the world doc has it put i
 
 test('a fight the room refused as too big, once cleared, leaves the pill saying live', async ({ device }) => {
   const gm = (await device('gm', { blockServiceWorker: true, allowConsole: [/status of 413/] })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
   const pill = gm.locator('#sync-pill [data-roompill]');
@@ -188,7 +188,7 @@ test('a fight the room refused as too big, once cleared, leaves the pill saying 
 
 test('an award on its way when the GM leaves the room waits for that room, says nothing meanwhile, and lands once when the GM is back', async ({ device }) => {
   const gm = (await device('gm', { blockServiceWorker: true })).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Kai Test', code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);

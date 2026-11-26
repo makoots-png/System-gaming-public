@@ -24,7 +24,7 @@
 // where its two busiest runs went by function. The 100 us profiler's own cost lands in the tasks, so bounds do not hold under it.
 import { Worker } from 'node:worker_threads';
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, go, startGoblinDenFight, createRoom, dismissAll, PHONE, chooseList, type Device, type DeviceOptions } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, go, startGoblinDenFight, createRoom, dismissAll, PHONE, chooseList, type Device, type DeviceOptions } from './helpers.ts';
 import { framesOf, profilerSamplesOf, round1, verdictOf, type CanarySample, type FeelWindow, type PipelineTask, type ProfileTicks, type TaskSpan, type TimedSpan } from './feel-stall.ts';
 
 // No Playwright trace: it takes a snapshot of the page at each action, a task of the harness's own inside the window this
@@ -377,7 +377,7 @@ async function setupMap(device: DeviceFn): Promise<{ dev: Device; page: Page; ma
   const dev = await device('gm', { viewport: PHONE });
   const page = dev.page;
   await page.addInitScript(recorder);
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await startGoblinDenFight(page);
   const combat = page.locator('#view-combat');
@@ -433,7 +433,7 @@ test('on a slow phone the GM plays a turn: a monster\'s use on Brakk and Next, e
     try {
       const page = dev.page;
       await page.addInitScript(recorder);
-      await onboardGM(page);
+      await setupGoblinDenGM(page);
       await chooseList(page);
       await startGoblinDenFight(page);
       const combat = page.locator('#view-combat');
@@ -475,7 +475,7 @@ test('on a slow phone a player watches the GM\'s turn: the HUD takes the GM\'s h
     try {
       const gm = gmDev.page, player = playerDev.page;
       await player.addInitScript(recorder);
-      await onboardGM(gm);
+      await setupGoblinDenGM(gm);
       await chooseList(gm);
       const code = await createRoom(gm);
       await onboardPlayer(player, 'Kai Feel', code);
@@ -523,7 +523,7 @@ test('on a slow phone a maker opens from the GM\'s Make row, its first frame at 
     try {
       const page = dev.page;
       await page.addInitScript(recorder);
-      await onboardGM(page);
+      await setupGoblinDenGM(page);
       await chooseList(page);
       await go(page, 'gm');
       const make = page.locator('#gm-make [data-make="item"]');
@@ -622,7 +622,7 @@ test('on a slow phone the GM plays a fight out 100 times for its odds, and the s
     try {
       const page = dev.page;
       await page.addInitScript(recorder);
-      await onboardGM(page);
+      await setupGoblinDenGM(page);
       await go(page, 'combat');
       await page.locator('#view-combat [data-addparty]').tap();
       await page.locator('#view-combat [data-mcount]').fill('3');

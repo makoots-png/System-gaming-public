@@ -100,7 +100,7 @@ describe('the link and the push under every event sequence', () => {
     expect(r.failure).toBeNull();
     expect(r.complete).toBe(true);
     // about 69,000 states and 20 s since a player's chase (ten quick polls) and the room's pace are part of the link.
-    // Inside the whole run with four workers (scripts/ci.ts), three runs on Nov 19: 19, 18 and 19 s. The budget is 60 s,
-    // over twice the slowest.
-  }, 60_000);
+    // Inside the whole run with four workers (scripts/ci.ts), three runs on Nov 19: 19, 18 and 19 s; under concurrent
+    // box load on Nov 26 it took 86 s and tripped 60 s. The budget is 180 s, over twice the loaded run.
+  }, 180_000);
 });

@@ -392,6 +392,8 @@ test('10 gear slots allow 6 active at once, show Swap on occupied slots, and loc
   await expect(swapCrown).toHaveText('Swap');
   await swapCrown.tap();
   await expect.poll(async () => (await activeHunter(page)).equipped.head).toBe(ids.crown);
+  // Wait for the rAF-batched Equipment panel redraw (which replaces [data-slots].innerHTML) before scrolling to a button inside it.
+  await expect(eq.locator('[data-slot="head"]')).toContainText('Iron Crown');
 
   // Tapping Unequip on the locked Off hand row unequips the two-handed weapon
   const offUnequip = eq.locator('[data-slot="offhand"] [data-unequip="weapon"]');

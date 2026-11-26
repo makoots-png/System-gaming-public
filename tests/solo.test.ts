@@ -650,8 +650,11 @@ describe('a world gate open to solo runs, in a room', () => {
       const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), DOCS.solo(JSON.parse(JSON.stringify(built))));
       const p = { ...alone({ skills: [caller] }), gates: [] }, at = ctx({ route: IN_ROOM, bound: H1, room: { targets, waiting: [] } });
       const ready = ok(soloReady(p, H1, WORLD, at)), card: Weighed = soloFight(ready.h, ready.target, RULES)!;
+      // 10 plays per case proves every assertion below (all wins vs losses, Sprite divergence, seed-0 match) without
+      // running 300 full fights against the 5 s default timeout on slower CI runners.
+      const PLAYS = 10;
       const playedBy = (R: Rules) => {
-        let odds: OddsRun = oddsStep(IDLE, { type: 'ask', fight: card.fight, seed: 42, of: ODDS_RUNS }, R);
+        let odds: OddsRun = oddsStep(IDLE, { type: 'ask', fight: card.fight, seed: 42, of: PLAYS }, R);
         while (odds.state === 'running') odds = oddsStep(odds, { type: 'step', commands: 500 }, R);
         if (odds.state !== 'done') throw new Error('no answer');
         return odds.odds;

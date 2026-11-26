@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { RAISE_CHIPS, RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtPreviewLine, debtXpClearedLine, debtXpLine, raiseLine, raiseOffer, raiseOwes, raisedSaid } from '../../src/core/hunter/revive-standing.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, gateByName } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, gateByName } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -18,7 +18,7 @@ const gold = (n: number) => `${n.toLocaleString('en-US')} gold`;
 
 test('a player\'s hunter killed in the GM\'s fight is offered the System raise once the fight ends: free, then on a debt of ten Clears, then never, and the GM\'s log hears each', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
@@ -90,7 +90,7 @@ test('a player\'s hunter killed in the GM\'s fight is offered the System raise o
 
 test('a death from the GM\'s fight that reaches the player\'s phone before the fight\'s doc offers no raise until that fight ends', async ({ device }) => {
   const gm = (await device('gm', { blockServiceWorker: true })).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
@@ -154,7 +154,7 @@ test('Not now leaves the hunter dead, and Rise on the sheet opens the window aga
 
 test('gate clear gold splits three ways for System revive debt, XP is cut while owing, room rules sync, and paying off debt restores full XP', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);

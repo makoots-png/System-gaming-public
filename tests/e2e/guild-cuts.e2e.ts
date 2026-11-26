@@ -4,14 +4,14 @@ import { CRYSTAL_WORDS, clearCrystalFor } from '../../src/core/hunter/crystal.ts
 import { GUILD_TABLE_PERKS, GUILD_WORDS, guildSheetLine } from '../../src/core/hunter/guild.ts';
 import { RULES, rulesOf } from '../../src/core/rules.ts';
 import { guildLines } from '../../src/core/rules-text.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
 
 const HUNTER = 'Jin Guild';
 const modalWin = (page: Page, title: string) => page.locator('.sys-overlay.show', { hasText: title });
 
 test('GM refuses Ninth Hour Rookie, assigns Ironwake Core, player uses Helix 90%, clears with Order C debt+guild split, uses custom override, and reads Rules at 390px and 360px', async ({ device }) => {
   const gm = (await device('gm-guild')).page, player = (await device('pl-guild')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);

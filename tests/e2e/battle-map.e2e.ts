@@ -5,7 +5,7 @@ import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, answerWindow, chooseList, startGoblinDenFight } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, fightRow, answerWindow, chooseList, startGoblinDenFight } from './helpers.ts';
 
 const HUNTER = 'Kai Map', MONSTER = 'Cave Rat', BRAKK = 'Brakk Ironhide';
 /** Every die rolls its lowest face: a reaction d20 of 1 is caught and a crit, so a use lands. */
@@ -19,7 +19,7 @@ const token = (page: Page, id: string) => map(page).locator(`[data-tok="${id}"]`
 /** A GM and a player in one room, the player's card on the GM's party board. */
 async function room(device: (label: string) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page }> {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -448,7 +448,7 @@ test('a player who switches the fight between list and map three times leaves no
 
 /** A GM alone with Brakk and one rat, the fight started on the map. */
 async function gmMapFight(gm: Page): Promise<void> {
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'combat');
   await combat(gm).locator('[data-hsel]').selectOption({ label: BRAKK });
   await combat(gm).locator('[data-addh]').tap();
@@ -492,7 +492,7 @@ test('on a 390 px phone the GM\'s fight switched from map to list fits the scree
 
 test('on a wide screen Add to the fight opened by hand in one fight folds away again when the next fight starts', async ({ device }) => {
   const gm = (await device('gm', { viewport: { width: 1280, height: 800 } })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await go(gm, 'combat');
   const build = combat(gm).locator('[data-build]');
@@ -524,7 +524,7 @@ test('on a wide screen Add to the fight opened by hand in one fight folds away a
 
 test('the GM taps See as a goblin and the hidden hunter it cannot see leaves the map; Everything brings it back dimmed', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await startGoblinDenFight(page);
   const { brakk, goblin } = await page.evaluate(() => {
@@ -562,7 +562,7 @@ test('the GM\'s tap on a hotbar slot of a settled, framed map draws its reach wi
   // lag test's stutter on a pick (tests/e2e/feel.e2e.ts, "an ability picked on the map"). Settled: a move still running
   // when a new one starts on the same element is read from its computed style (motion.ts), which is motion's, not the map's.
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await startGoblinDenFight(page);
   await combat(page).locator('[data-fview="map"]').tap();

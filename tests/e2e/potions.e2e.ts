@@ -9,7 +9,7 @@ import { SHOP_ITEMS } from '../../src/core/registry/items.ts';
 import { RANK_CAP_TEXT } from '../../src/core/effects.ts';
 import { USE_WORDS } from '../../src/core/hunter/use.ts';
 import { REFUSAL_WORDS } from '../../src/core/combat/refusal-words.ts';
-import { test, expect, onboardGM, onboardPlayer, dismissAll, go, activeHunter, chooseList, startGoblinDenFight } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, dismissAll, go, activeHunter, chooseList, startGoblinDenFight } from './helpers.ts';
 
 const SHOT_DIR = process.env.POTION_SHOTS || '';
 async function snap(page: Page, name: string): Promise<void> {
@@ -81,7 +81,7 @@ test('on a 390 px phone the Shop lists all 35 items, filters cleanly by rank, an
 
 test('a rank B hunter is refused a rank E potion outside a fight and inside a fight by core, keeping the bottle', async ({ device }) => {
   const { page } = await device('cap-refuse');
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await dismissAll(page);
   await page.evaluate(() => hunterApp.store.update((d: any) => {
     d.rulesOverrides.solo = { personal: false };
@@ -122,7 +122,7 @@ test('a rank B hunter is refused a rank E potion outside a fight and inside a fi
 
 test('in the item maker a GM can toggle rank cap on a consumable and sees 1.0x default price for full-heal consumables', async ({ device }) => {
   const { page } = await device('gm-maker');
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();
   const d = page.locator('.lf-overlay [role=dialog]');

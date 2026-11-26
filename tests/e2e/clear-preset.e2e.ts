@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises';
-import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName, ROOM_CODE, type Page } from './helpers.ts';
+import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName, ROOM_CODE, type Page } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { PRESET_WORDS } from '../../src/core/gates/preset.ts';
 import { shareEach } from '../../src/core/gates/spawn.ts';
@@ -22,7 +22,7 @@ const hunterTotalXp = (h: any): number => h.xp + RULES.xpPerLevel * (h.level - 1
 test('GM pre-sets a room gate clear, players never see it early, and clearing pays directly through the unified Clear panel and Party stash', async ({ device }) => {
   const gm = (await device('gm')).page;
   const player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   expect(code).toMatch(ROOM_CODE);
   await onboardPlayer(player, 'Kai Preset', code);
@@ -155,7 +155,7 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing pa
 test('non-preset gate opens the unified editable Clear panel with rolled boss loot, cancels cleanly without saving a preset, and pays edits directly', async ({ device }) => {
   const gm = (await device('gm-unified')).page;
   const player = (await device('player-unified')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Sera Unified', code);
   await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.remoteSheets().some((r: any) => r.data && r.data.name === 'Sera Unified'))).toBe(true);
@@ -201,7 +201,7 @@ test('non-preset gate opens the unified editable Clear panel with rolled boss lo
 
 test('playing alone: clearing a gate with a preset pays exact amounts immediately and stashes unpicked items', async ({ device }) => {
   const gm = (await device('gm-alone')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const gate = await gateByName(gm, 'Goblin Den');
   const startXp = await lifetimeXp(gm);
   const startGold: Record<string, number> = await gm.evaluate(() => Object.fromEntries(hunterApp.store.get().hunters.map((h: any) => [h.name, h.gold])));

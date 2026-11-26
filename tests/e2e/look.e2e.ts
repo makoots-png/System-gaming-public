@@ -1,4 +1,4 @@
-import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, createRoom, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, createRoom, PHONE, SMALL_PHONE } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import { WAYS_BACK } from '../../src/core/hunter/vitals.ts';
 import type { Locator } from '@playwright/test';
@@ -32,7 +32,7 @@ test('on a phone, three toasts in a row show the last two above the bottom bar, 
 
 test('on a 390 px phone, with an item, a title and a boon in the Award form, Send award is in view without scrolling and one tap sends it', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'gm');
   const toggle = gm.locator('[data-tog="award"]');
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
@@ -245,9 +245,7 @@ test('on the inventory, Store is the one filled button and is 44 px tall; Save c
 
 test('at 1280 the status maker keeps its preview in the right column in view while the effects scroll', async ({ device }) => {
   const gm = (await device('gm', { viewport: { width: 1280, height: 800 }, mouse: true })).page;
-  await openApp(gm);
-  for (const step of ['[data-yes]', '[data-gm]', '[data-starter]', '[data-oblater]']) await gm.locator(`.ob-overlay ${step}`).click();
-  await expect(gm.locator('.ob-overlay')).toHaveCount(0);
+  await setupGoblinDenGM(gm);
   await go(gm, 'workshop');
   await gm.locator('#view-workshop [data-ws="status"] [data-new]').click();
   const dlg = gm.locator('.fg-overlay [role=dialog]');
@@ -262,7 +260,7 @@ test('at 1280 the status maker keeps its preview in the right column in view whi
 
 test('on a 390 px phone the map maker shows its brushes and the map\'s first rows on the first screen, the map scrolls inside its frame, and every button is at least 44 px tall', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'workshop');
   await gm.locator('#view-workshop [data-ws="map"] [data-new]').tap();
   const d = gm.locator('.mpm-overlay [role=dialog]');
@@ -279,7 +277,7 @@ test('on a 390 px phone the map maker shows its brushes and the map\'s first row
 
 test('on a 390 px phone in a fight on the map, the map and its hotbar fit the first screen, Paint and Grid are 44 px buttons and the fight\'s news sits clear of the hotbar and the dock', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await startGoblinDenFight(gm);
   await gm.locator('#view-combat [data-fview="map"]').tap();
@@ -332,7 +330,7 @@ test('on a 390 px phone in a fight on the map, the map and its hotbar fit the fi
 
 test('on a 360 px phone the Fight tools keep each map size stepper, its label, minus, number and plus, on one row', async ({ device }) => {
   const gm = (await device('gm', { viewport: SMALL_PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await startGoblinDenFight(gm);
   await gm.locator('#view-combat [data-fview="map"]').tap();
@@ -352,7 +350,7 @@ test('on a 360 px phone the Fight tools keep each map size stepper, its label, m
 
 test('on a 390 px phone a pack of rats and a boss on the map each show their picture in the disc, the pack\'s letter in its corner and the boss\'s inside its stagger ring; a hunter shows its emblem, or its initials with none; the card, the order and the hotbar show theirs beside the words', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await startGoblinDenFight(gm);
   const combat = gm.locator('#view-combat');
@@ -430,7 +428,7 @@ test('on a 390 px phone a pack of rats and a boss on the map each show their pic
 for (const width of [360, 390]) {
   test(`on a ${width} px phone in a melee of three on the map, every name is clear of the other tokens and the other names, aimed or not`, async ({ device }) => {
     const gm = (await device('gm', { viewport: { width, height: 800 } })).page;
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     await chooseList(gm);
     await startGoblinDenFight(gm);
     await gm.evaluate(() => hunterApp.store.update((d: any) => {
@@ -476,7 +474,7 @@ for (const width of [360, 390]) {
 for (const width of [360, 390]) {
   test(`on a ${width} px phone the kits' groups of the status and skill makers, every one open, scroll only up and down, and every control is at least 44 px tall`, async ({ device }) => {
     const page = (await device('gm', { viewport: { width, height: 800 } })).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await go(page, 'workshop');
     /** Controls in `box` that are shown and under 44 px tall, and whether the maker's scroll is wider than the window. */
     const audit = (box: Locator) => box.evaluate(win => {
@@ -587,7 +585,7 @@ test('a player who closes a status chip\'s or a sheet number\'s detail opens it 
 
 test('a GM who closes a monster ability\'s detail on its card opens it again with the next tap', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await startGoblinDenFight(gm);
   const ability = gm.locator('#view-combat .cmb-x.abil .cmb-ai').first(), detail = gm.locator('#view-combat .cmb-x.abil .dt');
@@ -602,7 +600,7 @@ test('a GM who closes a monster ability\'s detail on its card opens it again wit
 
 test('a GM who closes a hotbar ability\'s detail on the map opens it again with the next press and hold', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'combat');
   const combat = gm.locator('#view-combat');
   await combat.locator('[data-hsel]').selectOption({ label: 'Brakk Ironhide' });
@@ -628,7 +626,7 @@ test('a GM who closes a hotbar ability\'s detail on the map opens it again with 
 
 test('shadows take no room until someone holds one: the GM\'s Add to the fight form has no shadow block with none summoned and shows it once one is, and a player sees the Shadows tab only with a job that extracts or a shadow of their own', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'combat');
   const block = gm.locator('#view-combat fieldset', { hasText: 'Summoned shadows' });
   await expect(gm.locator('#view-combat [data-hsel]')).toBeVisible();
@@ -654,7 +652,7 @@ test('shadows take no room until someone holds one: the GM\'s Add to the fight f
 for (const viewport of [PHONE, SMALL_PHONE]) {
   test(`on a ${viewport.width} px phone the odds control and its line fit the screen`, async ({ device }) => {
     const page = (await device('gm', { viewport })).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await go(page, 'combat');
     await page.locator('#view-combat [data-addparty]').tap();
     await page.locator('#view-combat [data-addm]').tap();
@@ -690,7 +688,7 @@ for (const viewport of [PHONE, SMALL_PHONE]) {
 for (const viewport of [SMALL_PHONE, PHONE]) {
   test(`on a ${viewport.width} px phone the GM's shelf of awards keeps Cancel and its moment chips on screen while the list scrolls, each row says when and what it gives, and nothing scrolls sideways`, async ({ device }) => {
     const gm = (await device('gm', { viewport })).page;
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     await go(gm, 'gm');
     const card = gm.locator('#gm-board .gm-card', { hasText: 'Brakk Ironhide' });
     await card.locator('[data-ggive]').tap();
@@ -745,7 +743,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 for (const viewport of [SMALL_PHONE, PHONE]) {
   test(`at ${viewport.width} px a feat's four conditions sit under Only when, each two rows of 44 px controls, with no sideways scroll`, async ({ device }) => {
     const page = (await device('gm', { viewport })).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await go(page, 'workshop');
     await page.locator('#view-workshop [data-ws="feat"] [data-new]').tap();
     const d = page.locator('.fm-overlay [role=dialog]');
@@ -764,7 +762,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 
 test('on a 360 px phone the feat maker scrolls only up and down, and every control in it is at least 44 px tall', async ({ device }) => {
   const page = (await device('gm', { viewport: SMALL_PHONE })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   await page.locator('#view-workshop [data-ws="feat"] [data-new]').tap();
   const d = page.locator('.fm-overlay [role=dialog]');
@@ -783,7 +781,7 @@ test('on a 360 px phone the feat maker scrolls only up and down, and every contr
 for (const viewport of [SMALL_PHONE, PHONE]) {
   test(`at ${viewport.width} px the story maker with four chapters scrolls only up and down, and the open chapter's controls are at least 44 px tall`, async ({ device }) => {
     const page = (await device('gm', { viewport })).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await go(page, 'workshop');
     await page.locator('#view-workshop [data-ws="story"] [data-new]').tap();
     const d = page.locator('.stm-overlay [role=dialog]');
@@ -808,7 +806,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 for (const viewport of [SMALL_PHONE, PHONE]) {
   test(`at ${viewport.width} px the GM view's Stories, its turn-on window and its open window have 44 px controls, no sideways scroll, and the open window's actions on screen at the end of its list`, async ({ device }) => {
     const page = (await device('gm', { viewport })).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await page.evaluate(story => hunterApp.store.update((d: any) => {
       d.library.stories = [{ ...story, id: 'st1', name: 'A story with a name long enough to wrap at this width' }];
       d.rulesOverrides = { ...d.rulesOverrides, feats: { on: false } };
@@ -856,7 +854,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 for (const viewport of [SMALL_PHONE, PHONE]) {
   test(`at ${viewport.width} px the Chronicle of a hunter with 40 entries shows the 5 newest and one 44 px button for the rest, and scrolls only up and down, on the sheet and in the GM's window`, async ({ device }) => {
     const gm = (await device('gm', { viewport })).page;
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     await gm.evaluate(() => {
       const s = hunterApp.store, at = (i: number) => new Date(Date.parse('2026-11-01T10:00:00.000Z') + i * 3_600_000).toISOString();
       const fight = { kind: 'fight', outcome: 'won', rounds: 6, up: true, downs: 0, low: 12, endPct: 12, exactOne: false, struck: 4, hits: 5, crits: 1, critRun: 1, avoided: 0, dealt: 60, taken: 40, healed: 0, raised: 0, hexes: 0,
@@ -920,7 +918,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 for (const viewport of [SMALL_PHONE, PHONE]) {
   test(`at ${viewport.width} px the GM's quest form with an objective counted by the System, a title worn in fights and If it fails scrolls only up and down, and every control in it is at least 44 px tall`, async ({ device }) => {
     const page = (await device('gm', { viewport })).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await go(page, 'quests');
     await page.locator('#view-quests [data-new]').tap();
     const form = page.locator('#view-quests form[data-form]');
@@ -970,7 +968,7 @@ test('on 360 and 390 px phones the Bag\'s four tabs and an item\'s row with Give
 
 test('on a 390 px phone the Give window with Ask in return open fits the width, and its chips and Ask in return are at least 44 px tall', async ({ device }) => {
   const gm = (await device('gm')).page, brakk = (await device('brakk', { viewport: PHONE })).page, mira = (await device('mira')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(brakk, 'Brakk', code);
   await onboardPlayer(mira, 'Mira', code);
@@ -993,7 +991,7 @@ test('on a 390 px phone the Give window with Ask in return open fits the width, 
 
 test('on a 390 px phone a player\'s Stash tab and the GM\'s stash list fit the width, each line\'s name beside its 44 px button', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page, mira = (await device('mira', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(mira, 'Mira', code);
   await dismissAll(mira, 4);

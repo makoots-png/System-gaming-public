@@ -4,14 +4,14 @@ import { CRYSTAL_WORDS, clearCrystalEach } from '../../src/core/hunter/crystal.t
 import { PRESET_WORDS } from '../../src/core/gates/preset.ts';
 import { RULES, rulesOf } from '../../src/core/rules.ts';
 import { crystalLines } from '../../src/core/rules-text.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
 
 const HUNTER = 'Kira Crystal';
 const exchangeWin = (page: Page) => page.locator('.sys-overlay.show', { hasText: CRYSTAL_WORDS.modalTitle });
 
 test('player earns mana crystal from a clear, sells at Bureau when debt-free and Stair when in debt, sees Helix locked, and syncs to GM', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -136,7 +136,7 @@ test('player earns mana crystal from a clear, sells at Bureau when debt-free and
 
 test('GM can adjust, edit, award, and pre-set mana crystal per hunter', async ({ device }) => {
   const gm = (await device('gm-ctrl')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'status');
 
   // 1. Bag Adjust crystal

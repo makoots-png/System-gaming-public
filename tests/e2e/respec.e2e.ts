@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test';
 import { RESPEC_WORDS, confirmCostLine, respecCost, respecRefusalWords, respecSaid } from '../../src/core/hunter/respec.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { newTally } from '../../src/core/hunter/chronicle.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
 
 const SHOTS = process.env.RESPEC_SHOTS ?? '';
 const shot = async (page: Page, name: string) => {
@@ -118,7 +118,7 @@ test('a solo player takes points back free before their first fight, then pays c
 test('in a room, respec follows GM respecPrices, refuses during a fight, sends one sealed report to the GM, and GM local respec is free', async ({ device }) => {
   const gm = (await device('gm')).page;
   const player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Mira Respec', code);

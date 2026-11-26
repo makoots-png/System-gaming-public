@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { UPGRADE_TAKEOVER_WORDS } from '../../src/core/upgrade.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, editIdentity, go, save, chooseList, startGoblinDenFight, PHONE, type Page } from './helpers.ts';
+import { test, expect, onboardGM, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, editIdentity, go, save, chooseList, startGoblinDenFight, PHONE, type Page } from './helpers.ts';
 
 // Chromium logs every 426 answer as a console error. The 426 is the refusal these tests are about.
 const REFUSED_LOG = /Failed to load resource: the server responded with a status of 426 \(Upgrade Required\)/;
@@ -114,7 +114,7 @@ async function sendOldBuild(page: Page, keepGoing: (refusals: number) => boolean
 }
 
 async function gmAndPlayerInARoom(gm: Page, player: Page): Promise<string> {
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Kai Test', code);
   await expect.poll(async () => (await syncState(player)).room).toBe(code);
@@ -221,7 +221,7 @@ test('a phone that cannot update shows the blocking takeover window, does not re
 
 test('a stuck update during a running fight freezes combat behind the takeover and preserves the fight in Export backup', async ({ device }) => {
   const gm = (await device('gm', { blockServiceWorker: true, allowConsole: [REFUSED_LOG] })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await createRoom(gm);
   await chooseList(gm);
   await startGoblinDenFight(gm);
@@ -293,7 +293,7 @@ test('stuck-update takeover fits 390 px and 360 px viewports with no horizontal 
 
   for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 844 }]) {
     const gm = (await device(`gm-${viewport.width}`, { viewport, blockServiceWorker: true, allowConsole: [REFUSED_LOG] })).page;
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     await createRoom(gm);
     await fillStorage(gm, UPGRADE_KEY);
     await sendOldBuild(gm, () => true);

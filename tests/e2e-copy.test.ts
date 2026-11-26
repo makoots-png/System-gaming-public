@@ -773,7 +773,8 @@ describe('e2e on-screen copy guard', () => {
     const rawKeys = new Set(rawStale.map(h => `${h.file}\0${h.chunk}`));
     const unused = ALLOWLIST.filter(e => !rawKeys.has(`${e.file}\0${e.chunk}`)).map(e => `${e.file}: ${JSON.stringify(e.chunk)}`);
     expect(unused, 'Remove unused ALLOWLIST entries once the lint no longer needs them.').toEqual([]);
-  });
+    // Scans every src/, public/, and tests/e2e/*.e2e.ts file (~1.2 s idle, ~2.9 s under parallel load); 30 s avoids default-5 s CI flakes.
+  }, 30_000);
 
   test('catches stale e2e words from the plain-copy pass and names the file, line, and missing words', () => {
     const appFiles = new Map<string, string>([

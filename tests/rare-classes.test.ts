@@ -785,5 +785,6 @@ describe('Rare class combat mechanics', () => {
     const kindleAoe = measure(fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-r']), 3, true, false);
     expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeGreaterThan(1.0);
     expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeLessThan(1.15);
-  });
+    // Runs 440 6-round fights across 11 variants (~1.4 s idle, ~3.5 s under parallel load); 30 s avoids default-5 s CI flakes.
+  }, 30_000);
 });

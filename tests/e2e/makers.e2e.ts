@@ -3,7 +3,7 @@
 // (combat.js); they need W5's merge to run.
 import { fightId } from '../../src/core/ids.ts';
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { itemSpend, spendLine } from '../../src/core/registry/item-budget.ts';
 import type { ItemTemplate } from '../../src/core/registry/items.ts';
@@ -84,7 +84,7 @@ const card = (page: Page, name: string) => combat(page).locator('.cmb-card', { h
 
 test('a GM makes Frostbite with damage by rank in 6 taps from the home screen, and a C-rank monster in a fight shows its C value', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const t = tapCounter(), d = statusMaker(page);
 
   await test.step('the GM makes the status: 1d6 arcane a round by rank, S changed to 9d12', async () => {
@@ -120,7 +120,7 @@ test('a GM makes Frostbite with damage by rank in 6 taps from the home screen, a
 
 test('a GM makes a status whose damage is a formula on the bearer\'s max HP, and a wrong name in it shows the parser\'s error on its row', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -140,7 +140,7 @@ test('a GM makes a status whose damage is a formula on the bearer\'s max HP, and
 
 test('a GM puts Slowed on an E-rank monster by hand at Strength A, and the card shows Speed −40%', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const wolf = await fightWith(page, 'E'), d = statusMaker(page);
   await statusOn(page, wolf);
   await expect(d.locator('[data-chips="strength"] [data-chip="E"]')).toHaveAttribute('aria-pressed', 'true');
@@ -153,7 +153,7 @@ test('a GM puts Slowed on an E-rank monster by hand at Strength A, and the card 
 
 test('from the Workshop, New status has no Rounds, no Apply existing and no Save to library, and one Save status button keeps it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -172,7 +172,7 @@ test('from the Workshop, New status has no Rounds, no Apply existing and no Save
 
 test('in a fight, Poisoned goes on a monster one tap after the Status window opens, with the Rounds and Strength the window shows', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const wolf = await fightWith(page, 'E'), d = statusMaker(page), t = tapCounter();
   await statusOn(page, wolf);
   await d.getByLabel('Rounds', { exact: true }).fill('5');
@@ -188,7 +188,7 @@ test('in a fight, Poisoned goes on a monster one tap after the Status window ope
 
 test('on a 390 by 844 phone, each button of the GM view\'s Make row opens its maker in one tap', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'gm');
   const makers: [string, string, Locator][] = [
     ['status', 'New status', statusMaker(page)], ['item', 'New item', itemMaker(page)], ['skill', 'New skill', skillMaker(page)],
@@ -211,7 +211,7 @@ test('on a 390 by 844 phone, each button of the GM view\'s Make row opens its ma
 
 test('the item maker takes the GM\'s typing the moment it shows, and its effects editor, drawn a frame later, takes the next tap', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const t = tapCounter(), d = itemMaker(page);
   await makeFromHome(page, t, 'item');
   await expect(d.getByRole('heading', { name: 'New item' })).toBeVisible();
@@ -226,7 +226,7 @@ test('the item maker takes the GM\'s typing the moment it shows, and its effects
 
 test('a GM makes the consumable Bottled Storm in 7 taps from the home screen, and Edit shows every field and effect as saved', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const t = tapCounter(), d = itemMaker(page);
 
   await test.step('the GM makes it: on a target, 2d6 damage and Bleeding', async () => {
@@ -273,7 +273,7 @@ test('a GM makes the consumable Bottled Storm in 7 taps from the home screen, an
 
 test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wears them has 6 more armor and 2 more Strength', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'item').locator('[data-new]').tap();
@@ -309,7 +309,7 @@ test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wea
 
 test('in the item maker a consumable shows no slot, no gear numbers and no bonus while worn; a weapon shows them and how it attacks', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();
@@ -334,7 +334,7 @@ test('in the item maker a consumable shows no slot, no gear numbers and no bonus
 
 test('on a 390 px phone the item maker\'s grade row, Legendary− to Legendary+, fits the screen with no sideways scroll', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page), grades = d.locator('[data-chips="grade"]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();
@@ -354,7 +354,7 @@ test('on a 390 px phone the item maker\'s grade row, Legendary− to Legendary+,
 
 test('a GM grades an epic item Epic+: the price by the rule is gradeStep times the Clear, a consumable usedUpShare of it, and Edit shows Epic+', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page), grades = d.locator('[data-chips="grade"]'), value = d.locator('#lf-value');
   /** The base price of the B rank, which prices an epic item. */
   const baseB = RULES.priceBase.B;
@@ -393,7 +393,7 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
 
 test('the item maker says what a rare weapon spends against its grade, names the grade that holds it, warns past the tier\'s top, weighs Lethality, and shows nothing for a consumable', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page), spend = d.locator('[data-spend]'), grades = d.locator('[data-chips="grade"]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();
@@ -451,7 +451,7 @@ test('the item maker says what a rare weapon spends against its grade, names the
 
 test('on a 390 px phone the item maker\'s spend line, past the tier\'s top with Lethality and Unravel on the weapon, fits the screen with no sideways scroll', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page), spend = d.locator('[data-spend]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();
@@ -475,7 +475,7 @@ test('on a 390 px phone the item maker\'s spend line, past the tier\'s top with 
 
 test('an effect whose amount the formula reader refuses ("abc") shows its error on its row and Save stays off until it is fixed', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -492,7 +492,7 @@ test('an effect whose amount the formula reader refuses ("abc") shows its error 
 /** A GM and a player in one room, the player's card on the GM's party board. Answers both pages and the player's sheet key. */
 async function room(device: (label: string) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page; key: string }> {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Mira Test', code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -523,7 +523,7 @@ test('a GM makes a skill from the Skills panel and gives it to a player in the r
 
 test('the enemy maker shows the body a rank, an archetype and a kind make, and XP follows the rank and kind until the GM types one', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = monsterMaker(page);
   await go(page, 'bestiary');
   await page.locator('#view-bestiary [data-new]').tap();
@@ -560,7 +560,7 @@ test('the enemy maker shows the body a rank, an archetype and a kind make, and X
 
 test('on a 390 px phone the enemy maker\'s starting status row keeps its × on the line of the status\'s name', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = monsterMaker(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="monster"]').tap();
@@ -576,7 +576,7 @@ test('on a 390 px phone the enemy maker\'s starting status row keeps its × on t
 
 test('on a 390 px phone a GM ticks Slow and Armored in the enemy maker: the body is 30% slower with half again the armor, the six traits fit the screen, and the card names them', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = monsterMaker(page), traits = d.locator('[data-chips="traits"]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="monster"]').tap();
@@ -634,7 +634,7 @@ const FROST_SHARD = { id: 'i900', name: 'Frost Shard', rar: 'rare', type: 'mater
 
 test('a GM makes the monster Ice Warden in at most 9 taps from the home screen: it holds Frost Lance, starts Hasted and drops its loot, and in a fight it starts Hasted', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await page.evaluate(([k, i]) => hunterApp.store.update((d: any) => { d.library.skills.push(k); d.library.items.push(i); }, 'test-setup'), [FROST_LANCE, FROST_SHARD] as const);
   const t = tapCounter(), d = monsterMaker(page);
 
@@ -679,7 +679,7 @@ test('a GM makes the monster Ice Warden in at most 9 taps from the home screen: 
 
 test('a GM makes Frost Lance in at most 9 taps from the home screen: a shot that slows for 2 rounds, in the library and on Brakk', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const t = tapCounter(), d = skillMaker(page);
 
   await test.step('the GM makes it from the Skills panel: the shot kind, its formula read only, Slowed for 2 rounds', async () => {
@@ -718,7 +718,7 @@ test('a GM makes Frost Lance in at most 9 taps from the home screen: a shot that
 
 test('in the skill maker a support reaches an ally or only the user, and another kind does not ask', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -740,7 +740,7 @@ test('in the skill maker a support reaches an ally or only the user, and another
 
 test('in the skill maker the form holds still after the GM types a formula, so a name chip tapped a moment later puts its name in', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
   const d = skillMaker(page), field = d.locator('[data-formula]'), names = d.locator('[data-group="names"]');
@@ -760,7 +760,7 @@ test('in the skill maker the form holds still after the GM types a formula, so a
 
 test('a press beside an edited maker or Escape asks before it drops the GM\'s work; Escape on that question closes only the question; an untouched maker just closes', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'gm');
   const d = statusMaker(page), ask = page.getByRole('alertdialog', { name: 'Discard changes?' });
   await page.locator('#gm-make [data-make="status"]').tap();
@@ -791,7 +791,7 @@ test('a press beside an edited maker or Escape asks before it drops the GM\'s wo
 
 test('when the phone\'s keyboard opens under a maker, the field the GM is typing in stays in view above it', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
   const d = skillMaker(page), cost = d.locator('[data-group="cost"]'), cooldown = d.locator('#skm-cd');
@@ -818,7 +818,7 @@ test('a GM gives a library skill to a player in the room from the Workshop, and 
 
 test('the Workshop says what an empty kind is, lists the GM\'s status, item, skill and monster, and Delete under ⋯ removes the skill', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   await test.step('with no skill made, the Skills section says what a skill is and shows New skill', async () => {
     await expect(workshop(page, 'skill').locator('.ws-empty')).toHaveText('A skill is an ability a hunter or monster uses in a fight. It can deal damage, heal, shield, or apply a status.');
@@ -860,7 +860,7 @@ test('the Workshop says what an empty kind is, lists the GM\'s status, item, ski
 
 test('a skill renamed and given another kind in the skill maker keeps its ability\'s id, so its pins, cooldown and uses stay with it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   await page.evaluate(k => hunterApp.store.update((d: any) => { d.library.skills.push(k); }, 'test-setup'), FROST_LANCE);
   await workshop(page, 'skill').locator('li', { hasText: 'Frost Lance' }).locator('.nm').tap();
@@ -876,7 +876,7 @@ test('a skill renamed and given another kind in the skill maker keeps its abilit
 
 test('the skill maker refuses a reaction that would push: the GM is told why and nothing is saved', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   await workshop(page, 'skill').locator('[data-new]').tap();
   const d = skillMaker(page);
@@ -896,7 +896,7 @@ const bundles = (page: Page) => page.evaluate(() => hunterApp.store.get().librar
 
 test('the Workshop\'s Bundles: New opens the reward editor alone, Duplicate copies, a tap on the row edits and renames, Delete removes', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   const sec = workshop(page, 'bundle'), row = (name: string) => sec.locator('.ws-list li').filter({ has: page.locator('.nm', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
 
@@ -938,7 +938,7 @@ test('the Workshop\'s Bundles: New opens the reward editor alone, Duplicate copi
 
 test('a quest whose reward is made in the reward editor pays it on completion, the boon included, and Enter in a reward field does not save the quest early', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'quests');
   const form = page.locator('#view-quests form[data-form]'), ed = form.locator('[data-rweditor]');
   const before = await page.evaluate(() => { const h = hunterApp.store.active(); return { id: h.id as string, gold: h.gold as number }; });
@@ -972,7 +972,7 @@ test('a quest whose reward is made in the reward editor pays it on completion, t
 
 test('on a 390 px phone the reward editor with a row of each kind scrolls only up and down, and every control is at least 44 px tall', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'gm');
   const toggle = page.locator('[data-tog="award"]');
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
@@ -1032,7 +1032,7 @@ const formulaOf = (text: string) => { const p = parseFormula(text, RULES); if (!
 
 test('a GM ticks "scales with Power" and "aimed at Resist" and saves the recommended formula; typed over it is marked edited, broken it blocks Save, and Reset brings the recommendation back', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page), field = d.locator('[data-formula]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -1075,7 +1075,7 @@ test('a GM ticks "scales with Power" and "aimed at Resist" and saves the recomme
 
 test('a formula the GM typed stays when the ability\'s kind changes, marked edited, and Reset gives the new kind\'s recommendation', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page), field = d.locator('[data-formula]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -1093,7 +1093,7 @@ test('a formula the GM typed stays when the ability\'s kind changes, marked edit
 
 test('a formula field holds whatever the maker writes in it: the GM types on at the end of the longest formula the rule builds, and a status\'s damage takes more than 60 characters', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
 
   await test.step('the rule builds a formula of more than 200 characters, and the GM types on at its end', async () => {
     const d = skillMaker(page), field = d.locator('[data-formula]');
@@ -1140,7 +1140,7 @@ test('a formula field holds whatever the maker writes in it: the GM types on at 
 
 test('a GM makes a status that slows by 30% and roots; on a monster in a fight its speed falls to 0.7 of what it was and it cannot move', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -1165,7 +1165,7 @@ test('a GM makes a status that slows by 30% and roots; on a monster in a fight i
 
 test('a GM makes a blast with a ring and a 1 round wind-up; in a fight a fast target gets out of it and a slow one is caught', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -1202,7 +1202,7 @@ test('a GM makes a blast with a ring and a 1 round wind-up; in a fight a fast ta
 
 test('a GM makes a channeled ability that grows exponentially; in a fight its charge grows one each of its user\'s turns', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -1234,7 +1234,7 @@ test('a GM makes a channeled ability that grows exponentially; in a fight its ch
 
 test('a GM makes a status with a shield of 20; on a hunter in a fight it takes a hit before HP does', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -1257,7 +1257,7 @@ test('a GM makes a status with a shield of 20; on a hunter in a fight it takes a
 
 test('every kind of op round-trips through the status maker and its parser, the same at every rank and by rank where it has one', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   // A status's own list does not offer echo (it acts only in a trigger on a status gained or imposed): its test is the one below.
@@ -1297,7 +1297,7 @@ test('every kind of op round-trips through the status maker and its parser, the 
 
 test('the echo effect appears in a trigger\'s list only when the trigger is on a status gained or imposed', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -1329,7 +1329,7 @@ test('the echo effect appears in a trigger\'s list only when the trigger is on a
 
 test('a GM makes a hide by rank that starts anywhere and that only damage it deals ends; the library holds those fields and Edit shows them as saved', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page), fx = d.locator('[data-row="0"]');
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -1378,7 +1378,7 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
 
 test('a GM makes Bulwark, armor of 10% of max HP: the row reads it on a sample hunter, the library keeps the formula, Edit shows it, and what a bearer lacks is refused in words', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page), fx = d.locator('[data-row="0"]');
   const now = Math.round(0.1 * sampleBody('C', 'str', RULES).sheet.hpMax), K = RULES.fight.kit;
   await go(page, 'workshop');
@@ -1423,7 +1423,7 @@ test('a GM makes Bulwark, armor of 10% of max HP: the row reads it on a sample h
 
 test('on a 390 px phone the status maker\'s hide row, its level by rank, Starts and Ends when, fits the screen with no sideways scroll', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page), fx = d.locator('[data-row="0"]');
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -1444,7 +1444,7 @@ test('on a 390 px phone the status maker\'s hide row, its level by rank, Starts 
 
 test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a fight the ground stays where it landed and a foe left standing in it burns', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page);
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -1486,7 +1486,7 @@ test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a figh
 
 test('in the skill maker "Add what lands when it ends" goes the moment an effect is added under it, and Save keeps that effect as the field\'s end', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = skillMaker(page), err = d.locator('[data-zend-err]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="skill"]').tap();
@@ -1508,7 +1508,7 @@ test('in the skill maker "Add what lands when it ends" goes the moment an effect
 
 test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: the library holds what the form said, the list says its rule, and Edit opens it as saved', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = page.locator('.fm-overlay [role=dialog]');
   await go(page, 'workshop');
   await workshop(page, 'feat').locator('[data-new]').tap();
@@ -1607,7 +1607,7 @@ test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: t
 
 test('a GM who opens a feat and saves it unchanged keeps when it is shown: from the start, after a count, after another feat, hidden, and after a feat the list no longer holds', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const own = { name: 'Second Wind', window: 'SECOND WIND', desc: 'Shown after a feat that was deleted.', show: { at: 'feat', key: 'gone-feat' },
     rule: { on: 'roll', where: [], measure: { of: 'facts' }, within: 'ever', reach: 2, also: [] }, rewards: { xp: 10 } };
   await page.evaluate(f => hunterApp.store.update((d: any) => { d.library.feats = { 'second-wind': f }; }, 'test-setup'), own);
@@ -1652,7 +1652,7 @@ test('a GM who opens a feat and saves it unchanged keeps when it is shown: from 
 
 test('a GM whose Save is refused reads why on screen, in the feat maker and in the status maker, wherever the form is scrolled', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   /** The message of the window `win` reads `text` and is wholly on screen, not clipped by the scrolled form. */
   const inView = async (win: Locator, text: string) => {
@@ -1686,7 +1686,7 @@ test('a GM whose Save is refused reads why on screen, in the feat maker and in t
 
 test('a status too large to keep is refused whole when the GM saves it: the maker says its size and the most a status holds, and the library does not get it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -1715,7 +1715,7 @@ const libraryStories = (page: Page) => page.evaluate(() => hunterApp.store.get()
 
 test('a GM makes a story of two chapters in the Workshop, the second with a quest, and edits the first', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = storyMakerWin(page);
   await go(page, 'workshop');
   await workshop(page, 'story').locator('[data-new]').tap();
@@ -1779,7 +1779,7 @@ test('a GM makes a story of two chapters in the Workshop, the second with a ques
 
 test('the shortest story is a name and a window title: three taps from the Workshop', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = storyMakerWin(page), t = tapCounter();
   await go(page, 'workshop');
 
@@ -1809,7 +1809,7 @@ test('the shortest story is a name and a window title: three taps from the Works
 
 test('a GM copies The wager from the stories to copy and finds it whole in the library', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   const sec = workshop(page, 'story');
   await sec.locator('[data-examples] summary').tap();
@@ -1822,7 +1822,7 @@ test('a GM copies The wager from the stories to copy and finds it whole in the l
 
 test('Enter in a maker\'s field moves to the next field and never saves the form; Ctrl and Enter saves it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = storyMakerWin(page);
   await go(page, 'workshop');
   await workshop(page, 'story').locator('[data-new]').tap();
@@ -1856,7 +1856,7 @@ test('Enter in a maker\'s field moves to the next field and never saves the form
 
 test('Enter in the Quests view\'s form moves to the next field as it does in a maker and never saves the quest; Ctrl and Enter saves it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'quests');
   const form = page.locator('#view-quests form[data-form]'), cards = page.locator('#view-quests .qc', { hasText: 'Clear the den' });
   await page.locator('#view-quests [data-new]').tap();
@@ -1888,7 +1888,7 @@ test('Enter in the Quests view\'s form moves to the next field as it does in a m
 
 test('a half-written reward row keeps its chapter open in the story maker, and the maker says so, until the row is finished', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = storyMakerWin(page), rw = d.locator('[data-stm-rw]');
   await go(page, 'workshop');
   await workshop(page, 'story').locator('[data-new]').tap();
@@ -1929,7 +1929,7 @@ const iconGroup = (d: Locator, words: string) => iconSheet(d).locator('[data-ic-
 
 test('in the item maker the Icon row follows the type and attack picked, a raven from the Foe group is saved on the item, and Default saves no key', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'item').locator('[data-new]').tap();
@@ -1981,7 +1981,7 @@ test('in the item maker the Icon row follows the type and attack picked, a raven
 
 test('in the monster maker the Icon row follows the type typed, a blood drop from the Status group is saved on the monster, and Default saves no key', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = monsterMaker(page);
   const saved = () => page.evaluate(() => hunterApp.store.get().monsters.find((m: any) => m.name === 'Pale Hound'));
   await go(page, 'workshop');
@@ -2023,7 +2023,7 @@ test('in the monster maker the Icon row follows the type typed, a blood drop fro
 
 test('in the status maker opening the icons and closing them changes nothing, a pick is a change the maker asks before dropping, an axe from the Item group is saved, and Default saves no key', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page), ask = page.getByRole('alertdialog', { name: 'Discard changes?' });
   const saved = () => page.evaluate(() => hunterApp.store.get().library.statuses['ember-mark']);
   await go(page, 'workshop');
@@ -2080,7 +2080,7 @@ test('in the status maker opening the icons and closing them changes nothing, a 
 
 test('a change of tab takes the icon picker down and leaves the maker under it open', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
   await workshop(page, 'status').locator('[data-new]').tap();
@@ -2094,7 +2094,7 @@ test('a change of tab takes the icon picker down and leaves the maker under it o
 
 test('a GM makes the Bulwark, a worn item whose wearer can use a shield of a flat, a scaling and a combined amount; the words line shows each, the library keeps them and Edit reads them back', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page), fx = (i: number) => d.locator(`[data-active-fx] [data-row="${i}"]`);
   const hp = sampleBody('C', 'str', RULES).sheet.hpMax;
   const words = (text: string, now: number) => `${text} (${now} on a sample rank C wearer)`;
@@ -2163,7 +2163,7 @@ test('a GM makes the Bulwark, a worn item whose wearer can use a shield of a fla
 
 test('on a 390 px phone the item maker\'s "Its wearer can use" group, the Grows with row and the words line, fit the screen with no sideways scroll', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const d = itemMaker(page), row = d.locator('[data-active-fx] [data-row="0"]');
   await go(page, 'gm');
   await page.locator('#gm-make [data-make="item"]').tap();

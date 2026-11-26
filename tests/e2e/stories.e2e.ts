@@ -1,7 +1,7 @@
 // A GM alone with hunters on one phone runs a story (notes-1-stories.md sections 5 and 9, unit 3): turned on from the GM
 // view's Stories section, a chapter opened at a time, ended under Undo, and the taps of section 5.2 counted.
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, onboardGM, go, answerWindow } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, answerWindow } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import { RUN_REFUSAL_WORDS, STORY_WORDS } from '../../src/core/story/run.ts';
 
@@ -35,7 +35,7 @@ async function answerEach(page: Page, title: string, n: number): Promise<void> {
 
 /** The GM alone with the starter campaign, feats off, The wager in the library (for the table when `forTable`), and 5 points more on each hunter. */
 async function setup(page: Page, forTable = false): Promise<void> {
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await page.evaluate(([story, table]) => hunterApp.store.update((d: any) => {
     d.library.stories = [{ ...story, for: table ? 'table' : story.for, id: 'st1' }];
     d.rulesOverrides = { ...d.rulesOverrides, feats: { on: false } };

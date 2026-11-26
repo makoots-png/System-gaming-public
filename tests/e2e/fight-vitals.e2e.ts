@@ -2,7 +2,7 @@
 // fight's `vitals`. These are the writers that wrote the sheet beside a running fight: a reward's status, a level-up's
 // refill and Revive. Each now reaches the row, so the next `vitals` keeps what the GM gave.
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, go, startGoblinDenFight, dismissAll, fightRow, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, startGoblinDenFight, dismissAll, fightRow, chooseList } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const activeName = (page: Page) => page.evaluate(() => hunterApp.store.active().name as string);
@@ -11,7 +11,7 @@ const sheetStatuses = (page: Page) => page.evaluate(() => hunterApp.store.active
 const rowStatuses = async (page: Page, name: string) => ((await fightRow(page, name)).statuses as { key: string }[]).map(s => s.key);
 
 async function gmFight(page: Page) {
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await startGoblinDenFight(page);
   return activeName(page);

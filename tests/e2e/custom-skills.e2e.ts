@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, go, startGoblinDenFight, answerWindow, fightRow, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, startGoblinDenFight, answerWindow, fightRow, chooseList } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const currentRow = (page: Page) => combat(page).locator('.cmb-row.cur .cmb-nm');
@@ -22,7 +22,7 @@ async function select(page: Page, name: string) {
 
 /** The Goblin Den fight on the GM's phone, moved on to Brakk's turn. `carry` goes in Brakk's bag before the fight (setup). */
 async function brakksTurn(page: Page, carry?: Record<string, unknown>) {
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   if (carry) await giveBrakk(page, 'items', carry);
   await startGoblinDenFight(page);
@@ -69,7 +69,7 @@ test('a GM\'s hunter uses a skill on a goblin: the goblin is hurt and its card s
 
 test('a goblin uses its Venom Spit on a hunter: the hunter\'s row shows Poisoned', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await startGoblinDenFight(page);
   const goblin = await firstMonster(page);
@@ -85,7 +85,7 @@ test('a goblin uses its Venom Spit on a hunter: the hunter\'s row shows Poisoned
 
 test('a monster the GM made with a starting status shows it on its card when the fight starts', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   const id = await page.evaluate(() => hunterApp.api.bestiary.save({ name: 'Hasted Hound', rank: 'D', archetype: 'skirmisher', kind: 'normal', statuses: [{ key: 'hasted', rounds: null }] }, true).id);
   await go(page, 'combat');
@@ -165,7 +165,7 @@ test('a bomb used from the bag in a running fight asks the GM whom it hits, and 
 
 test('with no fight and no room, a bomb used from the bag says what it does for the GM to rule on and leaves its user as he was', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await giveBrakk(page, 'items', BOMB);
   await brakkActive(page);
@@ -179,7 +179,7 @@ test('with no fight and no room, a bomb used from the bag says what it does for 
 
 test('a skill\'s name on the Skills panel opens what it does, with its cost, and a second tap closes it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await go(page, 'status');
   const s = await page.evaluate(() => hunterApp.store.active().skills.find((k: any) => k.type === 'active' && k.ability && (k.ability.cost.mana || k.ability.cost.fatigue)));
   expect(s, 'the active hunter holds an active skill with a cost').toBeTruthy();

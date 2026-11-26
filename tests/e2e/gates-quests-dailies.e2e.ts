@@ -1,4 +1,4 @@
-import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, gateByName, ROOM_CODE, chooseList, type DeviceOptions } from './helpers.ts';
+import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, gateByName, ROOM_CODE, chooseList, type DeviceOptions } from './helpers.ts';
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { CHAIN_WORDS } from '../../src/core/hunter/job-chain.ts';
@@ -117,7 +117,7 @@ async function passMinutePast(page: Page, when: string): Promise<void> {
 
 test('a gate cleared after End fight with XP pays each hunter its share of the gate XP once and the panel number matches', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await startGate(page, gate.id);
   const fought = await fightXp(page);
@@ -134,7 +134,7 @@ test('a gate cleared after End fight with XP pays each hunter its share of the g
 
 test('a gate cleared from its card after End fight with XP and a reload pays each hunter its share of the gate XP once', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await startGate(page, gate.id);
   const fought = await fightXp(page);
@@ -156,7 +156,7 @@ test('a gate cleared from its card after End fight with XP and a reload pays eac
 
 test('clearing a gate that never had an encounter pays each hunter the share of the gate XP the panel promises', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await go(page, 'gates');
   await gateCard(page, gate.id).locator('[data-act=clear]').tap();
@@ -173,7 +173,7 @@ test('clearing a gate that never had an encounter pays each hunter the share of 
 
 test('a Clear panel open on a gate that is cleared elsewhere closes, and nothing can pay the gate a second time', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page);
   await gateCard(page, gate.id).locator('[data-act=clear]').tap();
   const form = await openClearPanel(page, gate.id);
@@ -191,7 +191,7 @@ test('a Clear panel open on a gate that is cleared elsewhere closes, and nothing
 
 test('a gate cleared after End fight without XP still pays each hunter its share of the gate XP', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await startGate(page, gate.id);
   await defeatAllMonsters(page);
@@ -207,7 +207,7 @@ test('a gate cleared after End fight without XP still pays each hunter its share
 
 test('clearing a gate lists the room player, pre-ticked, and the party of 4 takes the gate XP each, the player once', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   expect(code).toMatch(ROOM_CODE);
   await onboardPlayer(player, 'Kai Test', code);
@@ -242,7 +242,7 @@ test('clearing a gate lists the room player, pre-ticked, and the party of 4 take
 
 test('the clear panel says the XP and gold each for the hunters ticked, more each as fewer are ticked, fits the phone, and pays exactly that', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den');
   const start = await lifetimeXp(page);
   expect(Object.keys(start).length, 'three hunters on the GM\'s phone').toBe(3);
@@ -307,7 +307,7 @@ async function endFightExpectingAward(page: Page): Promise<void> {
 
 test('a gate cleared with no hunters selected still lets its running fight award each hunter its share of the monster XP', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den');
   await startGate(page, gate.id);
   const xp = await fightXp(page), start = await lifetimeXp(page);
@@ -335,7 +335,7 @@ test('a gate cleared with no hunters selected still lets its running fight award
 
 test('a gate set back to detected and cleared again in the edit form shows the day of the second clear', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den');
   const today = (): Promise<number> => page.evaluate(() => hunterApp.store.get().world.day);
   const first = await today();
@@ -353,7 +353,7 @@ test('a gate set back to detected and cleared again in the edit form shows the d
 
 test('a gate set to cleared in the edit form, which pays nobody, still lets its running fight award each hunter its share of the monster XP', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const gate = await gateByName(page, 'Goblin Den');
   await startGate(page, gate.id);
   const xp = await fightXp(page), start = await lifetimeXp(page);
@@ -368,7 +368,7 @@ test('a gate set to cleared in the edit form, which pays nobody, still lets its 
 
 test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes a Fighter', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await page.evaluate(() => hunterApp.store.update(() => { const h = hunterApp.store.active(); h.level = 10; h.xp = 0; }, 'test-setup'));
   const hunterName = (await activeHunter(page)).name;
   const job = (title: string) => page.locator('#view-quests .qc', { hasText: title });
@@ -407,7 +407,7 @@ test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes 
 
 test('every job can be earned through the Job Change chain when it is issued at Lv 1, 10 or 30', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const failures = await page.evaluate(async () => {
     const A = hunterApp.api, s = hunterApp.store, out: string[] = [], pause = () => new Promise(r => setTimeout(r, 30));
     for (const job of ['Fighter', 'Assassin', 'Mage', 'Tanker', 'Healer', 'Ranger']) for (const level of [1, 10, 30]) {
@@ -432,7 +432,7 @@ test('every job can be earned through the Job Change chain when it is issued at 
 
 test('on a GM device, pre-made hunters roll over without a penalty and a hunter who did a daily is penalized when they skip', async ({ device }) => {
   const page = await newYorkPhone(device, 'gm', '2026-11-10T12:00:00-05:00');
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const hunters: string[] = await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.name));
   const penaltyChips = page.locator('#gm-board .gm-card .gm-chip.pen');
   const dailyChips = page.locator('#gm-board .gm-card .gm-chip', { hasText: /^Daily \d\/1$/ });
@@ -558,7 +558,7 @@ test('an urgent quest fails at its due time, and asks for a new due time before 
 
 test('E gates spawn E-sized packs of regular monsters and D gates keep 2 to 6', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const r = await page.evaluate(() => {
     const A = hunterApp.api, counts: Record<string, number[]> = { E: [], D: [] };
     for (const rank of ['E', 'D']) for (let i = 0; i < 60; i++) {
@@ -578,7 +578,7 @@ test('E gates spawn E-sized packs of regular monsters and D gates keep 2 to 6', 
 
 test('ability points and the HP refill cannot be farmed by gaining levels, spending the points, losing the levels and regaining them', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   const sheet = async () => {
     await go(page, 'status');
     const text = async (sel: string) => (await page.locator(sel).first().innerText()).replace(/\s+/g, ' ').trim();
@@ -749,7 +749,7 @@ test('a player sees no Delete on the Penalty Zone quest that holds their penalty
 
   await test.step('on the GM\'s phone the same quest offers Delete, the window says it lifts the penalty, and the Penalized chip is gone', async () => {
     const page = await newYorkPhone(device, 'gm', '2026-11-10T12:00:00-05:00');
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     const name: string = await page.evaluate(() => {
       const h = hunterApp.store.active();
       hunterApp.store.update(() => { h.daily.lastCompleteKey = '2026-11-09'; }, 'test-setup');
@@ -799,7 +799,7 @@ test('a failed Job Change shows on the Quests tab: the player is told the GM can
 
   await test.step('the GM fails step 2 of a Lv 10 hunter\'s chain, reissues it, and the hunter finishes steps 2 and 3', async () => {
     const page = (await device('gm')).page;
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await page.evaluate(() => hunterApp.store.update(() => { const h = hunterApp.store.active(); h.level = 10; h.peakLevel = 10; h.xp = 0; }, 'test-setup'));
     const hunterName = (await activeHunter(page)).name;
     await go(page, 'quests');
@@ -826,7 +826,7 @@ test('a failed Job Change shows on the Quests tab: the player is told the GM can
 
 test('the Job Change\'s last step tapped during a fight is refused in words, and completes once the fight is over (statechart rule 1)', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await page.evaluate(() => hunterApp.store.update(() => { const h = hunterApp.store.active(); h.level = 10; h.peakLevel = 10; h.xp = 0; }, 'test-setup'));
   const { name: hunterName, job: jobBefore } = await activeHunter(page);
@@ -872,7 +872,7 @@ test('the Job Change\'s last step tapped during a fight is refused in words, and
 
 test('Start session counts on from the campaign\'s last session after its log has dropped the old lines, and moves the day once', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await page.evaluate(() => hunterApp.store.update((d: any) => { d.world.session = 41; d.world.day = 7; d.log = []; d.gates = []; }, 'test-setup'));
   await go(page, 'gm');
   const toggle = page.locator('#view-gm [data-tog="cheat"]');
@@ -886,7 +886,7 @@ test('Start session counts on from the campaign\'s last session after its log ha
 
 test('a GM makes a quest the System counts: two rests complete it with its window, and a quest that fails costs what If it fails says', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await dismissAll(page, 6);
   await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
   const form = page.locator('#view-quests form[data-form]');
@@ -941,7 +941,7 @@ test('a GM makes a quest the System counts: two rests complete it with its windo
 
 test('from the GM view with Issue quest open, "Defeat 10 Beasts in one session, or lose 50 gold" takes 10 taps besides the typing', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
   const name = (await activeHunter(page)).name as string;
   await go(page, 'gm');
@@ -979,7 +979,7 @@ test('from the GM view with Issue quest open, "Defeat 10 Beasts in one session, 
 /** The GM's phone alone, its feats and personal gates off, so no window of theirs stands in front of the ones a test waits for. */
 async function quietGM(device: (label: string, options?: DeviceOptions) => Promise<{ page: Page }>, start: string): Promise<Page> {
   const page = await newYorkPhone(device, 'gm', start);
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await dismissAll(page, 6);
   await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
   return page;

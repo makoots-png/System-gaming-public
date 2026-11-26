@@ -1,6 +1,6 @@
 // Sharing custom content (src/core/pack.ts, src/edge/pack-code.ts, the Data view and the Workshop): a code or a file
 // made on one phone, read on another, merged with Add or Replace.
-import { test, expect, onboardGM, go, answerWindow, save, type Page } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, answerWindow, save, type Page } from './helpers.ts';
 
 const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] };
 /** Frostbite for 2 rounds: a round is 1000 ticks of fight time (RULES.fight.round). */
@@ -35,7 +35,7 @@ const ALL_FIVE = { statuses: ['frostbite'], labels: ['Frostbite'], items: ['Fros
 /** A GM's phone with one custom status, item, skill, enemy and reward bundle and nothing else custom (setup through the store; no gates, so no gate made a monster). */
 async function gmWithContent(device: (label: string) => Promise<{ page: Page }>, label = 'gm'): Promise<Page> {
   const { page } = await device(label);
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await page.evaluate(([st, it, sk, mo, rb]) => hunterApp.store.update((d: any) => {
     d.library.statuses.frostbite = st;
     d.library.items.push({ ...it, id: 'i900' }); d.library.skills.push({ ...sk, id: 's900' });
@@ -46,7 +46,7 @@ async function gmWithContent(device: (label: string) => Promise<{ page: Page }>,
 /** A second phone: a GM with the starter campaign and no custom content. */
 async function freshGM(device: (label: string) => Promise<{ page: Page }>, label = 'other'): Promise<Page> {
   const { page } = await device(label);
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   return page;
 }
 

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, go, dismissAll, answerWindow, chooseList, fightRow, PHONE } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, dismissAll, answerWindow, chooseList, fightRow, PHONE } from './helpers.ts';
 import { iconCreditLine, saleRows } from '../../src/core/rules-text.ts';
 import { lootMoreLine } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
@@ -7,7 +7,7 @@ import { RULES } from '../../src/core/rules.ts';
 for (const width of [PHONE.width, 320]) {
   test(`on a ${width} px phone the Loot and rarity sale table shows all four columns whole, and Sells for is the core's number`, async ({ device }) => {
     const p = (await device('rules-loot', { viewport: { width, height: 844 } })).page;
-    await onboardGM(p);
+    await setupGoblinDenGM(p);
     await dismissAll(p);
     await go(p, 'rules');
     const wrap = p.locator('#rr-loot .rr-tw').first();
@@ -29,7 +29,7 @@ for (const width of [PHONE.width, 320]) {
 
 test('on a 390 px phone the Rules page ends with the icons\' credit, whole, linked safely, and a search that matches nothing does not hide it', async ({ device }) => {
   const p = (await device('rules-credit', { viewport: { width: 390, height: 844 } })).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await dismissAll(p);
   await go(p, 'rules');
   const credit = p.locator('[data-rr-credit]');
@@ -85,7 +85,7 @@ const goldWaiting = (page: Page) => page.evaluate(() => { const l = hunterApp.st
 
 test('loot put off with Later survives the next fight: the Loot dropped window offers the first fight\'s 75 gold, then the second\'s 40, and Award loot opens the one it offered', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await page.evaluate(([a, b]) => hunterApp.store.update((d: any) => { d.monsters.push(a, b); }, 'test-setup'), [looter('m900', 'Hoard Rat', 75), looter('m901', 'Ember Rat', 40)] as const);
 

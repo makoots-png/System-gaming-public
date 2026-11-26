@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { STASH_WORDS } from '../../src/core/trade/stash.ts';
 import { restRefusalWords } from '../../src/core/hunter/rests.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, save, startGoblinDenFight } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, save, startGoblinDenFight } from './helpers.ts';
 
 const KAI = 'Kai Test', MIRA = 'Mira Test', FALLEN = 'Brakk Ironhide', POTION = 'Healing Potion';
 
@@ -63,7 +63,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
   let code = '';
 
   await test.step('setup: the GM opens a room and Kai and Mira join it', async () => {
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     await chooseList(gm);
     code = await createRoom(gm);
     await onboardPlayer(kai, KAI, code);

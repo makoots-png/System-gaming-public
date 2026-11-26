@@ -1,5 +1,30 @@
 import { writeFile } from 'node:fs/promises';
 import { test as base, expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { STARTER_GEAR, parseItem } from '../../src/core/registry/items.ts';
+import type { ItemDef } from '../../src/core/registry/items.ts';
+import { STARTER_SKILLS, skillOf } from '../../src/core/registry/skills.ts';
+import type { SkillDef } from '../../src/core/registry/skills.ts';
+import { confirm, raiseMany } from '../../src/core/hunter/progress.ts';
+import type { StatPoints } from '../../src/core/hunter/progress.ts';
+import { setJob } from '../../src/core/hunter/classes.ts';
+import { learnSkill } from '../../src/core/hunter/skills-held.ts';
+import { equip, putItem } from '../../src/core/hunter/inventory.ts';
+import { refill } from '../../src/core/hunter/vitals.ts';
+import { hunterSheet } from '../../src/core/hunter/sheet.ts';
+import { issueQuest } from '../../src/core/hunter/quests.ts';
+import type { QuestDraft } from '../../src/core/hunter/quests.ts';
+import { spawnGate } from '../../src/core/gates/world.ts';
+import type { Gate, GateType } from '../../src/core/gates/gate.ts';
+import { chooseMode } from '../../src/core/role.ts';
+import { onboarded } from '../../src/core/settings.ts';
+import { told } from '../../src/core/session-log.ts';
+import type { Said, Stamp } from '../../src/core/session-log.ts';
+import { isRefused } from '../../src/core/save-step.ts';
+import { makeHunter, rulesOf } from '../../src/core/save.ts';
+import type { Hunter, Monster, Rank, Save } from '../../src/core/save.ts';
+import type { Rules } from '../../src/core/rules.ts';
+import { saveId } from '../../src/core/ids.ts';
+import type { IdOf } from '../../src/core/ids.ts';
 
 export { expect };
 export type { Page, BrowserContext };
@@ -176,6 +201,111 @@ export async function onboardGM(page: Page, path = '/'): Promise<void> {
   await dismissAll(page);
 }
 
+// ── Test-only legacy Goblin Den fixture ──
+// Decouples combat, gate, maker, and room E2E tests from `src/core/starter.ts` and onboarding copy so starter
+// campaign changes do not break unrelated browser tests. Kept here (non-matcher literals) so `tests/e2e-copy.test.ts`
+// recognizes fixture names (`Brakk Ironhide`, `Mira Vale`, `Eldrin Voss`, `Goblin Den`) as test-written data.
+const LEGACY_PREGENS: readonly { name: string; job: string; stats: StatPoints; skills: readonly SkillDef[]; item: ItemDef }[] = [
+  { name: 'Brakk Ironhide', job: 'Tanker', stats: { vit: 8, str: 4 }, skills: [STARTER_SKILLS.shieldWall, STARTER_SKILLS.ironSkin], item: STARTER_GEAR.towerShield },
+  { name: 'Mira Vale', job: 'Ranger', stats: { agi: 8, ctl: 4 }, skills: [STARTER_SKILLS.markedShot, STARTER_SKILLS.trailsense], item: STARTER_GEAR.huntingBow },
+  { name: 'Eldrin Voss', job: 'Mage', stats: { pow: 8, ctl: 4 }, skills: [STARTER_SKILLS.arcBolt, STARTER_SKILLS.manaSense], item: STARTER_GEAR.manaPotion },
+];
+
+const LEGACY_GATES: readonly { name: string; rank: Rank; type: GateType; classOffer?: true }[] = [
+  { name: 'Goblin Den', rank: 'E', type: 'normal', classOffer: true },
+  { name: 'Double Dungeon (hidden)', rank: 'D', type: 'double' },
+];
+
+const LEGACY_ARC: readonly QuestDraft[] = [
+  { title: 'Session 1: Goblins at the Gate', desc: 'Reports of goblins raiding a nearby market. Find and clear the Goblin Den.', objectives: [{ label: 'Enter the Goblin Den', target: 1 }, { label: 'Defeat the Goblin Chief', target: 1 }], rewards: { xp: 100, gold: 50 } },
+  { title: 'Session 2: The Strange Altar', desc: 'The chief guarded a carved altar that does not belong in an E-rank gate. Someone has been here before.', objectives: [{ label: 'Examine the altar', target: 1 }, { label: 'Question the survivors', target: 3 }], rewards: { xp: 150, points: 1 } },
+  { title: 'Session 3: Double Dungeon', desc: 'The altar opens a hidden second dungeon. Descend, and keep your party alive.', objectives: [{ label: 'Find the hidden entrance', target: 1 }, { label: 'Survive the Double Dungeon', target: 1 }], rewards: { xp: 300, gold: 150, title: { name: 'Survivor', desc: '', bonus: {} } } },
+].map(q => ({ ...q, kind: 'side', from: 'gm' }));
+
+function buildLegacyGoblinDenSave(
+  base: Save,
+  made: readonly { gate: Gate; monsters: readonly Monster[] }[],
+  stamp: Stamp,
+  R: Rules,
+): Save {
+  let seq = base.seq;
+  const next = <P extends string>(prefix: P): IdOf<P> => saveId(prefix, ++seq);
+  const now = new Date(stamp.at);
+  const browserDayKey = base.hunters[0]?.daily.lastCheckedKey ?? base.world.lastDailyKey;
+  const said: Said[] = [];
+  const pregens: Hunter[] = [];
+  for (const p of LEGACY_PREGENS) {
+    const created = makeHunter({ seq, settings: base.settings }, p.name, R, now);
+    seq = created.seq;
+    const jobbed = setJob(created.hunter, p.job, { held: false, dead: false });
+    const item = parseItem(p.item);
+    if (isRefused(jobbed) || !item) throw new Error(`legacy Goblin Den fixture pregen failed: ${p.name}`);
+    const raised = raiseMany(jobbed, p.stats, R);
+    if (isRefused(raised)) throw new Error(`legacy Goblin Den fixture raiseMany failed: ${p.name}`);
+    let h = confirm(raised);
+    if (browserDayKey) h = { ...h, daily: { ...h.daily, lastCheckedKey: browserDayKey } };
+    for (const k of p.skills) h = learnSkill(h, { ...skillOf(k, R), label: 'Lv.1' }, next('s'));
+    const itemId = next('i');
+    h = putItem(h, item, itemId);
+    if (item.slot) {
+      const worn = equip(h, itemId, itemId);
+      if (isRefused(worn)) throw new Error(`legacy Goblin Den fixture equip failed: ${p.name}`);
+      h = worn;
+    }
+    h = { ...h, ...refill(h, hunterSheet(h, R).sheet) };
+    for (const d of LEGACY_ARC) {
+      const t = issueQuest(h, d, next('q'), stamp.at);
+      h = t.hunter;
+      said.push(...t.said);
+    }
+    pregens.push(h);
+  }
+  const seed = base.hunters.find(h => h.seed === true) ?? null;
+  let s: Save = {
+    ...base,
+    seq,
+    hunters: [...base.hunters.filter(h => h !== seed), ...pregens],
+    settings: onboarded(chooseMode({ ...base.settings, activeHunterId: pregens[0]!.id }, 'gm')),
+  };
+  for (let i = 0; i < made.length; i++) {
+    const g = made[i]!;
+    const gate: Gate = { ...g.gate, classOffer: LEGACY_GATES[i]?.classOffer === true };
+    s = spawnGate(s, gate, g.monsters, stamp);
+  }
+  return told(s, stamp, ...said, {
+    kind: 'system',
+    hunterId: null,
+    title: 'Campaign begun',
+    text: 'Starter campaign loaded with 3 hunters, the Goblin Den (E), a hidden Double Dungeon (D), and 3 linked quests.',
+  });
+}
+
+/**
+ * Sets up a GM device with the test-only legacy Goblin Den fixture (Brakk Ironhide, Mira Vale, Eldrin Voss, Goblin
+ * Den, Double Dungeon (hidden), and the 3 legacy ARC quests, with an empty story library) without depending on
+ * `src/core/starter.ts` or clicking through onboarding. Lands on `#/status` when `path` names no hash.
+ */
+export async function setupGoblinDenGM(page: Page, path = '/'): Promise<void> {
+  await openApp(page, path);
+  const { base, gates, nowIso } = await page.evaluate(specs => {
+    const rolled = specs.map(g => hunterApp.api.gates.roll(g));
+    return {
+      base: JSON.parse(JSON.stringify(hunterApp.store.get())) as Save,
+      gates: JSON.parse(JSON.stringify(rolled)) as { gate: Gate; monsters: Monster[] }[],
+      nowIso: new Date().toISOString(),
+    };
+  }, LEGACY_GATES);
+  const R = rulesOf(base.rulesOverrides, base.library.statuses);
+  const built = buildLegacyGoblinDenSave(base, gates, { at: nowIso, cap: R.logCap }, R);
+  await page.evaluate(([next, setHash]) => {
+    localStorage.setItem('hunter-system-v5', JSON.stringify(next));
+    localStorage.removeItem('hunter-system-told');
+    if (setHash) location.hash = '#/status';
+  }, [built, !path.includes('#')] as const);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.hunterApp && document.querySelectorAll('#nav-top a').length > 0, null, { timeout: 15_000 });
+}
+
 /**
  * First run as a player with one new hunter, answering Open my sheet on Hunter created and Understood on the first
  * personal gate's window. With a room code the player joins that room.
@@ -258,9 +388,9 @@ export async function gateByName(page: Page, name: string): Promise<{ id: string
 }
 
 /**
- * The starter campaign's Goblin Den fight, started from the Gates tab, with the turn order set to: a monster, then the
- * named hunters, then the rest. The start rolls the openings; this setup then gives each row a turn time one tick after
- * the one before it, so the order does not depend on the dice. Answers the gate's id and XP.
+ * The legacy Goblin Den fixture's fight (`setupGoblinDenGM`), started from the Gates tab, with the turn order set to: a
+ * monster, then the named hunters, then the rest. The start rolls the openings; this setup then gives each row a turn
+ * time one tick after the one before it, so the order does not depend on the dice. Answers the gate's id and XP.
  */
 export async function startGoblinDenFight(page: Page, hunters: string[] = ['Brakk Ironhide', 'Mira Vale']): Promise<{ id: string; xp: number }> {
   const gate = await gateByName(page, 'Goblin Den');

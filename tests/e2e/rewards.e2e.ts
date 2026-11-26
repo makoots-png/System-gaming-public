@@ -3,12 +3,12 @@ import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { titleLine } from '../../src/core/registry/item-budget.ts';
 import { REPLACES_WORDS, WORN_WORDS } from '../../src/core/rewards.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, startGoblinDenFight, chooseList, fightRow, type Page } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, startGoblinDenFight, chooseList, fightRow, type Page } from './helpers.ts';
 
 /** A GM and a player in one room, the player's card on the GM's party board. Answers both pages and the player's sheet key. */
 async function room(device: (label: string) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page; key: string }> {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Mira Test', code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -63,7 +63,7 @@ test('a GM award with a custom title, a skill, a status and a boon (posted to th
 
 test('the GM saves the Award form\'s reward as a bundle, and picking the bundle later fills the reward editor with every part', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await go(gm, 'gm');
   const toggle = gm.locator('[data-tog="award"]');
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
@@ -154,7 +154,7 @@ test('a player in a room gets no Edit, no Delete and no minus or plus on the Job
 
 test('a GM takes a boon back from a hunter on this phone: the Boons block goes, and no use is written to the log', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => { const s = hunterApp.store; s.update(() => { s.active().boons.push({ id: s.id('bn'), name: 'Free resurrection', text: 'Once.', at: '2026-11-13T00:00:00.000Z' }); }, 'test-setup'); });
   await go(gm, 'status');
   const titles = gm.locator('[data-panel="titles"]');
@@ -168,7 +168,7 @@ test('a GM takes a boon back from a hunter on this phone: the Boons block goes, 
 
 test('the GM awards the title Square in place of Owed to the Deep: the hunter keeps one title, still active, now named Square, and the reward window names both', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const held = await gm.evaluate(() => {
     const s = hunterApp.store, id = s.id('t') as string;
     s.update(() => { const h = s.active(); h.titles.push({ id, name: 'Owed to the Deep', desc: 'It is owed.', bonus: { hpMax: -10 } }); h.titleId = id; }, 'test-setup');
@@ -212,7 +212,7 @@ test('the GM awards the title Square in place of Owed to the Deep: the hunter ke
 
 test('the GM awards the title Steady Hand worn in fights as Hasted: once it is the active title, the hunter starts a fight Hasted', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
   const name = (await activeHunter(gm)).name as string;
   await go(gm, 'gm');
@@ -256,7 +256,7 @@ test('the GM awards the title Steady Hand worn in fights as Hasted: once it is t
 
 test('the GM awards a title of band C usable in fights as Second Wind: its card names the power, and once it is the active title the hunter has Second Wind in the fight', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
   const wind = abilityOf('support', { id: abilityId('second-wind'), name: 'Second Wind', aim: 'self' }, RULES);
   await gm.evaluate(a => hunterApp.store.update((d: any) => { d.library.skills.push({ id: 's-second-wind', name: 'Second Wind', type: 'active', level: 1, label: null, desc: '', ability: a }); }, 'test-setup'), wind);
@@ -307,7 +307,7 @@ test('the GM awards a title of band C usable in fights as Second Wind: its card 
 
 test('the GM folds an Award form holding a fight\'s 75 gold and later sends Brakk +25 XP: Brakk gets the XP and no gold, and the 75 gold is offered again', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.loot = { at: 'waiting', drops: [{ fight: 'f-hoard', gold: 75, items: [] }] }; }, 'test-setup'));
   await gm.reload();
   const tie = gm.locator('#gm-award-tie'), toggle = gm.locator('[data-tog="award"]');

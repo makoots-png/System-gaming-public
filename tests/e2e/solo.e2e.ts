@@ -9,7 +9,7 @@ import { WAYS_BACK } from '../../src/core/hunter/vitals.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { seedMonsters } from '../../src/core/registry/monsters.ts';
 import { STOP_WAITING, WAIT_WORDS } from '../../src/core/sync/asked.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, approveWaiting, waitingRow, type Page } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, save, approveWaiting, waitingRow, type Page } from './helpers.ts';
 
 /** The hunter on `page` made strong enough to clear any E or D gate alone: every stat at 60, its HP full. */
 const strong = (page: Page) => page.evaluate(() => hunterApp.store.update((d: any) => {
@@ -81,7 +81,7 @@ async function openToSolo(gm: Page, name: string): Promise<string> {
 /** A GM with the starter campaign in a room, and a player in it, its hunter strong, the Goblin Den open to solo runs. */
 async function roomWithSoloDen(device: (label: string, o?: object) => Promise<{ page: Page; ctx: import('@playwright/test').BrowserContext }>, players: string[], gmOptions: object = {}) {
   const gm = await device('gm', { blockServiceWorker: true, ...gmOptions });
-  await onboardGM(gm.page);
+  await setupGoblinDenGM(gm.page);
   const code = await createRoom(gm.page);
   // setup: the den holds one goblin and no boss, so a strong hunter clears it in every play
   await gm.page.evaluate(() => hunterApp.store.update((d: any) => { const g = d.gates.find((x: any) => x.name === 'Goblin Den'); g.monsters = [{ monsterId: 'seed:goblin', count: 1 }]; g.bossId = null; d.rulesOverrides.feats = { on: false }; }, 'test-setup'));

@@ -1,4 +1,4 @@
-import { test, expect, chooseList, go, onboardGM, onboardPlayer, startGoblinDenFight, type Page } from './helpers.ts';
+import { test, expect, chooseList, go, setupGoblinDenGM, onboardPlayer, startGoblinDenFight, type Page } from './helpers.ts';
 
 /** Whether the System window `title` names is what the player sees at its own middle, with no other window drawn over it. */
 const seenOnTop = (page: Page, title: string): Promise<boolean> => page.evaluate(t => {
@@ -83,7 +83,7 @@ test('on the Dice page, the dice roller\'s Dice tab takes the roller down', asyn
 test('a GM\'s Fight tools over the map go with Escape, and are not open again on the way back to Combat', async ({ device }) => {
   const { page } = await device('gm');
   const tools = page.locator('#view-combat').getByRole('dialog', { name: 'Fight tools' });
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await go(page, 'gates');
   await startGoblinDenFight(page);

@@ -8,7 +8,7 @@ import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { REFUSAL_WORDS } from '../../src/core/combat/refusal-words.ts';
 import { percent, tiles } from '../../src/core/combat/space.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc, PHONE, SMALL_PHONE } from './helpers.ts';
 
 const SHOTS = join('.lead-scratch', 'shots');
 mkdirSync(SHOTS, { recursive: true });
@@ -29,7 +29,7 @@ const FROST_NOVA = abilityOf('blast', {
 }, RULES);
 
 async function startSimpleMonsterFight(page: Page, listMode: boolean) {
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   if (listMode) await chooseList(page);
   await go(page, 'combat');
   await combat(page).locator('[data-hsel]').selectOption({ label: 'Brakk Ironhide' });
@@ -132,7 +132,7 @@ test('fudge forced d20 applies to Auto turn rolls and is spent just like a hand 
 test('Auto turn pauses for the player dodge picker when a monster blast catches a hunter', async ({ device }) => {
   const gm = (await device('gm-dodge', { viewport: PHONE })).page;
   const player = (await device('pl-dodge', { viewport: SMALL_PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Kai Auto', code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -217,7 +217,7 @@ test('stale Auto turn tap after the turn moved and second GM device guard both r
 
 test('on a mythic landing turn, Auto turn lands the standing omen on the aimed hunter', async ({ device }) => {
   const page = (await device('gm-mythic', { viewport: PHONE })).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await go(page, 'combat');
   await combat(page).locator('[data-hsel]').selectOption({ label: 'Brakk Ironhide' });

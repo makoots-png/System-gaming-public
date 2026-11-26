@@ -2,7 +2,7 @@
 // (src/core/draft.ts `storyProblem`): a chapter quest's "If it fails" cost survives a fold and a Save, and a folded
 // chapter's Job Change quest with no job is refused with that chapter opened. One GM phone.
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, go } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go } from './helpers.ts';
 import { newRewards } from '../../src/core/rewards.ts';
 import { newChapter, newChapterQuest, storyProblem } from '../../src/core/draft.ts';
 
@@ -20,7 +20,7 @@ async function newStory(page: Page, name: string, title: string): Promise<void> 
 
 test('a chapter quest\'s "If it fails" cost of -50 gold stays with it when its chapter folds, is saved with the chapter folded, and Edit shows it', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await newStory(page, 'The debt', 'The deep asks for a gate');
 
   await test.step('chapter 1 issues a quest that costs 50 gold if it fails; a second chapter folds it', async () => {
@@ -58,7 +58,7 @@ test('a chapter quest\'s "If it fails" cost of -50 gold stays with it when its c
 
 test('a folded chapter\'s Job Change quest with no job is refused at Save: the maker opens that chapter and says to choose a job, and saves once one is named', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await newStory(page, 'The new path', 'A path opens');
 
   await test.step('chapter 1 issues a Job Change quest and names no job; chapter 2 is added, which folds chapter 1', async () => {

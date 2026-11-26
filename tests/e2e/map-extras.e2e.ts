@@ -3,7 +3,7 @@
 // taking a hit first, and a channel's charge, its Release and its break. Values come from the rules (src/core/rules.ts
 // RULES.fight) and the GM's own fight.
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc, answerWindow } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc, answerWindow } from './helpers.ts';
 import { WAIT_WORDS } from '../../src/core/combat/fight-view.ts';
 
 const HUNTER = 'Kai Extra', BRAKK = 'Brakk Ironhide', RAT = 'Cave Rat', BOSS = 'Cerberus';
@@ -24,7 +24,7 @@ const rules = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify(hunt
 type Scene = 'intent' | 'threat' | 'stagger' | 'shield' | 'channel' | 'break' | 'kits';
 async function extrasFight(device: (label: string) => Promise<{ page: Page }>, scene: Scene) {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);

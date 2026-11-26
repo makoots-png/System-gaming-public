@@ -5,7 +5,7 @@ import { restRefusalWords } from '../../src/core/hunter/rests.ts';
 import { RAISE_TITLE } from '../../src/core/hunter/revive-standing.ts';
 import { DIED_WORDS } from '../../src/core/hunter/vitals.ts';
 import { deathLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList } from './helpers.ts';
 
 const lifeWord = (p: Page) => p.locator('#view-status [data-death] [data-life]');
 
@@ -89,7 +89,7 @@ async function sheetNumbers(p: Page) {
 
 test('At 0 HP the hunter is dead: the chip says the same word as the death panel, has no remove button, and a heal does not raise it', async ({ device }) => {
   const p = (await device('player-chip')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await switchToPlayerMode(p);
   await go(p, 'status');
 
@@ -111,7 +111,7 @@ test('At 0 HP the hunter is dead: the chip says the same word as the death panel
 
 test('A local hunter at 0 HP shows Dead on the combat card, with no status to remove for it there', async ({ device }) => {
   const p = (await device('gm-combat')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   const hid = await p.evaluate(() => hunterApp.store.active().id);
   await p.evaluate(id => hunterApp.store.update(() => {
     hunterApp.store.hunter(id).life = { at: 'dead' };
@@ -132,7 +132,7 @@ test('A GM sees a remote hunter at 0 HP as Dead with no remove button, on the bo
   const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
 
   await test.step('the player joins the room and drops to 0 HP', async () => {
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     const code = await createRoom(gm);
     await onboardPlayer(pl, 'Kai Test', code);
     await expect.poll(() => pl.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -169,7 +169,7 @@ test('A GM sees a remote hunter at 0 HP as Dead with no remove button, on the bo
 
 test('Taking XP back removes the ability points of lost levels and never goes below 0 points', async ({ device }) => {
   const p = (await device('gm-xp')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   const s0 = await sheetNumbers(p);
 
   await test.step('+500 then -500 XP returns level and points and keeps HP and mana within their maxima', async () => {
@@ -202,7 +202,7 @@ test('A point put on a stat and taken off again before Confirm comes back, on th
   for (const who of ['gm', 'player'] as const) {
     await test.step(`on the ${who}'s phone`, async () => {
       const p = (await device(`${who}-undo`)).page;
-      if (who === 'gm') await onboardGM(p); else await onboardPlayer(p, 'Mira');
+      if (who === 'gm') await setupGoblinDenGM(p); else await onboardPlayer(p, 'Mira');
       await go(p, 'status');
       await p.evaluate(() => { const id = hunterApp.store.active().id; hunterApp.store.update((d: any) => { d.hunters.find((h: any) => h.id === id).bonusPoints += 3; }, 'test'); });
       const before = await read(p);
@@ -228,7 +228,7 @@ test('A point put on a stat and taken off again before Confirm comes back, on th
 // shown 2.8, and the check is floor((2.76 - 10) / 2) + 2 = -4 + 2 = -2.
 test('Poisoned lowers Accuracy and the CTL check, Frightened lowers Will and the DIS check, and removing one gives them back', async ({ device }) => {
   const p = (await device('gm-poison')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
 
   await test.step('at the start Accuracy and Will are 10 and both checks +2', async () => {
     expect(await sheetCells(p)).toEqual({ aim: '10', will: '10', ctl: '+2', dis: '+2' });
@@ -252,7 +252,7 @@ test('Poisoned lowers Accuracy and the CTL check, Frightened lowers Will and the
 // floor((1.58 - 10) / 2) + 2 = -5 + 2 = -3.
 test('A GM\'s own Poisoned in the library, saved and reloaded, is the one the sheet applies', async ({ device }) => {
   const p = (await device('gm-poison-ov')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await p.evaluate(() => hunterApp.store.update((s: any) => {
     s.library.statuses = { poisoned: { label: 'Venom', desc: 'A GM\'s poison.', ops: [{ op: 'stat', key: 'ctl', amount: -12 }] } };
   }, 'test-setup'));
@@ -265,7 +265,7 @@ test('A GM\'s own Poisoned in the library, saved and reloaded, is the one the sh
 
 test('GM Reset rules restores the rule numbers but keeps roll tables and the statuses in the Workshop', async ({ device }) => {
   const p = (await device('gm-reset')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   const chipText = async (k: string) => (await p.locator(`#view-status [data-chips] [data-chip="${k}"] .c-info`).innerText()).trim();
   let before = { chk: 0, ember: '', pois: '' };
 
@@ -317,7 +317,7 @@ test('GM Reset rules restores the rule numbers but keeps roll tables and the sta
 
 test('a GM\'s round of 0 ticks is refused in the Rules editor: Save stays off and the fight keeps its 1000 ticks', async ({ device }) => {
   const p = (await device('gm-domain')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'gm');
   await openSection(p, 'rules');
   await p.locator('#gm-r-text').fill('{"fight":{"round":0}}');
@@ -332,7 +332,7 @@ test('a GM\'s round of 0 ticks is refused in the Rules editor: Save stays off an
 // The words are refusalWords in src/core/overrides.ts, the one place a refused override is put into words.
 test('the Rules editor names the bounds of a number out of its domain and why they are there', async ({ device }) => {
   const p = (await device('gm-domain-words')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'gm');
   await openSection(p, 'rules');
   await p.locator('#gm-r-text').fill('{"fight":{"round":0}}');
@@ -351,7 +351,7 @@ test('the Rules editor names the bounds of a number out of its domain and why th
 
 test('The skill maker starts the formula at the kind\'s recommendation, unmarked: a Shot is the quick share of 1d8 + phys, and the card says how it is used', async ({ device }) => {
   const p = (await device('skill-kind')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'status');
   const maker = p.locator('.skm-overlay [role=dialog]');
   await p.locator('#view-status [data-panel="skills"] [data-new]').tap();
@@ -369,7 +369,7 @@ test('The skill maker starts the formula at the kind\'s recommendation, unmarked
 
 test('A missed daily shows one Penalized chip without a remove button and -2 on checks once', async ({ device }) => {
   const p = (await device('penalized')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await switchToPlayerMode(p);
   const check0 = await strCheck(p);
   // the rollover runs as soon as the save shows a day unchecked, so the Penalty window follows the change itself
@@ -394,7 +394,7 @@ async function recordToasts(p: Page): Promise<() => Promise<string[]>> {
 
 test('the sheet says what a step did: fatigue is "critically high" once, as it crosses into disadvantage, and a fall to 0 HP says the hunter is dead', async ({ device }) => {
   const p = (await device('sheet-news')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'status');
   const said = await recordToasts(p), ft = p.locator('#view-status [data-bar="ft"] [data-cur]');
   const line = await p.evaluate(() => { const s = hunterApp.store, h = s.active(), max = hunterApp.api.hunter.sheet(h).sheet.fatigueMax, at = Math.ceil(max * 0.8) - 3; s.update(() => { s.active().fatigue = at; }, 'test-setup'); return at; });
@@ -418,7 +418,7 @@ test('the sheet says what a step did: fatigue is "critically high" once, as it c
 
 test('A hunter at 0 HP is dead, a heal and a rest do not raise them, and the GM revives them at 1 HP from the board with every status gone', async ({ device }) => {
   const p = (await device('gm-dead')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'status');
   const panel = p.locator('#view-status [data-death]');
 
@@ -457,7 +457,7 @@ test('A hunter at 0 HP is dead, a heal and a rest do not raise them, and the GM 
 
 test('A collapsed hunter stays Exhausted when fatigue drops by hand; a rest takes most of the fatigue off and lifts it, twice a gate', async ({ device }) => {
   const p = (await device('collapsed')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await switchToPlayerMode(p);
   await go(p, 'status');
   const exhausted = p.locator('#view-status [data-chips] [data-chip="exhausted"]');
@@ -577,7 +577,7 @@ test('Worn and used items do what their effects say: a rare potion heals its rar
 
 test('Editing a library item in the item maker shows a row for each of its six effects, and saving it keeps them', async ({ device }) => {
   const p = (await device('gm-forge-keep')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   const dice = (count: number, sides: number) => ({ kind: 'dice', count, sides }), n = (value: number) => ({ kind: 'number', value });
   const effects = [
     { op: 'heal', amount: [1, 2, 3, 4, 5, 6].map(c => dice(c, 4)), when: 'use' }, { op: 'damage', type: 'arcane', amount: n(10), when: 'use' },
@@ -603,7 +603,7 @@ test('Editing a library item in the item maker shows a row for each of its six e
 
 test('A GM\'s edit of Burning to a flat 1d4 is flat at every rank in the rules reference, and a status of the GM\'s own is listed beside it', async ({ device }) => {
   const p = (await device('gm-flat')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   const d = p.locator('.fg-overlay [role=dialog]');
   await go(p, 'workshop');
   await test.step('the GM edits the built-in Burning: one row of 1d4, by no rank', async () => {
@@ -682,7 +682,7 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
 
 test('a GM\'s rules page opens with the GM quick card', async ({ device }) => {
   const p = (await device('rules-gm')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'rules');
   await expect(p.locator('#view-rules .rr-sec').first()).toContainText('GM quick card');
 });
@@ -702,7 +702,7 @@ test('the rules reference explains the eight stats, Armor and Resist, and the tu
 
 test('a hunter who falls in a fight is Dead on the GM\'s card, which offers Revive, and the Revive stands it up at 1 HP', async ({ device }) => {
   const p = (await device('gm-dead-card')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   const hid = await p.evaluate(() => hunterApp.store.active().id);
   const cid = async () => p.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.holder && r.holder.hunterId === id).id, hid);
 
@@ -726,7 +726,7 @@ test('a player in a room at 0 HP reads Dead on their HUD in the GM\'s fight, wit
   const gm = (await device('gm-room-dead')).page, pl = (await device('player-room-dead')).page;
 
   await test.step('the player joins the room and drops to 0 HP', async () => {
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     const code = await createRoom(gm);
     await onboardPlayer(pl, 'Kai Test', code);
     await expect.poll(() => pl.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -766,7 +766,7 @@ test('each control on the sheet and the one that undoes it leave the hunter as i
   for (const who of ['gm', 'player'] as const) {
     await test.step(`on the ${who}'s phone`, async () => {
       const p = (await device(`${who}-roundtrip`)).page;
-      if (who === 'gm') await onboardGM(p); else await onboardPlayer(p, 'Mira');
+      if (who === 'gm') await setupGoblinDenGM(p); else await onboardPlayer(p, 'Mira');
       await go(p, 'status');
       await p.evaluate(() => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Test Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { str: 1 } }));
       const before = await hunter(p);
@@ -797,7 +797,7 @@ test('each control on the sheet and the one that undoes it leave the hunter as i
 
 test('removing a worn amulet that raised max HP brings HP down to the new maximum, as taking it off does', async ({ device }) => {
   const p = (await device('gm-amulet')).page;
-  await onboardGM(p);
+  await setupGoblinDenGM(p);
   await go(p, 'status');
   const id = await p.evaluate(() => {
     const A = hunterApp.api, hid = hunterApp.store.active().id;

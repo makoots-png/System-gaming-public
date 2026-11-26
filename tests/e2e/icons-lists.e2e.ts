@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, createRoom, go, dismissAll, startGoblinDenFight, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, go, dismissAll, startGoblinDenFight, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
 import type { Locator, Page } from '@playwright/test';
 
 /** A picture drawn by the one drawer: its reference, its side in px, and whether it hides from a screen reader. */
@@ -58,7 +58,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 
 test('the Bestiary draws each monster\'s picture, 32 px left of its name, on the GM\'s phone and on a player\'s through the codex doc', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Mira Test', code);
   await dismissAll(player);
@@ -86,7 +86,7 @@ test('the Bestiary draws each monster\'s picture, 32 px left of its name, on the
 
 test('a hunter\'s potion, in the hotbar\'s drawer on the map, shows the picture the bag shows for it', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const item = await gm.evaluate(() => {
     const brakk = hunterApp.store.get().hunters.find((h: any) => h.name === 'Brakk Ironhide');
     return hunterApp.api.inventory.addItem(brakk.id, hunterApp.api.inventory.itemTemplates().find((t: any) => t.name === 'Health Potion (E)')).id;
@@ -105,7 +105,7 @@ test('a hunter\'s potion, in the hotbar\'s drawer on the map, shows the picture 
 
 test('a status on the GM card and on the player\'s table HUD starts with its picture, and the chip fits a phone', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, 'Kai Test', code);

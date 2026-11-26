@@ -648,7 +648,8 @@ describe('a trade between two players (notes-5-trade.md 1.8, unit 2)', () => {
     }
     expect([...seen].sort()).toEqual(['refused', 'settled', 'stash given', 'stash kept', 'stash refused', 'stopped', 'withdrawn']);
     console.log(`room model: ${TRADE_WALKS} trade walks, ${moves} moves, ${Math.round(performance.now() - t0)} ms`);
-  }, 60_000);
+    // Compute-only trade walk (~8 s idle, 77 s under concurrent 4-worker load on Nov 26, tripping 60 s). Budget 180 s.
+  }, 180_000);
 });
 
 describe('the room under every interleaving explored', () => {

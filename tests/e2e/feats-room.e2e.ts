@@ -1,7 +1,7 @@
 // Feats in a room (feature 1's notes sections 2.3 and 3.2): the GM's own feats reach the players' phones in the room's
 // feats doc, and what the GM's phone saw of a player's hunter (a gate's Clear it was paid in) reaches its phone as the
 // room's `noted`, where the player's phone counts it and opens the feat's window once.
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, approveWaiting } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, approveWaiting } from './helpers.ts';
 import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
 import { CHRONICLE_WORDS } from '../../src/core/hunter/chronicle-view.ts';
 
@@ -15,7 +15,7 @@ test('the GM\'s own feat reaches a player\'s phone, and the gate the GM clears f
   const gm = (await device('gm')).page, player = (await device('player')).page;
 
   await test.step('a GM with a feat of its own and a gate entered, and a player in the room', async () => {
-    await onboardGM(gm);
+    await setupGoblinDenGM(gm);
     const code = await createRoom(gm);
     await gm.evaluate(f => hunterApp.store.update((d: any) => {
       d.library.feats = { 'first-clear': f };

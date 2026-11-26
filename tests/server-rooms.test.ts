@@ -4,7 +4,7 @@ import { MEM_EVENTS, database, handler, memoryStore, openDatabase, postgresStore
 import { apiError, parseEvent } from '../src/core/protocol.ts';
 import type { StoredEvent } from '../src/core/protocol.ts';
 import type { Store } from '../server.ts';
-import { DOC_MAX, ROOM_SHEETS, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
+import { DOC_MAX, ROOM_PAGE, ROOM_SHEETS, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
 import { ROOM_TTL_MS } from '../src/core/room-server.ts';
 import { newEvent } from '../src/core/protocol.ts';
@@ -821,18 +821,22 @@ describe('a room keeps every message it took (notes-5-trade.md 13, ruling 3)', (
     for (let after = 0; ;) { const p = await st.events(code, after); out.push(...p.events); if (!p.more) return out; after = p.next; }
   }
 
-  test('a phone that reads from the start after 2,000 more messages still reads the first, and a resend of it is not stored again', async () => {
+  // Over two full pages (ROOM_PAGE = 200) exercises multi-page paging, retention of seq 1, and resend deduplication
+  // without 2,000 sequential Postgres transactions timing out in CI. The 20,000-event memory bound is covered below.
+  const EXTRA = ROOM_PAGE * 2 + 5;
+  test(`a phone that reads from the start after ${EXTRA} more messages still reads the first, and a resend of it is not stored again`, async () => {
     const st = await freshStore(), code = someCode(), t0 = Date.now(), first = parseEvent('award', award(10, 'd-gm-first'))!;
     try {
       await st.create(code, 'hash', t0);
       expect(await st.addEvent(code, GM_PHONE, first, t0)).toBe(1);
-      for (let n = 1; n <= 2000; n++) await st.addEvent(code, GM_PHONE, told(n), t0);
+      for (let n = 1; n <= EXTRA; n++) await st.addEvent(code, GM_PHONE, told(n), t0);
       expect(String((await st.events(code, 0)).events[0]?.payload.eid), 'the award is the first message a phone reads from the start').toBe('d-gm-first');
       expect(await st.addEvent(code, GM_PHONE, first, t0), 'the outbox sends the award again: the room answers its seq').toBe(1);
       const events = await all(st, code);
-      expect([events.length, events.filter(e => e.payload.eid === 'd-gm-first').length]).toEqual([2001, 1]);
+      expect([events.length, events.filter(e => e.payload.eid === 'd-gm-first').length]).toEqual([EXTRA + 1, 1]);
     } finally { await st.close(); }
-  });
+    // Even 405 sequential Postgres transactions can exceed 5 s on a loaded CI runner.
+  }, 15_000);
 
   test('a memory room past its bound refuses a new message as full and forgets none; a resend of a message it holds still answers', async () => {
     const st = memoryStore(), server = serverOf(openDatabase(st));

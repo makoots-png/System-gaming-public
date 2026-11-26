@@ -844,3 +844,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T18:07Z	balance	PR 147 Hemomancer balance pass merged (Neon, arena; solo rows 93.5/79.0/85.5/91.0 from 98.5/87.5/99.0/96.5; CI 45871675324 8/8)
 2026-11-26T19:06Z	act1	PR 148 Act 1 U1: scripted goblin chief/usher/head usher, filtered from spawnPool and solo spawns; unit 7404/0; CI 45879545580 8/8
 2026-11-26T20:19Z	act1	PR 149 Act 1 U3: per-hunter display-only capDisplay chip, GM pickers, capSet event, Lift cap and offer classes; unit 7423/0; browser 22/22; CI 45888699815 8/8
+2026-11-26T20:46Z	act1	PR 150 Act 1 U2: gate waves, bossFell, offer gated on boss; unit 7428/0; browser 75/75; CI 45892051123 8/8

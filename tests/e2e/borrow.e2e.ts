@@ -7,7 +7,7 @@ import { RULES } from '../../src/core/rules.ts';
 import { BORROW_WORDS, BUY_WORDS, borrowConfirm, shopCreditLine } from '../../src/core/hunter/inventory.ts';
 import { RAISE_TITLE, debtChip, debtLine, debtPaidLine, debtXpClearedLine, debtXpLine, raiseOffer, raiseOwes } from '../../src/core/hunter/revive-standing.ts';
 import { borrowLine } from '../../src/core/rules-text.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, gateByName } from './helpers.ts';
 
 const HUNTER = 'Mira Loan';
 const confirmWin = (page: Page) => page.locator('.sys-overlay.show', { hasText: BORROW_WORDS.title });
@@ -15,7 +15,7 @@ const raiseWin = (page: Page) => page.locator('.sys-overlay.show', { hasText: RA
 
 test('a hunter can borrow in the shop up to the rank cap with plain confirmation, sees exact refusals, syncs room rules, and pays the loan off through gate clears', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);

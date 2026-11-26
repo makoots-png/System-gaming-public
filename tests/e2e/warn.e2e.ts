@@ -4,7 +4,7 @@
 import { mkdir } from 'node:fs/promises';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
-import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, noonDate, PHONE, SMALL_PHONE, type Page } from './helpers.ts';
+import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, noonDate, PHONE, SMALL_PHONE, type Page } from './helpers.ts';
 
 const V4 = 'hunter-system-v5';
 const SHOT_DIR = process.env.E2E_SHOT_DIR || '';
@@ -92,7 +92,7 @@ async function expectVariant1(page: Page, width: number, selector = '.sys-overla
 for (const viewport of [PHONE, SMALL_PHONE]) {
   test(`danger confirm at ${viewport.width}px: Variant 1 layout, safe Cancel focus, Enter/Escape/backdrop cancel, danger button deletes`, async ({ device }) => {
     const { page } = await device(`gm-${viewport.width}`, { viewport });
-    await onboardGM(page);
+    await setupGoblinDenGM(page);
     await go(page, 'gates');
     const card = page.locator('#view-gates .gate[data-id]', { hasText: 'Goblin Den' });
     await expect(card).toBeVisible();
@@ -198,7 +198,7 @@ test('penalty window, quest failed without Rewards heading, and GM EMERGENCY QUE
 
   // 2. Quest failed shows penalty lines without a "Rewards" heading
   const { page: gm } = await device('gm-qfail', { viewport: PHONE });
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.hunters[0].gold = 80; }, 'test-setup'));
   await go(gm, 'quests');
   await gm.locator('#view-quests [data-new]').tap();
@@ -232,7 +232,7 @@ test('penalty window, quest failed without Rewards heading, and GM EMERGENCY QUE
 
 test('gate break (GM Dungeon Break and player Gate Break) and room gone', async ({ device }) => {
   const { page: gm } = await device('gm-room', { viewport: PHONE, blockServiceWorker: true });
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
 
   const { page: player } = await device('player-room', { viewport: PHONE, blockServiceWorker: true, allowConsole: [/status of 404/] });

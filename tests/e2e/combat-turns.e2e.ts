@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { shareEach } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { NO_PEN, afterDefence } from '../../src/core/combat/land.ts';
-import { test, expect, onboardGM, go, startGoblinDenFight, answerWindow, openApp, fightRow, PHONE, SMALL_PHONE, LANDSCAPE, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, startGoblinDenFight, answerWindow, openApp, fightRow, PHONE, SMALL_PHONE, LANDSCAPE, chooseList } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const currentRow = (page: Page) => combat(page).locator('.cmb-row.cur .cmb-nm');
@@ -41,7 +41,7 @@ async function chooseInWindow(page: Page, label: string) {
 }
 
 async function gmFight(page: Page) {
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   return startGoblinDenFight(page);
 }
@@ -210,7 +210,7 @@ test('a goblin burning at strength C loses more HP over its turn than one burnin
 
 test('a caster rat\'s Curse tapped on its card hurts Brakk by what the damage rule gives', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await go(page, 'combat');
   await combat(page).locator('[data-hsel]').selectOption({ label: 'Brakk Ironhide' });
@@ -244,7 +244,7 @@ test('a caster rat\'s Curse tapped on its card hurts Brakk by what the damage ru
 
 test('the loot of a monster defeated in a fight opens in the Award form when the GM taps Award loot', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
   await page.evaluate(p => hunterApp.store.update((d: any) => {
@@ -275,7 +275,7 @@ test('the loot of a monster defeated in a fight opens in the Award form when the
 
 test('the loot of a fight the GM has not given yet is offered again after a reload, and Set aside ends the offer', async ({ device }) => {
   const page = (await device('gm')).page;
-  await onboardGM(page);
+  await setupGoblinDenGM(page);
   await chooseList(page);
   await page.evaluate(() => hunterApp.store.update((d: any) => {
     d.monsters.push({ id: 'm900', name: 'Hoard Rat', rank: 'E', type: '', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 40, extractable: false, desc: '', statuses: [], loot: { gold: 75, items: [] } });
@@ -450,13 +450,7 @@ for (const [size, viewport] of Object.entries({ phone: PHONE, 'small phone': SMA
 
 test('in a short window used with a mouse, the Workshop\'s New status opens at its top: title and Name in view', async ({ device }) => {
   const page = (await device('laptop', { viewport: LANDSCAPE, mouse: true })).page;
-  await openApp(page);
-  for (const step of ['[data-yes]', '[data-gm]', '[data-starter]', '[data-oblater]']) {
-    const b = page.locator(`.ob-overlay ${step}`).first();
-    if (await b.isVisible()) await b.click();
-  }
-  const windowButton = page.locator('.sys-overlay.show .primary');
-  while (await windowButton.isVisible()) await windowButton.click();
+  await setupGoblinDenGM(page);
   await go(page, 'workshop');
   await page.clock.install();
   await page.locator('#view-workshop [data-ws="status"] [data-new]').click();

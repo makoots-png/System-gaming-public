@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, openApp, go, dismissAll, createRoom, PHONE, ROOM_CODE, type DeviceOptions, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, openApp, go, dismissAll, createRoom, PHONE, ROOM_CODE, type DeviceOptions, chooseList } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const currentRow = (page: Page) => combat(page).locator('.cmb-row.cur');
@@ -20,18 +20,16 @@ async function brakkAndTwoGoblins(page: Page) {
   await dismissAll(page, 4);
 }
 
-/** A GM on a 1280 by 800 laptop with a mouse, through the onboarding with the starter campaign. */
+/** A GM on a 1280 by 800 laptop with a mouse, using the legacy Goblin Den fixture. */
 async function laptopGM(device: (label: string, options?: DeviceOptions) => Promise<{ page: Page }>) {
   const gm = (await device('gm', { viewport: { width: 1280, height: 800 }, mouse: true })).page;
-  await openApp(gm);
-  for (const step of ['[data-yes]', '[data-gm]', '[data-starter]', '[data-oblater]']) await gm.locator(`.ob-overlay ${step}`).click();
-  await expect(gm.locator('.ob-overlay')).toHaveCount(0);
+  await setupGoblinDenGM(gm);
   return gm;
 }
 
 test('on a 390 px phone the GM sees whose turn it is at the top of the fight, the mark moves on Next, and a goblin at 0 HP is marked down in the order', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await brakkAndTwoGoblins(gm);
   await go(gm, 'gm');
@@ -69,7 +67,7 @@ test('on a 390 px phone the GM sees whose turn it is at the top of the fight, th
 
 test('on a 390 px phone in a room, the empty Table feed is one line that covers none of the card, and a player\'s roll shows as 1 new', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await createRoom(gm);
   await brakkAndTwoGoblins(gm);
@@ -149,7 +147,7 @@ test('at 1280 the Workshop shows its entries as cards, two side by side', async 
 
 test('a GM\'s phone opens on the GM view and a player\'s on Status when the address names no view', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: PHONE })).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await chooseList(gm);
   await onboardPlayer(player, 'Mira Test');
   await chooseList(player);

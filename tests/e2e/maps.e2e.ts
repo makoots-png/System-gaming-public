@@ -3,7 +3,7 @@
 // a walk goes round, a fire that burns who stands in it, a foe behind a wall the player's phone does not hold, a wall
 // the GM paints mid-fight, and a map shared to another phone. Two phones where a player is in it.
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, gateByName, setupDoc } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, gateByName, setupDoc } from './helpers.ts';
 
 const HUNTER = 'Kai Map', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -17,7 +17,7 @@ const cell = (page: Page, x: number, y: number) => maker(page).locator(`[data-gr
 /** A GM and a player in one room, the player's card on the GM's party board. */
 async function room(device: (label: string) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page }> {
   const gm = (await device('gm')).page, player = (await device('player')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
   await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
@@ -195,7 +195,7 @@ test('a wall the GM paints mid-fight appears on the player\'s phone', async ({ d
 
 test('a GM whose Save as a new map is refused keeps the map maker open with the walls painted, and Save map then saves the edit to the same map', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
   await go(gm, 'workshop');
   await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
@@ -229,7 +229,7 @@ test('a GM whose Save as a new map is refused keeps the map maker open with the 
 test('a GM who paints walls on a map and touches nothing else is asked before Escape or a press beside the maker drops them; Discard closes it and the map keeps its floor', async ({ device }) => {
   const gm = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
   const ask = gm.getByRole('alertdialog', { name: 'Discard changes?' });
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
   await go(gm, 'workshop');
   await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
@@ -260,7 +260,7 @@ test('a GM who paints walls on a map and touches nothing else is asked before Es
 
 test('a GM\'s Save as a new map adds the painted copy under the new name, and the map edited keeps its floor', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
   await go(gm, 'workshop');
   await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
@@ -276,7 +276,7 @@ test('a GM\'s Save as a new map adds the painted copy under the new name, and th
 
 test('a map shared from the Workshop arrives on another phone with its walls and its fire', async ({ device }) => {
   const gm = (await device('gm')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const MAP = { id: 'mp900', name: 'Frost Hall', w: 6, h: 4, tiles: '#######....##.~o.#######', fog: true, sight: 6, starts: { party: [{ x: 1, y: 1 }], foe: [{ x: 4, y: 2 }] },
     zones: [{ id: 'z1', name: 'Ice', ground: { kind: 'tiles', tiles: [{ x: 2, y: 1 }] }, ops: [{ op: 'speed', pct: -30 }] }] };
   await gm.evaluate(m => hunterApp.store.update((d: any) => { d.library.maps.push(m); }, 'test-setup'), MAP);
@@ -289,7 +289,7 @@ test('a map shared from the Workshop arrives on another phone with its walls and
   await answerWindow(gm, 'Share code', 'Close');
 
   const other = (await device('other')).page;
-  await onboardGM(other);
+  await setupGoblinDenGM(other);
   await go(other, 'data');
   await other.locator('#view-data [data-paste]').fill(code);
   await other.locator('#view-data [data-read-code]').tap();
