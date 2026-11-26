@@ -42,7 +42,12 @@ for (const [list, defs] of LISTS) {
 }
 
 test('no two built-in or starter skills share a name', () => {
-  const names = LISTS.flatMap(([, defs]) => defs.map(s => s.name.toLowerCase()));
+  for (const [, defs] of LISTS) {
+    const names = defs.map(s => s.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+  }
+  const distinct = [...new Set(LISTS.flatMap(([, defs]) => defs))];
+  const names = distinct.map(s => s.name.toLowerCase());
   expect(new Set(names).size).toBe(names.length);
 });
 

@@ -6,7 +6,7 @@ import { exportedSave, freshSave, newHunter, repairSave } from '../src/core/save
 import type { Save } from '../src/core/save.ts';
 import type { EventId, FightId, GateId, GmKey, HunterId, RoomCode, SheetKey, StoryRunId } from '../src/core/ids.ts';
 import { parseDeviceId, sheetKeyOf } from '../src/core/ids.ts';
-import { STARTER_GATES, starterCampaign } from '../src/core/starter.ts';
+import { STARTER_GATE, starterCampaign } from '../src/core/starter.ts';
 import { newGate, parseGate, shownOf } from '../src/core/gates/gate.ts';
 import { planEncounter, settleEncounter } from '../src/core/gates/pay.ts';
 import { reduce as fightReduce } from '../src/core/combat/fight.ts';
@@ -55,23 +55,7 @@ const D7_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p7')!, 'h1' as HunterId);
 
 function gmSave(): Save {
   const base = freshSave(ENV, { onboarded: true });
-  const gob = seedMonsters(RULES)[0]!;
-  const made = {
-    gates: STARTER_GATES.map((sg, i) => ({
-      gate: {
-        ...newGate(),
-        id: `g${i + 1}` as GateId,
-        name: sg.name,
-        rank: sg.rank,
-        type: sg.type,
-        breakDay: 5,
-        monsters: [{ monsterId: gob.id, count: 2 }],
-        bossId: gob.id,
-      },
-      monsters: [gob],
-    })),
-  };
-  const s = starterCampaign(base, made, { at: AT, cap: RULES.logCap }, RULES);
+  const s = starterCampaign(base, { at: AT, cap: RULES.logCap }, RULES);
   if (isRefused(s)) throw new Error(`starterCampaign refused: ${s.why}`);
   return { ...s, settings: { ...s.settings, mode: 'gm', sync: { ...s.settings.sync, room: ROOM, gmKey: GM_KEY } } };
 }
@@ -89,14 +73,13 @@ const holderCtx = (
   heldRemote,
 });
 
-describe('starter Goblin Den classOffer gate field & first-fight trigger', () => {
-  test('starter Goblin Den carries classOffer: true, other starter gates are false, and parseGate/shownOf handle it cleanly', () => {
+describe('starter Tidewall Cannery Gate classOffer gate field & boss-fall trigger', () => {
+  test('starter Tidewall Cannery Gate carries classOffer: true, new gates default false, and parseGate/shownOf handle it cleanly', () => {
     const s = gmSave();
-    const den = s.gates.find(g => g.name === 'Goblin Den');
-    const others = s.gates.filter(g => g.name !== 'Goblin Den');
+    const den = s.gates.find(g => g.name === STARTER_GATE.name);
     expect(den?.classOffer).toBe(true);
-    expect(others.length).toBeGreaterThan(0);
-    expect(others.every(g => g.classOffer === false)).toBe(true);
+    expect(den?.bossId).toBe(STARTER_GATE.bossId);
+    expect(newGate().classOffer).toBe(false);
 
     const g0 = { ...newGate(), id: 'g99' as GateId, name: 'Custom Den', classOffer: true };
     expect(g0.classOffer).toBe(true);
@@ -106,11 +89,11 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
 
   test('settleEncounter signals offerClasses only after the gate boss falls, openClassOffer fallback checks bossFell, and OFFER_WORDS copy is neutral', () => {
     const s0 = gmSave();
-    const den = s0.gates.find(g => g.name === 'Goblin Den')!;
+    const den = s0.gates.find(g => g.name === STARTER_GATE.name)!;
     const h0 = s0.hunters[0]!;
     const seeds = seedMonsters(RULES);
-    const gob = seeds[0]!;
-    const otherMob = seeds.find(m => m.id !== gob.id)!;
+    const boss = seeds.find(m => m.id === den.bossId)!;
+    const otherMob = seeds.find(m => m.id !== boss.id)!;
     const ctx = { rules: RULES };
     const rows1 = [
       hunterRow(h0, combatantId('c1'), RULES),
@@ -144,10 +127,10 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
     const adHocClosed = closeClassOffer(adHoc.save, { at: AT, R: RULES });
     if (isRefused(adHocClosed)) throw new Error(adHocClosed.why);
 
-    // Fight 2 defeats the gate boss (gob.id): bossFell flips true and offerClasses signals den.id.
+    // Fight 2 defeats the gate boss (Head Usher): bossFell flips true and offerClasses signals den.id.
     const rows2 = [
       hunterRow(h0, combatantId('c3'), RULES),
-      ...monsterRows(gob, [combatantId('c4')], RULES),
+      ...monsterRows(boss, [combatantId('c4')], RULES),
     ];
     const f2Add = fightReduce(null, { type: 'add', fightId: 'f2' as FightId, rows: rows2, openings: [] }, ctx).fight!;
     const f2Start = fightReduce(f2Add, { type: 'start', openings: [{ id: combatantId('c3'), d20: 15, tie: 0 }, { id: combatantId('c4'), d20: 5, tie: 0 }] }, ctx).fight!;
@@ -155,7 +138,7 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
     if (f2End.phase !== 'ended') throw new Error('expected ended fight');
     const f2Ended = { ...f2End, summary: { ...f2End.summary, down: [combatantId('c4')] } };
 
-    const sFight2: Save = { ...adHocClosed, fight: f2Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c4')]: gob.id } } };
+    const sFight2: Save = { ...adHocClosed, fight: f2Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c4')]: boss.id } } };
     const plan2 = planEncounter(f2Ended, den.id, sFight2, 3, () => 25);
     const settled2 = settleEncounter(
       sFight2,
@@ -183,7 +166,7 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
     if (isRefused(closed)) return;
 
     const settled3 = settleEncounter(
-      { ...closed, fight: f2Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c4')]: gob.id } } },
+      { ...closed, fight: f2Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c4')]: boss.id } } },
       plan2,
       'skip',
       { room: null, events: [] },
@@ -279,7 +262,7 @@ describe('classOfferDocOf, DOCS.classOffer, classOfferFor & wire redaction', () 
 
   test('combined Lift cap and offer classes atomically sets capDisplay to none for local hunters and queues capSet for remote hunters', () => {
     const s0 = gmSave();
-    const den = s0.gates.find(g => g.name === 'Goblin Den')!;
+    const den = s0.gates.find(g => g.name === STARTER_GATE.name)!;
     const capped: Save = {
       ...s0,
       hunters: s0.hunters.map(h => ({ ...h, capDisplay: 'E' as const })),

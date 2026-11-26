@@ -4,9 +4,7 @@
 import { describe, expect } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
-import type { GateId } from '../src/core/ids.ts';
-import { STARTER_GATES, starterCampaign } from '../src/core/starter.ts';
-import { newGate } from '../src/core/gates/gate.ts';
+import { starterCampaign } from '../src/core/starter.ts';
 import { claimUniqueClass } from '../src/core/hunter/class-holders.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
@@ -27,35 +25,19 @@ const RUNS = 100;
 /** Adapts core `sensible` (3-arg TurnPolicy) to `fight-sim.ts` 4-arg Policy. */
 const sensiblePolicy: Policy = (f, me, _plan, R) => sensible(f, me, R);
 
-/** Builds the real E-rank starter party: Brakk + Mira + a freshly offered 0-node E-rank Hemomancer. */
+/** Builds the real E-rank starter party: Dolan + Nadia + a freshly offered 0-node E-rank Hemomancer. */
 function buildERankStarterParty(): readonly SimRow[] {
   const env = { now: new Date(AT), newDeviceId: () => dev('d-gm'), newDeviceToken: () => 'tok-gm-1234567890' };
-  const gob = seedMonsters(RULES)[0]!;
-  const made = {
-    gates: STARTER_GATES.map((sg, i) => ({
-      gate: {
-        ...newGate(),
-        id: `g${i + 1}` as GateId,
-        name: sg.name,
-        rank: sg.rank,
-        type: sg.type,
-        breakDay: 5,
-        monsters: [{ monsterId: gob.id, count: 2 }],
-        bossId: gob.id,
-      },
-      monsters: [gob],
-    })),
-  };
-  const s0 = starterCampaign(freshSave(env, { onboarded: true }), made, { at: AT, cap: RULES.logCap }, RULES);
+  const s0 = starterCampaign(freshSave(env, { onboarded: true }), { at: AT, cap: RULES.logCap }, RULES);
   if (isRefused(s0)) throw new Error(`starterCampaign refused: ${s0.why}`);
-  const [brakk, mira] = s0.hunters;
-  if (!brakk || !mira) throw new Error('starterCampaign must seed Brakk and Mira');
+  const [dolan, nadia] = s0.hunters;
+  if (!dolan || !nadia) throw new Error('starterCampaign must seed Dolan and Nadia');
 
   // 3rd E-rank party member (level 1, starter vit+pow split) claims Hemomancer at 0 nodes.
   const thirdBase = newHunter(RULES);
   const third = {
     ...thirdBase,
-    id: 'h-hemo' as typeof brakk.id,
+    id: 'h-hemo' as typeof dolan.id,
     name: 'Sora',
     stats: { ...thirdBase.stats, vit: 12, pow: 13 },
   };
@@ -80,8 +62,8 @@ function buildERankStarterParty(): readonly SimRow[] {
   }
 
   return [
-    { row: hunterRow(brakk, combatantId('brakk'), RULES), policy: sensiblePolicy },
-    { row: hunterRow(mira, combatantId('mira'), RULES), policy: sensiblePolicy },
+    { row: hunterRow(dolan, combatantId('dolan'), RULES), policy: sensiblePolicy },
+    { row: hunterRow(nadia, combatantId('nadia'), RULES), policy: sensiblePolicy },
     { row: hemoRow, policy: hemomancerPolicy },
   ];
 }

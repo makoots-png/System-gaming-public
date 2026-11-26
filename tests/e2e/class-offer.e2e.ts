@@ -5,7 +5,7 @@ import { OFFER_WORDS, classTakenLine, pickRefusedLine } from '../../src/core/hun
 import { CLASS_UI_WORDS } from '../../src/core/hunter/class-view.ts';
 import { uniqueJobRefusalText } from '../../src/core/hunter/grant.ts';
 import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER } from '../../src/core/hunter/class-locker.ts';
-import { test, expect, openApp, tapIfShown, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, SMALL_PHONE } from './helpers.ts';
+import { test, expect, openApp, tapIfShown, onboardGM, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, SMALL_PHONE } from './helpers.ts';
 
 const modalWin = (page: Page, title: string) => page.locator('.sys-overlay.show', { hasText: title });
 
@@ -26,7 +26,7 @@ async function onboardBlankGM(page: Page): Promise<void> {
 
 test('starter Goblin Den first fight prompts Offer classes, local hunters claim from 3 Mythics + 3 Epics, and GM panel offers anytime', async ({ device }) => {
   const gm = (await device('gm-starter')).page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   await dismissAll(gm);
 
   await test.step('after Goblin Den first fight, GM gets Offer classes alongside Mark gate cleared', async () => {

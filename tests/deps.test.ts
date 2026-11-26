@@ -19,6 +19,8 @@ const UNHEARD: Record<string, string> = {};
 const UNSENT: Record<string, string> = {};
 /** `api.member` registered that no module uses. */
 const UNUSED: Record<string, string> = {
+  // setupGoblinDenGM in tests/e2e/helpers.ts rolls legacy fixture gates; starter.js now builds Tidewall Cannery Gate deterministically in core
+  'gates.roll': TESTS_ONLY,
   // the Job Change browser tests in gates-quests-dailies.e2e.ts tap Complete; the app's own level steps complete in their step (grant.ts)
   'quests.complete': TESTS_ONLY,
 };

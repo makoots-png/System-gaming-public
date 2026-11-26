@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { test, expect, onboardGM, onboardPlayer, openApp, createRoom, dismissAll, answerWindow, go, activeHunter, chooseList, gmRoomHeaders, roomHeaders, type Page } from './helpers.ts';
+import { test, expect, onboardGM, setupGoblinDenGM, onboardPlayer, openApp, createRoom, dismissAll, answerWindow, go, activeHunter, chooseList, gmRoomHeaders, roomHeaders, type Page } from './helpers.ts';
 
 const roomView = '#view-room';
 const removedWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: 'Removed from room' });
@@ -10,7 +10,7 @@ const sheetsInRoom = async (page: Page, code: string) => Object.keys(((await (aw
 
 async function gmWithRoom(device: (label: string, options?: any) => Promise<any>, options: any = {}) {
   const gm = (await device('gm', options)).page as Page;
-  await onboardGM(gm);
+  await setupGoblinDenGM(gm);
   const code = await createRoom(gm);
   return { gm, code };
 }

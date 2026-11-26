@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, noonDate, ROOM_CODE } from './helpers.ts';
-import { ABOUT, ROOM_IS, ROOM_PATH, TIPS } from '../../src/core/first-run.ts';
+import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS } from '../../src/core/first-run.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
@@ -271,7 +271,7 @@ test('a new GM sees Campaign ready, taps Create room and lands on the room\'s in
   for (const b of ['[data-yes]', '[data-gm]', '[data-starter]']) await gm.locator(`${OB} ${b}`).tap();
 
   const win = await windowTitled(gm, 'Campaign ready');
-  await expect(win).toContainText('The starter campaign is loaded');
+  await expect(win).toContainText(LOADED.starter.split('\n')[0]!);
   await expect(win).toContainText(ROOM_IS);
   expect(await nextOf(gm)).toEqual([
     { text: 'Create a room.', done: false },

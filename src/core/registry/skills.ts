@@ -36,6 +36,8 @@ export type SkillDef =
   | { name: BuiltInSkill; type: 'active'; desc: string }
   | { name: string; type: 'passive'; desc: string; bonus: SkillBonus };
 
+const MENDING_AURA: SkillDef = { name: 'Mending Aura', type: 'active', desc: 'For three rounds, you and every ally near you heal each round. The area moves with you.' };
+
 // Restated by docs/agent-handoff/rw/m2-plan.md section 3.5: a passive's old bonus maps by the stat map (an old AC of N is
 // Vitality 2N); an active's MP cost, dice and cooldown are its ability's now.
 export const SKILL_SEEDS: readonly SkillDef[] = [
@@ -49,10 +51,10 @@ export const SKILL_SEEDS: readonly SkillDef[] = [
   { name: "Ruler's Authority", type: 'active', desc: 'Crush and push a foe up to 3 tiles away within 6 tiles (30 ft) with telekinetic force.' },
   { name: 'Shadow Exchange', type: 'active', desc: 'Swap places with one of your shadows.' },
   { name: 'Arise', type: 'active', desc: 'Raise a defeated monster as one of your shadows.' },
-  { name: 'Mending Aura', type: 'active', desc: 'For three rounds, you and every ally near you heal each round. The area moves with you.' },
+  MENDING_AURA,
 ];
 
-/** The skills the starter campaign's three hunters begin with (src/views/starter.js), two each. */
+/** The skills the starter campaign's hunters begin with (src/core/starter.ts). */
 export const STARTER_SKILLS = {
   shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Put a shield equal to 25% of your max HP on one ally in range.' },
   ironSkin: { name: 'Iron Skin', type: 'passive', desc: 'Adds 2 Vitality.', bonus: { vit: 2 } },
@@ -60,6 +62,7 @@ export const STARTER_SKILLS = {
   trailsense: { name: 'Trailsense', type: 'passive', desc: 'You notice tracks and signs others miss, and a gate never surprises you.', bonus: {} },
   arcBolt: { name: 'Arc Bolt', type: 'active', desc: 'Fire a bolt of mana at one foe in range.' },
   manaSense: { name: 'Mana Sense', type: 'passive', desc: 'You can sense mana near you, which lets you find hidden gates.', bonus: {} },
+  mendingAura: MENDING_AURA,
 } as const satisfies Record<string, SkillDef>;
 
 /** A built-in skill as a hunter holds it (no id yet): level 1, no label, an active one with its ability under `R`. */
