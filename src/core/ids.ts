@@ -9,6 +9,15 @@ export type Brand<T, B extends string> = T & { readonly [brand]: B };
 export type Id<B extends string> = Brand<string, B>;
 /** A room's six character code. */
 export type RoomCode = Id<'RoomCode'>;
+/** A GM's item catalog id (`cat-<6..24 lowercase alnum>`): on the server derived from its `CatalogKey`. */
+export type CatalogId = Id<'CatalogId'>;
+/** The secret key that owns a GM's item catalog (never sent to players). */
+export type CatalogKey = Id<'CatalogKey'>;
+/**
+ * An item definition's stable id: a built-in (`b:<slug>`) or a GM custom item (`c:<catalogId>:<stamp>`).
+ * Distinct from `ItemId` (`i<n>` / `seed:<word>`), which identifies one held stack in a hunter's bag or stash.
+ */
+export type ItemDefId = Id<'ItemDefId'>;
 /** A phone: `settings.deviceId`. */
 export type DeviceId = Id<'DeviceId'>;
 /** One event. The sender makes it; a phone applies an event that changes a hunter at most once per id. */
@@ -31,7 +40,37 @@ const CODE_RE = new RegExp(`^[${CODE_CHARS}]{${CODE_LEN}}$`);
 const WORD_RE = /^[\w-]{1,40}$/;
 const SHEET_KEY_RE = /^[\w-]+:[\w.-][\w:.-]*$/;
 const GM_KEY_RE = /^[\w-]{1,80}$/;
+export const ITEM_DEF_ID_MAX = 64;
+const CATALOG_ID_RE = /^cat-[a-z0-9]{6,24}$/;
+const CATALOG_KEY_RE = /^[\w-]{16,80}$/;
+const BUILT_IN_ITEM_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const BUILT_IN_ITEM_ID_RE = /^b:[a-z0-9][a-z0-9-]{0,39}$/;
+const CUSTOM_ITEM_ID_RE = /^c:(cat-[a-z0-9]{6,24}):[a-z0-9]{4,20}$/;
 export const parseRoomCode = (v: unknown): RoomCode | null => (typeof v === 'string' && CODE_RE.test(v) ? (v as RoomCode) : null);
+export const parseCatalogId = (v: unknown): CatalogId | null => (typeof v === 'string' && CATALOG_ID_RE.test(v) ? (v as CatalogId) : null);
+export const parseCatalogKey = (v: unknown): CatalogKey | null => (typeof v === 'string' && CATALOG_KEY_RE.test(v) ? (v as CatalogKey) : null);
+export const parseItemDefId = (v: unknown): ItemDefId | null =>
+  (typeof v === 'string' && v.length <= ITEM_DEF_ID_MAX && (BUILT_IN_ITEM_ID_RE.test(v) || CUSTOM_ITEM_ID_RE.test(v)) ? (v as ItemDefId) : null);
+/** The built-in item definition id for `slug` (`b:<slug>`). Throws if `slug` is not a valid built-in slug. */
+export function builtInItemId(slug: string): ItemDefId {
+  if (!BUILT_IN_ITEM_SLUG_RE.test(slug)) throw new Error(`invalid built-in item slug: "${slug}"`);
+  return `b:${slug}` as ItemDefId;
+}
+/** A custom item definition id under `catalogId` with collision-free `stamp` (`c:<catalogId>:<stamp>`). */
+export function customItemDefId(catalogId: CatalogId, stamp: string): ItemDefId {
+  const id = `c:${catalogId}:${stamp}`;
+  if (!CUSTOM_ITEM_ID_RE.test(id) || id.length > ITEM_DEF_ID_MAX) throw new Error(`invalid custom item def id: "${id}"`);
+  return id as ItemDefId;
+}
+/** Whether `id` names a shipped built-in item (`b:*`). */
+export const isBuiltInItemId = (id: ItemDefId): boolean => id.startsWith('b:');
+/** Whether `id` names a GM-created custom item (`c:*`). */
+export const isCustomItemDefId = (id: ItemDefId): boolean => id.startsWith('c:');
+/** The catalog that owns custom item `id`, or null for a built-in item. */
+export function catalogOfItemDefId(id: ItemDefId): CatalogId | null {
+  const m = CUSTOM_ITEM_ID_RE.exec(id);
+  return m ? (m[1] as CatalogId) : null;
+}
 export const parseDeviceId = (v: unknown): DeviceId | null => (typeof v === 'string' && WORD_RE.test(v) ? (v as DeviceId) : null);
 export const parseGmKey = (v: unknown): GmKey | null => (typeof v === 'string' && GM_KEY_RE.test(v) ? (v as GmKey) : null);
 export const parseEventId = (v: unknown): EventId | null => (typeof v === 'string' && WORD_RE.test(v) ? (v as EventId) : null);

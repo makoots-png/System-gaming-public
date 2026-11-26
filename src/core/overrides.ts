@@ -17,7 +17,7 @@ import { parseDamageTypes } from './combat/damage-type.ts';
  * three DCs, a range's two ends) has another; `order`: a range's ends go high to low; `split`: reviveDebtShare and
  * reviveDebtBurn together exceed 1; `range`: a number out of its rule's domain.
  */
-export type OverrideReason = 'object' | 'unknown' | 'list' | 'number' | 'boolean' | 'text' | 'statuses' | 'entry' | 'length' | 'order' | 'split' | 'range';
+export type OverrideReason = 'object' | 'unknown' | 'list' | 'number' | 'boolean' | 'text' | 'statuses' | 'items' | 'entry' | 'length' | 'order' | 'split' | 'range';
 /** Every reason but `range`, which carries the domain the number was out of. */
 type PlainReason = Exclude<OverrideReason, 'range'>;
 /**
@@ -223,8 +223,9 @@ function against(v: unknown, base: unknown, path: string, refused: OverrideRefus
 export function parseOverrides(v: unknown): { overrides: Rec; refused: OverrideRefusal[] } {
   const refused: OverrideRefusal[] = [];
   if (!isObj(v)) return { overrides: {}, refused: [{ path: '', reason: 'object' }] };
-  const { conditions, gmTables: tables, ...rest } = v;
+  const { conditions, items, gmTables: tables, ...rest } = v;
   if (conditions !== undefined) refused.push({ path: 'conditions', reason: 'statuses' });
+  if (items !== undefined) refused.push({ path: 'items', reason: 'items' });
   const kept = against(rest, RULES, '', refused), overrides: Rec = isObj(kept) ? kept : {};
   const debtShare = typeof overrides.reviveDebtShare === 'number' ? overrides.reviveDebtShare : RULES.reviveDebtShare;
   const debtBurn = typeof overrides.reviveDebtBurn === 'number' ? overrides.reviveDebtBurn : RULES.reviveDebtBurn;
@@ -239,7 +240,7 @@ export function parseOverrides(v: unknown): { overrides: Rec; refused: OverrideR
 /** What the Rules editor says of each reason an override was refused, after the rule's path. */
 export const OVERRIDE_REFUSAL_WORDS: Readonly<Record<Exclude<PlainReason, 'unknown'>, string>> = {
   object: 'must be an object', list: 'must be a list', number: 'must be a number', boolean: 'must be true or false', text: 'must be text',
-  statuses: 'statuses are made in the Workshop', entry: 'does not match the format for this rule', length: 'has the wrong number of entries',
+  statuses: 'statuses are made in the Workshop', items: 'items are made in the Workshop', entry: 'does not match the format for this rule', length: 'has the wrong number of entries',
   order: 'must go from low to high', split: 'reviveDebtShare and reviveDebtBurn together must be at most 1',
 };
 /**

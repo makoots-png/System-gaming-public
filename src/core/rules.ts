@@ -14,6 +14,15 @@ import type { SheetNumber } from './hunter/derive.ts';
 import type { Rewards } from './rewards.ts';
 import type { Pace } from './combat/timeline.ts';
 import type { DamageType, DamageTypeMap } from './combat/damage-type.ts';
+import type { ItemDefData } from './registry/item-book.ts';
+
+/**
+ * Item definitions layered onto the rules (built-in overrides, GM custom items, and player heard fallbacks), keyed by
+ * `ItemDefId`. Read via `resolveDef` in `src/core/registry/item-book.ts` so `rules.ts` has no value import from `items.ts`.
+ */
+export type ItemBook = Readonly<Record<string, ItemDefData>>;
+/** An empty item book: shipped rules carry no overrides, so every built-in reads from `BUILT_IN_ITEMS`. */
+export const EMPTY_ITEM_BOOK: ItemBook = Object.freeze({});
 
 const deepFreeze = <T>(o: T): T => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o as object).forEach(deepFreeze); } return o; };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -196,6 +205,7 @@ const SPEC = {
     { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, band: 'S' as Rank, gmOnly: true },
   ],
   conditions: BUILT_IN_STATUSES, // the built-in statuses: src/core/registry/statuses.ts
+  items: EMPTY_ITEM_BOOK, // item def overrides & custom items: src/core/registry/item-book.ts
   // Each rarity's color and the rank whose base price prices it (`priceBaseOf`): a price is computed from
   // `priceBase`, never stored, so a GM's edit of `priceBase` moves prices without tying them to gate clear gold.
   rarities: {
@@ -916,11 +926,15 @@ function merge<T extends Record<string, unknown>>(base: T, ov: Readonly<Record<s
   return out as T;
 }
 /**
- * The shipped rules with a save's `rulesOverrides` merged in, and the GM's statuses (`library.statuses`) over the
- * built-in `conditions`: an entry under a built-in key replaces that built-in whole, any other key adds a status.
+ * The shipped rules with a save's `rulesOverrides` merged in, the GM's statuses (`library.statuses`) over the built-in
+ * `conditions`, and the GM's/room's item definitions (`items`) over the empty book.
  */
-export function rulesOf(ov: unknown, statuses: Readonly<Record<string, StatusDef>> = {}): Rules {
-  return withStatuses(isObj(ov) && Object.keys(ov).length ? merge<Rules>(RULES, ov) : RULES, statuses);
+export function rulesOf(
+  ov: unknown,
+  statuses: Readonly<Record<string, StatusDef>> = {},
+  items: ItemBook = EMPTY_ITEM_BOOK,
+): Rules {
+  return withItems(withStatuses(isObj(ov) && Object.keys(ov).length ? merge<Rules>(RULES, ov) : RULES, statuses), items);
 }
 /**
  * Rules `R` with `statuses` laid over its `conditions`: an entry under a key `R` has replaces that status whole, any other
@@ -928,6 +942,12 @@ export function rulesOf(ov: unknown, statuses: Readonly<Record<string, StatusDef
  */
 export const withStatuses = (R: Rules, statuses: Readonly<Record<string, StatusDef>>): Rules =>
   Object.keys(statuses).length ? { ...R, conditions: { ...R.conditions, ...statuses } } : R;
+/**
+ * Rules `R` with `items` laid over its `items` book: an entry under a built-in `ItemDefId` overrides that built-in, and
+ * any custom `ItemDefId` adds or updates a custom item definition.
+ */
+export const withItems = (R: Rules, items: ItemBook): Rules =>
+  Object.keys(items).length ? { ...R, items: { ...R.items, ...items } } : R;
 
 // ── helpers. Each takes the rules as its first argument; src/edge/rules.ts binds them to the current rules for views. ──
 /** XP from `level` to the next: `xpPerLevel` times the level. `level` is a level (hunter/level.ts), so no bound is kept here. */

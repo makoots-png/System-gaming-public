@@ -142,8 +142,10 @@ export type Op =
   /**
    * `duration` null lasts until removed. The def travels with the op, so a status the rules do not know still works.
    * `stacks` (1 to `RULES.fight.kit.stackAdd`; absent, 1) is what it adds to a stacking status (kits design 1.1).
+   * `follow: true` means readers resolve the status live from `R.conditions[key]` (falling back to `def` when absent),
+   * so GM edits to a status (such as Grievous Wounds) reach existing items and skills automatically.
    */
-  | { readonly op: 'applyStatus'; readonly key: StatusKey; readonly def: StatusDef; readonly duration: Tiered<Tick> | null; readonly stacks?: number }
+  | { readonly op: 'applyStatus'; readonly key: StatusKey; readonly def: StatusDef; readonly duration: Tiered<Tick> | null; readonly stacks?: number; readonly follow?: true }
   /** `stacks` (1 to `stackAdd`) takes that many from a stacking status; absent, the whole status goes. */
   | { readonly op: 'cureStatus'; readonly key: StatusKey; readonly stacks?: number }
   | { readonly op: 'note'; readonly text: string }
@@ -958,9 +960,10 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
       return `Adds ${a.text} fatigue${turn}${rank(a)}`;
     }
     case 'applyStatus': {
+      const def = o.follow && Object.hasOwn(R.conditions, o.key) ? R.conditions[o.key]! : o.def;
       const lasts = o.duration === null ? null : num(o.duration, n => roundsText(roundsOf(n, R, 'near')));
-      const inner = opLines(o.def.ops, tier, R, null, o.key);
-      return `Applies ${o.def.label}${lasts ? ` (${lasts.text}${rank(lasts)})` : ''}${inner.length ? `: ${inner.join(', ')}` : ''}`;
+      const inner = opLines(def.ops, tier, R, null, o.key);
+      return `Applies ${def.label}${lasts ? ` (${lasts.text}${rank(lasts)})` : ''}${inner.length ? `: ${inner.join(', ')}` : ''}`;
     }
     case 'cureStatus': return `Cures ${o.stacks === undefined ? '' : `${o.stacks} of `}${R.conditions[o.key]?.label ?? o.key}`;
     case 'note': return o.text;

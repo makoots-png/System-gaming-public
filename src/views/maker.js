@@ -244,7 +244,7 @@ const typed = (kind, v) => String(NUMBERS[kind].rounds ? roundsOf(v, rules(), 'n
 /** A row of the editor from an op. An op of a kind the editor has no row for is a row that keeps the op as it is. */
 function rowOf(o) {
   const r = {
-    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, gwCut: '', text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
+    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, follow: false, gwCut: '', text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
     addStacks: o.stacks === undefined ? '' : String(o.stacks), sheetKey: o.op === 'sheet' ? o.key : 'armor', shareOn: o.op === 'share' ? o.on : 'taken', side: o.side || 'attack',
     edgeKeep: o.op === 'edge' ? o.keep : 'better', tag: o.op === 'edge' && o.tag ? o.tag : '', spend: o.op === 'edge' ? !!o.spend : true, dieMode: o.op === 'boost' ? o.die.kind : 'die',
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
@@ -263,10 +263,11 @@ function rowOf(o) {
   } else if (o.op === 'applyStatus') {
     const rounds = d => (d ? String(roundsOf(d, rules(), 'near')) : '');
     r.status = o.key || ''; r.def = o.def || null;
+    r.follow = o.follow === true || (!o.def && !!r.status);
     const cond = r.status && Object.hasOwn(rules().conditions, r.status) ? rules().conditions[r.status] : null;
     const defCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
     const condCut = cond && !hasTieredGrievousCut(cond) ? grievousCutOf(cond) : null;
-    r.gwCut = defCut !== null && defCut !== condCut ? String(defCut) : '';
+    r.gwCut = !r.follow && defCut !== null && defCut !== condCut ? String(defCut) : '';
     if (isTiers(o.duration)) { r.mode = 'rank'; r.tiers = o.duration.map(rounds); r.rounds = r.tiers[0]; } else r.rounds = rounds(o.duration);
   } else if (o.op === 'cureStatus') r.status = o.key || '';
   else if (o.op === 'note') r.text = o.text || '';
@@ -408,11 +409,12 @@ function checkRow(r, item, statusKey = null) {
   if (stacks === null) return fail(`Stacks go from 1 to ${K.stackAdd}. Leave it empty for ${r.kind === 'cureStatus' ? 'all of them' : 'one'}.`);
   const more = stacks === undefined ? {} : { stacks };
   if (r.kind === 'cureStatus') return ok({ op: 'cureStatus', key: r.status, ...more });
-  const baseDef = r.def || (Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null);
+  const condDef = Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null;
+  const baseDef = (r.follow ? condDef : null) || r.def || condDef;
   if (!baseDef) return fail('Pick a status.');
   const canCut = !hasTieredGrievousCut(baseDef) && grievousCutOf(baseDef) !== null;
   const baseCut = canCut ? grievousCutOf(baseDef) : null;
-  const savedCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+  const savedCut = !r.follow && r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
   const isGw = isGrievousKey(r.status);
   const gwCap = isGw ? grievousCapPct() : shareCapPct(R);
   const gwHi = !isGw && savedCut !== null ? Math.max(gwCap, Math.floor(savedCut)) : gwCap;
@@ -426,21 +428,23 @@ function checkRow(r, item, statusKey = null) {
         ? `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap), or no higher than its current ${gwHi}%.`
         : `Healing cut must be a whole number from ${GRIEVOUS_MIN} to ${gwCap} (the share cap).`);
   }
-  const condDef = Object.hasOwn(R.conditions, r.status) ? R.conditions[r.status] : null;
   const condCut = condDef && !hasTieredGrievousCut(condDef) ? grievousCutOf(condDef) : null;
   const maxCut = isGw ? GRIEVOUS_MAX : GRIEVOUS_LEGACY_MAX;
-  const def = !canCut || keptCut ? baseDef
+  const follow = condDef !== null && (canCut ? rawCut === '' : r.follow);
+  const def = follow ? condDef
+    : !canCut || keptCut ? baseDef
     : cut !== null ? (cut === baseCut ? baseDef : withGrievousCut(baseDef, cut, maxCut))
     : condCut !== null && condCut !== baseCut ? withGrievousCut(baseDef, condCut, maxCut) : baseDef;
+  const live = follow ? { follow: true } : {};
   if (r.mode === 'rank') {
     const all = r.tiers.map(x => { const t = String(x).trim(), n = Number(t); return t !== '' && Number.isInteger(n) && n >= 1 && n <= 999 ? n * R.fight.round : null; });
     const bad = all.flatMap((n, i) => (n === null ? [i] : []));
     if (bad.length) return fail(`At ${tierName(bad[0], item)}: rounds go from 1 to 999.`, bad);
-    return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more });
+    return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more, ...live });
   }
   const t = r.rounds.trim(), n = Number(t);
   if (t !== '' && !(Number.isInteger(n) && n >= 1 && n <= 999)) return fail('Rounds must be from 1 to 999. Leave empty so it lasts until removed.');
-  return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more });
+  return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more, ...live });
 }
 
 /**
@@ -486,12 +490,12 @@ function effects(box, o) {
     const group = (label, inner) => `<div class="field"><span class="lbl">${esc(label)}</span>${inner}</div>`;
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
       ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks added' : 'Stacks removed', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
-    const gwDef = r.kind === 'applyStatus' ? (r.def || defOf(r.status)) : null;
+    const gwDef = r.kind === 'applyStatus' ? ((r.follow ? defOf(r.status) : null) || r.def || defOf(r.status)) : null;
     const gwBaseCut = gwDef && !hasTieredGrievousCut(gwDef) ? grievousCutOf(gwDef) : null;
     const gwCond = r.kind === 'applyStatus' ? defOf(r.status) : null;
     const gwCondCut = gwCond && !hasTieredGrievousCut(gwCond) ? grievousCutOf(gwCond) : null;
     const gwIsGw = isGrievousKey(r.status);
-    const gwSavedCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
+    const gwSavedCut = !r.follow && r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
     const gwCap = gwIsGw ? grievousCapPct() : shareCapPct(rules());
     const gwHi = !gwIsGw && gwSavedCut !== null ? Math.max(gwCap, Math.floor(gwSavedCut)) : gwCap;
     const gwPlaceholder = gwBaseCut !== null ? Math.min(gwCondCut ?? gwBaseCut, gwCap) : null;
@@ -648,12 +652,12 @@ function effects(box, o) {
     if (t.dataset.f === 'spend') { r.spend = t.checked; mark(i); return; }
     if (t.dataset.f === 'status') {
       if (t.value !== NEW_STATUS) {
-        r.status = t.value; r.def = null; r.gwCut = '';
+        r.status = t.value; r.def = null; r.gwCut = ''; r.follow = true;
         render(); raise(); return;
       }
       const made = o.newStatus ? await o.newStatus() : null;
       if (made && made.key) {
-        r.status = made.key; r.def = made.def || null; r.gwCut = '';
+        r.status = made.key; r.def = made.def || null; r.gwCut = ''; r.follow = true;
       }
       render(); raise();
     }

@@ -828,3 +828,4 @@ ts	phase	decision	why	evidence	result
 2026-11-25T21:12Z	grievous	PR 131 merged (736d19c1): Grievous Wounds cut up to 90% whatever shareCap (the owner t150u); Fable diff review 0 blockers, 3 should-fix taken; unit 7111, browser 632/632 after reruns + 89 targeted, CI 45699904172 8/8.
 2026-11-25T22:45Z	save	PR 132 merged (394832da): legacy-cleanup, old saves no longer read (the owner t152u); net -1,673 lines; Neon two-way with Fable + interrogate; unit 7175, browser 631/631 + 70 targeted, CI 45714037224 8/8. No live data touched.
 2026-11-25T23:40Z	class-rarity	PR 133 merged (bb66e04c): wave 1 PR 2, classes in fights + Hemomancer; two-way with Fable; unit 7190 on merged tree, browser 632 + 122 targeted, CI 45721427198 8/8 (first run one flake). Hemomancer solo rows run hot.
+2026-11-26T00:21Z	class-rarity	PR 134 merged (9eb510bd): wave 1 PR 3, class screens + GM registry; two-way with Fable; unit 7211 merged tree; 2 test fixes after PR 2 merge; CI 45726240619 8/8.
