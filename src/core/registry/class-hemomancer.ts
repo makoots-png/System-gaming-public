@@ -146,16 +146,16 @@ const BASE_PACT: ClassWorn = makeCrimsonPact({
 const LORD_PACT: ClassWorn = makeCrimsonPact({
   key: KEY_PACT_LORD,
   label: 'Crimson Pact: Lord of Blood',
-  desc: `Deepens Crimson Pact conversions, boosts Transfusion healing, adds 5% damage dealt, and grants a blood shield below ${Math.round(R.fight.kit.lowHpAt * 100)}% HP once per fight.`,
-  hpToMag: '0.06 * hpmax',
-  magToHp: '0.45 * mag',
-  drainToMag: '0.6 * drain * mag',
-  transfusionHeal: '0.2 * (2d6 + mag) * (1 + drain) + 0.06 * hpmax * stacks(hemo-crimson-frenzy)',
+  desc: `Deepens Crimson Pact conversions, boosts Transfusion healing, adds 3% damage dealt, and grants a blood shield below ${Math.round(R.fight.kit.lowHpAt * 100)}% HP once per fight.`,
+  hpToMag: '0.055 * hpmax',
+  magToHp: '0.35 * mag',
+  drainToMag: '0.5 * drain * mag',
+  transfusionHeal: '0.18 * (2d6 + mag) * (1 + drain) + 0.05 * hpmax * stacks(hemo-crimson-frenzy)',
   extraOps: [
-    { op: 'share', on: 'dealt', pct: 5 },
+    { op: 'share', on: 'dealt', pct: 3 },
   ],
   extraTriggers: [
-    { on: 'lowHp', to: 'self', limit: ONCE, ops: [{ op: 'shield', amount: f('0.15 * hpmax') }] },
+    { on: 'lowHp', to: 'self', limit: ONCE, ops: [{ op: 'shield', amount: f('0.08 * hpmax') }] },
   ],
 });
 
@@ -342,7 +342,7 @@ const BASE_TIDES = makeTidesOfBlood({
 
 const UP_TIDES = makeTidesOfBlood({
   name: 'Tides of Blood: Riptide',
-  hpShare: 0.08,
+  hpShare: 0.1,
   cooldownRounds: 1,
   formula: '(2d8 + mag + 0.06 * hpmax) * (1 + 0.6 * drain)',
   channel: null,
@@ -361,17 +361,17 @@ const BASE_PLAGUE = makeHemoplague({
 const UP_PLAGUE = makeHemoplague({
   name: 'Hemoplague: Virulent Strain',
   statusKey: KEY_PLAGUE_UP,
-  hpShare: 0.12,
+  hpShare: 0.15,
   uses: 2,
   takenPct: 18,
-  popFormula: '(3d8 + 1.4 * mag) * (1 + drain)',
+  popFormula: '(3d8 + 1.45 * mag) * (1 + drain)',
   sourceHealShare: 0.45,
 });
 
 /** Base Hemomancer signature (before skill-tree nodes are folded on top). */
 export const HEMOMANCER_SIGNATURE: ClassSignature = {
   className: 'Hemomancer',
-  bonus: { drain: 12, shieldDrain: 8 },
+  bonus: { drain: 10, shieldDrain: 4 },
   worn: BASE_PACT,
   actives: [BASE_TRANSFUSION, BASE_POOL, BASE_TIDES, BASE_PLAGUE],
 };
@@ -407,13 +407,13 @@ export const HEMOMANCER_TREE: ClassTree = {
   rarity: 'mythic',
   nodes: [
     // Depth 1: Root (1)
-    node('hemo-root', 1, 'Awakened Vein', 'Gain 4 Power, 4 Vitality, and 3% lifesteal.', [], [
-      bonus({ pow: 4, vit: 4, drain: 3 }),
+    node('hemo-root', 1, 'Awakened Vein', 'Gain 4 Power, 4 Vitality, and 2% lifesteal.', [], [
+      bonus({ pow: 4, vit: 4, drain: 2 }),
     ]),
 
     // Depth 2: Three branches (3)
-    node('hemo-a2', 2, 'Sanguine Harvest', 'Gain 3% lifesteal and 3 Power.', ['hemo-root'], [
-      bonus({ drain: 3, pow: 3 }),
+    node('hemo-a2', 2, 'Sanguine Harvest', 'Gain 2% lifesteal and 3 Power.', ['hemo-root'], [
+      bonus({ drain: 2, pow: 3 }),
     ]),
     node('hemo-b2', 2, 'Crimson Tide', 'Gain 4 Vitality and 6 ability haste.', ['hemo-root'], [
       bonus({ vit: 4, haste: 6 }),
@@ -423,17 +423,17 @@ export const HEMOMANCER_TREE: ClassTree = {
     ]),
 
     // Depth 3: Branch splits (6)
-    node('hemo-a3x', 3, 'Deep Siphon', 'Gain 3% lifesteal and 15 max HP.', ['hemo-a2'], [
-      bonus({ drain: 3, hpMax: 15 }),
+    node('hemo-a3x', 3, 'Deep Siphon', 'Gain 2% lifesteal and 10 max HP.', ['hemo-a2'], [
+      bonus({ drain: 2, hpMax: 10 }),
     ]),
-    node('hemo-a3y', 3, 'Coagulate', 'Gain 3% damage to shield and 3 Power.', ['hemo-a2'], [
-      bonus({ shieldDrain: 3, pow: 3 }),
+    node('hemo-a3y', 3, 'Coagulate', 'Gain 2% damage to shield and 3 Power.', ['hemo-a2'], [
+      bonus({ shieldDrain: 2, pow: 3 }),
     ]),
     node('hemo-b3x', 3, 'Swift Pulse', 'Gain 8 ability haste and 5 speed.', ['hemo-b2'], [
       bonus({ haste: 8, speed: 5 }),
     ]),
-    node('hemo-b3y', 3, 'Thick Blood', 'Gain 5 Vitality, 20 max HP, and 6 tenacity.', ['hemo-b2'], [
-      bonus({ vit: 5, hpMax: 20, tenacity: 6 }),
+    node('hemo-b3y', 3, 'Thick Blood', 'Gain 5 Vitality, 10 max HP, and 6 tenacity.', ['hemo-b2'], [
+      bonus({ vit: 5, hpMax: 10, tenacity: 6 }),
     ]),
     node('hemo-c3x', 3, 'Hemorrhage', 'Gain 5% magic penetration and 5 flat magic penetration.', ['hemo-c2'], [
       bonus({ resistPen: 5, resistPenFlat: 5 }),
@@ -443,17 +443,17 @@ export const HEMOMANCER_TREE: ClassTree = {
     ]),
 
     // Depth 4: Deepening (6)
-    node('hemo-a4x', 4, 'Gorged Vessels', 'Gain 3% lifesteal and 4% heal and shield bonus.', ['hemo-a3x'], [
-      bonus({ drain: 3, healPower: 4 }),
+    node('hemo-a4x', 4, 'Gorged Vessels', 'Gain 2% lifesteal and 4% heal and shield bonus.', ['hemo-a3x'], [
+      bonus({ drain: 2, healPower: 4 }),
     ]),
-    node('hemo-a4y', 4, 'Clotted Guard', 'Gain 3% damage to shield and 4 Vitality.', ['hemo-a3y'], [
-      bonus({ shieldDrain: 3, vit: 4 }),
+    node('hemo-a4y', 4, 'Clotted Guard', 'Gain 2% damage to shield and 4 Vitality.', ['hemo-a3y'], [
+      bonus({ shieldDrain: 2, vit: 4 }),
     ]),
     node('hemo-b4x', 4, 'Surging Artery', 'Gain 8 ability haste and 5 speed.', ['hemo-b3x'], [
       bonus({ haste: 8, speed: 5 }),
     ]),
-    node('hemo-b4y', 4, 'Iron Marrow', 'Gain 25 max HP and 8 tenacity.', ['hemo-b3y'], [
-      bonus({ hpMax: 25, tenacity: 8 }),
+    node('hemo-b4y', 4, 'Iron Marrow', 'Gain 10 max HP and 8 tenacity.', ['hemo-b3y'], [
+      bonus({ hpMax: 10, tenacity: 8 }),
     ]),
     node('hemo-c4x', 4, 'Rupture Ward', 'Gain 6% magic penetration and 6 flat magic penetration.', ['hemo-c3x'], [
       bonus({ resistPen: 6, resistPenFlat: 6 }),
@@ -466,11 +466,11 @@ export const HEMOMANCER_TREE: ClassTree = {
     node('hemo-a5-l', 5, 'Exsanguinate', 'Upgrade Transfusion to a 1-round cooldown with stronger arcane and lifesteal scaling.', ['hemo-a4x', 'hemo-a4y'], [
       replaceActive(ID_TRANSFUSION, UP_TRANSFUSION),
     ], { forkGroup: 'hemo-a5' }),
-    node('hemo-a5-r', 5, 'Aegis of Blood', 'Gain 8% damage to shield, 8 Vitality, 40 max HP, and 8% heal and shield bonus.', ['hemo-a4x', 'hemo-a4y'], [
-      bonus({ shieldDrain: 8, vit: 8, hpMax: 40, healPower: 8 }),
+    node('hemo-a5-r', 5, 'Aegis of Blood', 'Gain 5% damage to shield, 8 Vitality, 20 max HP, and 6% heal and shield bonus.', ['hemo-a4x', 'hemo-a4y'], [
+      bonus({ shieldDrain: 5, vit: 8, hpMax: 20, healPower: 6 }),
     ], { forkGroup: 'hemo-a5' }),
 
-    node('hemo-b5-l', 5, 'Riptide', 'Upgrade Tides of Blood into an instant 1-round burst at 8% HP cost with stronger scaling.', ['hemo-b4x', 'hemo-b4y'], [
+    node('hemo-b5-l', 5, 'Riptide', 'Upgrade Tides of Blood into an instant 1-round cooldown burst at 10% HP cost.', ['hemo-b4x', 'hemo-b4y'], [
       replaceActive(ID_TIDES, UP_TIDES),
     ], { forkGroup: 'hemo-b5' }),
     node('hemo-b5-r', 5, 'Crimson Undertow', 'Upgrade Sanguine Pool to a 3-round cooldown, 15% HP cost, 35% speed, and stronger aura damage.', ['hemo-b4x', 'hemo-b4y'], [
@@ -485,17 +485,17 @@ export const HEMOMANCER_TREE: ClassTree = {
     ], { forkGroup: 'hemo-c5' }),
 
     // Depth 6: Post-fork convergence (6)
-    node('hemo-a6x', 6, 'Insatiable', 'Gain 3% lifesteal and 5 Power.', ['hemo-a5-l', 'hemo-a5-r'], [
-      bonus({ drain: 3, pow: 5 }),
+    node('hemo-a6x', 6, 'Insatiable', 'Gain 2% lifesteal and 5 Power.', ['hemo-a5-l', 'hemo-a5-r'], [
+      bonus({ drain: 2, pow: 5 }),
     ], { parentMode: 'any' }),
-    node('hemo-a6y', 6, 'Blood Carapace', 'Gain 30 max HP and 4% damage to shield.', ['hemo-a5-l', 'hemo-a5-r'], [
-      bonus({ hpMax: 30, shieldDrain: 4 }),
+    node('hemo-a6y', 6, 'Blood Carapace', 'Gain 15 max HP and 2% damage to shield.', ['hemo-a5-l', 'hemo-a5-r'], [
+      bonus({ hpMax: 15, shieldDrain: 2 }),
     ], { parentMode: 'any' }),
     node('hemo-b6x', 6, 'Racing Heart', 'Gain 10 ability haste and 6 speed.', ['hemo-b5-l', 'hemo-b5-r'], [
       bonus({ haste: 10, speed: 6 }),
     ], { parentMode: 'any' }),
-    node('hemo-b6y', 6, 'Crimson Bastion', 'Gain 40 max HP, 10 tenacity, and 6 Vitality.', ['hemo-b5-l', 'hemo-b5-r'], [
-      bonus({ hpMax: 40, tenacity: 10, vit: 6 }),
+    node('hemo-b6y', 6, 'Crimson Bastion', 'Gain 20 max HP, 10 tenacity, and 6 Vitality.', ['hemo-b5-l', 'hemo-b5-r'], [
+      bonus({ hpMax: 20, tenacity: 10, vit: 6 }),
     ], { parentMode: 'any' }),
     node('hemo-c6x', 6, 'Shatter Resist', 'Gain 6% magic penetration and 6 flat magic penetration.', ['hemo-c5-l', 'hemo-c5-r'], [
       bonus({ resistPen: 6, resistPenFlat: 6 }),
@@ -505,12 +505,12 @@ export const HEMOMANCER_TREE: ClassTree = {
     ], { parentMode: 'any' }),
 
     // Depth 7: Second Exclusive Fork Pairs (6 nodes, 3 buyable)
-    node('hemo-a7-l', 7, 'Reaper Thirst', 'Gain 3% lifesteal. Your damaging attacks and spells deal up to 15% more damage to foes below half HP.', ['hemo-a6x', 'hemo-a6y'], [
-      bonus({ drain: 3 }),
+    node('hemo-a7-l', 7, 'Reaper Thirst', 'Gain 2% lifesteal. Your damaging attacks and spells deal up to 15% more damage to foes below half HP.', ['hemo-a6x', 'hemo-a6y'], [
+      bonus({ drain: 2 }),
       scaler({ measure: 'target', dir: 'under', start: 0.5, scale: 0.15 }),
     ], { forkGroup: 'hemo-a7' }),
-    node('hemo-a7-r', 7, 'Sanguine Shell', 'Gain 8 Vitality, 45 max HP, and 6% damage to shield.', ['hemo-a6x', 'hemo-a6y'], [
-      bonus({ vit: 8, hpMax: 45, shieldDrain: 6 }),
+    node('hemo-a7-r', 7, 'Sanguine Shell', 'Gain 8 Vitality, 20 max HP, and 4% damage to shield.', ['hemo-a6x', 'hemo-a6y'], [
+      bonus({ vit: 8, hpMax: 20, shieldDrain: 4 }),
     ], { forkGroup: 'hemo-a7' }),
 
     node('hemo-b7-l', 7, 'Blood Frenzy', 'Gain 14 ability haste, 8 Power, and 6 speed.', ['hemo-b6x', 'hemo-b6y'], [
@@ -529,20 +529,20 @@ export const HEMOMANCER_TREE: ClassTree = {
     ], { forkGroup: 'hemo-c7' }),
 
     // Depth 8: Branch Capstones (3)
-    node('hemo-a8', 8, 'Eternal Harvest', 'Gain 4% lifesteal, 6 Power, and 30 max HP.', ['hemo-a7-l', 'hemo-a7-r'], [
-      bonus({ drain: 4, pow: 6, hpMax: 30 }),
+    node('hemo-a8', 8, 'Eternal Harvest', 'Gain 3% lifesteal, 6 Power, and 15 max HP.', ['hemo-a7-l', 'hemo-a7-r'], [
+      bonus({ drain: 3, pow: 6, hpMax: 15 }),
     ], { parentMode: 'any' }),
-    node('hemo-b8', 8, 'Undying Pulse', 'Gain 8 Vitality, 10 ability haste, 45 max HP, and 8 Will.', ['hemo-b7-l', 'hemo-b7-r'], [
-      bonus({ vit: 8, haste: 10, hpMax: 45, will: 8 }),
+    node('hemo-b8', 8, 'Undying Pulse', 'Gain 8 Vitality, 10 ability haste, 20 max HP, and 8 Will.', ['hemo-b7-l', 'hemo-b7-r'], [
+      bonus({ vit: 8, haste: 10, hpMax: 20, will: 8 }),
     ], { parentMode: 'any' }),
     node('hemo-c8', 8, 'Sovereign Vein', 'Gain 8 Power, 8 flat magic penetration, and 0.1 crit multiplier.', ['hemo-c7-l', 'hemo-c7-r'], [
       bonus({ pow: 8, resistPenFlat: 8, critSize: 10 }),
     ], { parentMode: 'any' }),
 
     // Depth 9: Monarch Capstone (1)
-    node('hemo-cap', 9, 'Lord of Blood', 'Upgrade Crimson Pact to Lord of Blood and gain 8 Power, 8 Vitality, and 4% lifesteal.', ['hemo-a8', 'hemo-b8', 'hemo-c8'], [
+    node('hemo-cap', 9, 'Lord of Blood', 'Upgrade Crimson Pact to Lord of Blood and gain 8 Power, 8 Vitality, and 3% lifesteal.', ['hemo-a8', 'hemo-b8', 'hemo-c8'], [
       replaceWorn(KEY_PACT, LORD_PACT),
-      bonus({ pow: 8, vit: 8, drain: 4 }),
+      bonus({ pow: 8, vit: 8, drain: 3 }),
     ], { parentMode: 'any', capstone: true }),
   ],
 };

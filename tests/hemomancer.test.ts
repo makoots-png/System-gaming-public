@@ -115,13 +115,13 @@ describe('combat/sheet wiring for classPowers and classStatusDef', () => {
 
     const bareSheet = hunterSheet(bare, RULES).sheet;
     const maxedSheet = hunterSheet(maxed, RULES).sheet;
-    expect(bareSheet.drain).toBeCloseTo(0.12, 5);
-    expect(Number(bareSheet.shieldDrain)).toBeCloseTo(0.08, 5);
-    expect(maxedSheet.drain).toBeGreaterThan(bareSheet.drain + 0.2);
+    expect(bareSheet.drain).toBeCloseTo(0.10, 5);
+    expect(Number(bareSheet.shieldDrain)).toBeCloseTo(0.04, 5);
+    expect(maxedSheet.drain).toBeGreaterThan(bareSheet.drain + 0.15);
 
     const exp = explain(bare, 'drain', RULES);
     const clsPart = exp.parts.find(p => p.from === 'class');
-    expect(clsPart?.amount).toBeCloseTo(0.12, 5);
+    expect(clsPart?.amount).toBeCloseTo(0.10, 5);
     expect(explain(plain, 'drain', RULES).parts.find(p => p.from === 'class')?.amount).toBe(0);
 
     // Out-of-combat hunterSheet includes Crimson Pact worn conversions so hpMax and mag match combat
