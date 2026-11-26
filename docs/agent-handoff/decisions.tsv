@@ -841,3 +841,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T15:08Z	classes	PR 144 SC-B merged (statechart rules 4-7; Claude Opus fallback, Fable design, Neon reviewed: accept + follow-up sc-b-revoke-check; CI 45843744226 8/8)
 2026-11-26T16:01Z	classes	PR 145 neon-fu-class merged (Neon follow-ups from its review of the Claude fallback units; CI 45852780310 8/8)
 2026-11-26T16:43Z	classes	PR 146 neon-fu-class2 merged (Neon answers Fable's post-merge review of PR 145; CI 45859268006 8/8)
+2026-11-26T18:07Z	balance	PR 147 Hemomancer balance pass merged (Neon, arena; solo rows 93.5/79.0/85.5/91.0 from 98.5/87.5/99.0/96.5; CI 45871675324 8/8)

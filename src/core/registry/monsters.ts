@@ -64,6 +64,8 @@ export type Monster = {
   auto?: boolean;
   /** Made by a gate's spawn for a rank the bestiary had no monster of (gates.js); not one of the GM's own (spawn.ts). */
   placeholder?: true;
+  /** Kept out of random gate spawns (`spawn.ts` `spawnPool`, `solo.ts`); placed only by authored gates and stories. */
+  scripted?: true;
 };
 /** A monster as the GM keeps it, before it has an id. */
 export type MonsterTemplate = Omit<Monster, 'id'>;
@@ -81,9 +83,10 @@ export const TRAIT_LABEL: { readonly [T in MonsterTrait]: string } = {
 
 /**
  * How a seed differs from its rank, archetype and kind: its tweak, a factor on its XP, whether a Necromancer may extract
- * it (its type's unless it says; never a mythic), and the statuses it starts a fight with. A mythic names its script.
+ * it (its type's unless it says; never a mythic), the statuses it starts a fight with, and whether random gate spawns
+ * skip it (`scripted`). A mythic names its script.
  */
-export type SeedTweak = MonsterTweak & { xp?: number; extractable?: boolean; statuses?: readonly StartStatus[]; script?: never };
+export type SeedTweak = MonsterTweak & { xp?: number; extractable?: boolean; statuses?: readonly StartStatus[]; scripted?: true; script?: never };
 /** A row of the bestiary of kind `K`, whose tweak is `T`. */
 type SeedRow<K extends MonsterKind, T extends object> = readonly [
   slug: string, name: string, rank: Rank, type: string, archetype: Archetype, kind: K, tweak: T,
@@ -111,6 +114,21 @@ export const SEEDS: readonly MonsterSeed[] = [
     [{ kind: 'curse', name: 'Venom Bite', feet: 5, applies: status('poisoned') }],
     ['Swarm: appears in groups of 6+', 'Lives in the Penalty Zone'],
     'A large centipede. Many of them live in the Penalty Zone.'],
+  ['goblin-chief', 'Goblin Chief', 'E', 'Humanoid', 'brute', 'elite', { hp: 0.8, scripted: true },
+    [{ kind: 'strike', name: 'Cleaver Swing', heavy: true }],
+    ['Pack Leader: rallies nearby goblins and backs away from one empty tile beside the party',
+      'Counting Fingers: as it dies, it points at each hunter and then at an empty space beside them'],
+    'A broad-shouldered goblin carrying a notched iron cleaver. It keeps glancing past the party toward an empty space.'],
+  ['usher', 'Usher', 'E', 'Humanoid', 'brute', 'normal', { scripted: true },
+    [{ kind: 'strike', name: 'Seat Grip', feet: 5, applies: status('restrained', 1) }],
+    ['Wall-Colored Coat: blends into dry stone until the lamps go out',
+      'Clipped Speech: speaks short fragments of an unknown language while moving to empty a chair'],
+    'A tall figure in a gray coat the color of dry stone. It grabs hunters by the shoulders to force them back into a seat.'],
+  ['head-usher', 'Head Usher', 'E', 'Humanoid', 'brute', 'boss', { hp: 0.85, stats: { ins: 4 }, scripted: true },
+    [{ kind: 'strike', name: 'Iron Grasp', feet: 5, applies: status('restrained', 2) }, { kind: 'strike', name: 'Gavel Blow', heavy: true }],
+    ['Measured Step: moves with rehearsed timing and never raises its voice',
+      'Empty Chair: when it falls, the extra chair is pushed back and the hall doors open'],
+    'The tallest figure in the stone hall, wearing a coat the color of the walls. It holds a hunter still before bringing down a heavy blow.'],
   // Strength and Dexterity tie at 16: a brute.
   ['steel-fanged-lycan', 'Steel-fanged Lycan', 'D', 'Beast', 'brute', 'normal', { stats: { ins: 8 } },
     [{ kind: 'strike', name: 'Pounce', feet: 10, applies: status('prone', 1) }],
@@ -242,7 +260,9 @@ export function seedMonsters(R: Rules): Monster[] {
     id: seedId<'m'>(slug), name, rank, type, archetype, kind,
     tweak: { ...(t.hp === undefined ? {} : { hp: t.hp }), ...(t.stats === undefined ? {} : { stats: { ...t.stats } }), ...(t.traits === undefined ? {} : { traits: [...t.traits] }) },
     abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.traits, t.xp), extractable: extractableOf(kind, type, t.extractable ?? null), desc,
-    statuses: (t.statuses ?? []).map(s => ({ ...s })), loot: { gold: 0, items: [] }, ...(kind === 'mythic' ? { script: t.script ?? PLAIN } : {}),
+    statuses: (t.statuses ?? []).map(s => ({ ...s })), loot: { gold: 0, items: [] },
+    ...(t.scripted ? { scripted: true as const } : {}),
+    ...(kind === 'mythic' ? { script: t.script ?? PLAIN } : {}),
   }));
 }
 
@@ -281,7 +301,7 @@ function tweakOf(v: unknown): MonsterTweak {
  * is read by the fight's ability reader with the shipped rules' limits, one it refuses dropped (at most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
  * state chip, each key once) with whole rounds 1 to 999 or null and a count of 1 to `kit.stackCap` (kept when above 1),
  * at most 8. Loot is gold and items read by `parseItem`
- * (at most 20). `icon` is kept only when it is a key of the icon registry (an unknown one is dropped, the default shows). `auto` (added on its first defeat) and `placeholder` (made by a gate's spawn) are kept only when true.
+ * (at most 20). `icon` is kept only when it is a key of the icon registry (an unknown one is dropped, the default shows). `auto` (added on its first defeat), `placeholder` (made by a gate's spawn) and `scripted` (excluded from random gate spawns) are kept only when true.
  * Every other key is dropped.
  */
 export function parseMonster(v: unknown): MonsterTemplate | null {
@@ -303,6 +323,7 @@ export function parseMonster(v: unknown): MonsterTemplate | null {
   if (kind === 'mythic') out.script = isMythicScriptId(v.script) ? v.script : PLAIN;
   if (v.auto === true) out.auto = true;
   if (v.placeholder === true) out.placeholder = true;
+  if (v.scripted === true) out.scripted = true;
   return out;
 }
 function startStatuses(v: unknown): StartStatus[] {

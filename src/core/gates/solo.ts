@@ -67,9 +67,9 @@ import { soloTracked } from './personal.ts';
 import type { PersonalGate } from './personal.ts';
 
 // ── the clock ──
-/** The built-in monsters a personal gate is drawn from: the seeds, as the spawn roll reads them. Normal ones only (no elite, no boss). */
+/** The built-in monsters a personal gate is drawn from: the seeds, as the spawn roll reads them. Normal, non-scripted ones only (no elite, no boss, no scripted). */
 const spawnable = (seeds: readonly Monster[]): SpawnMonster[] =>
-  seeds.filter(m => m.kind === 'normal').map(m => ({ id: m.id, rank: m.rank, type: m.type, name: m.name }));
+  seeds.filter(m => m.kind === 'normal' && !m.scripted).map(m => ({ id: m.id, rank: m.rank, type: m.type, name: m.name }));
 
 /**
  * `rank`, or the nearest rank below it whose pool holds a normal monster, else the nearest above: safe fallback when
@@ -429,7 +429,7 @@ export function soloRunBody(h: Hunter, run: SoloRun, t: SoloTarget, by: SheetKey
 // ── the room: a world gate marked solo (notes-2-solo.md section 4) ──
 /** A monster as the solo doc carries it: as `parseMonster` reads it, its text fields (notes, description) and loot left out. */
 const docMonster = (m: Monster): MonsterTemplate => {
-  const { auto: _auto, placeholder: _placeholder, ...fight } = parseMonster({ ...m, notes: [], desc: '', loot: { gold: 0, items: [] } })!;
+  const { auto: _auto, placeholder: _placeholder, scripted: _scripted, ...fight } = parseMonster({ ...m, notes: [], desc: '', loot: { gold: 0, items: [] } })!;
   return fight;
 };
 /** The statuses a monster names by key at its start, as the GM's rules hold them. */

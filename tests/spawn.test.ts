@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
-import { DEFAULT_PACK, MAX_KINDS, lootShareOf, packRange, pickWeighted, placeholderName, rollGate, rollLoot } from '../src/core/gates/spawn.ts';
+import { DEFAULT_PACK, MAX_KINDS, lootShareOf, packRange, pickWeighted, placeholderName, rollGate, rollLoot, spawnPool } from '../src/core/gates/spawn.ts';
 import type { Random, SpawnMonster } from '../src/core/gates/spawn.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 
@@ -32,8 +32,8 @@ test('over many rolls every pack stays in its rank\'s range, has at most 3 kinds
     expect(size(g.pack)).toBeGreaterThanOrEqual(lo);
     expect(size(g.pack)).toBeLessThanOrEqual(hi);
     expect(g.pack.length).toBeLessThanOrEqual(MAX_KINDS);
-    // Every rank E through S has at least one regular (non-boss) seed, so packs always draw real monsters.
-    const regulars = BESTIARY.filter(m => m.rank === g.rank && !m.boss);
+    // Every rank E through S has at least one regular (non-boss, non-scripted) seed, so packs always draw real monsters.
+    const regulars = BESTIARY.filter(m => m.rank === g.rank && !m.boss && !m.scripted);
     expect(regulars.length).toBeGreaterThan(0);
     for (const p of g.pack) {
       expect(regulars.map(m => m.id)).toContain(p.monsterId);
@@ -41,6 +41,27 @@ test('over many rolls every pack stays in its rank\'s range, has at most 3 kinds
     if (g.bossId) expect(BESTIARY.find(m => m.id === g.bossId)).toMatchObject({ rank: g.rank, boss: true });
     expect(RULES.gateNames).toContain(g.name);
     expect(g.breakDays).toBe(RULES.rankTable[g.rank].breakDays);
+  }
+});
+
+test('spawnPool filters scripted monsters out and rolled E-rank gates never pick scripted foes and keep bossId null', () => {
+  const scriptedIds = ['seed:goblin-chief', 'seed:usher', 'seed:head-usher'];
+  const ePool = spawnPool(BESTIARY, 'E');
+  expect(ePool.regulars.sort()).toEqual(['seed:giant-centipede', 'seed:goblin', 'seed:goblin-shaman']);
+  expect(ePool.bosses).toEqual([]);
+
+  // Even when a caller marks boss seeds with `boss: true`, scripted bosses stay out of the pool.
+  const withBossFlags: SpawnMonster[] = seedMonsters(RULES).map(m => ({ ...m, boss: m.kind === 'boss' }));
+  expect(spawnPool(withBossFlags, 'E')).toEqual({ regulars: ['seed:goblin', 'seed:goblin-shaman', 'seed:giant-centipede'], bosses: [] });
+  expect(spawnPool(withBossFlags, 'D').bosses).toEqual(['seed:kasaka']);
+
+  const rand = seeded(19);
+  for (let i = 0; i < 400; i++) {
+    for (const pool of [BESTIARY, withBossFlags]) {
+      const g = rollGate(RULES, { rank: 'E', type: 'normal' }, pool, rand);
+      expect(g.bossId).toBeNull();
+      for (const p of g.pack) expect(scriptedIds).not.toContain(p.monsterId!);
+    }
   }
 });
 

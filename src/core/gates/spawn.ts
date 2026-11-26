@@ -22,8 +22,8 @@ export type GateRoll = { rank: Rank; type: GateType; name: string; breakDays: nu
  * `boss: false`: no boss even when the pool has one (a personal gate, notes-2-solo.md section 7).
  */
 export type SpawnAsk = { rank?: Rank | undefined; type?: GateType | undefined; name?: string | undefined; pack?: readonly [number, number]; boss?: boolean };
-/** A bestiary entry as the roll sees it. `custom`: the GM's own (not a seed). */
-export type SpawnMonster = { id: string; rank: Rank; boss?: boolean; custom?: boolean; placeholder?: boolean; type: string; name: string };
+/** A bestiary entry as the roll sees it. `custom`: the GM's own (not a seed); `scripted`: kept out of random gate spawns. */
+export type SpawnMonster = { id: string; rank: Rank; boss?: boolean; custom?: boolean; placeholder?: boolean; scripted?: boolean; type: string; name: string };
 
 /** The pack size a rank spawns when `gateSpawn.regulars` does not name it. */
 export const DEFAULT_PACK: readonly [number, number] = [2, 6];
@@ -51,11 +51,12 @@ export function packRange(R: Rules, rank: Rank): [number, number] {
 export const placeholderName = (rank: Rank, boss: boolean): string => `${rank}-rank Gate ${boss ? 'Boss' : 'Monster'}`;
 
 /**
- * The monsters a gate of `rank` picks from: its regulars and its bosses. The GM's own monsters of the rank come first:
- * when there are any of a kind, only they are picked. A placeholder the spawn made earlier does not count as the GM's own.
+ * The monsters a gate of `rank` picks from: its regulars and its bosses. Scripted monsters (`scripted: true`) are
+ * excluded from random spawns. The GM's own monsters of the rank come first: when there are any of a kind, only they
+ * are picked. A placeholder the spawn made earlier does not count as the GM's own.
  */
 export function spawnPool(bestiary: readonly SpawnMonster[], rank: Rank): { regulars: string[]; bosses: string[] } {
-  const all = bestiary.filter(m => m.rank === rank);
+  const all = bestiary.filter(m => m.rank === rank && !m.scripted);
   const own = (m: SpawnMonster) => !!m.custom && !m.placeholder;
   const pick = (boss: boolean) => { const of = all.filter(m => !!m.boss === boss), mine = of.filter(own); return (mine.length ? mine : of).map(m => m.id); };
   return { regulars: pick(false), bosses: pick(true) };

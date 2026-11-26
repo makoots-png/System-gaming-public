@@ -193,6 +193,21 @@ group('the seeds as plan section 3.2 restates them', () => {
     expect(drake.tweak.stats?.ins).toBe(4);
     expect(drake.abilities).toEqual([]);
   });
+
+  test('the Act 1 scripted E-rank monsters carry scripted: true and their intended archetypes, kinds and abilities', () => {
+    const chief = seed('goblin-chief'), usher = seed('usher'), head = seed('head-usher');
+    expect([chief.rank, chief.type, chief.archetype, chief.kind, chief.scripted, chief.extractable]).toEqual(['E', 'Humanoid', 'brute', 'elite', true, true]);
+    expect([named(chief, 'Cleaver Swing').kind, named(chief, 'Cleaver Swing').cost.time]).toEqual(['strike', RULES.fight.cost.heavy]);
+
+    expect([usher.rank, usher.type, usher.archetype, usher.kind, usher.scripted, usher.extractable]).toEqual(['E', 'Humanoid', 'brute', 'normal', true, true]);
+    expect(named(usher, 'Seat Grip').ops).toEqual([{ op: 'applyStatus', key: statusKey('restrained'), def: RULES.conditions.restrained, duration: tick(round) }]);
+
+    expect([head.rank, head.type, head.archetype, head.kind, head.scripted, head.extractable]).toEqual(['E', 'Humanoid', 'brute', 'boss', true, true]);
+    expect(named(head, 'Iron Grasp').ops).toEqual([{ op: 'applyStatus', key: statusKey('restrained'), def: RULES.conditions.restrained, duration: tick(2 * round) }]);
+    expect([named(head, 'Gavel Blow').kind, named(head, 'Gavel Blow').cost.time]).toEqual(['strike', RULES.fight.cost.heavy]);
+
+    for (const slug of ['goblin', 'goblin-shaman', 'giant-centipede']) expect(seed(slug).scripted, slug).toBeUndefined();
+  });
 });
 
 group('a monster made from its rank', () => {
@@ -333,6 +348,12 @@ group('parseMonster: a monster from a save, a pack or the bestiary editor', () =
   test('a monster a gate\'s spawn made keeps that mark; any other value of it is none', () => {
     expect(parseMonster({ name: 'Wolf', placeholder: true })).toEqual({ ...base, placeholder: true });
     expect(parseMonster({ name: 'Wolf', placeholder: 'yes' })).toEqual(base);
+  });
+
+  test('a scripted monster keeps that mark; any other value of it is none', () => {
+    expect(parseMonster({ name: 'Usher', scripted: true })).toEqual({ ...blank, name: 'Usher', scripted: true });
+    expect(parseMonster({ name: 'Usher', scripted: 'yes' })).toEqual({ ...blank, name: 'Usher' });
+    expect(parseMonster({ name: 'Usher', scripted: false })).toEqual({ ...blank, name: 'Usher' });
   });
 
   test('a starting status is a status key with whole rounds from 1 to 999, or until removed; at most 8, each key once', () => {

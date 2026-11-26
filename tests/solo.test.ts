@@ -819,6 +819,16 @@ describe('the first gate after the clock turns on is the even gate (lead-look-2-
     expect(later.some(([, n]) => n === 2)).toBe(true);
     expect(later.some(([r]) => r === 'D')).toBe(true);
   });
+
+  test('E-rank personal gates never pick scripted monsters', () => {
+    const scripted = new Set(['seed:goblin-chief', 'seed:usher', 'seed:head-usher']);
+    for (const seed of SEEDS) {
+      const opened = ok(tick(blank({ rank: 'E' }), NOW, seed)).opened;
+      for (const { gate } of opened) {
+        for (const m of gate.monsters) expect(scripted.has(m.monsterId), `${seed}:${m.monsterId}`).toBe(false);
+      }
+    }
+  });
 });
 
 describe('the words of a solo run name the way back and speak to one hunter', () => {
