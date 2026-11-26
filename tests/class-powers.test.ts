@@ -110,4 +110,43 @@ describe('classPowers and classStatusDef', () => {
     expect(classStatusDef('crimson-pact-ii', signatures, trees)).toEqual(upgradedWorn.def);
     expect(classStatusDef('unknown-status', signatures, trees)).toBeNull();
   });
+
+  test('an upgrade-status gift swaps the status every folded active applies, even one a later node in tree order supplies', () => {
+    const burn: StatusDef = { label: 'Burn', desc: 'Burn', ops: [] };
+    const burnUp: StatusDef = { label: 'Burn II', desc: 'Burn II', ops: [] };
+    const withBurn = (a: Ability, stacks: number): Ability => ({
+      ...a,
+      ops: [{ op: 'applyStatus', key: statusKey('burn'), def: burn, duration: null, stacks }, { op: 'note', text: 'kept' }],
+    });
+    const lance = mkAbility('lance', 'Lance');
+    const kindle = withBurn(mkAbility('lance', 'Kindle'), 2);
+    const plain = mkAbility('pool', 'Pool');
+    const upSig: ClassSignature = { className: 'Pyromancer', actives: [lance, plain] };
+    const upTree: ClassTree = {
+      className: 'Pyromancer',
+      rarity: 'common',
+      nodes: [
+        // The upgrade sits before the node that brings in the burning active, so it must apply after the whole fold.
+        { id: nid('up'), depth: 1, name: 'Furnace', desc: 'Furnace', parents: [], gifts: [{ kind: 'upgrade-status', targetKey: statusKey('burn'), key: statusKey('burn-ii'), def: burnUp }] },
+        { id: nid('fork'), depth: 2, name: 'Kindle', desc: 'Kindle', parents: [nid('up')], gifts: [{ kind: 'replace-active', targetId: abilityId('lance'), active: kindle }] },
+      ],
+    };
+    const fold = (nodes: readonly ClassNodeId[]) => classPowers(
+      { job: 'Pyromancer', jobDone: 'Pyromancer', classes: { Pyromancer: { unlockedAt: '2026-01-01T00:00:00Z', nodes: [...nodes] } } },
+      RULES,
+      { signatures: { Pyromancer: upSig }, trees: { Pyromancer: upTree } },
+    ).actives;
+
+    const upgraded = fold([nid('fork'), nid('up')]);
+    expect(upgraded[0]!.name).toBe('Kindle');
+    expect(upgraded[0]!.ops).toEqual([
+      { op: 'applyStatus', key: statusKey('burn-ii'), def: burnUp, duration: null, stacks: 2 },
+      { op: 'note', text: 'kept' },
+    ]);
+    // An active without the status is passed through as the same object
+    expect(upgraded[1]).toBe(plain);
+    // With the upgrade alone, nothing applies Burn yet, so the lance is unchanged
+    expect(fold([nid('up')])[0]).toBe(lance);
+    expect(classStatusDef('burn-ii', { Pyromancer: upSig }, { Pyromancer: upTree })).toEqual(burnUp);
+  });
 });

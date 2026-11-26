@@ -290,6 +290,7 @@ const UP_LANCE_FLASH = makeIgnitionLance({
 });
 
 // D5 Fork B-Right (instant Cinder flare): applies Ember Mark plus 2 stacks of Cinder on hit for an immediate mag-scaled flare.
+// The Living Furnace capstone's `upgrade-status` gift swaps that Cinder for Cinder II, so the flare becomes its 2-tile blast.
 const UP_LANCE_KINDLE = makeIgnitionLance({
   name: 'Ignition Lance: Kindle Burst',
   markKey: KEY_EMBER,
@@ -331,6 +332,7 @@ const bonus = (p: Perk): NodeGift => ({ kind: 'bonus', bonus: p });
 const scaler = (s: Scaler): NodeGift => ({ kind: 'scaler', scaler: s });
 const replaceActive = (targetId: AbilityId, active: Ability): NodeGift => ({ kind: 'replace-active', targetId, active });
 const replaceWorn = (targetKey: StatusKey, worn: ClassWorn): NodeGift => ({ kind: 'replace-worn', targetKey, worn });
+const upgradeStatus = (targetKey: StatusKey, key: StatusKey, def: StatusDef): NodeGift => ({ kind: 'upgrade-status', targetKey, key, def });
 
 /** Full 7-depth, 2-branch, 16-buyable (18-node) Rare Pyromancer skill tree. */
 export const PYROMANCER_TREE: ClassTree = {
@@ -404,8 +406,9 @@ export const PYROMANCER_TREE: ClassTree = {
     ], { parentMode: 'any' }),
 
     // Depth 7: Rare Capstone (1)
-    node('pyro-cap', 7, 'Living Furnace', 'Upgrade Cinder Wake to Living Furnace and gain 5 Power, 3 Control, and 4 max mana.', ['pyro-a6', 'pyro-b6'], [
+    node('pyro-cap', 7, 'Living Furnace', 'Upgrade Cinder Wake to Living Furnace, make Kindle Burst apply Cinder II, and gain 5 Power, 3 Control, and 4 max mana.', ['pyro-a6', 'pyro-b6'], [
       replaceWorn(KEY_WAKE, LIVING_FURNACE),
+      upgradeStatus(KEY_CINDER, KEY_CINDER_UP, PYRO_CINDER_UP),
       bonus({ pow: 5, ctl: 3, manaMax: 4 }),
     ], { parentMode: 'any', capstone: true }),
   ],

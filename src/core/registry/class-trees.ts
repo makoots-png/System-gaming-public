@@ -53,14 +53,17 @@ export const TREE_SHAPE: Readonly<Record<ClassRarity, TreeShape>> = {
 };
 
 /**
- * What one skill-tree node grants when bought. Nodes may add a sheet bonus or conditional scaler, or replace an
- * existing worn status or active ability by id. Nodes never add a fifth active.
+ * What one skill-tree node grants when bought. Nodes may add a sheet bonus or conditional scaler, replace an
+ * existing worn status or active ability by id, or upgrade a status the folded actives apply (every top-level
+ * `applyStatus` of `targetKey` puts on `key`/`def` instead, whichever node supplied the active). Nodes never add a
+ * fifth active.
  */
 export type NodeGift =
   | { readonly kind: 'bonus'; readonly bonus: Perk }
   | { readonly kind: 'scaler'; readonly scaler: Scaler }
   | { readonly kind: 'replace-worn'; readonly targetKey: StatusKey; readonly worn: ClassWorn }
-  | { readonly kind: 'replace-active'; readonly targetId: AbilityId; readonly active: Ability };
+  | { readonly kind: 'replace-active'; readonly targetId: AbilityId; readonly active: Ability }
+  | { readonly kind: 'upgrade-status'; readonly targetKey: StatusKey; readonly key: StatusKey; readonly def: StatusDef };
 
 /** One node in a class skill tree. */
 export type ClassNodeDef = {

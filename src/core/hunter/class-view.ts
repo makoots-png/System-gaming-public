@@ -241,7 +241,7 @@ export function forkRefusalWords(cost: number, gold: number): ClassRefusalDict {
   };
 }
 
-/** Plain-English summary lines for one node's gifts (`bonus`, `scaler`, `replace-worn`, `replace-active`). */
+/** Plain-English summary lines for one node's gifts (`bonus`, `scaler`, `replace-worn`, `replace-active`, `upgrade-status`). */
 export function nodeGiftLines(gifts: readonly NodeGift[]): string[] {
   const out: string[] = [];
   for (const g of gifts) {
@@ -256,6 +256,8 @@ export function nodeGiftLines(gifts: readonly NodeGift[]): string[] {
       out.push(`Upgrades passive: ${g.worn.def.label}`);
     } else if (g.kind === 'replace-active') {
       out.push(`Upgrades ability: ${g.active.name}`);
+    } else if (g.kind === 'upgrade-status') {
+      out.push(`Upgrades status: ${g.def.label}`);
     }
   }
   return out;

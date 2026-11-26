@@ -308,6 +308,7 @@ describe('Status keys, wire round-trip, anti-drift copy, voice, and name collisi
         for (const g of node.gifts) {
           if (g.kind === 'replace-worn') check(g.worn.key, g.worn.def);
           else if (g.kind === 'replace-active') checkOps(g.active.ops);
+          else if (g.kind === 'upgrade-status') check(g.key, g.def);
         }
       }
     }
@@ -579,6 +580,70 @@ describe('Rare class combat mechanics', () => {
     r = reduce(rf, { type: 'act', by: combatantId('h1'), ability: lanceId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 10 } }, force: true }, { rules: RULES });
     expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
     expect(r.effects.some(e => e.type === 'burst')).toBe(true);
+  });
+
+  test('Pyromancer: Kindle Burst flares base Cinder without the capstone, and Living Furnace turns it into the 2-tile Cinder II blast that ignites Wildfire', () => {
+    const spec = RARE_SPECS[1]!;
+    const lanceId = wornAbilityId(abilityId('pyro-ignition-lance'));
+    const kindleCap = fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-r']);
+    const kindleNoCap = kindleCap.filter(id => id !== nid('pyro-cap'));
+    const flashCap = fullNodesFor(spec.tree, ['pyro-a5-l', 'pyro-b5-l']);
+    const lanceOf = (nodes: readonly ClassNodeId[]) =>
+      classPowers(makeRareHunter(spec, nodes, 'C'), RULES).actives.find(a => a.id === abilityId('pyro-ignition-lance'))!;
+    const cinderKeys = (nodes: readonly ClassNodeId[]) =>
+      lanceOf(nodes).ops.flatMap(op => (op.op === 'applyStatus' && op.key.startsWith('pyro-cinder') ? [{ key: op.key, stacks: op.stacks }] : []));
+
+    // Fold: the capstone swaps Kindle Burst's 2 Cinder stacks for 2 Cinder II stacks and leaves the other lances alone
+    expect(cinderKeys(kindleNoCap)).toEqual([{ key: statusKey('pyro-cinder'), stacks: 2 }]);
+    expect(cinderKeys(kindleCap)).toEqual([{ key: statusKey('pyro-cinder-ii'), stacks: 2 }]);
+    expect(lanceOf(kindleCap).name).toBe('Ignition Lance: Kindle Burst');
+    expect(lanceOf(flashCap)).toBe(PYROMANCER_TREE.nodes.find(n => n.id === nid('pyro-b5-l'))!.gifts.flatMap(g => (g.kind === 'replace-active' ? [g.active] : []))[0]!);
+    expect(lanceOf(fullNodesFor(spec.tree, []).filter(id => id !== nid('pyro-cap')))).toBe(PYROMANCER_SIGNATURE.actives![1]!);
+    // Status lookups still resolve the upgraded key to the one shipped Cinder II def
+    const kindleCinder = lanceOf(kindleCap).ops.find(op => op.op === 'applyStatus' && op.key === statusKey('pyro-cinder-ii'));
+    expect(kindleCinder?.op === 'applyStatus' ? kindleCinder.def : null).toEqual(classStatusDef('pyro-cinder-ii')!);
+
+    // Combat: m1 is aimed, m2 stands 2 tiles from m1, m3 stands 3 tiles from m1
+    const cast = (nodes: readonly ClassNodeId[]) => {
+      const h = makeRareHunter(spec, nodes, 'C');
+      const hRow = hunterRow(h, combatantId('h1'), RULES);
+      const foes = monsterRows({ name: 'Target', rank: 'C', archetype: 'brute', kind: 'boss', tweak: { hp: 3 }, abilities: [], statuses: [] }, [combatantId('m1'), combatantId('m2'), combatantId('m3')], RULES);
+      const at = [place(6, 2), place(8, 2), place(9, 2)];
+      let f = reduce(null, { type: 'add', fightId: fightId('f-kindle'), rows: [{ ...hRow, place: place(2, 2) }, ...foes.map((m, i) => ({ ...m, place: at[i]! }))], openings: [] }, { rules: RULES }).fight!;
+      f = reduce(f, { type: 'start', openings: [{ id: combatantId('h1'), d20: 20, tie: 4 }, { id: combatantId('m1'), d20: 1, tie: 3 }, { id: combatantId('m2'), d20: 1, tie: 2 }, { id: combatantId('m3'), d20: 1, tie: 1 }] }, { rules: RULES }).fight!;
+      if (f.phase !== 'running') throw new Error('expected running fight');
+      const hp0 = new Map(f.rows.map(x => [x.id, rowHp(x)]));
+      const r = reduce(f, { type: 'act', by: combatantId('h1'), ability: lanceId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 10 } }, force: true }, { rules: RULES });
+      expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+      const after = (r.fight as Running).rows;
+      const row = (id: string) => after.find(x => x.id === combatantId(id))!;
+      const lost = (id: string) => hp0.get(combatantId(id))! - rowHp(row(id));
+      const has = (id: string, key: string) => row(id).statuses.some(s => s.key === statusKey(key));
+      const stacks = (id: string, key: string) => row(id).statuses.find(s => s.key === statusKey(key))?.stacks ?? 0;
+      return { r, lost, has, stacks, mag: f.rows.find(x => x.id === combatantId('h1'))!.sheet.mag };
+    };
+
+    // Without the capstone: the 12% Cinder flare hits m1 alone, nobody burns with Wildfire
+    const base = cast(kindleNoCap);
+    expect(base.r.effects.some(e => e.type === 'burst')).toBe(true);
+    // The flare spent both stacks, then Cinder Wake's on-hit trigger put a fresh stack back
+    expect(base.stacks('m1', 'pyro-cinder')).toBe(1);
+    expect(base.has('m1', 'pyro-wildfire')).toBe(false);
+    expect(base.lost('m2')).toBe(0);
+    expect(base.has('m2', 'pyro-wildfire')).toBe(false);
+
+    // With Living Furnace: 2 Cinder II stacks detonate at once, blasting m1 and m2 (within 2 tiles) for 45% mag and igniting Wildfire, and m3 (3 tiles) is untouched
+    const cap = cast(kindleCap);
+    expect(cap.r.effects.some(e => e.type === 'burst')).toBe(true);
+    expect(cap.has('m1', 'pyro-wildfire')).toBe(true);
+    expect(cap.has('m1', 'pyro-cinder')).toBe(false);
+    expect(cap.stacks('m1', 'pyro-cinder-ii')).toBe(1);
+    expect(cap.has('m2', 'pyro-wildfire')).toBe(true);
+    expect(cap.lost('m2')).toBeGreaterThan(0);
+    expect(cap.lost('m2')).toBeLessThanOrEqual(Math.ceil(0.45 * cap.mag));
+    expect(cap.lost('m3')).toBe(0);
+    expect(cap.has('m3', 'pyro-wildfire')).toBe(false);
+    expect(cap.lost('m1')).toBeGreaterThan(base.lost('m1'));
   });
 
   test('Sniper: Vantage Perch adds +2 range, Sightline grants only 1 Sighted stack, moving clears Sighted to 0, Overwatch Brace reduces damage taken, and Horizon Scope + Eagle Perch stack cleanly', () => {

@@ -8,7 +8,7 @@ import type { Ability } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName } from './jobs.ts';
 import { CLASS_ACTIVES_MAX, CLASS_TREES, repairNodes } from './class-trees.ts';
-import type { ClassTreeMap, ClassWorn } from './class-trees.ts';
+import type { ClassTreeMap, ClassWorn, NodeGift } from './class-trees.ts';
 import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
 import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
@@ -100,6 +100,7 @@ export function classPowers(
   const scalers: Scaler[] = sig?.scalers ? [...sig.scalers] : [];
   let worn: ClassWorn | null = sig?.worn ?? null;
   const actives: Ability[] = sig?.actives ? sig.actives.slice(0, CLASS_ACTIVES_MAX) : [];
+  const upgrades: Extract<NodeGift, { kind: 'upgrade-status' }>[] = [];
 
   if (tree && entry.nodes.length > 0) {
     const owned = new Set(repairNodes(tree, entry.nodes));
@@ -122,8 +123,23 @@ export function classPowers(
             if (idx >= 0) actives[idx] = gift.active;
             break;
           }
+          case 'upgrade-status':
+            upgrades.push(gift);
+            break;
         }
       }
+    }
+  }
+
+  // Status upgrades apply after every replacement, so they reach whichever active a fork or later node folded in.
+  for (const up of upgrades) {
+    for (let i = 0; i < actives.length; i++) {
+      const a = actives[i]!;
+      if (!a.ops.some(op => op.op === 'applyStatus' && op.key === up.targetKey)) continue;
+      actives[i] = {
+        ...a,
+        ops: a.ops.map(op => (op.op === 'applyStatus' && op.key === up.targetKey ? { ...op, key: up.key, def: up.def } : op)),
+      };
     }
   }
 
@@ -160,6 +176,7 @@ function buildClassStatusDefs(signatures: ClassSignatureMap, trees: ClassTreeMap
       for (const gift of node.gifts) {
         if (gift.kind === 'replace-worn') record(gift.worn.key, gift.worn.def);
         else if (gift.kind === 'replace-active') recordOps(gift.active.ops);
+        else if (gift.kind === 'upgrade-status') record(gift.key, gift.def);
       }
     }
   }
