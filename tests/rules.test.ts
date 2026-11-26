@@ -20,7 +20,7 @@ test('the rules and the save name the same ranks and rarities, in the same order
 });
 
 test('every table by rank has a row for every rank', () => {
-  const byRank = { rankLevels: RULES.rankLevels, rankBonus: RULES.rankBonus, rankColors: RULES.rankColors, rankTable: RULES.rankTable, priceBase: RULES.priceBase, reviveDebtPrices: RULES.reviveDebtPrices, loot: RULES.loot, summonMp: RULES.shadow.summonMp, spawnWeight: RULES.gateSpawn.rank };
+  const byRank = { rankLevels: RULES.rankLevels, rankBonus: RULES.rankBonus, rankColors: RULES.rankColors, rankTable: RULES.rankTable, priceBase: RULES.priceBase, reviveDebtPrices: RULES.reviveDebtPrices, loot: RULES.loot, summonMp: RULES.shadow.summonMp, spawnWeight: RULES.gateSpawn.rank, difficultyRankScale: RULES.fight.difficulty.rankScale, difficultyRankSpread: RULES.fight.difficulty.rankSpread };
   for (const [name, table] of Object.entries(byRank)) expect([name, keys(table)]).toEqual([name, [...RANKS].sort()]);
 });
 

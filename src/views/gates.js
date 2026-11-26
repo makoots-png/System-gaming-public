@@ -109,12 +109,12 @@ export function register(app) {
     const cs = [];
     for (const m of g.monsters) {
       const mo = monsterOf(m.monsterId);
-      const scale = mo ? difficultyFactor(mo.kind, mo.rank, gateLevel, R) : undefined;
+      const scale = mo ? difficultyFactor(mo.kind, mo.rank, gateLevel, R, mo.archetype) : undefined;
       cs.push(...api.bestiary.toCombatant(m.monsterId, m.count, scale));
     }
     if (g.bossId) {
       const boss = monsterOf(g.bossId);
-      const scale = boss ? difficultyFactor(boss.kind, boss.rank, bossLevel, R) : undefined;
+      const scale = boss ? difficultyFactor(boss.kind, boss.rank, bossLevel, R, boss.archetype) : undefined;
       cs.push(...api.bestiary.toCombatant(g.bossId, 1, scale));
     }
     if (!cs.length) { ui.toast('Gates', 'This gate has no monsters.', { kind: 'warning' }); return false; }

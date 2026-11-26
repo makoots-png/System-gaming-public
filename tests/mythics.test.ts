@@ -171,10 +171,11 @@ test('a mythic of any body plays plain with no gap in its guard: its armor and r
     const { sheet } = modified(row.origin, row.statuses, ON);
     expect([archetype, Math.abs(sheet.armor - mean) <= 0.5, Math.abs(sheet.resist - mean) <= 0.5], `armor ${sheet.armor}, resist ${sheet.resist}, bare ${bare.armor} and ${bare.resist}`).toEqual([archetype, true, true]);
   }
-  // Zaratan, a brute, wears it under its Shell of armor: its resist is the mean of its body's two
+  // Zaratan, a brute, wears Even Guard under its Shell (+15 armor, +15 resist): both sit 15 above the bare mean
   const zaratan = SEEDS.find(m => m.script === 'zaratan-the-island-that-wakes')!, bare = monsterSheet('S', zaratan.archetype, 'mythic', RULES, [], tweakOfMonster(zaratan.tweak));
   const row = monsterRows(zaratan, [combatantId('z')], ON)[0]!;
-  expect(Math.abs(modified(row.origin, row.statuses, ON).sheet.resist - (bare.armor + bare.resist) / 2)).toBeLessThanOrEqual(0.5);
+  const zSheet = modified(row.origin, row.statuses, ON).sheet, zTarget = (bare.armor + bare.resist) / 2 + 15;
+  expect([Math.abs(zSheet.armor - zTarget) <= 0.5, Math.abs(zSheet.resist - zTarget) <= 0.5]).toEqual([true, true]);
 });
 
 test('a move\'s ability is named for its key, cannot be avoided when sure, never lands on its own side and applies its status', () => {

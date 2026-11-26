@@ -538,16 +538,23 @@ export function spending(a: PenBuild, rank: Rank, spend: PenSpend, id: string = 
   return hunterOn(a, rank, id, { ...build, perks: { [key]: budget / rate } }, R);
 }
 /**
+ * `a` wearing a full set of `WEAR_LIMIT` middle items of `gearRank` (or 0 bonus items when `gearRank` is null),
+ * split by `mainShare` across its main and second stats, replacing `referenceBonus` on the main stat so gear is not double-counted.
+ */
+export function gearedAt(a: Archetype, rank: Rank, gearRank: Rank | null, id: string = a, R: Rules = RULES): SimRow {
+  const build = buildOf(a, rank, R), { main, second } = BUILDS[a];
+  const stats = { ...build.stats, [main]: build.stats[main] - referenceBonus(rank) };
+  if (gearRank === null) return hunterOn(a, rank, id, { ...build, stats, perks: {} }, R);
+  const total = WEAR_LIMIT * middleBudget(R, gearRank);
+  const big = Math.round(total * R.fight.mainShare), small = Math.round(total - big);
+  return hunterOn(a, rank, id, { ...build, stats, perks: { [main]: big, [second]: small } }, R);
+}
+/**
  * `a` wearing a full set of `WEAR_LIMIT` middle items (`WEAR_LIMIT * middleBudget`), split by `mainShare` across its main
  * and second stats, replacing `referenceBonus` on the main stat so gear is not double-counted.
  */
-export function geared(a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow {
-  const build = buildOf(a, rank, R), { main, second } = BUILDS[a];
-  const total = WEAR_LIMIT * middleBudget(R, rank);
-  const big = Math.round(total * R.fight.mainShare), small = Math.round(total - big);
-  const stats = { ...build.stats, [main]: build.stats[main] - referenceBonus(rank) };
-  return hunterOn(a, rank, id, { ...build, stats, perks: { [main]: big, [second]: small } }, R);
-}
+export const geared = (a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow =>
+  gearedAt(a, rank, rank, id, R);
 /** The Strength-to-physical-power rate on the item maker's sample wearer at `rank` (matching `item-budget.ts`). */
 function physRateAt(rank: Rank, R: Rules): number {
   const level = R.rankLevels[rank], stats = split('agi', 'str', pointsAt(level, R), R);

@@ -12,7 +12,6 @@
 // the owner's ruling 4); the raising costs levels wherever it happens (grant.ts `sheetEdit`, ruling 9).
 import { amountDice, amountOn } from '../effects.ts';
 import { healsFully } from '../combat/effect-ops.ts';
-import { liveOp } from '../combat/live-status.ts';
 import { atTier } from '../combat/op-amount.ts';
 import { roundsOf } from '../combat/timeline.ts';
 import type { Op, Source } from '../combat/effect-ops.ts';
@@ -68,10 +67,9 @@ function opOn(h: Hunter, o: Op, tier: number, source: Source, dice: readonly num
       return d !== 0 ? { hunter: x, line: `${sign(d)} fatigue` } : null;
     }
     case 'applyStatus': {
-      const def = liveOp(o, R.conditions).def;
       const rounds = o.duration === null ? null : roundsOf(atTier(o.duration, tier), R, 'near');
-      const x = edit({ type: 'put', status: { key: o.key, def, source, rounds } }); if (!x) return null;
-      return { hunter: x, line: `Status applied: ${def.label}${rounds ? ` (${rounds} round${rounds === 1 ? '' : 's'})` : ''}` };
+      const x = edit({ type: 'put', status: { key: o.key, def: o.def, source, rounds } }); if (!x) return null;
+      return { hunter: x, line: `Status applied: ${o.def.label}${rounds ? ` (${rounds} round${rounds === 1 ? '' : 's'})` : ''}` };
     }
     case 'cureStatus': {
       const held = h.conditions.find(c => c.key === o.key); if (!held) return null;

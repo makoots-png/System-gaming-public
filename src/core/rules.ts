@@ -14,15 +14,6 @@ import type { SheetNumber } from './hunter/derive.ts';
 import type { Rewards } from './rewards.ts';
 import type { Pace } from './combat/timeline.ts';
 import type { DamageType, DamageTypeMap } from './combat/damage-type.ts';
-import type { ItemDefData } from './registry/item-book.ts';
-
-/**
- * Item definitions layered onto the rules (built-in overrides, GM custom items, and player heard fallbacks), keyed by
- * `ItemDefId`. Read via `resolveDef` in `src/core/registry/item-book.ts` so `rules.ts` has no value import from `items.ts`.
- */
-export type ItemBook = Readonly<Record<string, ItemDefData>>;
-/** An empty item book: shipped rules carry no overrides, so every built-in reads from `BUILT_IN_ITEMS`. */
-export const EMPTY_ITEM_BOOK: ItemBook = Object.freeze({});
 
 const deepFreeze = <T>(o: T): T => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o as object).forEach(deepFreeze); } return o; };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -123,6 +114,8 @@ const TITLE_SPEND = realIn(0, 30, 'bonus-point budget for a title of this rank. 
 const DIFFICULTY_LEVEL = wholeIn(1, 10, 'gate or boss difficulty level, 1 to 10');
 const DIFFICULTY_WIN_PCT = wholeIn(1, 99, 'expected three-hunter win chance in percent for one difficulty step');
 const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty multiplier for one step or rank');
+const DIFFICULTY_SPREAD = realIn(0.1, 1, 'upper difficulty slope (levels 6 to 10) for one rank, from 0.1 to 1');
+const DIFFICULTY_ARCHETYPE = realIn(0.1, 2, 'boss difficulty multiplier for one monster archetype, from 0.1 to 2');
 const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty multiplier applied to max HP. The rest applies to damage dealt');
 const CLASS_TREE_MULT = realIn(0, 20, 'skill tree price multiplier, from 0 (free) to 20');
 /** A bonus's points on a bonus key (a title's bonus, a passive skill, an item): the bound of every flat bonus a parser reads. */
@@ -205,7 +198,6 @@ const SPEC = {
     { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, band: 'S' as Rank, gmOnly: true },
   ],
   conditions: BUILT_IN_STATUSES, // the built-in statuses: src/core/registry/statuses.ts
-  items: EMPTY_ITEM_BOOK, // item def overrides & custom items: src/core/registry/item-book.ts
   // Each rarity's color and the rank whose base price prices it (`priceBaseOf`): a price is computed from
   // `priceBase`, never stored, so a GM's edit of `priceBase` moves prices without tying them to gate clear gold.
   rarities: {
@@ -523,7 +515,9 @@ const SPEC = {
       normal: { hp: of(0.6, KIND_FACTOR), power: of(0.7, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), stagger: of(0, KIND_STAGGER), xp: of(1, KIND_XP) },
       elite: { hp: of(1.5, KIND_FACTOR), power: of(1, KIND_FACTOR), armor: of(1.25, KIND_GUARD), resist: of(1.25, KIND_GUARD), stagger: of(2.5, KIND_STAGGER), xp: of(1.5, KIND_XP) },
       boss: { hp: of(2.8, KIND_FACTOR), power: of(1.2, KIND_FACTOR), armor: of(1.5, KIND_GUARD), resist: of(1.5, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(3, KIND_XP) },
-      mythic: { hp: of(5.2, KIND_FACTOR), power: of(2, KIND_FACTOR), armor: of(2, KIND_GUARD), resist: of(2, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(5, KIND_XP) },
+      // Retuned for geared parties (6 middle items, the owner t157u): hp 6.7 and armor 2.3 place geared S parties in
+      // the owner's 5 to 10% band across brute, skirmisher and caster mythics (M1) without moving fight.archetypes.
+      mythic: { hp: of(6.7, KIND_FACTOR), power: of(2, KIND_FACTOR), armor: of(2.3, KIND_GUARD), resist: of(2, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(5, KIND_XP) },
     },
     // Monster archetypes (derive.ts `ARCHETYPES`): factors on max HP and power, after the kind's. An archetype changes how
     // a monster fights (a shot from range and a dodge, a curse no dodge escapes), not how hard it is to beat, so each kind
@@ -866,8 +860,8 @@ const SPEC = {
         hits: each([0, 4], realIn(0, 10, 'mythic move damage measured in S-rank hunter max HP bars, from 0 to 10')),
       },
     },
-    // Gate and boss difficulty slider (1 to 10, default 5; the owner, Nov 22, QD row 8).
-    // Three same-rank hunters win about 95% at 1, 75% at 5, and 5% at 10 against one same-rank boss.
+    // Gate and boss difficulty slider (1 to 10, default 5; the owner, Nov 22, QD row 8; retuned for 6-item geared parties, t157u).
+    // Three geared same-rank hunters win about 95% at 1, 75% at 5, and 5% at 10 against one same-rank boss.
     difficulty: {
       default: of(5, DIFFICULTY_LEVEL),
       // Share of combined factor `k` placed on max HP (`hp = k^hpExponent`, `dealt = k^(1 - hpExponent)`).
@@ -875,19 +869,38 @@ const SPEC = {
       hpExponent: of(0.35, DIFFICULTY_SPLIT),
       // Displayed three-hunter expected win chance (%) for levels 1..10. Straight lines between anchors (1=95, 5=75, 10=5).
       targets: each([95, 90, 85, 80, 75, 61, 47, 33, 19, 5], DIFFICULTY_WIN_PCT),
-      // Combined difficulty factor `k` for `kind === 'boss'` at levels 1..10 (calibrated at Rank C, scaled per rank by `rankScale`).
-      boss: each([2.55, 2.71, 2.88, 2.93, 2.97, 3.09, 3.22, 3.38, 3.88, 4.91], DIFFICULTY_FACTOR),
+      // Combined difficulty factor `k` for `kind === 'boss'` at levels 1..10 (levels 1..5 calibrated at Rank C, levels 6..10
+      // carry Rank E's upper slope and compress per rank via `rankSpread <= 1` so every rank stays bounded and monotonic).
+      boss: each([3.30, 3.52, 3.74, 3.92, 4.08, 4.55, 5.12, 5.72, 6.28, 7.14], DIFFICULTY_FACTOR),
       // Combined difficulty factor `k` for non-boss monsters (`normal`, `elite`) and `mythic` bosses in a gate.
       // Centered at 1.0 at default level 5 so balanced packs and mythic odds (5 to 10%) stay untouched by default.
       pack: each([0.72, 0.79, 0.86, 0.93, 1.00, 1.15, 1.32, 1.52, 1.75, 2.05], DIFFICULTY_FACTOR),
-      // Per-rank multiplier on `boss[level - 1]` so all six ranks align on the 95/75/5% anchors.
+      // Per-rank multiplier on `boss[level - 1]` so geared parties at all six ranks align on the 95/75% anchors.
       rankScale: {
-        E: of(1.04, DIFFICULTY_FACTOR),
-        D: of(0.96, DIFFICULTY_FACTOR),
+        E: of(0.84, DIFFICULTY_FACTOR),
+        D: of(0.91, DIFFICULTY_FACTOR),
         C: of(1.00, DIFFICULTY_FACTOR),
-        B: of(0.96, DIFFICULTY_FACTOR),
-        A: of(0.84, DIFFICULTY_FACTOR),
-        S: of(0.85, DIFFICULTY_FACTOR),
+        B: of(1.00, DIFFICULTY_FACTOR),
+        A: of(1.025, DIFFICULTY_FACTOR),
+        S: of(1.02, DIFFICULTY_FACTOR),
+      },
+      // Per-rank upper slope exponent (0.1 to 1) applied above default level 5 (`k5 * (boss[level-1] / boss[4])^rankSpread`).
+      // Die variance shrinks with rank (k10/k5 compresses from 1.75x at E to 1.23x at S); keeping spread <= 1 guarantees
+      // a weighted geometric mean with no overflow past the wire cap and no inverted boss[4] edits.
+      rankSpread: {
+        E: of(1.00, DIFFICULTY_SPREAD),
+        D: of(0.80, DIFFICULTY_SPREAD),
+        C: of(0.66, DIFFICULTY_SPREAD),
+        B: of(0.57, DIFFICULTY_SPREAD),
+        A: of(0.36, DIFFICULTY_SPREAD),
+        S: of(0.37, DIFFICULTY_SPREAD),
+      },
+      // Per-archetype boss difficulty multiplier: `fight.archetypes` HP multipliers (1.7 skirmisher, 1.8 caster) are tuned
+      // for S mythics, so non-brute bosses scale down here to stay near the 75% default target at difficulty 5.
+      archetypeScale: {
+        brute: of(1.00, DIFFICULTY_ARCHETYPE),
+        skirmisher: of(0.76, DIFFICULTY_ARCHETYPE),
+        caster: of(0.68, DIFFICULTY_ARCHETYPE),
       },
     },
     // Sparse GM overrides of damaging ability types (AbilityId or the six reserved keys; `attack` is refused).
@@ -926,15 +939,11 @@ function merge<T extends Record<string, unknown>>(base: T, ov: Readonly<Record<s
   return out as T;
 }
 /**
- * The shipped rules with a save's `rulesOverrides` merged in, the GM's statuses (`library.statuses`) over the built-in
- * `conditions`, and the GM's/room's item definitions (`items`) over the empty book.
+ * The shipped rules with a save's `rulesOverrides` merged in, and the GM's statuses (`library.statuses`) over the
+ * built-in `conditions`: an entry under a built-in key replaces that built-in whole, any other key adds a status.
  */
-export function rulesOf(
-  ov: unknown,
-  statuses: Readonly<Record<string, StatusDef>> = {},
-  items: ItemBook = EMPTY_ITEM_BOOK,
-): Rules {
-  return withItems(withStatuses(isObj(ov) && Object.keys(ov).length ? merge<Rules>(RULES, ov) : RULES, statuses), items);
+export function rulesOf(ov: unknown, statuses: Readonly<Record<string, StatusDef>> = {}): Rules {
+  return withStatuses(isObj(ov) && Object.keys(ov).length ? merge<Rules>(RULES, ov) : RULES, statuses);
 }
 /**
  * Rules `R` with `statuses` laid over its `conditions`: an entry under a key `R` has replaces that status whole, any other
@@ -942,12 +951,6 @@ export function rulesOf(
  */
 export const withStatuses = (R: Rules, statuses: Readonly<Record<string, StatusDef>>): Rules =>
   Object.keys(statuses).length ? { ...R, conditions: { ...R.conditions, ...statuses } } : R;
-/**
- * Rules `R` with `items` laid over its `items` book: an entry under a built-in `ItemDefId` overrides that built-in, and
- * any custom `ItemDefId` adds or updates a custom item definition.
- */
-export const withItems = (R: Rules, items: ItemBook): Rules =>
-  Object.keys(items).length ? { ...R, items: { ...R.items, ...items } } : R;
 
 // ── helpers. Each takes the rules as its first argument; src/edge/rules.ts binds them to the current rules for views. ──
 /** XP from `level` to the next: `xpPerLevel` times the level. `level` is a level (hunter/level.ts), so no bound is kept here. */

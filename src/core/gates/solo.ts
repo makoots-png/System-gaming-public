@@ -440,7 +440,7 @@ const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 const scaledLine = (m: Monster | undefined, id: string, n: number, role: 'pack' | 'boss', g: Gate, R: Rules): SoloDocLine => {
   if (!m) return { m: id, n };
   const level = role === 'boss' ? effectiveBossLevel(g.difficulty, R) : effectiveGateLevel(g.difficulty, R);
-  const s = difficultyFactor(m.kind, m.rank, level, R);
+  const s = difficultyFactor(m.kind, m.rank, level, R, m.archetype);
   const hp = round3(s.hp), dealt = round3(s.dealt);
   return { m: id, n, ...(hp !== 1 ? { hp } : {}), ...(dealt !== 1 ? { dealt } : {}) };
 };

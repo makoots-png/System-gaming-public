@@ -627,7 +627,7 @@ const FROST_LANCE = {
     shape: { kind: 'line', width: 0, pierce: false }, delivery: { kind: 'travel', windup: 100, speed: 80 }, foesOnly: true,
     // made with the shot's own ticks, so it follows the rule: `0.7 * (1d8 + phys)` worked out where it is read (M2)
     effect: { type: 'physical', by: 'rule', ticks: { scale: 'str', gap: null, scalers: [] } },
-    ops: [{ op: 'applyStatus', key: 'slowed', def: SLOWED, duration: 2000, follow: true }], channel: null,
+    ops: [{ op: 'applyStatus', key: 'slowed', def: SLOWED, duration: 2000 }], channel: null,
   },
 };
 const FROST_SHARD = { id: 'i900', name: 'Frost Shard', rar: 'rare', type: 'material', slot: null, qty: 1, dice: '', bonus: {}, value: 40, desc: 'Cold to the touch.', weight: 0, armor: 0, resist: 0 };

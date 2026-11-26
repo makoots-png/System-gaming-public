@@ -380,7 +380,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
     ]);
     const add = (rows: NewRow[]) => reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, { rules: ON_RULES }).fight!.rows[0]!;
     const off = add(monsterRows(zaratan(), [id('m1')], OFF)), on = add([r!]), even = (off.sheet.armor + off.sheet.resist) / 2;
-    expect([on.sheet.armor, on.sheet.resist], 'the guard evened to the mean of the two, and the shell 30 more armor on top').toEqual([even + 30, even]);
+    expect([on.sheet.armor, on.sheet.resist], 'the guard evened to the mean of the two, and the shell 15 more armor and 15 more resist on top').toEqual([even + 15, even + 15]);
     expect(monsterRows(monster({ kind: 'boss' }), [id('m1')], ON)[0]!.mythic, 'a monster of another kind plays no script').toBeNull();
     const { script: _named, ...unnamed } = zaratan();
     expect(monsterRows(unnamed, [id('m1')], ON)[0]!.mythic, 'a mythic that names none plays plain').toMatchObject({ script: 'plain' });

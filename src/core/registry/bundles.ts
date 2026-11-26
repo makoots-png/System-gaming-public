@@ -17,7 +17,7 @@
 import { grantLines, newRewards } from '../rewards.ts';
 import type { RewardRules, RewardTitle, Rewards, SystemWords } from '../rewards.ts';
 import { BONUS_KEYS, BONUS_LABELS, RULES } from '../rules.ts';
-import { BUNDLE_ITEMS, SHOP_ITEMS, itemOf } from './items.ts';
+import { SHOP_ITEMS, itemOf, parseItem } from './items.ts';
 import type { ItemTemplate } from './items.ts';
 
 /** The moments an award for roleplay is for, in the order the shelf lists them. */
@@ -69,10 +69,14 @@ const title = (t: RewardTitle, extra: Partial<Rewards> = {}): Rewards => ({ ...n
 /** The held reroll of the shelf: a d20 rolled again, once, the second kept. */
 const REROLL = 'Once, roll one of your d20s again and keep the second roll.';
 const HEALTH_POTION: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
-/** A31's item: worn, a status that gives its bearer a shield of a quarter of its max HP as each fight begins. */
-const PUNCHLINE: ItemTemplate = itemOf(RULES, BUNDLE_ITEMS.punchline);
+/** A31's item: worn, a status that gives its bearer a shield of a quarter of its max HP as each fight begins (a status's `shield` op lands with it). */
+const PUNCHLINE: ItemTemplate = parseItem({
+  name: 'The Punchline', rar: 'legendary', type: 'accessory', slot: 'neck', value: 0,
+  desc: 'Given for a long-running joke that mattered in a serious scene. While worn, you get a shield at the start of each fight.',
+  worn: { label: 'The Punchline', desc: 'Gain a shield equal to a quarter of your max HP at the start of the fight.', ops: [{ op: 'shield', amount: { kind: 'binary', op: '/', left: { kind: 'sheet', whose: 'user', key: 'hpMax' }, right: { kind: 'number', value: 4 } } }] },
+})!;
 /** A46's item: a thing exchanged at a goodbye, worth nothing to the shop. */
-const KEEPSAKE: ItemTemplate = itemOf(RULES, BUNDLE_ITEMS.keepsake);
+const KEEPSAKE: ItemTemplate = parseItem({ name: 'Keepsake', rar: 'common', type: 'material', value: 0, desc: 'Something given at a goodbye. Name it and write what it is.' })!;
 
 type Entry = Omit<BuiltInBundle, 'rare'> & { readonly rare?: true };
 const ENTRIES: readonly Entry[] = [

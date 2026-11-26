@@ -263,11 +263,8 @@ function opOf(v: unknown, R: Rules, depth: number): Op | null {
       const key = idText(v.key), def = depth < 3 ? defOf(v.def, R, depth + 1, key ?? undefined) : null;
       const duration = v.duration === null ? null : tiered(v.duration, tickOf);
       if (!key || !def || (duration === null && v.duration !== null)) return null;
-      return {
-        op: 'applyStatus', key: statusKey(key), def, duration,
-        ...(v.stacks === undefined ? {} : { stacks: clamped(v.stacks, 1, R.fight.kit.stackAdd) }),
-        ...(v.follow === true ? { follow: true as const } : {}),
-      };
+      const op = { op: 'applyStatus', key: statusKey(key), def, duration } as const;
+      return v.stacks === undefined ? op : { ...op, stacks: clamped(v.stacks, 1, R.fight.kit.stackAdd) };
     }
     case 'cureStatus': {
       const key = idText(v.key);

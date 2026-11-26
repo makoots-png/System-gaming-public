@@ -67,7 +67,7 @@ import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
-import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, geared, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2, weaponOrStat, withApex } from './models/fight-sim.ts';
+import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, geared, gearedAt, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2, weaponOrStat, withApex } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
 import { piece, weaponWeight } from '../src/core/registry/items.ts';
 import type { ArmorSlot } from '../src/core/registry/items.ts';
@@ -416,23 +416,25 @@ const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
     }, low: 0.1, high: 0.35, lever: 'the party\'s control (abilities().stun) and Tenacity' },
 ]);
 
-/** The mixed party at S against one same-rank mythic of `archetype` (balance plan section 4, row M1). */
+/** The geared mixed party (six middle items) at S against one same-rank mythic of `archetype` (balance plan section 4, row M1, retuned t157u). */
+const gearedPartyOf = (ids: readonly Archetype[], rank: Rank, R = RULES): SimRow[] =>
+  ids.map((a, i) => geared(a, rank, ids.indexOf(a) === i ? a : `${a}-${i}`, R));
 const vsMythic = (archetype: MonsterArchetype) => {
-  const rows = once(() => [...party(MIXED, 'S'), monster('S', archetype, 'mythic', 'mythic')]);
+  const rows = once(() => [...gearedPartyOf(MIXED, 'S'), monster('S', archetype, 'mythic', 'mythic')]);
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 const MONSTER_ARCHETYPES = Object.keys(RULES.fight.archetypes) as MonsterArchetype[];
 
 
 // ── a mythic's script (notes-11-keystones.md, design B.8): rows B1 to B9 ──
-// The party is row M1's mixed party at S, its tank holding P3's plain stun (`abilities().stun`, which only an omen's
+// The party is row M1's geared mixed party at S, its tank holding P3's plain stun (`abilities().stun`, which only an omen's
 // answer spends: tankPolicy never casts it), each hunter answering a standing omen first (`answering`). Without the stun
 // no hunter of the party could land a hold or a root, and the interrupt answer of six omens out of nine would be words.
 // Each script plays on its seed's body under scripts on (`scripted`, its HP times the script's `hp`). A row's fights are
 // 600 a script, M1's number. Why each bound is what it is: design B.8's table.
 const SCRIPTED = scriptsOn();
-const answeringParty = (ids: readonly Archetype[], kinds: readonly Answer[]): SimRow[] => party(ids, 'S').map(s =>
-  answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s, kinds));
+const answeringParty = (ids: readonly Archetype[], kinds: readonly Answer[]): SimRow[] => gearedPartyOf(ids, 'S', SCRIPTED).map(s =>
+  answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities(SCRIPTED).stun] } } : s, kinds));
 const vsScript = (id: MythicScriptId, kinds: readonly Answer[] = ANSWERS, ids: readonly Archetype[] = MIXED) => {
   const rows = once(() => [...answeringParty(ids, kinds), scripted(id, SCRIPTED)]);
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), rules: SCRIPTED, tallyDamage: false }, seed)];
@@ -523,11 +525,11 @@ const SCRIPT_ROWS: readonly Row[] = [
   })),
 ];
 
-// ── gate and boss difficulty slider (the owner, Nov 22, QD row 8): rows D1 to D5 ──
-const vsScaledBoss = (rank: Rank, level: DifficultyLevel) => {
+// ── gate and boss difficulty slider (the owner, Nov 22, QD row 8; retuned for geared parties, t157u): rows D1 to D5 ──
+const vsScaledBoss = (rank: Rank, level: DifficultyLevel, archetype: MonsterArchetype = 'brute') => {
   const rows = once(() => {
-    const scale = difficultyFactor('boss', rank, level, RULES);
-    return [...party(MIXED, rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
+    const scale = difficultyFactor('boss', rank, level, RULES, archetype);
+    return [...gearedPartyOf(MIXED, rank), monster(rank, archetype, 'boss', 'boss', RULES, [], scale)];
   });
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
@@ -549,20 +551,21 @@ const DIFFICULTY_ROWS: readonly Row[] = [
   })),
   ...(['E', 'C', 'S'] as const).map((rank): Row => ({
     name: `D3 three hunters win 1 to 10% against a difficulty 10 boss at ${rank}`, setup: `mixed v boss d10 ${rank}`, runs: RUNS.even,
-    measure: () => wins(`mixed v boss d10 ${rank}`, vsScaledBoss(rank, 10), RUNS.even), low: 0.01, high: 0.10, lever: 'difficulty.boss[9] and difficulty.rankScale',
+    measure: () => wins(`mixed v boss d10 ${rank}`, vsScaledBoss(rank, 10), RUNS.even), low: 0.01, high: 0.10, lever: 'difficulty.boss[9], rankScale and rankSpread',
   })),
   { name: 'D4 three hunters win 78 to 92% against a difficulty 3 boss at C', setup: 'mixed v boss d3 C', runs: RUNS.quarter,
     measure: () => wins('mixed v boss d3 C', vsScaledBoss('C', 3), RUNS.quarter), low: 0.78, high: 0.92, lever: 'difficulty.boss[2]' },
   { name: 'D4 three hunters win 39 to 55% against a difficulty 7 boss at C', setup: 'mixed v boss d7 C', runs: RUNS.even,
-    measure: () => wins('mixed v boss d7 C', vsScaledBoss('C', 7), RUNS.even), low: 0.39, high: 0.55, lever: 'difficulty.boss[6]' },
+    measure: () => wins('mixed v boss d7 C', vsScaledBoss('C', 7), RUNS.even), low: 0.39, high: 0.55, lever: 'difficulty.boss[6] and rankSpread.C' },
   { name: 'D4 three hunters win 25 to 41% against a difficulty 8 boss at C', setup: 'mixed v boss d8 C', runs: RUNS.even,
-    measure: () => wins('mixed v boss d8 C', vsScaledBoss('C', 8), RUNS.even), low: 0.25, high: 0.41, lever: 'difficulty.boss[7]' },
+    measure: () => wins('mixed v boss d8 C', vsScaledBoss('C', 8), RUNS.even), low: 0.25, high: 0.41, lever: 'difficulty.boss[7] and rankSpread.C' },
   { name: 'D5 a difficulty 10 pack kills a hunter in at least 20% of fights at C', setup: 'mixed v pack d10 C', runs: RUNS.tenth,
     measure: () => anyDead('mixed v pack d10 C', vsScaledPack('C', 10), RUNS.tenth), low: 0.20, high: 1, lever: 'difficulty.pack[9]' },
 ];
 
 // ── Worldbreaker, the Strength apex (QD row 32, unit row-32): rows W1 to W3 ──
 const worldbreakerParty = (rank: Rank): SimRow[] => party(MIXED, rank).map(s => (s.row.id === 'bruiser' ? withApex(s, 'str', rank) : s));
+const gearedWorldbreakerParty = (rank: Rank, R = RULES): SimRow[] => gearedPartyOf(MIXED, rank, R).map(s => (s.row.id === 'bruiser' ? withApex(s, 'str', rank, R) : s));
 const vsWorldbreakerPack = (rank: Rank) => {
   const rows = once(() => [...worldbreakerParty(rank), ...pack(rank)]);
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
@@ -570,13 +573,13 @@ const vsWorldbreakerPack = (rank: Rank) => {
 const vsWorldbreakerBossD5 = (rank: Rank) => {
   const rows = once(() => {
     const scale = difficultyFactor('boss', rank, 5, RULES);
-    return [...worldbreakerParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
+    return [...gearedWorldbreakerParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
   });
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 const vsWorldbreakerScript = (id: MythicScriptId) => {
   const rows = once(() => {
-    const partyRows = worldbreakerParty('S').map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s));
+    const partyRows = gearedWorldbreakerParty('S', SCRIPTED).map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities(SCRIPTED).stun] } } : s));
     return [...partyRows, scripted(id, SCRIPTED)];
   });
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), rules: SCRIPTED, tallyDamage: false }, seed)];
@@ -640,43 +643,47 @@ const BULK_ROWS: readonly Row[] = SIM_RANKS.flatMap((rank): Row[] => [
     low: rank === 'E' ? 0.25 : 0.6, high: rank === 'E' ? 0.75 : 0.9, lever: BULK_LEVER },
 ]);
 
-// ── six-middle-item party and weaponDuty parity (BAL-A, QD 2026-11-24-v2-gear-budget-divisor) ──
-const gearedParty = (rank: Rank, R = RULES): SimRow[] => MIXED.map(a => geared(a, rank, a, R));
-const vsGearedBoss = (rank: Rank, level: DifficultyLevel) => {
+// ── six-middle-item party, progression, and weaponDuty parity (BAL-A, boss-retune t157u) ──
+const gearedParty = (rank: Rank, R = RULES): SimRow[] => gearedPartyOf(MIXED, rank, R);
+const vsPartyAtGearBoss = (rank: Rank, gearRank: Rank | null, level: DifficultyLevel) => {
   const rows = once(() => {
     const scale = difficultyFactor('boss', rank, level, RULES);
-    return [...gearedParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
+    return [...MIXED.map(a => gearedAt(a, rank, gearRank)), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)];
   });
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
-};
-const vsGearedScript = (id: MythicScriptId) => {
-  const rows = once(() => {
-    const partyRows = gearedParty('S', SCRIPTED).map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities(SCRIPTED).stun] } } : s));
-    return [...partyRows, scripted(id, SCRIPTED)];
-  });
-  return (seed: number): FightRecord[] => [playFight({ rows: rows(), rules: SCRIPTED, tallyDamage: false }, seed)];
 };
 const GEARED_RUNS = 200;
 const GEARED_ROWS: readonly Row[] = [
   ...(['E', 'C', 'S'] as const).map((rank): Row => ({
-    name: `G1 three hunters wearing six middle items win 78 to 100% against a difficulty 5 boss at ${rank}`, setup: `geared v boss d5 ${rank}`, runs: GEARED_RUNS,
-    measure: () => wins(`geared v boss d5 ${rank}`, vsGearedBoss(rank, 5), GEARED_RUNS), low: 0.78, high: 1, lever: 'itemBudget.share (6 worn slots) and difficulty.boss[4]',
+    name: `G1 three hunters wearing six middle items win 68 to 82% against a difficulty 5 boss at ${rank}`, setup: `mixed v boss d5 ${rank}`, runs: RUNS.quarter,
+    measure: () => wins(`mixed v boss d5 ${rank}`, vsScaledBoss(rank, 5), RUNS.quarter), low: 0.68, high: 0.82, lever: 'difficulty.boss[4] and difficulty.rankScale',
   })),
-  ...([['E', 0.08, 0.30], ['C', 0.30, 0.58], ['S', 0.62, 0.88]] as const).map(([rank, low, high]): Row => ({
-    name: `G2 three hunters wearing six middle items punch up against a difficulty 10 boss (${Math.round(low * 100)} to ${Math.round(high * 100)}%) at ${rank}`, setup: `geared v boss d10 ${rank}`, runs: GEARED_RUNS,
-    measure: () => wins(`geared v boss d10 ${rank}`, vsGearedBoss(rank, 10), GEARED_RUNS), low, high, lever: 'itemBudget.share (6 worn slots) and difficulty.boss[9]',
+  ...(['E', 'C', 'S'] as const).map((rank): Row => ({
+    name: `G2 three hunters wearing six middle items win 1 to 10% against a difficulty 10 boss at ${rank}`, setup: `mixed v boss d10 ${rank}`, runs: RUNS.even,
+    measure: () => wins(`mixed v boss d10 ${rank}`, vsScaledBoss(rank, 10), RUNS.even), low: 0.01, high: 0.10, lever: 'difficulty.boss[9], rankScale and rankSpread',
   })),
-  { name: 'G3 three hunters wearing six middle items average 35 to 60% across mythics at S', setup: 'geared v mythics S', runs: MYTHIC_IDS.length * GEARED_RUNS,
+  { name: 'G3 three hunters wearing six middle items average 5 to 10% across mythics at S', setup: 'geared v mythics S', runs: MYTHIC_IDS.length * RUNS.mythic,
     measure: () => {
-      const ms = MYTHIC_IDS.map(id => ({ id, m: wins(`geared v ${id} S`, vsGearedScript(id), GEARED_RUNS) }));
+      const ms = MYTHIC_IDS.map(id => ({ id, m: wins(B1_KEY(id), vsScript(id), RUNS.mythic) }));
       return {
         value: mean(ms.map(x => x.m.value)),
         se: Math.sqrt(ms.reduce((n, x) => n + x.m.se ** 2, 0)) / ms.length,
         note: ms.map(x => `${x.id} ${fmt(x.m.value)}`).join(', '),
       };
     },
-    low: 0.35, high: 0.60, lever: 'itemBudget.share (6 worn slots) and mythic script HP' },
+    low: 0.05, high: 0.10, lever: 'kinds.mythic.{hp, armor} and mythic script HP' },
+  { name: 'G4 truly ungeared level 1 starters (0 items) win 30 to 55% against a difficulty 5 boss at E', setup: 'starter-0 v boss d5 E', runs: GEARED_RUNS,
+    measure: () => wins('starter-0 v boss d5 E', vsPartyAtGearBoss('E', null, 5), GEARED_RUNS), low: 0.30, high: 0.55, lever: 'difficulty.boss[4] and difficulty.rankScale.E' },
+  ...([['C', 'D', 0.20, 0.55], ['S', 'A', 0.25, 0.60]] as const).map(([rank, prev, low, high]): Row => ({
+    name: `G4 freshly promoted hunters wearing six ${prev} items win ${Math.round(low * 100)} to ${Math.round(high * 100)}% against a difficulty 5 boss at ${rank}`, setup: `prev6 v boss d5 ${rank}`, runs: GEARED_RUNS,
+    measure: () => wins(`prev6 v boss d5 ${rank}`, vsPartyAtGearBoss(rank, prev, 5), GEARED_RUNS), low, high, lever: 'itemBudget.share and difficulty.rankScale',
+  })),
+  ...(['C', 'S'] as const).flatMap(rank => (['skirmisher', 'caster'] as const).map((arch): Row => ({
+    name: `G5 geared hunters win 55 to 90% against a difficulty 5 ${arch} boss at ${rank}`, setup: `geared v ${arch} boss d5 ${rank}`, runs: GEARED_RUNS,
+    measure: () => wins(`geared v ${arch} boss d5 ${rank}`, vsScaledBoss(rank, 5, arch), GEARED_RUNS), low: 0.55, high: 0.90, lever: `difficulty.archetypeScale.${arch}`,
+  }))),
 ];
+void gearedParty;
 
 const WEAPON_DUTY_SIDE_RUNS = 100;
 /** Symmetric 1v1 duel (weapon spend vs main-stat spend): swaps party/foe so speed ties cancel, across both openings. */
@@ -802,7 +809,7 @@ describe('the reworked fight holds the bounds of design section 6', () => {
       console.log(`  ${inside(row, m) ? 'in ' : 'OUT'}${edge(row, m)}  ${row.name}: ${fmt(m.value)} (se ${fmt(m.se)}, ${row.runs} runs), bound ${bound}, lever ${row.lever}${m.note ? `; ${m.note}` : ''}`);
       expect(m.value).toBeGreaterThanOrEqual(row.low);
       expect(m.value).toBeLessThanOrEqual(row.high);
-    });
+    }, row.runs > 1500 ? workBudget(row.runs) : undefined);
   }
 });
 
@@ -852,7 +859,7 @@ describe('a mythic\'s script stays out of the fights it is not in (design B.8)',
  */
 const FUDGE_STEPS = [0, 1, 2, 3, 4, 5] as const;
 const weightedMythic = (n: number) => {
-  const rows = once(() => [...party(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')]);
+  const rows = once(() => [...gearedPartyOf(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')]);
   const fudge = { sides: { party: n, foe: 0 }, rows: {}, forced: {} };
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), fudge, tallyDamage: false }, seed)];
 };

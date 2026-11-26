@@ -8,7 +8,7 @@ import { priceOf } from '../src/core/registry/items.ts';
 
 /** Each path of RULES whose shipped value cannot read an override: a list, a null, or a map the GM may add to. */
 function unreadable(v: unknown, path: string, out: string[]): string[] {
-  if (path === 'conditions' || path === 'items') return out;
+  if (path === 'conditions') return out;
   if (Array.isArray(v) || v === null || path === 'rarities' || path === 'fight.damageTypes') out.push(path);
   else if (typeof v === 'object') for (const [k, x] of Object.entries(v)) unreadable(x, path ? `${path}.${k}` : k, out);
   return out;
@@ -19,12 +19,6 @@ describe('every list rule has a reader', () => {
     const paths = unreadable(RULES, '', []);
     expect(paths.length, 'the walk finds the lists').toBeGreaterThan(20);
     expect(paths.filter(p => !readerOf(p))).toEqual([]);
-  });
-
-  test('items and conditions are refused in rule overrides because they live in the Workshop', () => {
-    const { overrides, refused } = parseOverrides({ items: { 'b:iron-dagger': { name: 'Hacked' } }, conditions: { burning: {} } });
-    expect(overrides).toEqual({});
-    expect(refused).toEqual([{ path: 'conditions', reason: 'statuses' }, { path: 'items', reason: 'items' }]);
   });
 });
 
@@ -132,6 +126,8 @@ describe('an override of a list rule', () => {
           boss: [2.5, 2.6, 2.7, 2.8, 3.0, 3.2, 3.4, 3.6, 4.0, 4.6],
           pack: [0.7, 0.8, 0.85, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.7],
           rankScale: { E: 1.05, S: 0.85 },
+          rankSpread: { E: 1, S: 0.4 },
+          archetypeScale: { brute: 1, skirmisher: 0.8, caster: 0.7 },
         },
       },
     });
@@ -141,6 +137,8 @@ describe('an override of a list rule', () => {
     expect(R.fight.difficulty.hpExponent).toBe(0.4);
     expect(R.fight.difficulty.targets[5]).toBe(60);
     expect(R.fight.difficulty.rankScale.E).toBe(1.05);
+    expect(R.fight.difficulty.rankSpread.S).toBe(0.4);
+    expect(R.fight.difficulty.archetypeScale.caster).toBe(0.7);
 
     const bad = parseOverrides({
       fight: {
@@ -151,6 +149,8 @@ describe('an override of a list rule', () => {
           boss: [0.05, 2, 2, 2, 2, 2, 2, 2, 2, 2],
           pack: [1, 1, 1, 1, 1, 1, 1, 1, 1, 25],
           rankScale: { C: 0 },
+          rankSpread: { E: 1.5 },
+          archetypeScale: { caster: 3 },
         },
       },
     });
@@ -161,6 +161,8 @@ describe('an override of a list rule', () => {
       ['fight.difficulty.boss.0', 'range'],
       ['fight.difficulty.pack.9', 'range'],
       ['fight.difficulty.rankScale.C', 'range'],
+      ['fight.difficulty.rankSpread.E', 'range'],
+      ['fight.difficulty.archetypeScale.caster', 'range'],
     ]);
   });
 

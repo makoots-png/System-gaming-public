@@ -42,15 +42,14 @@ import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
 import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
 import { isDamage, typed } from './damage-type.ts';
-import { liveAbility, liveStatusDef } from './live-status.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { mythicStart } from './mythic.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
 import type { NewRow } from './fight-types.ts';
 
-/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, rarities (for rank-capped consumables), and optional live conditions for `follow: true` ops. */
-export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities'> & { readonly conditions?: StatusDefs };
+/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, and rarities (for rank-capped consumables). */
+export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities'>;
 /** The statuses a monster may start with, by key: the built-ins with the GM's laid over them (`rulesOf`). */
 export type StatusDefs = Readonly<Partial<Record<string, StatusDef>>>;
 
@@ -115,15 +114,10 @@ const JOINS = tick(0);
 const starting = (key: string, def: StatusDef, source: Status['source'], rounds: number | null, now: Tick, R: RowRules, stacks = 1): Status => statusOn(def, {
   key: statusKey(key), source, until: rounds === null ? null : tick(now + Math.round(rounds * R.fight.round)), since: now, settledAt: now,
 }, stacks);
-/** The first ability of each id, at most `MAX_ABILITIES`, stamped with `typed(a, R)` and live `follow: true` status defs. */
+/** The first ability of each id, at most `MAX_ABILITIES`, stamped with `typed(a, R)` so learned by-value copies follow GM overrides. */
 function distinct(list: readonly Ability[], R: RowRules): Ability[] {
   const out: Ability[] = [];
-  for (const a of list) {
-    if (out.length < MAX_ABILITIES && !out.some(b => b.id === a.id)) {
-      const t = typed(a, R);
-      out.push(R.conditions ? liveAbility(t, R.conditions) : t);
-    }
-  }
+  for (const a of list) if (out.length < MAX_ABILITIES && !out.some(b => b.id === a.id)) out.push(typed(a, R));
   return out;
 }
 
@@ -224,9 +218,7 @@ function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
   const keys = new Set(taken), out: Status[] = [];
-  const put = (def: StatusDef, source: Status['source'], preferredKey?: Status['key']): void => {
-    out.push(wornOn(R.conditions ? liveStatusDef(def, R.conditions) : def, source, keys, now, preferredKey));
-  };
+  const put = (def: StatusDef, source: Status['source'], preferredKey?: Status['key']): void => { out.push(wornOn(def, source, keys, now, preferredKey)); };
   const tier = rankIdx(h.rank);
   for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier });
   for (const { powers, tier: heldTier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier: heldTier });

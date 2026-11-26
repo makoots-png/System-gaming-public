@@ -120,7 +120,7 @@ describe('the policy answers a mythic\'s omen (design B.4)', () => {
   });
 
   test('a mythic with an omen standing lands it', () => {
-    const f = omened(begun('X', mythic('the-fourth-rider', place(5, 5)), party('cannon', 'C', place(12, 5))), 'named', 'C');
+    const f = omened(begun('X', mythic('the-fourth-rider', place(5, 5)), party('tank', 'T', place(6, 5)), party('cannon', 'C', place(12, 5))), 'named', 'C');
     expect(runningState(f)).toEqual({ at: 'landing', id: X });
     const choice = sensible(f, body(f, 'X'), ON);
     expect(choice.type === 'act' && [choice.ability.id, choice.aim]).toEqual(['mythic-named', combatantId('C')]);

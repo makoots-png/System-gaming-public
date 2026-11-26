@@ -5,7 +5,7 @@
 // via `withDifficulty` (spawn and edit) or `gateDifficulty` (standalone save step). `gate.ts` only initializes
 // `DEFAULT_DIFFICULTY` in `newGate`, reads it with `parseGateDifficulty` in `parseGate`, and copies it in `fieldsOf`.
 import type { GateId } from '../ids.ts';
-import type { MonsterKind } from '../hunter/derive.ts';
+import type { Archetype, MonsterKind } from '../hunter/derive.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -164,12 +164,28 @@ export const targetWinPct = (level: DifficultyLevel, R: Pick<Rules, 'fight'>): n
   R.fight.difficulty.targets[level - 1] ?? R.fight.difficulty.targets[DIFFICULTY_DEFAULT - 1]!;
 
 /**
- * Multiplicative HP and outgoing-damage factors for a monster of `kind` and `rank` at `level`.
- * Bosses read `boss[level - 1] * rankScale[rank]`; normals, elites, and mythics read `pack[level - 1]`.
+ * Multiplicative HP and outgoing-damage factors for a monster of `kind`, `rank`, and `archetype` at `level`.
+ * Bosses read `boss[level - 1] * rankScale[rank] * archetypeScale[archetype]` for levels 1..5 and compress the upper
+ * ratio `(boss[level - 1] / boss[4])^rankSpread[rank]` above default level 5; normals, elites, and mythics read `pack[level - 1]`.
  */
-export function difficultyFactor(kind: MonsterKind, rank: Rank, level: DifficultyLevel, R: Pick<Rules, 'fight'>): DifficultyScale {
+export function difficultyFactor(
+  kind: MonsterKind,
+  rank: Rank,
+  level: DifficultyLevel,
+  R: Pick<Rules, 'fight'>,
+  archetype: Archetype = 'brute',
+): DifficultyScale {
   const cfg = R.fight.difficulty;
-  const k = kind === 'boss' ? cfg.boss[level - 1]! * cfg.rankScale[rank] : cfg.pack[level - 1]!;
+  let k: number;
+  if (kind === 'boss') {
+    const base = cfg.rankScale[rank] * cfg.archetypeScale[archetype];
+    const step = level <= DIFFICULTY_DEFAULT
+      ? cfg.boss[level - 1]!
+      : Math.pow(cfg.boss[DIFFICULTY_DEFAULT - 1]!, 1 - cfg.rankSpread[rank]) * Math.pow(cfg.boss[level - 1]!, cfg.rankSpread[rank]);
+    k = base * step;
+  } else {
+    k = cfg.pack[level - 1]!;
+  }
   if (k === 1) return { hp: 1, dealt: 1 };
   return { hp: Math.pow(k, cfg.hpExponent), dealt: Math.pow(k, 1 - cfg.hpExponent) };
 }
@@ -183,14 +199,14 @@ export function scaleRowMonster<M extends Pick<RowMonster, 'tweak'>>(m: M, scale
 }
 
 /** Scales monster `m` for `gate` according to its role (`pack` uses gate level, `boss` uses boss level). */
-export function scaleMonsterForGate<M extends Pick<RowMonster, 'kind' | 'rank' | 'tweak'>>(
+export function scaleMonsterForGate<M extends Pick<RowMonster, 'kind' | 'rank' | 'tweak'> & Partial<Pick<RowMonster, 'archetype'>>>(
   m: M,
   gate: { readonly difficulty: GateDifficulty },
   role: 'pack' | 'boss',
   R: Pick<Rules, 'fight'>,
 ): M & { readonly tweak: RowMonster['tweak'] } {
   const level = role === 'boss' ? effectiveBossLevel(gate.difficulty, R) : effectiveGateLevel(gate.difficulty, R);
-  return scaleRowMonster(m, difficultyFactor(m.kind, m.rank, level, R));
+  return scaleRowMonster(m, difficultyFactor(m.kind, m.rank, level, R, m.archetype ?? 'brute'));
 }
 
 // ── boundary parser ──

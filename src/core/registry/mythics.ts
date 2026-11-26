@@ -60,8 +60,13 @@ const EVEN_GUARD: MythicStatus = {
  * bar under the waves every other round and the Sea Rises never landed on them (row B4, sim-log.md "Mythic balance").
  */
 const UNDER_THE_WAVES: MythicStatus = { key: statusKey('mythic-under-the-waves'), def: { label: 'Under the Waves', desc: 'Hits do not fill its stagger bar.', ops: [{ op: 'staggerRate', pct: -100 }] } };
-/** Zaratan's shell, worn on the Shore and again once the Island Wakes. */
-const SHELL: MythicStatus = { key: statusKey('mythic-shell'), def: { label: 'Shell of a Thousand Years', desc: 'Adds 30 armor.', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 30 } }] } };
+/** Zaratan's shell, worn on the Shore and again once the Island Wakes. Split across armor and resist so physical and arcane parties face the same shell. */
+const SHELL: MythicStatus = {
+  key: statusKey('mythic-shell'), def: {
+    label: 'Shell of a Thousand Years', desc: 'Adds 15 armor and 15 resist.',
+    ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 15 } }, { op: 'sheet', key: 'resist', amount: { kind: 'number', value: 15 } }],
+  },
+};
 
 /** Every script, by its id. `plain` is the script of a mythic that names none. */
 export const MYTHICS = {
@@ -70,10 +75,10 @@ export const MYTHICS = {
   // any a GM makes, so it wears the even guard: on a brute's its `hp` fell from 1.03 to 0.98 to keep B1 (sim-log.md,
   // "Mythic balance").
   plain: mythicScript({
-    name: 'A Mythic', hp: 0.98,
+    name: 'A Mythic', hp: 0.96,
     shape: 'Fights normally on a timer. Once the timer runs out, it uses Overwhelm on the whole field every other turn, dealing more damage each time.',
     moves: {
-      overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.2, sure: true, applies: null, leaves: null, self: CRESCENDO },
+      overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.8, sure: true, applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
       overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
@@ -86,7 +91,7 @@ export const MYTHICS = {
 
   // "The fight should be a countdown to one note that ends it, with no way to survive the note."
   'angel-of-the-last-trumpet': mythicScript({
-    name: 'The Angel of the Last Trumpet', hp: 1,
+    name: 'The Angel of the Last Trumpet', hp: 1.21,
     shape: 'Every phase has a short timer. When a timer runs out, it uses The Final Note every other turn.',
     moves: {
       // 1.0 at the farthest and sure, not 0.55 at the crowd: the walk in stepped off the crowd's tile, at 0.55 a party
@@ -137,23 +142,22 @@ export const MYTHICS = {
 
   // "The hunters stand on it, so it should be able to end the fight by going under."
   'zaratan-the-island-that-wakes': mythicScript({
-    name: 'Zaratan, the Island That Wakes', hp: 0.92,
+    name: 'Zaratan, the Island That Wakes', hp: 0.75,
     shape: 'Each Sinking of the Shore floods tiles for the rest of the fight. During The Dive, you cannot hurt it and must survive until it surfaces.',
     moves: {
       // 1.0, not 0.5: leaving the tile it aims at cancels it (decision 43), so it is the cost of not answering, and at 0.5
       // the party that answered no omen won 0.027 of its fights against 0.070 (sim-log.md, MY5 fifth pass)
       'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 1, sure: false,
         applies: { status: 'prone', rounds: 1 }, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
-      // 0.8 at the weakest, not 0.4 at the crowd: every hunter stepped out of the crowd's tile, and the Dive held 0.007 of
-      // the first falls (row B7, sim-log.md MY5 second pass)
-      'rising': { name: 'The Sea Rises', kind: 'blast', type: 'physical', reach: 2, range: 16, hits: 0.8, sure: false,
+      // 1.65 at the weakest (raised from 0.8 for geared parties): keeps the Dive lethal enough that phase 3 stays under 60% of first falls (row B7) and three cannons stay under 15% (row B4)
+      'rising': { name: 'The Sea Rises', kind: 'blast', type: 'physical', reach: 2, range: 16, hits: 1.65, sure: false,
         applies: null, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
       // 1.2, not 0.75, for the same reason as the Sinking: a step off its tile weakens it, and a stun cancels it
       'trench': { name: 'Breath of the Deep Trench', kind: 'blast', type: 'arcane', reach: 2, range: 16, hits: 1.2, sure: false,
         applies: { status: 'stunned', rounds: 1 }, leaves: null, self: null },
-      'spray': { name: 'Spray of the Trench', kind: 'blast', type: 'arcane', reach: 2, range: 16, hits: 0.35, sure: false,
+      'spray': { name: 'Spray of the Trench', kind: 'blast', type: 'arcane', reach: 2, range: 16, hits: 0.5, sure: false,
         applies: null, leaves: null, self: null },
-      'go-under': { name: 'It Goes Under', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.4, sure: true,
+      'go-under': { name: 'It Goes Under', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 2.2, sure: true,
         applies: { status: 'prone', rounds: 1 }, leaves: null, self: CRESCENDO },
     },
     omens: {
@@ -177,7 +181,7 @@ export const MYTHICS = {
         ends: 'clock', clock: 4, worn: [EVEN_GUARD, UNDER_THE_WAVES], bar: 1,
         acts: [], rotation: [omen('rising')] },
       { name: 'The Island Wakes', line: 'It surfaces, awake. The shore is smaller now.',
-        from: 0.55, ends: 'gate', clock: 5, bar: 1, worn: [EVEN_GUARD, SHELL, fury(20, 'Waking')],
+        from: 0.55, ends: 'gate', clock: 4, bar: 1, worn: [EVEN_GUARD, SHELL, fury(20, 'Waking')],
         acts: ['Jaws Like a Harbor', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
     ],
     enraged: [omen('under')],
@@ -185,16 +189,16 @@ export const MYTHICS = {
 
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
-    name: 'The Fourth Rider', hp: 0.78,
+    name: 'The Fourth Rider', hp: 0.72,
     shape: 'He marks one hunter at a time to die. The party must stop him or shield the target to save them.',
     moves: {
-      'named': { name: 'Named in the Book', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 1.1, sure: true,
+      'named': { name: 'Named in the Book', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 1.45, sure: true,
         applies: null, leaves: null, self: null },
       'struck': { name: 'Struck from the Book', kind: 'curse', type: 'arcane', reach: 0, range: 24, hits: 0.45, sure: true,
         applies: { status: 'frightened', rounds: 2 }, leaves: null, self: null },
-      'pale-wake': { name: 'Pale Wake', kind: 'blast', type: 'arcane', reach: 2, range: 12, hits: 0.3, sure: false,
+      'pale-wake': { name: 'Pale Wake', kind: 'blast', type: 'arcane', reach: 2, range: 12, hits: 1.15, sure: true,
         applies: { status: 'plague', rounds: 3 }, leaves: { name: 'Pale wake', rounds: 3, status: 'plague' }, self: null },
-      'all-end': { name: 'All Things End', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 0.55, sure: true,
+      'all-end': { name: 'All Things End', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 1.25, sure: true,
         applies: { status: 'frightened', rounds: 2 }, leaves: null, self: null },
       'not-all': { name: 'Not Yet, Not All', kind: 'blast', type: 'arcane', reach: 'field', range: 0, hits: 0.25, sure: true,
         applies: null, leaves: null, self: null },
@@ -206,7 +210,7 @@ export const MYTHICS = {
       named: { name: 'Named in the Book', full: 'named', weak: 'struck', aim: 'weakest',
         interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'none', burst: 'none', shield: 'cancel', step: 'none' },
       wake: { name: 'Pale Wake', full: 'pale-wake', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'cancel', step: 'none' },
       allEnd: { name: 'All Things End', full: 'all-end', weak: 'not-all', aim: 'all',
         interrupt: { by: ['hold'], outcome: 'cancel' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
       reaping: { name: 'The Reaping', full: 'reaping', weak: null, aim: 'all',
@@ -217,10 +221,10 @@ export const MYTHICS = {
         from: 1, ends: 'gate', clock: 5, worn: [], bar: 1,
         acts: ['Reaping Stroke', 'Not Yet'], rotation: [act, omen('named'), act] },
       { name: 'The Book Opens', line: 'He is never late, and he is faster now.',
-        from: 0.55, ends: 'gate', clock: 3, worn: [drawn(15, 'Never Late')], bar: 1,
-        acts: ['Reaping Stroke', 'Not Yet'], rotation: [omen('named'), act, omen('wake')] },
+        from: 0.55, ends: 'gate', clock: 4, worn: [drawn(15, 'Never Late')], bar: 1,
+        acts: ['Reaping Stroke', 'Not Yet'], rotation: [omen('wake'), act, omen('named')] },
       { name: 'All Things End', line: 'The last page. Every name is in it.',
-        from: 0.35, ends: 'gate', clock: 3, worn: [drawn(15, 'Never Late'), fury(20, 'The Last Page')], bar: 0.75,
+        from: 0.35, ends: 'gate', clock: 4, worn: [drawn(15, 'Never Late'), fury(10, 'The Last Page')], bar: 0.75,
         acts: ['Reaping Stroke'], rotation: [omen('named'), omen('allEnd')] },
     ],
     enraged: [omen('reaping')],

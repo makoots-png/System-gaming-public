@@ -138,18 +138,66 @@ describe('effective levels and scaling math', () => {
     }
   });
 
-  test('boss scaling is strictly monotonic across 1..10 for every rank E..S', () => {
+  test('boss scaling is strictly monotonic across 1..10 for every rank E..S and archetype', () => {
     for (const rank of RANKS) {
-      let prevHp = 0;
-      let prevDealt = 0;
-      for (const level of DIFFICULTY_LEVELS) {
-        const s = difficultyFactor('boss', rank, level, RULES);
-        expect(s.hp).toBeGreaterThan(prevHp);
-        expect(s.dealt).toBeGreaterThan(prevDealt);
-        prevHp = s.hp;
-        prevDealt = s.dealt;
+      for (const arch of ['brute', 'skirmisher', 'caster'] as const) {
+        let prevHp = 0;
+        let prevDealt = 0;
+        for (const level of DIFFICULTY_LEVELS) {
+          const s = difficultyFactor('boss', rank, level, RULES, arch);
+          expect(s.hp).toBeGreaterThan(prevHp);
+          expect(s.dealt).toBeGreaterThan(prevDealt);
+          prevHp = s.hp;
+          prevDealt = s.dealt;
+        }
       }
     }
+  });
+
+  test('rankSpread <= 1 never inverts boss[4] edits and keeps extreme valid overrides within the 100 wire cap', () => {
+    const raised = rulesOf({ fight: { difficulty: { boss: [3.3, 3.52, 3.74, 3.92, 4.35, 4.55, 5.12, 5.72, 6.28, 7.14] } } });
+    for (const rank of RANKS) {
+      for (const level of [5, 6, 7, 8, 9, 10] as const) {
+        const before = difficultyFactor('boss', rank, level, RULES);
+        const after = difficultyFactor('boss', rank, level, raised);
+        expect(after.hp * after.dealt, `${rank} d${level}`).toBeGreaterThanOrEqual(before.hp * before.dealt - 1e-9);
+      }
+    }
+    const maxOv = rulesOf({
+      fight: {
+        difficulty: {
+          boss: [0.1, 0.1, 0.1, 0.1, 0.1, 20, 20, 20, 20, 20],
+          rankScale: { E: 20 },
+          rankSpread: { E: 1 },
+          archetypeScale: { brute: 2 },
+        },
+      },
+    });
+    const hi = difficultyFactor('boss', 'E', 10, maxOv, 'brute');
+    expect(hi.hp).toBeLessThanOrEqual(100);
+    expect(hi.dealt).toBeLessThanOrEqual(100);
+    const minOv = rulesOf({
+      fight: {
+        difficulty: {
+          boss: [0.1, 0.1, 0.1, 0.1, 20, 0.1, 0.1, 0.1, 0.1, 0.1],
+          rankScale: { E: 0.1 },
+          rankSpread: { E: 1 },
+          archetypeScale: { brute: 0.1 },
+        },
+      },
+    });
+    const lo = difficultyFactor('boss', 'E', 10, minOv, 'brute');
+    expect(Math.round(lo.hp * 1000) / 1000).toBeGreaterThan(0);
+    expect(Math.round(lo.dealt * 1000) / 1000).toBeGreaterThan(0);
+  });
+
+  test('archetypeScale scales non-brute bosses down relative to brutes and flows through scaleMonsterForGate', () => {
+    const gate = { difficulty: DEFAULT_DIFFICULTY };
+    const brute = scaleMonsterForGate({ kind: 'boss' as const, rank: 'C' as const, archetype: 'brute' as const, tweak: {} }, gate, 'boss', RULES);
+    const skirm = scaleMonsterForGate({ kind: 'boss' as const, rank: 'C' as const, archetype: 'skirmisher' as const, tweak: {} }, gate, 'boss', RULES);
+    const caster = scaleMonsterForGate({ kind: 'boss' as const, rank: 'C' as const, archetype: 'caster' as const, tweak: {} }, gate, 'boss', RULES);
+    expect(skirm.tweak.hp!).toBeLessThan(brute.tweak.hp!);
+    expect(caster.tweak.hp!).toBeLessThan(skirm.tweak.hp!);
   });
 
   test('scales multiplicatively on top of GM Bestiary edits without losing stats or traits', () => {
