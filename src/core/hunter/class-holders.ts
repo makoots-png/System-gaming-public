@@ -248,8 +248,9 @@ export function reassignUniqueClass(
   if (!isUniqueClass(cls)) return refuse('not-unique');
   const old = save.classHolders.held[cls];
   if (!old) return refuse('not-held');
+  if (isTargetHeld(old, ctx)) return refuse('held');
   if (sameHolder(old, nextTarget)) return refuse('same-holder');
-  if (isTargetHeld(old, ctx) || isTargetHeld(nextTarget, ctx)) return refuse('held');
+  if (isTargetHeld(nextTarget, ctx)) return refuse('held');
 
   const nextSeq = save.seq + 1;
   const grantId = makeGrantId(nextSeq, ctx.at);

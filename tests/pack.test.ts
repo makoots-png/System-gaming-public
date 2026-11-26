@@ -139,9 +139,9 @@ describe('a pack made and read back', () => {
 });
 
 describe('a pack from outside data', () => {
-  test('anything but an object of kind library is not a pack, and newer, older, or malformed schemas are refused', () => {
-    for (const v of [null, 'HS1.x', 42, [], {}, { kind: 'hunter', hunters: [] }, { schema: 3, library: {} }]) expect(parsePack(v)).toEqual({ ok: false, why: 'not-a-pack' });
-    for (const schema of [0, -1, 4.5, Number.NaN, Number.POSITIVE_INFINITY, '4', null]) {
+  test('anything but an object of kind library is not a pack, and missing, newer, older, or malformed schemas are refused', () => {
+    for (const v of [null, 'HS1.x', 42, [], {}, { kind: 'hunter', hunters: [] }, { schema: 3, library: {} }, { kind: 'library', library: {} }]) expect(parsePack(v)).toEqual({ ok: false, why: 'not-a-pack' });
+    for (const schema of [undefined, 0, -1, 4.5, Number.NaN, Number.POSITIVE_INFINITY, '4', null]) {
       expect(parsePack({ schema, kind: 'library', library: {} })).toEqual({ ok: false, why: 'not-a-pack' });
     }
     expect(parsePack({ schema: SCHEMA + 1, kind: 'library', library: {} })).toEqual({ ok: false, why: 'newer' });
@@ -149,12 +149,13 @@ describe('a pack from outside data', () => {
   });
 
   test('parts of the wrong type hold nothing', () => {
-    const r = read({ kind: 'library', library: { statuses: [], items: 'x', skills: {}, rewards: 5 }, monsters: { a: 1 } });
+    const r = read({ schema: SCHEMA, kind: 'library', library: { statuses: [], items: 'x', skills: {}, rewards: 5 }, monsters: { a: 1 } });
     expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, maps: 0, feats: 0, stories: 0 });
   });
 
   test('entries the parsers refuse are counted unreadable, and a wrong field takes its default', () => {
     const r = read({
+      schema: SCHEMA,
       kind: 'library',
       library: {
         statuses: {
@@ -185,13 +186,13 @@ describe('a pack from outside data', () => {
   });
 
   test('500 items keep the first 200 and count 300 over', () => {
-    const r = read({ kind: 'library', library: { items: items(500) } });
+    const r = read({ schema: SCHEMA, kind: 'library', library: { items: items(500) } });
     expect(r.counts.items).toEqual({ kept: PACK_CAP.items, unreadable: 0, over: 500 - PACK_CAP.items });
     expect(r.pack.items.at(-1)!.name).toBe('Junk 200');
   });
 
   test('an entry keeps no key its parser does not know, nor an id', () => {
-    const r = read({ kind: 'library', library: { items: [{ name: 'Gem', id: 'i1', hunters: [{ name: 'x' }], gmKey: 'k' }] } });
+    const r = read({ schema: SCHEMA, kind: 'library', library: { items: [{ name: 'Gem', id: 'i1', hunters: [{ name: 'x' }], gmKey: 'k' }] } });
     expect(r.pack.items[0]).not.toHaveProperty('gmKey');
     expect(r.pack.items[0]).not.toHaveProperty('id');
   });
@@ -225,7 +226,7 @@ describe('merging a pack', () => {
   });
 
   test('Add renames a status whose label a built-in has, and one whose key is a built-in\'s', () => {
-    const pack: Pack = { ...read({ kind: 'library' }).pack, statuses: { 'my-poison': { label: 'Poisoned', desc: 'Mine.', ops: [] }, hasted: { label: 'Quick', desc: '', ops: [] } } };
+    const pack: Pack = { ...read({ schema: SCHEMA, kind: 'library' }).pack, statuses: { 'my-poison': { label: 'Poisoned', desc: 'Mine.', ops: [] }, hasted: { label: 'Quick', desc: '', ops: [] } } };
     const { save } = mergePack(target(newSave(dev('d'))), pack, 'add');
     expect(save.library.statuses).toEqual({ 'poisoned-2': { label: 'Poisoned 2', desc: 'Mine.', ops: [] }, 'quick-2': { label: 'Quick 2', desc: '', ops: [] } });
   });
@@ -292,7 +293,7 @@ describe('merging a pack', () => {
   test('a merge never grows a list past its cap, and counts what did not fit', () => {
     const s = newSave(dev('d'));
     s.library.items = items(PACK_CAP.items - 1).map((it, i) => ({ ...parseItem(it)!, id: iid(`i${i + 1}`) }));
-    const pack = read({ kind: 'library', library: { items: [{ name: 'Junk 1' }, { name: 'New A' }, { name: 'New B' }] } }).pack;
+    const pack = read({ schema: SCHEMA, kind: 'library', library: { items: [{ name: 'Junk 1' }, { name: 'New A' }, { name: 'New B' }] } }).pack;
     const add = mergePack(target(s), pack, 'add');
     expect(add.save.library.items.length).toBe(PACK_CAP.items);
     expect(add.report.items).toEqual({ added: 1, renamed: 1, replaced: 0, full: 2 });
@@ -304,7 +305,7 @@ describe('merging a pack', () => {
   test('a full status library takes no new status, and Replace still overwrites one it holds', () => {
     const s = newSave(dev('d'));
     for (let i = 0; i < PACK_CAP.statuses; i++) s.library.statuses[`s-${i}`] = { label: `S ${i}`, desc: '', ops: [] };
-    const pack = read({ kind: 'library', library: { statuses: { 's-0': { label: 'S 0', desc: 'new', ops: [] }, fresh: { label: 'Fresh', desc: '', ops: [] } } } }).pack;
+    const pack = read({ schema: SCHEMA, kind: 'library', library: { statuses: { 's-0': { label: 'S 0', desc: 'new', ops: [] }, fresh: { label: 'Fresh', desc: '', ops: [] } } } }).pack;
     const r = mergePack(target(s), pack, 'replace');
     expect(Object.keys(r.save.library.statuses).length).toBe(PACK_CAP.statuses);
     expect(r.save.library.statuses['s-0']!.desc).toBe('new');
@@ -320,7 +321,7 @@ describe('merging a pack', () => {
   test('when the pack does not hold the status, the item\'s op is kept as it was, its own def included', () => {
     const def = { label: 'Numb', desc: 'Cannot feel.', ops: [] };
     const numb = { op: 'applyStatus' as const, key: statusKey('numb'), def, duration: tick(2000) };
-    const pack = read({ kind: 'library', library: { items: [{ name: 'Numbing Dart', effects: [numb] }] } }).pack;
+    const pack = read({ schema: SCHEMA, kind: 'library', library: { items: [{ name: 'Numbing Dart', effects: [numb] }] } }).pack;
     const { save } = mergePack(target(newSave(dev('d'))), pack, 'add');
     expect(save.library.statuses).toEqual({});
     expect(save.library.items[0]!.effects).toEqual([numb]);
@@ -502,7 +503,7 @@ describe('stories in a pack', () => {
   });
 
   test(`a pack holds at most ${PACK_CAP.stories} stories, and a full library takes no more`, () => {
-    const r = read({ kind: 'library', library: { stories: Array.from({ length: 40 }, (_, i) => ({ name: `S${i}`, chapters: [{ words: { title: 'T' } }] })) } });
+    const r = read({ schema: SCHEMA, kind: 'library', library: { stories: Array.from({ length: 40 }, (_, i) => ({ name: `S${i}`, chapters: [{ words: { title: 'T' } }] })) } });
     expect(r.counts.stories).toEqual({ kept: PACK_CAP.stories, unreadable: 0, over: 40 - PACK_CAP.stories });
     const full = newSave(dev('d'));
     full.library.stories = r.pack.stories.map((x, i) => ({ ...x, name: `Mine ${i}`, id: `st${i + 1}` as StoryId }));

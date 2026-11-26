@@ -80,11 +80,16 @@ export const CLASS_UI_WORDS = {
   syncedBadge: 'Sent to room',
   syncingBadge: 'Sending',
   noKitBadge: 'No kit yet',
-  noKitNote: 'This class has no combat powers yet.',
+  noKitNote: 'This class has no fight powers yet.',
   removedSuffix: ' (removed)',
   lockerHeading: 'Class locker',
   lockerEmpty: 'No earned classes yet. Complete a Job Change or receive a unique class from the GM.',
-  starterFoldLabel: 'Set starter or custom job',
+  statPairPrefix: 'Stat pair: ',
+  recRankPrefix: 'Recommended rank: ',
+  inFightSuffix: ' (in fight)',
+  nodesProgress: (bought: number, cap: number | null): string => (cap ? `${bought}/${cap} nodes` : nodeWord(bought)),
+  depthHeading: (depth: number, capstone: boolean): string =>
+    `Depth ${depth}${depth === 1 ? ' (Root)' : capstone ? ' (Capstone)' : ''}`,
   starterFieldLabel: 'Starter or custom job',
   starterApply: 'Set job',
   starterClear: 'Clear job',
@@ -115,7 +120,7 @@ export const CLASS_UI_WORDS = {
   nodeWarnBody: (nodeName: string, className: string, cost: number, gold: number): string =>
     `Buy ${nodeName} on ${className} for ${gp(cost)}? You have ${gp(gold)}. Node purchases are permanent.`,
   flipWarnTag: 'Fork flip',
-  flipWarnTitle: (fromName: string, toName: string): string => `Flip fork to ${toName}?`,
+  flipWarnTitle: (toName: string): string => `Flip fork to ${toName}?`,
   flipWarnBody: (fromName: string, toName: string, plan: ClassCostPlan, gold: number): string => {
     const pricePart = plan.cost > 0
       ? `Flipping from ${fromName} to ${toName} costs ${gp(plan.cost)}. You have ${gp(gold)}.`
@@ -141,9 +146,11 @@ export const CLASS_UI_WORDS = {
   },
   jobSetToast: (job: string | null): string => (job ? `Job set to ${job}.` : 'Job cleared.'),
   // GM Unique-Class Registry
-  gmSectionTitle: 'Unique classes',
   gmSummary: (held: number, total: number): string => `${held} of ${total} held`,
-  gmHint: 'Only one hunter or NPC can hold each Epic or Mythic class in a campaign. Death or leaving does not free a class. Release or Reassign frees it outside combat.',
+  gmHint: 'Only one hunter or NPC can hold each Epic or Mythic class in a campaign. Death or leaving does not free a class. Release or Reassign frees it outside a fight.',
+  gmFilterAria: 'Filter unique classes',
+  gmSearchLabel: 'Search classes',
+  gmListAria: 'Unique classes',
   gmFilterAll: 'All',
   gmFilterMythic: 'Mythic',
   gmFilterEpic: 'Epic',
@@ -153,6 +160,7 @@ export const CLASS_UI_WORDS = {
   gmReleaseAction: 'Release',
   gmReassignAction: 'Reassign',
   gmUnclaimed: 'Open',
+  gmHeldBy: (name: string, kindLabel: string): string => `Held by ${name} (${kindLabel})`,
   gmGrantTitle: (cls: string): string => `Grant ${cls}`,
   gmGrantConfirm: 'Grant class',
   gmReassignTitle: (cls: string): string => `Reassign ${cls}`,
@@ -170,13 +178,13 @@ export const CLASS_UI_WORDS = {
   gmNpcNameLabel: 'NPC name',
   gmNpcMonsterLabel: 'Bestiary entry (optional)',
   gmNpcMonsterNone: 'None (named NPC only)',
-  gmNoHunters: 'No local or remote hunters available.',
+  gmNoHunters: 'No hunters available.',
   gmHeldWarning: 'This hunter is in a fight. Finish the fight before changing their unique class.',
   gmClaimedToast: (cls: string, name: string): string => `Granted ${cls} to ${name}.`,
   gmReleasedToast: (cls: string, name: string): string => `Released ${cls} from ${name}.`,
   gmReassignedToast: (cls: string, fromName: string, toName: string): string =>
     `Reassigned ${cls} from ${fromName} to ${toName}.`,
-  gmLocalKind: 'Local',
+  gmLocalKind: 'This phone',
   gmRemoteKind: 'Player phone',
   gmNpcKind: 'NPC',
 } as const;
@@ -198,7 +206,6 @@ export function swapCostLine(plan: ClassCostPlan, gold: number): string {
   if (plan.freeWhy === 'gm') return 'Class swaps are free in GM mode.';
   if (plan.freeWhy === 'before-first-fight') return 'Class swaps are free before your first fight.';
   if (plan.freeWhy === 'rules') return 'Class swaps are free under current rules.';
-  if (gold < plan.cost) return `Swapping classes costs ${gp(plan.cost)}. You have ${num(gold)}.`;
   return `Swapping classes costs ${gp(plan.cost)}. You have ${num(gold)}.`;
 }
 
@@ -274,10 +281,8 @@ export type LockerEntryView = {
   readonly unique: boolean;
   readonly active: boolean;
   readonly parked: boolean;
-  readonly backedByRoom: boolean;
   readonly pairLabel: string | null;
   readonly recRank: string | null;
-  readonly pairChanges: boolean;
   readonly nodesBought: number;
   readonly nodesCap: number | null;
 };
@@ -293,7 +298,6 @@ export type TreeNodeView = {
   readonly gifts: readonly string[];
   readonly status: TreeNodeStatus;
   readonly costPlan: ClassCostPlan | null;
-  readonly affordable: boolean;
   readonly forkGroup: string | null;
   readonly flipFromId: ClassNodeId | null;
   readonly flipCostPlan: ClassCostPlan | null;
@@ -328,7 +332,6 @@ export type LockerViewModel = {
   } | null;
   readonly treeMissing: boolean;
   readonly held: boolean;
-  readonly dead: boolean;
 };
 
 /** Builds the pure view-model for a hunter's class locker and active class skill tree. */
@@ -339,8 +342,6 @@ export function lockerView(
     readonly held: boolean;
     readonly R: Rules;
     readonly activeRegistryId: string | null;
-    readonly mySheetKey: SheetKey | null;
-    readonly holdersDoc: HoldersDoc | null;
     readonly trees?: ClassTreeMap;
   },
 ): LockerViewModel {
@@ -355,11 +356,8 @@ export function lockerView(
     const unique = isUniqueClass(name);
     const isAct = active.kind === 'earned' && active.name === name;
     const parked = unique && !!opts.activeRegistryId && !!entry.registryId && entry.registryId !== opts.activeRegistryId;
-    const docEntry = unique && opts.holdersDoc ? opts.holdersDoc.held[name] : undefined;
-    const backedByRoom = !!docEntry && !!opts.mySheetKey && docEntry.who === opts.mySheetKey;
     const tree = classTreeOf(name, trees);
     const nodesCap = tree ? TREE_SHAPE[tree.rarity].buyable : (def ? TREE_SHAPE[def.rarity].buyable : null);
-    const pairChanges = !isAct && !!def && !!activeDef && def.pair !== activeDef.pair;
     return {
       name,
       rarity: def?.rarity ?? null,
@@ -367,10 +365,8 @@ export function lockerView(
       unique,
       active: isAct,
       parked,
-      backedByRoom,
       pairLabel: def ? pairShortLabel(def.pair) : null,
       recRank: def?.recRank ?? null,
-      pairChanges,
       nodesBought: entry.nodes.length,
       nodesCap,
     };
@@ -426,7 +422,6 @@ export function lockerView(
           gifts: nodeGiftLines(n.gifts),
           status,
           costPlan,
-          affordable: costPlan ? h.gold >= costPlan.cost : true,
           forkGroup: n.forkGroup ?? null,
           flipFromId,
           flipCostPlan: flipFromId ? flipPlan : null,
@@ -465,7 +460,6 @@ export function lockerView(
     tree: treeView,
     treeMissing,
     held: opts.held,
-    dead: h.life.at === 'dead',
   };
 }
 

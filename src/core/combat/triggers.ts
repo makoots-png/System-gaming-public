@@ -15,7 +15,7 @@ import { counting, harmful } from './standing.ts';
 import { isDamage } from './damage-type.ts';
 import type { Ability, CombatantId, Outcome, Tag } from './ability-types.ts';
 import { tagsOf } from '../registry/ability-kinds.ts';
-import { alive, landOps, landThreshold, reached } from './land.ts';
+import { alive, landedWords, landOps, landThreshold, reached } from './land.ts';
 import type { Gained } from './land.ts';
 import { refunded, tick } from './timeline.ts';
 import { tallied } from './row-tally.ts';
@@ -257,8 +257,9 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           const g = gainedOf(e), to = targetsOf(rows, bearer, t.to, e);
           const r = landOps(rows, t.ops, bearer, to, s.source, now, R, { cross: true, event: e.key ?? s.key, ...(g ? { gained: g } : {}) });
           for (const f of r.fired) landThreshold(rows, f, now, R);
-          about.push(bearer.id, ...r.landed.filter(l => l.dealt).map(l => l.target));
-          said.push(`${bearer.name}'s ${s.def.label}${r.landed.some(l => l.dealt) ? ` (${r.landed.filter(l => l.dealt).map(l => `${rows.get(l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`);
+          const parts = landedWords(r.landed, id => rows.get(id)?.name ?? id);
+          about.push(bearer.id, ...r.landed.filter(l => l.dealt || l.healed).map(l => l.target));
+          said.push(`${bearer.name}'s ${s.def.label}${parts.length ? ` (${parts.join(', ')})` : ''}`);
           for (const l of r.landed) {
             if (l.down) withKill(rows, bearer.id, l.target);
             if (depth >= K.depth) continue;

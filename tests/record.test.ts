@@ -32,8 +32,8 @@ describe('name, job and rank', () => {
   test('round trip: a job set and set back is what it was; no job is null, from a blank or the old word "None"', () => {
     const h = hunter();
     expect(h.job, 'a new hunter has none').toBeNull();
-    expect(ok(setJob(ok(setJob(h, 'Tanker')), h.job))).toEqual(h);
-    expect(ok(setJob(ok(setJob(h, 'Tanker')), ' ')).job).toBeNull();
+    expect(ok(setJob(ok(setJob(h, 'Tanker', { held: false, dead: false })), h.job, { held: false, dead: false }))).toEqual(h);
+    expect(ok(setJob(ok(setJob(h, 'Tanker', { held: false, dead: false })), ' ', { held: false, dead: false })).job).toBeNull();
     expect([jobOf('None'), jobOf('  Shadow  Monarch '), jobOf(7)]).toEqual([null, 'Shadow Monarch', null]);
   });
 

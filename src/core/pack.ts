@@ -150,19 +150,18 @@ function readList<T>(v: unknown, cap: number, read: (x: unknown) => T | null, co
 }
 
 /**
- * A pack read from outside data. Not a pack: anything but an object whose `kind` is 'library'. Newer: its schema is
- * above this app's. Each entry is read by its kind's parser (`parseStatusDef` with the shipped rules' dice limits, under
- * a key `STATUS_KEY_RE` accepts that is not a hunter's state chip, `parseItem`, `parseSkill`, `parseBundle`,
- * `parseMonster`, `parseBattleMap`, `parseFeat`, `parseStory`); one it refuses is counted
- * unreadable, and entries past `PACK_CAP` are counted over. A missing or wrongly typed part holds nothing.
+ * A pack read from outside data. Not a pack: anything but an object whose `kind` is 'library' and whose `schema` is a
+ * positive integer. Newer: its schema is above this app's. Older: its schema is below this app's. Each entry is read by
+ * its kind's parser (`parseStatusDef` with the shipped rules' dice limits, under a key `STATUS_KEY_RE` accepts that is
+ * not a hunter's state chip, `parseItem`, `parseSkill`, `parseBundle`, `parseMonster`, `parseBattleMap`, `parseFeat`,
+ * `parseStory`); one it refuses is counted unreadable, and entries past `PACK_CAP` are counted over. A missing or
+ * wrongly typed part holds nothing.
  */
 export function parsePack(v: unknown): PackRead {
   if (!isObj(v) || v.kind !== 'library') return { ok: false, why: 'not-a-pack' };
-  if (v.schema !== undefined) {
-    if (typeof v.schema !== 'number' || !Number.isInteger(v.schema) || v.schema < 1) return { ok: false, why: 'not-a-pack' };
-    if (v.schema > SCHEMA) return { ok: false, why: 'newer' };
-    if (v.schema < SCHEMA) return { ok: false, why: 'older' };
-  }
+  if (typeof v.schema !== 'number' || !Number.isInteger(v.schema) || v.schema < 1) return { ok: false, why: 'not-a-pack' };
+  if (v.schema > SCHEMA) return { ok: false, why: 'newer' };
+  if (v.schema < SCHEMA) return { ok: false, why: 'older' };
   const lib = isObj(v.library) ? v.library : {};
   const counts = each((): KindCount => ({ kept: 0, unreadable: 0, over: 0 }));
   const pack = newPack();

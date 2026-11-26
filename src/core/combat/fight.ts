@@ -18,7 +18,7 @@ import { applyStatus, modified, removeStatus, statusOn, statusShield, withMoved,
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
-import { alive, drainWords, putBy, stealthAfter } from './land.ts';
+import { alive, drainWords, landedWords, putBy, stealthAfter } from './land.ts';
 import type { DodgeAsked, DodgePick, Resolved } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { hides, hideStarts, holds } from './standing.ts';
@@ -272,7 +272,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
     ...reacted.said, ...reacted.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? AVOID_WORDS.out : `${AVOID_WORDS[o.avoid]}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
     ...(drank ? [`${u.name} ${drank}`] : []),
-    ...r.bursts.map(b => `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${b.landed.some(l => l.dealt) ? ` (${b.landed.map(l => `${rowOf(f, l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`),
+    ...r.bursts.map(b => { const p = landedWords(b.landed, id => rowOf(f, id)?.name ?? id); return `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${p.length ? ` (${p.join(', ')})` : ''}`; }),
   ];
   // the zones its price ends land their ends when old enough (table 2.6), then its own zone goes down (rule 18b, the cap per owner)
   const rest = f.zones.filter(z => !taken.includes(z));

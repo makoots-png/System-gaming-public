@@ -144,7 +144,7 @@ describe('variable Grievous Wounds helpers, bounds, and number-free prose', () =
       expect(grievousCutOf(parsedSave.save.library.statuses.blight)).toBe(95);
     }
 
-    const pack = parsePack({ kind: 'library', library: { statuses: { grievous: renamed95 } } });
+    const pack = parsePack({ schema: SCHEMA, kind: 'library', library: { statuses: { grievous: renamed95 } } });
     expect(pack.ok ? grievousCutOf(pack.pack.statuses.grievous) : null).toBe(90);
   });
 

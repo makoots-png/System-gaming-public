@@ -15,7 +15,7 @@ import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
-import { alive, drained, drainWords, held, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
+import { alive, drained, drainWords, held, landedWords, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
 import type { Burst } from './land.ts';
 import { charged, cooled } from './charge.ts';
 import type { Answers, ResolveRules } from './resolve.ts';
@@ -160,12 +160,12 @@ export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: C
   if (out.landed.some(l => l.dealt > 0 && rows.get(l.target)?.side !== b.side)) rows.set(b.id, stealthAfter(rows.get(b.id)!, { type: 'dealt' }, now, R, putBy(a.ops)));
   const guard = a.ops.reduce((n, o) => (o.op === 'guard' ? Math.max(n, o.share) : n), 0), negate = a.ops.some(o => o.op === 'negate');
   const name = (id: CombatantId): string => rows.get(id)?.name ?? id;
-  const dealt = out.landed.filter(l => l.dealt).map(l => `${name(l.target)} ${l.dealt}`);
-  const went = bursts.map(x => `${name(x.bearer)}'s ${x.label} goes off${x.landed.some(l => l.dealt) ? ` (${x.landed.map(l => `${name(l.target)} ${l.dealt}`).join(', ')})` : ''}`);
+  const dealt = landedWords(out.landed, name);
+  const went = bursts.map(x => { const p = landedWords(x.landed, name); return `${name(x.bearer)}'s ${x.label} goes off${p.length ? ` (${p.join(', ')})` : ''}`; });
   return {
     guard, negate, bursts,
     said: `${b.name} reacts with ${a.name}${dealt.length ? ` (${dealt.join(', ')})` : ''}${drank ? `; ${b.name} ${drank}` : ''}${went.length ? `; ${went.join('; ')}` : ''}`,
-    about: [b.id, ...out.landed.filter(l => l.dealt).map(l => l.target), ...bursts.flatMap(x => [x.bearer, ...x.landed.map(l => l.target)])],
+    about: [b.id, ...out.landed.filter(l => l.dealt || l.healed).map(l => l.target), ...bursts.flatMap(x => [x.bearer, ...x.landed.map(l => l.target)])],
   };
 }
 

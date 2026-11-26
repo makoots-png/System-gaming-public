@@ -678,7 +678,16 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     });
     for (const f of landed.fired) bursts.push(landThreshold(rows, f, now, R));
     // a cure that sets a delayed effect off lands its end at once (kits table 2.2)
-    for (const d of landed.detonated) { const e = landEnd(rows, t.id, d, now, R); bursts.push({ bearer: t.id, key: d.key, label: d.def.label, landed: [{ target: t.id, dealt: e.dealt }] }); }
+    for (const d of landed.detonated) {
+      const e = landEnd(rows, t.id, d, now, R);
+      bursts.push({
+        bearer: t.id, key: d.key, label: d.def.label,
+        landed: [
+          { target: t.id, dealt: e.dealt },
+          ...(e.sourceHealed && d.source.id !== null ? [{ target: d.source.id, dealt: 0, healed: e.sourceHealed }] : []),
+        ],
+      });
+    }
   }
   if (rollsReaction(a)) spendEdges(a, rows.get(user.id)!, [...hit, ...ring].map(b => rows.get(b.id)!), rows, now, R);
   const shoved = [...swapped(a, user.id, outcomes, rows, grid, R), ...pushed(a, user.id, at, outcomes, rows, grid, R)];

@@ -36,7 +36,7 @@ import { channelStep } from './fight-channel.ts';
 import { anchorOf, oldEnough, payUpkeep, zoneStep, zoneSync } from './zones.ts';
 import type { Zone } from './zones.ts';
 import { fire, raised } from './triggers.ts';
-import { NO_PEN, afterDefence, alive, held, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
+import { NO_PEN, afterDefence, alive, held, landedWords, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
 export { held };
 import { dismissed, isSummon, timeUp } from './summons.ts';
 import { damageShare, given, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
@@ -578,7 +578,8 @@ export function zoneEnds(f: Running, ending: readonly Zone[], stood: readonly Bo
     const inside = stood.filter(b => b.statuses.some(s => s.zone === z.id && s.until === null)).map(b => b.id);
     const rows = new Map(g.rows.map(b => [b.id, b] as const)), owner = z.owner === null ? null : rows.get(z.owner) ?? null;
     const r = landOps(rows, (z.end ?? []).filter(o => o.op !== 'refund'), owner, inside, { id: z.owner, tier: z.tier }, g.now, ctx.rules);
-    g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${z.name} ends${r.landed.some(l => l.dealt) ? ` (${r.landed.filter(l => l.dealt).map(l => `${rows.get(l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}.`, [...r.landed.filter(l => l.dealt).map(l => l.target)], [z.id]), ctx.rules);
+    const parts = landedWords(r.landed, id => rows.get(id)?.name ?? id);
+    g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${z.name} ends${parts.length ? ` (${parts.join(', ')})` : ''}.`, [...r.landed.filter(l => l.dealt || l.healed).map(l => l.target)], [z.id]), ctx.rules);
   }
   return g;
 }

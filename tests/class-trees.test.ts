@@ -208,29 +208,26 @@ describe('parseClasses', () => {
   const AT = '2026-11-25T12:00:00.000Z';
 
   test('parseClasses always clears un-held unique classes including Necromancer and Shadow Monarch', () => {
-    const strictNecro = parseClasses(undefined, { job: 'Necromancer', jobDone: 'Necromancer', fallbackAt: AT, trees });
+    const strictNecro = parseClasses(undefined, { job: 'Necromancer', fallbackAt: AT, trees });
     expect(strictNecro).toEqual({ classes: {}, job: null, jobDone: null });
-    const strictAlias = parseClasses(undefined, { job: 'Shadow Monarch', jobDone: 'Shadow Monarch', fallbackAt: AT, trees });
+    const strictAlias = parseClasses(undefined, { job: 'Shadow Monarch', fallbackAt: AT, trees });
     expect(strictAlias).toEqual({ classes: {}, job: null, jobDone: null });
-    const unheldHemo = parseClasses(undefined, { job: 'Hemomancer', jobDone: 'Hemomancer', fallbackAt: AT, trees });
+    const unheldHemo = parseClasses(undefined, { job: 'Hemomancer', fallbackAt: AT, trees });
     expect(unheldHemo).toEqual({ classes: {}, job: null, jobDone: null });
   });
 
   test('explicitly earned Necromancer entry stays active and awakened and preserves registryId and grantId', () => {
     const res = parseClasses(
       { Necromancer: { unlockedAt: AT, nodes: [], registryId: 'reg-1', grantId: 'cg7' } },
-      { job: 'Necromancer', jobDone: 'Necromancer', fallbackAt: AT, trees },
+      { job: 'Necromancer', fallbackAt: AT, trees },
     );
     expect(res.classes.Necromancer).toEqual({ unlockedAt: AT, nodes: [], registryId: 'reg-1', grantId: 'cg7' });
     expect(res.job).toBe('Necromancer');
     expect(res.jobDone).toBe('Necromancer');
   });
 
-  test('unearned jobDone does not seed classes; unawakened starter stays outside locker', () => {
-    const unseeded = parseClasses(undefined, { job: 'Fighter', jobDone: 'Fighter', fallbackAt: AT, trees });
-    expect(unseeded).toEqual({ classes: {}, job: 'Fighter', jobDone: null });
-
-    const unawakened = parseClasses(undefined, { job: 'Fighter', jobDone: null, fallbackAt: AT, trees });
+  test('unawakened starter stays outside locker and keeps jobDone null', () => {
+    const unawakened = parseClasses(undefined, { job: 'Fighter', fallbackAt: AT, trees });
     expect(unawakened).toEqual({ classes: {}, job: 'Fighter', jobDone: null });
   });
 
@@ -248,7 +245,7 @@ describe('parseClasses', () => {
   test('enforces CLASS_LOCKER_CAP (48) entries', () => {
     const raw: Record<string, { unlockedAt: string; nodes: string[] }> = {};
     for (let i = 0; i < 60; i++) raw[`Custom${i}`] = { unlockedAt: AT, nodes: [] };
-    const res = parseClasses(raw, { job: null, jobDone: null, fallbackAt: AT, trees });
+    const res = parseClasses(raw, { job: null, fallbackAt: AT, trees });
     expect(Object.keys(res.classes).length).toBe(CLASS_LOCKER_CAP);
   });
 });

@@ -250,6 +250,17 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
     expect(twice.lines).toEqual([]);
   });
 
+  test('a reward job is not applied while a fight holds the hunter or while dead', () => {
+    const save = fresh();
+    const inFight = given(save, { ...newRewards(), job: 'Fighter' }, 'fight');
+    expect(inFight.job).toBeNull();
+    expect(hunter(inFight.save).job).toBeNull();
+    const deadSave: Save = { ...save, hunters: [{ ...hunter(save), life: { at: 'dead' } }] };
+    const whileDead = given(deadSave, { ...newRewards(), job: 'Fighter' }, 'sheet');
+    expect(whileDead.job).toBeNull();
+    expect(hunter(whileDead.save).job).toBeNull();
+  });
+
   test('a title in place of the active one: the hunter keeps one title, still active, its bonus on the sheet, and the window says which it replaced', () => {
     const debt = given(fresh(), { ...newRewards(), title: { name: 'Owed to the Deep', desc: '', bonus: { hpMax: -10 } } }).save;
     const h0 = hunter(debt), held = h0.titles.find(t => t.name === 'Owed to the Deep')!;

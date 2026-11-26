@@ -28,8 +28,9 @@ test('player class locker enforces setJob refusals, free vs paid swapClass, shor
     await expect(page.locator('#toasts .toast-warning').last()).toContainText(CLASS_REFUSAL_WORDS['not-earned']);
 
     await jobInput.fill('Fighter');
-    await setBtn.tap();
+    await jobInput.press('Enter');
     await expect(panel.locator('[data-cls-active]')).toContainText('Fighter');
+    await expect(panel.locator('[data-cls-job-clear]')).toBeVisible();
     expect(await page.evaluate(() => hunterApp.store.active().job)).toBe('Fighter');
   });
 
@@ -166,7 +167,7 @@ test('skill tree buyer and fork flip deduct gold, unlock capstone early, preserv
     const goldBeforeFlip = await page.evaluate(() => hunterApp.store.active().gold);
     await tree.locator('[data-cls-flip-from="pyro-a5-l"][data-cls-flip-to="pyro-a5-r"]').tap();
     const flipWarn = page.locator('.sys-overlay.show .sys-window.sys-warn');
-    await expect(flipWarn).toContainText(CLASS_UI_WORDS.flipWarnTitle('Molten Basin', 'Cinder Pit'));
+    await expect(flipWarn).toContainText(CLASS_UI_WORDS.flipWarnTitle('Cinder Pit'));
     await flipWarn.locator('button', { hasText: CLASS_UI_WORDS.payAction(25) }).tap();
     await expect(flipWarn).toHaveCount(0);
 
@@ -305,12 +306,9 @@ test('two-tab room uniqueness: GM grants, strips spoofed unique, enforces in-fig
     await expect(regBox.locator('[data-cg-msg]')).toHaveText(HOLDER_REFUSAL_WORDS.held);
 
     await hemoRow.locator('[data-cg-reassign="Hemomancer"]').tap();
-    const rdlg = modalWin(gm, CLASS_UI_WORDS.gmReassignTitle('Hemomancer'));
-    await expect(rdlg.locator('[data-cg-warn]')).toHaveText(CLASS_UI_WORDS.gmHeldWarning);
-    await rdlg.locator('[data-cg-hsel]').selectOption({ label: 'Kael Unique (E-rank, Player phone)' });
-    await rdlg.locator('.sys-actions button.primary').tap();
-    await expect(rdlg).toHaveCount(0);
+    await expect(gm.locator('.sys-overlay.show')).toHaveCount(0);
     await expect(gm.locator('#toasts .toast-warning').last()).toContainText(HOLDER_REFUSAL_WORDS.held);
+    await expect(regBox.locator('[data-cg-msg]')).toHaveText(HOLDER_REFUSAL_WORDS.held);
     await expect(hemoRow).toContainText('Held by Mira Unique (Player phone)');
 
     // Mira's phone also refuses swapping classes mid-fight.

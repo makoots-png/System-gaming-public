@@ -80,7 +80,7 @@ export function starterCampaign(save: Save, made: StarterMade, stamp: Stamp, R: 
   for (const p of PREGENS) {
     const created = makeHunter({ seq, settings: save.settings }, p.name, R, now);
     seq = created.seq;
-    const jobbed = setJob(created.hunter, p.job);
+    const jobbed = setJob(created.hunter, p.job, { held: false, dead: false });
     const item = parseItem(p.item);
     if (isRefused(jobbed) || !item) return refuse('pregen');
     const raised = raiseMany(jobbed, p.stats, R);

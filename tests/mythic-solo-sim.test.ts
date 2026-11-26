@@ -90,8 +90,8 @@ describe('Hemomancer solo vs Mythic bosses (200 runs each, target 75% to 98% aim
     const noKsHero = buildMythicSoloRow(HEMOMANCER_SOLO_SPEC, shipped);
     for (const id of ['plain', 'angel-of-the-last-trumpet'] as const) {
       const res = runSoloMythic(noKsHero, id, DIAG_RUNS, shipped);
-      console.log(`[solo-mythic:keystones-off] Hemomancer vs ${id}: ${(res.winRate * 100).toFixed(1)}% (${res.wins}/${res.runs}, mean ${res.meanRounds.toFixed(1)} rounds)`);
-      expect(res.runs).toBe(DIAG_RUNS);
+      console.log(`[solo-mythic:keystones-off] Hemomancer vs ${id}: ${(res.winRate * 100).toFixed(1)}% (${res.wins}/${res.runs}, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped)`);
+      expect(res.capped).toBe(0);
     }
   }, SOLO_BUDGET);
 });

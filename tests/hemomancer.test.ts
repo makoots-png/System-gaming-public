@@ -9,10 +9,14 @@ import { lifeAfter } from '../src/core/hunter/vitals.ts';
 import { explain, hunterSheet } from '../src/core/hunter/sheet.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { combatantId, abilityId } from '../src/core/combat/ability-types.ts';
+import type { CombatantId } from '../src/core/combat/ability-types.ts';
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
+import type { Body } from '../src/core/combat/effect-ops.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
-import { landEnd } from '../src/core/combat/land.ts';
-import { reduce } from '../src/core/combat/fight.ts';
+import { landEnd, landOps } from '../src/core/combat/land.ts';
+import { resolve } from '../src/core/combat/resolve.ts';
+import { fire, raised } from '../src/core/combat/triggers.ts';
+import { MAX_STATUSES, reduce } from '../src/core/combat/fight.ts';
 import type { Fight, Running } from '../src/core/combat/fight.ts';
 import { fightDoc, fightWire, shippedStatusDef } from '../src/core/combat/fight-doc.ts';
 import { DOCS } from '../src/core/protocol.ts';
@@ -20,7 +24,7 @@ import { place } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { FORMULA_PARTS, partsOf } from '../src/core/formula.ts';
-import { formulaOf } from '../src/core/registry/ability-kinds.ts';
+import { abilityOf, formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { scalersOf } from '../src/core/registry/scalers.ts';
 import { abilityWorth } from '../src/core/registry/worth.ts';
 import { choose, EVERYTHING, fightBodies, mapScene, NO_CHOICE } from '../src/core/combat/map-view.ts';
@@ -31,7 +35,7 @@ import { CLASS_SIGNATURES, classPowers, classStatusDef } from '../src/core/regis
 import { HEMOMANCER_SIGNATURE, HEMOMANCER_TREE } from '../src/core/registry/class-hemomancer.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
-import { dev } from './fixtures/ids.ts';
+import { dev, skid } from './fixtures/ids.ts';
 
 const AT = '2026-11-25T12:00:00.000Z';
 const nid = (s: string): ClassNodeId => parseClassNodeId(s)!;
@@ -342,6 +346,76 @@ describe('Hemomancer combat mechanics', () => {
     const afterPass = reduce(plagueApplied, { type: 'endTurn', by: h.id }, { rules: RULES });
     const logTexts = (afterPass.fight as Running).log.map(l => l.text).join('\n');
     expect(logTexts).toContain(`heals ${res.sourceHealed}`);
+  });
+
+  test('cure/dispel detonation carries sourceHealed and source id in resolve bursts, fight log, landOps Landed, and trigger logs', () => {
+    const f = startDuel();
+    const h = f.rows.find(r => r.id === combatantId('h1'))!;
+    const m = f.rows.find(r => r.id === combatantId('m1'))!;
+    const plagueDef = classStatusDef('hemo-hemoplague')!;
+    const detonateDef = { ...plagueDef, end: { ...plagueDef.end!, cleanse: 'land' as const } };
+    const plagueStatus = statusOn(detonateDef, { key: statusKey('hemo-hemoplague'), source: { id: h.id, tier: h.tier }, until: tick(2000), since: tick(0), settledAt: tick(0) });
+    const purge = abilityOf('support', { id: abilityId('test-purge'), name: 'Purge', effect: null, ops: [{ op: 'dispel', which: 'all' }] }, RULES);
+
+    // 1. resolve.ts:681 carries sourceHealed + source id in burst.landed
+    const hurtH = { ...h, life: { at: 'up' as const, hp: 100 } };
+    const plaguedM = { ...m, statuses: [...m.statuses, plagueStatus], abilities: [...m.abilities, purge] };
+    const resolved = resolve(purge, plaguedM, [hurtH, plaguedM], plaguedM.id, f.grid, { dice: {}, react: {} }, tick(500), RULES);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.bursts.length).toBe(1);
+    const [victimEntry, healEntry] = resolved.bursts[0]!.landed;
+    const expectedHeal = Math.round(victimEntry!.dealt * 0.4);
+    expect(victimEntry!.target).toBe(m.id);
+    expect(victimEntry!.dealt).toBeGreaterThan(50);
+    expect(healEntry).toEqual({ target: h.id, dealt: 0, healed: expectedHeal });
+    expect(rowHp(resolved.bodies.find(b => b.id === h.id)!)).toBe(100 + expectedHeal);
+
+    // 2. fight.ts logs the detonation heal line and tags caster in `rows`, matching fight-turn.ts:482
+    const fighting: Running = { ...f, rows: [hurtH, plaguedM], currentId: m.id, now: tick(500) };
+    const acted = reduce(fighting, { type: 'act', by: m.id, ability: purge.id, aim: m.id, rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    const purgeLog = (acted.fight as Running).log.find(l => l.text.includes('Purge'))!;
+    expect(purgeLog).toBeDefined();
+    expect(purgeLog.text).toContain(`${h.name} heals ${expectedHeal}`);
+    expect(purgeLog.rows).toContain(h.id);
+
+    // 3. Dead caster on dispel detonation adds no heal entry and no "heals" text
+    const deadH = { ...h, life: { at: 'dead' as const } };
+    const resolvedDead = resolve(purge, plaguedM, [deadH, plaguedM], plaguedM.id, f.grid, { dice: {}, react: {} }, tick(500), RULES);
+    expect(resolvedDead.ok).toBe(true);
+    if (resolvedDead.ok) expect(resolvedDead.bursts[0]!.landed).toEqual([{ target: m.id, dealt: victimEntry!.dealt }]);
+
+    // 4. land.ts:288 (`landOps`) carries sourceHealed + source id in `Landed`, and triggers.ts logs it
+    const rows = new Map<CombatantId, Body>([[h.id, hurtH], [m.id, plaguedM]]);
+    const land = landOps(rows, [{ op: 'dispel', which: 'all' }], plaguedM, [m.id], { id: m.id, tier: m.tier }, tick(500), RULES);
+    expect(land.landed).toContainEqual({ target: h.id, dealt: 0, healed: expectedHeal, down: false, gained: [], cured: [] });
+    expect(rowHp(rows.get(h.id)!)).toBe(100 + expectedHeal);
+
+    const cleanseTrig = statusOn({
+      label: 'Self Purge', desc: '', ops: [],
+      triggers: [{ on: 'turnStart', to: 'self', limit: { kind: 'each' }, ops: [{ op: 'dispel', which: 'all' }] }],
+    }, { key: statusKey('self-purge'), source: { id: m.id, tier: m.tier }, until: null, since: tick(0), settledAt: tick(0) });
+    const trigOut = fire([hurtH, { ...plaguedM, statuses: [...plaguedM.statuses, cleanseTrig] }], [raised(m.id, 'turnStart')], tick(500), RULES);
+    expect(trigOut.said.join('\n')).toContain(`${h.name} heals ${expectedHeal}`);
+    expect(trigOut.about).toContain(h.id);
+  });
+
+  test('wornStatuses places class worn status first so MAX_STATUSES never slices it off', () => {
+    const base = makeHemoHunter(FULL_HEMO_NODES);
+    const passives = Array.from({ length: MAX_STATUSES }, (_, i) => ({
+      id: skid(`s${i + 1}`),
+      name: `Passive ${i + 1}`,
+      type: 'passive' as const,
+      level: 1,
+      label: null,
+      desc: '',
+      bonus: {},
+      worn: { label: `Extra Worn ${i + 1}`, desc: '', ops: [] },
+    }));
+    const row = hunterRow({ ...base, skills: passives }, combatantId('h1'), RULES);
+    expect(row.statuses.length).toBe(MAX_STATUSES);
+    expect(row.statuses[0]!.key).toBe(statusKey('hemo-crimson-pact-lord'));
+    expect(row.statuses[0]!.worn).toBe(true);
   });
 
   test('Fable review guards: unique status keys, sourceHealShare pricing, node anti-drift, and self-centered map aiming for Tides of Blood', () => {

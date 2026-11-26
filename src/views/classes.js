@@ -1,10 +1,11 @@
 // classes.js: player class locker, skill tree viewer/buyer, fork flip modal, GM unique-class registry, and GM room
 // logging for classSwap/classNode (PR 3). Every save mutation delegates to src/core/hunter/classes.ts or
 // src/core/hunter/class-holders.ts; every sentence comes from src/core/hunter/class-view.ts, classes.ts, or class-holders.ts.
-import { parseClassNodeId, parseSaveId, parseSheetKey } from '../core/ids.ts';
+import { parseClassNodeId, parseSaveId } from '../core/ids.ts';
 import { oneOf } from '../core/one-of.ts';
 import { CLASS_SIGNATURES } from '../core/registry/class-powers.ts';
-import { CLASS_TREES, classTreeOf } from '../core/registry/class-trees.ts';
+import { classTreeOf } from '../core/registry/class-trees.ts';
+import { activeClassTrees } from '../edge/store.ts';
 import { classDefOf, isUniqueClass } from '../core/registry/jobs.ts';
 import { CLASS_NAME_MAX } from '../core/hunter/class-locker.ts';
 import {
@@ -63,7 +64,6 @@ const CSS = `
 .cls-row-acts{display:flex;gap:6px;flex-wrap:wrap}
 .cls-row-acts button{min-height:var(--control-h)}
 .cls-starter{border:1px solid var(--line);background:rgba(10,26,46,.4);padding:8px 10px;margin:8px 0}
-.cls-starter>summary{cursor:pointer;min-height:var(--control-h);display:flex;align-items:center;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-dim)}
 .cls-job-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:6px}
 .cls-job-row .field{flex:1 1 150px;min-width:0}
 .cls-job-row input{width:100%;box-sizing:border-box}
@@ -102,14 +102,6 @@ const CSS = `
 @media (max-width:720px){.cls-nodes,.cls-fork-grid{grid-template-columns:minmax(0,1fr)}.cls-row-acts button{flex:1 0 auto}}
 `;
 
-/** Returns active class trees: production `CLASS_TREES` always takes precedence over Playwright test fixtures. */
-const activeTrees = () => {
-  const injected = /** @type {import('../core/registry/class-trees.ts').ClassTreeMap | undefined} */ (
-    /** @type {any} */ (globalThis).__e2eClassTrees
-  );
-  return injected ? { ...injected, ...CLASS_TREES } : CLASS_TREES;
-};
-
 /** @param {import('./app.ts').App} app */
 export function register(app) {
   const { store, ui } = app;
@@ -121,13 +113,17 @@ export function register(app) {
   let holdersSig = '';
 
   /** Whether a local (`{ hid }`) or remote (`{ key }`) hunter is currently held in a fight on save `s` (shared via `hunter.heldIn`). */
-  const heldIn = (s, who) => A().hunter.heldIn(s, who) !== null;
+  const isHeld = (s, who) => A().hunter.heldIn(s, who) !== null;
 
-  /** Campaign registry id active on this phone: the room's `DOCS.holders` for a player, the local save's for a GM, else null. */
-  const activeRegistryId = () => {
+  /** Whether a unique-class holder (local hunter, remote sheet, or NPC) is currently held in a fight on save `s`. */
+  const holderInFight = (s, holder) =>
+    holder.kind === 'local' ? isHeld(s, { hid: holder.hunterId }) : holder.kind === 'remote' ? isHeld(s, { key: holder.sheetKey }) : false;
+
+  /** Campaign registry id active on this phone: the room's `DOCS.holders` for a player, `s`'s for a GM, else null. */
+  const activeRegistryId = s => {
     const seat = app.seat();
     if (seat === 'player') return A().sync.doc('holders')?.registryId ?? null;
-    if (app.isGM()) return store.get().classHolders.registryId;
+    if (app.isGM()) return s.classHolders.registryId;
     return null;
   };
 
@@ -137,13 +133,13 @@ export function register(app) {
     const room = role === 'player' ? A().sync.room() : null;
     return {
       role,
-      held: heldIn(s, { hid }),
+      held: isHeld(s, { hid }),
       at: new Date().toISOString(),
       room,
       stamp: room ? A().sync.stamp() : null,
       R: app.rules(),
-      activeRegistryId: activeRegistryId(),
-      trees: activeTrees(),
+      activeRegistryId: activeRegistryId(s),
+      trees: activeClassTrees(),
     };
   };
 
@@ -155,8 +151,8 @@ export function register(app) {
       room,
       stamp: room ? A().sync.stamp() : null,
       R: app.rules(),
-      heldLocal: hid => heldIn(s, { hid }),
-      heldRemote: key => heldIn(s, { key }),
+      heldLocal: hid => isHeld(s, { hid }),
+      heldRemote: key => isHeld(s, { key }),
     };
   };
 
@@ -164,26 +160,27 @@ export function register(app) {
 
   function applyJob(hid, raw) {
     const clean = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, CLASS_NAME_MAX);
-    const w = store.apply('class-job', s => atHunter(hid, h => setJob(h, clean || null, { held: heldIn(s, { hid }), dead: h.life.at === 'dead' }))(s));
+    const w = store.apply('class-job', s => atHunter(hid, h => setJob(h, clean || null, { held: isHeld(s, { hid }), dead: h.life.at === 'dead' }))(s));
     if (!ui.wrote('! Class', w, CLASS_REFUSAL_WORDS)) return;
     ui.toast('! Class', W.jobSetToast(store.hunter(hid)?.job ?? null), { kind: 'info' });
   }
 
   async function doSwap(hid, targetClass) {
+    const s0 = store.get();
     const h = store.hunter(hid);
     if (!h) return;
     const R = app.rules(), role = app.isGM() ? 'gm' : 'player';
     const plan = swapCost(h, role, R);
-    const regId = activeRegistryId();
+    const regId = activeRegistryId(s0);
     const entry = Object.hasOwn(h.classes, targetClass) ? h.classes[targetClass] : null;
     const parked = isUniqueClass(targetClass) && !!regId && !!entry?.registryId && entry.registryId !== regId;
     const holdersPending = isUniqueClass(targetClass) && app.seat() === 'player' && !!entry?.registryId && !regId;
-    const isHeld = heldIn(store.get(), { hid });
+    const held = isHeld(s0, { hid });
     const targetDef = classDefOf(targetClass);
     const curDef = classDefOf(h.job);
     const pairChanged = !!targetDef && !!curDef && targetDef.pair !== curDef.pair;
 
-    if (plan.cost > 0 && h.life.at !== 'dead' && !isHeld && !parked && !holdersPending && h.gold >= plan.cost) {
+    if (plan.cost > 0 && h.life.at !== 'dead' && !held && !parked && !holdersPending && h.gold >= plan.cost) {
       const ok = await ui.warn({
         tag: W.swapWarnTag,
         title: W.swapWarnTitle(targetClass),
@@ -227,14 +224,14 @@ export function register(app) {
     const nodeId = parseClassNodeId(rawNodeId);
     const h = store.hunter(hid);
     if (!h || !nodeId) return;
-    const R = app.rules(), role = app.isGM() ? 'gm' : 'player', trees = activeTrees();
+    const R = app.rules(), role = app.isGM() ? 'gm' : 'player', trees = activeClassTrees();
     const tree = classTreeOf(h.job, trees);
     const node = tree ? tree.nodes.find(n => n.id === nodeId) : null;
     const priced = nodeCost(h, h.job, nodeId, role, R, trees);
     const cost = isRefused(priced) ? 0 : priced.cost;
-    const isHeld = heldIn(store.get(), { hid });
+    const held = isHeld(store.get(), { hid });
 
-    if (cost > 0 && node && h.job && h.life.at !== 'dead' && !isHeld && h.gold >= cost) {
+    if (cost > 0 && node && h.job && h.life.at !== 'dead' && !held && h.gold >= cost) {
       const ok = await ui.warn({
         tag: W.nodeWarnTag,
         title: W.nodeWarnTitle(node.name),
@@ -274,18 +271,18 @@ export function register(app) {
     const fromId = parseClassNodeId(rawFromId), toId = parseClassNodeId(rawToId);
     const h = store.hunter(hid);
     if (!h || !fromId || !toId) return;
-    const R = app.rules(), role = app.isGM() ? 'gm' : 'player', trees = activeTrees();
+    const R = app.rules(), role = app.isGM() ? 'gm' : 'player', trees = activeClassTrees();
     const tree = classTreeOf(h.job, trees);
     const entry = h.job && Object.hasOwn(h.classes, h.job) ? h.classes[h.job] : null;
     const plan = forkFlipCost(h, role, R);
-    const isHeld = heldIn(store.get(), { hid });
+    const held = isHeld(store.get(), { hid });
     const prev = tree && entry ? forkFlipPreview(tree, entry.nodes, fromId, toId) : null;
 
-    if (prev && h.life.at !== 'dead' && !isHeld && h.gold >= plan.cost) {
+    if (prev && h.life.at !== 'dead' && !held && h.gold >= plan.cost) {
       const lines = prev.dropped.length ? [W.flipDroppedLine(prev.dropped.map(n => n.name))] : [];
       const ok = await ui.warn({
         tag: W.flipWarnTag,
-        title: W.flipWarnTitle(prev.from.name, prev.to.name),
+        title: W.flipWarnTitle(prev.to.name),
         body: W.flipWarnBody(prev.from.name, prev.to.name, plan, h.gold),
         ...(lines.length ? { lines } : {}),
         actions: [
@@ -323,15 +320,12 @@ export function register(app) {
   function renderLockerPanel(el) {
     const h = store.active(), s = store.get(), R = app.rules();
     const role = /** @type {import('../core/role.ts').Role} */ (app.isGM() ? 'gm' : 'player');
-    const holdersDoc = A().sync.doc('holders');
     const vm = lockerView(h, {
       role,
-      held: heldIn(s, { hid: h.id }),
+      held: isHeld(s, { hid: h.id }),
       R,
-      activeRegistryId: activeRegistryId(),
-      mySheetKey: A().sync.myKey(h.id),
-      holdersDoc,
-      trees: activeTrees(),
+      activeRegistryId: activeRegistryId(s),
+      trees: activeClassTrees(),
     });
 
     const activeHtml = vm.active.kind === 'none'
@@ -346,13 +340,13 @@ export function register(app) {
               ${vm.held ? `<span class="cls-tag warn">${esc(W.inFightBadge)}</span>` : ''}
             </span>
           </div>
-          ${vm.activePairLabel ? `<p class="cls-meta">Stat pair: ${esc(vm.activePairLabel)}${vm.activeRecRank ? ` · Recommended rank: ${esc(vm.activeRecRank)}` : ''}</p>` : ''}
+          ${vm.activePairLabel ? `<p class="cls-meta">${esc(W.statPairPrefix)}${esc(vm.activePairLabel)}${vm.activeRecRank ? ` · ${esc(W.recRankPrefix)}${esc(vm.activeRecRank)}` : ''}</p>` : ''}
         </div>`;
 
     const lockerRows = vm.entries.length
       ? `<ul class="cls-list" data-cls-locker>${vm.entries.map(e => {
-          const progress = e.nodesCap ? `${e.nodesBought}/${e.nodesCap} nodes` : `${e.nodesBought} nodes`;
-          const meta = [e.pairLabel, progress, e.recRank ? `Rank ${e.recRank}` : null].filter(Boolean).join(' · ');
+          const progress = W.nodesProgress(e.nodesBought, e.nodesCap);
+          const meta = [e.pairLabel, progress, e.recRank ? `${W.recRankPrefix}${e.recRank}` : null].filter(Boolean).join(' · ');
           const badges = [
             `<span class="cls-tag${e.rarity ? ` r-${esc(e.rarity)}` : ''}">${esc(e.rarityLabel)}</span>`,
             e.unique ? `<span class="cls-tag">${esc(W.uniqueBadge)}</span>` : '',
@@ -433,7 +427,7 @@ export function register(app) {
           ${vm.tree.capstoneReady ? `<span class="cls-tag ok" data-cls-capstone-ready>${esc(W.capstoneReady)}</span>` : ''}
         </summary>
         ${vm.tree.depths.map(g => `<div class="cls-depth" data-cls-depth="${esc(g.depth)}">
-          <div class="cls-depth-h">Depth ${esc(g.depth)}${g.depth === 1 ? ' (Root)' : g.nodes.some(n => n.capstone) ? ' (Capstone)' : ''}</div>
+          <div class="cls-depth-h">${esc(W.depthHeading(g.depth, g.nodes.some(n => n.capstone)))}</div>
           <div class="cls-nodes">${depthNodesHtml(g.nodes)}</div>
         </div>`).join('')}
       </details>`
@@ -476,15 +470,23 @@ export function register(app) {
         if (b.dataset.clsFlipFrom && b.dataset.clsFlipTo) { void doFlipFork(h.id, b.dataset.clsFlipFrom, b.dataset.clsFlipTo); return; }
         if ('clsJobSet' in b.dataset) {
           const inp = el.querySelector('[data-cls-job]');
+          if (inp instanceof HTMLElement) inp.blur();
           applyJob(h.id, inp ? inp.value : '');
           return;
         }
-        if ('clsJobClear' in b.dataset) { applyJob(h.id, ''); return; }
+        if ('clsJobClear' in b.dataset) {
+          const inp = el.querySelector('[data-cls-job]');
+          if (inp instanceof HTMLElement) inp.blur();
+          applyJob(h.id, '');
+          return;
+        }
       });
       el.addEventListener('keydown', e => {
         if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.matches('[data-cls-job]')) {
           e.preventDefault();
-          applyJob(store.active().id, e.target.value);
+          e.target.blur();
+          const h = store.active();
+          if (h) applyJob(h.id, e.target.value);
         }
       });
     },
@@ -499,20 +501,20 @@ export function register(app) {
     const out = [];
     for (const h of s.hunters) {
       if (exclude && exclude.kind === 'local' && exclude.hunterId === h.id) continue;
-      const held = heldIn(s, { hid: h.id });
+      const held = isHeld(s, { hid: h.id });
       out.push({
         value: h.id,
-        label: `${h.name} (${h.rank}-rank, ${W.gmLocalKind})${held ? ' (in fight)' : ''}`,
+        label: `${h.name} (${h.rank}-rank, ${W.gmLocalKind})${held ? W.inFightSuffix : ''}`,
         held,
         target: { kind: 'local', hunterId: h.id },
       });
     }
     for (const r of A().sync.remoteSheets()) {
       if (exclude && exclude.kind === 'remote' && exclude.sheetKey === r.key) continue;
-      const held = heldIn(s, { key: r.key });
+      const held = isHeld(s, { key: r.key });
       out.push({
         value: r.key,
-        label: `${r.data.name} (${r.data.rank}-rank, ${W.gmRemoteKind})${held ? ' (in fight)' : ''}`,
+        label: `${r.data.name} (${r.data.rank}-rank, ${W.gmRemoteKind})${held ? W.inFightSuffix : ''}`,
         held,
         target: { kind: 'remote', sheetKey: r.key, name: r.data.name },
       });
@@ -529,9 +531,6 @@ export function register(app) {
     const hunters = gmTargetOptions(s, currentHolder);
     const monsters = s.monsters;
     const defaultKind = hunters.length > 0 ? 'hunter' : 'npc';
-    const currentHeld = currentHolder
-      ? (currentHolder.kind === 'local' ? heldIn(s, { hid: currentHolder.hunterId }) : currentHolder.kind === 'remote' ? heldIn(s, { key: currentHolder.sheetKey }) : false)
-      : false;
 
     const hunterOpts = hunters.length
       ? hunters.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')
@@ -539,7 +538,7 @@ export function register(app) {
     const monsterOpts = `<option value="">${esc(W.gmNpcMonsterNone)}</option>`
       + monsters.map(m => `<option value="${esc(m.id)}">${esc(m.name)} (${esc(m.rank)}-rank)</option>`).join('');
 
-    const hasKit = Boolean(CLASS_SIGNATURES[cls] || activeTrees()[cls]);
+    const hasKit = Boolean(CLASS_SIGNATURES[cls] || activeClassTrees()[cls]);
     const html = `<div class="cls-gm-form">
       ${!hasKit ? `<p class="cls-meta" data-cg-nokit>${esc(W.noKitNote)}</p>` : ''}
       ${currentHolder ? `<p class="cls-meta">${esc(W.gmReassignBody(cls, currentHolder.name))}</p>` : ''}
@@ -554,7 +553,7 @@ export function register(app) {
         ${ui.field(W.gmNpcNameLabel, `<input type="text" data-cg-npc-name maxlength="${CLASS_NAME_MAX}" autocomplete="off">`)}
         ${ui.field(W.gmNpcMonsterLabel, `<select data-cg-npc-mon>${monsterOpts}</select>`)}
       </div>
-      <p class="cls-gm-warn" data-cg-warn${currentHeld ? '' : ' hidden'}>${currentHeld ? esc(W.gmHeldWarning) : ''}</p>
+      <p class="cls-gm-warn" data-cg-warn hidden></p>
     </div>`;
 
     const pick = {
@@ -589,7 +588,7 @@ export function register(app) {
             b.setAttribute('aria-pressed', String(b.dataset.kind === pick.kind));
           }
           const selOpt = hunters.find(x => x.value === pick.hunterVal);
-          const showHeld = currentHeld || (pick.kind === 'hunter' && !!selOpt?.held);
+          const showHeld = (pick.kind === 'hunter' && !!selOpt?.held);
           warnEl.hidden = !showHeld;
           warnEl.textContent = showHeld ? W.gmHeldWarning : '';
         };
@@ -621,8 +620,6 @@ export function register(app) {
     }
     const found = hunters.find(x => x.value === pick.hunterVal);
     if (found) return found.target;
-    const sk = parseSheetKey(pick.hunterVal);
-    if (sk) return { kind: /** @type {const} */ ('remote'), sheetKey: sk, name: 'Hunter' };
     return { kind: /** @type {const} */ ('npc'), name: '' }; // triggers HOLDER_REFUSAL_WORDS['bad-target'] cleanly
   }
 
@@ -668,9 +665,9 @@ export function register(app) {
     const s0 = store.get();
     const cur = holderOf(s0, cls);
     if (!cur) return;
-    const isHeld = cur.kind === 'local' ? heldIn(s0, { hid: cur.hunterId }) : cur.kind === 'remote' ? heldIn(s0, { key: cur.sheetKey }) : false;
+    const curHeld = holderInFight(s0, cur);
     // Skip confirm when holder is in a fight so the core step's plain-words 'held' refusal fires in one tap.
-    if (!isHeld) {
+    if (!curHeld) {
       const ok = await ui.confirm({
         title: W.gmReleaseTitle(cls),
         body: W.gmReleaseBody(cls, cur.name),
@@ -707,9 +704,11 @@ export function register(app) {
 
   async function gmReassign(box, cls) {
     if (!app.isGM() || !isUniqueClass(cls)) return;
-    const cur = holderOf(store.get(), cls);
+    const s0 = store.get();
+    const cur = holderOf(s0, cls);
     if (!cur) return;
-    const nextTarget = await pickHolderTarget(cls, cur);
+    // Skip the form when the current holder is in a fight so core's plain-words 'held' refusal fires in one tap, matching gmRelease.
+    const nextTarget = holderInFight(s0, cur) ? { kind: /** @type {const} */ ('npc'), name: '' } : await pickHolderTarget(cls, cur);
     if (!nextTarget) return;
     const out = {
       /** @type {{ from: import('../core/hunter/class-locker.ts').ClassHolder; to: import('../core/hunter/class-locker.ts').ClassHolder } | null} */
@@ -776,17 +775,17 @@ export function register(app) {
       box.dataset.cg = '1';
       box.innerHTML = `<p class="empty">${esc(W.gmHint)}</p>
         <div class="cls-gm-ctrl">
-          <div class="seg" role="group" aria-label="Filter unique classes" data-cg-filter>
+          <div class="seg" role="group" aria-label="${esc(W.gmFilterAria)}" data-cg-filter>
             <button type="button" data-f="all" aria-pressed="true">${esc(W.gmFilterAll)}</button>
             <button type="button" data-f="mythic" aria-pressed="false">${esc(W.gmFilterMythic)}</button>
             <button type="button" data-f="epic" aria-pressed="false">${esc(W.gmFilterEpic)}</button>
             <button type="button" data-f="held" aria-pressed="false">${esc(W.gmFilterHeld)}</button>
             <button type="button" data-f="open" aria-pressed="false">${esc(W.gmFilterOpen)}</button>
           </div>
-          <span class="cls-gm-q">${ui.field('Search classes', '<input type="text" data-cg-q maxlength="60" autocomplete="off">')}</span>
+          <span class="cls-gm-q">${ui.field(W.gmSearchLabel, '<input type="text" data-cg-q maxlength="60" autocomplete="off">')}</span>
         </div>
         <div class="gm-msg" data-cg-msg role="status" aria-live="polite"></div>
-        <ul class="cls-gm-list" data-cg-list aria-label="Unique classes"></ul>`;
+        <ul class="cls-gm-list" data-cg-list aria-label="${esc(W.gmListAria)}"></ul>`;
       wireGm(box);
     }
 
@@ -796,21 +795,21 @@ export function register(app) {
     const vm = registryView(s, {
       inRoom,
       holdersDoc: inRoom ? A().sync.doc('holders') : null,
-      heldLocal: hid => heldIn(s, { hid }),
-      heldRemote: key => heldIn(s, { key }),
+      heldLocal: hid => isHeld(s, { hid }),
+      heldRemote: key => isHeld(s, { key }),
       remotes,
-      trees: activeTrees(),
+      trees: activeClassTrees(),
     });
 
     const listHtml = vm.rows.map(r => {
       const search = [r.className, r.rarityLabel, r.pairLabel, r.holderName || W.gmUnclaimed].join(' ').toLowerCase();
-      const holderLine = r.holder && r.holderName
-        ? `Held by ${r.holderName} (${r.holderKindLabel})`
+      const holderLine = r.holder && r.holderName && r.holderKindLabel
+        ? W.gmHeldBy(r.holderName, r.holderKindLabel)
         : W.gmUnclaimed;
-      const syncTag = r.synced === true
-        ? `<span class="cls-tag ok" data-cg-sync="synced">${esc(W.syncedBadge)}</span>`
-        : r.synced === false
-          ? `<span class="cls-tag" data-cg-sync="syncing">${esc(W.syncingBadge)}</span>`
+      const syncTag = r.synced === false
+        ? `<span class="cls-tag" data-cg-sync="syncing">${esc(W.syncingBadge)}</span>`
+        : r.synced === true && r.holder
+          ? `<span class="cls-tag ok" data-cg-sync="synced">${esc(W.syncedBadge)}</span>`
           : '';
       const kitTag = !r.hasKit ? `<span class="cls-tag" data-cg-nokit>${esc(W.noKitBadge)}</span>` : '';
       const actions = r.holder
@@ -823,13 +822,12 @@ export function register(app) {
             <span class="r-name">${esc(r.className)}</span>
             <span class="cls-badges">
               <span class="cls-tag r-${esc(r.rarity)}">${esc(r.rarityLabel)}</span>
-              <span class="cls-tag">Rank ${esc(r.recRank)}</span>
               ${kitTag}
               ${r.inFight ? `<span class="cls-tag warn">${esc(W.inFightBadge)}</span>` : ''}
               ${syncTag}
             </span>
           </div>
-          <div class="cls-meta">${esc(r.pairLabel)} · ${esc(holderLine)}</div>
+          <div class="cls-meta">${esc(r.pairLabel)} · ${esc(`${W.recRankPrefix}${r.recRank}`)} · ${esc(holderLine)}</div>
         </div>
         <div class="cls-row-acts">${actions}</div>
       </li>`;
@@ -855,7 +853,7 @@ export function register(app) {
   });
 
   app.on('sync:event', ({ event: ev }) => {
-    if (!app.isGM()) return;
+    if (app.seat() !== 'gm') return;
     const R = app.rules();
     if (ev.type === 'classSwap') {
       const p = ev.payload;
@@ -864,7 +862,7 @@ export function register(app) {
       ui.toast('! Class', said.text, { kind: 'info' });
     } else if (ev.type === 'classNode') {
       const p = ev.payload;
-      const tree = classTreeOf(p.className, activeTrees());
+      const tree = classTreeOf(p.className, activeClassTrees());
       const nameOf = id => tree?.nodes.find(n => n.id === id)?.name ?? id;
       const said = p.act === 'flip' && p.fromId
         ? classForkSaid(p.name || 'Hunter', p.className, nameOf(p.fromId), nameOf(p.nodeId), p.cost)

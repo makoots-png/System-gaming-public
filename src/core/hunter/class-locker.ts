@@ -67,7 +67,6 @@ export function parseClasses(
   raw: unknown,
   opts: {
     readonly job: string | null;
-    readonly jobDone: string | null;
     readonly fallbackAt: string;
     readonly trees?: ClassTreeMap;
   },

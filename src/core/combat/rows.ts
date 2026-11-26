@@ -215,11 +215,12 @@ function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now
 }
 
 /**
- * The worn statuses of a hunter (kits design 1.3.2): each passive skill's, at the hunter's rank with the row as its
- * source, then each held thing's `worn` (`heldPowers`: the active title's at the hunter's rank, feature 1's notes 17.14,
- * then each worn item's at the item's rarity, then its keystones), then the active awakened class's worn status
- * (`classPowers`, preferring its registry key for 0-byte fight-doc lookup), the row its source. Each lasts until removed
- * and is never written back (`worn`).
+ * The worn statuses of a hunter (kits design 1.3.2): first the active awakened class's worn status (`classPowers`,
+ * preferring its registry key for 0-byte fight-doc lookup and placed ahead of passive skills and held things so
+ * `MAX_STATUSES` never slices it off), then each passive skill's at the hunter's rank with the row as its source, then
+ * each held thing's `worn` (`heldPowers`: the active title's at the hunter's rank, feature 1's notes 17.14, then each
+ * worn item's at the item's rarity, then its keystones), the row its source. Each lasts until removed and is never
+ * written back (`worn`).
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
   const keys = new Set(taken), out: Status[] = [];
@@ -227,10 +228,10 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
     out.push(wornOn(liveStatusDef(def, R.conditions), source, keys, now, preferredKey));
   };
   const tier = rankIdx(h.rank);
-  for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier });
-  for (const { powers, tier: heldTier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier: heldTier });
   const cp = activeClassPowers(h, R);
   if (cp?.worn) put(cp.worn.def, { id, tier }, cp.worn.key);
+  for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier });
+  for (const { powers, tier: heldTier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier: heldTier });
   return out;
 }
 

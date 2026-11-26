@@ -239,7 +239,6 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   h.name = h.name.slice(0, 60) || 'Hunter';
   const parsedClasses = parseClasses(h.classes, {
     job: jobOf(h.job),
-    jobDone: jobOf(h.jobDone),
     fallbackAt: run.env.now.toISOString(),
     ...(run.env.classTrees ? { trees: run.env.classTrees } : {}),
   });

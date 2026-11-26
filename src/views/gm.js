@@ -1270,7 +1270,6 @@ export function register(app) {
   setInterval(() => { if (root && root.isConnected && !root.closest('[hidden]') && document.visibilityState === 'visible') renderRoom(); }, 5000); // presence ages
   app.on('sync:status', () => { if (root && root.isConnected && !root.closest('[hidden]')) renderRoom(); });
   app.on('sync:sheets', () => { if (root && root.isConnected && !root.closest('[hidden]')) { renderBoard(); renderTargets(); $('#gm-hsum-classes').textContent = A().classUi.paint($('#gm-classes')); } });
-  app.on('sync:docs', () => { if (root && root.isConnected && !root.closest('[hidden]')) $('#gm-hsum-classes').textContent = A().classUi.paint($('#gm-classes')); });
   app.on('sync:sheets', weighJoined);
   // a player's reward asked of the GM (hunter/pending.ts): kept waiting once by its id, with its log line
   app.on('sync:event', ({ event: ev }) => {

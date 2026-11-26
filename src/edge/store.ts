@@ -46,13 +46,14 @@ function randToken(): string {
   const a = new Uint8Array(24); crypto.getRandomValues(a);
   return Array.from(a, b => b.toString(36).padStart(2, '0')).join('').slice(0, 32);
 }
-const e2eClassTrees = (): ClassTreeMap | undefined => {
+/** Active class trees: production `CLASS_TREES` always takes precedence over Playwright test fixtures. */
+export const activeClassTrees = (): ClassTreeMap => {
   const injected = (globalThis as { __e2eClassTrees?: ClassTreeMap }).__e2eClassTrees;
-  return injected ? { ...injected, ...CLASS_TREES } : undefined;
+  return injected ? { ...injected, ...CLASS_TREES } : CLASS_TREES;
 };
 const env = (): ParseEnv => {
-  const classTrees = e2eClassTrees();
-  return { now: new Date(), newDeviceId: randId, newDeviceToken: randToken, ...(classTrees ? { classTrees } : {}) };
+  const classTrees = activeClassTrees();
+  return { now: new Date(), newDeviceId: randId, newDeviceToken: randToken, ...(classTrees !== CLASS_TREES ? { classTrees } : {}) };
 };
 
 // ── device prefs: their own key, so a campaign export, a backup and a sheet never carry them ──

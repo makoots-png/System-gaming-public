@@ -833,3 +833,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T05:26Z	item-sync	PR 136 merged (ed460612): item-sync PR 1 + Fable fix-up (B1, B2, should-fix); unit 7236 merged, CI 45760024810 8/8
 2026-11-26T05:56Z	class-rarity	PR 137 merged (a70ceebe): wave 1 PR 4, Bladefiend + Rifthunter kits; unit 7258 merged, CI 45762622486 8/8
 2026-11-26T06:47Z	class-rarity	PR 138 merged (55e7a700): wave 1 PR 5, Seraph + Ironclad + Stormcaller kits; unit 7273 merged, CI 45768905368 8/8
+2026-11-26T07:09Z	class-rarity	PR 139 merged (eedd9f0c): wave 1 PR 7, Brambleguard + Pyromancer + Sniper kits (Claude Opus finished after Neon quota); unit 7295 merged, CI 45771412563 8/8

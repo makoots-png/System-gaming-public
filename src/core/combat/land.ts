@@ -213,8 +213,8 @@ export function hasteOn(user: Body, t: Body, share: number, now: Tick, R: OpRule
 
 /** A threshold a status set off on a body (rule 18a), to land once its outcome is in. */
 export type LandFired = { readonly bearer: CombatantId; readonly key: StatusKey; readonly label: string; readonly threshold: Threshold; readonly source: Source };
-/** A threshold that went off: on whom, which status, and what its ops did to each body they reached. */
-export type Burst = { readonly bearer: CombatantId; readonly key: StatusKey; readonly label: string; readonly landed: readonly { readonly target: CombatantId; readonly dealt: number }[] };
+/** A threshold or delayed-effect detonation that went off: on whom, which status, and what its ops did to each body they reached (damage dealt, or a detonation's heal to its source). */
+export type Burst = { readonly bearer: CombatantId; readonly key: StatusKey; readonly label: string; readonly landed: readonly { readonly target: CombatantId; readonly dealt: number; readonly healed?: number }[] };
 
 /**
  * Rule 18a (kits design 1.2): a stacking status put on with `k` stacks, from a count of `before`, fires its threshold on
@@ -244,10 +244,23 @@ export function reached(rows: ReadonlyMap<CombatantId, Body>, bearer: Body, reac
 }
 
 /**
- * What landing did to one body: its HP damage dealt (after defence, before the shield), whether it went down, and the
- * status keys it gained (for the triggers' events, design 1.3), with the thresholds those set off.
+ * What landing did to one body: its HP damage dealt (after defence, before the shield), any HP healed on a detonated
+ * status's source, whether it went down, and the status keys it gained or had cured (for the triggers' events, design 1.3).
  */
-export type Landed = { readonly target: CombatantId; readonly dealt: number; readonly down: boolean; readonly gained: readonly StatusKey[]; readonly cured: readonly StatusKey[] };
+export type Landed = { readonly target: CombatantId; readonly dealt: number; readonly healed?: number; readonly down: boolean; readonly gained: readonly StatusKey[]; readonly cured: readonly StatusKey[] };
+
+/** The log parts for landed entries (damage dealt and detonation source heals), e.g. `["Monster 80", "Hemomancer heals 32"]`. */
+export function landedWords(
+  entries: readonly { readonly target: CombatantId; readonly dealt: number; readonly healed?: number }[],
+  name: (id: CombatantId) => string,
+): string[] {
+  const out: string[] = [];
+  for (const l of entries) {
+    if (l.dealt) out.push(`${name(l.target)} ${l.dealt}`);
+    if (l.healed) out.push(`${name(l.target)} heals ${l.healed}`);
+  }
+  return out;
+}
 
 /**
  * Ops landing once on each of `targets`, from `source`, at their formulas' averages (no dice: design 1.3.6). `hitter` is
@@ -255,13 +268,16 @@ export type Landed = { readonly target: CombatantId; readonly dealt: number; rea
  * a threshold or an end, the bearer for a trigger (design 1.3.9); null reads the target itself. `times` multiplies every
  * amount (an end lands times its stacks, design 1.6). With `cross` a status put on checks its threshold (rule 18a) and
  * the ones it sets off come back in `fired`, for the caller to land once; without it a status only adds its stacks. A
- * move that takes from a target gives to the hitter, which then has an entry of its own in `landed`, after the targets'.
+ * move that takes from a target gives to the hitter, and a cure/dispel detonation that heals a status's source reports
+ * that source, each as an entry of its own in `landed`, after the targets'.
  */
 export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hitter: Body | null, targets: readonly CombatantId[], source: Source, now: Tick, R: OpRules,
   o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey; readonly gained?: Gained } = {}): { landed: Landed[]; fired: LandFired[] } {
   const landed: Landed[] = [], fired: LandFired[] = [];
   // what a move from a target gave the body that took it (the hitter), told after the targets
   const taken: Record<CombatantId, StatusKey[]> = {};
+  // what a cure/dispel detonation healed a status's source, told after the targets
+  const sourceHealed = new Map<CombatantId, number>();
   for (const id of targets) {
     let t = rows.get(id);
     if (!t || !alive(t)) continue;
@@ -285,12 +301,19 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
       if (r.gained) gained.push(r.gained);
       if (r.cured) cured.push(r.cured);
       // a cure's or a dispel's detonation (table 2.2) lands on the bearer as the ops left it
-      for (const gone of r.lands) { rows.set(t.id, t); const e = landEnd(rows, t.id, gone, now, R); t = rows.get(t.id)!; dealt += e.dealt; }
+      for (const gone of r.lands) {
+        rows.set(t.id, t);
+        const e = landEnd(rows, t.id, gone, now, R);
+        t = rows.get(t.id)!;
+        dealt += e.dealt;
+        if (e.sourceHealed && gone.source.id !== null) sourceHealed.set(gone.source.id, (sourceHealed.get(gone.source.id) ?? 0) + e.sourceHealed);
+      }
     }
     rows.set(t.id, t);
     landed.push({ target: t.id, dealt, down: before > 0 && rowHp(t) === 0, gained, cured });
   }
   for (const [id, keys] of Object.entries(taken) as [CombatantId, StatusKey[]][]) landed.push({ target: id, dealt: 0, down: false, gained: keys, cured: [] });
+  for (const [id, amt] of sourceHealed) landed.push({ target: id, dealt: 0, healed: amt, down: false, gained: [], cured: [] });
   // an echo lands once, on a body of its own choosing, after the targets (keystones A.7)
   if (o.gained) for (const op of ops) if (op.op === 'echo') {
     const e = echoed(rows, op, o.gained, o.cross ?? false, now, R);
@@ -376,7 +399,7 @@ export function landThreshold(rows: Map<CombatantId, Body>, f: LandFired, now: T
   const bearer = rows.get(f.bearer)!, from = f.source.id === null ? null : rows.get(f.source.id) ?? null;
   const inside = reached(rows, bearer, f.threshold.to).map(b => b.id);
   const r = landOps(rows, f.threshold.ops.filter(op => op.op !== 'refund'), from, inside, f.source, now, R);
-  return { bearer: f.bearer, key: f.key, label: f.label, landed: r.landed.map(l => ({ target: l.target, dealt: l.dealt })) };
+  return { bearer: f.bearer, key: f.key, label: f.label, landed: r.landed.map(l => ({ target: l.target, dealt: l.dealt, ...(l.healed ? { healed: l.healed } : {}) })) };
 }
 
 /**

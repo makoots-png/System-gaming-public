@@ -105,24 +105,27 @@ describe('setJob, earnClass, swapClass, buyClassNode, flipClassFork, pushedClass
   const common = buildSyntheticTree('Fighter', 'common');
   const trees = { Hemomancer: mythic, Fighter: common };
 
-  test('setJob refuses all 18 unique names, Shadow Monarch alias, unearned Rare names, and earned non-active classes', () => {
+  test('setJob refuses all 18 unique names, Shadow Monarch alias, unearned Rare names, earned non-active classes, held, and dead hunters', () => {
     const h = makeSave().hunters[0]!;
-    expect(setJob(h, 'Necromancer')).toEqual({ ok: false, why: 'unique-class' });
-    expect(setJob(h, 'Shadow Monarch')).toEqual({ ok: false, why: 'unique-class' });
-    expect(setJob(h, '  shadow   monarch  ')).toEqual({ ok: false, why: 'unique-class' });
-    expect(setJob(h, '  hemomancer  ')).toEqual({ ok: false, why: 'unique-class' });
-    expect(setJob(h, 'CHRONOKEEPER')).toEqual({ ok: false, why: 'unique-class' });
+    const free = { held: false, dead: false };
+    expect(setJob(h, 'Fighter', { held: true, dead: false })).toEqual({ ok: false, why: 'held' });
+    expect(setJob(h, 'Fighter', { held: false, dead: true })).toEqual({ ok: false, why: 'dead' });
+    expect(setJob(h, 'Necromancer', free)).toEqual({ ok: false, why: 'unique-class' });
+    expect(setJob(h, 'Shadow Monarch', free)).toEqual({ ok: false, why: 'unique-class' });
+    expect(setJob(h, '  shadow   monarch  ', free)).toEqual({ ok: false, why: 'unique-class' });
+    expect(setJob(h, '  hemomancer  ', free)).toEqual({ ok: false, why: 'unique-class' });
+    expect(setJob(h, 'CHRONOKEEPER', free)).toEqual({ ok: false, why: 'unique-class' });
     // Unearned Rare built-in classes are refused so free text never grants their keystone stat pair
-    expect(setJob(h, 'Berserker')).toEqual({ ok: false, why: 'not-earned' });
-    expect(setJob(h, 'Pyromancer')).toEqual({ ok: false, why: 'not-earned' });
+    expect(setJob(h, 'Berserker', free)).toEqual({ ok: false, why: 'not-earned' });
+    expect(setJob(h, 'Pyromancer', free)).toEqual({ ok: false, why: 'not-earned' });
 
-    const ok = setJob(h, 'Fighter');
+    const ok = setJob(h, 'Fighter', free);
     expect(isRefused(ok)).toBe(false);
     if (!isRefused(ok)) {
       expect(ok.job).toBe('Fighter');
       expect(ok.jobDone).toBeNull();
     }
-    const custom = setJob(h, 'Rune Chef');
+    const custom = setJob(h, 'Rune Chef', free);
     expect(isRefused(custom)).toBe(false);
 
     // Earned non-active class must go through swapClass, never free-text setJob
@@ -130,9 +133,9 @@ describe('setJob, earnClass, swapClass, buyClassNode, flipClassFork, pushedClass
     if (isRefused(withTwo1)) throw new Error(withTwo1.why);
     const withTwo2 = earnClass(withTwo1, 'Mage', { at: AT, R: RULES });
     if (isRefused(withTwo2)) throw new Error(withTwo2.why);
-    expect(setJob(withTwo2, 'Fighter')).toEqual({ ok: false, why: 'earned-class' });
+    expect(setJob(withTwo2, 'Fighter', free)).toEqual({ ok: false, why: 'earned-class' });
     // Re-typing the already active earned class is a safe no-op that preserves jobDone
-    const same = setJob(withTwo2, 'Mage');
+    const same = setJob(withTwo2, 'Mage', free);
     expect(same).toBe(withTwo2);
   });
 
@@ -335,6 +338,19 @@ describe('setJob, earnClass, swapClass, buyClassNode, flipClassFork, pushedClass
     expect(fin.job).toBeNull();
     expect(fin.granted.job).toBeNull();
     expect(fin.granted.lines.some(l => l.includes('Necromancer'))).toBe(false);
+  });
+
+  test('grant tells the player when a job reward is not taken because a fight holds them or they are down', () => {
+    const s = makeSave();
+    const h = s.hunters[0]!;
+    const r = { ...newRewards(), xp: 5, job: 'Fighter' };
+    const held = grant(s, h.id, r, { at: AT, today: day('2026-11-25'), R: RULES, vitals: 'fight' });
+    if (isRefused(held)) throw new Error(held.why);
+    expect(held.job).toBeNull();
+    expect(held.lines).toContain('Job not taken: Fighter (you are in a fight)');
+    const free = grant(s, h.id, r, { at: AT, today: day('2026-11-25'), R: RULES, vitals: 'sheet' });
+    if (isRefused(free)) throw new Error(free.why);
+    expect(free.lines.some(l => l.startsWith('Job not taken'))).toBe(false);
   });
 
   test('backedRemoteHunter strips spoofed unique classes from pushed sheets while keeping GM-backed claims', () => {

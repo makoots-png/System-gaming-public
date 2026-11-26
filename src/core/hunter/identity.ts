@@ -24,6 +24,6 @@ export function neutralSeed(h: Hunter, name: string, job?: string): Hunter {
     quests: h.quests.filter(q => q.kind === 'daily'),
   };
   if (!job) return base;
-  const jobbed = setJob(base, job);
+  const jobbed = setJob(base, job, { held: false, dead: false });
   return isRefused(jobbed) ? base : jobbed;
 }

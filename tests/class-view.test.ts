@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave } from '../src/core/save.ts';
-import { parseClassNodeId, parseSheetKey, sheetKeyOf } from '../src/core/ids.ts';
+import { parseClassNodeId, parseSheetKey } from '../src/core/ids.ts';
 import type { ClassNodeId, SheetKey } from '../src/core/ids.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { parseClasses } from '../src/core/hunter/class-locker.ts';
@@ -33,12 +33,12 @@ const skey = (s: string): SheetKey => parseSheetKey(s)!;
 
 describe('PR 3 unique class parsing and refusal copy', () => {
   test('parseClasses clears un-held Necromancer and Shadow Monarch', () => {
-    expect(parseClasses(undefined, { job: 'Necromancer', jobDone: 'Necromancer', fallbackAt: AT })).toEqual({
+    expect(parseClasses(undefined, { job: 'Necromancer', fallbackAt: AT })).toEqual({
       classes: {},
       job: null,
       jobDone: null,
     });
-    expect(parseClasses(undefined, { job: 'Shadow Monarch', jobDone: 'Shadow Monarch', fallbackAt: AT })).toEqual({
+    expect(parseClasses(undefined, { job: 'Shadow Monarch', fallbackAt: AT })).toEqual({
       classes: {},
       job: null,
       jobDone: null,
@@ -107,15 +107,12 @@ describe('lockerView, forkFlipPreview, and nodeGiftLines', () => {
       held: false,
       R: RULES,
       activeRegistryId: 'reg-home',
-      mySheetKey: sheetKeyOf(s.settings.deviceId, h.id),
-      holdersDoc: { registryId: 'reg-home', at: AT, held: {} },
       trees: { Pyromancer: rareTree },
     });
 
     expect(vm.active.kind).toBe('earned');
     expect(vm.entries.map(e => e.name)).toEqual(['Pyromancer', 'Starforger', 'Fighter']);
     expect(vm.entries.find(e => e.name === 'Starforger')?.parked).toBe(true);
-    expect(vm.entries.find(e => e.name === 'Fighter')?.pairChanges).toBe(true);
     expect(vm.treeMissing).toBe(false);
     expect(vm.tree?.ownedCount).toBe(7);
     expect(vm.tree?.buyableCap).toBe(16);
@@ -137,8 +134,8 @@ describe('lockerView, forkFlipPreview, and nodeGiftLines', () => {
   test('setJob refuses dead and held hunters, swapClass refuses holders-pending before first DOCS.holders, and node logs use node names', () => {
     const s0 = freshSave(env, { onboarded: true });
     const h0 = s0.hunters[0]!;
-    expect(setJob(h0, 'Fighter', { held: true })).toEqual({ ok: false, why: 'held' });
-    expect(setJob(h0, 'Fighter', { dead: true })).toEqual({ ok: false, why: 'dead' });
+    expect(setJob(h0, 'Fighter', { held: true, dead: false })).toEqual({ ok: false, why: 'held' });
+    expect(setJob(h0, 'Fighter', { held: false, dead: true })).toEqual({ ok: false, why: 'dead' });
 
     const earned = earnClass({ ...h0, gold: 500 }, 'Hemomancer', { at: AT, activate: false, registryId: 'reg-1', grantId: 'cg1', R: RULES });
     if (isRefused(earned)) throw new Error(earned.why);
@@ -213,8 +210,6 @@ describe('lockerView, forkFlipPreview, and nodeGiftLines', () => {
       held: false,
       R: RULES,
       activeRegistryId: null,
-      mySheetKey: null,
-      holdersDoc: null,
       trees: {},
     });
     expect(vm.tree).toBeNull();
@@ -295,7 +290,7 @@ describe('registryView', () => {
     const seraph = vm.rows.find(r => r.className === 'Seraph')!;
     expect(seraph.hasKit).toBe(true);
     expect(seraph.holderName).toBe(h0.name);
-    expect(seraph.holderKindLabel).toBe('Local');
+    expect(seraph.holderKindLabel).toBe('This phone');
     expect(seraph.inFight).toBe(true);
     expect(seraph.synced).toBe(true);
 
@@ -310,17 +305,16 @@ describe('registryView', () => {
 
     // Deleted local holder is flagged with "(removed)" while staying held per t135u
     const removedSave = removeHunter({ ...c3.save, hunters: [...c3.save.hunters, { ...h0, id: 'h999' as typeof h0.id, name: 'Spare' }] }, h0.id, null);
-    if (!isRefused(removedSave)) {
-      const remVm = registryView(removedSave, {
-        inRoom: false,
-        holdersDoc: null,
-        heldLocal: () => false,
-        heldRemote: () => false,
-      });
-      const remSeraph = remVm.rows.find(r => r.className === 'Seraph')!;
-      expect(remSeraph.holderRemoved).toBe(true);
-      expect(remSeraph.holderName).toBe(`${h0.name} (removed)`);
-    }
+    if (isRefused(removedSave)) throw new Error(`removeHunter refused: ${removedSave.why}`);
+    const remVm = registryView(removedSave, {
+      inRoom: false,
+      holdersDoc: null,
+      heldLocal: () => false,
+      heldRemote: () => false,
+    });
+    const remSeraph = remVm.rows.find(r => r.className === 'Seraph')!;
+    expect(remSeraph.holderRemoved).toBe(true);
+    expect(remSeraph.holderName).toBe(`${h0.name} (removed)`);
 
     // Out-of-date room doc marks claimed class as syncing (false)
     const staleVm = registryView(c3.save, {

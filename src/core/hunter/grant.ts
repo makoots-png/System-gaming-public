@@ -186,7 +186,12 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   const replaced = titleNew && r.title?.replaces ? titleNamed(h, r.title.replaces, R.titles) : undefined;
   if (r.title && titleNew) h = giveTitle(h, r.title, ids.next('t'), R.titles);
   let jobGranted: string | null = null;
-  if (r.job) { const j = setJob(h, r.job); if (!isRefused(j)) { h = j; jobGranted = j.job; } }
+  // a job refused because the hunter is held or down is told in the window; the other refusals are the GM's job name to fix
+  let jobWhy: 'held' | 'dead' | null = null;
+  if (r.job) {
+    const j = setJob(h, r.job, { held: o.vitals === 'fight', dead: h.life.at === 'dead' });
+    if (!isRefused(j)) { h = j; jobGranted = j.job; } else if (j.why === 'held' || j.why === 'dead') jobWhy = j.why;
+  }
   for (const k of r.skills) h = giveSkill(h, k, ids.next('s'));
   h = giveBoons(h, r.boons.map(b => ({ id: ids.next('bn'), name: b.name, text: b.text })), o.at);
   h = fitted(h, R);
@@ -248,7 +253,7 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   }
 
   const debtLog = guildPaidLog(h.name, debtPaid, guildCut, debtXp, debtXpCleared ? xp : 0);
-  const lines = grantLines(
+  const lines: string[] = grantLines(
     R,
     { ...r, xp, gold, crystal, points, job: jobGranted, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
     {
@@ -259,6 +264,7 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
       ...(debtXpCleared ? { debtXpCleared: true } : {}),
     },
   );
+  if (r.job && jobWhy) lines.push(jobWhy === 'held' ? `Job not taken: ${r.job} (you are in a fight)` : `Job not taken: ${r.job} (you are down)`);
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
   return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted };

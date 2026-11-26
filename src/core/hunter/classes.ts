@@ -114,17 +114,17 @@ export function nodeCost(
 
 /**
  * Sets a hunter's job from free text (pre-chain Common starter or custom GM job), or clears it with null/blank.
- * Refuses dead or fight-held hunters when `opts` supplies those guards, unique built-in names or aliases
- * (including Shadow Monarch), earned non-active classes (no free-swap loophole), and unearned Rare built-in
- * class names (so typing a Rare name never grants its keystone stat pair).
+ * Refuses dead or fight-held hunters (`opts`), unique built-in names or aliases (including Shadow Monarch),
+ * earned non-active classes (no free-swap loophole), and unearned Rare built-in class names (so typing a Rare
+ * name never grants its keystone stat pair).
  */
 export function setJob<H extends { job: string | null; jobDone: string | null; classes: ClassLocker }>(
   h: H,
   job: string | null,
-  opts?: { readonly held?: boolean; readonly dead?: boolean },
+  opts: { readonly held: boolean; readonly dead: boolean },
 ): H | Refused<'dead' | 'held' | 'unique-class' | 'earned-class' | 'not-earned'> {
-  if (opts?.dead) return refuse('dead');
-  if (opts?.held) return refuse('held');
+  if (opts.dead) return refuse('dead');
+  if (opts.held) return refuse('held');
   const clean = jobOf(job);
   if (clean && canonicalUniqueClass(clean) !== null) return refuse('unique-class');
   if (clean === null) return { ...h, job: null, jobDone: null };
@@ -533,7 +533,7 @@ export const CLASS_REFUSAL_WORDS = {
   'unknown-node': 'That skill tree node does not exist.',
   owned: 'You already own that node.',
   locked: 'Buy a parent node first.',
-  'fork-taken': 'You already picked the other fork. Flip the fork outside combat to switch.',
+  'fork-taken': 'You already picked the other fork. Flip the fork outside a fight to switch.',
   'not-fork-pair': 'Those two nodes are not an exclusive fork pair.',
   'not-owned': 'You do not own that fork node.',
   'already-owned': 'You already own that fork choice.',
