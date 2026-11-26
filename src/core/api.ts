@@ -139,8 +139,8 @@ export type CombatApi = {
   /** Rows join the fight (a new one in setup when there is none; while it runs each rolls its opening). Answers how many joined. */
   add(list: JoinRow[]): number;
   isActive(): boolean;
-  /** Starts a fight from a gate or the bestiary: asks the GM who fights, adds them with `cs`, and starts it. */
-  startFlow(cs: JoinRow[], o?: { gateId?: string; title?: string; body?: string }): Promise<boolean>;
+  /** Starts a fight from a gate or the bestiary: asks the GM who fights (and which wave on a wave gate), adds them with `cs`, and starts it. */
+  startFlow(cs: JoinRow[], o?: { gateId?: string; title?: string; body?: string; waves?: readonly { readonly id: string; readonly label: string; readonly rows: () => JoinRow[] }[]; wave?: string }): Promise<boolean>;
   /** One party reward window for rewards already given in one step (pay.ts): each hunter's lines and level-ups, listed together. */
   showParty(granted: readonly { hid: string; g: Granted }[], o?: { title?: string; body?: string; lines?: string[] }): Promise<void>;
   /** False when another GM phone runs a fight and the GM declines to replace it. */

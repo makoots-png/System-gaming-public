@@ -86,7 +86,7 @@ export function openClassOffer(
   const nextHunters = shouldLift ? save.hunters.map(h => setCapDisplay(h, 'none')) : save.hunters;
   const gates = opts.gateId
     ? save.gates.map(g => (g.id === opts.gateId && g.classOffer ? { ...g, classOffer: false } : g))
-    : save.gates.map(g => (g.classOffer && g.fought.length > 0 ? { ...g, classOffer: false } : g));
+    : save.gates.map(g => (g.classOffer && g.bossFell ? { ...g, classOffer: false } : g));
   let s = told(
     { ...save, seq: nextSeq, hunters: nextHunters, gates, classOffer: offer },
     { at: opts.at, cap: opts.R.logCap },
@@ -329,7 +329,7 @@ export function classTakenLine(cls: string, holderName: string | null | undefine
 export const OFFER_WORDS = {
   tag: '! Class offer',
   title: 'Pick a class',
-  openBody: 'Pick a class. Only one hunter can hold each class.',
+  openBody: 'Six classes are open. Pick one class. Only one hunter can hold each class.',
   fitsBadge: 'Fits your stats',
   epicHeading: 'Epic classes',
   mythicHeading: 'Mythic classes',
@@ -348,7 +348,7 @@ export const OFFER_WORDS = {
   gmPickForLabel: 'Pick for local hunter',
   gmNoLocalHunters: 'No local hunters without an offered class.',
   gmOfferTitle: 'Class offer',
-  gmOfferRoomHint: 'Players in the room can pick one open class on their phones. You can also claim a class for a local hunter below, or release and reassign classes in the registry.',
+  gmOfferRoomHint: 'Players in the room can pick one open class on their phones. You can claim a class for a local hunter below. When everyone has picked, tap Close offer, then tap Clear gate in the Gates tab.',
   gmOfferLocalHint: 'Select a local hunter and pick one unique class for them. Only one hunter can hold each class.',
   gmOpenedToast: 'Class offer is open.',
   gmLiftAndOpenedToast: 'Cap lifted and class offer is open.',

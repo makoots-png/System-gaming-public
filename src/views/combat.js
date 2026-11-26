@@ -602,16 +602,26 @@ export function register(app) {
       actions: [{ label: 'Close', value: true, primary: true }] }).then(() => undefined);
   }
 
-  // Start-encounter dialog: party checkboxes (all checked) + "Start the fight now", on the maker shell.
+  // Start-encounter dialog: optional wave picker + party checkboxes (all checked) + "Start the fight now", on the maker shell.
   function partyDialog(o) {
     const hs = store.get().hunters;
+    const wavesHtml = o.waves && o.waves.length
+      ? `<fieldset class="cmb-party" data-wave-pick><legend>Fight wave</legend>${o.waves.map(w => `<label class="cmb-chk"><input type="radio" name="wave" value="${esc(w.id)}"${w.id === o.wave ? ' checked' : ''}> <span>${esc(w.label)}</span></label>`).join('')}</fieldset>`
+      : '';
     return A().maker.open({
       tag: '! Fight', title: o.title, save: 'Start fight', cls: 'cmbd', focus: win => win.querySelector('[data-apply]'),
       build(el) {
         el.innerHTML = `${o.body ? `<p class="n-body">${esc(o.body)}</p>` : ''}
+          ${wavesHtml}
           <fieldset class="cmb-party"><legend>Party</legend>${hs.length ? hs.map(h => `<label class="cmb-chk"><input type="checkbox" name="hid" value="${esc(h.id)}" checked> <span>${esc(h.name)}</span></label>`).join('') : '<p class="empty">No hunters yet.</p>'}</fieldset>
           <label class="cmb-chk"><input type="checkbox" name="roll" checked> <span>Start the fight now</span></label>`;
-        return { save: () => ({ hids: [...el.querySelectorAll('input[name=hid]:checked')].map(i => i.value), roll: Boolean(el.querySelector('input[name=roll]')?.checked) }) };
+        return {
+          save: () => ({
+            hids: [...el.querySelectorAll('input[name=hid]:checked')].map(i => i.value),
+            roll: Boolean(el.querySelector('input[name=roll]')?.checked),
+            wave: el.querySelector('input[name=wave]:checked')?.value ?? null,
+          }),
+        };
       },
     });
   }
@@ -619,11 +629,13 @@ export function register(app) {
   async function startFlow(cs, o = {}) {
     if (!canRun()) return false;
     if (otherGMLive() && !(await confirmReplace())) return false;
-    const pick = await partyDialog({ title: o.title || 'Start fight', body: o.body });
+    const pick = await partyDialog({ title: o.title || 'Start fight', body: o.body, waves: o.waves, wave: o.wave });
     if (!pick) return false;
     const have = haveKeys(fight()).ids;
     const hs = store.get().hunters.filter(h => pick.hids.includes(h.id) && !have.has(h.id)).map(hunterJoin);
-    const joins = [...(cs || []), ...hs];
+    const pickedWave = o.waves && pick.wave ? o.waves.find(w => w.id === pick.wave) : null;
+    const foes = pickedWave ? pickedWave.rows() : (cs || []);
+    const joins = [...foes, ...hs];
     if (joins.length && !add(joins, o.gateId || null)) return false;
     if (pick.roll) start();
     app.go('combat');

@@ -23,7 +23,7 @@ import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { RULES } from '../src/core/rules.ts';
 import { newRewards } from '../src/core/rewards.ts';
-import { den } from './models/gate-events.ts';
+import { den, mid } from './models/gate-events.ts';
 import { day, dev, gid } from './fixtures/ids.ts';
 
 const AT = '2026-11-14T10:00:00.000Z', DAY = { at: AT, today: day('2026-11-14'), R: RULES };
@@ -149,6 +149,54 @@ describe('the end of a fight', () => {
     const s = inDen(), copy = JSON.stringify(s), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
     settleEncounter(s, plan, 'award', { room: ROOM, events: [award(30)] }, DAY, NONE);
     expect(JSON.stringify(s)).toBe(copy);
+  });
+
+  test('bossFell and offerClasses stay false after Wave 1 (boss alive) and flip true once the gate boss falls (or when bossId is null)', () => {
+    const base = inDen();
+    const waveGate = {
+      ...base.gates[0]!,
+      classOffer: true,
+      bossId: mid('m-head-usher'),
+      monsters: [
+        { monsterId: mid('m-goblin'), count: 3, wave: 1 as const },
+        { monsterId: mid('m-usher'), count: 2, wave: 2 as const },
+      ],
+    };
+    // Fight 1: only a goblin (not the Head Usher) goes down -> bossFell stays false, offerClasses is null.
+    const f1Save: Save = {
+      ...base,
+      gates: [waveGate],
+      fightRefs: { gate: gid('g-den'), monsters: { [combatantId('c3')]: mid('m-goblin') } },
+    };
+    const plan1 = planEncounter(f1Save.fight as Ended, 'g-den', f1Save, PARTY, xpOf);
+    expect(plan1.dead[0]?.monsterId).toBe(mid('m-goblin'));
+    const out1 = ok(settleEncounter(f1Save, plan1, 'award', { room: ROOM, events: [award(120)] }, DAY, NONE));
+    expect(out1.save.gates[0]!.bossFell).toBe(false);
+    expect(out1.offerClasses).toBeNull();
+    expect(out1.save.gates[0]!.fought).toHaveLength(2);
+
+    // Fight 2: Head Usher (gate.bossId) goes down -> bossFell becomes true, offerClasses signals the gate.
+    const f2Save: Save = {
+      ...out1.save,
+      fight: inDen(0, 'f-wave2').fight,
+      fightRefs: { gate: gid('g-den'), monsters: { [combatantId('c3')]: mid('m-head-usher') } },
+    };
+    const plan2 = planEncounter(f2Save.fight as Ended, 'g-den', f2Save, PARTY, xpOf);
+    expect(plan2.dead[0]?.monsterId).toBe(mid('m-head-usher'));
+    const out2 = ok(settleEncounter(f2Save, plan2, 'award', { room: ROOM, events: [award(120)] }, DAY, NONE));
+    expect(out2.save.gates[0]!.bossFell).toBe(true);
+    expect(out2.offerClasses).toBe(gid('g-den'));
+
+    // Bossless gate (bossId: null): first settled fight sets bossFell true and unlocks offerClasses.
+    const noBossSave: Save = {
+      ...base,
+      gates: [{ ...waveGate, bossId: null, bossFell: false }],
+      fightRefs: { gate: gid('g-den'), monsters: { [combatantId('c3')]: mid('m-goblin') } },
+    };
+    const planNoBoss = planEncounter(noBossSave.fight as Ended, 'g-den', noBossSave, PARTY, xpOf);
+    const outNoBoss = ok(settleEncounter(noBossSave, planNoBoss, 'skip', { room: null, events: [] }, DAY, NONE));
+    expect(outNoBoss.save.gates[0]!.bossFell).toBe(true);
+    expect(outNoBoss.offerClasses).toBe(gid('g-den'));
   });
 });
 

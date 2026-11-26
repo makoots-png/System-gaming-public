@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, fightAward, gateXp, parseGate, shownOf, transition, xpDue } from '../src/core/gates/gate.ts';
+import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown, fightAward, gateXp, hasGateWaves, parseGate, shownOf, transition, waveRoster, xpDue } from '../src/core/gates/gate.ts';
 import { DEFAULT_DIFFICULTY, withDifficulty } from '../src/core/gates/difficulty.ts';
 import type { Gate, GateEvent, GateEventType, GateStatus, MonsterId } from '../src/core/gates/gate.ts';
 import { WALK_EVENTS, den, fields, mid } from './models/gate-events.ts';
@@ -220,6 +220,81 @@ describe('reading a stored gate', () => {
     const hard = withDifficulty(den('detected'), [{ type: 'setGate', level: 9 }, { type: 'setBoss', level: 10 }]);
     const shown = shownOf(hard, 60);
     expect('difficulty' in shown).toBe(false);
+  });
+
+  test('parseGate round-trips wave tags and bossFell, drops invalid wave values, and shownOf strips bossFell', () => {
+    const wavy: Gate = {
+      ...den('raiding'),
+      monsters: [
+        { monsterId: mid('m-goblin'), count: 3, wave: 1 },
+        { monsterId: mid('m-usher'), count: 2, wave: 2 },
+        { monsterId: mid('m-rat'), count: 1 },
+      ],
+      bossId: mid('m-head-usher'),
+      bossFell: true,
+    };
+    const parsed = parseGate(copy(wavy));
+    expect(parsed).toEqual(wavy);
+    expect('wave' in parsed!.monsters[2]!).toBe(false);
+    expect('bossFell' in shownOf(parsed!, 60)).toBe(false);
+
+    const messy = parseGate({
+      ...copy(den('detected')),
+      bossFell: 'yes',
+      monsters: [
+        { monsterId: 'm1', count: 2, wave: 1 },
+        { monsterId: 'm2', count: 1, wave: 2 },
+        { monsterId: 'm3', count: 1, wave: 3 },
+        { monsterId: 'm4', count: 1, wave: '1' },
+      ],
+    })!;
+    expect(messy.bossFell).toBe(false);
+    expect(messy.monsters).toEqual([
+      { monsterId: mid('m1'), count: 2, wave: 1 },
+      { monsterId: mid('m2'), count: 1, wave: 2 },
+      { monsterId: mid('m3'), count: 1 },
+      { monsterId: mid('m4'), count: 1 },
+    ]);
+
+    // transition preserves bossFell across status changes
+    expect(transition(wavy, { type: 'clear', day: 4 }).bossFell).toBe(true);
+    expect(transition(wavy, { type: 'gmSet', status: 'detected', day: 4 }).bossFell).toBe(true);
+  });
+});
+
+describe('multi-wave gate rosters and active wave selection', () => {
+  const twoWave = (): Gate => ({
+    ...den('detected'),
+    monsters: [
+      { monsterId: mid('m-goblin'), count: 3, wave: 1 },
+      { monsterId: mid('m-chief'), count: 1, wave: 1 },
+      { monsterId: mid('m-usher'), count: 2, wave: 2 },
+    ],
+    bossId: mid('m-head-usher'),
+  });
+
+  test('gates without wave tags report hasGateWaves false and activeGateWave all', () => {
+    const g = den('detected');
+    expect(hasGateWaves(g)).toBe(false);
+    expect(activeGateWave(g)).toBe('all');
+    expect(waveRoster(g, 'all')).toEqual({ monsters: g.monsters, bossId: g.bossId });
+  });
+
+  test('wave-tagged gates separate Wave 1 (no boss) from Wave 2 (with boss) and switch active wave once Wave 1 settles', () => {
+    const g = twoWave();
+    expect(hasGateWaves(g)).toBe(true);
+    expect(waveRoster(g, 1)).toEqual({
+      monsters: [{ monsterId: mid('m-goblin'), count: 3, wave: 1 }, { monsterId: mid('m-chief'), count: 1, wave: 1 }],
+      bossId: null,
+    });
+    expect(waveRoster(g, 2)).toEqual({
+      monsters: [{ monsterId: mid('m-usher'), count: 2, wave: 2 }],
+      bossId: mid('m-head-usher'),
+    });
+    expect(activeGateWave(g)).toBe(1);
+    expect(activeGateWave({ ...g, fought: ['h1'] })).toBe(2);
+    expect(activeGateWave({ ...g, xpPaid: 50 })).toBe(2);
+    expect(activeGateWave({ ...g, bossFell: true })).toBe(2);
   });
 });
 

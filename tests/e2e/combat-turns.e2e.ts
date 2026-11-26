@@ -417,7 +417,10 @@ test('a removed defeated monster keeps its XP and a removed live one gives none'
   await tapCombat(page, '[data-end]');
   await expect(page.locator('.sys-overlay.show .sys-window').first()).toContainText(`Total XP: ${dead.xp.toLocaleString('en-US')}`);
   await chooseInWindow(page, 'Award XP to party');
-  await chooseInWindow(page, 'Mark gate cleared');
+  await chooseInWindow(page, 'Close');
+  // The gate's boss is still alive, so Gate cleared? is skipped; open Clear directly from the gate card.
+  await go(page, 'gates');
+  await page.locator(`#view-gates .gate[data-id="${gate.id}"] [data-act=clear]`).tap();
 
   const panel = page.locator(`#view-gates .gate[data-id="${gate.id}"] .gt-panel[data-form=clear]`);
   const promise = panel.locator('[data-clearxp]').first();

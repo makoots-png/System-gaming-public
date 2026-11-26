@@ -1,6 +1,6 @@
 // gates.js: U08. Gates and dungeons: world day, spawn, break, encounter hand-off, clear + loot.
 // The world day and the gates change only through the steps of src/core/gates/world.ts (a gate's status through `transition`).
-import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
+import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown, gateXp as rosterXp, hasGateWaves, monsterId, newGate, parseGate, waveRoster, xpDue } from '../core/gates/gate.ts';
 import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, presetStep, refKey } from '../core/gates/preset.ts';
 import { OFFER_WORDS } from '../core/hunter/class-offer.ts';
 import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLevel, parseDifficultyLevel, scaleMonsterForGate, withDifficulty } from '../core/gates/difficulty.ts';
@@ -104,20 +104,46 @@ export function register(app) {
   const startSession = backup => moveDay('session-start', s => sessionStarted(s, backup, stamp()));
 
   // ── encounter hand-off ──
-  async function startEncounter(id) {
-    const g = gate(id); if (!g) return false;
+  /** Builds combatant rows for one wave slice of gate `g` (`1`, `2`, or `'all'`). */
+  function gateCombatants(g, pick) {
     const R = app.rules(), gateLevel = effectiveGateLevel(g.difficulty, R), bossLevel = effectiveBossLevel(g.difficulty, R);
-    const cs = [];
-    for (const m of g.monsters) {
+    const slice = waveRoster(g, pick), cs = [];
+    for (const m of slice.monsters) {
       const mo = monsterOf(m.monsterId);
       const scale = mo ? difficultyFactor(mo.kind, mo.rank, gateLevel, R, mo.archetype) : undefined;
       cs.push(...api.bestiary.toCombatant(m.monsterId, m.count, scale));
     }
-    if (g.bossId) {
-      const boss = monsterOf(g.bossId);
+    if (slice.bossId) {
+      const boss = monsterOf(slice.bossId);
       const scale = boss ? difficultyFactor(boss.kind, boss.rank, bossLevel, R, boss.archetype) : undefined;
-      cs.push(...api.bestiary.toCombatant(g.bossId, 1, scale));
+      cs.push(...api.bestiary.toCombatant(slice.bossId, 1, scale));
     }
+    return cs;
+  }
+  async function startEncounter(id) {
+    const g = gate(id); if (!g) return false;
+    if (hasGateWaves(g)) {
+      const s1 = waveRoster(g, 1), s2 = waveRoster(g, 2), sAll = waveRoster(g, 'all');
+      const countOf = s => s.monsters.reduce((n, m) => n + m.count, 0) + (s.bossId ? 1 : 0);
+      const namesOf = s => [
+        ...s.monsters.map(m => `${m.count} ${monsterOf(m.monsterId)?.name || 'Unknown monster'}`),
+        ...(s.bossId ? [`1 ${monsterOf(s.bossId)?.name || 'Unknown boss'}`] : []),
+      ].join(', ');
+      if (!countOf(sAll)) { ui.toast('Gates', 'This gate has no monsters.', { kind: 'warning' }); return false; }
+      const waves = [
+        { id: '1', label: `Wave 1 (${countOf(s1)}: ${namesOf(s1)})`, rows: () => gateCombatants(g, 1) },
+        { id: '2', label: `Wave 2 (${countOf(s2)}: ${namesOf(s2)})`, rows: () => gateCombatants(g, 2) },
+        { id: 'all', label: `All monsters (${countOf(sAll)})`, rows: () => gateCombatants(g, 'all') },
+      ];
+      return api.combat.startFlow([], {
+        gateId: g.id,
+        title: `Start fight: ${g.name}`,
+        body: `Choose a wave and who fights in this ${g.rank}-rank gate.`,
+        waves,
+        wave: String(activeGateWave(g)),
+      });
+    }
+    const cs = gateCombatants(g, 'all');
     if (!cs.length) { ui.toast('Gates', 'This gate has no monsters.', { kind: 'warning' }); return false; }
     // the combat view links the fight to the gate and marks the gate as fought in the same write (fight-save.ts `fought`)
     return api.combat.startFlow(cs, { gateId: g.id, title: `Start fight: ${g.name}`, body: `${cs.length} monster${cs.length === 1 ? '' : 's'} from this ${g.rank}-rank gate. Choose who fights.` });
@@ -417,6 +443,8 @@ export function register(app) {
 .gt-mons li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .gt-mons .cnt{font-family:var(--font-mono);color:var(--cyan)}
 .gt-mons .boss{color:var(--gold);font-weight:600}
+.gt-mons .gt-wave-h{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan-dim);margin-top:4px}
+.gt-mons .gt-wave-h:first-child{margin-top:0}
 .gt-mons .mx{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
 .gt-notes{margin:8px 0 0;font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}
 .gt-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
@@ -425,7 +453,7 @@ export function register(app) {
 .gt-chk{display:flex;align-items:center;gap:10px;min-height:44px;min-width:0;overflow-wrap:anywhere;padding:0 10px;border:1px solid var(--line);background:rgba(6,14,26,.7);cursor:pointer}
 .gt-chk input{width:20px;height:20px;flex:0 0 auto}
 .gt-mrow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-.gt-mrow .field:first-child{flex:1 1 160px}.gt-mrow .field.n{flex:0 0 80px}
+.gt-mrow .field:first-child{flex:1 1 160px}.gt-mrow .field.n{flex:0 0 80px}.gt-mrow .field.w{flex:0 0 118px}
 .gt-pitems{display:flex;flex-direction:column;gap:8px}
 .gt-prow{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);background:rgba(6,14,26,.55)}
 .gt-pchk{border:0;background:none;padding:0;min-height:44px}
@@ -488,12 +516,20 @@ export function register(app) {
 
       function cardHtml(g) {
         const gm = app.isGM(), R = app.rules();
-        const mons = g.monsters.map(m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(mo, g, 'pack', R), R).hpMax)}</span>` : ''}</li>`; }).join('');
+        const monLi = m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(mo, g, 'pack', R), R).hpMax)}</span>` : ''}</li>`; };
         const boss = g.bossId ? monsterOf(g.bossId) : null;
+        const bossLi = g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(boss, g, 'boss', R), R).hpMax)}</span>` : ''}</li>` : '';
+        const rosterHtml = hasGateWaves(g)
+          ? (() => {
+              const w1 = waveRoster(g, 1), w2 = waveRoster(g, 2);
+              return `<li class="gt-wave-h" data-wave-head="1">Wave 1</li>${w1.monsters.map(monLi).join('')}`
+                + `<li class="gt-wave-h" data-wave-head="2">Wave 2</li>${w2.monsters.map(monLi).join('')}${bossLi}`;
+            })()
+          : `${g.monsters.map(monLi).join('') || '<li class="empty">No regular monsters.</li>'}${bossLi}`;
         const acts = !gm ? '' : [
           can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Mark as raiding</button>' : '',
           can(g, 'fightStarted') ? '<button type="button" data-act="encounter">Start fight</button>' : '',
-          g.classOffer && g.fought.length > 0 && !store.get().classOffer ? `<button type="button" data-act="class-offer">${esc(OFFER_WORDS.gmLiftAndOfferButton)}</button>` : '',
+          g.classOffer && g.bossFell && !store.get().classOffer ? `<button type="button" data-act="class-offer">${esc(OFFER_WORDS.gmLiftAndOfferButton)}</button>` : '',
           can(g, 'clear') && g.preset.at !== 'paid' ? `<button type="button" data-act="preset">${esc(PRESET_WORDS.button)}</button>` : '',
           can(g, 'clear') ? '<button type="button" data-act="clear" class="primary">Clear gate</button>' : '',
           '<button type="button" data-act="edit">Edit</button>',
@@ -510,8 +546,7 @@ export function register(app) {
           ${g.type === 'red' ? `<div class="gt-red-banner" role="note">Red gate: no exit until the boss is defeated. Check difficulty (DC) +${esc(cfg.redDcBonus)}.</div>` : ''}
           ${g.type === 'double' && gm ? '<div class="gt-notes">Double gate. Contains a hidden second dungeon for the GM to reveal.</div>' : ''}
           <div class="gt-timer ${timerCls(g)}">${esc(timer(g))}</div>
-          <ul class="gt-mons" aria-label="Monsters">${mons || '<li class="empty">No regular monsters.</li>'}
-            ${g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(boss, g, 'boss', R), R).hpMax)}</span>` : ''}</li>` : ''}</ul>
+          <ul class="gt-mons" aria-label="Monsters">${rosterHtml}</ul>
           <div class="gt-notes" data-gate-xp>Gate XP per hunter (for ${app.rules().gateParty} hunters, higher for fewer): <span data-xp-val>${ui.fmt(gateXp(g))}</span></div>
           ${gm ? `<div class="gt-notes" data-diff-summary>${esc(DIFFICULTY_WORDS.cardSummary(g.difficulty, !!g.bossId, R))}</div>` : ''}
           ${pLine}${paidList}
@@ -654,7 +689,8 @@ export function register(app) {
       function editPanel(g) {
         const all = api.bestiary.list();
         const mopt = sel => all.map(m => `<option value="${esc(m.id)}"${m.id === sel ? ' selected' : ''}>${esc(m.name)} (${esc(m.rank)}${m.kind === 'normal' ? '' : `, ${m.kind}`})</option>`).join('');
-        const row = m => `<div class="gt-mrow" data-mrow>${ui.field('Monster', `<select name="mid">${mopt(m.monsterId)}</select>`)}${ui.field('Count', `<input type="number" name="cnt" min="1" max="${MONSTER_BOUNDS.copies}" inputmode="numeric" value="${esc(m.count)}">`).replace('class="field"', 'class="field n"')}<button type="button" class="danger" data-act="rm-row" aria-label="Remove this monster">Remove</button></div>`;
+        const wopt = w => `<option value="">Single fight</option><option value="1"${w === 1 ? ' selected' : ''}>Wave 1</option><option value="2"${w === 2 ? ' selected' : ''}>Wave 2</option>`;
+        const row = m => `<div class="gt-mrow" data-mrow>${ui.field('Monster', `<select name="mid">${mopt(m.monsterId)}</select>`)}${ui.field('Count', `<input type="number" name="cnt" min="1" max="${MONSTER_BOUNDS.copies}" inputmode="numeric" value="${esc(m.count)}">`).replace('class="field"', 'class="field n"')}${ui.field('Wave', `<select name="wave">${wopt(m.wave)}</select>`).replace('class="field"', 'class="field w"')}<button type="button" class="danger" data-act="rm-row" aria-label="Remove this monster">Remove</button></div>`;
         const sOpt = (list, sel, label = v => v) => list.map(v => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(label(v))}</option>`).join('');
         return `<form class="gt-panel" data-form="edit" aria-label="Edit gate">
           <div class="grid2">${ui.field('Name', `<input type="text" name="name" maxlength="60" value="${esc(g.name)}">`)}
@@ -983,7 +1019,11 @@ export function register(app) {
           if (!(await clearGate(id, hids, clearData))) { openPanel.set(id, 'clear'); return; }
           clearDrafts.delete(id);
         } else if (kind === 'edit') {
-          const rows = [...f.querySelectorAll('[data-mrow]')].map(r => ({ monsterId: monsterId(r.querySelector('[name=mid]').value), count: copiesOf(r.querySelector('[name=cnt]').value) })).filter(r => r.monsterId);
+          const rows = [...f.querySelectorAll('[data-mrow]')].map(r => {
+            const mid = monsterId(r.querySelector('[name=mid]').value);
+            const w = Number(r.querySelector('[name=wave]')?.value);
+            return mid ? { monsterId: mid, count: copiesOf(r.querySelector('[name=cnt]').value), ...(w === 1 || w === 2 ? { wave: /** @type {import('../core/gates/gate.ts').GateWave} */ (w) } : {}) } : null;
+          }).filter(Boolean);
           openPanel.delete(id);
           const g = gate(id);
           // a refused edit keeps the panel open with what was typed: nothing redraws it
@@ -1002,6 +1042,7 @@ export function register(app) {
   app.on('combat:end', async ({ fight, gateId, offerClasses }) => {
     const g = gateId ? gate(gateId) : null;
     if (!g || !can(g, 'clear') || !app.isGM()) return;
+    if (g.bossId && !g.bossFell) return;
     const withOffer = !!offerClasses && offerClasses === g.id;
     const body = withOffer
       ? `Did the party clear "${g.name}" (${g.rank}-rank)? ${OFFER_WORDS.gatePromptNote}`

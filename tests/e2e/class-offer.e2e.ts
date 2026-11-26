@@ -348,6 +348,126 @@ test('a pick the GM undoes or refuses takes the player off Claiming: a grant rel
   });
 });
 
+test('two-wave offer gate: Fight 1 preselects Wave 1 with neither Clear modal nor offer; Fight 2 preselects Wave 2, triggers both, and Clear-before-offer keeps the card button active', async ({ device }) => {
+  const gm = (await device('gm-waves')).page;
+  await onboardGM(gm);
+  await dismissAll(gm);
+  await chooseList(gm);
+
+  // Author a two-wave E-rank gate using the U1 scripted monsters (goblin-chief in Wave 1, usher + head-usher in Wave 2).
+  const gateId = await gm.evaluate(() => {
+    const id = hunterApp.store.id('g');
+    hunterApp.store.update((d: any) => {
+      d.gates.unshift({
+        id,
+        name: 'Wave Trial Gate',
+        rank: 'E',
+        type: 'normal',
+        status: 'detected',
+        breakDay: d.world.day + 1,
+        monsters: [
+          { monsterId: 'seed:goblin', count: 2, wave: 1 },
+          { monsterId: 'seed:goblin-chief', count: 1, wave: 1 },
+          { monsterId: 'seed:usher', count: 2, wave: 2 },
+        ],
+        bossId: 'seed:head-usher',
+        notes: '',
+        createdDay: d.world.day,
+        xpPaid: 0,
+        mapId: null,
+        fought: [],
+        solo: false,
+        preset: { at: 'none' },
+        difficulty: { gate: { at: 'default' }, boss: { at: 'follows' } },
+        classOffer: true,
+        bossFell: false,
+      });
+    }, 'test-wave-gate');
+    return id as string;
+  });
+
+  await go(gm, 'gates');
+  const card = gm.locator(`#view-gates .gate[data-id="${gateId}"]`);
+  await expect(card).toBeVisible();
+  await expect(card.locator('[data-wave-head="1"]')).toHaveText('Wave 1');
+  await expect(card.locator('[data-wave-head="2"]')).toHaveText('Wave 2');
+  await expect(card.locator('[data-act="class-offer"]')).toHaveCount(0);
+
+  await test.step('Fight 1 preselects Wave 1 (no Ushers) and settling it triggers neither Gate cleared? nor Lift cap and offer classes', async () => {
+    await card.locator('[data-act="encounter"]').tap();
+    const dlg = gm.locator('[aria-modal="true"]');
+    await expect(dlg.locator('[data-wave-pick] input[name="wave"][value="1"]')).toBeChecked();
+    await dlg.locator('[data-apply]').tap();
+    await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+
+    const foeNames = await gm.evaluate(() => hunterApp.store.get().fight.rows.filter((r: any) => r.side === 'foe').map((r: any) => r.name));
+    expect(foeNames.some((n: string) => n.includes('Usher'))).toBe(false);
+    expect(foeNames.some((n: string) => n.includes('Goblin Chief'))).toBe(true);
+
+    await gm.evaluate(() => hunterApp.store.update((d: any) => {
+      for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' };
+    }, 'test-defeat-wave1'));
+    const endBtn = gm.locator('#view-combat [data-end]').first();
+    await endBtn.evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
+    await endBtn.tap();
+    await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Award XP to party' }).first().tap();
+
+    // Close rewards/loot windows and verify Gate cleared? never opens.
+    await dismissAll(gm);
+    await expect(modalWin(gm, 'Gate cleared?')).toHaveCount(0);
+    await go(gm, 'gates');
+    await expect(card.locator('[data-act="class-offer"]')).toHaveCount(0);
+    expect(await gm.evaluate(id => hunterApp.store.get().gates.find((g: any) => g.id === id)?.bossFell, gateId)).toBe(false);
+  });
+
+  await test.step('Fight 2 preselects Wave 2 (Ushers + Head Usher), triggers Gate cleared? + Lift cap and offer classes, and clearing first keeps the card button active', async () => {
+    await card.locator('[data-act="encounter"]').tap();
+    const dlg = gm.locator('[aria-modal="true"]');
+    await expect(dlg.locator('[data-wave-pick] input[name="wave"][value="2"]')).toBeChecked();
+    await dlg.locator('[data-apply]').tap();
+    await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+
+    const foeNames = await gm.evaluate(() => hunterApp.store.get().fight.rows.filter((r: any) => r.side === 'foe').map((r: any) => r.name));
+    expect(foeNames.some((n: string) => n.includes('Head Usher'))).toBe(true);
+    expect(foeNames.some((n: string) => n.includes('Goblin'))).toBe(false);
+
+    await gm.evaluate(() => hunterApp.store.update((d: any) => {
+      for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' };
+    }, 'test-defeat-wave2'));
+    const endBtn = gm.locator('#view-combat [data-end]').first();
+    await endBtn.evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
+    await endBtn.tap();
+    await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Award XP to party' }).first().tap();
+
+    const clearedDlg = modalWin(gm, 'Gate cleared?');
+    const otherPrimary = gm.locator('.sys-overlay.show', { hasNotText: 'Gate cleared?' }).locator('.sys-actions button.primary').first();
+    await expect.poll(async () => {
+      if (await clearedDlg.isVisible()) return true;
+      if (await otherPrimary.isVisible()) await otherPrimary.tap();
+      return false;
+    }, { timeout: 15_000 }).toBe(true);
+
+    await expect(clearedDlg).toContainText(OFFER_WORDS.gatePromptNote);
+    await expect(clearedDlg.locator('.sys-actions button', { hasText: OFFER_WORDS.gmLiftAndOfferButton })).toBeVisible();
+
+    // Tap Mark gate cleared BEFORE offering classes to test the post-Clear recovery path.
+    await clearedDlg.locator('.sys-actions button', { hasText: 'Mark gate cleared' }).tap();
+    const clearForm = card.locator('.gt-panel[data-form="clear"]');
+    await expect(clearForm).toBeVisible();
+    await clearForm.locator('button[type="submit"]').tap();
+    await dismissAll(gm);
+
+    // Open Finished gates: the cleared card still shows Lift cap and offer classes and opens the class offer modal.
+    const done = gm.locator('#gt-done');
+    if (!(await done.evaluate((el: any) => el.open))) await done.locator('summary').tap();
+    const clearedCard = gm.locator(`#gt-done-list .gate[data-id="${gateId}"]`);
+    await expect(clearedCard).toBeVisible();
+    await expect(clearedCard.locator('[data-act="class-offer"]')).toHaveText(OFFER_WORDS.gmLiftAndOfferButton);
+    await clearedCard.locator('[data-act="class-offer"]').tap();
+    await expect(gm.locator('[data-co-modal]')).toBeVisible();
+  });
+});
+
 test('capDisplay chip stays hidden on blank saves, updates via GM picker and rankLevels edits, and syncs to players via capSet', async ({ device }) => {
   const gmDev = await device('gm-cap');
   const p1Dev = await device('p1-cap', { viewport: SMALL_PHONE });

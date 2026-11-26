@@ -104,25 +104,30 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
     expect('classOffer' in shownOf(g0, 1)).toBe(false);
   });
 
-  test('settleEncounter signals offerClasses after the first fight of Goblin Den, and not once openClassOffer has run', () => {
+  test('settleEncounter signals offerClasses only after the gate boss falls, openClassOffer fallback checks bossFell, and OFFER_WORDS copy is neutral', () => {
     const s0 = gmSave();
     const den = s0.gates.find(g => g.name === 'Goblin Den')!;
     const h0 = s0.hunters[0]!;
-    const gob = seedMonsters(RULES)[0]!;
+    const seeds = seedMonsters(RULES);
+    const gob = seeds[0]!;
+    const otherMob = seeds.find(m => m.id !== gob.id)!;
     const ctx = { rules: RULES };
-    const rows = [
+    const rows1 = [
       hunterRow(h0, combatantId('c1'), RULES),
-      ...monsterRows(gob, [combatantId('c2')], RULES),
+      ...monsterRows(otherMob, [combatantId('c2')], RULES),
     ];
-    const fAdd = fightReduce(null, { type: 'add', fightId: 'f1' as FightId, rows, openings: [] }, ctx).fight!;
-    const fStart = fightReduce(fAdd, { type: 'start', openings: [{ id: combatantId('c1'), d20: 15, tie: 0 }, { id: combatantId('c2'), d20: 5, tie: 0 }] }, ctx).fight!;
-    const fEnd = fightReduce(fStart, { type: 'end' }, ctx).fight!;
-    if (fEnd.phase !== 'ended') throw new Error('expected ended fight');
+    const f1Add = fightReduce(null, { type: 'add', fightId: 'f1' as FightId, rows: rows1, openings: [] }, ctx).fight!;
+    const f1Start = fightReduce(f1Add, { type: 'start', openings: [{ id: combatantId('c1'), d20: 15, tie: 0 }, { id: combatantId('c2'), d20: 5, tie: 0 }] }, ctx).fight!;
+    const f1End = fightReduce(f1Start, { type: 'end' }, ctx).fight!;
+    if (f1End.phase !== 'ended') throw new Error('expected ended fight');
+    const f1Ended = { ...f1End, summary: { ...f1End.summary, down: [combatantId('c2')] } };
 
-    const plan = planEncounter(fEnd, den.id, s0, 3, () => 25);
+    // Fight 1 defeats a non-boss monster: bossFell remains false and offerClasses is null.
+    const sFight1: Save = { ...s0, fight: f1Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c2')]: otherMob.id } } };
+    const plan1 = planEncounter(f1Ended, den.id, sFight1, 3, () => 25);
     const settled1 = settleEncounter(
-      { ...s0, fight: fEnd },
-      plan,
+      sFight1,
+      plan1,
       'skip',
       { room: null, events: [] },
       { at: AT, today: day('2026-11-25'), R: RULES },
@@ -130,19 +135,31 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
     );
     expect(isRefused(settled1)).toBe(false);
     if (isRefused(settled1)) return;
-    expect(settled1.offerClasses).toBe(den.id);
+    expect(settled1.save.gates.find(g => g.id === den.id)?.bossFell).toBe(false);
+    expect(settled1.offerClasses).toBeNull();
 
-    // Opening the offer clears gate.classOffer so a second fight never re-prompts.
-    const opened = openClassOffer(settled1.save, { at: AT, room: ROOM, R: RULES, gateId: den.id });
-    expect(opened.save.gates.find(g => g.id === den.id)?.classOffer).toBe(false);
+    // Opening an ad-hoc offer (no gateId) after Fight 1 leaves den.classOffer intact because bossFell is still false.
+    const adHoc = openClassOffer(settled1.save, { at: AT, room: ROOM, R: RULES });
+    expect(adHoc.save.gates.find(g => g.id === den.id)?.classOffer).toBe(true);
+    const adHocClosed = closeClassOffer(adHoc.save, { at: AT, R: RULES });
+    if (isRefused(adHocClosed)) throw new Error(adHocClosed.why);
 
-    const closed = closeClassOffer(opened.save, { at: AT, R: RULES });
-    expect(isRefused(closed)).toBe(false);
-    if (isRefused(closed)) return;
+    // Fight 2 defeats the gate boss (gob.id): bossFell flips true and offerClasses signals den.id.
+    const rows2 = [
+      hunterRow(h0, combatantId('c3'), RULES),
+      ...monsterRows(gob, [combatantId('c4')], RULES),
+    ];
+    const f2Add = fightReduce(null, { type: 'add', fightId: 'f2' as FightId, rows: rows2, openings: [] }, ctx).fight!;
+    const f2Start = fightReduce(f2Add, { type: 'start', openings: [{ id: combatantId('c3'), d20: 15, tie: 0 }, { id: combatantId('c4'), d20: 5, tie: 0 }] }, ctx).fight!;
+    const f2End = fightReduce(f2Start, { type: 'end' }, ctx).fight!;
+    if (f2End.phase !== 'ended') throw new Error('expected ended fight');
+    const f2Ended = { ...f2End, summary: { ...f2End.summary, down: [combatantId('c4')] } };
 
+    const sFight2: Save = { ...adHocClosed, fight: f2Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c4')]: gob.id } } };
+    const plan2 = planEncounter(f2Ended, den.id, sFight2, 3, () => 25);
     const settled2 = settleEncounter(
-      { ...closed, fight: fEnd },
-      plan,
+      sFight2,
+      plan2,
       'skip',
       { room: null, events: [] },
       { at: AT, today: day('2026-11-25'), R: RULES },
@@ -150,7 +167,38 @@ describe('starter Goblin Den classOffer gate field & first-fight trigger', () =>
     );
     expect(isRefused(settled2)).toBe(false);
     if (isRefused(settled2)) return;
-    expect(settled2.offerClasses).toBeNull();
+    expect(settled2.save.gates.find(g => g.id === den.id)?.bossFell).toBe(true);
+    expect(settled2.offerClasses).toBe(den.id);
+
+    // Fallback openClassOffer (no gateId) clears den.classOffer once bossFell is true.
+    const openedFallback = openClassOffer(settled2.save, { at: AT, room: ROOM, R: RULES });
+    expect(openedFallback.save.gates.find(g => g.id === den.id)?.classOffer).toBe(false);
+
+    // Opening with explicit gateId also clears classOffer so a repeat fight never re-prompts.
+    const opened = openClassOffer(settled2.save, { at: AT, room: ROOM, R: RULES, gateId: den.id });
+    expect(opened.save.gates.find(g => g.id === den.id)?.classOffer).toBe(false);
+
+    const closed = closeClassOffer(opened.save, { at: AT, R: RULES });
+    expect(isRefused(closed)).toBe(false);
+    if (isRefused(closed)) return;
+
+    const settled3 = settleEncounter(
+      { ...closed, fight: f2Ended, fightRefs: { gate: den.id, monsters: { [combatantId('c4')]: gob.id } } },
+      plan2,
+      'skip',
+      { room: null, events: [] },
+      { at: AT, today: day('2026-11-25'), R: RULES },
+      { gold: 0, items: [] },
+    );
+    expect(isRefused(settled3)).toBe(false);
+    if (isRefused(settled3)) return;
+    expect(settled3.offerClasses).toBeNull();
+
+    // Shared OFFER_WORDS stays neutral (no carved altar prop) and names the real buttons.
+    expect(OFFER_WORDS.gatePromptNote.toLowerCase()).not.toContain('altar');
+    expect(OFFER_WORDS.openBody).toContain('Six classes are open.');
+    expect(OFFER_WORDS.gmOfferRoomHint).toContain('Close offer');
+    expect(OFFER_WORDS.gmOfferRoomHint).toContain('Clear gate');
   });
 });
 

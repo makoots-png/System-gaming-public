@@ -162,6 +162,22 @@ test('only src/core/gates/difficulty.ts writes a gate\'s difficulty', async () =
   expect(report(hits), 'change a gate\'s difficulty only through withDifficulty or gateDifficulty in src/core/gates/difficulty.ts.').toEqual([]);
 });
 
+test('only src/core/gates/pay.ts (and gate.ts defaults/repair/fieldsOf) writes a gate\'s bossFell', async () => {
+  // bossFell is the one predicate gating post-fight Clear/class-offer prompts and the gate card's Offer classes button.
+  // Only settleEncounter in pay.ts sets it at runtime; gate.ts supplies the default, copies it in fieldsOf, and parses it.
+  const assign = String.raw`\s*([-+*/]?=(?![=>])|\+\+|--)`;
+  const dotWrite = new RegExp(String.raw`\.bossFell${assign}`);
+  const spreadWrite = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])bossFell\s*[:,}]/;
+  const writes = (text: string) => dotWrite.test(text) || spreadWrite.test(text);
+  const owners = ['src/core/gates/pay.ts', 'src/core/gates/gate.ts'];
+  expect(writes('g.bossFell = true;'), 'the rule sees a dot write').toBe(true);
+  expect(writes('{ ...g, bossFell: true }'), 'the rule sees a spread write').toBe(true);
+  expect(writes('{ ...g, fought, bossFell }'), 'the rule sees a shorthand spread write').toBe(true);
+  expect(writes('if (g.bossId && !g.bossFell) return;'), 'and not a read').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes(line.text));
+  expect(report(hits), 'set bossFell only through settleEncounter in src/core/gates/pay.ts.').toEqual([]);
+});
+
 test('a view sends a room event made by the constructor, never a type name and a payload of its own', async () => {
   // Each view used to build its payload and its event id by hand, so the server, the senders and the appliers drifted.
   const raw = /\.send\(\s*['"`]/;

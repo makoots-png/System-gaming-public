@@ -23,8 +23,12 @@ export const GATE_STATUSES = ['detected', 'raiding', 'cleared', 'broken', 'close
 export type GateType = (typeof GATE_TYPES)[number];
 export type GateStatus = (typeof GATE_STATUSES)[number];
 
-/** One line of a gate's roster: `count` of one bestiary monster. */
-export type GateMonster = { monsterId: MonsterId; count: number };
+/** Which wave of a multi-wave gate a monster line belongs to (`1` before the boss fight, `2` alongside the boss). */
+export type GateWave = 1 | 2;
+/** Which roster slice `Start fight` builds for a gate: wave 1, wave 2 (with boss), or the whole gate. */
+export type GateWavePick = GateWave | 'all';
+/** One line of a gate's roster: `count` of one bestiary monster, optionally tagged with its `wave`. */
+export type GateMonster = { monsterId: MonsterId; count: number; wave?: GateWave };
 /** What every gate has. `xpPaid` is all the XP this gate has paid out: fights in it that awarded XP, and its Clear. */
 export type GateFields = {
   id: GateId; name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null;
@@ -44,6 +48,8 @@ export type GateFields = {
   difficulty: GateDifficulty;
   /** Whether settling a fight in this gate prompts the GM to open the Wave 1 unique-class offer (GM-only, never in `shownOf`). */
   classOffer: boolean;
+  /** Whether this gate's boss has fallen in a settled fight, or a fight settled on a gate with no boss (GM-only, never in `shownOf`). */
+  bossFell: boolean;
 };
 /** Only a cleared gate has the day it was cleared. */
 export type Gate =
@@ -53,7 +59,7 @@ export type Gate =
 /** A detected gate on day 1 with nothing in it. The save repair fills a stored gate from it. */
 export const newGate = (): Gate => ({
   id: 'g0' as GateId, name: '', rank: 'E', type: 'normal', status: 'detected', breakDay: 1, monsters: [], bossId: null, notes: '',
-  createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY, classOffer: false,
+  createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY, classOffer: false, bossFell: false,
 });
 
 // ── events ──
@@ -80,7 +86,7 @@ type Row = { readonly [T in GateEventType]: Step<T> | null };
 const fieldsOf = (gate: Gate): GateFields => ({
   id: gate.id, name: gate.name, rank: gate.rank, type: gate.type, breakDay: gate.breakDay, monsters: gate.monsters, bossId: gate.bossId,
   notes: gate.notes, createdDay: gate.createdDay, xpPaid: gate.xpPaid, mapId: gate.mapId, fought: gate.fought, solo: gate.solo, preset: gate.preset,
-  difficulty: gate.difficulty, classOffer: gate.classOffer,
+  difficulty: gate.difficulty, classOffer: gate.classOffer, bossFell: gate.bossFell,
 });
 /** Leaving cleared drops the cleared day. Entering it stamps the day. */
 const uncleared = (gate: Gate, status: Exclude<GateStatus, 'cleared'>): Gate => ({ ...fieldsOf(gate), status });
@@ -163,7 +169,11 @@ export function parseGate(value: unknown): Gate | null {
   for (const raw of Array.isArray(value.monsters) ? value.monsters : []) {
     if (monsters.length >= MAX_LINES) break;
     const mid = isObj(raw) ? monsterId(raw.monsterId) : null;
-    if (mid) monsters.push({ monsterId: mid, count: Math.min(MAX_COUNT, int(raw.count, 1, 1)) });
+    const wave: GateWave | undefined = isObj(raw) && (raw.wave === 1 || raw.wave === 2) ? raw.wave : undefined;
+    if (mid) {
+      const count = Math.min(MAX_COUNT, int(raw.count, 1, 1));
+      monsters.push(wave ? { monsterId: mid, count, wave } : { monsterId: mid, count });
+    }
   }
   const createdDay = int(value.createdDay, 1, d.createdDay);
   const fields: GateFields = {
@@ -176,9 +186,38 @@ export function parseGate(value: unknown): Gate | null {
     preset: parseClearPreset(value.preset),
     difficulty: parseGateDifficulty(value.difficulty),
     classOffer: value.classOffer === true,
+    bossFell: value.bossFell === true,
   };
   const status = oneOf(value.status, GATE_STATUSES, 'detected');
   return status === 'cleared' ? { ...fields, status, clearedDay: int(value.clearedDay, 1, createdDay) } : { ...fields, status };
+}
+
+// ── wave splitting for multi-wave gates ──
+/**
+ * The roster slice for `pick`: Wave 1 holds regular monsters not tagged Wave 2 (without the boss), Wave 2 holds
+ * monsters tagged Wave 2 plus the boss, and `'all'` holds every monster plus the boss.
+ */
+export function waveRoster(
+  gate: Pick<GateFields, 'monsters' | 'bossId'>,
+  pick: GateWavePick,
+): { readonly monsters: readonly GateMonster[]; readonly bossId: MonsterId | null } {
+  if (pick === 'all') return { monsters: gate.monsters, bossId: gate.bossId };
+  if (pick === 1) return { monsters: gate.monsters.filter(m => m.wave !== 2), bossId: null };
+  return { monsters: gate.monsters.filter(m => m.wave === 2), bossId: gate.bossId };
+}
+/** Whether `gate` separates its roster into two non-empty waves (at least one monster tagged `wave: 1` or `2`). */
+export function hasGateWaves(gate: Pick<GateFields, 'monsters' | 'bossId'>): boolean {
+  if (!gate.monsters.some(m => m.wave === 1 || m.wave === 2)) return false;
+  const w1 = waveRoster(gate, 1), w2 = waveRoster(gate, 2);
+  return (w1.monsters.length > 0 || w1.bossId !== null) && (w2.monsters.length > 0 || w2.bossId !== null);
+}
+/**
+ * The wave `Start fight` preselects for `gate`: Wave 1 before any fight has settled on it, Wave 2 once Wave 1 is down
+ * (`fought.length > 0`, `xpPaid > 0`, or `bossFell`), or `'all'` when the gate has no waves.
+ */
+export function activeGateWave(gate: Pick<GateFields, 'monsters' | 'bossId' | 'fought' | 'xpPaid' | 'bossFell'>): GateWavePick {
+  if (!hasGateWaves(gate)) return 'all';
+  return gate.bossFell || gate.fought.length > 0 || gate.xpPaid > 0 ? 2 : 1;
 }
 
 // ── a gate's countdown, as the GM and a player read it (implicit audit 3, G2) ──

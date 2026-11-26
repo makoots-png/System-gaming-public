@@ -20,7 +20,7 @@ import type { Rewards } from '../rewards.ts';
 import { EARNED_WHAT_MAX, newEvent, newEventId, parseSheetKey } from '../protocol.ts';
 import type { EventBody, EventStamp, RewardFrom, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
 import { sheetKeyOf } from '../ids.ts';
-import type { FightId, GateId, HunterId } from '../ids.ts';
+import type { FightId, GateId, HunterId, MonsterId } from '../ids.ts';
 import type { ItemTemplate } from '../registry/items.ts';
 import type { Dropped, FightLoot, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -63,8 +63,8 @@ export type EncounterPlan = {
    */
   readonly xp: number; readonly award: number; readonly covered: boolean; readonly shared: boolean; readonly each: number;
   readonly payees: readonly Payee[];
-  /** The foes that went down, with their XP. */
-  readonly dead: readonly { readonly id: CombatantId; readonly name: string; readonly xp: number }[];
+  /** The foes that went down, with their XP and bestiary `monsterId` (null when not from the bestiary). */
+  readonly dead: readonly { readonly id: CombatantId; readonly name: string; readonly xp: number; readonly monsterId?: MonsterId | null }[];
   readonly rounds: number;
 };
 /**
@@ -73,8 +73,9 @@ export type EncounterPlan = {
  * of a fight from a gate, its award shared as the gate's pot among the payees, the gate made for `party`; of a fight
  * from no gate (the GM's own scene, sized for the hunters at the table), the whole award to each.
  */
-export function planEncounter(f: Ended, gateId: string | null, save: Pick<Save, 'gates' | 'hunters'>, party: number, xpOf: XpOf): EncounterPlan {
+export function planEncounter(f: Ended, gateId: string | null, save: Pick<Save, 'gates' | 'hunters'> & { readonly fightRefs?: Save['fightRefs'] | undefined }, party: number, xpOf: XpOf): EncounterPlan {
   const gate = (gateId && save.gates.find(g => g.id === gateId)) || null;
+  const monsterIds = save.fightRefs?.monsters ?? {};
   const locals = [...new Set(f.rows.flatMap(r => (r.holder?.kind === 'local' ? [r.holder.hunterId as string] : [])))]
     .flatMap((hid): Payee[] => { const h = save.hunters.find(x => x.id === hid); return h ? [{ kind: 'local', hid, name: h.name }] : []; });
   const remotes = f.rows.flatMap((r): Payee[] => { const key = r.holder?.kind === 'remote' ? parseSheetKey(r.holder.remote) : null; return key ? [{ kind: 'remote', key, name: r.name }] : []; });
@@ -82,7 +83,10 @@ export function planEncounter(f: Ended, gateId: string | null, save: Pick<Save, 
   return {
     fightId: f.id, gateId, xp: f.summary.xp, award, covered: award < f.summary.xp, shared: gate !== null,
     each: gate ? shareEach(award, n, party) : n > 0 ? award : 0, payees,
-    dead: f.rows.filter(r => r.side === 'foe' && f.summary.down.includes(r.id)).map(r => ({ id: r.id, name: r.name, xp: r.xp })), rounds: f.summary.rounds,
+    dead: f.rows
+      .filter(r => r.side === 'foe' && f.summary.down.includes(r.id))
+      .map(r => ({ id: r.id, name: r.name, xp: r.xp, monsterId: monsterIds[r.id] ?? null })),
+    rounds: f.summary.rounds,
   };
 }
 /** Whether the GM's choice pays: Award XP with a share over 0. */
@@ -129,8 +133,16 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
   const logged = encounterEnded(save, { gateId: plan.gateId, paid: paid ? plan.award : 0, text }, { at: day.at, cap: day.R.logCap });
   // who fought it stays on the gate, so its Clear offers them first after a reload too
   const fought = plan.payees.map(p => (p.kind === 'local' ? p.hid : p.key));
-  const offerClasses: GateId | null = gateBefore && gateBefore.classOffer && fought.length > 0 && !save.classOffer ? gateBefore.id : null;
-  const ended = { ...logged, gates: logged.gates.map(g => (g.id === plan.gateId ? { ...g, fought } : g)) };
+  const monsterIds = save.fightRefs?.monsters ?? {};
+  const defeatedIds = new Set(plan.dead.flatMap(d => {
+    const mid = d.monsterId ?? monsterIds[d.id] ?? null;
+    return mid ? [mid] : [];
+  }));
+  const bossFell = gateBefore
+    ? gateBefore.bossFell || gateBefore.bossId === null || defeatedIds.has(gateBefore.bossId)
+    : false;
+  const offerClasses: GateId | null = gateBefore && gateBefore.classOffer && bossFell && fought.length > 0 && !save.classOffer ? gateBefore.id : null;
+  const ended = { ...logged, gates: logged.gates.map(g => (g.id === plan.gateId ? { ...g, fought, bossFell } : g)) };
   const locals = paid ? plan.payees.flatMap(p => (p.kind === 'local' ? [{ hid: p.hid, rewards: { ...newRewards(), xp: plan.each } }] : [])) : [];
   const out = payAll(ended, locals, paid ? posts : { room: null, events: [] }, day);
   const ctx: Ctx = { rules: day.R };
