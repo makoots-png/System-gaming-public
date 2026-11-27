@@ -1,5 +1,5 @@
 // nullweaver-solo-sim.test.ts: Nullweaver (Mythic, ins+pow) solo simulation checks against all 4 scripted Mythic bosses,
-// fixture legality, and Hook 3 (Erase Field removing boss zones) fight-observed tallies.
+// fixture legality, and Hook 3 (Erase Field removing boss zones) fight-observed tallies via soloRow.
 import { describe, expect } from 'bun:test';
 import type { ClassNodeId } from '../src/core/ids.ts';
 import { fightId } from '../src/core/ids.ts';
@@ -20,20 +20,31 @@ import type { Play } from '../src/core/combat/play.ts';
 import type { Policy as TurnPolicy } from '../src/core/combat/policy.ts';
 import { answering, runSoloMythic, scripted } from './models/fight-sim.ts';
 import type { SimRow } from './models/fight-sim.ts';
+import { SOLO_RUNS, soloRow } from './models/mythic-row.ts';
+import type { TallyCheck } from './models/mythic-row.ts';
 import { beginFight, recordFightStep, simTest, workBudget } from './models/sim-budget.ts';
 import { SOLO_MYTHIC_RULES, buildMythicSoloHunter, buildMythicSoloRow } from './fixtures/mythic-hunters.ts';
 import { NULLWEAVER_ERASE_ID, NULLWEAVER_SOLO_SPEC } from './fixtures/nullweaver-solo.ts';
 
-const SOLO_RUNS = 200;
-const HARD_FLOOR = 0.75;
-const HARD_CEILING = 0.98;
-const SOLO_BUDGET = workBudget(250);
+const SOLO_BUDGET = workBudget(300);
 const TALLY_SEEDS = 50;
-const GATING_ZONE_BOSS_FLOORS: ReadonlyArray<{ readonly id: MythicScriptId; readonly minErased: number }> = [
-  { id: 'zaratan-the-island-that-wakes', minErased: 25 },
-  { id: 'the-fourth-rider', minErased: 5 },
-];
 const ANGEL_NON_STEPPING_FLOOR = 2;
+
+/** Exact recorded solo win baselines for Nullweaver. */
+const NULLWEAVER_BASELINES: Readonly<Record<MythicScriptId, number>> = {
+  plain: 180,
+  'angel-of-the-last-trumpet': 177,
+  'zaratan-the-island-that-wakes': 175,
+  'the-fourth-rider': 189,
+};
+
+/** Per-boss Erase Field zone-erasure floors on full-answering gating runs (0 declared on plain and gated Angel). */
+const NULLWEAVER_ZONE_FLOORS: Readonly<Record<MythicScriptId, number>> = {
+  plain: 0,
+  'angel-of-the-last-trumpet': 0,
+  'zaratan-the-island-that-wakes': 25,
+  'the-fourth-rider': 5,
+};
 
 /**
  * Plays `seeds` fights on the real reducer loop (`playBegin`/`playStep`/`playOver`) and counts boss zones
@@ -82,7 +93,7 @@ function tallyFightErasures(player: SimRow, boss: SimRow, R: Rules, seeds: numbe
   return { casts, erased };
 }
 
-describe('Nullweaver solo-sim fixture legality and Hook 3 Erase Field tally', () => {
+describe('Nullweaver solo-sim fixture legality and non-stepping Angel Hook 3 tally', () => {
   simTest('Nullweaver fixture passes tree legality, S-band title, Mythic middle-grade gear, armed reaction, and keystone wiring', () => {
     const spec = NULLWEAVER_SOLO_SPEC;
     const tree = classTreeOf(spec.className);
@@ -126,19 +137,6 @@ describe('Nullweaver solo-sim fixture legality and Hook 3 Erase Field tally', ()
     }
   }, workBudget(0));
 
-  simTest('seeded fight tally confirms Erase Field erases boss zones in the 2 of 4 gating rows that lay hazards (Zaratan and Fourth Rider) (Hook 3)', () => {
-    const baseHero = buildMythicSoloRow(NULLWEAVER_SOLO_SPEC, SOLO_MYTHIC_RULES);
-    const player = answering(baseHero);
-
-    for (const { id: mythicId, minErased } of GATING_ZONE_BOSS_FLOORS) {
-      const boss = scripted(mythicId, SOLO_MYTHIC_RULES);
-      const { casts, erased } = tallyFightErasures(player, boss, SOLO_MYTHIC_RULES, TALLY_SEEDS);
-      console.log(`[solo-mythic:hook3] Nullweaver Erase Field vs ${mythicId} (${TALLY_SEEDS} gating fights): ${erased} boss zones erased across ${casts} casts (floor ${minErased})`);
-      expect(casts, `Nullweaver never cast Erase Field vs ${mythicId}`).toBeGreaterThan(0);
-      expect(erased, `Nullweaver erased ${erased} < ${minErased} boss zones vs ${mythicId}`).toBeGreaterThanOrEqual(minErased);
-    }
-  }, workBudget(150));
-
   simTest('seeded fight tally confirms Erase Field erases Fallen stars against Angel for a hunter who does not step out of Stars Fall (Hook 3)', () => {
     const baseHero = buildMythicSoloRow(NULLWEAVER_SOLO_SPEC, SOLO_MYTHIC_RULES);
     // With full answering, stepping cancels Stars Fall so Fallen stars never lands; omit 'step' to represent a hunter who does not step.
@@ -151,18 +149,33 @@ describe('Nullweaver solo-sim fixture legality and Hook 3 Erase Field tally', ()
   }, workBudget(80));
 });
 
-describe('Nullweaver solo vs Mythic bosses (200 runs each, fail both ways: capped === 0, 75% <= win <= 98%)', () => {
+describe('Nullweaver solo vs Mythic bosses (200 runs each + Hook 3 tallies via soloRow)', () => {
   const hero = buildMythicSoloRow(NULLWEAVER_SOLO_SPEC, SOLO_MYTHIC_RULES);
+  const player = answering(hero);
 
   for (const mythicId of MYTHIC_IDS) {
     simTest(`Nullweaver solo vs ${mythicId}`, () => {
       const res = runSoloMythic(hero, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
-      const pct = (res.winRate * 100).toFixed(1);
-      const se = (res.se * 100).toFixed(1);
-      console.log(`[solo-mythic] Nullweaver vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped)`);
-      expect(res.capped, `Nullweaver vs ${mythicId} had ${res.capped} capped fights`).toBe(0);
-      expect(res.winRate, `Nullweaver vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
-      expect(res.winRate, `Nullweaver vs ${mythicId} win rate ${pct}% above 98% ceiling`).toBeLessThanOrEqual(HARD_CEILING);
+      const minErased = NULLWEAVER_ZONE_FLOORS[mythicId];
+      let tallies: readonly TallyCheck[];
+      if (minErased > 0) {
+        const boss = scripted(mythicId, SOLO_MYTHIC_RULES);
+        const { casts, erased } = tallyFightErasures(player, boss, SOLO_MYTHIC_RULES, TALLY_SEEDS);
+        console.log(`[solo-mythic:hook3] Nullweaver Erase Field vs ${mythicId} (${TALLY_SEEDS} gating fights): ${erased} boss zones erased across ${casts} casts (floor ${minErased})`);
+        tallies = [
+          { name: 'Erase Field casts', actual: casts, min: 1 },
+          { name: 'boss zones erased', actual: erased, min: minErased },
+        ];
+      } else {
+        tallies = [{ name: 'boss zones erased (no gating hazards)', actual: 0, min: 0 }];
+      }
+      soloRow({
+        className: 'Nullweaver',
+        boss: mythicId,
+        res,
+        baseline: NULLWEAVER_BASELINES[mythicId],
+        tallies,
+      });
     }, SOLO_BUDGET);
   }
 });

@@ -18,7 +18,7 @@ import { describeStatus, modified, statusKey } from '../src/core/combat/effect-o
 import type { Body, LandOp, Origin, StackDef, Status, StatusDef } from '../src/core/combat/effect-ops.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { parseFight, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { eventsOf, fellLow, READY, tripStep } from '../src/core/combat/triggers.ts';
 import type { Limit, Trigger, Trip } from '../src/core/combat/triggers.ts';
 import { reduce } from '../src/core/combat/fight.ts';
@@ -49,7 +49,7 @@ function row(name: string, side: Side, statuses: Status[] = [], o: RowPatch<NewR
   const hpMax = modified(rest.origin ?? origin, statuses, RULES).sheet.hpMax;
   return {
     id: id(name), name, side, ...lifeAt(kind ?? (side === 'party' ? 'hunter' : 'monster'), hp ?? hpMax), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null,
-    channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SWORD, BIG], intent: null, holder: null, xp: 0, ...rest,
+    channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SWORD, BIG], intent: null, holder: null, xp: 0, mythic: null, ...rest,
   } as NewRow;
 }
 function play(...commands: Command[]): Fight {
@@ -892,5 +892,199 @@ describe('Hook H1: blocked/lost hit counts and stacksBy on struck/critTaken trig
       use('A', 'M', oneStack),
     );
     expect(stacksOf(body(offFight, 'A'), 'grit')).toBe(0);
+  });
+});
+
+describe('Hook H2: overhealed event and over count', () => {
+  const hpMax = modified(origin, [], RULES).sheet.hpMax;
+  const sheet = modified(origin, [], RULES).sheet;
+  const healAbility = (name: string, amount: number): Ability => ({
+    ...abilityOf('support', { id: abilityId(name), name, aim: 'self', shape: { kind: 'self' }, range: tiles(0) }, RULES),
+    effect: { type: 'heal', by: 'hand', formula: f(String(amount)) },
+  });
+  const solarSmite = worn('Rising Dawn', {
+    on: 'overhealed',
+    to: { kind: 'most', of: 'hp', radius: tiles(6), on: 'foes' },
+    limit: { kind: 'round' },
+    ops: [{ op: 'damage', type: 'arcane', amount: f('0.75 * over'), when: 'use' }],
+  });
+
+  test('full-HP and partial-to-max heals fire overhealed with exact over, target the highest-HP foe in radius, and clear overhealed', () => {
+    const mend = healAbility('mend', 30);
+    const aAt = { place: place(0, 0), abilities: [mend] };
+    const highFoe = (hp = hpMax) => row('M', 'foe', [], { place: place(3, 0), hp });
+    const lowFoe = () => row('N', 'foe', [], { place: place(2, 0), hp: Math.max(1, hpMax - 20) });
+
+    // 1. Full-HP heal (amount 30 -> over = 30) smites highest-HP foe M (placed second in order) for exact 0.75 * 30 arcane damage
+    const full = play(
+      ...duel(row('A', 'party', [on('dawn', solarSmite)], { ...aAt, hp: hpMax }), lowFoe(), highFoe()),
+      use('A', 'A', mend),
+    );
+    const expectedFull = afterDefence(0.75 * 30, 'arcane', sheet, sheet, RULES);
+    expect(hpMax - rowHp(body(full, 'M'))).toBe(expectedFull);
+    expect(rowHp(body(full, 'N'))).toBe(Math.max(1, hpMax - 20));
+    expect(body(full, 'A').overhealed).toBeUndefined();
+    expect(full.log.some(l => l.text.includes("A's Rising Dawn"))).toBe(true);
+
+    // 2. Partial heal crossing max HP (missing 12, heal 30 -> over = 18) smites for exact 0.75 * 18
+    const partial = play(
+      ...duel(row('A', 'party', [on('dawn', solarSmite)], { ...aAt, hp: hpMax - 12 }), lowFoe(), highFoe()),
+      use('A', 'A', mend),
+    );
+    const expectedPartial = afterDefence(0.75 * 18, 'arcane', sheet, sheet, RULES);
+    expect(rowHp(body(partial, 'A'))).toBe(hpMax);
+    expect(hpMax - rowHp(body(partial, 'M'))).toBe(expectedPartial);
+    expect(expectedPartial).not.toBe(expectedFull);
+    expect(body(partial, 'A').overhealed).toBeUndefined();
+
+    // 3. Partial heal staying under max HP (missing 40, heal 30 -> over = 0) does not fire or trip the limit
+    const under = play(
+      ...duel(row('A', 'party', [on('dawn', solarSmite)], { ...aAt, hp: Math.max(1, hpMax - 40) }), highFoe()),
+      use('A', 'A', mend),
+    );
+    expect(rowHp(body(under, 'M'))).toBe(hpMax);
+    expect(body(under, 'A').trips).toBeUndefined();
+    expect(under.log.some(l => l.text.includes("A's Rising Dawn"))).toBe(false);
+
+    // 4. Once-a-round limit blocks a second overheal in the same round and still clears overhealed
+    const second = reduce(full, use('A', 'A', mend), ctx).fight!;
+    expect(hpMax - rowHp(body(second, 'M'))).toBe(expectedFull);
+    expect(body(second, 'A').overhealed).toBeUndefined();
+  });
+
+  test('heal-over-time and trigger heals fire overhealed, depth cap clears unread overheal, and GM adjust does not fire', () => {
+    // 1. Heal-over-time (when: 'turn') overhealing on turn start fires overhealed with exact prorated excess
+    const regen: Status = {
+      ...on('regen', { label: 'Regen', desc: '', ops: [{ op: 'heal', amount: f('40'), when: 'turn' }] }),
+      until: tick(RULES.fight.round / 2),
+    } as Status;
+    const hot = play(
+      ...duel(row('A', 'party', [on('dawn', solarSmite), regen], { place: place(0, 0), hp: hpMax - 5 }), row('M', 'foe', [], { place: place(2, 0) })),
+      { type: 'endTurn', by: id('A') },
+      { type: 'endTurn', by: id('M') },
+    );
+    // Half a round of 40 heal = 20 healed, 5 needed -> excess = 15
+    expect(rowHp(body(hot, 'A'))).toBe(hpMax);
+    expect(hpMax - rowHp(body(hot, 'M'))).toBe(afterDefence(0.75 * 15, 'arcane', sheet, sheet, RULES));
+    expect(body(hot, 'A').overhealed).toBeUndefined();
+
+    // 2. Depth-1 trigger heal overhealing fires overhealed at depth 2, and a depth-2 overheal clears without depth-3 loop
+    const siphon = worn('Siphon', { on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: f('20'), when: 'use' }] });
+    const echoHeal = worn('Echo Heal', { on: 'overhealed', to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: f('10'), when: 'use' }] });
+    const chained = play(
+      ...duel(row('A', 'party', [on('siphon', siphon), on('dawn', solarSmite), on('echo-heal', echoHeal)], { place: place(0, 0), hp: hpMax }), row('M', 'foe', [], { place: place(2, 0) })),
+      use('A', 'M'),
+    );
+    const strikeDealt = through(10);
+    const overDealt = afterDefence(0.75 * 20, 'arcane', sheet, sheet, RULES);
+    expect(hpMax - rowHp(body(chained, 'M'))).toBe(strikeDealt + overDealt);
+    expect(body(chained, 'A').overhealed).toBeUndefined();
+
+    // 3. GM adjust (setHp) past max HP does not fire overhealed
+    const gmEdit = play(
+      ...duel(row('A', 'party', [on('dawn', solarSmite)], { place: place(0, 0), hp: hpMax - 5 }), row('M', 'foe', [], { place: place(2, 0) })),
+      { type: 'adjust', id: id('A'), hp: 50 },
+    );
+    expect(rowHp(body(gmEdit, 'A'))).toBe(hpMax);
+    expect(rowHp(body(gmEdit, 'M'))).toBe(hpMax);
+    expect(body(gmEdit, 'A').overhealed).toBeUndefined();
+  });
+
+  test('over reads 0 outside overhealed triggers, parses cleanly, refuses target.over, and round-trips through parseStatusDef', () => {
+    expect(parseFormula('over', RULES)).toEqual({ ok: true, formula: { kind: 'count', name: 'over' } });
+    expect(parseFormula('target.over', RULES).ok).toBe(false);
+
+    // On a hitDealt trigger, over reads 0 -> 0 damage dealt (not 1)
+    const offTrigger = worn('Off Over', { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'arcane', amount: f('over'), when: 'use' }] });
+    const offTrigFight = play(...duel(row('A', 'party', [on('off', offTrigger)]), row('M', 'foe')), use('A', 'M'));
+    expect(hpMax - rowHp(body(offTrigFight, 'M'))).toBe(through(10));
+
+    // On an ability's own formula, over reads 0
+    const overStrike = ability('over-strike', '10 + over');
+    const abFight = play(...duel(row('A', 'party', [], { abilities: [overStrike] }), row('M', 'foe')), use('A', 'M', overStrike));
+    expect(hpMax - rowHp(body(abFight, 'M'))).toBe(through(10));
+
+    // parseStatusDef accepts overhealed on self/reach, refuses to: 'other' (alone event), and round-trips identically
+    const parsed = parseStatusDef(solarSmite, RULES)!;
+    expect(parsed).toEqual(solarSmite);
+    expect(parseStatusDef(JSON.parse(JSON.stringify(parsed)), RULES)).toEqual(parsed);
+    const badOther = parseStatusDef({
+      label: 'Bad', desc: '', ops: [],
+      triggers: [{ on: 'overhealed', to: 'other', limit: { kind: 'round' }, ops: [{ op: 'damage', type: 'arcane', amount: f('over'), when: 'use' }] }],
+    }, RULES);
+    expect(badOther?.triggers ?? []).toEqual([]);
+    expect(describeStatus(parsed, 0, RULES)[0]).toContain('When its bearer is overhealed:');
+  });
+
+  test('a leave-only stack on overhealed clears on full-HP and partial-to-max heals and stays on a heal under max', () => {
+    const mend = healAbility('mend', 20);
+    const brittle: StackDef = {
+      label: 'Brittle Grace',
+      desc: '',
+      ops: [],
+      stack: { cap: 5, leave: { kind: 'event', event: 'overhealed' }, keep: 'fight', threshold: null },
+    };
+    const held = { ...on('brittle', brittle), stacks: 3 } as Status;
+    const aAt = { place: place(0, 0), abilities: [mend] };
+
+    // Full-HP heal clears the leave-only stack with no overhealed trigger present
+    const full = play(
+      ...duel(row('A', 'party', [held], { ...aAt, hp: hpMax }), row('M', 'foe', [], { place: place(2, 0) })),
+      use('A', 'A', mend),
+    );
+    expect(stacksOf(body(full, 'A'), 'brittle')).toBe(0);
+    expect(full.rows.every(r => r.overhealed === undefined)).toBe(true);
+
+    // Partial heal staying under max HP keeps all stacks
+    const under = play(
+      ...duel(row('A', 'party', [held], { ...aAt, hp: Math.max(1, hpMax - 30) }), row('M', 'foe', [], { place: place(2, 0) })),
+      use('A', 'A', mend),
+    );
+    expect(stacksOf(body(under, 'A'), 'brittle')).toBe(3);
+    expect(under.rows.every(r => r.overhealed === undefined)).toBe(true);
+  });
+
+  test('lifesteal at full HP and after-reaction heals on a watcher fire overhealed, clear every row, and round-trip through parseFight', () => {
+    // 1. Lifesteal at full HP on a watcher (50% drain on a 20-raw physical strike)
+    const leechDef: StatusDef = { label: 'Leech', desc: '', ops: [{ op: 'sheet', key: 'drain', amount: f('0.5') }] };
+    const heavyHit = ability('heavy-hit', '20');
+    const aLeechStatuses = [on('dawn', solarSmite), on('leech', leechDef)];
+    const aLeechSheet = modified(origin, aLeechStatuses, RULES).sheet;
+    const strikeDealt = afterDefence(20, 'physical', aLeechSheet, sheet, RULES);
+    const drainedAmt = Math.round(strikeDealt * aLeechSheet.drain);
+    expect(drainedAmt).toBeGreaterThan(0);
+    const expectedSmite = afterDefence(0.75 * drainedAmt, 'arcane', aLeechSheet, sheet, RULES);
+
+    const lifestealFight = play(
+      ...duel(
+        row('A', 'party', aLeechStatuses, { place: place(0, 0), hp: hpMax, abilities: [heavyHit] }),
+        row('M', 'foe', [], { place: place(3, 0), hp: hpMax }),
+      ),
+      use('A', 'M', heavyHit),
+    );
+    expect(hpMax - rowHp(body(lifestealFight, 'M'))).toBe(strikeDealt + expectedSmite);
+    expect(lifestealFight.rows.every(r => r.overhealed === undefined)).toBe(true);
+    expect(parseFight(JSON.parse(JSON.stringify(lifestealFight)), RULES)).toEqual(lifestealFight);
+
+    // 2. After-reaction heal landing on a full-HP watcher (M reacts after A's strike with a 30-HP heal on A)
+    const afterHeal: Ability = {
+      ...abilityOf('support', { id: abilityId('after-heal'), name: 'After Heal', aim: 'foe', shape: { kind: 'touch', reach: tiles(6) }, range: tiles(6) }, RULES),
+      effect: { type: 'heal', by: 'hand', formula: f('30') },
+      react: { when: 'after', reach: tiles(0) },
+    };
+    const tap = ability('tap', '10');
+    const tapDealt = through(10);
+    const afterSmite = afterDefence(0.75 * 30, 'arcane', sheet, sheet, RULES);
+
+    const reactFight = play(
+      ...duel(
+        row('A', 'party', [on('dawn', solarSmite)], { place: place(0, 0), hp: hpMax, abilities: [tap] }),
+        row('M', 'foe', [], { place: place(3, 0), hp: hpMax, abilities: [HIT, afterHeal], armed: { ability: afterHeal.id, on: null, spent: false } }),
+      ),
+      use('A', 'M', tap),
+    );
+    expect(hpMax - rowHp(body(reactFight, 'M'))).toBe(tapDealt + afterSmite);
+    expect(reactFight.rows.every(r => r.overhealed === undefined)).toBe(true);
+    expect(parseFight(JSON.parse(JSON.stringify(reactFight)), RULES)).toEqual(reactFight);
   });
 });

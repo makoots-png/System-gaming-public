@@ -490,6 +490,13 @@ type BodyCommon = Clock & {
    */
   readonly hurtFrom?: number;
   /**
+   * Excess healing past max HP from fight heals that no batch of triggers has read yet: set by its life's one writer
+   * (row-life.ts `rowLifeAfter`) only for rows watching `overhealed` (a live `overhealed` trigger or a stacking status
+   * whose stacks leave on `overhealed`), read into `overhealed` and taken off by the next batch (triggers.ts `fire`).
+   * Never serialized in fight-doc.ts or on the wire.
+   */
+  readonly overhealed?: number;
+  /**
    * Its armed reaction (kits design 8.4, fight-react.ts): the ability, the body a `turn` reaction names (null for the
    * rest), and whether it fired since it was last restored. Absent when it holds none.
    */
@@ -1125,7 +1132,7 @@ const worded = (w: Words, R: DescribeRules): string => (typeof w === 'string' ? 
 const EVENT_TEXT: { readonly [K in Trigger['on']]: Words } = {
   hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills', avoided: 'avoids an ability', down: 'drops to 0 HP',
   turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', statusGained: 'gains', statusEnded: 'loses', used: 'uses an ability tagged',
-  lowHp: lowHpText, imposed: 'puts a harmful status on a foe', armyKill: 'or a minion kills a monster', minionDown: 'has a minion drop to 0 HP',
+  lowHp: lowHpText, imposed: 'puts a harmful status on a foe', armyKill: 'or a minion kills a monster', minionDown: 'has a minion drop to 0 HP', overhealed: 'is overhealed',
 };
 /** A trigger in words (kits design 5.1): "When its bearer deals a hit with a sword: Applies Corruption on the other, every time." */
 function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string {
@@ -1160,4 +1167,5 @@ const LEAVE_TEXT: { readonly [K in 'never' | 'round' | BearerEvent]: Words } = {
   moved: ' All stacks expire when the bearer moves.', down: ' All stacks expire when the bearer drops to 0 HP.',
   lowHp: R => ` All stacks expire when the bearer ${lowHpText(R)}.`, imposed: ' All stacks expire when the bearer puts a harmful status on a foe.',
   armyKill: ' All stacks expire when the bearer or a minion kills a monster.', minionDown: ' All stacks expire when a minion of the bearer drops to 0 HP.',
+  overhealed: ' All stacks expire when the bearer is overhealed.',
 };

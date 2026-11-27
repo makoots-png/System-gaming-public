@@ -867,3 +867,4 @@ ts	phase	decision	why	evidence	result
 2026-11-27T17:00Z	combat	PR 170: gate fights scale with headcount (t205u); sized once at start; 1-6 table in PR
 2026-11-27T18:24Z	class-offer	PR 171: every wired Mythic goes into the class offer after the first dungeon, derived from the registry, with a pin test; Necromancer included (overrules wave 2)
 2026-11-27T19:29Z	copy	PR 172: light AI-ism sweep of shown text per t210u; voice lint word list; primer untouched
+2026-11-27T23:12Z	class-rarity	PR 173: wave 4 landed (A1-A8, 8 new classes, 34/36 wired). Godfist retuned to plain 84.5, Angel 94.5, Zaratan 82.0, Rider 78.5. Unit 8015/0, browser 693/0, CI 46079840176 8/8, Fable MERGE. Dreadnought script reads and All-Out economy deferred to a Dreadnought balance task (Neon's call; Fable: not architecture).

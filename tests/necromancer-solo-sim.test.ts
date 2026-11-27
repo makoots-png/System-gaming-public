@@ -11,6 +11,12 @@
 //   - zaratan-the-island-that-wakes:BEFORE  76.0% (152/200, 15.0r) -> AFTER  77.0% (154/200, 15.0r)
 //   - the-fourth-rider:             BEFORE  81.5% (163/200, 10.5r) -> AFTER  84.0% (168/200, 10.4r)
 //   - plain + 4 S normals (adds):   BEFORE 100.0% (100/100, 7.5r, 4 Arise casts) -> AFTER 100.0% (100/100, 7.5r, 4 Arise casts)
+//
+// Fork 2 trim results (200 runs each; plain stayed 200/200 while Zaratan dropped below the 75% floor, so plain uses
+// ceiling 1.0 with an exact pinned shadow-attrition pressure floor):
+//   - aura trim:         plain 200/200, Zaratan 116/200, Angel 146/200, Rider 97/200
+//   - shadow-grade trim: plain 200/200, Zaratan 113/200
+//   - shadow-count trim: plain 200/200, Zaratan 99/200
 import { describe, expect } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -31,6 +37,7 @@ import type { HeldItem } from '../src/core/registry/item-book.ts';
 import { gradeOfSpend, itemSpend, titleSpend } from '../src/core/registry/item-budget.ts';
 import { ATTACK_ID, wornAbilityId } from '../src/core/registry/abilities.ts';
 import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
+import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { CLASS_ACTIVES_MAX, TREE_SHAPE, canBuyNode, classTreeOf, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
 import { classPowers } from '../src/core/registry/class-powers.ts';
 import { NECROMANCER_TREE } from '../src/core/registry/class-necromancer.ts';
@@ -54,17 +61,27 @@ import { weightsFor } from '../src/core/combat/fudge.ts';
 import { drawNeeds, seededSource } from '../src/core/draws.ts';
 import { fightId } from '../src/core/ids.ts';
 import { place } from '../src/core/combat/space.ts';
-import { monsterPolicy, playFight, runSoloMythicArmy, scripted } from './models/fight-sim.ts';
-import type { Policy, SimRow } from './models/fight-sim.ts';
+import { answering, monsterPolicy, playFight, runSoloMythicArmy, scripted } from './models/fight-sim.ts';
+import type { Policy, SimRow, SoloMythicResult } from './models/fight-sim.ts';
+import { SOLO_PRESSURE_MIN_FLOOR, SOLO_RUNS, soloRow } from './models/mythic-row.ts';
 import { simTest, workBudget } from './models/sim-budget.ts';
 import { SOLO_MYTHIC_RULES } from './fixtures/mythic-hunters.ts';
 
 const AT = '2026-11-26T12:00:00.000Z';
-const SOLO_RUNS = 200;
 const ADDS_RUNS = 100;
-const HARD_FLOOR = 0.75;
-const HIGH_DIAGNOSTIC = 0.98;
 const SOLO_BUDGET = workBudget(250);
+
+/** Exact recorded solo-army win baselines for Necromancer (Fork 2: plain uses ceiling 1.0 + pinned shadow-attrition pressure floor). */
+const NECROMANCER_BASELINES: Readonly<Record<MythicScriptId, number>> = {
+  plain: 200,
+  'angel-of-the-last-trumpet': 193,
+  'zaratan-the-island-that-wakes': 154,
+  'the-fourth-rider': 168,
+};
+const PLAIN_SHADOW_HP_THRESHOLD = 0.85;
+const PLAIN_SHADOW_LOSS_BASELINE = 105;
+const PLAIN_ANY_SHADOW_HURT_BASELINE = 153;
+const PLAIN_HERO_UNDER_70_BASELINE = 0;
 
 const itemId = (s: string): ItemId => parseSaveId<'i'>(s)!;
 const titleId = (s: string): TitleId => parseSaveId<'t'>(s)!;
@@ -306,17 +323,74 @@ describe('Necromancer solo-army fixture legality under shipped rules', () => {
   }, workBudget(0));
 });
 
-describe('Necromancer solo-army vs Mythic bosses (4 gating rows, target 75% to 98% aiming ~85%)', () => {
-  const { hero, shadows } = buildNecroArmy(SOLO_MYTHIC_RULES);
+describe('Necromancer solo-army vs Mythic bosses (4 gating rows via soloRow)', () => {
+  const { hunter, hero, shadows } = buildNecroArmy(SOLO_MYTHIC_RULES);
+  const shadowMaxHpById: Readonly<Record<string, number>> = Object.fromEntries(
+    shadows.map((s, idx) => [s.row.id as string, shadowSheet(hunter.shadows[idx]!, SOLO_MYTHIC_RULES).hpMax]),
+  );
 
   for (const mythicId of MYTHIC_IDS) {
     simTest(`Necromancer solo-army vs ${mythicId}`, () => {
+      if (mythicId === 'plain') {
+        const player = answering(hero);
+        const boss = scripted(mythicId, SOLO_MYTHIC_RULES);
+        const heroId = player.row.id as string;
+        const heroHpMax = hunterSheet(hunter, SOLO_MYTHIC_RULES).sheet.hpMax;
+        const shadowIds = shadows.map(s => s.row.id as string);
+        let wins = 0;
+        let roundSum = 0;
+        let cappedCount = 0;
+        let shadowLossFights = 0;
+        let anyShadowHurtFights = 0;
+        let heroUnder70Fights = 0;
+        for (let i = 0; i < SOLO_RUNS; i++) {
+          const rec = playFight({ rows: [player, ...shadows, boss], rules: SOLO_MYTHIC_RULES, tallyDamage: false }, 1 + i);
+          if (rec.winner === 'party' && (rec.end[heroId]?.hp ?? 0) > 0) wins++;
+          roundSum += rec.rounds;
+          if (rec.capped) cappedCount++;
+          if (shadowIds.some(sid => (rec.end[sid]?.hp ?? 0) < shadowMaxHpById[sid]!)) anyShadowHurtFights++;
+          if (shadowIds.some(sid => (rec.end[sid]?.hp ?? 0) < PLAIN_SHADOW_HP_THRESHOLD * shadowMaxHpById[sid]!)) {
+            shadowLossFights++;
+          }
+          if ((rec.end[heroId]?.hp ?? 0) < 0.7 * heroHpMax) heroUnder70Fights++;
+        }
+        const winRate = wins / SOLO_RUNS;
+        const res: SoloMythicResult = {
+          mythicId,
+          runs: SOLO_RUNS,
+          wins,
+          winRate,
+          se: Math.sqrt((winRate * (1 - winRate)) / SOLO_RUNS),
+          meanRounds: roundSum / SOLO_RUNS,
+          capped: cappedCount,
+        };
+        expect(anyShadowHurtFights, 'Necromancer vs plain any-shadow-damaged count drifted').toBe(PLAIN_ANY_SHADOW_HURT_BASELINE);
+        expect(heroUnder70Fights, 'Necromancer vs plain hero-under-70%-HP count drifted').toBe(PLAIN_HERO_UNDER_70_BASELINE);
+        soloRow({
+          className: 'Necromancer',
+          boss: mythicId,
+          res,
+          baseline: NECROMANCER_BASELINES[mythicId],
+          ceiling: 1.0,
+          pressure: {
+            label: 'shadow HP loss (>=15% max HP)',
+            minRate: SOLO_PRESSURE_MIN_FLOOR,
+            actual: shadowLossFights / SOLO_RUNS,
+            exact: PLAIN_SHADOW_LOSS_BASELINE / SOLO_RUNS,
+          },
+          tallies: [{ name: 'arise casts (boss-only)', actual: 0, min: 0 }],
+        });
+        return;
+      }
+
       const res = runSoloMythicArmy(hero, shadows, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
-      const pct = (res.winRate * 100).toFixed(1);
-      const se = (res.se * 100).toFixed(1);
-      const diag = res.winRate > HIGH_DIAGNOSTIC ? ' [DIAGNOSTIC: >98% hot]' : '';
-      console.log(`[solo-mythic-army] Necromancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped)${diag}`);
-      expect(res.winRate, `Necromancer vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
+      soloRow({
+        className: 'Necromancer',
+        boss: mythicId,
+        res,
+        baseline: NECROMANCER_BASELINES[mythicId],
+        tallies: [{ name: 'arise casts (boss-only)', actual: 0, min: 0 }],
+      });
     }, SOLO_BUDGET);
   }
 

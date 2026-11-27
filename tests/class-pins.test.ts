@@ -251,7 +251,7 @@ describe('PR 2 combat/sheet seam tripwire', () => {
   });
 });
 
-describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status keys, and name collisions)', () => {
+describe('Wave 5: Roster Lock (36/36 wired classes, signatures, trees, status keys, and name collisions)', () => {
   // One class per line and counts derived from list lengths so parallel wave units merge cleanly.
   const COMMON_WIRED: readonly ClassName[] = [
     'Assassin',
@@ -287,6 +287,7 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
   ];
   const MYTHIC_WIRED: readonly ClassName[] = [
     'Bladefiend',
+    'Dawnbringer',
     'Dreadnought',
     'Godfist',
     'Hemomancer',
@@ -294,6 +295,7 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
     'Nullweaver',
     'Rifthunter',
     'Starforger',
+    'Usurper',
   ];
   const WIRED_CLASSES: readonly ClassName[] = [
     ...COMMON_WIRED,
@@ -301,10 +303,7 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
     ...EPIC_WIRED,
     ...MYTHIC_WIRED,
   ];
-  const UNWIRED_CLASSES: readonly ClassName[] = [
-    'Dawnbringer',
-    'Usurper',
-  ];
+  const UNWIRED_CLASSES: readonly ClassName[] = [];
 
   // Frozen Wave 1-3 node-name duplicates (zero-stale permit list: no new duplicates permitted in Wave 4+).
   const LEGACY_NODE_NAME_DUPLICATES: Readonly<Record<string, readonly string[]>> = {
@@ -426,14 +425,14 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
     return errors;
   }
 
-  test('pins 34/36 wired classes (6 Common, 12 Rare, 8 Epic, 8 Mythic; 2 unwired) with fail-capable negative self-tests', async () => {
+  test('pins 36/36 wired classes (6 Common, 12 Rare, 8 Epic, 10 Mythic; 0 unwired) with fail-capable negative self-tests', async () => {
     expect(CLASS_NAMES).toHaveLength(36);
-    expect(WIRED_CLASSES).toHaveLength(34);
-    expect(UNWIRED_CLASSES).toHaveLength(2);
+    expect(WIRED_CLASSES).toHaveLength(36);
+    expect(UNWIRED_CLASSES).toHaveLength(0);
     expect(COMMON_WIRED).toHaveLength(6);
     expect(RARE_WIRED).toHaveLength(12);
     expect(EPIC_WIRED).toHaveLength(8);
-    expect(MYTHIC_WIRED).toHaveLength(8);
+    expect(MYTHIC_WIRED).toHaveLength(10);
 
     const sigNames = (Object.keys(CLASS_SIGNATURES) as ClassName[]).sort();
     const treeNames = (Object.keys(CLASS_TREES) as ClassName[]).sort();
@@ -458,11 +457,16 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
     expect(checkRosterLock({ ...liveInput, treeKeys: treeNames.filter(c => c !== 'Godfist') })).toContain(
       'CLASS_TREES keys do not match wired classes',
     );
-    expect(checkRosterLock({ ...liveInput, sigKeys: [...sigNames, 'Usurper'] })).toEqual([
+    expect(checkRosterLock({
+      ...liveInput,
+      allClasses: [...CLASS_NAMES, 'FakeUnwired'],
+      unwired: ['FakeUnwired'],
+      sigKeys: [...sigNames, 'FakeUnwired'],
+    })).toEqual([
       'CLASS_SIGNATURES keys do not match wired classes',
-      'unwired class "Usurper" leaked into wired tables',
+      'unwired class "FakeUnwired" leaked into wired tables',
     ]);
-    expect(checkRosterLock({ ...liveInput, registryFiles: [...registryFiles, 'class-usurper.ts'] })).toContain(
+    expect(checkRosterLock({ ...liveInput, registryFiles: [...registryFiles, 'class-fakeunwired.ts'] })).toContain(
       'src/core/registry/class-*.ts files do not match wired classes',
     );
     expect(checkRosterLock({ ...liveInput, soloSpecClasses: liveInput.soloSpecClasses.filter(c => c !== 'Dreadnought') })).toContain(
@@ -471,7 +475,10 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
     expect(checkRosterLock({ ...liveInput, offerPoolMythics: liveInput.offerPoolMythics.filter(c => c !== 'Godfist') })).toContain(
       'MYTHIC_OFFER_POOL does not match wired Mythics',
     );
-    expect(checkRosterLock({ ...liveInput, unwired: ['Dawnbringer'] })).toContain(
+    expect(checkRosterLock({ ...liveInput, unwired: ['FakeUnwired'] })).toContain(
+      'wired + unwired partition does not match allClasses (37 vs 36)',
+    );
+    expect(checkRosterLock({ ...liveInput, wired: WIRED_CLASSES.filter(c => c !== 'Dawnbringer') })).toContain(
       'wired + unwired partition does not match allClasses (35 vs 36)',
     );
 
@@ -826,7 +833,7 @@ describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status
     const realWired = CLASS_NAMES
       .filter(c => BUILT_IN_CLASSES[c].rarity === 'mythic' && Boolean(CLASS_SIGNATURES[c]) && Boolean(CLASS_TREES[c]))
       .sort();
-    expect(realWired).toEqual(['Bladefiend', 'Dreadnought', 'Godfist', 'Hemomancer', 'Necromancer', 'Nullweaver', 'Rifthunter', 'Starforger']);
+    expect(realWired).toEqual(['Bladefiend', 'Dawnbringer', 'Dreadnought', 'Godfist', 'Hemomancer', 'Necromancer', 'Nullweaver', 'Rifthunter', 'Starforger', 'Usurper']);
     expect([...MYTHIC_OFFER_POOL].sort()).toEqual(realWired);
     expect(poolMythicDiff(MYTHIC_OFFER_POOL, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });
     expect(poolMythicDiff(DEFAULT_OFFER_POOL, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });

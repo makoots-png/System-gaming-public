@@ -47,7 +47,7 @@ export type Formula =
   | { readonly kind: 'missing'; readonly whose: Whose }
   /** Rounds the user has held a status. */
   | { readonly kind: 'held'; readonly key: StatusKey }
-  /** Bodies in the shape (`hits`), the user's kills this fight (`kills`), stacks this use's price took (`spent`), damage stopped by defense or shield (`blocked`), and HP damage past shield (`lost`). */
+  /** Bodies in the shape (`hits`), the user's kills this fight (`kills`), stacks this use's price took (`spent`), damage stopped by defense or shield (`blocked`), HP damage past shield (`lost`), and excess healing past max HP (`over`). */
   | { readonly kind: 'count'; readonly name: CountName }
   | { readonly kind: 'negate'; readonly arg: Formula }
   | { readonly kind: 'binary'; readonly op: BinaryOp; readonly left: Formula; readonly right: Formula }
@@ -116,7 +116,7 @@ export type FormulaRules = { readonly dice: { readonly maxDice: number; readonly
 
 /** One side of a use, as a formula reads it. */
 export type FormulaBody = { readonly stats: Stats; readonly sheet: Sheet };
-export const COUNT_NAMES = ['hits', 'kills', 'spent', 'blocked', 'lost'] as const;
+export const COUNT_NAMES = ['hits', 'kills', 'spent', 'blocked', 'lost', 'over'] as const;
 export type CountName = (typeof COUNT_NAMES)[number];
 /**
  * What the kits' names read (kits design 1.5): a snapshot of the fight taken when a use's shape is known (rule 6b), so
@@ -135,9 +135,11 @@ export type KitScope = {
   readonly blocked?: number;
   /** HP damage past shield on a `struck`/`critTaken` trigger (0 everywhere else). */
   readonly lost?: number;
+  /** Excess healing past max HP on an `overhealed` trigger (0 everywhere else). */
+  readonly over?: number;
 };
 /** A snapshot of nothing: no stacks anywhere, full HP, no kills. What a formula read outside a fight's use sees. */
-export const NO_KIT: KitScope = { stacks: { user: {}, target: {} }, field: {}, missing: { user: 0, target: 0 }, held: {}, hits: 0, kills: 0, spent: 0, blocked: 0, lost: 0 };
+export const NO_KIT: KitScope = { stacks: { user: {}, target: {} }, field: {}, missing: { user: 0, target: 0 }, held: {}, hits: 0, kills: 0, spent: 0, blocked: 0, lost: 0, over: 0 };
 /**
  * What a formula reads besides its dice. A use on oneself has the user as its target. `kit` is the kits' snapshot;
  * absent, every kit name reads as `NO_KIT` (the maker's preview, a status's shield as it lands).
@@ -165,7 +167,7 @@ const KEYED = ['stacks', 'field', 'held'] as const;
 type Keyed = (typeof KEYED)[number];
 /** The longest status key (effect-ops.ts `STATUS_KEY_RE`). */
 const KEY_MAX = 40;
-const NAME_HINT = `Use a stat (${STAT_KEYS.join(', ')}), a sheet value (like phys for physical power, mag for magic, sup for support, hpMax, or armor), charge, hp (current HP), missing (missing HP share), hits, kills, spent, blocked, lost, or stacks(key), field(key), or held(key). Add target. in front to read the target's value.`;
+const NAME_HINT = `Use a stat (${STAT_KEYS.join(', ')}), a sheet value (like phys for physical power, mag for magic, sup for support, hpMax, or armor), charge, hp (current HP), missing (missing HP share), hits, kills, spent, blocked, lost, over, or stacks(key), field(key), or held(key). Add target. in front to read the target's value.`;
 
 type Token =
   | { readonly t: 'number'; readonly value: number; readonly at: number; readonly text: string }

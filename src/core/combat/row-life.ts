@@ -9,7 +9,9 @@ import { can, lifeAfter, refilled, REVIVE_HP } from '../hunter/vitals.ts';
 import type { Life, LifeEvent, LifeEventType, LifeState } from '../hunter/vitals.ts';
 import type { Body, CombatantKind, HunterRow } from './effect-ops.ts';
 import { gateOf } from './mythic.ts';
+import { isStacking } from './op-amount.ts';
 import { rowHp } from './row-hp.ts';
+import { counting } from './standing.ts';
 
 // ── a foe's life ──
 export const FOE_LIFE_STATES = ['up', 'dead'] as const;
@@ -94,14 +96,26 @@ export function sameLife(a: Life | FoeLife, b: Life | FoeLife): boolean {
 }
 
 /**
+ * Whether `b` watches `overhealed`: holds any live status with a trigger on `overhealed` (triggers.ts `counting`), or
+ * any stacking status whose stacks leave on `overhealed` (triggers.ts `leaveOn`).
+ */
+export const watchesOverheal = (b: Body): boolean =>
+  counting(b.statuses).some(s => s.def.triggers?.some(t => t.on === 'overhealed') ?? false)
+  || b.statuses.some(s => isStacking(s.def) && s.def.stack.leave.kind === 'event' && s.def.stack.leave.event === 'overhealed');
+
+/**
  * Row `b` after `event`, through its kind's table at the row's maximum HP: the life machine for a hunter, `FOE_TABLE` for
  * anything else. The same row when the event does not apply or changes nothing (a heal of a dead hunter, damage to a
- * dead foe, a heal at full HP), so a caller tells a change by identity. The one writer of a row's life.
+ * dead foe, a heal at full HP on a row not watching `overhealed`), so a caller tells a change by identity. The one writer
+ * of a row's life.
  *
  * Damage is the fight's (a use's or a trigger's hit, a status's end or round damage, a settled roll, a zone's hit, an
  * HP price): the row keeps the HP it had before the first damage no batch of triggers has read (`hurtFrom`), and the
- * next batch reads its fall under the low share from it (triggers.ts `fire`, `lowHp`). The GM's hand edit sets HP
- * (`setHp`, fight.ts `adjust`): a correction is not an event of the fight, so it keeps nothing.
+ * next batch reads its fall under the low share from it (triggers.ts `fire`, `lowHp`). Excess healing past max HP on a
+ * living row that watches `overhealed` (`watchesOverheal`: a live `overhealed` trigger, or a stacking status whose
+ * stacks leave on `overhealed`) is added to `overhealed` (even at full HP), which the next batch reads and clears
+ * (`readOverhealed`). Rows not watching `overhealed` keep strict reference identity on a full-HP heal. The GM's hand
+ * edit sets HP (`setHp`, fight.ts `adjust`): a correction is not an event of the fight, so it keeps nothing.
  *
  * A mythic's damage and the GM's set stop at its gate (`gateOf`, the HP its phase holds; 0 in its last phase and on every
  * other row). A row at its gate takes no damage, so what follows from the HP lost (lifesteal) gets nothing.
@@ -114,6 +128,15 @@ export function rowLifeAfter<T extends Body>(b: T, event: FoeLifeEvent): T {
     return sameLife(row.life, life) ? b : { ...b, life };
   }
   const life = row.kind === 'hunter' ? lifeAfter(row.life, event, max) : foeLifeAfter(row.life, event, max, gateOf(row));
+  if (event.type === 'heal') {
+    const amt = amountOf(event.amount);
+    if (amt !== null && row.life.at === 'up' && watchesOverheal(row)) {
+      const gained = Math.max(0, rowHp({ life }) - rowHp(row));
+      const excess = Math.max(0, amt - gained);
+      if (excess > 0) return { ...b, life, overhealed: (row.overhealed ?? 0) + excess };
+    }
+    return sameLife(row.life, life) ? b : { ...b, life };
+  }
   if (sameLife(row.life, life)) return b;
   return event.type === 'damage' ? { ...b, life, hurtFrom: row.hurtFrom ?? rowHp(row) } : { ...b, life };
 }

@@ -30,6 +30,8 @@ import { STARFORGER_SOLO_SPEC } from './starforger-solo.ts';
 import { NULLWEAVER_SOLO_SPEC } from './nullweaver-solo.ts';
 import { DREADNOUGHT_SOLO_SPEC } from './dreadnought-solo.ts';
 import { GODFIST_SOLO_SPEC } from './godfist-solo.ts';
+import { DAWNBRINGER_SOLO_SPEC } from './dawnbringer-solo.ts';
+import { USURPER_SOLO_SPEC } from './usurper-solo.ts';
 import { hunterRow } from '../../src/core/combat/rows.ts';
 import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { AbilityId } from '../../src/core/combat/ability-types.ts';
@@ -533,7 +535,7 @@ export const NECROMANCER_SOLO_SPEC: MythicSoloSpec = {
   policy: () => ({ type: 'pass' }),
 };
 
-export { STARFORGER_SOLO_SPEC, NULLWEAVER_SOLO_SPEC, DREADNOUGHT_SOLO_SPEC, GODFIST_SOLO_SPEC };
+export { STARFORGER_SOLO_SPEC, NULLWEAVER_SOLO_SPEC, DREADNOUGHT_SOLO_SPEC, GODFIST_SOLO_SPEC, DAWNBRINGER_SOLO_SPEC, USURPER_SOLO_SPEC };
 
 /** All shipped Mythic-class solo specs verified by `tests/mythic-solo-sim.test.ts`. */
 export const MYTHIC_SOLO_SPECS: readonly MythicSoloSpec[] = [
@@ -545,4 +547,6 @@ export const MYTHIC_SOLO_SPECS: readonly MythicSoloSpec[] = [
   RIFTHUNTER_SOLO_SPEC,
   NULLWEAVER_SOLO_SPEC,
   GODFIST_SOLO_SPEC,
+  DAWNBRINGER_SOLO_SPEC,
+  USURPER_SOLO_SPEC,
 ];

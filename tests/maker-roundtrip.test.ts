@@ -31,7 +31,10 @@ import { customId, stampSeq } from './fixtures/items.ts';
 import { parseSkill } from '../src/core/registry/skills.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
+import { tiles } from '../src/core/combat/space.ts';
 import { parseLandOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { rekeyed, statusDef as walkStatusDef } from '../src/core/status-refs.ts';
+import { wornWorth } from '../src/core/registry/worth.ts';
 import { mergePack, packOf, parsePack } from '../src/core/pack.ts';
 import {
   WORST_BUNDLE,
@@ -383,6 +386,31 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     expect('stacksBy' in plain).toBe(false);
     expect(parseLandOp({ op: 'refund', pct: 25 }, RULES)).toEqual({ op: 'refund', pct: 25 });
     expect(parseLandOp({ op: 'reform', hpShare: 0.5, mana: 15 }, RULES)).toEqual({ op: 'reform', hpShare: 0.5, mana: 15 });
+  },
+
+  overhealed() {
+    const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+    const raw = {
+      label: 'Solar Overflow',
+      desc: 'Converts excess healing into solar fire on the healthiest foe in range.',
+      ops: [],
+      stack: { cap: 3, leave: { kind: 'event', event: 'overhealed' }, keep: 'fight', threshold: null },
+      triggers: [
+        {
+          on: 'overhealed',
+          to: { kind: 'most', of: 'hp', radius: tiles(6), on: 'foes' },
+          limit: { kind: 'round' },
+          ops: [{ op: 'damage', type: 'arcane', amount: f('0.75 * over'), when: 'use' }],
+        },
+      ],
+    };
+    const parsed = parseStatusDef(raw, RULES)!;
+    expect(parsed).toEqual(raw as typeof parsed);
+    expect(parseStatusDef(JSON.parse(JSON.stringify(parsed)), RULES)).toEqual(parsed);
+    expect(rekeyed(walkStatusDef, parsed, new Map())).toEqual(parsed);
+    const worth = wornWorth(parsed, RULES);
+    expect(worth.worth).toBe(0);
+    expect(worth.unweighed).toContain('count');
   },
 
   npc() {

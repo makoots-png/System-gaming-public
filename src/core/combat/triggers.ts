@@ -27,16 +27,17 @@ import type { Tick } from './timeline.ts';
 /**
  * What can happen to a bearer: it deals a hit, is struck, deals or takes a crit, kills, avoids, starts or ends a turn,
  * moves, goes down, falls under `kit.lowHpAt` of its max HP (`fellLow`), puts a harmful status on a foe (`imposed`),
- * kills a monster itself or through one of its minions (`armyKill`), or has one of its minions drop to 0 HP (`minionDown`).
+ * kills a monster itself or through one of its minions (`armyKill`), has one of its minions drop to 0 HP (`minionDown`),
+ * or receives excess healing past max HP (`overhealed`).
  */
-export type BearerEvent = 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'turnStart' | 'turnEnd' | 'moved' | 'down' | 'lowHp' | 'imposed' | 'armyKill' | 'minionDown';
+export type BearerEvent = 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'turnStart' | 'turnEnd' | 'moved' | 'down' | 'lowHp' | 'imposed' | 'armyKill' | 'minionDown' | 'overhealed';
 /** The events with another body in them: the one hit, the striker, the one killed, the one whose use was avoided, the foe a status was put on, the slain monster, or the fallen minion. */
 export type Party = Extract<BearerEvent, 'hitDealt' | 'struck' | 'critDealt' | 'critTaken' | 'kill' | 'avoided' | 'imposed' | 'armyKill' | 'minionDown'>;
 /** Each bearer event, whether it has another body in it (`Party`) or none: the typecheck asks a new event for its cell. */
 const BEARER_EVENT_BODIES: { readonly [E in BearerEvent]: E extends Party ? 'party' : 'alone' } = {
   hitDealt: 'party', struck: 'party', critDealt: 'party', critTaken: 'party', kill: 'party', avoided: 'party',
   turnStart: 'alone', turnEnd: 'alone', moved: 'alone', down: 'alone', lowHp: 'alone', imposed: 'party',
-  armyKill: 'party', minionDown: 'party',
+  armyKill: 'party', minionDown: 'party', overhealed: 'alone',
 };
 /** Every bearer event, once: what a parser reads a stack's leave or a trigger's event against. */
 export const BEARER_EVENTS = Object.keys(BEARER_EVENT_BODIES) as readonly BearerEvent[];
@@ -104,8 +105,9 @@ export const tripKey = (key: StatusKey, i: number): string => `${key}#${i}`;
 // ── the events a use raises (rule 19b) ──
 /**
  * One event on one bearer: what it was, the other body in it (the one hit, the striker, the one killed), the tags of the
- * ability behind it (none for a trigger's own hit), for a status gained or ended its key, and for `struck`/`critTaken`
- * raised by a use the damage stopped (`blocked`) and HP lost past shield (`lost`).
+ * ability behind it (none for a trigger's own hit), for a status gained or ended its key, for `struck`/`critTaken`
+ * raised by a use the damage stopped (`blocked`) and HP lost past shield (`lost`), and for `overhealed` the excess
+ * healing past max HP (`over`).
  */
 export type Raised = {
   readonly bearer: CombatantId;
@@ -115,6 +117,7 @@ export type Raised = {
   readonly key: StatusKey | null;
   readonly blocked?: number;
   readonly lost?: number;
+  readonly over?: number;
 };
 export const raised = (
   bearer: CombatantId,
@@ -123,7 +126,12 @@ export const raised = (
   tags: readonly Tag[] = [],
   key: StatusKey | null = null,
   hit?: { readonly blocked: number; readonly lost: number },
-): Raised => ({ bearer, event, other, tags, key, ...(hit ? { blocked: hit.blocked, lost: hit.lost } : {}) });
+  over?: number,
+): Raised => ({
+  bearer, event, other, tags, key,
+  ...(hit ? { blocked: hit.blocked, lost: hit.lost } : {}),
+  ...(over !== undefined ? { over } : {}),
+});
 
 /**
  * Whether the fight's damage took a body under `kit.lowHpAt` of its max HP (item-stats design 3.1), the one test of the
@@ -146,6 +154,21 @@ function readHurt(rows: Map<CombatantId, Body>, R: OpRules): Raised[] {
     const { hurtFrom, ...read } = b;
     rows.set(b.id, read);
     if (fellLow(hurtFrom, b, R)) out.push(raised(b.id, 'lowHp'));
+  }
+  return out;
+}
+/**
+ * Excess healing past max HP in the fight's heals no batch has read yet (set by row-life.ts `rowLifeAfter` only for
+ * rows watching `overhealed`): one `overhealed` event per body with excess healing, each read once, as `rows` is left
+ * without what it read. The one place `overhealed` is raised.
+ */
+function readOverhealed(rows: Map<CombatantId, Body>): Raised[] {
+  const out: Raised[] = [];
+  for (const b of rows.values()) {
+    if (b.overhealed === undefined) continue;
+    const { overhealed, ...read } = b;
+    rows.set(b.id, read);
+    if (overhealed > 0) out.push(raised(b.id, 'overhealed', null, [], null, undefined, overhealed));
   }
   return out;
 }
@@ -278,8 +301,8 @@ export type TriggerFired = { readonly bodies: Body[]; readonly said: string[]; r
  */
 export function fire(bodies: readonly Body[], events: readonly Raised[], now: Tick, R: OpRules): TriggerFired {
   const rows = new Map(bodies.map(b => [b.id, b] as const)), said: string[] = [], about: CombatantId[] = [];
-  // the change that raised `events` may have hurt a body: its falls under the low share join them (`readHurt`)
-  const first = [...events, ...readHurt(rows, R)];
+  // the change that raised `events` may have hurt or overhealed a body: those events join the batch (`readHurt`, `readOverhealed`)
+  const first = [...events, ...readHurt(rows, R), ...readOverhealed(rows)];
   for (const e of first) if (e.event === 'kill' && e.other !== null) withKill(rows, e.bearer, e.other);
   if (!first.length || !answers(bodies)) return { bodies: bodies.map(b => rows.get(b.id)!), said, about, fires: 0, deepest: 0 };
   const K = R.fight.kit, round = Math.floor(now / R.fight.round);
@@ -331,7 +354,8 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           // an echo reads the status gained or imposed that set it off (land.ts `echoed`); what it puts on is neither, so it never chains
           const g = gainedOf(e);
           const hit = e.event === 'struck' || e.event === 'critTaken' ? { blocked: e.blocked ?? 0, lost: e.lost ?? 0 } : undefined;
-          const r = landOps(rows, t.ops, bearer, to, s.source, now, R, { cross: true, event: e.key ?? s.key, ...(g ? { gained: g } : {}), ...(hit ? { hit } : {}) });
+          const over = e.event === 'overhealed' ? (e.over ?? 0) : undefined;
+          const r = landOps(rows, t.ops, bearer, to, s.source, now, R, { cross: true, event: e.key ?? s.key, ...(g ? { gained: g } : {}), ...(hit ? { hit } : {}), ...(over !== undefined ? { over } : {}) });
           for (const f of r.fired) landThreshold(rows, f, now, R);
           const parts = landedWords(r.landed, id => rows.get(id)?.name ?? id);
           about.push(bearer.id, ...r.landed.filter(l => l.dealt || l.healed || l.reformed).map(l => l.target));
@@ -352,9 +376,9 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
             }
             for (const k of l.cured) next.push(raised(l.target, 'statusEnded', bearer.id, [], k));
           }
-          // its ops' and thresholds' damage, read at once: past the depth, read and dropped as the rest
-          const fell = readHurt(rows, R);
-          if (depth < K.depth) next.push(...fell);
+          // its ops' and thresholds' damage and overheal, read at once: past the depth, read and dropped as the rest
+          const fell = readHurt(rows, R), healedOver = readOverhealed(rows);
+          if (depth < K.depth) next.push(...fell, ...healedOver);
         });
       }
       const after = rows.get(e.bearer)!;

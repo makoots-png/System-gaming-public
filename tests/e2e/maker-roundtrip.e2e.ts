@@ -7,6 +7,7 @@ import { newHunter } from '../../src/core/hunter/hunter.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { parseFormula } from '../../src/core/formula.ts';
 import { statusKey } from '../../src/core/combat/effect-ops.ts';
+import { tiles } from '../../src/core/combat/space.ts';
 import { parseStatusDef } from '../../src/core/combat/fight-parse.ts';
 import type { Item } from '../../src/core/registry/items.ts';
 import type { ItemDefData } from '../../src/core/registry/item-book.ts';
@@ -50,7 +51,7 @@ import {
 const COVERED_E2E_IDS: readonly MakerId[] = [
   'status', 'item', 'skill', 'skill-swap', 'monster', 'npc', 'rewards', 'bundle', 'map', 'feat', 'story',
   'quest', 'gate', 'preset', 'title', 'guild', 'identity', 'rules-overrides', 'roll-tables',
-  'typed-weapon', 'true-ability', 'grievous-cut', 'dispel-helpful', 'zone-erase', 'stacks-by',
+  'typed-weapon', 'true-ability', 'grievous-cut', 'dispel-helpful', 'zone-erase', 'stacks-by', 'overhealed',
 ];
 
 const mustFormula = (text: string) => {
@@ -98,6 +99,21 @@ const WORST_STATUS_STACKS_BY = parseStatusDef({
   ],
 }, RULES)!;
 
+const WORST_STATUS_OVERHEALED = parseStatusDef({
+  label: 'Solar Overflow',
+  desc: 'Turns excess healing past max HP into solar fire.',
+  ops: [],
+  stack: { cap: 3, leave: { kind: 'event', event: 'overhealed' }, keep: 'fight', threshold: null },
+  triggers: [
+    {
+      on: 'overhealed',
+      to: { kind: 'most', of: 'hp', radius: tiles(6), on: 'foes' },
+      limit: { kind: 'round' },
+      ops: [{ op: 'damage', type: 'arcane', amount: mustFormula('0.75 * over'), when: 'use' }],
+    },
+  ],
+}, RULES)!;
+
 /** A by-value item fixture as the def the library keys by its id: no `id`, no `qty`. */
 const defOf = ({ id: _id, qty: _qty, ...def }: Item): ItemDefData => def;
 /** The worst-case item fixtures, each a library item of the GM's catalog in the Workshop session. */
@@ -128,6 +144,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
     d.library.statuses['rt-stacks-by'] = f.statusStacksBy;
+    d.library.statuses['rt-overhealed'] = f.statusOverhealed;
     d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous, f.skillDispelHelpful, f.skillZoneErase);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.npcs.push(f.npc);
@@ -140,6 +157,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     statusOps: WORST_STATUS_OPS,
     statusKits: WORST_STATUS_KITS,
     statusStacksBy: WORST_STATUS_STACKS_BY,
+    statusOverhealed: WORST_STATUS_OVERHEALED,
     skillActive: WORST_SKILL_ACTIVE,
     skillReaction: WORST_SKILL_REACTION,
     skillPassive: WORST_SKILL_PASSIVE,
@@ -171,6 +189,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     { label: 'status (colored ops)', ws: 'status', id: 'rt-ops', overlay: '.fg-overlay', expected: WORST_STATUS_OPS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-ops']) },
     { label: 'status (uncolored kits + long bounds + Reach most)', ws: 'status', id: 'rt-kits', overlay: '.fg-overlay', expected: WORST_STATUS_KITS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-kits']) },
     { label: 'stacks-by (status trigger applyStatus with dynamic stacksBy formula)', ws: 'status', id: 'rt-stacks-by', overlay: '.fg-overlay', expected: WORST_STATUS_STACKS_BY, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-stacks-by']) },
+    { label: 'overhealed (status trigger on overhealed using over formula count)', ws: 'status', id: 'rt-overhealed', overlay: '.fg-overlay', expected: WORST_STATUS_OVERHEALED, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-overhealed']) },
     { label: 'item (Bulwark Ring active.name)', ws: 'item', id: itemIds.bulwark, overlay: '.lf-overlay', expected: WORST_ITEMS.bulwark, read: () => libraryItem(itemIds.bulwark) },
     { label: 'item (worn weapon + worn icon/label + active)', ws: 'item', id: itemIds.worn, overlay: '.lf-overlay', expected: WORST_ITEMS.worn, read: () => libraryItem(itemIds.worn) },
     { label: 'item (finesse strike weapon with formula dice)', ws: 'item', id: itemIds.finesse, overlay: '.lf-overlay', expected: WORST_ITEMS.finesse, read: () => libraryItem(itemIds.finesse) },
@@ -248,7 +267,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     expect(updated.ability.zoneAct).toEqual({ act: 'erase', name: null, by: 1 });
   });
 
-  await test.step('formula helper chips include blocked and lost and insert their names', async () => {
+  await test.step('formula helper chips include blocked, lost, and over and insert their names', async () => {
     const btn = page.locator(`#view-workshop [data-ws="skill"] [data-id="${WORST_SKILL_TRUE.id}"] [data-act="edit"]`);
     await btn.scrollIntoViewIfNeeded();
     await btn.tap();
@@ -258,12 +277,33 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     await names.locator('summary').tap();
     const blockedChip = names.locator('[data-insert="blocked"]');
     const lostChip = names.locator('[data-insert="lost"]');
+    const overChip = names.locator('[data-insert="over"]');
     await expect(blockedChip).toHaveText('Damage stopped by defense or shield');
     await expect(lostChip).toHaveText('HP damage past your shield');
+    await expect(overChip).toHaveText('Excess healing past max HP');
     await blockedChip.tap();
     await expect(dlg.locator('[data-formula]')).toHaveValue(/blocked/);
     await lostChip.tap();
     await expect(dlg.locator('[data-formula]')).toHaveValue(/lost/);
+    await overChip.tap();
+    await expect(dlg.locator('[data-formula]')).toHaveValue(/over/);
+    await dlg.locator('[data-cancel]').tap();
+    await expect(dlg).toHaveCount(0);
+  });
+
+  await test.step('overhealed event label renders in Status Forge trigger and stack-expiry selects', async () => {
+    const btn = page.locator('#view-workshop [data-ws="status"] [data-id="rt-overhealed"] [data-act="edit"]');
+    await btn.scrollIntoViewIfNeeded();
+    await btn.tap();
+    const dlg = page.locator('.fg-overlay [role=dialog]');
+    await expect(dlg).toBeVisible();
+    await expect(dlg.locator('.mk-preview')).toContainText('When its bearer is overhealed:');
+    const when = dlg.locator('details[data-group="when"]');
+    await when.locator('summary').tap();
+    await expect(when.locator('[data-tk="on"] option[value="overhealed"]')).toHaveText('When its bearer is overhealed');
+    const stacks = dlg.locator('details[data-group="stacks"]');
+    await stacks.locator('summary').tap();
+    await expect(stacks.locator('[data-k="leaveEvent"] option[value="overhealed"]')).toHaveText('is overhealed');
     await dlg.locator('[data-cancel]').tap();
     await expect(dlg).toHaveCount(0);
   });

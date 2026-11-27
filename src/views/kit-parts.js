@@ -15,6 +15,7 @@ const eventLabels = () => ({
   hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills a foe', avoided: 'avoids an ability',
   turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', down: 'reaches 0 HP',
   lowHp: `falls under ${Math.round(rules().fight.kit.lowHpAt * 100)}% HP`, imposed: 'puts a harmful status on a foe',
+  overhealed: 'is overhealed',
   statusGained: 'gains a status', statusEnded: 'loses a status', used: 'uses an ability tagged',
 });
 const TRIGGER_EVENTS = [...BEARER_EVENTS, 'statusGained', 'statusEnded', 'used'];

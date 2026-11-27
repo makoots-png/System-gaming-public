@@ -114,7 +114,7 @@ const usedTrigger = fields<On<'used'>>({ ...TRIGGER_PARTS, tag: none });
 function trigger(t: Trigger, f: KeyFn): Trigger {
   switch (t.on) {
     case 'hitDealt': case 'struck': case 'critDealt': case 'critTaken': case 'kill': case 'avoided': case 'imposed': case 'armyKill': case 'minionDown': return partyTrigger(t, f);
-    case 'turnStart': case 'turnEnd': case 'moved': case 'down': case 'lowHp': return aloneTrigger(t, f);
+    case 'turnStart': case 'turnEnd': case 'moved': case 'down': case 'lowHp': case 'overhealed': return aloneTrigger(t, f);
     case 'statusGained': case 'statusEnded': return statusTrigger(t, f);
     case 'used': return usedTrigger(t, f);
     default: return t satisfies never;
@@ -159,7 +159,7 @@ const zoneSpec = fields<ZoneSpec>({ name: none, duration: none, ops, endsWithOwn
 const summon = fields<Summon>({ name: none, archetype: none, rounds: none, statuses: list(fields<Summon['statuses'][number]>({ key, rounds: none })) });
 const ability = fields<Ability>({
   id: none, name: none, kind: none, cost: none, aim: none, range: none, shape: none, delivery: none, foesOnly: none, effect, ops, channel: none,
-  zone: zoneSpec, tags: none, prices: list(price), gates: list(gate), summon, raise: none, move: none, react: none, zoneAct: none, item: none, maxTier: none,
+  zone: zoneSpec, tags: none, prices: list(price), gates: list(gate), summon, raise: none, move: none, react: none, zoneAct: none, usurp: none, item: none, maxTier: none,
 });
 
 // ── the GM's things ──

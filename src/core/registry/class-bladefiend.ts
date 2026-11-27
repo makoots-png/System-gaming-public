@@ -134,25 +134,22 @@ const BASE_FLOW: ClassWorn = makeBladeFlow({
   key: KEY_FLOW,
   label: 'Blade Flow',
   desc: 'Counter-slashes and refunds turn time when you parry or avoid a foe, and builds Tempest Flow on crits (lost when struck).',
-  counterFormula: '1d6 + 0.35 * phys',
-  refundPct: 15,
+  counterFormula: '1d6 + 0.2 * phys',
+  refundPct: 10,
   tempestKey: KEY_TEMPEST,
-  tempestSpeedPct: 3,
-  tempestDealtPct: 2,
+  tempestSpeedPct: 2,
+  tempestDealtPct: 1,
 });
 
 const SAINT_FLOW: ClassWorn = makeBladeFlow({
   key: KEY_FLOW_SAINT,
   label: 'Blade Flow: Sword Saint',
-  desc: 'Increases counter-slash damage, turn refund, and Tempest Flow bonuses on crits (lost when struck), and adds 4% damage dealt.',
-  counterFormula: '1d8 + 0.55 * phys',
-  refundPct: 20,
+  desc: 'Increases counter-slash damage, turn refund, and Tempest Flow bonuses on crits (lost when struck).',
+  counterFormula: '1d6 + 0.3 * phys',
+  refundPct: 14,
   tempestKey: KEY_TEMPEST_UP,
-  tempestSpeedPct: 4,
-  tempestDealtPct: 3,
-  extraOps: [
-    { op: 'share', on: 'dealt', pct: 4 },
-  ],
+  tempestSpeedPct: 3,
+  tempestDealtPct: 2,
 });
 
 // ── active ability builders ──
@@ -282,7 +279,7 @@ const BASE_PARRY = makeDeflectingEdge({
   edgeKey: KEY_PARRY_EDGE,
   edgeDealtPct: 14,
   edgeSpeedPct: 10,
-  cooldownRounds: 5,
+  cooldownRounds: 6,
 });
 
 const UP_PARRY = makeDeflectingEdge({
@@ -290,7 +287,7 @@ const UP_PARRY = makeDeflectingEdge({
   edgeKey: KEY_PARRY_EDGE_UP,
   edgeDealtPct: 18,
   edgeSpeedPct: 14,
-  cooldownRounds: 4,
+  cooldownRounds: 5,
 });
 
 const BASE_GALE = makeRendingGale({
@@ -326,7 +323,7 @@ const UP_CUTS = makeHundredCuts({
 /** Base Bladefiend signature (before skill-tree nodes are folded on top). */
 export const BLADEFIEND_SIGNATURE: ClassSignature = {
   className: 'Bladefiend',
-  bonus: { speed: 6, critFaces: 1, react: 3 },
+  bonus: { speed: 4, critFaces: 1 },
   worn: BASE_FLOW,
   actives: [BASE_SLASH, BASE_PARRY, BASE_GALE, BASE_CUTS],
 };
@@ -363,33 +360,33 @@ export const BLADEFIEND_TREE: ClassTree = {
   rarity: 'mythic',
   nodes: [
     // Depth 1: Root (1)
-    node('bf-root', 1, 'First Cut', 'Gain 2 Strength, 2 Agility, and 3 speed.', [], [
-      bonus({ str: 2, agi: 2, speed: 3 }),
+    node('bf-root', 1, 'First Cut', 'Gain 2 Strength, 2 Agility, and 2 speed.', [], [
+      bonus({ str: 2, agi: 2, speed: 2 }),
     ]),
 
     // Depth 2: Three branches (3)
-    node('bf-a2', 2, 'Parrying Edge', 'Gain 2 Reaction and 2 Agility.', ['bf-root'], [
-      bonus({ react: 2, agi: 2 }),
+    node('bf-a2', 2, 'Parrying Edge', 'Gain 2 Agility and 4 tenacity.', ['bf-root'], [
+      bonus({ agi: 2, tenacity: 4 }),
     ]),
-    node('bf-b2', 2, 'Unbound Gale', 'Gain 3 Agility and 3 ability haste.', ['bf-root'], [
-      bonus({ agi: 3, haste: 3 }),
+    node('bf-b2', 2, 'Unbound Gale', 'Gain 3 Agility and 2 ability haste.', ['bf-root'], [
+      bonus({ agi: 3, haste: 2 }),
     ]),
     node('bf-c2', 2, 'Severing Edge', 'Gain 3 Strength and 3% armor penetration.', ['bf-root'], [
       bonus({ str: 3, armorPen: 3 }),
     ]),
 
     // Depth 3: Branch splits (6)
-    node('bf-a3x', 3, 'Riposte Stance', 'Gain 2 Reaction and 3 Strength.', ['bf-a2'], [
-      bonus({ react: 2, str: 3 }),
+    node('bf-a3x', 3, 'Riposte Stance', 'Gain 3 Strength and 4 tenacity.', ['bf-a2'], [
+      bonus({ str: 3, tenacity: 4 }),
     ]),
-    node('bf-a3y', 3, 'Iron Guard', 'Gain 2 Vitality and 15 max HP.', ['bf-a2'], [
-      bonus({ vit: 2, hpMax: 15 }),
+    node('bf-a3y', 3, 'Iron Guard', 'Gain 1 Vitality and 15 max HP.', ['bf-a2'], [
+      bonus({ vit: 1, hpMax: 15 }),
     ]),
-    node('bf-b3x', 3, 'Windstep', 'Gain 4 speed and 3 ability haste.', ['bf-b2'], [
-      bonus({ speed: 4, haste: 3 }),
+    node('bf-b3x', 3, 'Windstep', 'Gain 2 speed and 2 ability haste.', ['bf-b2'], [
+      bonus({ speed: 2, haste: 2 }),
     ]),
-    node('bf-b3y', 3, 'Calm Stance', 'Gain 5 tenacity, 4 Will, and 10 max HP.', ['bf-b2'], [
-      bonus({ tenacity: 5, will: 4, hpMax: 10 }),
+    node('bf-b3y', 3, 'Calm Stance', 'Gain 7 Discipline, 5 tenacity, and 4 Will.', ['bf-b2'], [
+      bonus({ dis: 7, tenacity: 5, will: 4 }),
     ]),
     node('bf-c3x', 3, 'Armor Cleave', 'Gain 3% armor penetration and 3 flat armor penetration.', ['bf-c2'], [
       bonus({ armorPen: 3, armorPenFlat: 3 }),
@@ -399,17 +396,17 @@ export const BLADEFIEND_TREE: ClassTree = {
     ]),
 
     // Depth 4: Deepening (6)
-    node('bf-a4x', 4, 'Fleet Counter', 'Gain 2 Reaction and 4 speed.', ['bf-a3x'], [
-      bonus({ react: 2, speed: 4 }),
+    node('bf-a4x', 4, 'Fleet Counter', 'Gain 2 speed and 4 tenacity.', ['bf-a3x'], [
+      bonus({ speed: 2, tenacity: 4 }),
     ]),
-    node('bf-a4y', 4, 'Steel Poise', 'Gain 3 Vitality and 20 max HP.', ['bf-a3y'], [
-      bonus({ vit: 3, hpMax: 20 }),
+    node('bf-a4y', 4, 'Steel Poise', 'Gain 1 Vitality and 15 max HP.', ['bf-a3y'], [
+      bonus({ vit: 1, hpMax: 15 }),
     ]),
-    node('bf-b4x', 4, 'Flash Step', 'Gain 4 speed and 4 ability haste.', ['bf-b3x'], [
-      bonus({ speed: 4, haste: 4 }),
+    node('bf-b4x', 4, 'Flash Step', 'Gain 2 speed and 2 ability haste.', ['bf-b3x'], [
+      bonus({ speed: 2, haste: 2 }),
     ]),
-    node('bf-b4y', 4, 'Unshaken Mind', 'Gain 6 tenacity and 5 Will.', ['bf-b3y'], [
-      bonus({ tenacity: 6, will: 5 }),
+    node('bf-b4y', 4, 'Unshaken Mind', 'Gain 7 Discipline, 6 tenacity, and 5 Will.', ['bf-b3y'], [
+      bonus({ dis: 7, tenacity: 6, will: 5 }),
     ]),
     node('bf-c4x', 4, 'Sundered Plate', 'Gain 3% armor penetration and 4 flat armor penetration.', ['bf-c3x'], [
       bonus({ armorPen: 3, armorPenFlat: 4 }),
@@ -419,7 +416,7 @@ export const BLADEFIEND_TREE: ClassTree = {
     ]),
 
     // Depth 5: Exclusive Fork Pairs (6 nodes, 3 buyable)
-    node('bf-a5-l', 5, 'Mirror Riposte', 'Upgrade Deflecting Edge to a 4-round cooldown with 18% damage dealt and 14% speed on Parry Edge.', ['bf-a4x', 'bf-a4y'], [
+    node('bf-a5-l', 5, 'Mirror Riposte', 'Upgrade Deflecting Edge to a 5-round cooldown with 18% damage dealt and 14% speed on Parry Edge.', ['bf-a4x', 'bf-a4y'], [
       replaceActive(ID_PARRY, UP_PARRY),
     ], { forkGroup: 'bf-a5' }),
     node('bf-a5-r', 5, 'Untouched Duelist', 'Gain 4 Reaction, 4 Vitality, and 25 max HP.', ['bf-a4x', 'bf-a4y'], [
@@ -441,17 +438,17 @@ export const BLADEFIEND_TREE: ClassTree = {
     ], { forkGroup: 'bf-c5' }),
 
     // Depth 6: Post-fork convergence (6)
-    node('bf-a6x', 6, 'Duelist Reflex', 'Gain 2 Reaction and 3 Strength.', ['bf-a5-l', 'bf-a5-r'], [
-      bonus({ react: 2, str: 3 }),
+    node('bf-a6x', 6, 'Duelist Reflex', 'Gain 3 Strength and 4 tenacity.', ['bf-a5-l', 'bf-a5-r'], [
+      bonus({ str: 3, tenacity: 4 }),
     ], { parentMode: 'any' }),
-    node('bf-a6y', 6, 'Tempered Frame', 'Gain 20 max HP and 3 Vitality.', ['bf-a5-l', 'bf-a5-r'], [
-      bonus({ hpMax: 20, vit: 3 }),
+    node('bf-a6y', 6, 'Tempered Frame', 'Gain 20 max HP and 1 Vitality.', ['bf-a5-l', 'bf-a5-r'], [
+      bonus({ hpMax: 20, vit: 1 }),
     ], { parentMode: 'any' }),
-    node('bf-b6x', 6, 'Gale Tempo', 'Gain 4 speed and 4 ability haste.', ['bf-b5-l', 'bf-b5-r'], [
-      bonus({ speed: 4, haste: 4 }),
+    node('bf-b6x', 6, 'Gale Tempo', 'Gain 2 speed and 2 ability haste.', ['bf-b5-l', 'bf-b5-r'], [
+      bonus({ speed: 2, haste: 2 }),
     ], { parentMode: 'any' }),
-    node('bf-b6y', 6, 'Still Blade', 'Gain 15 max HP, 6 tenacity, and 5 Will.', ['bf-b5-l', 'bf-b5-r'], [
-      bonus({ hpMax: 15, tenacity: 6, will: 5 }),
+    node('bf-b6y', 6, 'Still Blade', 'Gain 7 Discipline, 6 tenacity, and 5 Will.', ['bf-b5-l', 'bf-b5-r'], [
+      bonus({ dis: 7, tenacity: 6, will: 5 }),
     ], { parentMode: 'any' }),
     node('bf-c6x', 6, 'Piercing Draw', 'Gain 3% armor penetration and 4 flat armor penetration.', ['bf-c5-l', 'bf-c5-r'], [
       bonus({ armorPen: 3, armorPenFlat: 4 }),
@@ -461,16 +458,16 @@ export const BLADEFIEND_TREE: ClassTree = {
     ], { parentMode: 'any' }),
 
     // Depth 7: Second Exclusive Fork Pairs (6 nodes, 3 buyable; at most 2 scalers across any path: steady + execute)
-    node('bf-a7-l', 7, 'Unscathed Form', 'Gain 2 Reaction and deal up to 12% more damage while above half HP.', ['bf-a6x', 'bf-a6y'], [
-      bonus({ react: 2 }),
+    node('bf-a7-l', 7, 'Unscathed Form', 'Gain 4 tenacity and deal up to 12% more damage while above half HP.', ['bf-a6x', 'bf-a6y'], [
+      bonus({ tenacity: 4 }),
       scaler({ measure: 'user', dir: 'over', start: 0.5, scale: 0.12 }),
     ], { forkGroup: 'bf-a7' }),
     node('bf-a7-r', 7, 'Aegis of Steel', 'Gain 6 Vitality, 30 max HP, and 6 tenacity.', ['bf-a6x', 'bf-a6y'], [
       bonus({ vit: 6, hpMax: 30, tenacity: 6 }),
     ], { forkGroup: 'bf-a7' }),
 
-    node('bf-b7-l', 7, 'Phantom Footwork', 'Gain 5 speed, 4 ability haste, and 2 Reaction.', ['bf-b6x', 'bf-b6y'], [
-      bonus({ speed: 5, haste: 4, react: 2 }),
+    node('bf-b7-l', 7, 'Phantom Footwork', 'Gain 2 speed and 4 ability haste.', ['bf-b6x', 'bf-b6y'], [
+      bonus({ speed: 2, haste: 4 }),
     ], { forkGroup: 'bf-b7' }),
     node('bf-b7-r', 7, 'Iron Will', 'Gain 8 tenacity, 6 Will, and 25 max HP.', ['bf-b6x', 'bf-b6y'], [
       bonus({ tenacity: 8, will: 6, hpMax: 25 }),
@@ -485,11 +482,11 @@ export const BLADEFIEND_TREE: ClassTree = {
     ], { forkGroup: 'bf-c7' }),
 
     // Depth 8: Branch Capstones (3)
-    node('bf-a8', 8, 'Untouched Edge', 'Gain 2 Reaction, 4 Strength, and 20 max HP.', ['bf-a7-l', 'bf-a7-r'], [
-      bonus({ react: 2, str: 4, hpMax: 20 }),
+    node('bf-a8', 8, 'Untouched Edge', 'Gain 4 Strength and 20 max HP.', ['bf-a7-l', 'bf-a7-r'], [
+      bonus({ str: 4, hpMax: 20 }),
     ], { parentMode: 'any' }),
-    node('bf-b8', 8, 'Storm Stride', 'Gain 4 Agility, 5 speed, 4 ability haste, and 5 Will.', ['bf-b7-l', 'bf-b7-r'], [
-      bonus({ agi: 4, speed: 5, haste: 4, will: 5 }),
+    node('bf-b8', 8, 'Storm Stride', 'Gain 4 Agility, 2 speed, 4 ability haste, 7 Discipline, and 5 Will.', ['bf-b7-l', 'bf-b7-r'], [
+      bonus({ agi: 4, speed: 2, haste: 4, dis: 7, will: 5 }),
     ], { parentMode: 'any' }),
     node('bf-c8', 8, 'Perfect Form', 'Gain 4 Strength, 5 flat armor penetration, and 0.08 crit multiplier.', ['bf-c7-l', 'bf-c7-r'], [
       bonus({ str: 4, armorPenFlat: 5, critSize: 8 }),

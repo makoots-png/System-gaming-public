@@ -43,6 +43,7 @@ export const ROUNDTRIP_REGISTRY = [
   { id: 'dispel-helpful', viewFile: 'src/views/skills.js', opensMaker: true, coverage: 'both', description: 'Active skill dispelling helpful statuses (skills.js + maker.js)' },
   { id: 'zone-erase', viewFile: 'src/views/kit-parts.js', opensMaker: false, coverage: 'both', description: 'Active skill erasing foe fields (skills.js + kit-parts.js)' },
   { id: 'stacks-by', viewFile: 'src/views/forge.js', opensMaker: true, coverage: 'both', description: 'Status trigger applyStatus with dynamic stacksBy formula (forge.js + maker.js)' },
+  { id: 'overhealed', viewFile: 'src/views/forge.js', opensMaker: true, coverage: 'both', description: 'Status trigger on overhealed using over formula count (forge.js + maker.js + kit-parts.js)' },
 ] as const satisfies readonly MakerRegistryEntry[];
 
 export type MakerId = (typeof ROUNDTRIP_REGISTRY)[number]['id'];

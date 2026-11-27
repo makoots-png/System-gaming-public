@@ -1,7 +1,9 @@
-// mythic-solo-sim.test.ts: Mythic-class solo simulation checks against all 4 scripted Mythic bosses (MYTHIC_IDS).
+// mythic-solo-sim.test.ts: Mythic-class solo simulation checks against all 4 scripted Mythic bosses (MYTHIC_IDS),
+// shared legality checks, and soloRow negative self-tests.
 // Each Mythic class fixture is built as a real S-rank level 70 Hunter (2:1 stats, 32-node legal tree, S-band title,
 // 6-slot Mythic middle-grade gear, awakened Confluence + Marks + Apex) through `hunterRow`. Target solo win rate:
-// 75% to 98% (hard floor 75%, aiming near 85%; >98% reported as diagnostic).
+// 75% to 98% (hard floor 75%, aiming near 85%; exact baseline ratchet via `soloRow`).
+import { readFileSync } from 'node:fs';
 import { describe, expect } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { ClassNodeId } from '../src/core/ids.ts';
@@ -9,13 +11,15 @@ import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { CLASS_ACTIVES_MAX, TREE_SHAPE, canBuyNode, classTreeOf, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
 import { classPowers } from '../src/core/registry/class-powers.ts';
-import { classDefOf } from '../src/core/registry/jobs.ts';
+import { CLASS_NAMES, classDefOf } from '../src/core/registry/jobs.ts';
 import { keystoneOf } from '../src/core/registry/keystones.ts';
 import { heldKeystones } from '../src/core/hunter/sheet.ts';
 import { gradeOfSpend, itemSpend, titleSpend } from '../src/core/registry/item-budget.ts';
 import { WEAR_LIMIT } from '../src/core/registry/items.ts';
 import { wornAbilityId } from '../src/core/registry/abilities.ts';
 import { runSoloMythic, scriptsOn } from './models/fight-sim.ts';
+import type { SoloMythicResult } from './models/fight-sim.ts';
+import { SOLO_PRESSURE_MIN_FLOOR, SOLO_RUNS, soloRow } from './models/mythic-row.ts';
 import { simTest, workBudget } from './models/sim-budget.ts';
 import {
   HEMOMANCER_SOLO_SPEC,
@@ -27,26 +31,217 @@ import {
   buildMythicSoloRow,
 } from './fixtures/mythic-hunters.ts';
 
-const SOLO_RUNS = 200;
 const DIAG_RUNS = 100;
-const HARD_FLOOR = 0.75;
-const HIGH_DIAGNOSTIC = 0.98;
 const SOLO_BUDGET = workBudget(250);
 
-/**
- * Recorded BEFORE baseline (branch extract-c at c65aef59, 0 Crimson Vessels) and pre-rescale PR C (24-power scale)
- * vs AFTER rank-driven rescale (120-power scale: 84/120 = +9/+9/+9 for 3 S-normals, 120/120 = +12/+12/+12 for 3 S-bosses):
- *   - plain:                         0/120 93.5% (187/200, 6.3r) | PR C 18/24 93.5%, 24/24 93.5% -> AFTER 84/120 93.5% (6.0r), 120/120 93.5% (5.9r)
- *   - angel-of-the-last-trumpet:     0/120 79.0% (158/200, 11.2r)| PR C 18/24 80.0%, 24/24 80.0% -> AFTER 84/120 80.0% (11.0r), 120/120 80.0% (11.0r)
- *   - zaratan-the-island-that-wakes: 0/120 85.5% (171/200, 15.9r)| PR C 18/24 91.0%, 24/24 90.5% -> AFTER 84/120 91.0% (15.5r), 120/120 89.0% (15.2r)
- *   - the-fourth-rider:              0/120 91.0% (182/200, 9.0r) | PR C 18/24 91.0%, 24/24 91.0% -> AFTER 84/120 91.0% (8.9r), 120/120 91.0% (8.9r)
- */
-const HEMO_BEFORE_BASELINE: Readonly<Record<MythicScriptId, { readonly wins: number; readonly meanRounds: number }>> = {
-  plain: { wins: 187, meanRounds: 6.3 },
-  'angel-of-the-last-trumpet': { wins: 158, meanRounds: 11.2 },
-  'zaratan-the-island-that-wakes': { wins: 171, meanRounds: 15.9 },
-  'the-fourth-rider': { wins: 182, meanRounds: 9.0 },
+/** Exact recorded solo win baselines for Hemomancer across 0/120, 84/120, and 120/120 Crimson Vessels. */
+const HEMO_BEFORE_BASELINE: Readonly<Record<MythicScriptId, number>> = {
+  plain: 187,
+  'angel-of-the-last-trumpet': 158,
+  'zaratan-the-island-that-wakes': 171,
+  'the-fourth-rider': 182,
 };
+
+const HEMO_VESSELS_84_BASELINE: Readonly<Record<MythicScriptId, number>> = {
+  plain: 187,
+  'angel-of-the-last-trumpet': 160,
+  'zaratan-the-island-that-wakes': 182,
+  'the-fourth-rider': 182,
+};
+
+const HEMO_VESSELS_120_BASELINE: Readonly<Record<MythicScriptId, number>> = {
+  plain: 187,
+  'angel-of-the-last-trumpet': 160,
+  'zaratan-the-island-that-wakes': 178,
+  'the-fourth-rider': 182,
+};
+
+describe('soloRow helper contract and fail-capable negative self-tests', () => {
+  const mkRes = (boss: MythicScriptId, wins: number, capped = 0, runs = SOLO_RUNS): SoloMythicResult => {
+    const winRate = wins / runs;
+    return {
+      mythicId: boss,
+      runs,
+      wins,
+      winRate,
+      se: Math.sqrt((winRate * (1 - winRate)) / runs),
+      meanRounds: 10,
+      capped,
+    };
+  };
+
+  simTest('tests/models/mythic-row.ts contains no built-in class names', () => {
+    const src = readFileSync(`${import.meta.dir}/models/mythic-row.ts`, 'utf8');
+    const found = CLASS_NAMES.filter(name => new RegExp(`\\b${name}\\b`, 'i').exec(src) !== null);
+    expect(found, `mythic-row.ts must not mention class names: ${found.join(', ')}`).toEqual([]);
+  }, workBudget(0));
+
+  simTest('soloRow accepts valid rows and fails loudly on every mutated contract violation', () => {
+    // Valid standard row passes
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'angel-of-the-last-trumpet',
+      res: mkRes('angel-of-the-last-trumpet', 170),
+      baseline: 170,
+      tallies: [{ name: 'hookless', actual: 0, min: 0 }],
+      quiet: true,
+    })).not.toThrow();
+
+    // Valid plain row with ceiling 1.0 + passing pressure floor and exact pin passes
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      pressure: { label: 'hp-drop', minRate: 0.5, actual: 0.52, exact: 0.52 },
+      quiet: true,
+    })).not.toThrow();
+
+    // 1. Below 75% floor (0.74) fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'zaratan-the-island-that-wakes',
+      res: mkRes('zaratan-the-island-that-wakes', 148),
+      baseline: 148,
+      quiet: true,
+    })).toThrow(/below 75% floor/);
+
+    // 2. Above 98% ceiling on scripted boss (0.99) fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'angel-of-the-last-trumpet',
+      res: mkRes('angel-of-the-last-trumpet', 198),
+      baseline: 198,
+      quiet: true,
+    })).toThrow(/above 98\.0% ceiling/);
+
+    // 3. Capped fights > 0 fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'the-fourth-rider',
+      res: mkRes('the-fourth-rider', 170, 1),
+      baseline: 170,
+      quiet: true,
+    })).toThrow(/had 1 capped fights/);
+
+    // 4. Exact ratchet drift (+1 or -1 win) fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 171),
+      baseline: 170,
+      quiet: true,
+    })).toThrow(/drifted from recorded baseline 170\/200/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 169),
+      baseline: 170,
+      quiet: true,
+    })).toThrow(/drifted from recorded baseline 170\/200/);
+
+    // 5. ceiling 1.0 on scripted boss fails even with passing pressure
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'angel-of-the-last-trumpet',
+      res: mkRes('angel-of-the-last-trumpet', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      pressure: { label: 'hp-drop', minRate: 0.5, actual: 0.8 },
+      quiet: true,
+    })).toThrow(/only allowed on plain/);
+
+    // 6. ceiling 1.0 on plain without pressure fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      quiet: true,
+    })).toThrow(/requires a pressure floor/);
+
+    // 7. ceiling 1.0 on plain with missing pressure.exact, failing pressure, weak minRate (0.01), or drifted exact pressure fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      pressure: { label: 'hp-drop', minRate: SOLO_PRESSURE_MIN_FLOOR, actual: 0.55 },
+      quiet: true,
+    })).toThrow(/requires pressure\.exact/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      pressure: { label: 'hp-drop', minRate: SOLO_PRESSURE_MIN_FLOOR, actual: 0.49, exact: 0.49 },
+      quiet: true,
+    })).toThrow(/below floor 50\.0%/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      pressure: { label: 'hp-drop', minRate: 0.01, actual: 1.0, exact: 1.0 },
+      quiet: true,
+    })).toThrow(/below required floor 0\.5/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 200),
+      baseline: 200,
+      ceiling: 1.0,
+      pressure: { label: 'hp-drop', minRate: SOLO_PRESSURE_MIN_FLOOR, actual: 0.55, exact: 0.525 },
+      quiet: true,
+    })).toThrow(/drifted from recorded 52\.5%/);
+
+    // 8. Tally below floor or above max fails
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'zaratan-the-island-that-wakes',
+      res: mkRes('zaratan-the-island-that-wakes', 170),
+      baseline: 170,
+      tallies: [{ name: 'zones erased', actual: 24, min: 25 }],
+      quiet: true,
+    })).toThrow(/tally "zones erased" \(24\) below floor 25/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'zaratan-the-island-that-wakes',
+      res: mkRes('zaratan-the-island-that-wakes', 170),
+      baseline: 170,
+      tallies: [{ name: 'cheat-death rate', actual: 0.6, min: 0, max: 0.5 }],
+      quiet: true,
+    })).toThrow(/tally "cheat-death rate" \(0\.6\) above max 0\.5/);
+
+    // 9. Boss mismatch, runs !== SOLO_RUNS, and forged winRate !== wins / runs fail
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('the-fourth-rider', 170),
+      baseline: 170,
+      quiet: true,
+    })).toThrow(/does not match plain/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: mkRes('plain', 85, 0, 100),
+      baseline: 85,
+      quiet: true,
+    })).toThrow(/must equal SOLO_RUNS \(200\)/);
+    expect(() => soloRow({
+      className: 'Synthetic',
+      boss: 'plain',
+      res: { ...mkRes('plain', 170), winRate: 0.9 },
+      baseline: 170,
+      quiet: true,
+    })).toThrow(/does not match wins\/runs/);
+  }, workBudget(0));
+});
 
 describe('Mythic solo-sim hunter fixtures are 100% legal under shipped rules', () => {
   for (const spec of MYTHIC_SOLO_SPECS) {
@@ -108,42 +303,42 @@ describe('Hemomancer solo vs Mythic bosses (200 runs each, before 0/120 baseline
   for (const mythicId of MYTHIC_IDS) {
     simTest(`Hemomancer solo (before / 0/120 vessels) vs ${mythicId}`, () => {
       const res = runSoloMythic(hero0, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
-      const pct = (res.winRate * 100).toFixed(1);
-      const se = (res.se * 100).toFixed(1);
-      const base = HEMO_BEFORE_BASELINE[mythicId];
-      console.log(`[solo-mythic:before 0/120] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped) [baseline ${base.wins}/${SOLO_RUNS}]`);
-      expect(res.capped).toBe(0);
-      expect(res.wins, `Hemomancer 0/120 vs ${mythicId} drifted from baseline ${base.wins}/${SOLO_RUNS}`).toBe(base.wins);
-      expect(res.winRate, `Hemomancer 0/120 vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
-      expect(res.winRate, `Hemomancer 0/120 vs ${mythicId} win rate ${pct}% above 98% ceiling`).toBeLessThanOrEqual(HIGH_DIAGNOSTIC);
+      soloRow({
+        className: 'Hemomancer',
+        label: '0/120 vessels',
+        boss: mythicId,
+        res,
+        baseline: HEMO_BEFORE_BASELINE[mythicId],
+        tallies: [{ name: 'hookless-mythic', actual: 0, min: 0 }],
+      });
     }, SOLO_BUDGET);
   }
 
   for (const mythicId of MYTHIC_IDS) {
     simTest(`Hemomancer solo (after / 84/120 vessels, 3 S-normals) vs ${mythicId}`, () => {
       const res = runSoloMythic(hero84, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
-      const pct = (res.winRate * 100).toFixed(1);
-      const se = (res.se * 100).toFixed(1);
-      const base = HEMO_BEFORE_BASELINE[mythicId];
-      const delta = ((res.wins - base.wins) / SOLO_RUNS * 100).toFixed(1);
-      console.log(`[solo-mythic:after 84/120] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped, delta ${Number(delta) >= 0 ? '+' : ''}${delta} pp vs before ${base.wins}/${SOLO_RUNS})`);
-      expect(res.capped).toBe(0);
-      expect(res.winRate, `Hemomancer 84/120 vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
-      expect(res.winRate, `Hemomancer 84/120 vs ${mythicId} win rate ${pct}% above 98% hard ceiling`).toBeLessThanOrEqual(HIGH_DIAGNOSTIC);
+      soloRow({
+        className: 'Hemomancer',
+        label: '84/120 vessels',
+        boss: mythicId,
+        res,
+        baseline: HEMO_VESSELS_84_BASELINE[mythicId],
+        tallies: [{ name: 'hookless-mythic', actual: 0, min: 0 }],
+      });
     }, SOLO_BUDGET);
   }
 
   for (const mythicId of MYTHIC_IDS) {
     simTest(`Hemomancer solo (after / 120/120 vessels, 3 S-bosses) vs ${mythicId}`, () => {
       const res = runSoloMythic(hero120, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
-      const pct = (res.winRate * 100).toFixed(1);
-      const se = (res.se * 100).toFixed(1);
-      const base = HEMO_BEFORE_BASELINE[mythicId];
-      const delta = ((res.wins - base.wins) / SOLO_RUNS * 100).toFixed(1);
-      console.log(`[solo-mythic:after 120/120] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped, delta ${Number(delta) >= 0 ? '+' : ''}${delta} pp vs before ${base.wins}/${SOLO_RUNS})`);
-      expect(res.capped).toBe(0);
-      expect(res.winRate, `Hemomancer 120/120 vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
-      expect(res.winRate, `Hemomancer 120/120 vs ${mythicId} win rate ${pct}% above 98% hard ceiling`).toBeLessThanOrEqual(HIGH_DIAGNOSTIC);
+      soloRow({
+        className: 'Hemomancer',
+        label: '120/120 vessels',
+        boss: mythicId,
+        res,
+        baseline: HEMO_VESSELS_120_BASELINE[mythicId],
+        tallies: [{ name: 'hookless-mythic', actual: 0, min: 0 }],
+      });
     }, SOLO_BUDGET);
   }
 

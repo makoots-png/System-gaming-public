@@ -1,10 +1,11 @@
 // godfist-solo-sim.test.ts: Godfist (Mythic, str+dis) solo simulation checks against all 4 scripted Mythic bosses,
-// fixture legality, and per-boss fight-observed tallies (Heavenly Suplex displacement >= 2 tiles and Worldsplitter Grit spend).
+// fixture legality, and per-boss fight-observed tallies (Heavenly Suplex displacement >= 2 tiles and Worldsplitter Grit spend) via soloRow.
 import { describe, expect } from 'bun:test';
 import type { ClassNodeId } from '../src/core/ids.ts';
 import { fightId } from '../src/core/ids.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
+import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { CLASS_ACTIVES_MAX, TREE_SHAPE, canBuyNode, classTreeOf, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
 import { classPowers } from '../src/core/registry/class-powers.ts';
 import { heldKeystones } from '../src/core/hunter/sheet.ts';
@@ -20,6 +21,7 @@ import type { Policy as TurnPolicy } from '../src/core/combat/policy.ts';
 import { dist } from '../src/core/combat/space.ts';
 import { answering, runSoloMythic, scripted } from './models/fight-sim.ts';
 import type { SimRow } from './models/fight-sim.ts';
+import { SOLO_RUNS, soloRow } from './models/mythic-row.ts';
 import { beginFight, recordFightStep, simTest, workBudget } from './models/sim-budget.ts';
 import { SOLO_MYTHIC_RULES, buildMythicSoloHunter, buildMythicSoloRow } from './fixtures/mythic-hunters.ts';
 import {
@@ -29,11 +31,16 @@ import {
   GODFIST_WORLDSPLITTER_ID,
 } from './fixtures/godfist-solo.ts';
 
-const SOLO_RUNS = 200;
-const HARD_FLOOR = 0.75;
-const HARD_CEILING = 0.98;
-const SOLO_BUDGET = workBudget(250);
+const SOLO_BUDGET = workBudget(260);
 const TALLY_SEEDS = 30;
+
+/** Exact recorded solo win baselines for Godfist. */
+const GODFIST_BASELINES: Readonly<Record<MythicScriptId, number>> = {
+  plain: 169,
+  'angel-of-the-last-trumpet': 189,
+  'zaratan-the-island-that-wakes': 164,
+  'the-fourth-rider': 157,
+};
 
 type GodfistTally = {
   readonly suplexCaught: number;
@@ -103,7 +110,7 @@ function tallyGodfistLoop(player: SimRow, boss: SimRow, R: Rules, seeds: number)
   return { suplexCaught, suplexMoved2, worldsplitterHits, worldsplitterSpentGrit };
 }
 
-describe('Godfist solo-sim fixture legality and per-boss Suplex / Grit tallies', () => {
+describe('Godfist solo-sim fixture legality', () => {
   simTest('Godfist fixture passes tree legality, S-band title, Mythic middle-grade gear, armed Qi Guard, and keystone wiring', () => {
     const spec = GODFIST_SOLO_SPEC;
     const tree = classTreeOf(spec.className);
@@ -146,35 +153,32 @@ describe('Godfist solo-sim fixture legality and per-boss Suplex / Grit tallies',
       expect(sim.row.abilities.some(x => x.id === wornAbilityId(a.id)), `Godfist missing active ${a.name}`).toBe(true);
     }
   }, workBudget(0));
+});
+
+describe('Godfist solo vs Mythic bosses (200 runs each + Suplex / Grit tallies via soloRow)', () => {
+  const hero = buildMythicSoloRow(GODFIST_SOLO_SPEC, SOLO_MYTHIC_RULES);
+  const player = answering(hero);
 
   for (const mythicId of MYTHIC_IDS) {
-    simTest(`seeded fight tally vs ${mythicId} confirms >= 50% of caught Heavenly Suplex casts move target >= 2 tiles and >= 50% of Worldsplitter hits spend Grit`, () => {
-      const player = answering(buildMythicSoloRow(GODFIST_SOLO_SPEC, SOLO_MYTHIC_RULES));
+    simTest(`Godfist solo vs ${mythicId}`, () => {
+      const res = runSoloMythic(hero, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
       const boss = scripted(mythicId, SOLO_MYTHIC_RULES);
       const t = tallyGodfistLoop(player, boss, SOLO_MYTHIC_RULES, TALLY_SEEDS);
       console.log(
         `[solo-mythic:godfist-tally] vs ${mythicId} (${TALLY_SEEDS} fights): Suplex moved>=2 ${t.suplexMoved2}/${t.suplexCaught}, Worldsplitter spent Grit ${t.worldsplitterSpentGrit}/${t.worldsplitterHits}`,
       );
-      expect(t.suplexCaught, `Godfist never landed Heavenly Suplex vs ${mythicId}`).toBeGreaterThan(0);
-      expect(t.suplexMoved2 * 2, `Suplex displaced >= 2 tiles on < 50% of caught casts vs ${mythicId}`).toBeGreaterThanOrEqual(t.suplexCaught);
-      expect(t.worldsplitterHits, `Godfist never landed Worldsplitter vs ${mythicId}`).toBeGreaterThan(0);
-      expect(t.worldsplitterSpentGrit * 2, `Worldsplitter spent Grit on < 50% of hits vs ${mythicId}`).toBeGreaterThanOrEqual(t.worldsplitterHits);
-    }, workBudget(60));
-  }
-});
-
-describe('Godfist solo vs Mythic bosses (200 runs each, fail both ways: capped === 0, 75% <= win <= 98%)', () => {
-  const hero = buildMythicSoloRow(GODFIST_SOLO_SPEC, SOLO_MYTHIC_RULES);
-
-  for (const mythicId of MYTHIC_IDS) {
-    simTest(`Godfist solo vs ${mythicId}`, () => {
-      const res = runSoloMythic(hero, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
-      const pct = (res.winRate * 100).toFixed(1);
-      const se = (res.se * 100).toFixed(1);
-      console.log(`[solo-mythic] Godfist vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped)`);
-      expect(res.capped, `Godfist vs ${mythicId} had ${res.capped} capped fights`).toBe(0);
-      expect(res.winRate, `Godfist vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
-      expect(res.winRate, `Godfist vs ${mythicId} win rate ${pct}% above 98% ceiling`).toBeLessThanOrEqual(HARD_CEILING);
+      soloRow({
+        className: 'Godfist',
+        boss: mythicId,
+        res,
+        baseline: GODFIST_BASELINES[mythicId],
+        tallies: [
+          { name: 'Heavenly Suplex caught', actual: t.suplexCaught, min: 1 },
+          { name: 'Suplex displaced >=2 tiles (>=50%)', actual: t.suplexMoved2, min: Math.ceil(t.suplexCaught * 0.5) },
+          { name: 'Worldsplitter hits', actual: t.worldsplitterHits, min: 1 },
+          { name: 'Worldsplitter spent Grit (>=50%)', actual: t.worldsplitterSpentGrit, min: Math.ceil(t.worldsplitterHits * 0.5) },
+        ],
+      });
     }, SOLO_BUDGET);
   }
 });

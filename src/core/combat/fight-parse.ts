@@ -21,9 +21,9 @@ import type { Grid, Place, Shape } from './space.ts';
 import { cost, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { DAMAGE_TYPES } from './damage-type.ts';
-import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-types.ts';
+import { abilityId, combatantId, hunterId, REACT_WHEN, tag, USURP_AMP_MIN } from './ability-types.ts';
 import { fightId, parseSaveId, parseSheetKey } from '../ids.ts';
-import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RiseSpec, RuleTicks, Summon, Tag } from './ability-types.ts';
+import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RiseSpec, RuleTicks, Summon, Tag, UsurpSpec } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
 import { amountOp, AURA_ON, DISPEL_KINDS, HIDE_STARTS, REACH_ON, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
@@ -614,16 +614,18 @@ function abilityOf(v: unknown, R: Rules): Ability | null {
   const gates = v.gates === undefined ? undefined : all(v.gates, K.gates, x => gateOf(x, R));
   const summon = v.summon === undefined ? undefined : summonOf(v.summon, R);
   const raise = v.raise === undefined ? undefined : raiseOf(v.raise);
+  const usurp = v.usurp === undefined ? undefined : usurpOf(v.usurp, R);
   const w2 = abilityWave2(v, R), item = v.item === undefined ? undefined : parseSaveId<'i'>(v.item);
   const maxTier = v.maxTier === undefined ? undefined : whole(v.maxTier, 0, RANKS.length - 1);
   if (!id || name === null || !kind || !aim || fatigue === null || mana === null || time === null || cooldown === null || range === null
-    || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || raise === null || !w2 || item === null || maxTier === null) return null;
+    || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || raise === null || usurp === null || !w2 || item === null || maxTier === null) return null;
   if (w2.react && !ops.every(reactionMayHold)) return null;
+  if (w2.react && usurp) return null;
   if (w2.move && channel) return null;
   return {
     id: abilityId(id), name, kind, cost: { fatigue, mana, time: cost(time), cooldown }, aim, range, shape, delivery, foesOnly, effect, ops,
     channel, ...(zone ? { zone } : {}), ...(tags ? { tags } : {}), ...(prices ? { prices } : {}), ...(gates ? { gates } : {}),
-    ...(summon ? { summon } : {}), ...(raise ? { raise } : {}), ...w2, ...(item ? { item } : {}), ...(maxTier === undefined ? {} : { maxTier }),
+    ...(summon ? { summon } : {}), ...(raise ? { raise } : {}), ...(usurp ? { usurp } : {}), ...w2, ...(item ? { item } : {}), ...(maxTier === undefined ? {} : { maxTier }),
   };
 }
 /** Corpse-raising spec (Arise): check bonus, risen cap per caster, and elite corpse cap per fight. */
@@ -631,6 +633,12 @@ function raiseOf(v: unknown): RiseSpec | null {
   if (!isObj(v)) return null;
   const bonus = whole(v.bonus, 0, RAISE_BONUS_MAX), maxRisen = whole(v.maxRisen, 1, MAX_ROWS), elitePerFight = whole(v.elitePerFight, 0, MAX_ROWS);
   return bonus === null || maxRisen === null || elitePerFight === null ? null : { bonus, maxRisen, elitePerFight };
+}
+/** Proactive ability copy spec (Wave 5 Hook H3): `amp` clamped to `USURP_AMP_MIN`..`kit.critSizeMax`. */
+function usurpOf(v: unknown, R: Rules): UsurpSpec | null {
+  if (!isObj(v)) return null;
+  const amp = within(v.amp, USURP_AMP_MIN, R.fight.kit.critSizeMax);
+  return amp === null ? null : { amp };
 }
 /**
  * An ability's wave 2 parts (kits design 8.3 to 8.5), each left out when absent: a blink or a swap (optionally

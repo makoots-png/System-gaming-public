@@ -227,13 +227,14 @@ function tallyWrong(before: Fight | null, after: Fight): string | null {
  * The kits' invariants (kits design 3.1 and 3.2): no count past its cap; an owner holds at most `summons` summons, each
  * on its owner's side for at most `summonRounds`, and at most `zonesPerOwner` zones; no limited ability past its uses;
  * an HP price never takes its user to 0 (a use with one that went through had more HP than the price); and no row ends a
- * command holding damage no batch of triggers has read (`hurtFrom`, triggers.ts `readHurt`), so no fall under the low
- * share is missed or left for a later command.
+ * command holding damage or excess healing no batch of triggers has read (`hurtFrom`, `overhealed`, triggers.ts
+ * `readHurt`, `readOverhealed`), so no fall under the low share or overheal is missed or left for a later command.
  */
 function kitsWrong(before: Fight | null, cmd: Command, after: Fight, effects: readonly Effect[]): string | null {
   const K = RULES.fight.kit;
   for (const r of after.rows) {
     if (r.hurtFrom !== undefined) return `${r.id} ends ${cmd.type} holding damage from ${r.hurtFrom} HP no trigger read`;
+    if (r.overhealed !== undefined) return `${r.id} ends ${cmd.type} holding ${r.overhealed} overheal no trigger read`;
     for (const s of r.statuses) if (stacked(s) && (s.stacks < 1 || s.stacks > s.def.stack.cap)) return `${r.id} holds ${s.stacks} of ${s.key}, cap ${s.def.stack.cap}`;
     const summons = after.rows.flatMap(x => (x.kind === 'summon' && x.owner === r.id ? [x] : []));
     const timed = summons.filter(x => x.rose === undefined);

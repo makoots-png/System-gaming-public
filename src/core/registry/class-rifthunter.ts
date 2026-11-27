@@ -154,13 +154,10 @@ const BASE_CADENCE: ClassWorn = makeCadenceWorn({
 const MONARCH_CADENCE: ClassWorn = makeCadenceWorn({
   key: KEY_CADENCE_MONARCH,
   label: 'Four-Beat Cadence: Rift Monarch',
-  desc: 'Every 4th shot deals 6% of target max HP as true damage, capped by your Instinct. Adds 3% damage dealt and faster Rift Stride on crits once per round.',
-  fourthTrueFormula: 'min(0.06 * target.hpmax, 16 * (ins / 10)^0.8)',
+  desc: 'Every 4th shot deals 5% of target max HP as true damage, capped by your Instinct, and grants faster Rift Stride on crits once per round.',
+  fourthTrueFormula: 'min(0.05 * target.hpmax, 14 * (ins / 10)^0.8)',
   strideKey: KEY_STRIDE_UP,
-  strideSpeedPct: 15,
-  extraOps: [
-    { op: 'share', on: 'dealt', pct: 3 },
-  ],
+  strideSpeedPct: 12,
 });
 
 // ── active ability builders ──
@@ -280,66 +277,66 @@ function makeFourthVerdict(o: {
 
 const BASE_BOLT = makeRiftBolt({
   name: 'Rift Bolt',
-  formula: '1d8 + 2 * (ins / 10)^0.8 + 0.08 * aim',
+  formula: '1d8 + 1.9 * (ins / 10)^0.8 + 0.08 * aim',
 });
 
 const UP_BOLT = makeRiftBolt({
   name: 'Rift Bolt: Piercing Round',
-  formula: '1d8 + 2.4 * (ins / 10)^0.8 + 0.1 * aim',
+  formula: '1d8 + 2.25 * (ins / 10)^0.8 + 0.09 * aim',
 });
 
 const BASE_STEP = makeRiftStep({
   name: 'Rift Step',
   edgeKey: KEY_STEP_EDGE,
-  speedPct: 16,
-  dealtPct: 12,
-  cooldownRounds: 5,
+  speedPct: 14,
+  dealtPct: 10,
+  cooldownRounds: 6,
 });
 
 const UP_STEP = makeRiftStep({
   name: 'Rift Step: Phase Slip',
   edgeKey: KEY_STEP_EDGE_UP,
-  speedPct: 22,
-  dealtPct: 16,
-  cooldownRounds: 4,
+  speedPct: 18,
+  dealtPct: 14,
+  cooldownRounds: 5,
 });
 
 const BASE_TETHER = makeRiftTether({
   name: 'Rift Tether',
-  formula: '1d8 + 2.2 * (ins / 10)^0.8',
+  formula: '1d8 + 2.1 * (ins / 10)^0.8',
   tetherKey: KEY_TETHERED,
   exposed: 1,
   takenPct: 6,
-  cooldownRounds: 4,
+  cooldownRounds: 5,
 });
 
 const UP_TETHER = makeRiftTether({
   name: 'Rift Tether: Void Anchor',
-  formula: '1d8 + 2.7 * (ins / 10)^0.8 + 0.1 * aim',
+  formula: '1d8 + 2.5 * (ins / 10)^0.8 + 0.09 * aim',
   tetherKey: KEY_TETHERED_UP,
   exposed: 2,
   takenPct: 8,
-  cooldownRounds: 3,
+  cooldownRounds: 4,
 });
 
 const BASE_VERDICT = makeFourthVerdict({
   name: 'Fourth Verdict',
-  formula: '2d6 + 3.2 * (ins / 10)^0.8 + 0.16 * aim',
-  staggerShare: 0.18,
+  formula: '2d6 + 3.0 * (ins / 10)^0.8 + 0.14 * aim',
+  staggerShare: 0.16,
   cooldownRounds: 5,
 });
 
 const UP_VERDICT = makeFourthVerdict({
   name: 'Fourth Verdict: Rift Piercer',
-  formula: '2d8 + 3.8 * (ins / 10)^0.8 + 0.2 * aim',
-  staggerShare: 0.24,
+  formula: '2d8 + 3.5 * (ins / 10)^0.8 + 0.18 * aim',
+  staggerShare: 0.2,
   cooldownRounds: 4,
 });
 
 /** Base Rifthunter signature (before skill-tree nodes are folded on top). No redundant critFaces (ins already approaches cap 6). */
 export const RIFTHUNTER_SIGNATURE: ClassSignature = {
   className: 'Rifthunter',
-  bonus: { critSize: 15, armorPen: 6, aim: 4 },
+  bonus: { critSize: 12, armorPen: 6, aim: 4 },
   worn: BASE_CADENCE,
   actives: [BASE_BOLT, BASE_STEP, BASE_TETHER, BASE_VERDICT],
 };
@@ -384,25 +381,25 @@ export const RIFTHUNTER_TREE: ClassTree = {
     node('rh-a2', 2, 'Rift Cadence', 'Gain 3 Instinct and 3 Accuracy.', ['rh-root'], [
       bonus({ ins: 3, aim: 3 }),
     ]),
-    node('rh-b2', 2, 'Phase Stride', 'Gain 3 speed and 3 ability haste.', ['rh-root'], [
-      bonus({ speed: 3, haste: 3 }),
+    node('rh-b2', 2, 'Phase Stride', 'Gain 2 speed and 2 ability haste.', ['rh-root'], [
+      bonus({ speed: 2, haste: 2 }),
     ]),
     node('rh-c2', 2, 'Kill Box', 'Gain 3 Control and 3% armor penetration.', ['rh-root'], [
       bonus({ ctl: 3, armorPen: 3 }),
     ]),
 
     // Depth 3: Branch splits (6)
-    node('rh-a3x', 3, 'True Sight', 'Gain 3 Instinct and 0.06 crit multiplier.', ['rh-a2'], [
-      bonus({ ins: 3, critSize: 6 }),
+    node('rh-a3x', 3, 'True Sight', 'Gain 3 Instinct and 0.05 crit multiplier.', ['rh-a2'], [
+      bonus({ ins: 3, critSize: 5 }),
     ]),
     node('rh-a3y', 3, 'Keen Sight', 'Gain 2 Instinct and 10 max HP.', ['rh-a2'], [
       bonus({ ins: 2, hpMax: 10 }),
     ]),
-    node('rh-b3x', 3, 'Phase Step', 'Gain 4 speed and 3 ability haste.', ['rh-b2'], [
-      bonus({ speed: 4, haste: 3 }),
+    node('rh-b3x', 3, 'Phase Step', 'Gain 3 speed and 2 ability haste.', ['rh-b2'], [
+      bonus({ speed: 3, haste: 2 }),
     ]),
-    node('rh-b3y', 3, 'Rift Shell', 'Gain 10 max HP and 4 Will.', ['rh-b2'], [
-      bonus({ hpMax: 10, will: 4 }),
+    node('rh-b3y', 3, 'Rift Shell', 'Gain 10 max HP, 5 Discipline, and 4 Will.', ['rh-b2'], [
+      bonus({ hpMax: 10, dis: 5, will: 4 }),
     ]),
     node('rh-c3x', 3, 'Rift Bore', 'Gain 3% armor penetration and 3 flat armor penetration.', ['rh-c2'], [
       bonus({ armorPen: 3, armorPenFlat: 3 }),
@@ -412,17 +409,17 @@ export const RIFTHUNTER_TREE: ClassTree = {
     ]),
 
     // Depth 4: Deepening (6)
-    node('rh-a4x', 4, 'Heartseeker', 'Gain 3 Instinct and 0.08 crit multiplier.', ['rh-a3x'], [
-      bonus({ ins: 3, critSize: 8 }),
+    node('rh-a4x', 4, 'Heartseeker', 'Gain 3 Instinct and 0.06 crit multiplier.', ['rh-a3x'], [
+      bonus({ ins: 3, critSize: 6 }),
     ]),
     node('rh-a4y', 4, 'Measured Breath', 'Gain 3 Instinct and 4 Reaction.', ['rh-a3y'], [
       bonus({ ins: 3, react: 4 }),
     ]),
-    node('rh-b4x', 4, 'Ghost Stride', 'Gain 4 speed and 4 ability haste.', ['rh-b3x'], [
-      bonus({ speed: 4, haste: 4 }),
+    node('rh-b4x', 4, 'Ghost Stride', 'Gain 3 speed and 3 ability haste.', ['rh-b3x'], [
+      bonus({ speed: 3, haste: 3 }),
     ]),
-    node('rh-b4y', 4, 'Clear Nerves', 'Gain 12 max HP, 5 tenacity, and 5 Will.', ['rh-b3y'], [
-      bonus({ hpMax: 12, tenacity: 5, will: 5 }),
+    node('rh-b4y', 4, 'Clear Nerves', 'Gain 12 max HP, 5 Discipline, 5 tenacity, and 5 Will.', ['rh-b3y'], [
+      bonus({ hpMax: 12, dis: 5, tenacity: 5, will: 5 }),
     ]),
     node('rh-c4x', 4, 'Piercing Chamber', 'Gain 3% armor penetration and 4 flat armor penetration.', ['rh-c3x'], [
       bonus({ armorPen: 3, armorPenFlat: 4 }),
@@ -439,18 +436,18 @@ export const RIFTHUNTER_TREE: ClassTree = {
       bonus({ ins: 5, react: 6, hpMax: 25 }),
     ], { forkGroup: 'rh-a5' }),
 
-    node('rh-b5-l', 5, 'Phase Slip', 'Upgrade Rift Step to a 4-round cooldown with 22% speed and 16% damage dealt on Phase Edge.', ['rh-b4x', 'rh-b4y'], [
+    node('rh-b5-l', 5, 'Phase Slip', 'Upgrade Rift Step to a 5-round cooldown with 18% speed and 14% damage dealt on Phase Edge.', ['rh-b4x', 'rh-b4y'], [
       replaceActive(ID_STEP, UP_STEP),
     ], { forkGroup: 'rh-b5' }),
-    node('rh-b5-r', 5, 'Void Anchor', 'Upgrade Rift Tether to a 3-round cooldown with 2 exposed faces, 8% bonus damage taken, and stronger scaling.', ['rh-b4x', 'rh-b4y'], [
+    node('rh-b5-r', 5, 'Void Anchor', 'Upgrade Rift Tether to a 4-round cooldown with 2 exposed faces, 8% bonus damage taken, and stronger scaling.', ['rh-b4x', 'rh-b4y'], [
       replaceActive(ID_TETHER, UP_TETHER),
     ], { forkGroup: 'rh-b5' }),
 
-    node('rh-c5-l', 5, 'Rift Piercer', 'Upgrade Fourth Verdict to a 4-round cooldown with 24% stagger and stronger damage.', ['rh-c4x', 'rh-c4y'], [
+    node('rh-c5-l', 5, 'Rift Piercer', 'Upgrade Fourth Verdict to a 4-round cooldown with 20% stagger and stronger damage.', ['rh-c4x', 'rh-c4y'], [
       replaceActive(ID_VERDICT, UP_VERDICT),
     ], { forkGroup: 'rh-c5' }),
-    node('rh-c5-r', 5, 'Long Precision', 'Gain 6 Control, 6 Accuracy, and 0.1 crit multiplier.', ['rh-c4x', 'rh-c4y'], [
-      bonus({ ctl: 6, aim: 6, critSize: 10 }),
+    node('rh-c5-r', 5, 'Long Precision', 'Gain 6 Control, 6 Accuracy, and 0.09 crit multiplier.', ['rh-c4x', 'rh-c4y'], [
+      bonus({ ctl: 6, aim: 6, critSize: 9 }),
     ], { forkGroup: 'rh-c5' }),
 
     // Depth 6: Post-fork convergence (6)
@@ -460,58 +457,58 @@ export const RIFTHUNTER_TREE: ClassTree = {
     node('rh-a6y', 6, 'Elusive Frame', 'Gain 10 max HP and 4 Reaction.', ['rh-a5-l', 'rh-a5-r'], [
       bonus({ hpMax: 10, react: 4 }),
     ], { parentMode: 'any' }),
-    node('rh-b6x', 6, 'Slipstream', 'Gain 4 speed and 4 ability haste.', ['rh-b5-l', 'rh-b5-r'], [
-      bonus({ speed: 4, haste: 4 }),
+    node('rh-b6x', 6, 'Slipstream', 'Gain 3 speed and 3 ability haste.', ['rh-b5-l', 'rh-b5-r'], [
+      bonus({ speed: 3, haste: 3 }),
     ], { parentMode: 'any' }),
-    node('rh-b6y', 6, 'Anchored Mind', 'Gain 12 max HP, 6 tenacity, and 5 Will.', ['rh-b5-l', 'rh-b5-r'], [
-      bonus({ hpMax: 12, tenacity: 6, will: 5 }),
+    node('rh-b6y', 6, 'Anchored Mind', 'Gain 12 max HP, 6 Discipline, 6 tenacity, and 5 Will.', ['rh-b5-l', 'rh-b5-r'], [
+      bonus({ hpMax: 12, dis: 6, tenacity: 6, will: 5 }),
     ], { parentMode: 'any' }),
     node('rh-c6x', 6, 'Armor Rupture', 'Gain 3% armor penetration and 4 flat armor penetration.', ['rh-c5-l', 'rh-c5-r'], [
       bonus({ armorPen: 3, armorPenFlat: 4 }),
     ], { parentMode: 'any' }),
-    node('rh-c6y', 6, 'Pinpoint Shot', 'Gain 3 Control, 5 Accuracy, and 0.08 crit multiplier.', ['rh-c5-l', 'rh-c5-r'], [
-      bonus({ ctl: 3, aim: 5, critSize: 8 }),
+    node('rh-c6y', 6, 'Pinpoint Shot', 'Gain 3 Control, 5 Accuracy, and 0.06 crit multiplier.', ['rh-c5-l', 'rh-c5-r'], [
+      bonus({ ctl: 3, aim: 5, critSize: 6 }),
     ], { parentMode: 'any' }),
 
     // Depth 7: Second Exclusive Fork Pairs (6 nodes, 3 buyable; at most 2 scalers across any path: opener + giantSlayer)
-    node('rh-a7-l', 7, 'Opening Volley', 'Gain 3 Instinct and deal up to 14% more damage to foes above half HP.', ['rh-a6x', 'rh-a6y'], [
+    node('rh-a7-l', 7, 'Opening Volley', 'Gain 3 Instinct and deal up to 12% more damage to foes above half HP.', ['rh-a6x', 'rh-a6y'], [
       bonus({ ins: 3 }),
-      scaler({ measure: 'target', dir: 'over', start: 0.5, scale: 0.14 }),
+      scaler({ measure: 'target', dir: 'over', start: 0.5, scale: 0.12 }),
     ], { forkGroup: 'rh-a7' }),
     node('rh-a7-r', 7, 'Phantom Coat', 'Gain 5 Vitality, 30 max HP, and 5 Reaction.', ['rh-a6x', 'rh-a6y'], [
       bonus({ vit: 5, hpMax: 30, react: 5 }),
     ], { forkGroup: 'rh-a7' }),
 
-    node('rh-b7-l', 7, 'Rift Velocity', 'Gain 5 speed, 4 ability haste, and 5 Reaction.', ['rh-b6x', 'rh-b6y'], [
-      bonus({ speed: 5, haste: 4, react: 5 }),
+    node('rh-b7-l', 7, 'Rift Velocity', 'Gain 4 speed, 3 ability haste, and 4 Reaction.', ['rh-b6x', 'rh-b6y'], [
+      bonus({ speed: 4, haste: 3, react: 4 }),
     ], { forkGroup: 'rh-b7' }),
     node('rh-b7-r', 7, 'Steadfast Aim', 'Gain 8 tenacity, 6 Will, and 25 max HP.', ['rh-b6x', 'rh-b6y'], [
       bonus({ tenacity: 8, will: 6, hpMax: 25 }),
     ], { forkGroup: 'rh-b7' }),
 
-    node('rh-c7-l', 7, 'Behemoth Hunter', 'Gain 4 Control and deal up to 16% more damage to foes with higher max HP than you.', ['rh-c6x', 'rh-c6y'], [
+    node('rh-c7-l', 7, 'Behemoth Hunter', 'Gain 4 Control and deal up to 14% more damage to foes with higher max HP than you.', ['rh-c6x', 'rh-c6y'], [
       bonus({ ctl: 4 }),
-      scaler({ measure: 'maxPair', dir: 'over', start: 0.5, scale: 0.16 }),
+      scaler({ measure: 'maxPair', dir: 'over', start: 0.5, scale: 0.14 }),
     ], { forkGroup: 'rh-c7' }),
-    node('rh-c7-r', 7, 'Shredding Bolt', 'Gain 5% armor penetration, 6 flat armor penetration, and 0.1 crit multiplier.', ['rh-c6x', 'rh-c6y'], [
-      bonus({ armorPen: 5, armorPenFlat: 6, critSize: 10 }),
+    node('rh-c7-r', 7, 'Shredding Bolt', 'Gain 5% armor penetration, 6 flat armor penetration, and 0.09 crit multiplier.', ['rh-c6x', 'rh-c6y'], [
+      bonus({ armorPen: 5, armorPenFlat: 6, critSize: 9 }),
     ], { forkGroup: 'rh-c7' }),
 
     // Depth 8: Branch Capstones (3)
     node('rh-a8', 8, 'Rift Execution', 'Gain 4 Instinct, 4 Accuracy, and 10 max HP.', ['rh-a7-l', 'rh-a7-r'], [
       bonus({ ins: 4, aim: 4, hpMax: 10 }),
     ], { parentMode: 'any' }),
-    node('rh-b8', 8, 'Untouched Stride', 'Gain 5 speed, 4 ability haste, 15 max HP, and 5 Will.', ['rh-b7-l', 'rh-b7-r'], [
-      bonus({ speed: 5, haste: 4, hpMax: 15, will: 5 }),
+    node('rh-b8', 8, 'Untouched Stride', 'Gain 4 speed, 3 ability haste, 15 max HP, 6 Discipline, and 5 Will.', ['rh-b7-l', 'rh-b7-r'], [
+      bonus({ speed: 4, haste: 3, hpMax: 15, dis: 6, will: 5 }),
     ], { parentMode: 'any' }),
-    node('rh-c8', 8, 'Deadly Measure', 'Gain 4 Control, 5 flat armor penetration, and 0.08 crit multiplier.', ['rh-c7-l', 'rh-c7-r'], [
-      bonus({ ctl: 4, armorPenFlat: 5, critSize: 8 }),
+    node('rh-c8', 8, 'Deadly Measure', 'Gain 4 Control, 5 flat armor penetration, and 0.06 crit multiplier.', ['rh-c7-l', 'rh-c7-r'], [
+      bonus({ ctl: 4, armorPenFlat: 5, critSize: 6 }),
     ], { parentMode: 'any' }),
 
     // Depth 9: Monarch Capstone (1)
-    node('rh-cap', 9, 'Rift Monarch', 'Upgrade Four-Beat Cadence to Rift Monarch and gain 4 Instinct, 4 Control, and 0.08 crit multiplier.', ['rh-a8', 'rh-b8', 'rh-c8'], [
+    node('rh-cap', 9, 'Rift Monarch', 'Upgrade Four-Beat Cadence to Rift Monarch and gain 4 Instinct, 4 Control, and 0.06 crit multiplier.', ['rh-a8', 'rh-b8', 'rh-c8'], [
       replaceWorn(KEY_CADENCE_WORN, MONARCH_CADENCE),
-      bonus({ ins: 4, ctl: 4, critSize: 8 }),
+      bonus({ ins: 4, ctl: 4, critSize: 6 }),
     ], { parentMode: 'any', capstone: true }),
   ],
 };

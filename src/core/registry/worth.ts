@@ -181,11 +181,11 @@ export const landShare = (a: Pick<Ability, 'delivery'>, R: WorthRules): number =
 
 // ── what the bar does not estimate ──
 /** A block the bar has no rule for: an op kind, or a part of an ability. Each is named, never counted as 0. */
-export type Unweighed = OpKind | 'count' | 'charge' | 'reaction' | 'summon' | 'zone' | 'blink' | 'zoneAct' | 'end' | 'reform' | 'raise';
+export type Unweighed = OpKind | 'count' | 'charge' | 'reaction' | 'summon' | 'zone' | 'blink' | 'zoneAct' | 'end' | 'reform' | 'raise' | 'usurp';
 const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
   count: 'fight counts', charge: 'channel charge', reaction: 'its reaction', summon: 'its summon', zone: 'its field',
   blink: 'its teleport', zoneAct: 'moving, resizing, or erasing a field', end: 'its delayed end effect',
-  reform: 'reforming a fallen minion', raise: 'raising a fallen monster',
+  reform: 'reforming a fallen minion', raise: 'raising a fallen monster', usurp: 'copying a foe ability',
   damage: 'instant damage', heal: 'instant healing', mana: 'mana', fatigue: 'fatigue', applyStatus: 'a status', cureStatus: 'a cure',
   note: 'a note', speed: 'a speed change', delay: 'turn delay', hold: 'stun', root: 'rooting', taunt: 'a taunt', threat: 'threat',
   shield: 'a shield', channel: 'channel protection', staggerRate: 'a stagger change', stat: 'a stat change', refund: 'turn-time refund', aura: 'an aura',
@@ -308,7 +308,7 @@ const actionTicks = (R: WorthRules): number => interval(R.fight.speedBase, paceC
  */
 export const breakWorth = (R: WorthRules): number => R.fight.staggerCost * R.fight.round / actionTicks(R);
 const triggerWorth = (t: Trigger, at: At, R: WorthRules): number =>
-  t.ops.reduce((n, o) => n + landWorth(o, at, R), 0) * R.fight.kit.eventRates[t.on];
+  t.ops.reduce((n, o) => n + landWorth(o, at, R), 0) * R.fight.kit.eventRates[t.on === 'overhealed' ? 'used' : t.on];
 
 /**
  * A status's worth when `k` stacks of it land for `rounds` (null: until removed, weighed over the reference fight): each
@@ -382,6 +382,7 @@ function weigh(a: Ability, rank: Rank, on: ReadOn, R: WorthRules): { readonly wo
   if (a.move) at.miss.add('blink');
   if (a.zoneAct) at.miss.add('zoneAct');
   if (a.raise) at.miss.add('raise');
+  if (a.usurp) at.miss.add('usurp');
   return { worth, at };
 }
 /**

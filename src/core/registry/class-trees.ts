@@ -20,6 +20,8 @@ import { BLADEFIEND_TREE } from './class-bladefiend.ts';
 import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
 import { NULLWEAVER_TREE } from './class-nullweaver.ts';
 import { GODFIST_TREE } from './class-godfist.ts';
+import { DAWNBRINGER_TREE } from './class-dawnbringer.ts';
+import { USURPER_TREE } from './class-usurper.ts';
 import { IRONCLAD_TREE } from './class-ironclad.ts';
 import { PACKLORD_TREE } from './class-packlord.ts';
 import { SERAPH_TREE } from './class-seraph.ts';
@@ -141,6 +143,8 @@ export const CLASS_TREES: ClassTreeMap = {
   Rifthunter: RIFTHUNTER_TREE,
   Nullweaver: NULLWEAVER_TREE,
   Godfist: GODFIST_TREE,
+  Dawnbringer: DAWNBRINGER_TREE,
+  Usurper: USURPER_TREE,
   Seraph: SERAPH_TREE,
   Ironclad: IRONCLAD_TREE,
   Packlord: PACKLORD_TREE,

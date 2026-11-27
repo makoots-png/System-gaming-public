@@ -16,6 +16,8 @@ import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
 import { NULLWEAVER_SIGNATURE } from './class-nullweaver.ts';
 import { GODFIST_SIGNATURE } from './class-godfist.ts';
+import { DAWNBRINGER_SIGNATURE } from './class-dawnbringer.ts';
+import { USURPER_SIGNATURE } from './class-usurper.ts';
 import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
 import { PACKLORD_SIGNATURE } from './class-packlord.ts';
 import { SERAPH_SIGNATURE } from './class-seraph.ts';
@@ -103,6 +105,8 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Rifthunter: RIFTHUNTER_SIGNATURE,
   Nullweaver: NULLWEAVER_SIGNATURE,
   Godfist: GODFIST_SIGNATURE,
+  Dawnbringer: DAWNBRINGER_SIGNATURE,
+  Usurper: USURPER_SIGNATURE,
   Seraph: SERAPH_SIGNATURE,
   Ironclad: IRONCLAD_SIGNATURE,
   Packlord: PACKLORD_SIGNATURE,

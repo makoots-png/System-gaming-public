@@ -697,7 +697,7 @@ const DEFENCE_WORD = { armor: 'Armor', resist: 'Resist' };
 const FORMULA_NAMES = [
   ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks or fields this use spent'], ['field(KEY)', 'Its stacks on everyone'],
   ['held(KEY)', 'Rounds you held it'], ['target.missing', 'Target\'s missing HP share'], ['missing', 'Your missing HP share'], ['hits', 'Targets hit'], ['kills', 'Your kills this fight'],
-  ['blocked', 'Damage stopped by defense or shield'], ['lost', 'HP damage past your shield'],
+  ['blocked', 'Damage stopped by defense or shield'], ['lost', 'HP damage past your shield'], ['over', 'Excess healing past max HP'],
 ];
 /** A lasting change in words on the maker's sample hunter (`SAMPLE_RANK`): `Armor: +10% of max HP (now 12)`. */
 const lastingLine = op => `On a sample rank ${SAMPLE_RANK} hunter: ${opLines([op], 0, rules(), sampleBody(SAMPLE_RANK, 'str', rules())).join('')}`;

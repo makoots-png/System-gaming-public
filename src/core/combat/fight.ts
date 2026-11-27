@@ -21,7 +21,7 @@ import { diceFor, landUse, leftZone, placeOf, ready, resolve } from './resolve.t
 import { alive, drainWords, landedWords, putBy, stealthAfter } from './land.ts';
 import type { DodgeAsked, DodgePick, Resolved, Rolls } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
-import { hides, hideStarts, holds } from './standing.ts';
+import { harmful, hides, hideStarts, holds } from './standing.ts';
 import { watched } from './sight.ts';
 import { counted, usesGates } from './uses.ts';
 import type { Aim } from './resolve.ts';
@@ -30,6 +30,8 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { armyKillOf, eventsOf, raised } from './triggers.ts';
+import type { Raised } from './triggers.ts';
+import { usurpCopy } from './usurp.ts';
 import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, omenMove, overIf, partyView, phasedRow, giverOf, payDue, retaunted, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unscriptedRow, untaunted, unwarded, withRow, zoneEnds } from './fight-turn.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { mythicJoined, mythicStepped, playsScript, scriptOf } from './mythic.ts';
@@ -342,8 +344,29 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
     }
   }
   const pushedIn = new Set<string>(zoneMoved ? used.rows.map(b => b.id) : r.shoved);
+  const usurpEvents: Raised[] = [];
+  if (a.usurp) {
+    for (const o of r.outcomes) {
+      if (o.avoid !== 'caught' || o.target === u.id) continue;
+      const actorNow = rowOf(used, u.id), t = rowOf(used, o.target);
+      if (!actorNow || !isUp(actorNow) || !t || !isUp(t) || t.side === actorNow.side) continue;
+      const res = usurpCopy(actorNow, t, a.usurp.amp, used.now, R);
+      if (!res) continue;
+      used = logged(withRow(used, res.target), line(`${actorNow.name} usurps ${res.copied.name} (${t.name} ${res.dealt}).`, [actorNow.id, t.id]), R);
+      if (res.down) {
+        usurpEvents.push(raised(actorNow.id, 'kill', t.id));
+        const ak = armyKillOf(actorNow, res.target);
+        if (ak) usurpEvents.push(ak);
+        usurpEvents.push(raised(t.id, 'down', actorNow.id));
+      }
+      for (const k of res.gained) {
+        if (res.target.statuses.some(s => s.key === k && harmful(s.def))) usurpEvents.push(raised(actorNow.id, 'imposed', t.id, [], k));
+        usurpEvents.push(raised(t.id, 'statusGained', actorNow.id, [], k));
+      }
+    }
+  }
   const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes }) };
-  const fired = triggered(scored, eventsOf(a, u.id, r.outcomes, rows, scored.rows), ctx);
+  const fired = triggered(scored, [...eventsOf(a, u.id, r.outcomes, rows, scored.rows), ...usurpEvents], ctx);
   const fx: Fx = [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf([...r.bursts, ...reacted.bursts])];
   return after(f, afterReactions(fired, u.id, r.outcomes, R, reacted.count, fx), use.by, null, ctx, fx, pushedIn);
 }

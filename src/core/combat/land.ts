@@ -278,7 +278,7 @@ export type HitCounts = { readonly blocked: number; readonly lost: number };
  * that source, each as an entry of its own in `landed`, after the targets'.
  */
 export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hitter: Body | null, targets: readonly CombatantId[], source: Source, now: Tick, R: OpRules,
-  o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey; readonly gained?: Gained; readonly hit?: HitCounts } = {}): { landed: Landed[]; fired: LandFired[] } {
+  o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey; readonly gained?: Gained; readonly hit?: HitCounts; readonly over?: number } = {}): { landed: Landed[]; fired: LandFired[] } {
   const landed: Landed[] = [], fired: LandFired[] = [];
   // what a move from a target gave the body that took it (the hitter), told after the targets
   const taken: Record<CombatantId, StatusKey[]> = {};
@@ -316,7 +316,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
         if (m) (m.holder === t.id ? gained : (taken[m.holder] ??= [])).push(m.key);
         continue;
       }
-      const r = landOne(op, user, hitter ? user : null, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false, o.hit);
+      const r = landOne(op, user, hitter ? user : null, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false, o.hit, o.over);
       t = r.target; dealt += r.dealt;
       if (r.fired) fired.push(r.fired);
       if (r.gained) gained.push(r.gained);
@@ -427,14 +427,14 @@ export function landThreshold(rows: Map<CombatantId, Body>, f: LandFired, now: T
  * What the kits' formula names read outside a use (kits design 1.5): each body's stacks and lost share, and the user's
  * kills, within their rules' bounds; no field, rounds held or bodies hit, which only a use's snapshot has.
  */
-export function kitOf(user: Body, target: Body, R: OpRules, hit?: HitCounts): KitScope {
+export function kitOf(user: Body, target: Body, R: OpRules, hit?: HitCounts, over?: number): KitScope {
   const K = R.fight.kit;
   const stacks = (b: Body) => Object.fromEntries(counting(b.statuses).map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
   const missing = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - rowHp(b) / b.sheet.hpMax)) : 0);
   return {
     stacks: { user: stacks(user), target: stacks(target) }, field: {}, missing: { user: missing(user), target: missing(target) },
     held: {}, hits: 0, kills: Math.min(K.kills, tallyOf(user).kills.length), spent: 0,
-    blocked: hit?.blocked ?? 0, lost: hit?.lost ?? 0,
+    blocked: hit?.blocked ?? 0, lost: hit?.lost ?? 0, over: over ?? 0,
   };
 }
 
@@ -486,9 +486,9 @@ export function landMove(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op:
  * whose raw average is 0 or less deals 0 (never rule 12's 1-damage floor, which applies only to positive raw hits). A
  * refund is time back on the bearer's own turn, which the caller gives (triggers.ts); here it changes nothing.
  */
-function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean, hit?: HitCounts):
+function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean, hit?: HitCounts, over?: number):
   { target: Body; dealt: number; fired: LandFired | null; gained: StatusKey | null; cured: StatusKey | null; lands: readonly Status[] } {
-  const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R, hit) };
+  const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R, hit, over) };
   const at = (f: Tiered<Formula>) => average(atTier(f, source.tier), scope) * times;
   const none = { fired: null, gained: null, cured: null, lands: [] };
   switch (o.op) {

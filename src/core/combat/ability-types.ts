@@ -87,6 +87,8 @@ export type Ability = {
   readonly react?: React;
   /** What it does to a field (kits design 8.5): moves one of its user's toward the aim, widens it, or erases foe fields; absent, nothing. */
   readonly zoneAct?: ZoneAct;
+  /** Proactive copy of a caught foe's standing omen or strongest damaging ability (`usurp.ts`); absent when none. */
+  readonly usurp?: UsurpSpec;
   /**
    * The bag item it is the use of (registry/abilities.ts `itemAbility`): a fight spends one of it at each use. Only a
    * fight row's abilities hold it; a skill's or a monster's never does (`parseAbility`). Absent for every other ability.
@@ -110,6 +112,10 @@ export const REACT_WHEN: readonly ReactWhen[] = ['before', 'lethal', 'after', 't
 export type React = { readonly when: ReactWhen; readonly reach: Tiles };
 /** A zone act (kits design 8.5): `shift` moves the user's zone named (null: any) by up to `by` tiles toward the aim, `grow` widens an around zone by `by`, and `erase` removes up to `by` foe-owned non-aura zones nearest the aim. */
 export type ZoneAct = { readonly act: 'shift' | 'grow' | 'erase'; readonly name: string | null; readonly by: number };
+/** Proactive ability copy (Wave 5 Hook H3, `usurp.ts`): scales the copied move's damage average by `amp` (clamped to `USURP_AMP_MIN`..`kit.critSizeMax`). */
+export type UsurpSpec = { readonly amp: number };
+/** Lower bound for `Ability.usurp.amp`; the upper bound is `R.fight.kit.critSizeMax`. */
+export const USURP_AMP_MIN = 0.1;
 
 /** A GM's word on an ability, which a trigger may name: lower-case letters, digits and hyphens, "sword", "ultimate". */
 export type Tag = Id<'Tag'>;

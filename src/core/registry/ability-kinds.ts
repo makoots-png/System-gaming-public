@@ -207,7 +207,7 @@ const roundsWord = (ticks: number, R: KindRules): string => { const n = roundsOf
  * range, then whether a target can move out of it in the time it takes to land, resists it with Discipline, or cannot
  * avoid it; then its channel. An ability on an ally or on the user is not avoided.
  */
-export function describeAbility(a: Pick<Ability, 'kind' | 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'channel' | 'zone' | 'prices' | 'gates' | 'tags' | 'summon' | 'move' | 'react' | 'zoneAct'> & { readonly effect: Ability['effect']; readonly ops?: Ability['ops'] }, R: KindRules & { readonly conditions?: ConditionLabels }): string[] {
+export function describeAbility(a: Pick<Ability, 'kind' | 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'channel' | 'zone' | 'prices' | 'gates' | 'tags' | 'summon' | 'move' | 'react' | 'zoneAct' | 'usurp'> & { readonly effect: Ability['effect']; readonly ops?: Ability['ops'] }, R: KindRules & { readonly conditions?: ConditionLabels }): string[] {
   const s = a.shape, out: string[] = [];
   if (s.kind === 'self' || a.aim === 'self') out.push('Affects the user.');
   else if (s.kind === 'touch') out.push(`Hits one ${a.aim === 'ally' ? 'ally' : 'target'} up to ${tilesWord(a.range)} away.`);
@@ -247,8 +247,8 @@ export const gateLine = (g: AbilityGate, conditions?: ConditionLabels): string =
 const WHEN_TEXT: { readonly [W in NonNullable<Ability['react']>['when']]: string } = {
   before: 'before a foe\'s ability lands on you', lethal: 'before a hit would drop you to 0 HP', after: 'after a foe\'s ability lands on you', turn: 'before a chosen target\'s turn',
 };
-/** Wave 2's parts of an ability in words (kits design 8.12): a blink or a swap, a reaction, a zone act. */
-function wave2Lines(a: Pick<Ability, 'range' | 'move' | 'react' | 'zoneAct'> & { readonly ops?: Ability['ops'] }, R: KindRules): string[] {
+/** Wave 2's parts of an ability in words (kits design 8.12): a blink or a swap, a reaction, a zone act, a usurp copy. */
+function wave2Lines(a: Pick<Ability, 'range' | 'move' | 'react' | 'zoneAct' | 'usurp'> & { readonly ops?: Ability['ops'] }, R: KindRules): string[] {
   const out: string[] = [];
   if (a.move?.kind === 'blink') out.push(`Teleports to a tile you can see within ${tilesWord(Math.min(a.range, R.fight.kit.blinkMax))}.`);
   if (a.move?.kind === 'swap') out.push(a.move.only === 'shadow' ? 'Swaps places with an allied shadow.' : 'Swaps places with the target.');
@@ -263,10 +263,11 @@ function wave2Lines(a: Pick<Ability, 'range' | 'move' | 'react' | 'zoneAct'> & {
     : a.zoneAct.act === 'grow' ? `Widens your ${a.zoneAct.name ?? 'field'} by ${tilesWord(a.zoneAct.by)}.`
     : `Erases up to ${a.zoneAct.by} foe ${a.zoneAct.name ?? (a.zoneAct.by === 1 ? 'field' : 'fields')} nearest where you aim.`,
   );
+  if (a.usurp) out.push(`Copies and unleashes the foe's omen or strongest attack at ${Math.round(a.usurp.amp * 100)}% power.`);
   return out;
 }
 /** An ability's kit parts in words (kits design 5.1): its prices, its gates, its tags and its summon, then wave 2's. */
-function kitLines(a: Pick<Ability, 'prices' | 'gates' | 'tags' | 'summon' | 'range' | 'move' | 'react' | 'zoneAct'> & { readonly ops?: Ability['ops'] }, R: KindRules & { readonly conditions?: ConditionLabels }): string[] {
+function kitLines(a: Pick<Ability, 'prices' | 'gates' | 'tags' | 'summon' | 'range' | 'move' | 'react' | 'zoneAct' | 'usurp'> & { readonly ops?: Ability['ops'] }, R: KindRules & { readonly conditions?: ConditionLabels }): string[] {
   const out = [...(a.prices ?? []).map(p => priceLine(p, R.conditions)), ...(a.gates ?? []).map(g => gateLine(g, R.conditions)), ...wave2Lines(a, R)];
   if (a.tags?.length) out.push(`Tags: ${a.tags.join(', ')}.`);
   const m = a.summon;
