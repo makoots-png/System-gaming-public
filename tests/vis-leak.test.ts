@@ -368,7 +368,9 @@ describe('sealed events and room projections hide GM-only data', () => {
     expect(added.fight).not.toBeNull();
     const fudged = reduce(added.fight, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'foe' }, n: 5 } }, ctx);
     expect(fudged.fight).not.toBeNull();
-    const doc = fightDoc(fudged.fight, RULES, {
+    const forced = reduce(fudged.fight, { type: 'adjustRoll', id: combatantId('m1'), force: 20 }, ctx);
+    expect(forced.fight).not.toBeNull();
+    const doc = fightDoc(forced.fight, RULES, {
       by: parseDeviceId('d-gm')!,
       at: '2026-11-23T12:00:00.000Z',
       was: null,
@@ -400,7 +402,10 @@ describe('sealed events and room projections hide GM-only data', () => {
     expect(monsterWire.b).toBe(0);
     expect(monsterWire.h).toBeUndefined();
     expect(monsterWire.hm).toBeUndefined();
+    expect(monsterWire.adjust).toBeUndefined();
+    expect(monsterWire.force).toBeUndefined();
     expect(wireFight.fudge).toBeUndefined();
+    expect(JSON.stringify(wireFight)).not.toMatch(/adjust|force|fudge/i);
   });
 
   test('a hidden foe in dodge reach leaves no hole in FightDoc.dodge, a hidden attacker is redacted, and dodge events stay sealed', async () => {

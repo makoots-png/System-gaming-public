@@ -146,7 +146,7 @@ export function register(app) {
     const c = ctx(), was = fight(), S = A().sync;
     // what the motion compares with: the fight's rows are written into in place (save-step.ts `writeInto`)
     const hpWas = new Map(was ? was.rows.map(r => [r.id, rowHp(r)]) : []), readyWas = new Set(was ? was.rows.filter(r => r.armed && !r.armed.spent).map(r => r.id) : []);
-    const r = reduceAll(was, cmds, c), reason = String((r.fight && r.fight.log[0] && r.fight.log[0].text) || 'Fight').slice(0, 120);
+    const r = reduceAll(was, cmds, c), topLog = r.fight && r.fight.log[0], reason = String((topLog && (topLog.table ?? topLog.text)) || 'Fight').slice(0, 120);
     // the fight's totals for a hunter or shadow on another phone: one `vitals` or `shadowHp` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
     const rf = r.fight;
     const totals = rf ? r.effects.flatMap(fx => (
@@ -390,7 +390,12 @@ export function register(app) {
         const d = `${x.dist} tile${x.dist === 1 ? '' : 's'}`;
         if (a.aim === 'corpse' && a.raise) {
           const corpse = rowOf(f, x.target.id);
-          if (corpse) return `${x.target.name} · ${d} · DC ${riseDc(row, corpse, R)}${corpse.kind === 'monster' && corpse.adjust ? ` · GM ${signed(corpse.adjust)}` : ''}`;
+          if (corpse) {
+            const gmTag = app.isGM() && corpse.kind === 'monster'
+              ? (corpse.force ? ` · GM natural ${corpse.force}` : corpse.adjust ? ` · GM ${signed(corpse.adjust)}` : '')
+              : '';
+            return `${x.target.name} · ${d} · DC ${riseDc(row, corpse, R)}${gmTag}`;
+          }
         }
         return `${x.target.name} · ${d}`;
       };
@@ -421,9 +426,10 @@ export function register(app) {
     });
     const added = after ? (() => { const idx = prevTop ? after.log.indexOf(prevTop) : -1; return idx >= 0 ? after.log.slice(0, idx) : after.log.slice(0, 8); })() : [];
     const targetId = typeof aim === 'string' ? rowOf(g, aim)?.id ?? null : null;
-    const riseLine = a.raise && targetId
-      ? added.find(l => l.rows.includes(u.id) && l.rows.includes(targetId))?.text ?? null
+    const riseEntry = a.raise && targetId
+      ? added.find(l => l.rows.includes(u.id) && l.rows.includes(targetId)) ?? null
       : null;
+    const riseLine = riseEntry ? (app.isGM() ? riseEntry.text : (riseEntry.table ?? riseEntry.text)) : null;
     // the line the use logged, as the fight answers it, once the map or the card shows what it did
     for (const x of fx) if (x.type === 'used') { const said = riseLine || x.line; afterFrame(() => toast(said)); }
   }
@@ -729,8 +735,8 @@ export function register(app) {
     adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return NO_ROW; return answered(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
     revive: cid => { const r = rowOf(fight(), cid); return r ? revive(r) : NO_ROW; },
     spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return r ? answered(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)) : NO_ROW; },
-    // an extraction's roll and GM adjustment on the corpse's row (the fight's `extract`), and a risen shadow or Crimson Vessel in the same write
-    extracted: (what, cid, by, roll, adjust, rose) => answered(send({ type: 'extract', what, id: combatantId(cid), by: combatantId(by), roll, adjust }, null,
+    // an extraction's roll and optional GM adjustment/force on the corpse's row (the fight's `extract`), and a risen shadow or Crimson Vessel in the same write
+    extracted: (what, cid, by, roll, adjust, rose, force = undefined) => answered(send({ type: 'extract', what, id: combatantId(cid), by: combatantId(by), roll, adjust, ...(force !== undefined ? { force } : {}) }, null,
       rose && rose.kind === 'local' ? rose.step : null, rose && rose.kind === 'remote' ? rose.event : null)),
     add: list => add(list), isActive: () => running(fight()),
     startFlow, showParty, okToReplace: async () => !otherGMLive() || confirmReplace(),
@@ -860,7 +866,7 @@ export function register(app) {
 .cmb-fudge{display:flex;flex-direction:column;gap:6px}.cmb-fudge[hidden]{display:none}.cmb-fudge .cmb-step{justify-content:space-between}.cmb-fudge .cmb-step .lbl{flex:1 1 auto;min-width:0}
 .cmb-fdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:6px;vertical-align:middle}
 .cmb-fz{display:flex;flex-direction:column;gap:6px}.cmb-fz .seg>button{min-width:0}
-.cmb-adj{display:flex;flex-direction:column;gap:4px}.cmb-adj .cmb-step{flex-wrap:wrap;justify-content:space-between;width:100%}.cmb-adj .cmb-step .lbl{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.cmb-adj .cmb-step-btns{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}.cmb-adj .cmb-hint{margin:0;font-size:12px;color:var(--muted)}
+.cmb-adj{display:flex;flex-direction:column;gap:4px}.cmb-adj-box{display:flex;flex-direction:column;gap:6px}.cmb-adj .cmb-step{flex-wrap:wrap;justify-content:space-between;width:100%}.cmb-adj .cmb-step .lbl{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.cmb-adj .cmb-step-btns{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}.cmb-adj-in{width:4.5em;min-height:var(--control-h);padding:4px 6px;text-align:center;font-family:var(--font-mono);color:var(--ice)}.cmb-adj .seg>button{min-width:0}.cmb-adj .cmb-hint{margin:0;font-size:12px;color:var(--muted)}
 .cmb-eyes{display:flex;flex-direction:column;gap:4px}.cmb-eyes .seg>button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win.cmb-mapmode .cmb-log{max-height:none}
 @media (min-width:900px){.win.cmb-mapmode .cmb-tools.open{left:auto;top:0;bottom:0;width:min(520px,100vw);max-height:none;border-top:none;border-left:1px solid var(--line-bright)}}
@@ -1124,7 +1130,7 @@ export function register(app) {
         ...bloodExtractors.map(x => `<button type="button" data-fk="extract-blood-${esc(x.row.id)}" data-extract-blood="${esc(x.row.id)}">${bloodExtractors.length > 1 ? `${esc(x.label)} (${esc(x.h.name)})` : esc(x.label)}</button>`),
       ].join(''),
       removeLabel: `Remove ${r.name} from the fight`,
-      fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k), adjustRollBox: adjustRollCard(r, k, R),
+      fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k), adjustRollBox: adjustRollCard(r, k),
     };
   }
 
@@ -1247,11 +1253,26 @@ export function register(app) {
     });
     el.addEventListener('input', ev => {
       if (ev.target.matches('[data-amt]')) { const r = focusRow(fight()); if (r) amounts.set(r.id, ev.target.value); }
+      if (ev.target.matches('[data-adjust-input]') && canRun()) {
+        const raw = ev.target.value.trim(), id = ev.target.dataset.adjustInput, target = id ? rowOf(fight(), id) : null;
+        if (target && target.kind === 'monster' && /^[+-]?\d+$/.test(raw)) {
+          const n = Number(raw);
+          if (Number.isSafeInteger(n) && n !== (target.adjust ?? 0)) send({ type: 'adjustRoll', id: target.id, n });
+        }
+      }
     });
     el.addEventListener('change', ev => {
       const t = ev.target; if (!canRun()) return;
       if (t.matches('[data-target]')) { const r = focusRow(fight()); if (r) picks.set(r.id, t.value); render(); }
       if (t.matches('[data-garm-on]')) { const f = fight(), r = focusRow(f), target = rowOf(f, t.value); if (r && r.armed && target) armRow(r, r.armed.ability, target.id); }
+      if (t.matches('[data-adjust-input]')) {
+        const id = t.dataset.adjustInput, target = id ? rowOf(fight(), id) : null;
+        if (!target || target.kind !== 'monster') return;
+        const raw = t.value.trim();
+        if (raw === '') { send({ type: 'adjustRoll', id: target.id, n: 0 }); return; }
+        if (/^[+-]?\d+$/.test(raw) && Number.isSafeInteger(Number(raw))) send({ type: 'adjustRoll', id: target.id, n: Number(raw) });
+        else t.value = String(target.adjust ?? 0);
+      }
     });
     el.addEventListener('submit', async ev => {
       if (!ev.target.matches('[data-qform]')) return; ev.preventDefault(); if (!canRun()) return;
@@ -1304,7 +1325,12 @@ export function register(app) {
       }
       if (b.dataset.adjustRoll !== undefined) {
         const to = Number(b.dataset.to), target = rowOf(f, b.dataset.adjustRoll);
-        if (Number.isInteger(to) && target) send({ type: 'adjustRoll', id: target.id, n: to });
+        if (Number.isSafeInteger(to) && target) send({ type: 'adjustRoll', id: target.id, n: to });
+        return;
+      }
+      if (b.dataset.adjustMode !== undefined) {
+        const target = rowOf(f, b.dataset.adjustMode), mode = oneOf(b.dataset.mode, /** @type {const} */ (['adjust', '20', '1']), 'adjust');
+        if (target) send({ type: 'adjustRoll', id: target.id, force: mode === '20' ? 20 : mode === '1' ? 1 : null });
         return;
       }
       if (b.hasAttribute('data-mythsw-btn')) { ui.wrote('GM', store.apply('gm-rules', st => mythicSwitched(st, !rules().fight.mythic.scripts))); return; }
@@ -1411,7 +1437,8 @@ export function register(app) {
         const max = extractAttemptsMax(rules().shadow, byRow.kind === 'hunter' && byRow.extractBonus ? byRow : byHunter);
         /** @type {import('../core/api.ts').ExtractTarget} */
         const corpse = { id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
-          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, max), adjust: r.kind === 'monster' ? (r.adjust ?? 0) : 0 };
+          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, max),
+          adjust: r.kind === 'monster' ? (r.adjust ?? 0) : 0, force: r.kind === 'monster' ? (r.force ?? null) : null };
         const made = await A().shadows.extract(byRow.holder, corpse);
         if (made) { const c = el.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
         if (rowOf(fight(), r.id)) toast(made ? `${r.name} rises as a shadow.` : `Extraction of ${r.name} failed.`);
@@ -1425,7 +1452,8 @@ export function register(app) {
         /** @type {import('../core/api.ts').ExtractTarget} */
         const corpse = {
           id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
-          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: 0, adjust: r.kind === 'monster' ? (r.adjust ?? 0) : 0,
+          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: 0,
+          adjust: r.kind === 'monster' ? (r.adjust ?? 0) : 0, force: r.kind === 'monster' ? (r.force ?? null) : null,
           bled: r.kind === 'monster' && r.bled === true, ended: f.phase === 'ended',
         };
         const made = await A().shadows.extractBlood(byRow.holder, corpse);
@@ -1501,14 +1529,19 @@ export function register(app) {
       + `<div class="cmb-x"><span>Force ${esc(r.name)}'s next d20</span><div class="seg" role="group" aria-label="Force ${esc(r.name)}'s next d20">${face.map(([v, l, fk]) =>
         `<button type="button" data-fk="fz-${fk}" data-fudge-force="${esc(r.id)}" data-face="${v ?? ''}" aria-pressed="${k.forced === v}">${l}</button>`).join('')}</div></div>`;
   }
-  /** The corpse card's visible GM roll adjustment stepper: shown on fallen monsters while `shadow.adjustMax > 0`. */
-  function adjustRollCard(r, k, R) {
-    const max = R.shadow.adjustMax;
-    if (r.kind !== 'monster' || !k.down || max <= 0) return '';
-    const n = k.rollAdjust;
-    return `<div class="cmb-fgroup" data-adjust-box><span class="cmb-step"><span class="lbl">Adjust next roll on ${esc(r.name)}${n !== 0 ? '<i class="cmb-fdot" aria-hidden="true"></i><span class="sr-only"> active</span>' : ''}</span>`
-      + `<span class="cmb-step-btns"><button type="button" class="icon-btn" data-fk="adj-m" data-adjust-roll="${esc(r.id)}" data-to="${n - 1}" aria-label="Lower roll adjustment on ${esc(r.name)}"${n <= -max ? ' disabled' : ''}>−</button><b data-adjust-val>${signed(n)}</b>`
-      + `<button type="button" class="icon-btn" data-fk="adj-p" data-adjust-roll="${esc(r.id)}" data-to="${n + 1}" aria-label="Raise roll adjustment on ${esc(r.name)}"${n >= max ? ' disabled' : ''}>+</button></span></span></div>`
+  /** The corpse card's GM-only roll adjustment and force controls: shown on fallen monsters in GM view. */
+  function adjustRollCard(r, k) {
+    if (!app.isGM() || r.kind !== 'monster' || !k.down) return '';
+    const n = k.rollAdjust, force = k.rollForce, active = n !== 0 || force !== null;
+    const modes = [[null, 'Adjust by N', 'adj'], [20, 'Force natural 20', '20'], [1, 'Force natural 1', '1']];
+    const modeRow = `<div class="seg" role="group" aria-label="Next roll mode on ${esc(r.name)}">${modes.map(([v, l, fk]) =>
+      `<button type="button" data-fk="adj-mode-${fk}" data-adjust-mode="${esc(r.id)}" data-mode="${v ?? 'adjust'}" aria-pressed="${force === v}">${l}</button>`).join('')}</div>`;
+    const stepRow = force === null
+      ? `<span class="cmb-step-btns"><button type="button" class="icon-btn" data-fk="adj-m" data-adjust-roll="${esc(r.id)}" data-to="${n - 1}" aria-label="Lower roll adjustment on ${esc(r.name)}">−</button>`
+        + `<input type="text" inputmode="numeric" class="cmb-adj-in" data-fk="adj-val" data-adjust-input="${esc(r.id)}" value="${n}" aria-label="Roll adjustment amount on ${esc(r.name)}" autocomplete="off" spellcheck="false">`
+        + `<button type="button" class="icon-btn" data-fk="adj-p" data-adjust-roll="${esc(r.id)}" data-to="${n + 1}" aria-label="Raise roll adjustment on ${esc(r.name)}">+</button></span>`
+      : '';
+    return `<div class="cmb-adj-box" data-adjust-box><div class="cmb-step"><span class="lbl">Adjust next roll on ${esc(r.name)}${active ? '<i class="cmb-fdot" aria-hidden="true"></i><span class="sr-only"> active</span>' : ''}</span>${stepRow}</div>${modeRow}</div>`
       + `<p class="cmb-hint">${esc(ADJUST_HINT)}</p>`;
   }
 
@@ -1686,7 +1719,7 @@ export function register(app) {
     win.classList.toggle('cmb-mapmode', mapMode);
     tl.classList.toggle('open', tools); ui.sheet('fightTools', tools, shutOver);
     if (tools !== tl.hasAttribute('role')) { if (tools) tl.setAttribute('role', 'dialog'); else tl.removeAttribute('role'); }
-    drawLog(logBox, f ? f.log.map(l => l.text) : []);
+    drawLog(logBox, f ? f.log.map(l => (app.isGM() ? l.text : (l.table ?? l.text))) : []);
     const mode = idle ? 'idle' : f && n ? 'fight' : 'empty';
     if (main.dataset.mode !== mode) {
       main.dataset.mode = mode;

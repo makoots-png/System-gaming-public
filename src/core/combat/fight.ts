@@ -40,7 +40,7 @@ import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseSte
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
-import { adjustRollStep, bloodExtractionCheck, clampedAdjust, clearRollAdjust, extractionCheck, rollCheckText, validExtractRoll, validRollAdjust } from './roll-adjust.ts';
+import { adjustRollStep, bloodExtractionCheck, clearRollAdjust, extractionCheck, plainRollCheckText, rollCheckText, validExtractRoll, validForcedFace, validRollAdjust } from './roll-adjust.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
 import type { Command, CommandType, Ctx, DodgeWait, Effect, Fight, HeldUse, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
@@ -336,13 +336,21 @@ function risen(f: Running, a: Ability, by: CombatantId, aim: Aim, rolls: Rolls, 
   if (!u || !isUp(u) || !corpse || !canRiseFor(corpse, f.rows, a.raise)) return f;
   const d20 = rolls.dice[corpse.id]?.[diceFor(a, u.tier, R).length - 1];
   if (d20 === undefined) return f;
-  const dc = riseDc(u, corpse, R), bonus = riseBonus(u, a.raise, R), adj = clampedAdjust(corpse.adjust, R.shadow.adjustMax);
-  const ok = risePassed(d20, bonus, dc, adj);
-  const checkText = rollCheckText(d20, bonus, adj, dc);
+  const forced = corpse.force ?? null;
+  const natural = forced ?? d20;
+  const adj = forced !== null ? 0 : (corpse.adjust ?? 0);
+  const dc = riseDc(u, corpse, R), bonus = riseBonus(u, a.raise, R);
+  const ok = risePassed(natural, bonus, dc, adj, forced);
+  const gmCheck = rollCheckText(natural, bonus, adj, dc, forced);
+  const plainCheck = plainRollCheckText(natural, bonus, dc);
   const cleared = withRow(f, clearRollAdjust(corpse));
   const nextState = riseStep(riseState(corpse), { type: ok ? 'succeed' : 'fail' });
   if (!ok || nextState !== 'risen') {
-    return logged(cleared, line(`${u.name}'s ${a.name} fails on ${corpse.name} (rolled ${checkText}).`, [u.id, corpse.id]), R);
+    const gmText = `${u.name}'s ${a.name} fails on ${corpse.name} (rolled ${gmCheck}).`;
+    const tableText = forced !== null
+      ? `${u.name}'s ${a.name} fails on ${corpse.name} (rolled ${plainCheck}).`
+      : adj !== 0 ? `${u.name}'s ${a.name} fails on ${corpse.name}.` : undefined;
+    return logged(cleared, line(gmText, [u.id, corpse.id], [], tableText), R);
   }
   const g = sentAway(cleared, crowded(cleared.rows, u.id, 'risen', a.raise.maxRisen), 'leaves because a newer risen took its place', ctx);
   if (g.rows.length >= MAX_ROWS) return g;
@@ -353,7 +361,11 @@ function risen(f: Running, a: Ability, by: CombatantId, aim: Aim, rolls: Rolls, 
   const nr = risenRow(u, corpse, combatantId(`${u.id}~r${g.now}-${n}`), R);
   const base = rowFrom(nr, at, tick(0), 0, R), row = { ...base, at: tick(g.now + interval(base.speed, paceCost('standard', R.fight), R.fight)) };
   const markedRows = g.rows.map(r => r.id === corpse.id && r.kind === 'monster' ? { ...r, rose: true as const } : r);
-  return logged({ ...g, rows: [...markedRows, row] }, line(`${u.name} raises ${row.name} (rolled ${checkText}).`, [u.id, corpse.id, row.id]), R);
+  const gmText = `${u.name} raises ${row.name} (rolled ${gmCheck}).`;
+  const tableText = forced !== null
+    ? `${u.name} raises ${row.name} (rolled ${plainCheck}).`
+    : adj !== 0 ? `${u.name} raises ${row.name}.` : undefined;
+  return logged({ ...g, rows: [...markedRows, row] }, line(gmText, [u.id, corpse.id, row.id], [], tableText), R);
 }
 
 /** Nearest walkable free tile to `anchor` on `f.grid` (distance, then `y`, then `x`), or null when none is free. */
@@ -888,43 +900,70 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
   if (u.kind !== 'monster') return refused(f, 'notMonster');
   if (isUp(u)) return refused(f, 'notNow');
   if (!validExtractRoll(cmd.roll)) return refused(f, 'needsRoll');
-  if (cmd.adjust !== undefined && !validRollAdjust(cmd.adjust, ctx.rules.shadow.adjustMax)) return refused(f, 'adjustValue');
-  const adj = cmd.adjust !== undefined ? cmd.adjust : clampedAdjust(u.adjust, ctx.rules.shadow.adjustMax);
+  if (cmd.adjust !== undefined && !validRollAdjust(cmd.adjust)) return refused(f, 'adjustValue');
+  if (cmd.force !== undefined && cmd.force !== null && !validForcedFace(cmd.force)) return refused(f, 'adjustValue');
+  const forced = cmd.force !== undefined ? cmd.force : cmd.adjust !== undefined ? null : (u.force ?? null);
+  const adj = forced !== null ? 0 : (cmd.adjust !== undefined ? cmd.adjust : (u.adjust ?? 0));
   if (cmd.what === 'blood') {
     if (f.phase !== 'ended') return refused(f, 'notNow');
     if (u.bled) return refused(f, 'noAttempts');
-    const checked = bloodExtractionCheck(cmd.roll, adj);
-    const checkText = rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc);
+    const checked = bloodExtractionCheck(cmd.roll, adj, forced);
+    const gmCheck = rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc, checked.forced);
+    const plainCheck = plainRollCheckText(checked.natural, checked.bonus, checked.dc);
     const said = checked.passed
-      ? `${by.name} drains blood from ${u.name} for a Crimson Vessel (rolled ${checkText}).`
-      : `${by.name}'s blood extraction fails on ${u.name} (rolled ${checkText}).`;
+      ? `${by.name} drains blood from ${u.name} for a Crimson Vessel (rolled ${gmCheck}).`
+      : `${by.name}'s blood extraction fails on ${u.name} (rolled ${gmCheck}).`;
+    const tableText = checked.forced !== null
+      ? (checked.passed
+          ? `${by.name} drains blood from ${u.name} for a Crimson Vessel (rolled ${plainCheck}).`
+          : `${by.name}'s blood extraction fails on ${u.name} (rolled ${plainCheck}).`)
+      : checked.adjust !== 0
+        ? (checked.passed
+            ? `${by.name} drains blood from ${u.name} for a Crimson Vessel.`
+            : `${by.name}'s blood extraction fails on ${u.name}.`)
+        : undefined;
     const nextRow: MonsterRow = { ...clearRollAdjust(u), bled: true };
-    return done(logged(withRow(f, nextRow), line(said, [u.id, by.id]), ctx.rules), []);
+    return done(logged(withRow(f, nextRow), line(said, [u.id, by.id], [], tableText), ctx.rules), []);
   }
-  const checked = extractionCheck(cmd.roll, adj);
+  const checked = extractionCheck(cmd.roll, adj, forced);
   const max = extractAttemptsMax(ctx.rules.shadow, by);
   const e = extractionStep(u.extraction ?? UNTRIED, checked.outcome, max);
   if (!e) return refused(f, 'noAttempts');
-  const checkText = rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc);
+  const gmCheck = rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc, checked.forced);
+  const plainCheck = plainRollCheckText(checked.natural, checked.bonus, checked.dc);
+  const left = attemptsLeft(e, max);
   const said = checked.outcome === 'risen'
-    ? `${u.name} rises as a shadow (rolled ${checkText}).`
+    ? `${u.name} rises as a shadow (rolled ${gmCheck}).`
     : checked.outcome === 'crumbled'
-      ? `${u.name}'s corpse is destroyed (rolled ${checkText}).`
-      : `The extraction of ${u.name} fails (rolled ${checkText}, ${attemptsLeft(e, max)} left).`;
+      ? `${u.name}'s corpse is destroyed (rolled ${gmCheck}).`
+      : `The extraction of ${u.name} fails (rolled ${gmCheck}, ${left} left).`;
+  const tableText = checked.forced !== null
+    ? (checked.outcome === 'risen'
+        ? `${u.name} rises as a shadow (rolled ${plainCheck}).`
+        : checked.outcome === 'crumbled'
+          ? `${u.name}'s corpse is destroyed (rolled ${plainCheck}).`
+          : `The extraction of ${u.name} fails (rolled ${plainCheck}, ${left} left).`)
+    : checked.adjust !== 0
+      ? (checked.outcome === 'risen'
+          ? `${u.name} rises as a shadow.`
+          : checked.outcome === 'crumbled'
+            ? `${u.name}'s corpse is destroyed.`
+            : `The extraction of ${u.name} fails (${left} left).`)
+      : undefined;
   const nextRow: MonsterRow = { ...clearRollAdjust(u), extraction: e };
-  return done(logged(withRow(f, nextRow), line(said, [u.id, by.id]), ctx.rules), []);
+  return done(logged(withRow(f, nextRow), line(said, [u.id, by.id], [], tableText), ctx.rules), []);
 }
 
 /**
- * The GM's visible signed adjustment (`±RULES.shadow.adjustMax`) for the next extraction or Arise roll on monster
- * `id`, through `adjustRollStep`: set, never added, and 0 clears it. Allowed in setup, running, and ended. No time
- * passes and nothing is logged until a roll consumes it.
+ * The GM's hidden signed adjustment (any whole number) or forced natural face (20 or 1) for the next extraction or
+ * Arise roll on monster `id`, through `adjustRollStep`: set, never added, and 0 / null clears it. Allowed in setup,
+ * running, and ended. No time passes and nothing is logged until a roll consumes it.
  */
-function adjustRoll<F extends Fight>(f: F, cmd: Extract<Command, { type: 'adjustRoll' }>, ctx: Ctx): Result {
+function adjustRoll<F extends Fight>(f: F, cmd: Extract<Command, { type: 'adjustRoll' }>, _ctx: Ctx): Result {
   const u = rowOf(f, cmd.id);
   if (!u) return refused(f, 'unknown');
   if (u.kind !== 'monster') return refused(f, 'notMonster');
-  const next = adjustRollStep(u, cmd.n, ctx.rules.shadow.adjustMax);
+  const next = adjustRollStep(u, { ...(cmd.n !== undefined ? { n: cmd.n } : {}), ...(cmd.force !== undefined ? { force: cmd.force } : {}) });
   if (!next) return refused(f, 'adjustValue');
   return done(next === u ? f : withRow(f, next), []);
 }

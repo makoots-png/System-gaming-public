@@ -223,9 +223,16 @@ function against(v: unknown, base: unknown, path: string, refused: OverrideRefus
 export function parseOverrides(v: unknown): { overrides: Rec; refused: OverrideRefusal[] } {
   const refused: OverrideRefusal[] = [];
   if (!isObj(v)) return { overrides: {}, refused: [{ path: '', reason: 'object' }] };
-  const { conditions, items, gmTables: tables, ...rest } = v;
+  const { conditions, items, gmTables: tables, ...rawRest } = v;
   if (conditions !== undefined) refused.push({ path: 'conditions', reason: 'statuses' });
   if (items !== undefined) refused.push({ path: 'items', reason: 'items' });
+  // Legacy shadow.adjustMax was retired when GM roll adjustments became uncapped; strip it silently on load/parse.
+  let rest: Rec = rawRest;
+  if (isObj(rawRest.shadow) && Object.hasOwn(rawRest.shadow, 'adjustMax')) {
+    const { adjustMax: _legacy, ...shadowLeft } = rawRest.shadow;
+    if (Object.keys(shadowLeft).length > 0) rest = { ...rawRest, shadow: shadowLeft };
+    else { const { shadow: _emptyShadow, ...withoutShadow } = rawRest; rest = withoutShadow; }
+  }
   const kept = against(rest, RULES, '', refused), overrides: Rec = isObj(kept) ? kept : {};
   const debtShare = typeof overrides.reviveDebtShare === 'number' ? overrides.reviveDebtShare : RULES.reviveDebtShare;
   const debtBurn = typeof overrides.reviveDebtBurn === 'number' ? overrides.reviveDebtBurn : RULES.reviveDebtBurn;

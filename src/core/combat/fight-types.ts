@@ -21,11 +21,13 @@ export const PHASES = ['setup', 'running', 'ended'] as const;
 export type Phase = (typeof PHASES)[number];
 /**
  * A line of the fight's log and the rows and zones it is about (`rows`, `zones`), named by the step that logs it: the party's doc keeps a
- * line only when none of them is hidden from the party (fight-doc.ts), whatever the words say.
+ * line only when none of them is hidden from the party (fight-doc.ts), whatever the words say. When `text` holds GM-only
+ * details (a hidden roll adjustment or forced natural), `table` carries the player-safe text for the room doc and player messages.
  */
-export type LogLine = { readonly text: string; readonly rows: readonly CombatantId[]; readonly zones: readonly ZoneId[] };
-/** A log line about these rows and zones. */
-export const line = (text: string, rows: readonly CombatantId[] = [], zones: readonly ZoneId[] = []): LogLine => ({ text, rows, zones });
+export type LogLine = { readonly text: string; readonly rows: readonly CombatantId[]; readonly zones: readonly ZoneId[]; readonly table?: string };
+/** A log line about these rows and zones, with optional player-safe `table` words. */
+export const line = (text: string, rows: readonly CombatantId[] = [], zones: readonly ZoneId[] = [], table?: string): LogLine =>
+  (table === undefined ? { text, rows, zones } : { text, rows, zones, table });
 /**
  * What every fight has: its rows (one `Body` each, in the order they joined), its map, the zones on it (zones.ts), its
  * fog (null: the party sees the whole map), its log (newest first) and `banked`, the XP of foes the GM removed while
@@ -214,18 +216,19 @@ export type Command =
    */
   | { readonly type: 'arm'; readonly by: CombatantId; readonly ability: AbilityId | null; readonly on?: CombatantId }
   /**
-   * An attempt to extract a shadow or blood from fallen monster `id` with `roll` (and optional GM `adjust` overriding
-   * `corpse.adjust`): the reducer computes the outcome (roll-adjust.ts `extractionCheck` / `bloodExtractionCheck`),
-   * records it on the row (`extraction` for `'shadow'`, independent `bled: true` for `'blood'`), clears `corpse.adjust`,
-   * and logs the full roll breakdown. Blood extraction is post-fight only (`phase === 'ended'`); shadow extraction may
-   * run in setup, running, or ended. No time passes.
+   * An attempt to extract a shadow or blood from fallen monster `id` with `roll` (and optional GM `adjust` or `force`
+   * overriding the corpse's standing adjustment/force): the reducer computes the outcome (roll-adjust.ts `extractionCheck` /
+   * `bloodExtractionCheck`), records it on the row (`extraction` for `'shadow'`, independent `bled: true` for `'blood'`),
+   * clears `corpse.adjust` and `corpse.force`, and logs the GM breakdown with a player-safe `table` line. Blood
+   * extraction is post-fight only (`phase === 'ended'`); shadow extraction may run in setup, running, or ended. No time passes.
    */
-  | { readonly type: 'extract'; readonly what: ExtractKind; readonly id: CombatantId; readonly by: CombatantId; readonly roll: ExtractRoll; readonly adjust?: number }
+  | { readonly type: 'extract'; readonly what: ExtractKind; readonly id: CombatantId; readonly by: CombatantId; readonly roll: ExtractRoll; readonly adjust?: number; readonly force?: ForcedFace | null }
   /**
-   * The GM sets the visible signed adjustment (`±RULES.shadow.adjustMax`) for the next extraction or Arise roll on
-   * monster `id`. It sets, never adds, and 0 clears it. No time passes and nothing is logged until a roll consumes it.
+   * The GM sets a hidden signed adjustment (any whole number) or forced natural face (20 or 1, or null to clear) for the
+   * next extraction or Arise roll on monster `id`. It sets, never adds, and 0 / null clears it. No time passes and nothing
+   * is logged until a roll consumes it.
    */
-  | { readonly type: 'adjustRoll'; readonly id: CombatantId; readonly n: number }
+  | { readonly type: 'adjustRoll'; readonly id: CombatantId; readonly n?: number; readonly force?: ForcedFace | null }
   /**
    * The GM sets the fight's hidden weight (`Fudge`): a side's or a row's to `n` faces, or a row's forced next roll. It
    * sets, never adds. No time passes and nothing is logged.
@@ -271,7 +274,7 @@ export type Refusal = UseRefusal
   | 'lifeCannot'
   /** A `fudge` whose weight is not a whole number, or whose forced face is not 1 or 20. */
   | 'fudgeValue'
-  /** An `adjustRoll` or `extract` adjustment that is not a whole number within `±RULES.shadow.adjustMax`. */
+  /** An `adjustRoll` or `extract` adjustment that is not a whole number, or a forced face that is not 1 or 20. */
   | 'adjustValue'
   /** A mythic's machine refused the event (mythic.ts `MythicRefusal`): no omen to drop, one standing, its last phase. */
   | MythicRefusal

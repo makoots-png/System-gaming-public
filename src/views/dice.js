@@ -112,7 +112,8 @@ export function register(app) {
     const clean = printFormula(f);
     // the GM's weight on this hunter, heard while a player in this room; a roll that is not logged spends nothing, so it draws with none
     const room = app.seat() === 'player' ? app.api.sync.room() : null, weight = who && !o.silent ? heldWeight(store.get().settings.sync.weights, room, who.id) : NO_WEIGHT;
-    const r = rollFormula(edged, { user: body, target: body, charge: 0 }, trayRandom, drawnWith(weight, clean));
+    const drawWeight = o.force === 20 || o.force === 1 ? { forced: o.force } : drawnWith(weight, clean);
+    const r = rollFormula(edged, { user: body, target: body, charge: 0 }, trayRandom, drawWeight);
     const natural = naturalOf(r), total = Math.round(r.total * 100) / 100, rolls = r.terms.flatMap(t => t.faces.map(x => x.face));
     const kind = o.kind || 'other', check = kind === 'check' && typeof o.dc === 'number' ? checkResult(natural, total, o.dc) : null;
     const res = { expr: clean, total, rolls, kept: natural, natural, crit: natural === 20, fumble: natural === 1, adv: edged !== f && !o.dis, dis: edged !== f && !!o.dis, check };

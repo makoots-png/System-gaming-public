@@ -88,14 +88,17 @@ test('GM extracts blood after a fight with Adjust roll, fills a Crimson Vessel o
     await expect(bloodBtn).toHaveText('Extract blood');
     await expect(card(page).locator('[data-extract]')).toHaveCount(0);
 
-    // Set +2 on the corpse card stepper
+    // Set +2 on the corpse card with the new GM Adjust roll controls (Adjust by N / Force natural 20 / Force natural 1)
     const box = card(page).locator('[data-adjust-box]');
     await expect(box).toContainText('Adjust next roll on Bloodfang Alpha');
     await expect(card(page).locator('.cmb-adj .cmb-hint')).toHaveText(ADJUST_HINT);
+    await expect(box.getByRole('button', { name: 'Adjust by N' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(box.getByRole('button', { name: 'Force natural 20' })).toHaveAttribute('aria-pressed', 'false');
+    await expect(box.getByRole('button', { name: 'Force natural 1' })).toHaveAttribute('aria-pressed', 'false');
     const up = box.getByRole('button', { name: 'Raise roll adjustment on Bloodfang Alpha' });
     await up.tap();
     await up.tap();
-    await expect(box.locator('[data-adjust-val]')).toHaveText('+2');
+    await expect(box.locator('[data-adjust-input]')).toHaveValue('2');
     await expect(box.locator('.cmb-fdot')).toHaveCount(1);
 
     // Open Blood Extraction modal and bump adjustment inline from +2 to +6
@@ -107,39 +110,50 @@ test('GM extracts blood after a fight with Adjust roll, fills a Crimson Vessel o
     await expect(dlg).toContainText(`DC ${dc}`);
     await expect(dlg).toContainText('Vitality check');
     await expect(dlg).toContainText('1 attempt per corpse');
-    await expect(dlg.locator('[data-adj-val]')).toHaveText('+2');
+    await expect(dlg.getByRole('button', { name: 'Adjust by N' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(dlg.getByRole('button', { name: 'Force natural 20' })).toHaveAttribute('aria-pressed', 'false');
+    await expect(dlg.getByRole('button', { name: 'Force natural 1' })).toHaveAttribute('aria-pressed', 'false');
+    await expect(dlg.locator('[data-adj-in]')).toHaveValue('2');
     await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +2');
 
     const modalUp = dlg.getByRole('button', { name: 'Raise roll adjustment on Bloodfang Alpha' });
     for (let i = 0; i < 4; i++) await modalUp.tap();
-    await expect(dlg.locator('[data-adj-val]')).toHaveText('+6');
+    await expect(dlg.locator('[data-adj-in]')).toHaveValue('6');
     await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +6');
 
     // Pick natural face that fails at +0 (dc - 4) and passes with +6 GM adjustment (dc + 2)
     const natural = Math.max(2, Math.min(19, dc - baseSheet.vitBonus - 4));
-    const expectedTotal = natural + baseSheet.vitBonus + 6;
-    expect(natural + baseSheet.vitBonus, 'natural roll fails without GM adjustment').toBeLessThan(dc);
+    const plainTotal = natural + baseSheet.vitBonus;
+    const expectedTotal = plainTotal + 6;
+    expect(plainTotal, 'natural roll fails without GM adjustment').toBeLessThan(dc);
     expect(expectedTotal, 'adjusted roll passes DC').toBeGreaterThanOrEqual(dc);
 
     await page.evaluate(f => { Math.random = () => (f - 0.5) / 20; }, natural);
     await dlg.getByRole('button', { name: 'Extract blood' }).tap();
     await expect(page.locator('.sys-overlay.show')).toHaveCount(0);
 
-    // Fight log shows the blood extraction and GM modifier; bled is set, adjust is cleared, button disappears
+    // GM fight log shows the blood extraction and GM modifier; player-safe table log strips it; bled is set, adjust clears, button disappears
     const logTop = (await combat(page).locator('[data-log] li').first().textContent()) ?? '';
     expect(logTop).toContain('Mira Vale drains blood from Bloodfang Alpha for a Crimson Vessel');
     expect(logTop).toContain(`+ 6 GM = ${expectedTotal} vs DC ${dc}`);
+    const logTable = await page.evaluate(() => hunterApp.store.get().fight?.log?.[0]?.table ?? '');
+    expect(logTable).toMatch(/^R\d+: Mira Vale drains blood from Bloodfang Alpha for a Crimson Vessel\.$/);
+    expect(logTable).not.toMatch(/GM|\+ 6|forced/i);
     const rowAfter = await fightRow(page, 'Bloodfang Alpha');
     expect(rowAfter.bled).toBe(true);
     expect(rowAfter.adjust).toBeUndefined();
+    expect(rowAfter.force).toBeUndefined();
     await expect(card(page).locator('[data-extract-blood]')).toHaveCount(0);
-    await expect(card(page).locator('[data-adjust-val]')).toHaveText('0');
+    await expect(card(page).locator('[data-adjust-input]')).toHaveValue('0');
+    await expect(card(page).locator('[data-adjust-box] .cmb-fdot')).toHaveCount(0);
 
-    // Dice roll log records Extract blood with GM +6
+    // Dice roll log stays plain with no GM tag or hidden adjustment
     await go(page, 'dice');
     const firstRoll = page.locator('#view-dice [data-hist] li').first();
-    await expect(firstRoll).toContainText('Extract blood: Bloodfang Alpha (GM +6)');
-    await expect(firstRoll).toContainText(`[${natural}] = ${expectedTotal}`);
+    await expect(firstRoll).toContainText('Extract blood: Bloodfang Alpha');
+    await expect(firstRoll).toContainText(`[${natural}] = ${plainTotal}`);
+    await expect(firstRoll).not.toContainText('GM');
+    await expect(firstRoll).not.toContainText('forced');
   });
 
   await test.step('Classes panel shows Crimson Vessels (1 / 3), active bonuses on sheet, and supports removing a vessel', async () => {

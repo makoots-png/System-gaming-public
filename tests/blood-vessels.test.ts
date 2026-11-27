@@ -173,19 +173,20 @@ describe('Crimson Vessels math, DCs, and upgrade rules (blood-vessels.ts)', () =
     expect(parsed.classes.Hemomancer?.vessels).toEqual([mkVessel('Igris', 'A', 'boss')]);
   });
 
-  test('bloodExtractionCheck obeys nat 20 pass, nat 1 fail, and adjust matrix; extractDiceLabel formats blood labels', () => {
+  test('bloodExtractionCheck obeys nat 20 pass, nat 1 fail, uncapped adjust, and forced 20/1; extractDiceLabel stays plain', () => {
     for (let face = 1; face <= 20; face++) {
-      for (const adj of [-10, 0, 10]) {
+      for (const adj of [-50, 0, 50]) {
         const res = bloodExtractionCheck({ natural: face, bonus: 30, dc: 45 }, adj);
         expect(res.total).toBe(face + 30 + adj);
+        expect(res.forced).toBeNull();
         if (face === 1) expect(res.passed).toBe(false);
         else if (face === 20) expect(res.passed).toBe(true);
         else expect(res.passed).toBe(face + 30 + adj >= 45);
       }
     }
-    expect(extractDiceLabel('blood', 'Igris', 0)).toBe('Extract blood: Igris');
-    expect(extractDiceLabel('blood', 'Igris', 2)).toBe('Extract blood: Igris (GM +2)');
-    expect(extractDiceLabel('blood', 'Igris', -3)).toBe('Extract blood: Igris (GM -3)');
+    expect(bloodExtractionCheck({ natural: 1, bonus: 0, dc: 999 }, -100, 20)).toEqual({ natural: 20, bonus: 0, adjust: 0, forced: 20, total: 20, dc: 999, passed: true });
+    expect(bloodExtractionCheck({ natural: 20, bonus: 100, dc: 5 }, 100, 1)).toEqual({ natural: 1, bonus: 100, adjust: 0, forced: 1, total: 101, dc: 5, passed: false });
+    expect(extractDiceLabel('blood', 'Igris')).toBe('Extract blood: Igris');
   });
 });
 

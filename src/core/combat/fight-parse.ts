@@ -44,7 +44,6 @@ import { FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_RO
 import type { DodgeWait, DueTurn, Fight, Fog, ForcedFace, Fudge, HeldUse, LogLine, Summary } from './fight-types.ts';
 import { clampGrievousOps, isGrievousKey } from './grievous.ts';
 import type { Extraction } from './extraction.ts';
-import { ADJUST_BOUND } from './roll-adjust.ts';
 import { isMythicScriptId, mythicScriptOf } from '../registry/mythics.ts';
 import type { BarAt, MythicStanding, OmenKey } from './mythic-types.ts';
 import { NO_TALLY } from './row-tally.ts';
@@ -814,9 +813,9 @@ type OwnIn = { readonly v: Rec; readonly grid: Grid; readonly hpMax: number };
 /** The fields of another kind a kind holds as null (`HunterRow` and the rest, effect-ops.ts): each must be stored as null. */
 const NULLS = (v: Rec, keys: readonly ('holder' | 'threat' | 'stagger' | 'intent' | 'mythic')[]): boolean => keys.every(k => v[k] === null);
 /** The fields of another kind a kind holds absent: each must be absent from the stored row. */
-const ABSENT = (v: Rec, keys: readonly ('moved' | 'extractBonus' | 'owner' | 'until' | 'extraction' | 'rose' | 'adjust' | 'bled')[]): boolean => keys.every(k => v[k] === undefined);
+const ABSENT = (v: Rec, keys: readonly ('moved' | 'extractBonus' | 'owner' | 'until' | 'extraction' | 'rose' | 'adjust' | 'force' | 'bled')[]): boolean => keys.every(k => v[k] === undefined);
 /** The fields a row's kind decides (effect-ops.ts `HunterRow` and the rest), one kind's at a time. */
-type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'moved' | 'extractBonus' | 'owner' | 'until' | 'extraction' | 'rose' | 'adjust' | 'bled';
+type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'moved' | 'extractBonus' | 'owner' | 'until' | 'extraction' | 'rose' | 'adjust' | 'force' | 'bled';
 type OwnOf = Pick<HunterRow, OwnKey> | Pick<MonsterRow, OwnKey> | Pick<ShadowRow, OwnKey> | Pick<SummonRow, OwnKey>;
 /**
  * A row's own fields, read by its kind (SMX-rules-8): each kind reads its own and requires another kind's to be null or
@@ -830,25 +829,26 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
     const moved = v.moved === undefined ? undefined : whole(v.moved, 1, BIG);
     const extractBonus = v.extractBonus === undefined ? undefined : whole(v.extractBonus, 1, 5);
     if (holder === undefined || holder?.kind === 'shadow' || holder?.kind === 'remoteShadow' || !life || v.xp !== 0 || moved === null || extractBonus === null) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction', 'rose', 'adjust', 'bled'])) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction', 'rose', 'adjust', 'force', 'bled'])) return null;
     return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null, ...(moved === undefined ? {} : { moved }), ...(extractBonus === undefined ? {} : { extractBonus }) };
   },
   monster: ({ v, grid, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), stagger = staggerOf(v.stagger);
     const intent = intentOf(v.intent, grid), xp = whole(v.xp, 0, BIG), extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
     const mythic = mythicOf(v.mythic, grid), rose = v.rose === undefined ? undefined : v.rose === true ? true as const : null;
-    const rawAdjust = v.adjust === undefined ? undefined : whole(v.adjust, -ADJUST_BOUND, ADJUST_BOUND);
+    const rawAdjust = v.adjust === undefined ? undefined : (typeof v.adjust === 'number' && Number.isSafeInteger(v.adjust) ? v.adjust : null);
     const adjust = rawAdjust === 0 ? null : rawAdjust;
+    const force = v.force === undefined ? undefined : oneOf(v.force, FORCED_FACES, null);
     const bled = v.bled === undefined ? undefined : v.bled === true ? true as const : null;
-    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null || mythic === undefined || rose === null || adjust === null || bled === null) return null;
+    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null || mythic === undefined || rose === null || adjust === null || force === null || bled === null) return null;
     if (!NULLS(v, ['holder']) || !ABSENT(v, ['moved', 'extractBonus', 'owner', 'until'])) return null;
-    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }), ...(rose ? { rose } : {}), ...(adjust === undefined ? {} : { adjust }), ...(bled ? { bled } : {}) };
+    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }), ...(rose ? { rose } : {}), ...(adjust === undefined ? {} : { adjust }), ...(force === undefined ? {} : { force }), ...(bled ? { bled } : {}) };
   },
   shadow: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), owner = idText(v.owner);
     const holder = read === null ? null : read?.kind === 'shadow' || read?.kind === 'remoteShadow' ? read : undefined;
     if (!life || holder === undefined || !owner || v.xp !== 0) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'extractBonus', 'until', 'extraction', 'rose', 'adjust', 'bled'])) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'extractBonus', 'until', 'extraction', 'rose', 'adjust', 'force', 'bled'])) return null;
     return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner) };
   },
   summon: ({ v, hpMax }) => {
@@ -857,7 +857,7 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
     const rose = v.rose === undefined ? undefined : idText(v.rose);
     if (!life || threat === undefined || !owner || (v.until !== null && until === null) || rose === null || v.xp !== 0) return null;
     if ((until === null) !== (rose !== undefined)) return null;
-    if (!NULLS(v, ['holder', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'extractBonus', 'extraction', 'adjust', 'bled'])) return null;
+    if (!NULLS(v, ['holder', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'extractBonus', 'extraction', 'adjust', 'force', 'bled'])) return null;
     return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner), until, ...(rose !== undefined ? { rose: combatantId(rose) } : {}) };
   },
 };
@@ -1062,11 +1062,15 @@ function dodgeOf(v: unknown, grid: Grid, rows: readonly Body[]): DodgeWait | nul
   return { n, use, to };
 }
 
-/** A log line: its words and the ids of the rows (at most `MAX_ROWS`) and zones (`MAX_ZONES`) it is about. */
+/** A log line: its words, optional player-safe `table` words, and the ids of the rows (at most `MAX_ROWS`) and zones (`MAX_ZONES`) it is about. */
 function logLineOf(v: unknown): LogLine | null {
   if (!isObj(v)) return null;
   const words = text(v.text, LOG_LINE_MAX), rows = all(v.rows, MAX_ROWS, idText), zones = all(v.zones, MAX_ZONES, idText);
-  return words === null || !rows || !zones ? null : { text: words, rows: rows.map(combatantId), zones: zones.map(zoneId) };
+  const table = v.table === undefined ? undefined : text(v.table, LOG_LINE_MAX);
+  if (words === null || !rows || !zones || table === null) return null;
+  return table === undefined
+    ? { text: words, rows: rows.map(combatantId), zones: zones.map(zoneId) }
+    : { text: words, rows: rows.map(combatantId), zones: zones.map(zoneId), table };
 }
 
 /**

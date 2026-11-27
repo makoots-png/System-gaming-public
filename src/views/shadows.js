@@ -6,7 +6,7 @@
 import { canExtract as canExtractJob, RANKS } from '../edge/rules.ts';
 import { shadowSheet } from '../core/combat/rows.ts';
 import { extractAttemptsMax } from '../core/combat/extraction.ts';
-import { ADJUST_HINT, bloodExtractionCheck, extractDiceExpr, extractDiceLabel, extractionCheck, rollCheckText } from '../core/combat/roll-adjust.ts';
+import { ADJUST_HINT, bloodExtractionCheck, extractDiceExpr, extractDiceLabel, extractionCheck, plainRollCheckText, rollCheckText } from '../core/combat/roll-adjust.ts';
 import { ARCHETYPE_LIST, MONSTER_KINDS } from '../core/registry/monsters.ts';
 import { oneOf } from '../core/one-of.ts';
 import { armyCap, can, extractDc, healShadow, noteShadow, renameShadow, risesAs, shadowRises, shadowState, stepShadow } from '../core/hunter/shadows.ts';
@@ -30,32 +30,74 @@ export function register(app) {
   const dcFor = (h, c) => extractDc(h.rank, c.rank, c.kind, rules().shadow);
   const hpMaxOf = s => shadowSheet(s, rules()).hpMax;
 
-  /** Shared inline `Adjust roll` stepper block and DOM binder for Shadow and Blood Extraction modals. */
-  function adjustModal(name, initial, maxAdj) {
-    const picked = { adj: Math.max(-maxAdj, Math.min(maxAdj, int(initial))) };
-    if (maxAdj <= 0) return { picked, opts: {} };
+  /** Shared inline GM-only roll adjustment and force controls for Shadow and Blood Extraction modals. */
+  function adjustModal(name, initialAdj, initialForce) {
+    /** @type {{ adj: number; force: import('../core/combat/fight-types.ts').ForcedFace | null }} */
+    const picked = {
+      adj: Number.isSafeInteger(Number(initialAdj)) ? Math.trunc(Number(initialAdj)) : 0,
+      force: initialForce === 20 || initialForce === 1 ? initialForce : null,
+    };
+    if (!app.isGM()) return { picked: { adj: 0, force: null }, opts: {} };
     const signed = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+    const summary = () => (picked.force !== null ? `GM: Force natural ${picked.force}` : picked.adj !== 0 ? `GM adjustment: ${signed(picked.adj)}` : '');
     const html = `<div class="sh-adj" data-ext-adj>
-      <div class="sh-adj-row"><span class="lbl">Adjust roll</span>
-        <span class="sh-step"><button type="button" class="icon-btn" data-adj="-1" aria-label="Lower roll adjustment on ${esc(name)}"${picked.adj <= -maxAdj ? ' disabled' : ''}>−</button><b data-adj-val>${signed(picked.adj)}</b><button type="button" class="icon-btn" data-adj="1" aria-label="Raise roll adjustment on ${esc(name)}"${picked.adj >= maxAdj ? ' disabled' : ''}>+</button></span></div>
-      <p class="sh-adj-line" data-adj-line${picked.adj === 0 ? ' hidden' : ''}>${picked.adj === 0 ? '' : `GM adjustment: ${signed(picked.adj)}`}</p>
+      <div class="sh-adj-row"><span class="lbl">Adjust next roll on ${esc(name)}</span>
+        <span class="sh-step" data-adj-step${picked.force !== null ? ' hidden' : ''}><button type="button" class="icon-btn" data-adj="-1" aria-label="Lower roll adjustment on ${esc(name)}">−</button><input type="text" inputmode="numeric" class="sh-adj-in" data-adj-in value="${picked.adj}" aria-label="Roll adjustment amount on ${esc(name)}" autocomplete="off" spellcheck="false"><button type="button" class="icon-btn" data-adj="1" aria-label="Raise roll adjustment on ${esc(name)}">+</button></span></div>
+      <div class="seg" role="group" aria-label="Next roll mode on ${esc(name)}">
+        <button type="button" data-adj-mode="adjust" aria-pressed="${picked.force === null}">Adjust by N</button>
+        <button type="button" data-adj-mode="20" aria-pressed="${picked.force === 20}">Force natural 20</button>
+        <button type="button" data-adj-mode="1" aria-pressed="${picked.force === 1}">Force natural 1</button>
+      </div>
+      <p class="sh-adj-line" data-adj-line${!summary() ? ' hidden' : ''}>${esc(summary())}</p>
       <p class="sh-adj-hint">${esc(ADJUST_HINT)}</p>
     </div>`;
     const drawn = win => {
       const box = win.querySelector('[data-ext-adj]'); if (!box) return;
-      const val = box.querySelector('[data-adj-val]'), lineEl = box.querySelector('[data-adj-line]');
-      const down = box.querySelector('[data-adj="-1"]'), up = box.querySelector('[data-adj="1"]');
+      const stepEl = box.querySelector('[data-adj-step]'), inp = box.querySelector('[data-adj-in]'), lineEl = box.querySelector('[data-adj-line]');
+      const syncLine = () => {
+        const text = summary();
+        if (lineEl) { lineEl.hidden = !text; lineEl.textContent = text; }
+      };
       const sync = () => {
-        if (val) val.textContent = signed(picked.adj);
-        if (lineEl) { lineEl.hidden = picked.adj === 0; lineEl.textContent = picked.adj === 0 ? '' : `GM adjustment: ${signed(picked.adj)}`; }
-        if (down) down.disabled = picked.adj <= -maxAdj;
-        if (up) up.disabled = picked.adj >= maxAdj;
+        if (stepEl) stepEl.hidden = picked.force !== null;
+        if (inp) inp.value = String(picked.adj);
+        box.querySelectorAll('[data-adj-mode]').forEach(b => {
+          const m = b.dataset.adjMode;
+          b.setAttribute('aria-pressed', String(m === '20' ? picked.force === 20 : m === '1' ? picked.force === 1 : picked.force === null));
+        });
+        syncLine();
       };
       box.addEventListener('click', ev => {
+        const modeBtn = ev.target.closest('button[data-adj-mode]');
+        if (modeBtn) {
+          const m = modeBtn.dataset.adjMode;
+          if (m === '20') { picked.force = 20; picked.adj = 0; }
+          else if (m === '1') { picked.force = 1; picked.adj = 0; }
+          else picked.force = null;
+          sync();
+          return;
+        }
         const btn = ev.target.closest('button[data-adj]'); if (!btn) return;
         const next = picked.adj + Number(btn.dataset.adj);
-        if (next >= -maxAdj && next <= maxAdj) { picked.adj = next; sync(); }
+        if (Number.isSafeInteger(next)) { picked.adj = next; picked.force = null; sync(); }
       });
+      if (inp) {
+        inp.addEventListener('input', () => {
+          const raw = inp.value.trim();
+          if (/^[+-]?\d+$/.test(raw) && Number.isSafeInteger(Number(raw))) {
+            picked.adj = Number(raw);
+            picked.force = null;
+            syncLine();
+          }
+        });
+        inp.addEventListener('change', () => {
+          const raw = inp.value.trim();
+          if (raw === '') picked.adj = 0;
+          else if (/^[+-]?\d+$/.test(raw) && Number.isSafeInteger(Number(raw))) picked.adj = Number(raw);
+          picked.force = null;
+          sync();
+        });
+      }
     };
     return { picked, opts: { html, drawn } };
   }
@@ -93,7 +135,7 @@ export function register(app) {
     if (left <= 0) { ui.toast('System', 'No attempts left on this corpse.', { kind: 'warning' }); return null; }
     if (h.shadows.length >= cap(h)) { ui.toast('System', `Army is full (${h.shadows.length} / ${cap(h)}). Release a shadow first.`, { kind: 'warning' }); return null; }
     const m = c, dc = dcFor(h, m), bonus = A().hunter.sheet(h).checks.bonus.pre;
-    const { picked, opts: adjOpts } = adjustModal(m.name, m.adjust, int(R.adjustMax));
+    const { picked, opts: adjOpts } = adjustModal(m.name, m.adjust, m.force ?? null);
     const go = await ui.system({
       tag: '! Extraction', title: 'Shadow Extraction', kind: 'arise',
       body: `Target: ${m.name} (${m.rank}-rank${m.kind === 'boss' ? ' boss' : ''}).`,
@@ -102,21 +144,21 @@ export function register(app) {
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Extract shadow', value: true, primary: true }],
     });
     if (!go) return null;
-    const adj = picked.adj;
+    const force = picked.force, adj = force !== null ? 0 : picked.adj;
     // a player's hunter rolls on the GM's phone with its own sheet's bonus; the roll is the GM's, not a hunter of this phone's
-    const r = A().dice.roll(extractDiceExpr(bonus, adj), { label: extractDiceLabel('shadow', m.name, adj), ...(who.kind === 'local' ? { hid: h.id } : {}) });
+    const r = A().dice.roll(extractDiceExpr(bonus), { label: extractDiceLabel('shadow', m.name), ...(force !== null ? { force } : {}), ...(who.kind === 'local' ? { hid: h.id } : {}) });
     const roll = { natural: int(r.natural), bonus, dc };
-    const checked = extractionCheck(roll, adj), outcome = checked.outcome;
-    // the roll and GM adjustment are kept on the corpse's fight row, and a risen shadow joins the army in the same write:
+    const checked = extractionCheck(roll, adj, force), outcome = checked.outcome;
+    // the roll and GM adjustment/force are kept on the corpse's fight row, and a risen shadow joins the army in the same write:
     // this phone's hunter's at once, a player's through the room's `shadow` message posted in that write
     const origin = outcome === 'risen' ? originOf(m) : null, id = origin && who.kind === 'local' ? store.id('sh') : null;
     const event = origin && who.kind === 'remote' ? A().sync.event('shadow', { to: [who.remote], shadow: origin }) : null;
     if (origin && who.kind === 'remote' && !event) return null;
     const rose = !origin ? null : who.kind === 'local' ? { kind: /** @type {const} */ ('local'), step: joined(h.id, origin, id) } : { kind: /** @type {const} */ ('remote'), event };
-    if (!ui.wrote('! Extraction', A().combat.extracted('shadow', c.id, c.by, roll, adj, rose))) return null;
+    if (!ui.wrote('! Extraction', A().combat.extracted('shadow', c.id, c.by, roll, adj, rose, force))) return null;
     if (origin && who.kind === 'local') return arise(h, store.hunter(h.id).shadows.find(s => s.id === id));
     if (origin) { ui.toast('ARISE', `${origin.name} rises for ${h.name}. It joins their army on their phone.`, { kind: 'levelup' }); return origin; }
-    const rolledLine = `Rolled ${rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc)}`;
+    const rolledLine = `Rolled ${app.isGM() ? rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc, checked.forced) : plainRollCheckText(checked.natural, checked.bonus, checked.dc)}`;
     if (outcome === 'crumbled') {
       await ui.warn({ tag: 'Shadow extraction', title: 'Extraction failed', body: `Natural 1. ${m.name}'s corpse is destroyed and cannot be extracted.`, lines: [rolledLine] });
       return null;
@@ -152,7 +194,7 @@ export function register(app) {
         ? [`Replaces ${plan.replaces.name} (${plan.replaces.rank}-rank${plan.replaces.kind === 'normal' ? '' : ` ${plan.replaces.kind}`}, power ${vesselPower(plan.replaces.rank, plan.replaces.kind)}) if successful.`]
         : []),
     ];
-    const { picked, opts: adjOpts } = adjustModal(c.name, c.adjust, int(R.shadow.adjustMax));
+    const { picked, opts: adjOpts } = adjustModal(c.name, c.adjust, c.force ?? null);
     const go = await ui.system({
       tag: '! Extraction', title: 'Blood Extraction', kind: 'arise',
       body: `Target: ${c.name} (${rank}-rank${kindWord}).`,
@@ -161,10 +203,10 @@ export function register(app) {
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: spec.label, value: true, primary: true }],
     });
     if (!go) return null;
-    const adj = picked.adj;
-    const r = A().dice.roll(extractDiceExpr(bonus, adj), { label: extractDiceLabel('blood', c.name, adj), ...(who.kind === 'local' ? { hid: h.id } : {}) });
+    const force = picked.force, adj = force !== null ? 0 : picked.adj;
+    const r = A().dice.roll(extractDiceExpr(bonus), { label: extractDiceLabel('blood', c.name), ...(force !== null ? { force } : {}), ...(who.kind === 'local' ? { hid: h.id } : {}) });
     const roll = { natural: int(r.natural), bonus, dc };
-    const checked = bloodExtractionCheck(roll, adj);
+    const checked = bloodExtractionCheck(roll, adj, force);
     const at = new Date().toISOString();
     const vessel = checked.passed ? { name: String(c.name || ''), rank, kind, at } : null;
     const event = vessel && who.kind === 'remote' ? A().sync.event('bloodExtract', { to: [who.remote], vessel }) : null;
@@ -172,7 +214,7 @@ export function register(app) {
     const rose = !vessel ? null : who.kind === 'local'
       ? { kind: /** @type {const} */ ('local'), step: s => { const res = addBloodVessel(s, h.id, vessel, { at, cap: R.logCap }, R, { className: active.name, cap: spec.cap }); return isRefused(res) ? res : res.save; } }
       : { kind: /** @type {const} */ ('remote'), event };
-    if (!ui.wrote('! Extraction', A().combat.extracted('blood', c.id, c.by, roll, adj, rose))) return null;
+    if (!ui.wrote('! Extraction', A().combat.extracted('blood', c.id, c.by, roll, adj, rose, force))) return null;
     if (vessel) {
       const msg = who.kind === 'local'
         ? (plan.replaces ? `${vessel.name} fills a Crimson Vessel for ${h.name}, replacing ${plan.replaces.name}.` : `${vessel.name} fills a Crimson Vessel for ${h.name}.`)
@@ -180,7 +222,7 @@ export function register(app) {
       ui.toast('! Extraction', msg, { kind: 'levelup' });
       return vessel;
     }
-    const rolledLine = `Rolled ${rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc)}`;
+    const rolledLine = `Rolled ${app.isGM() ? rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc, checked.forced) : plainRollCheckText(checked.natural, checked.bonus, checked.dc)}`;
     await ui.warn({
       tag: 'Blood extraction', title: 'Blood extraction failed',
       body: checked.natural === 1 ? 'Natural 1. No blood was extracted from this corpse.' : 'No attempts left on this corpse.',
@@ -225,7 +267,10 @@ export function register(app) {
 .sh-adj{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);text-align:left}
 .sh-adj-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 .sh-step{display:inline-flex;align-items:center;gap:6px}
+.sh-step[hidden]{display:none}
 .sh-step b{min-width:2.2em;text-align:center;font-family:var(--font-mono);color:var(--ice)}
+.sh-adj-in{width:4.5em;min-height:var(--control-h);padding:4px 6px;text-align:center;font-family:var(--font-mono);color:var(--ice)}
+.sh-adj .seg>button{min-width:0}
 .sh-step .icon-btn{min-width:var(--control-h);min-height:var(--control-h)}
 .sh-adj-line{margin:0;font-size:13px;font-weight:700;color:var(--gold)}
 .sh-adj-line[hidden]{display:none}

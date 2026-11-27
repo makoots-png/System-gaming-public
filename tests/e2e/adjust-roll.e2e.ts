@@ -1,7 +1,7 @@
-// PR A browser test: GM "Adjust roll" modifier on shadow extraction and mid-fight Arise.
-// Verifies corpse card stepper (persistence across reload, gold dot, helper text), extraction modal inline stepper
-// and GM adjustment line, roll log showing the modifier, fight log breakdown, clearing after one roll, and Arise
-// ignoring hidden fight fudge while applying Adjust roll.
+// Browser test: GM hidden "Adjust roll" (uncapped integer + Force natural 20 / Force natural 1) on shadow extraction and mid-fight Arise.
+// Verifies corpse card controls (uncapped input, mode selector, persistence across reload, gold dot, helper text),
+// extraction modal pre-fill and inline switching to Force natural 20, plain dice log without GM tags, GM fight log
+// breakdown vs player-safe table log, clearing after one roll, and Arise ignoring hidden fight fudge while applying Adjust/Force.
 import type { Page } from '@playwright/test';
 import { test, expect, setupGoblinDenGM, go, answerWindow, chooseList, fightRow } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
@@ -37,7 +37,7 @@ async function fixCryptoD20(page: Page, d20: number): Promise<void> {
   }, raw);
 }
 
-test('GM adjusts a shadow extraction roll via the corpse card and modal, reload keeps it, and both fight log and roll log show the modifier', async ({ device }) => {
+test('GM sets an uncapped adjustment and Force natural 20 on a corpse card and modal, reload keeps it, GM log notes it, and dice log stays plain', async ({ device }) => {
   const page = (await device('gm')).page;
   await setupGoblinDenGM(page);
   await chooseList(page);
@@ -71,38 +71,32 @@ test('GM adjusts a shadow extraction roll via the corpse card and modal, reload 
   const igrisId: string = (await fightRow(page, 'Igris the Bloodred')).id;
   await combat(page).locator(`[data-pick="${igrisId}"]`).tap();
 
-  await test.step('corpse card shows Adjust next roll stepper, helper text, and gold dot while non-zero, and survives reload', async () => {
+  await test.step('corpse card shows uncapped Adjust next roll input, mode buttons, helper text, and gold dot while active, and survives reload', async () => {
     const box = card(page).locator('[data-adjust-box]');
     await expect(box).toBeVisible();
     await expect(box).toContainText('Adjust next roll on Igris the Bloodred');
     await expect(card(page).locator('.cmb-adj .cmb-hint')).toHaveText(ADJUST_HINT);
     await expect(box.locator('.cmb-fdot')).toHaveCount(0);
 
-    const up = box.getByRole('button', { name: 'Raise roll adjustment on Igris the Bloodred' });
-    await up.tap();
-    await up.tap();
-    await expect(box.locator('[data-adjust-val]')).toHaveText('+2');
+    const inp = box.locator('[data-adjust-input]');
+    await inp.fill('25');
+    await inp.blur();
+    await expect(inp).toHaveValue('25');
     await expect(box.locator('.cmb-fdot')).toHaveCount(1);
 
     await page.reload();
     await go(page, 'combat');
     await combat(page).locator(`[data-pick="${igrisId}"]`).tap();
-    await expect(card(page).locator('[data-adjust-val]')).toHaveText('+2');
+    await expect(card(page).locator('[data-adjust-input]')).toHaveValue('25');
     await expect(card(page).locator('[data-adjust-box] .cmb-fdot')).toHaveCount(1);
   });
 
-  await test.step('extraction modal pre-fills +2, edits inline to +6, passes a roll that would fail without it, clears adjust, and logs to fight and dice logs', async () => {
-    // Compute Mira's Presence bonus and choose a natural face that fails at +0 (DC - 4) and passes at +6 (DC + 2)
+  await test.step('extraction modal pre-fills +25, switches to Force natural 20, succeeds despite raw 1, clears state, and logs plain roll in Dice', async () => {
     const { bonus, dc } = await page.evaluate(() => {
       const h = hunterApp.store.active();
       const b = hunterApp.api.hunter.sheet(h).checks.bonus.pre as number;
-      // E hunter vs C boss: 10 + 3*2 + 5 = 21
       return { bonus: b, dc: 21 };
     });
-    const natural = Math.max(2, Math.min(19, dc - bonus - 4));
-    const expectedTotal = natural + bonus + 6;
-    expect(natural + bonus, 'natural roll fails without GM adjustment').toBeLessThan(dc);
-    expect(expectedTotal, 'adjusted roll passes DC').toBeGreaterThanOrEqual(dc);
 
     const extractBtn = card(page).locator('[data-extract]');
     await expect(extractBtn).toHaveText('Extract shadow');
@@ -110,35 +104,38 @@ test('GM adjusts a shadow extraction roll via the corpse card and modal, reload 
     await extractBtn.tap();
     const dlg = page.locator('.sys-overlay.show', { hasText: 'Shadow Extraction' });
     await expect(dlg).toBeVisible();
-    await expect(dlg.locator('[data-adj-val]')).toHaveText('+2');
-    await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +2');
+    await expect(dlg.locator('[data-adj-in]')).toHaveValue('25');
+    await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +25');
 
-    const modalUp = dlg.getByRole('button', { name: 'Raise roll adjustment on Igris the Bloodred' });
-    for (let i = 0; i < 4; i++) await modalUp.tap();
-    await expect(dlg.locator('[data-adj-val]')).toHaveText('+6');
-    await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +6');
+    await dlg.getByRole('button', { name: 'Force natural 20' }).tap();
+    await expect(dlg.locator('[data-adj-line]')).toHaveText('GM: Force natural 20');
 
-    await page.evaluate(f => { Math.random = () => (f - 0.5) / 20; }, natural);
+    // Fix Math.random to draw 1 so only Force natural 20 can produce a 20 and pass
+    await page.evaluate(() => { Math.random = () => 0.01; });
     await dlg.getByRole('button', { name: 'Extract shadow' }).tap();
     await answerWindow(page, 'ARISE', 'Arise');
 
-    // Fight log shows the GM modifier and corpse.adjust is cleared
+    // GM fight log shows forced 20, player-safe table log shows plain natural 20, and corpse fields clear
     const logTop = (await combat(page).locator('[data-log] li').first().textContent()) ?? '';
     expect(logTop).toContain('Igris the Bloodred rises as a shadow');
-    expect(logTop).toContain(`+ 6 GM = ${expectedTotal} vs DC ${dc}`);
-    expect((await fightRow(page, 'Igris the Bloodred')).adjust).toBeUndefined();
-    await expect(card(page).locator('[data-adjust-val]')).toHaveText('0');
+    expect(logTop).toContain(`20 + ${bonus} = ${20 + bonus} vs DC ${dc}, GM forced 20`);
+    const rowAfter = await fightRow(page, 'Igris the Bloodred');
+    expect(rowAfter.adjust).toBeUndefined();
+    expect(rowAfter.force).toBeUndefined();
+    await expect(card(page).locator('[data-adjust-input]')).toHaveValue('0');
     await expect(card(page).locator('[data-adjust-box] .cmb-fdot')).toHaveCount(0);
 
-    // Dice roll log shows the modifier in both expression and label
+    // Dice roll log shows only the plain natural 20 roll (no GM or forced tag)
     await go(page, 'dice');
     const firstRoll = page.locator('#view-dice [data-hist] li').first();
-    await expect(firstRoll).toContainText('Extract shadow: Igris the Bloodred (GM +6)');
-    await expect(firstRoll).toContainText(`[${natural}] = ${expectedTotal}`);
+    await expect(firstRoll).toContainText('Extract shadow: Igris the Bloodred');
+    await expect(firstRoll).toContainText(`[20] = ${20 + bonus}`);
+    await expect(firstRoll).not.toContainText('GM');
+    await expect(firstRoll).not.toContainText('forced');
   });
 });
 
-test('GM adjusts a mid-fight Arise roll on a corpse card, hidden fight fudge does not interfere, and the adjustment clears after one roll', async ({ device }) => {
+test('GM applies uncapped negative adjust and Force natural 1 to mid-fight Arise, hidden fight fudge does not interfere, and state clears after one roll', async ({ device }) => {
   const page = (await device('gm')).page;
   await setupGoblinDenGM(page);
   await chooseList(page);
@@ -173,28 +170,31 @@ test('GM adjusts a mid-fight Arise roll on a corpse card, hidden fight fudge doe
     f.fudge = { sides: { party: 10, foe: 0 }, rows: { [mira.id]: 5 }, forced: { [mira.id]: 20 } };
   }, 'test-setup'), ARISE_ABILITY);
 
-  // Set -5 roll adjustment on High Orc corpse card
+  // Set uncapped -25 roll adjustment on High Orc corpse card
   await combat(page).locator('.cmb-pick', { hasText: 'High Orc' }).tap();
-  const down = card(page).getByRole('button', { name: 'Lower roll adjustment on High Orc' });
-  for (let i = 0; i < 5; i++) await down.tap();
-  await expect(card(page).locator('[data-adjust-val]')).toHaveText('−5');
+  const inp = card(page).locator('[data-adjust-input]');
+  await inp.fill('-25');
+  await inp.blur();
+  await expect(inp).toHaveValue('-25');
 
-  // Choose natural face that passes without adjustment (15 + bonus >= 16) but fails with -5 GM adjustment
-  await fixCryptoD20(page, 14);
+  // Even a natural 19 fails with -25 GM adjustment
+  await fixCryptoD20(page, 19);
   await combat(page).locator('.cmb-pick', { hasText: 'Mira Vale' }).tap();
   await card(page).locator('[data-ab="arise"]').tap();
   const dlg = page.locator('.sys-overlay.show', { hasText: 'Use Arise on…' });
   await expect(dlg).toBeVisible();
-  await expect(dlg.locator('.sys-actions button', { hasText: 'High Orc' })).toContainText('GM −5');
+  await expect(dlg.locator('.sys-actions button', { hasText: 'High Orc' })).toContainText('GM −25');
   await dlg.locator('.sys-actions button', { hasText: 'High Orc' }).tap();
   await expect(dlg).toHaveCount(0);
 
-  // Arise failed despite hidden fudge +15 & forced 20; log shows - 5 GM and adjust is cleared
+  // Arise failed despite hidden fudge +15 & forced 20; GM log shows - 25 GM, table log strips it, adjust is cleared
   const afterFail = await page.evaluate(() => {
     const f = hunterApp.store.get().fight;
     const orc = f.rows.find((r: any) => r.name === 'High Orc');
+    const ariseLog = f.log.find((l: any) => l.text.includes('fails on High Orc'));
     return {
-      log: f.log.map((l: any) => l.text).join('\n'),
+      text: ariseLog?.text ?? '',
+      table: ariseLog?.table ?? '',
       adjust: orc.adjust ?? null,
       risen: f.rows.filter((r: any) => r.kind === 'summon').length,
       forced: f.fudge.forced,
@@ -202,7 +202,48 @@ test('GM adjusts a mid-fight Arise roll on a corpse card, hidden fight fudge doe
   });
   expect(afterFail.risen).toBe(0);
   expect(afterFail.adjust).toBeNull();
-  expect(afterFail.log).toContain('fails on High Orc');
-  expect(afterFail.log).toContain('- 5 GM =');
+  expect(afterFail.text).toContain('- 25 GM =');
+  expect(afterFail.table).toContain('fails on High Orc.');
+  expect(afterFail.table).not.toMatch(/GM|- 25/i);
   expect(Object.keys(afterFail.forced).length, 'hidden forced roll was not consumed by Arise').toBe(1);
+
+  // Now set Force natural 1 on High Orc and give Mira another turn with a raw 20 roll -> still fails as natural 1 and clears force
+  await page.evaluate(() => hunterApp.store.update((d: any) => {
+    const f = d.fight;
+    const mira = f.rows.find((r: any) => r.name === 'Mira Vale');
+    mira.readyAt = {};
+    mira.mana = 100;
+    mira.at = f.now;
+    f.currentId = mira.id;
+  }, 'test-setup'));
+  await combat(page).locator('.cmb-pick', { hasText: 'High Orc' }).tap();
+  await card(page).getByRole('button', { name: 'Force natural 1' }).tap();
+  await expect(card(page).getByRole('button', { name: 'Force natural 1' })).toHaveAttribute('aria-pressed', 'true');
+
+  await fixCryptoD20(page, 20);
+  await combat(page).locator('.cmb-pick', { hasText: 'Mira Vale' }).tap();
+  await card(page).locator('[data-ab="arise"]').tap();
+  const dlg2 = page.locator('.sys-overlay.show', { hasText: 'Use Arise on…' });
+  const orcPick = dlg2.locator('.sys-actions button', { hasText: 'High Orc' });
+  await expect(orcPick).toContainText('GM natural');
+  expect(await orcPick.textContent()).toContain('GM natural 1');
+  await orcPick.tap();
+  await expect(dlg2).toHaveCount(0);
+
+  const afterForce1 = await page.evaluate(() => {
+    const f = hunterApp.store.get().fight;
+    const orc = f.rows.find((r: any) => r.name === 'High Orc');
+    const ariseLog = f.log.find((l: any) => l.text.includes('fails on High Orc'));
+    return {
+      text: ariseLog?.text ?? '',
+      table: ariseLog?.table ?? '',
+      force: orc.force ?? null,
+      risen: f.rows.filter((r: any) => r.kind === 'summon').length,
+    };
+  });
+  expect(afterForce1.risen).toBe(0);
+  expect(afterForce1.force).toBeNull();
+  expect(afterForce1.text).toContain('GM forced 1');
+  expect(afterForce1.table).not.toMatch(/GM|forced/i);
+  expect(afterForce1.table).toContain('rolled 1 +');
 });

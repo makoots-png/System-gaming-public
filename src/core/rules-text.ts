@@ -360,7 +360,6 @@ export function shadowLines(R: Pick<Rules, 'extractJobs' | 'shadow' | 'fight'>):
     `Extraction rolls d20 + Presence check bonus against DC ${S.dcBase} + ${S.dcPerRank} × (monster rank − hunter rank) + ${S.bossDc} for a boss (minimum ${S.dcMin}). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${S.maxAttempts} attempt${S.maxAttempts === 1 ? '' : 's'} per corpse.${extra}`,
     `On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster's rank and archetype. Its grade sets its monster kind. ${grades}`,
     `Army capacity = floor(${R.fight.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${r} ${S.summonMp[r]}`).join(', ')}. Unsummoning is free. Clearing a gate heals resting shadows to full HP.`,
-    ...(S.adjustMax > 0 ? [`Before an extraction or Arise roll, the GM can add a visible roll adjustment from −${S.adjustMax} to +${S.adjustMax} on a fallen monster. It applies to one roll and appears in the fight log. A natural 20 still succeeds and a natural 1 still fails.`] : []),
   ];
 }
 

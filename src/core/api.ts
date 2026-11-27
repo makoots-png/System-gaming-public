@@ -31,7 +31,7 @@ import type { StatBlock } from './registry/monsters.ts';
 import type { Gate, GateId, GateType } from './gates/gate.ts';
 import type { DifficultyLevel, DifficultyScale } from './gates/difficulty.ts';
 import type { WorldWhy } from './gates/world.ts';
-import type { NewRow, Running, Setup } from './combat/fight-types.ts';
+import type { ForcedFace, NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { SoloFight } from './gates/solo.ts';
 import type { ExtractKind, ExtractRoll } from './combat/roll-adjust.ts';
@@ -134,10 +134,10 @@ export type CombatApi = {
   status(cid: string, change: { add?: { key: string; def: StatusDef; rounds: number | null; tier: number }; remove?: string }): Applied;
   /**
    * An extraction attempt (`what`: `'shadow'` or `'blood'`) by hunter row `by` on fallen monster `cid` with `roll` and
-   * GM `adjust`: the fight's `extract` computes the outcome, keeps it on the row, clears `corpse.adjust`, and writes a
-   * shadow or Crimson Vessel (`rose`) with it, or nothing when refused. Answers as `adjust`.
+   * optional GM `adjust` or `force`: the fight's `extract` computes the outcome, keeps it on the row, clears
+   * `corpse.adjust` and `corpse.force`, and writes a shadow or Crimson Vessel (`rose`) with it, or nothing when refused. Answers as `adjust`.
    */
-  extracted(what: ExtractKind, cid: string, by: string, roll: ExtractRoll, adjust: number, rose: Rose | null): Applied;
+  extracted(what: ExtractKind, cid: string, by: string, roll: ExtractRoll, adjust: number, rose: Rose | null, force?: ForcedFace | null): Applied;
   /** Rows join the fight (a new one in setup when there is none; while it runs each rolls its opening). Answers how many joined. */
   add(list: JoinRow[]): number;
   isActive(): boolean;
@@ -162,7 +162,7 @@ export type CombatApi = {
  * hunter who rolls; without it, the active hunter on a player's phone and the GM on the GM's. `dc`: a check's DC, which
  * the log keeps with its result (`checkResult`).
  */
-export type RollOptions = { adv?: boolean; dis?: boolean; label?: string; silent?: boolean; kind?: RollKind; hid?: HunterId; dc?: number | null };
+export type RollOptions = { adv?: boolean; dis?: boolean; label?: string; silent?: boolean; kind?: RollKind; hid?: HunterId; dc?: number | null; force?: ForcedFace | null };
 /**
  * A roll; `kept` is the d20 kept under advantage or disadvantage (null without a single d20). `coin`: it called the coin.
  * `check`: a check's DC and result, null for a roll without a DC.
@@ -610,7 +610,7 @@ export type Rose = { readonly kind: 'local'; readonly step: Step<Save> } | { rea
  */
 export type ExtractTarget = {
   id: string; by: string; name: string; rank: Rank; archetype: Archetype; kind: MonsterKind; monster: string | null;
-  down: boolean; extractable: boolean; left: number; adjust: number;
+  down: boolean; extractable: boolean; left: number; adjust: number; force?: ForcedFace | null;
   bled?: boolean; ended?: boolean;
 };
 export type ShadowsApi = {

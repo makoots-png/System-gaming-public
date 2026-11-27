@@ -17,6 +17,7 @@ import type { Place, Side, Tiles } from './space.ts';
 import { roundsOf, tick, withSpeed } from './timeline.ts';
 import type { Clock, Tick } from './timeline.ts';
 import type { Ability, AbilityId, CombatantId, DamageType, HunterId, Tag } from './ability-types.ts';
+import type { ForcedFace } from './fight-types.ts';
 import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
 import type { MythicStanding } from './mythic-types.ts';
@@ -508,7 +509,7 @@ type HunterOwn = {
   readonly moved?: number;
   /** Extra panel shadow extraction attempts carried by this hunter's active awakened class (`RULES.shadow.classAttempts`). Absent when 0. */
   readonly extractBonus?: number;
-  readonly owner?: never; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly bled?: never;
+  readonly owner?: never; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
 };
 type MonsterOwn = {
   readonly kind: 'monster'; readonly life: FoeLife; readonly holder: null;
@@ -516,20 +517,22 @@ type MonsterOwn = {
   readonly mythic: MythicStanding | null; readonly moved?: never; readonly extractBonus?: never; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
   /** Set once Arise succeeds on this dead monster row, so each corpse rises at most once. */
   readonly rose?: true;
-  /** GM's visible signed roll adjustment for the next extraction or Arise roll on this corpse (`±RULES.shadow.adjustMax`). Absent when 0. */
+  /** GM's hidden signed roll adjustment for the next extraction or Arise roll on this corpse (any whole number). Absent when 0. */
   readonly adjust?: number;
+  /** GM's hidden forced natural d20 face (20 or 1) for the next extraction or Arise roll on this corpse. Absent when not forcing. */
+  readonly force?: ForcedFace;
   /** Set once blood extraction has been attempted on this dead monster row (one attempt per corpse, independent of shadow `extraction` and `rose`). */
   readonly bled?: true;
 };
 type ShadowOwn = {
   readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly extractBonus?: never; readonly owner: CombatantId; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly bled?: never;
+  readonly moved?: never; readonly extractBonus?: never; readonly owner: CombatantId; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
 };
 type SummonOwn = {
   readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly extractBonus?: never; readonly owner: CombatantId; readonly until: Tick | null; readonly extraction?: never; readonly adjust?: never; readonly bled?: never;
+  readonly moved?: never; readonly extractBonus?: never; readonly owner: CombatantId; readonly until: Tick | null; readonly extraction?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
   /** Present on a risen corpse (`until: null`): the dead monster row it rose from. Absent on timed summons. */
   readonly rose?: CombatantId;
 };

@@ -171,10 +171,9 @@ describe('the shadow lines', () => {
     expect(noBonus).not.toContain('awakened Necromancer');
   });
 
-  test('state the GM roll adjustment range from shadow.adjustMax, and drop the line when it is 0', () => {
-    expect(shadowLines(RULES).at(-1)).toContain(`−${RULES.shadow.adjustMax} to +${RULES.shadow.adjustMax}`);
-    const off = { ...RULES, shadow: { ...RULES.shadow, adjustMax: 0 } };
-    expect(shadowLines(off).some(l => l.includes('roll adjustment'))).toBe(false);
+  test('do not expose GM roll adjustment or forcing on the player-facing Rules page', () => {
+    const joined = shadowLines(RULES).join('\n');
+    expect(joined).not.toMatch(/roll adjustment|adjust roll|force natural/i);
   });
 
   test('name every shadow grade in SHADOW_KINDS with its monster kind, and state army capacity and summon costs', () => {

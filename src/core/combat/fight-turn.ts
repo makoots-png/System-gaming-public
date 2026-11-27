@@ -61,8 +61,10 @@ export const withRow = <F extends Fight>(f: F, row: Body): F => ({ ...f, rows: f
 
 /** The fight with `l` on top of its log, its words prefixed with the round once it has a time. */
 export function logged<F extends Fight>(f: F, l: LogLine, R: Rules): F {
-  const text = (f.phase === 'setup' ? l.text : `R${roundOf(f.now, R.fight)}: ${l.text}`).slice(0, LOG_LINE_MAX);
-  return { ...f, log: [{ ...l, text }, ...f.log].slice(0, LOG_CAP) };
+  const pre = f.phase === 'setup' ? '' : `R${roundOf(f.now, R.fight)}: `;
+  const text = `${pre}${l.text}`.slice(0, LOG_LINE_MAX);
+  const table = l.table === undefined ? undefined : `${pre}${l.table}`.slice(0, LOG_LINE_MAX);
+  return { ...f, log: [{ ...l, text, ...(table === undefined ? {} : { table }) }, ...f.log].slice(0, LOG_CAP) };
 }
 
 const scopeOf = (b: Body): Scope => ({ user: { stats: b.stats, sheet: b.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 });

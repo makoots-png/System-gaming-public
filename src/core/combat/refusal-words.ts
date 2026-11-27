@@ -22,7 +22,7 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   notHunter: 'Only a hunter can be refilled.',
   lifeCannot: 'Only a dead hunter or defeated combatant can be revived.',
   fudgeValue: 'Fudge must be a whole number, and a forced roll must be 1 or 20.',
-  adjustValue: 'Roll adjustment must be a whole number within the allowed range.',
+  adjustValue: 'Roll adjustment must be a whole number, and a forced roll must be 1 or 20.',
   notMythic: 'Only a scripted mythic monster has phases and omens.', noOmen: 'No omen is active.',
   omenStands: 'An omen is already active. Resolve, cancel, or drop it first.', omenDue: 'Its omen is due. Resolve the omen move where it was aimed.',
   lastPhase: 'This is the last phase. It ends when HP reaches 0.', weakened: 'The omen is already weakened.',

@@ -2392,7 +2392,8 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     refuses(f0, extract('A', 'failed'), 'notMonster');
     refuses(f0, extract('ghost', 'failed'), 'unknown');
     refuses(f0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 21, bonus: 0, dc: 10 } }, 'needsRoll');
-    refuses(f0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 0, dc: 10 }, adjust: RULES.shadow.adjustMax + 1 }, 'adjustValue');
+    refuses(f0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 0, dc: 10 }, adjust: 1.5 }, 'adjustValue');
+    refuses(f0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 0, dc: 10 }, force: 12 as never }, 'adjustValue');
   });
 
   test('after the fight ends its corpses may still be tried, until the fight is closed', () => {
@@ -2401,37 +2402,64 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     refuses(null, extract('M', 'failed'), 'notNow');
   });
 
-  test('adjustRoll sets per-corpse GM adjustment across setup, running, and ended; extract consumes and clears it and logs the modifier', () => {
-    // Setup accepts adjustRoll on monsters, refuses hunters, unknown rows, and out-of-range/non-integer values
+  test('adjustRoll sets uncapped adjustment or forced 20/1 across setup, running, and ended; extract consumes and clears both with player-safe table log', () => {
+    // Setup accepts uncapped adjustRoll and forced 20/1 on monsters, refuses hunters, unknown rows, non-integers, and invalid forces
     const s0 = play(add(row('A', 'party'), row('M', 'foe'))).fight!;
     refuses(s0, { type: 'adjustRoll', id: id('A'), n: 2 }, 'notMonster');
     refuses(s0, { type: 'adjustRoll', id: id('ghost'), n: 2 }, 'unknown');
-    refuses(s0, { type: 'adjustRoll', id: id('M'), n: RULES.shadow.adjustMax + 1 }, 'adjustValue');
     refuses(s0, { type: 'adjustRoll', id: id('M'), n: 1.5 }, 'adjustValue');
-    const s1 = play(add(row('A', 'party'), row('M', 'foe')), { type: 'adjustRoll', id: id('M'), n: 4 }).fight!;
-    expect(body(s1, 'M').adjust).toBe(4);
-    expect(reduce(s1, { type: 'adjustRoll', id: id('M'), n: 4 }, ctx).fight, 'setting same value is a no-op').toBe(s1);
+    refuses(s0, { type: 'adjustRoll', id: id('M'), force: 10 as never }, 'adjustValue');
+    refuses(s0, { type: 'adjustRoll', id: id('M') }, 'adjustValue');
+    const s1 = play(add(row('A', 'party'), row('M', 'foe')), { type: 'adjustRoll', id: id('M'), n: 50 }).fight!;
+    expect(body(s1, 'M').adjust).toBe(50);
+    expect(reduce(s1, { type: 'adjustRoll', id: id('M'), n: 50 }, ctx).fight, 'setting same value is a no-op').toBe(s1);
+    const sForce = reduce(s1, { type: 'adjustRoll', id: id('M'), force: 20 }, ctx).fight!;
+    expect(body(sForce, 'M').force).toBe(20);
+    expect(body(sForce, 'M').adjust, 'forcing clears standing adjust').toBeUndefined();
+    const sUnforce = reduce(sForce, { type: 'adjustRoll', id: id('M'), force: null }, ctx).fight!;
+    expect(body(sUnforce, 'M').force).toBeUndefined();
     expect(body(reduce(s1, { type: 'adjustRoll', id: id('M'), n: 0 }, ctx).fight, 'M').adjust, 'setting 0 clears field').toBeUndefined();
 
-    // Standing +2 turns 9 + 4 = 13 vs DC 15 into 9 + 4 + 2 = 15 (risen), logs + 2 GM, and clears adjust
-    const f1 = play(...fallen(), { type: 'adjustRoll', id: id('M'), n: 2 }).fight!;
-    expect(body(f1, 'M').adjust).toBe(2);
-    const f2 = reduce(f1, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 9, bonus: 4, dc: 15 } }, ctx).fight!;
+    // Uncapped +50 turns 2 + 4 = 6 vs DC 40 into 56 (risen), logs + 50 GM for GM and strips GM details in table text
+    const f1 = play(...fallen(), { type: 'adjustRoll', id: id('M'), n: 50 }).fight!;
+    expect(body(f1, 'M').adjust).toBe(50);
+    const f2 = reduce(f1, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 2, bonus: 4, dc: 40 } }, ctx).fight!;
     expect(body(f2, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
     expect(body(f2, 'M').adjust).toBeUndefined();
-    expect(f2.log[0]!.text).toContain('M rises as a shadow (rolled 9 + 4 + 2 GM = 15 vs DC 15).');
+    expect(f2.log[0]!.text).toContain('M rises as a shadow (rolled 2 + 4 + 50 GM = 56 vs DC 40).');
+    expect(f2.log[0]!.table).toContain('M rises as a shadow.');
+    expect(f2.log[0]!.table).not.toMatch(/GM|50|adjust/i);
+
+    // Forced natural 20 on shadow extraction plays as natural 20 (even on raw natural 1), clears force, and table text shows plain 20
+    const f20 = play(...fallen(), { type: 'adjustRoll', id: id('M'), force: 20 }).fight!;
+    const f20Done = reduce(f20, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 1, bonus: 4, dc: 99 } }, ctx).fight!;
+    expect(body(f20Done, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
+    expect(body(f20Done, 'M').force).toBeUndefined();
+    expect(f20Done.log[0]!.text).toContain('M rises as a shadow (rolled 20 + 4 = 24 vs DC 99, GM forced 20).');
+    expect(f20Done.log[0]!.table).toContain('M rises as a shadow (rolled 20 + 4 = 24 vs DC 99).');
+    expect(f20Done.log[0]!.table).not.toMatch(/GM|forced/i);
+
+    // Forced natural 1 on shadow extraction plays as natural 1 (crumbles even on raw natural 20), clears force, and table text shows plain 1
+    const f1Force = play(...fallen(), { type: 'adjustRoll', id: id('M'), force: 1 }).fight!;
+    const f1Done = reduce(f1Force, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 20, bonus: 50, dc: 5 } }, ctx).fight!;
+    expect(body(f1Done, 'M').extraction).toEqual({ at: 'gone', why: 'crumbled' });
+    expect(body(f1Done, 'M').force).toBeUndefined();
+    expect(f1Done.log[0]!.text).toContain('M\'s corpse is destroyed (rolled 1 + 50 = 51 vs DC 5, GM forced 1).');
+    expect(f1Done.log[0]!.table).toContain('M\'s corpse is destroyed (rolled 1 + 50 = 51 vs DC 5).');
+    expect(f1Done.log[0]!.table).not.toMatch(/GM|forced/i);
 
     // Modal override adjust in ended fight overrides standing adjust and clears corpse.adjust on fail too
     const e0 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), n: 5 }).fight!;
     expect(body(e0, 'M').adjust).toBe(5);
-    const e1 = reduce(e0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 5, dc: 15 }, adjust: -2 }, ctx).fight!;
+    const e1 = reduce(e0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 5, dc: 15 }, adjust: -25 }, ctx).fight!;
     expect(body(e1, 'M').extraction).toEqual({ at: 'open', tried: 1 });
     expect(body(e1, 'M').adjust).toBeUndefined();
-    expect(e1.log[0]!.text).toContain(`The extraction of M fails (rolled 10 + 5 - 2 GM = 13 vs DC 15, ${MAX - 1} left).`);
+    expect(e1.log[0]!.text).toContain(`The extraction of M fails (rolled 10 + 5 - 25 GM = -10 vs DC 15, ${MAX - 1} left).`);
+    expect(e1.log[0]!.table).toContain(`The extraction of M fails (${MAX - 1} left).`);
   });
 
-  test('blood extraction is post-fight only, sets independent MonsterRow.bled, consumes adjust, and never collides with shadow extraction or Arise', () => {
-    const bloodPass: Command = { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 14, bonus: 33, dc: 45 }, adjust: 2 };
+  test('blood extraction is post-fight only, sets independent MonsterRow.bled, consumes adjust/force, and never collides with shadow extraction or Arise', () => {
+    const bloodPass: Command = { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 14, bonus: 33, dc: 45 }, adjust: 25 };
     const bloodFail: Command = { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 1, bonus: 33, dc: 45 } };
 
     // Refused while setup or running
@@ -2441,19 +2469,38 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     const r0 = play(...fallen()).fight!;
     refuses(r0, bloodPass, 'notNow');
 
-    // Accepted in ended fight: sets bled: true, clears adjust, logs breakdown, refuses 2nd attempt
+    // Accepted in ended fight: sets bled: true, clears adjust, logs GM breakdown + player-safe table text, refuses 2nd attempt
     const e0 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), n: 5 }).fight!;
     const e1 = reduce(e0, bloodPass, ctx).fight!;
     expect(body(e1, 'M').bled).toBe(true);
     expect(body(e1, 'M').adjust).toBeUndefined();
     expect(body(e1, 'M').extraction).toBeUndefined();
-    expect(e1.log[0]!.text).toContain('A drains blood from M for a Crimson Vessel (rolled 14 + 33 + 2 GM = 49 vs DC 45).');
+    expect(e1.log[0]!.text).toContain('A drains blood from M for a Crimson Vessel (rolled 14 + 33 + 25 GM = 72 vs DC 45).');
+    expect(e1.log[0]!.table).toContain('A drains blood from M for a Crimson Vessel.');
+    expect(e1.log[0]!.table).not.toMatch(/GM|25/i);
     refuses(e1, bloodPass, 'noAttempts');
 
-    // Round-trip parseFight keeps MonsterRow.bled and refuses bled on non-monsters or non-true values
+    // Forced natural 20 and forced natural 1 on blood extraction both apply once and clear force
+    const eb20 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), force: 20 }).fight!;
+    const eb20Done = reduce(eb20, { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 1, bonus: 5, dc: 99 } }, ctx).fight!;
+    expect(body(eb20Done, 'M').bled).toBe(true);
+    expect(body(eb20Done, 'M').force).toBeUndefined();
+    expect(eb20Done.log[0]!.text).toContain('A drains blood from M for a Crimson Vessel (rolled 20 + 5 = 25 vs DC 99, GM forced 20).');
+    expect(eb20Done.log[0]!.table).toContain('A drains blood from M for a Crimson Vessel (rolled 20 + 5 = 25 vs DC 99).');
+
+    const eb1 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), force: 1 }).fight!;
+    const eb1Done = reduce(eb1, { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 20, bonus: 50, dc: 5 } }, ctx).fight!;
+    expect(body(eb1Done, 'M').bled).toBe(true);
+    expect(body(eb1Done, 'M').force).toBeUndefined();
+    expect(body(eb1Done, 'M').extraction, 'forced nat 1 blood extraction does not crumble shadow extraction').toBeUndefined();
+    expect(eb1Done.log[0]!.text).toContain('A\'s blood extraction fails on M (rolled 1 + 50 = 51 vs DC 5, GM forced 1).');
+    expect(eb1Done.log[0]!.table).toContain('A\'s blood extraction fails on M (rolled 1 + 50 = 51 vs DC 5).');
+
+    // Round-trip parseFight keeps MonsterRow.bled and LogLine.table and refuses bled on non-monsters or non-true values
     const reparsed = parseFight(JSON.parse(JSON.stringify(e1)), RULES);
     expect(reparsed).not.toBeNull();
     expect(body(reparsed, 'M').bled).toBe(true);
+    expect(reparsed!.log[0]!.table).toBe(e1.log[0]!.table);
     const badHunter = JSON.parse(JSON.stringify(e1));
     badHunter.rows[0].bled = true;
     expect(parseFight(badHunter, RULES)).toBeNull();

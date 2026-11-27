@@ -58,6 +58,14 @@ describe('an override of a list rule', () => {
     expect(refused).toEqual([{ path: 'dailyTemplate.objectives.1', reason: 'entry' }, { path: 'dailyTemplate.objectives.2', reason: 'entry' }]);
   });
 
+  test('legacy shadow.adjustMax is silently repaired on parse without refusal while sibling shadow rules are kept', () => {
+    expect(parseOverrides({ shadow: { adjustMax: 10 } })).toEqual({ overrides: {}, refused: [] });
+    expect(parseOverrides({ shadow: { adjustMax: 20, maxAttempts: 5 } })).toEqual({
+      overrides: { shadow: { maxAttempts: 5 } },
+      refused: [],
+    });
+  });
+
   test('legacy build, paths, slots and itemBudget.weaponStep overrides are refused as unknown while valid sibling overrides are kept', () => {
     const { overrides, refused } = parseOverrides({
       logCap: 75,

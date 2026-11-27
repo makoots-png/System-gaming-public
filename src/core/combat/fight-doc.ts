@@ -317,7 +317,7 @@ export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | n
     ended: false, active: f.phase === 'running', by: o.by, id: f.id, at: o.at, now, currentId,
     ahead: f.phase === 'running' ? ahead(f.rows.filter(isUp), DOC_AHEAD + hiddenRows.size, R.fight).map(r => r.id).filter(id => ids.has(id)).slice(0, DOC_AHEAD) : [],
     grid, zones, rows,
-    log: f.log.filter(l => !l.rows.some(x => hiddenRows.has(x)) && !l.zones.some(x => hiddenZones.has(x))).map(l => l.text).slice(0, DOC_LOG),
+    log: f.log.filter(l => !l.rows.some(x => hiddenRows.has(x)) && !l.zones.some(x => hiddenZones.has(x))).map(l => l.table ?? l.text).slice(0, DOC_LOG),
     refused: f.phase === 'running' && o.refused && o.refused.at === now ? o.refused : null,
     ready: readyOf(f.rows.find(b => b.id === currentId), now), ...leftOf(f.rows.find(b => b.id === currentId)), ...armedOf(seen, R),
     ...(o.burst ? { burst: { n: o.burst.n, ids: o.burst.ids.filter(id => ids.has(id)).slice(0, R.fight.kit.doArmed) } } : {}),

@@ -5,7 +5,10 @@ import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { ARMY, WALK_EVENTS } from './models/shadow-events.ts';
 import { shadowSheet } from '../src/core/combat/rows.ts';
 import { RULES, domainOf } from '../src/core/rules.ts';
-import { extractDiceExpr, extractDiceLabel, extractionCheck, rollCheckText } from '../src/core/combat/roll-adjust.ts';
+import { extractDiceExpr, extractDiceLabel, extractionCheck, plainRollCheckText, rollCheckText } from '../src/core/combat/roll-adjust.ts';
+import { parseOverrides } from '../src/core/overrides.ts';
+import { freshSave, parseSave } from '../src/core/save.ts';
+import { dev } from './fixtures/ids.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { newHunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -167,44 +170,61 @@ describe('the army\'s cap, an extraction\'s outcome and the grade a monster rise
   });
 });
 
-describe('PR A: GM roll adjustment on shadow extraction (20-face matrix, dice expression/label, rules domain)', () => {
-  test('RULES.shadow.adjustMax defaults to 10 with whole domain 0..20', () => {
-    expect(RULES.shadow.adjustMax).toBe(10);
-    expect(domainOf('shadow.adjustMax')).toMatchObject({ least: 0, most: 20, whole: true });
+describe('GM hidden roll adjustment and forced natural 20/1 on shadow extraction', () => {
+  test('RULES.shadow has no adjustMax cap, and parseOverrides / parseSave repair legacy shadow.adjustMax without refusing', () => {
+    expect('adjustMax' in RULES.shadow).toBe(false);
+    expect(domainOf('shadow.adjustMax')).toBeNull();
+    expect(parseOverrides({ shadow: { adjustMax: 10 } })).toEqual({ overrides: {}, refused: [] });
+    expect(parseOverrides({ shadow: { adjustMax: 15, maxAttempts: 5 } })).toEqual({ overrides: { shadow: { maxAttempts: 5 } }, refused: [] });
+    const env = { now: new Date('2026-11-26T00:00:00.000Z'), newDeviceId: () => dev('d-sh1'), newDeviceToken: () => 't'.repeat(32) };
+    const stored = { ...freshSave(env, { onboarded: true }), rulesOverrides: { shadow: { adjustMax: 10, maxAttempts: 4 } } };
+    const parsed = parseSave(JSON.stringify(stored), env);
+    expect(parsed.kind).toBe('save');
+    if (parsed.kind !== 'save') throw new Error('expected save');
+    expect(parsed.save.rulesOverrides).toEqual({ shadow: { maxAttempts: 4 } });
   });
 
-  test('20-face exact matrix across adjust in [-10..+10] preserves nat 20 auto-rise and nat 1 auto-crumble invariants', () => {
+  test('uncapped adjust matrix and forced 20 / forced 1 obey nat 20 auto-rise and nat 1 auto-crumble invariants', () => {
     const bonus = 6, dc = 15;
-    for (let adj = -10; adj <= 10; adj++) {
+    for (const adj of [-100, -10, 0, 10, 100]) {
       for (let natural = 1; natural <= 20; natural++) {
         const checked = extractionCheck({ natural, bonus, dc }, adj);
         const total = natural + bonus + adj;
         const expected = natural === 1 ? 'crumbled' : natural === 20 || total >= dc ? 'risen' : 'failed';
         expect(checked.total, `d20=${natural} adj=${adj}`).toBe(total);
         expect(checked.outcome, `d20=${natural} adj=${adj}`).toBe(expected);
+        expect(checked.forced).toBeNull();
         if (adj === 0) expect(checked.outcome).toBe(extractOutcome({ natural, total }, dc));
       }
       expect(extractionCheck({ natural: 1, bonus: 50, dc: 5 }, adj).outcome, `nat 1 always crumbles at adj=${adj}`).toBe('crumbled');
       expect(extractionCheck({ natural: 20, bonus: -5, dc: 100 }, adj).outcome, `nat 20 always rises at adj=${adj}`).toBe('risen');
     }
+    // Forced 20 plays as natural 20 even when raw roll is 1 and DC is unreachable
+    const f20 = extractionCheck({ natural: 1, bonus: -5, dc: 999 }, -50, 20);
+    expect(f20).toEqual({ natural: 20, bonus: -5, adjust: 0, forced: 20, total: 15, dc: 999, outcome: 'risen' });
+    // Forced 1 plays as natural 1 (crumbles) even when raw roll is 20 and bonus dwarfs DC
+    const f1 = extractionCheck({ natural: 20, bonus: 100, dc: 5 }, 50, 1);
+    expect(f1).toEqual({ natural: 1, bonus: 100, adjust: 0, forced: 1, total: 101, dc: 5, outcome: 'crumbled' });
   });
 
-  test('extractDiceExpr, extractDiceLabel, and rollCheckText format positive, negative, and zero adjustments cleanly', () => {
-    expect(extractDiceExpr(6, 2)).toBe('1d20+6+2');
-    expect(extractDiceExpr(6, -2)).toBe('1d20+6-2');
-    expect(extractDiceExpr(6, 0)).toBe('1d20+6');
-    expect(extractDiceExpr(-1, 3)).toBe('1d20-1+3');
-    for (const expr of ['1d20+6+2', '1d20+6-2', '1d20+6', '1d20-1+3', '1d20+0-5']) {
+  test('extractDiceExpr, extractDiceLabel, plainRollCheckText, and rollCheckText keep player text plain and GM text explicit', () => {
+    expect(extractDiceExpr(6)).toBe('1d20+6');
+    expect(extractDiceExpr(0)).toBe('1d20+0');
+    expect(extractDiceExpr(-1)).toBe('1d20-1');
+    for (const expr of ['1d20+6', '1d20+0', '1d20-1']) {
       expect(parseFormula(expr, RULES).ok, `parseFormula(${expr})`).toBe(true);
     }
 
-    expect(extractDiceLabel('shadow', 'Igris', 2)).toBe('Extract shadow: Igris (GM +2)');
-    expect(extractDiceLabel('shadow', 'Igris', -2)).toBe('Extract shadow: Igris (GM -2)');
-    expect(extractDiceLabel('shadow', 'Igris', 0)).toBe('Extract shadow: Igris');
+    expect(extractDiceLabel('shadow', 'Igris')).toBe('Extract shadow: Igris');
+    expect(extractDiceLabel('blood', 'Igris')).toBe('Extract blood: Igris');
 
-    expect(rollCheckText(9, 6, 2, 15)).toBe('9 + 6 + 2 GM = 17 vs DC 15');
+    expect(plainRollCheckText(20, 6, 21)).toBe('20 + 6 = 26 vs DC 21');
+    expect(plainRollCheckText(8, -1, 12)).toBe('8 - 1 = 7 vs DC 12');
+
+    expect(rollCheckText(9, 6, 50, 15)).toBe('9 + 6 + 50 GM = 65 vs DC 15');
     expect(rollCheckText(9, 6, 0, 15)).toBe('9 + 6 = 15 vs DC 15');
-    expect(rollCheckText(11, 10, -2, 13)).toBe('11 + 10 - 2 GM = 19 vs DC 13');
-    expect(rollCheckText(8, -1, 3, 12)).toBe('8 - 1 + 3 GM = 10 vs DC 12');
+    expect(rollCheckText(11, 10, -25, 13)).toBe('11 + 10 - 25 GM = -4 vs DC 13');
+    expect(rollCheckText(20, 6, 0, 21, 20)).toBe('20 + 6 = 26 vs DC 21, GM forced 20');
+    expect(rollCheckText(1, 6, 0, 10, 1)).toBe('1 + 6 = 7 vs DC 10, GM forced 1');
   });
 });
