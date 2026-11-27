@@ -860,3 +860,4 @@ ts	phase	decision	why	evidence	result
 2026-11-27T04:45Z	combat	PR 163: extraction by rank (rank-driven DCs, no auto-pass from C up; rank-scaled shadow/risen bodies and vessel power; sims >= 75%)
 2026-11-27T05:09Z	story	PR 164: the owner's primer + London history + required Beat 1 card; gates break at 7 days at every rank
 2026-11-27T08:10Z	npc	PR 165: NPC builder units 1-3 and 6 (template, maker, fight rows, gate roster) with Fable review fixes; unit 7779/0; full browser (landK) + touched set; CI 45961831164 8/8
+2026-11-27T09:22Z	npc	PR 166: NPC unit 4 (skill slider, foe NPC stagger, NPC sims) + item-sync/npc-builder flake fixes; unit 7794/0; touched browser 104+1skip; CI 45965825266 8/8

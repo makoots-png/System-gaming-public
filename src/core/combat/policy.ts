@@ -400,11 +400,28 @@ export function skilled(f: Running, me: Body, R: Rules, best: TurnChoice, random
   return { type: 'act', ability: last.a, aim: last.aim };
 }
 
+/** Delay in ms before an automatic NPC turn plays itself on the GM's phone (npc-final.md section 3). */
+export const NPC_AUTO_MS = 650;
+
 /** Why `autoTurnOf` cannot build an automatic turn right now. */
 export type AutoTurnRefusal = 'notNow' | 'dodging' | 'notYourTurn' | 'unknown' | 'down' | 'notMonster' | 'needsRandom';
 
 /** Whether `b` is a row eligible for automatic GM turns: monsters and NPCs (`kind === 'hunter'` with `npc`). */
 export const isAutoRow = (b: Body): boolean => b.kind === 'monster' || (b.kind === 'hunter' && b.npc !== undefined);
+
+/**
+ * Whether an NPC's turn is due to play itself on the GM's phone right now: returns `f.currentId` while `f` is running
+ * in `acting` state (not dodging, owing dice, or landing a mythic omen) and the current row is an up NPC
+ * (`kind === 'hunter'` with `npc`). Monsters, player hunters, shadows, summons, down rows, and non-running fights
+ * return `null`.
+ */
+export function autoDue(f: Fight | null): CombatantId | null {
+  if (!f || f.phase !== 'running') return null;
+  if (runningState(f).at !== 'acting') return null;
+  const cur = f.rows.find(r => r.id === f.currentId);
+  if (!cur || !isUp(cur) || cur.kind !== 'hunter' || cur.npc === undefined) return null;
+  return f.currentId;
+}
 
 /**
  * What one automatic turn asks of the edge: refused (`kind: 'refused'`), a command ready to send

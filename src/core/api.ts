@@ -674,8 +674,9 @@ export type SyncApi = {
   /**
    * `waiting`: the messages this phone has posted for its room that the room does not have yet (src/core/sync/outbox.ts).
    * `joining`: the room a join under way goes to, from whichever window started it.
+   * `heard`: true once the current live stretch of the link has applied a poll of the room's docs.
    */
-  detail(): { conn: Connection; room: RoomCode | null; lastOk: number; online: boolean; unsent: boolean; locked: boolean; waiting: number; joining: RoomCode | null };
+  detail(): { conn: Connection; room: RoomCode | null; lastOk: number; online: boolean; unsent: boolean; locked: boolean; waiting: number; joining: RoomCode | null; heard: boolean };
   /** The room the link is in: live, or the one a create or join started from. A view asks `app.seat()` whether it is in one. */
   room(): RoomCode | null;
   /** A room event of `type` with its id (newEvent in src/core/protocol.ts), or null for a body the server would refuse. */

@@ -1361,7 +1361,7 @@ export function register(app: SyncHost): void {
   /** The sheet has changes the server does not have yet. */
   const unsent = (): boolean => push.at !== 'off' && push.at !== 'clean';
   const detail = () => ({ conn: conn(), room: room(), lastOk, online: navigator.onLine, unsent: unsent(), locked: locked(), waiting: waiting(box(), room()),
-    joining: link.at === 'joining' ? link.code : null });
+    joining: link.at === 'joining' ? link.code : null, heard: link.at === 'live' && shown.gen === link.gen });
   const nInt = (x: unknown, max = 99999): number => Math.max(-max, Math.min(max, Math.trunc(Number(x)) || 0));
   /** The GM's list of sheets, online (polled in the last 15 s), away, or unknown when the server sent no presence. */
   function roster(): ReturnType<SyncApi['roster']> {

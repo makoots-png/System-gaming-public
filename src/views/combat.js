@@ -22,7 +22,7 @@ import { classExtractOf } from '../core/registry/class-powers.ts';
 import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/rise.ts';
 import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
-import { autoTurnOf, isAutoRow } from '../core/combat/policy.ts';
+import { NPC_AUTO_MS, autoDue, autoTurnOf, isAutoRow } from '../core/combat/policy.ts';
 import { WAIT_WORDS, aims, answersBy, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { omenMove, omenNeeds } from '../core/combat/fight-turn.ts';
 import { runningState } from '../core/combat/fight.ts';
@@ -104,6 +104,15 @@ export function register(app) {
   const ctx = () => ({ rules: rules() });
   /** The target each row's move control and use picker start on, by row id. */
   const picks = new Map();
+  /** GM-only preference for whether NPC turns play automatically (default true), kept on this phone only. */
+  const npcAutoMemory = store.device('npcAuto');
+  const npcAutoOn = () => npcAutoMemory.read() !== false;
+  /**
+   * The one timer waiting to play the current NPC's automatic turn (`autoDue`, `NPC_AUTO_MS`), tagged with the row id
+   * and fight tick it was armed for so unrelated store writes neither reset nor duplicate it.
+   * @type {{ timer: ReturnType<typeof setTimeout>; id: import('../core/combat/ability-types.ts').CombatantId; at: import('../core/combat/timeline.ts').Tick } | null}
+   */
+  let npcAutoTimer = null;
 
   // ── the one writer of the fight ──
   /** What a command the store refused did: nothing (its refusal was told by its kind, `ui.wrote`). */
@@ -135,7 +144,11 @@ export function register(app) {
    */
   function sendAll(cmds, links = null, also = null, risen = null) {
     const effects = command(cmds, links, also, risen);
-    if (!refused(effects)) payOwed();
+    if (!refused(effects)) {
+      cancelNpcAuto();
+      payOwed();
+      scheduleNpcAuto();
+    }
     return effects;
   }
   /**
@@ -223,8 +236,53 @@ export function register(app) {
       if (refused(fx)) return;
     }
   }
-  // a fight stored with dice still owed (the page was left before they were rolled) is paid when the app opens
-  app.on('ready', () => { payOwed(); void offerDrop(); });
+  /** Whether this GM phone is seated in a room on a live link that has not heard this stretch's docs yet. */
+  const awaitingDocs = () => inRoomAsGM() && !A().sync.detail().heard;
+  function cancelNpcAuto() {
+    if (npcAutoTimer) { clearTimeout(npcAutoTimer.timer); npcAutoTimer = null; }
+  }
+  /**
+   * Schedules the one named timer (`NPC_AUTO_MS`) to run the current NPC's turn automatically when `autoDue` holds,
+   * this phone runs the fight, the GM switch is on, a live GM room has heard this stretch, no other GM device owns
+   * the room fight, the tab is visible, and storage is writable. Idempotent for the same `(id, f.now)` so unrelated
+   * store writes never reset the countdown.
+   */
+  function scheduleNpcAuto() {
+    if (!canRun() || store.readOnly || !npcAutoOn() || awaitingDocs() || otherGMRunning() || document.visibilityState !== 'visible') {
+      cancelNpcAuto();
+      return;
+    }
+    const f = fight(), id = autoDue(f);
+    if (!id || !running(f)) { cancelNpcAuto(); return; }
+    if (npcAutoTimer && npcAutoTimer.id === id && npcAutoTimer.at === f.now) return;
+    cancelNpcAuto();
+    const at = f.now;
+    const timer = setTimeout(() => {
+      npcAutoTimer = null;
+      runNpcAuto(id, at);
+    }, NPC_AUTO_MS);
+    npcAutoTimer = { timer, id, at };
+  }
+  /** Updates this phone's GM switch for automatic NPC turns (`store.device('npcAuto')`) and updates the timer. */
+  function setNpcAuto(on) {
+    npcAutoMemory.write(Boolean(on));
+    if (on) scheduleNpcAuto();
+    else cancelNpcAuto();
+    render();
+  }
+  // a fight stored with dice still owed (the page was left before they were rolled) is paid when the app opens,
+  // and an active NPC turn resumes its automatic timer after reload
+  app.on('ready', () => { payOwed(); scheduleNpcAuto(); void offerDrop(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') scheduleNpcAuto();
+    else cancelNpcAuto();
+  });
+  app.on('change', p => {
+    if (!canRun() || store.readOnly || awaitingDocs() || otherGMRunning() || (p && p.reason === 'storage')) { cancelNpcAuto(); return; }
+    if (p && (p.replaced || p.reason === 'mode')) scheduleNpcAuto();
+  });
+  app.on('sync:docs', scheduleNpcAuto);
+  app.on('sync:room', scheduleNpcAuto);
 
   /**
    * What the fight just did, drawn in the frame after the one that shows it: a burst for a crit, a kill, a stagger and a
@@ -402,13 +460,15 @@ export function register(app) {
         return `${x.target.name} · ${d}`;
       };
       if (b) b.disabled = true;
+      cancelNpcAuto();
       const id = await ui.system({ tag: '! Fight', title: `Use ${a.name} on…`, ...(body ? { body } : {}), layout: 'list',
         actions: [...sorted.map((x, i) => ({ label: labelOf(x), value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
       if (b) b.disabled = false;
-      const t = id ? list.find(x => x.target.id === id) : null; if (!t) return;
+      const t = id ? list.find(x => x.target.id === id) : null;
+      if (!t) { scheduleNpcAuto(); return; }
       aim = a.aim === 'place' ? t.target.place : t.target.id;
     }
-    useAt(row, a, aim);
+    if (!useAt(row, a, aim)) scheduleNpcAuto();
   }
   /** The dice `n` asks for a use by row `by` of fight `f`, drawn on this phone with the fight's weights (fudge.ts `weightsFor`). */
   const drawnFor = (f, by, n) => rollNeeds(n, cryptoRandom, weightsFor(f, by, n));
@@ -416,11 +476,11 @@ export function register(app) {
   const plannedFor = (f, by, at) => autoTurnOf(f, by, rules(), at, cryptoRandom);
   /** `row` uses `a` at `aim` (a row id or a tile): the dice `needs` asks for and the fight's `act` (an item leaves the bag in its write). */
   function useAt(row, a, aim) {
-    const g = fight(), u = rowOf(g, row.id); if (!running(g) || !u) return;
+    const g = fight(), u = rowOf(g, row.id); if (!running(g) || !u) return false;
     const risenWas = a.raise ? new Set(g.rows.filter(isRisen).map(x => x.id)) : null;
     const prevTop = g.log[0] ?? null;
     const fx = send({ type: 'act', by: u.id, ability: a.id, aim, rolls: drawnFor(g, u.id, needs(a, u, g.rows, aim, g.grid, g.now, rules())) });
-    if (refused(fx)) return;
+    if (refused(fx)) return false;
     const after = fight();
     const risenNow = risenWas && after ? after.rows.find(x => isRisen(x) && !risenWas.has(x.id)) : null;
     if (risenNow) afterFrame(() => {
@@ -436,6 +496,7 @@ export function register(app) {
     const riseLine = riseEntry ? (app.isGM() ? riseEntry.text : (riseEntry.table ?? riseEntry.text)) : null;
     // the line the use logged, as the fight answers it, once the map or the card shows what it did
     for (const x of fx) if (x.type === 'used') { const said = riseLine || x.line; afterFrame(() => toast(said)); }
+    return true;
   }
 
   /** `row`'s channel goes off: a holding one on its turn at its charge, a broken one at once at half (design 4.1). */
@@ -458,8 +519,32 @@ export function register(app) {
   }
 
   /**
-   * Runs monster or NPC `by`'s current turn via `autoTurnOf` (`policy.ts`), rolling only the dice it requests through
-   * `drawnFor` so fudge applies identically to hand rolls and dodge prompts pause as usual.
+   * Executes one planned automatic turn for monster or NPC `by` at tick `at`, rolling only the dice `autoTurnOf`
+   * requests through `drawnFor` so fudge applies identically to hand rolls and dodge prompts pause as usual.
+   * @param {import('../core/combat/ability-types.ts').CombatantId} by
+   * @param {import('../core/combat/timeline.ts').Tick | undefined} at
+   */
+  function playAutoTurn(by, at) {
+    const g = fight();
+    const plan = plannedFor(g, by, at);
+    if (plan.kind === 'refused') { toast(REFUSAL_WORDS[plan.reason], 'warning'); return; }
+    if (!running(g)) return;
+    const cmd = plan.kind === 'ready' ? plan.command : plan.command(drawnFor(g, plan.by, plan.needs));
+    const fx = send(cmd);
+    if (refused(fx) || fx.some(x => x.type === 'dodgeAsked')) return;
+    const used = fx.filter(x => x.type === 'used');
+    if (used.length) { for (const x of used) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); } }
+    else if (plan.note) { const said = plan.note; afterFrame(() => toast(said)); }
+  }
+  /** Runs the scheduled automatic NPC turn once `NPC_AUTO_MS` elapses, re-verifying every guard before acting. */
+  function runNpcAuto(by, at) {
+    if (!canRun() || store.readOnly || !npcAutoOn() || awaitingDocs() || otherGMRunning() || document.visibilityState !== 'visible') return;
+    const g = fight();
+    if (!running(g) || autoDue(g) !== by || g.now !== at) return;
+    playAutoTurn(by, at);
+  }
+  /**
+   * Runs monster or NPC `by`'s current turn on GM tap (`Auto turn` for monsters, `Step once` for NPCs).
    * @param {import('../core/combat/ability-types.ts').CombatantId} by
    * @param {import('../core/combat/timeline.ts').Tick | undefined} at
    * @param {{ disabled: boolean } | null} [btn]
@@ -471,16 +556,8 @@ export function register(app) {
       if (btn) btn.disabled = false;
       if (!ok) return;
     }
-    const g = fight();
-    const plan = plannedFor(g, by, at);
-    if (plan.kind === 'refused') { toast(REFUSAL_WORDS[plan.reason], 'warning'); return; }
-    if (!running(g)) return;
-    const cmd = plan.kind === 'ready' ? plan.command : plan.command(drawnFor(g, plan.by, plan.needs));
-    const fx = send(cmd);
-    if (refused(fx) || fx.some(x => x.type === 'dodgeAsked')) return;
-    const used = fx.filter(x => x.type === 'used');
-    if (used.length) { for (const x of used) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); } }
-    else if (plan.note) { const said = plan.note; afterFrame(() => toast(said)); }
+    cancelNpcAuto();
+    playAutoTurn(by, at);
   }
 
   // ── a player's tap from another phone (`step`, `cast`, `pass` and `dodge`) ──
@@ -568,11 +645,12 @@ export function register(app) {
   function removeRow(r) { send({ type: 'remove', id: r.id }); sel = null; }
   /** The Status window: a status put on `r` from the GM, at the tier the window picked (the target's rank by default). */
   async function addStatus(r) {
+    cancelNpcAuto();
     const st = await A().forge.status({ mode: 'apply', title: `Status for ${r.name}`, target: r.name, rank: rankOf(r) });
-    if (!st || !st.key) return;
-    const def = rules().conditions[st.key] || st.def; if (!def) return;
+    if (!st || !st.key) { scheduleNpcAuto(); return; }
+    const def = rules().conditions[st.key] || st.def; if (!def) { scheduleNpcAuto(); return; }
     const tier = st.source && Number.isFinite(st.source.tier) ? st.source.tier : r.tier;
-    send({ type: 'status', id: r.id, add: statusGrant(st.key, def, st.rounds ?? null, tier, rules()) });
+    if (refused(send({ type: 'status', id: r.id, add: statusGrant(st.key, def, st.rounds ?? null, tier, rules()) }))) scheduleNpcAuto();
   }
 
   // ── the end of a fight ──
@@ -614,17 +692,18 @@ export function register(app) {
     if (plan.award > 0 && nPart) actions.push({ label: 'Award XP to party', value: 'award', primary: true });
     actions.push({ label: 'End without XP', value: 'skip', primary: !(plan.award > 0 && nPart) });
     const body = `${plan.dead.length} defeated in ${plan.rounds} round${plan.rounds === 1 ? '' : 's'}.`;
+    cancelNpcAuto();
     const v = await ui.system({ tag: '! Fight', title: 'Fight over', kind: 'quest', body, lines, actions });
-    if (v !== 'award' && v !== 'skip') return;
+    if (v !== 'award' && v !== 'skip') { scheduleNpcAuto(); return; }
     const curFight = fight();
     if (curFight && curFight.phase !== 'ended') send({ type: 'end' });
-    const ended = fight(); if (!ended || ended.phase !== 'ended' || ended.id !== plan.fightId) return;
+    const ended = fight(); if (!ended || ended.phase !== 'ended' || ended.id !== plan.fightId) { scheduleNpcAuto(); return; }
     // the plan again from the fight as it ended (the end the GM confirmed), then one step
     const done = planEncounter(ended, links.gate, store.get(), R.gateParty, xpOf), S = A().sync;
     const posts = { room: S.room(), events: encounterAwards(done, v).flatMap(b => { const e = S.event('award', b); return e ? [e] : []; }) };
     /** @type {{ settled: import('../core/gates/pay.ts').Settled | null }} */
     const out = { settled: null };
-    if (!ui.wrote('! Fight', store.apply('combat-ended', sv => { const r = settleEncounter(sv, done, v, posts, dayNow(), loot); if (isRefused(r)) return r; out.settled = r; return r.save; }))) return;
+    if (!ui.wrote('! Fight', store.apply('combat-ended', sv => { const r = settleEncounter(sv, done, v, posts, dayNow(), loot); if (isRefused(r)) return r; out.settled = r; return r.save; }))) { scheduleNpcAuto(); return; }
     const settled = out.settled;
     if (!settled) return;
     S.flush();
@@ -648,15 +727,21 @@ export function register(app) {
    * offered again when the app next opens or the next fight ends.
    */
   async function offerDrop() {
-    for (;;) {
-      const loot = store.get().loot, d = lootOffered(loot); if (!d || !app.isGM()) return;
-      const more = loot.at === 'waiting' ? loot.drops.length - 1 : 0;
-      const after = more ? ` ${lootMoreLine(more)}` : '';
-      const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: `Tap Award loot to open the Award form with this loot. Tap Set aside to skip awarding it.${after}`, lines: [lootText(d)],
-        actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
-      // the Award form opens the drop this window offered, the oldest (gm.js `award.open`)
-      if (give === 'award') return A().award.open({ ...newRewards(), gold: d.gold, items: d.items }, undefined, true);
-      if (give !== 'aside' || !ui.wrote('! Fight', store.apply('drop-aside', s => dropDealt(s, d.fight)), LOOT_WORDS)) return;
+    if (!app.isGM() || !lootOffered(store.get().loot)) return;
+    cancelNpcAuto();
+    try {
+      for (;;) {
+        const loot = store.get().loot, d = lootOffered(loot); if (!d || !app.isGM()) return;
+        const more = loot.at === 'waiting' ? loot.drops.length - 1 : 0;
+        const after = more ? ` ${lootMoreLine(more)}` : '';
+        const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: `Tap Award loot to open the Award form with this loot. Tap Set aside to skip awarding it.${after}`, lines: [lootText(d)],
+          actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
+        // the Award form opens the drop this window offered, the oldest (gm.js `award.open`)
+        if (give === 'award') return A().award.open({ ...newRewards(), gold: d.gold, items: d.items }, undefined, true);
+        if (give !== 'aside' || !ui.wrote('! Fight', store.apply('drop-aside', s => dropDealt(s, d.fight)), LOOT_WORDS)) return;
+      }
+    } finally {
+      scheduleNpcAuto();
     }
   }
   /** What a fight dropped, in one line: "50 gold, Frost Shard ×2"; '' for nothing. */
@@ -878,6 +963,7 @@ export function register(app) {
 .cmb-fdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:6px;vertical-align:middle}
 .cmb-fz{display:flex;flex-direction:column;gap:6px}.cmb-fz .seg>button{min-width:0}
 .cmb-npcskill:empty{display:none}.cmb-nskill{flex:1 1 100%;min-width:0}.cmb-nskill[hidden]{display:none}
+.cmb-npcauto{display:flex;flex-direction:column;gap:4px}.cmb-npcauto[hidden]{display:none}.cmb-npcauto .seg>button{min-width:0}
 .cmb-adj{display:flex;flex-direction:column;gap:4px}.cmb-adj-box{display:flex;flex-direction:column;gap:6px}.cmb-adj .cmb-step{flex-wrap:wrap;justify-content:space-between;width:100%}.cmb-adj .cmb-step .lbl{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.cmb-adj .cmb-step-btns{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}.cmb-adj-in{width:4.5em;min-height:var(--control-h);padding:4px 6px;text-align:center;font-family:var(--font-mono);color:var(--ice)}.cmb-adj .seg>button{min-width:0}.cmb-adj .cmb-hint{margin:0;font-size:12px;color:var(--muted)}
 .cmb-eyes{display:flex;flex-direction:column;gap:4px}.cmb-eyes .seg>button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win.cmb-mapmode .cmb-log{max-height:none}
@@ -1126,8 +1212,9 @@ export function register(app) {
         return isRefused(vesselUpgradePlan(active.entry.vessels, rankOf(r), vKind, spec.cap)) ? [] : [{ row: x, h, label: spec.label }];
       }) : [];
     const waitDodge = running(f) && !!f.dodge;
+    const autoLabel = r.kind === 'hunter' && r.npc ? 'Step once' : 'Auto turn';
     const turnAct = now && !k.down && isAutoRow(r) && running(f)
-      ? `<div class="cmb-auto"><button type="button" class="primary" data-fk="auto" data-auto="${esc(r.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button></div>`
+      ? `<div class="cmb-auto"><button type="button" class="primary" data-fk="auto" data-auto="${esc(r.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>${autoLabel}</button></div>`
       : '';
     return {
       ...base,
@@ -1190,20 +1277,21 @@ export function register(app) {
   /** The GM announces `r`'s next action: an ability, then a target among the rows its side would aim at (fight-view.ts `aims`). */
   async function setIntent(r) {
     const f = fight(); if (!f) return;
+    cancelNpcAuto();
     const aid = await ui.system({ tag: '! Fight', title: `${r.name} will use…`, layout: 'list',
       actions: [...r.abilities.map((a, i) => ({ label: a.name, value: a.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
-    const a = aid && r.abilities.find(x => x.id === aid); if (!a) return;
+    const a = aid && r.abilities.find(x => x.id === aid); if (!a) { scheduleNpcAuto(); return; }
     let aim = r.id;
     if (a.aim === 'place' && a.range === 0) aim = r.place;
     else if (a.aim !== 'self') {
       const list = aims(spots(f), r.id, a, f.grid);
-      if (!list.length) { toast('No valid targets.', 'warning'); return; }
+      if (!list.length) { toast('No valid targets.', 'warning'); scheduleNpcAuto(); return; }
       const id = await ui.system({ tag: '! Fight', title: `${a.name} at…`, layout: 'list',
         actions: [...list.map((x, i) => ({ label: `${x.target.name} · ${x.dist} tile${x.dist === 1 ? '' : 's'}`, value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
-      const t = id ? list.find(x => x.target.id === id) : null; if (!t) return;
+      const t = id ? list.find(x => x.target.id === id) : null; if (!t) { scheduleNpcAuto(); return; }
       aim = a.aim === 'place' ? t.target.place : t.target.id;
     }
-    send({ type: 'setIntent', by: r.id, ability: a.id, aim });
+    if (refused(send({ type: 'setIntent', by: r.id, ability: a.id, aim }))) scheduleNpcAuto();
   }
 
   /** A row of the order ahead: its fields are `rowDesc`'s. */
@@ -1237,6 +1325,7 @@ export function register(app) {
       <div data-main></div>
       <div class="cmb-tools" data-tools aria-label="Fight tools"><div class="cmb-toolshead"><b>Fight tools</b><span class="slot" data-toolacts></span><button type="button" class="quiet" data-toolsx>Close</button></div>
       <div class="cmb-fudge" data-fudge hidden></div>
+      <div class="cmb-npcauto" data-npcauto hidden></div>
       <div class="cmb-mythsw" data-mythsw hidden></div>
       <div class="cmb-eyes" data-eyesrow hidden><span class="lbl" aria-hidden="true">View map as</span><div class="seg" role="group" aria-label="View map as" data-eyesseg></div></div>
       <div data-buildwrap><details class="cmb-build" data-build open><summary>Add to the fight</summary><div class="cmb-bgrid">
@@ -1368,12 +1457,18 @@ export function register(app) {
         return;
       }
       if (b.hasAttribute('data-mythsw-btn')) { ui.wrote('GM', store.apply('gm-rules', st => mythicSwitched(st, !rules().fight.mythic.scripts))); return; }
+      if (b.dataset.npcAuto) { setNpcAuto(b.dataset.npcAuto === 'on'); return; }
       const mid = b.dataset.myland || b.dataset.mydrop || b.dataset.mynext, mrow = mid && rowOf(f, mid);
       if (mrow) {
         if (b.dataset.myland) return landOmenOf(mrow);
         if (b.dataset.mydrop) { send({ type: 'mythic', by: mrow.id, step: 'drop' }); return; }
         const seen = mythicSeenOf(mrow), nx = seen ? mythicHand(seen).next : null;
-        if (nx && await ui.confirm({ title: nx.label, body: nx.ask, confirmLabel: nx.yes })) send({ type: 'mythic', by: mrow.id, step: 'next' });
+        if (nx) {
+          cancelNpcAuto();
+          if (await ui.confirm({ title: nx.label, body: nx.ask, confirmLabel: nx.yes })) {
+            if (refused(send({ type: 'mythic', by: mrow.id, step: 'next' }))) scheduleNpcAuto();
+          } else scheduleNpcAuto();
+        }
         return;
       }
       if (b.hasAttribute('data-start')) return start();
@@ -1395,7 +1490,11 @@ export function register(app) {
       }
       if (b.hasAttribute('data-end')) { overTo({ at: 'none' }); return endEncounter(); }
       if (b.hasAttribute('data-clear')) {
-        if (await ui.confirm({ title: 'Clear the fight?', body: 'Clearing removes every combatant and empties the fight log. Nobody gets XP.', danger: true, confirmLabel: 'Clear fight' })) { send({ type: 'clear' }); sel = null; }
+        cancelNpcAuto();
+        if (await ui.confirm({ title: 'Clear the fight?', body: 'Clearing removes every combatant and empties the fight log. Nobody gets XP.', danger: true, confirmLabel: 'Clear fight' })) {
+          if (refused(send({ type: 'clear' }))) scheduleNpcAuto();
+          else sel = null;
+        } else scheduleNpcAuto();
         return;
       }
       if (b.hasAttribute('data-addh')) {
@@ -1466,7 +1565,14 @@ export function register(app) {
       if (b.hasAttribute('data-cforge')) return addStatus(r);
       if (b.hasAttribute('data-defeat')) { adjust(r, { hp: -cardOf(f, r, rules()).hpMax }); return; }
       if (b.hasAttribute('data-revive')) { revive(r); return; }
-      if (b.hasAttribute('data-remove')) { if (await ui.confirm({ title: 'Remove combatant?', body: r.name, danger: true, confirmLabel: 'Remove combatant' })) removeRow(r); return; }
+      if (b.hasAttribute('data-remove')) {
+        cancelNpcAuto();
+        if (await ui.confirm({ title: 'Remove combatant?', body: r.name, danger: true, confirmLabel: 'Remove combatant' })) {
+          if (refused(send({ type: 'remove', id: r.id }))) scheduleNpcAuto();
+          else sel = null;
+        } else scheduleNpcAuto();
+        return;
+      }
       if (b.dataset.ab) return useAbility(r, b.dataset.ab, b);
       if (b.hasAttribute('data-intent-set')) return setIntent(r);
       if (b.hasAttribute('data-intent-reveal')) { send({ type: 'reveal', by: r.id }); return; }
@@ -1642,7 +1748,7 @@ export function register(app) {
     if (mapMode) {
       const c = act ? rowOf(f, f.currentId) : null;
       const autoBtn = c && isAutoRow(c) && isUp(c)
-        ? `<button type="button" data-fk="bar-auto" data-auto="${esc(c.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button>`
+        ? `<button type="button" data-fk="bar-auto" data-auto="${esc(c.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>${c.kind === 'hunter' && c.npc ? 'Step once' : 'Auto turn'}</button>`
         : '';
       return {
         head: `${elsewhere}<div class="cmb-head">Round ${firstTurn ? firstTurn.round : 1}</div>`,
@@ -1692,6 +1798,19 @@ export function register(app) {
     const on = rules().fight.mythic.scripts, W = MYTHIC_SWITCH_WORDS;
     return `<span class="lbl">${esc(W.label)}</span><button type="button" data-mythsw-btn aria-pressed="${on}">${on ? W.on : W.off}</button><p class="cmb-hint">${esc(W.hint)}</p>`;
   }
+  /**
+   * The GM's device-only switch for automatic NPC turns (`store.device('npcAuto')`, default on), drawn in Fight tools
+   * when this phone holds saved NPCs or the fight has an NPC.
+   */
+  function npcAutoMarkup(f) {
+    const hasNpcs = store.get().library.npcs.length > 0 || !!(f && f.rows.some(r => r.kind === 'hunter' && r.npc));
+    if (!hasNpcs) return '';
+    const on = npcAutoOn();
+    return `<span class="lbl">NPC turns</span><div class="seg" role="group" aria-label="NPC turns">`
+      + `<button type="button" data-fk="npc-auto-on" data-npc-auto="on" aria-pressed="${on}">Play automatically</button>`
+      + `<button type="button" data-fk="npc-auto-off" data-npc-auto="off" aria-pressed="${!on}">Wait for my tap</button>`
+      + `</div>`;
+  }
 
   /** The log, newest first: a line the fight added goes in at the top, and only a shorter log is drawn again (patch.ts `prepended`). */
   function drawLog(box, lines) {
@@ -1722,9 +1841,9 @@ export function register(app) {
     const s = store.get();
     const gm = canRun();
     const wrap = $q('[data-buildwrap]'), bld = $q('[data-build]'), logLbl = $q('[data-loglbl]'), logBox = $q('[data-log]');
-    const barBox = $q('[data-bar]'), ta = $q('[data-toolacts]'), fz = $q('[data-fudge]'), sw = $q('[data-mythsw]');
+    const barBox = $q('[data-bar]'), ta = $q('[data-toolacts]'), fz = $q('[data-fudge]'), na = $q('[data-npcauto]'), sw = $q('[data-mythsw]');
     const my = $q('[data-mythic]'), er = $q('[data-eyesrow]'), es = $q('[data-eyesseg]'), win = $q('.win'), tl = $q('[data-tools]'), main = $q('[data-main]');
-    if (!wrap || !bld || !logLbl || !logBox || !barBox || !ta || !fz || !sw || !my || !er || !es || !win || !tl || !main) return;
+    if (!wrap || !bld || !logLbl || !logBox || !barBox || !ta || !fz || !na || !sw || !my || !er || !es || !win || !tl || !main) return;
     wrap.hidden = !gm; // P01: players never get the encounter builder
     const act = running(f), wanted = buildWanted(f);
     drawerTo({ kind: 'drawn', fight: drawerFight(f) });
@@ -1769,6 +1888,8 @@ export function register(app) {
     if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
     const fh = gm ? fudgeBlock(f) : '';
     fz.hidden = !fh; if (fz.innerHTML !== fh) fz.innerHTML = fh;
+    const nah = gm ? npcAutoMarkup(f) : '';
+    na.hidden = !nah; if (na.innerHTML !== nah) na.innerHTML = nah;
     const swh = gm ? mythicSwitchMarkup() : '';
     sw.hidden = !swh; if (sw.innerHTML !== swh) sw.innerHTML = swh;
     const mh = mythicMarkup(f, gm);

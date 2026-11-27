@@ -13,7 +13,7 @@ import { weightsFor } from '../src/core/combat/fudge.ts';
 import { drawNeeds, seededSource } from '../src/core/draws.ts';
 import { mythicStepped } from '../src/core/combat/mythic.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
-import { autoMonsterTurn, autoTurnOf, sensible, skilled } from '../src/core/combat/policy.ts';
+import { NPC_AUTO_MS, autoDue, autoMonsterTurn, autoTurnOf, sensible, skilled } from '../src/core/combat/policy.ts';
 import { playBegin, playStep, policySource } from '../src/core/combat/play.ts';
 import type { Play } from '../src/core/combat/play.ts';
 import { newNpc } from '../src/core/registry/npcs.ts';
@@ -665,5 +665,129 @@ describe('skilled NPC policy: determinism, fudge isolation, dice-stream isolatio
     expect(skilled(f1, me1, ON, best, () => 0.80)).toBe(best);
     const skipped = skilled(f1, me1, ON, best, () => 0.05);
     expect(skipped.type === 'act' && skipped.aim !== X).toBe(true);
+  });
+});
+
+describe('autoDue table: decides when an NPC turn plays itself on the GM phone (NPC unit 5)', () => {
+  const N_ALLY = combatantId('N_ALLY'), N_FOE = combatantId('N_FOE');
+  const H = combatantId('H'), M = combatantId('M'), SH = combatantId('SH'), SU = combatantId('SU');
+  const allyNpc = (at: Place = place(5, 5)): NewRow => ({
+    ...npcRows(newNpc({ name: 'Mira', rank: 'E', archetype: 'skirmisher', defaultSide: 'party', skill: 3 }), [N_ALLY], ON)[0]!,
+    place: at,
+  });
+  const foeNpc = (at: Place = place(5, 6), extra?: readonly Ability[]): NewRow => {
+    const base = npcRows(newNpc({ name: 'Vance', rank: 'E', archetype: 'caster', defaultSide: 'foe', skill: 3 }), [N_FOE], ON)[0]!;
+    return { ...base, ...(extra ? { abilities: [...extra] } : {}), place: at };
+  };
+  const brute = (id = M, at: Place = place(6, 6)): Extract<NewRow, { kind: 'monster' }> => ({
+    ...(monsterRows(statBlock(ON, 'E', { name: 'Goblin', archetype: 'brute', kind: 'normal' }), [id], ON)[0]! as Extract<NewRow, { kind: 'monster' }>),
+    place: at,
+  });
+  const shadow = (at: Place = place(4, 5)): NewRow => {
+    const b = brute(SH, at);
+    return {
+      id: SH, name: 'Igris', side: 'party', kind: 'shadow', origin: b.origin, tier: b.tier, place: at,
+      life: b.life, mana: b.mana, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+      statuses: [], readyAt: {}, abilities: b.abilities, intent: null, holder: null, xp: 0, mythic: null, owner: H,
+    };
+  };
+  const summon = (at: Place = place(4, 6)): NewRow => {
+    const b = brute(SU, at);
+    return {
+      id: SU, name: 'Hound', side: 'party', kind: 'summon', origin: b.origin, tier: b.tier, place: at,
+      life: b.life, mana: b.mana, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+      statuses: [], readyAt: {}, abilities: b.abilities, intent: null, holder: null, xp: 0, mythic: null, owner: H, until: tick(500),
+    };
+  };
+
+  test('phase table: null, setup, and ended return null; running acting returns currentId for up ally and foe NPCs', () => {
+    const setup = reduce(null, { type: 'add', fightId: fightId('f-autodue'), rows: [allyNpc(), foeNpc()], openings: [] }, ctx).fight!;
+    const ended = reduce(setup, { type: 'end' }, ctx).fight!;
+    const runAlly = begun(N_ALLY, allyNpc(), foeNpc());
+    const runFoe = begun(N_FOE, allyNpc(), foeNpc());
+
+    expect(autoDue(null)).toBeNull();
+    expect(autoDue(setup)).toBeNull();
+    expect(autoDue(ended)).toBeNull();
+    expect(autoDue(runAlly)).toBe(N_ALLY);
+    expect(autoDue(runFoe)).toBe(N_FOE);
+    expect(NPC_AUTO_MS).toBeGreaterThan(0);
+  });
+
+  test('row kind table: monsters, player hunters, shadows, summons, dead NPCs, and missing ids return null', () => {
+    const fHunter = begun(H, party('bruiser', 'H', place(5, 5)), allyNpc(place(5, 4)), foeNpc(place(5, 6)));
+    const fMonster = begun(M, brute(M, place(5, 6)), party('bruiser', 'H', place(5, 5)));
+    const fSummon = begun(SU, party('bruiser', 'H', place(5, 5)), summon(), foeNpc(place(5, 6)));
+    const shRow = shadow();
+    const fShadow: Running = {
+      ...fSummon,
+      currentId: SH,
+      rows: fSummon.rows.map(r => (r.id === SU ? { ...r, ...shRow, kind: 'shadow' as const, owner: H, holder: null } as Body : r)),
+    };
+    const fAlly = begun(N_ALLY, allyNpc(), foeNpc());
+    const fDead: Running = { ...fAlly, rows: fAlly.rows.map(r => (r.id === N_ALLY ? { ...r, life: { at: 'dead' as const } } : r)) };
+    const fMissing: Running = { ...fAlly, currentId: combatantId('NO_SUCH_ROW') };
+
+    expect(autoDue(fHunter)).toBeNull();
+    expect(autoDue(fMonster)).toBeNull();
+    expect(autoDue(fShadow)).toBeNull();
+    expect(autoDue(fSummon)).toBeNull();
+    expect(autoDue(fDead)).toBeNull();
+    expect(autoDue(fMissing)).toBeNull();
+  });
+
+  test('runningState table: pauses on dodging, owing (settle dice and broken channel), and mythic landing; runs while holding a channel', () => {
+    // 1. Dodging: foe NPC casts a dodgeable blast on a player hunter -> dodging pauses autoDue.
+    const nova = abilityOf('blast', {
+      id: abilityId('npc-due-nova'), name: 'Frost Nova', range: tiles(8), foesOnly: true,
+      shape: { kind: 'radius', radius: tiles(1), ring: { outer: tiles(2), share: percent(50) } },
+    }, ON);
+    const fBlast = begun(N_FOE, foeNpc(place(5, 2), [nova]), party('bruiser', 'H', place(5, 5)));
+    expect(autoDue(fBlast)).toBe(N_FOE);
+    const plan = autoTurnOf(fBlast, N_FOE, ON, fBlast.now, () => 0.5);
+    if (plan.kind !== 'roll') throw new Error(`expected roll, got ${plan.kind}`);
+    const rDodge = reduce(fBlast, plan.command({
+      dice: Object.fromEntries(Object.entries(plan.needs.dice).map(([k, ds]) => [k, ds.map(() => 1)])),
+      react: Object.fromEntries(plan.needs.react.map(id => [id, 20])),
+    }), ctx);
+    const dodging = rDodge.fight as Running;
+    expect(runningState(dodging).at).toBe('dodging');
+    expect(autoDue(dodging)).toBeNull();
+
+    // 2. Owing (pending settle dice while NPC is current) -> autoDue returns null.
+    const fBurnBase = sent(begun(N_ALLY, allyNpc(place(1, 1)), foeNpc(place(10, 10))), {
+      type: 'status', id: N_ALLY,
+      add: { key: 'burning' as StatusKey, def: ON.conditions.burning!, duration: null, tier: 0 },
+    });
+    let owing = fBurnBase;
+    for (let i = 0; i < 8 && runningState(owing).at !== 'owing'; i++) owing = sent(owing, { type: 'endTurn', by: owing.currentId });
+    expect(runningState(owing).at).toBe('owing');
+    expect(autoDue(owing)).toBeNull();
+
+    // 3. Holding channel -> runningState is acting, so autoDue returns the NPC id; broken channel -> owing, returns null.
+    const chAb: Ability = {
+      ...abilityOf('blast', { id: abilityId('npc-chan'), name: 'Charge', range: tiles(8), foesOnly: true }, ON),
+      channel: { max: 2, growth: 'linear' },
+    };
+    const fHolding: Running = {
+      ...begun(N_FOE, foeNpc(place(5, 2), [chAb]), party('bruiser', 'H', place(5, 5))),
+    };
+    const withHold: Running = {
+      ...fHolding,
+      rows: fHolding.rows.map(r => (r.id === N_FOE ? { ...r, channel: { ability: chAb.id, aim: H, charge: 1, spent: 0, state: 'holding' as const } } : r)),
+    };
+    expect(runningState(withHold).at).toBe('acting');
+    expect(autoDue(withHold)).toBe(N_FOE);
+    const withBroken: Running = {
+      ...fHolding,
+      rows: fHolding.rows.map(r => (r.id === N_FOE ? { ...r, channel: { ability: chAb.id, aim: H, charge: 1, spent: 0, state: 'broken' as const } } : r)),
+    };
+    expect(runningState(withBroken).at).toBe('owing');
+    expect(autoDue(withBroken)).toBeNull();
+
+    // 4. Mythic landing -> returns null.
+    const fLanding = omened(begun('X', mythic('the-fourth-rider', place(5, 5)), party('tank', 'T', place(6, 5)), party('cannon', 'C', place(12, 5))), 'named', 'C');
+    expect(runningState(fLanding).at).toBe('landing');
+    expect(autoDue(fLanding)).toBeNull();
   });
 });

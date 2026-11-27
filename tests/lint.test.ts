@@ -1417,6 +1417,7 @@ test('a view waits on a timer only where this list names it with its reason', as
     'src/views/gm.js': { count: 1, why: 'the room\'s presence ages drawn every 5 s' },
     'src/views/io.js': { count: 2, why: 'a download\'s URL revoked; a button\'s label put back' },
     'src/views/takeover.js': { count: 1, why: 'a backup download\'s URL revoked' },
+    'src/views/combat.js': { count: 1, why: 'one named timer (`NPC_AUTO_MS`) playing the current NPC\'s turn automatically while `autoDue` holds, the GM switch is on, and the tab is visible' },
   };
   const timer = /\bset(Timeout|Interval)\(/g;
   const old: Line = { file: 'src/views/quests.js', line: 0, text: '  setInterval(checkDaily, 60000);' };
@@ -1469,7 +1470,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
   const named: Record<string, { count: number; why: string }> = {
     'src/views/map.js': { count: 16, why: 'the count of maps mounted, for each one\'s detail list (mounts); the three machines\' values (choice, g, life: map-mount.ts holds what was framed and the words over the frame), the scene and what the last frame drew (areaSig, along, draws, zonesWas, far, seen), the resize waiting for a frame (sized), the frame\'s place under a finger, the hold timer, the paint brush, the news line\'s timer; the open detail is detail.js\'s' },
     'src/views/maker.js': { count: 16, why: 'the makers\' window stack and form (body, me, draft, previewEl), the formula field (ticks, type, gapOn, text, kind), an effect row\'s amount and value, the field\'s end editor (zendFx), the ability form\'s kind, the Icon row\'s machine (picker, src/core/icon-pick.ts, moved only by iconPickStep) and its window while up (sheetWin)' },
-    'src/views/combat.js': { count: 9, why: 'the GM\'s fight screen: the side marked surprised, the doc\'s last refusal and burst, what is open over the map (over), the root and the map\'s handle, and locals of three functions (aim twice, actions); the odds\' run is odds-box.js\'s' },
+    'src/views/combat.js': { count: 10, why: 'the GM\'s fight screen: the side marked surprised, the one automatic NPC turn timer (`npcAutoTimer`), the doc\'s last refusal and burst, what is open over the map (over), the root and the map\'s handle, and locals of three functions (aim twice, actions); the odds\' run is odds-box.js\'s' },
     'src/views/gm.js': { count: 8, why: 'the root, the Award editor\'s and Issue quest\'s handles, the reward the Award form opens with, and locals of a tool\'s form (n, msg, text, parsed)' },
     'src/views/quests.js': { count: 6, why: 'the rollover\'s timer (wake), the tab on screen, the quest form\'s state (form, quest-form.ts), whether the title is the one the form made (autoTitle), the view\'s handle, and a function\'s local (out)' },
     'src/views/uses.js': { count: 1, why: 'the turn held from a command\'s tap on any screen (src/core/combat/hold.ts, moved only by turnHoldStep through holdTo)' },
@@ -1666,6 +1667,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'classes.js offerUi': 'ephemeral class-offer modal UI state in this tab (auto-open offer id, pending player pick, inline notice, GM local hunter selection, last room): ' + what.shown,
     'coin.js prompt': 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design',
     'combat.js surprised': 'the side the GM marked surprised before the start; the fight takes it at its start',
+    'combat.js npcAutoTimer': 'the one timer waiting to play the current NPC\'s automatic turn (`autoDue`, `NPC_AUTO_MS`), tagged with its row id and fight tick; cleared whenever the turn moves, the tab hides, or the switch turns off',
     'combat.js tableRefusal': 'the last refusal of a player\'s move for the fight doc, its count inside it (`n`), so a repeat is told again',
     'combat.js lastBurst': 'the last threshold burst for the fight doc, its count inside it (`n`), so a repeat is drawn again',
     'combat.js root': what.handle, 'combat.js sel': what.shown, 'combat.js over': 'what is open over the map: nothing, a row\'s card or the Fight tools; one union, so two cannot be open at once', 'combat.js build': 'who holds the Build drawer (map-mount.ts BuildDrawer): the screen, or the GM\'s hand for one fight; moved only by drawerTo', 'map.js mounts': 'the count of maps mounted, for each one\'s own detail list',
