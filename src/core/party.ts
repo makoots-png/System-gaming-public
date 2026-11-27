@@ -71,3 +71,42 @@ function played(h: Hunter): unknown {
  * (combat.js): the room's players bring their own.
  */
 export const untouched = (h: Hunter, R: Rules): boolean => same(played(h), played(newHunter(R)));
+
+/** A remote player sheet whose phone polled within this window (10 minutes) counts as present in the default party. */
+export const RECENT_POLL_MS = 10 * 60_000;
+
+/** Server-adjusted current time in ms: `localMs` shifted by `skewMs` (`server - local`, kept by `sync.ts`). */
+export const serverNowMs = (localMs: number, skewMs = 0): number =>
+  localMs + (Number.isFinite(skewMs) ? skewMs : 0);
+
+/** Inputs for `defaultParty`: whether this phone is running a room as GM, the current time, and the active rules. */
+export type DefaultPartyOpts = {
+  readonly inRoom: boolean;
+  readonly nowMs: number;
+  readonly R: Rules;
+  readonly recentMs?: number;
+};
+
+/**
+ * The one default-party selector used by the GM gate card preview, the Start fight dialog's checked boxes, and Add
+ * whole party. In a room (`inRoom: true`), skips any untouched local placeholder on the GM's phone (players bring
+ * their own) and skips any remote sheet with no recent poll (`polledAt` missing, unparseable, or older than
+ * `recentMs`, default `RECENT_POLL_MS`). Outside a room, keeps all local hunters.
+ */
+export function defaultParty<
+  H extends Hunter,
+  S extends { readonly key: SheetKey; readonly polledAt: string | null },
+>(
+  hunters: readonly H[],
+  remotes: readonly S[],
+  opts: DefaultPartyOpts,
+): { readonly hunters: H[]; readonly remotes: S[] } {
+  const recentMs = opts.recentMs ?? RECENT_POLL_MS;
+  const keptRemotes = remotes.filter(r => {
+    if (!r.polledAt) return false;
+    const t = Date.parse(r.polledAt);
+    return Number.isFinite(t) && opts.nowMs - t <= recentMs;
+  });
+  const keptHunters = opts.inRoom ? hunters.filter(h => !untouched(h, opts.R)) : [...hunters];
+  return { hunters: keptHunters, remotes: keptRemotes };
+}

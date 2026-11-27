@@ -170,6 +170,11 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'fight.difficulty.targets': numbers(10),
   'fight.difficulty.boss': numbers(10),
   'fight.difficulty.pack': numbers(10),
+  // gate party-size scaling curves: 6 steps (headcounts 1 to 6), each entry in its rule's domain
+  'fight.partyScale.hp': numbers(6),
+  'fight.partyScale.dealt': numbers(6),
+  'fight.partyScale.packHp': numbers(6),
+  'fight.partyScale.packDealt': numbers(6),
   classTreeDepthMult: numbers(9),
   // sparse map of GM ability/reserved damage-type overrides (`attack` refused)
   'fight.damageTypes': damageTypes,

@@ -2570,7 +2570,7 @@ test('every test in tests/fight-sim.test.ts uses simTest with deterministic work
   expect(modelSrc, 'report each fight to sim-budget.ts from playFight').toContain('beginFight(');
   expect(modelSrc, 'report each playStep to sim-budget.ts from playFight').toContain('recordFightStep(');
 
-  const soloSimFiles = (await readdir(`${ROOT}/tests`)).filter(n => /-(?:solo|smoke)-sim\.test\.ts$/.test(n)).sort().map(n => `tests/${n}`);
+  const soloSimFiles = (await readdir(`${ROOT}/tests`)).filter(n => /-(?:solo|smoke|scale)-sim\.test\.ts$/.test(n)).sort().map(n => `tests/${n}`);
   const simFiles = ['tests/fight-sim.test.ts', 'tests/npc-sim.test.ts', ...soloSimFiles];
   for (const rel of simFiles) {
     const simSrc = await Bun.file(`${ROOT}/${rel}`).text();

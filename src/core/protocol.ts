@@ -55,6 +55,7 @@ import type { Tick } from './combat/timeline.ts';
 import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_DODGE_RUNS, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, shippedStatusDef, unpackBits } from './combat/fight-doc.ts';
 import type { Band, DocBurst, DocChannel, DocDodge, DocGrid, DocIntent, DocStanding, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
 import { TERRAIN, TERRAINS } from './combat/space.ts';
+import type { Side } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
 import { isMythicScriptId, mythicScriptOf, omensOf } from './registry/mythics.ts';
 import { MAX_ZONES, ZONE_NAME_MAX, zoneId } from './combat/zones.ts';
@@ -1155,13 +1156,15 @@ export const eachRarity = <T>(f: (r: Rarity) => T): Record<Rarity, T> =>
   Object.fromEntries(RARITIES.map(r => [r, f(r)])) as Record<Rarity, T>; // the compiler cannot follow a map over a list to its keys
 /** A gate as the room's world doc carries it: a cleared one with the day it was cleared (gate.ts `countdown` reads both); `solo` when the solo doc holds it. */
 export type WorldGate = ShownGate & { solo?: true };
-/** One roster line of a solo gate in the solo doc: `n` of the doc's monster `m` (its key in `monsters`), with optional difficulty `hp`/`dealt` scales. */
-export type SoloDocLine = { m: string; n: number; hp?: number; dealt?: number };
-/** A gate open to solo runs as the solo doc carries it: its roster, its last line the boss when `boss`. */
-export type SoloDocGate = { id: GateId; name: string; rank: Rank; boss: boolean; lines: SoloDocLine[] };
+/** One roster line of a solo gate in the solo doc: `n` of the doc's entry `m` (its key in `monsters`), with optional per-line `hp`/`dealt` scales (whenever a line differs from the gate's scale) and optional `as` side and `skill` (1 to 5) for raid companions. */
+export type SoloDocLine = { m: string; n: number; hp?: number; dealt?: number; as?: Side; skill?: 1 | 2 | 3 | 4 | 5 };
+/** A gate open to solo runs as the solo doc carries it: its roster, optional gate-level non-boss `hp`/`dealt` scale, and its last monster line the boss when `boss`. */
+export type SoloDocGate = { id: GateId; name: string; rank: Rank; boss: boolean; hp?: number; dealt?: number; lines: SoloDocLine[] };
+/** Maximum HP or damage multiplier allowed on a solo doc gate or line; gates above it are left out of the solo doc. */
+export const SOLO_SCALE_MAX = 100;
 /**
- * What a player's phone needs to play the room's solo gates (gates/solo.ts `soloDoc`): each gate's roster, each monster
- * once by value as `parseMonster` reads it (its text fields left out), and the GM's statuses those monsters name.
+ * What a player's phone needs to play the room's solo gates (gates/solo.ts `soloDoc`): each gate's roster, each body
+ * once by value as `parseMonster` reads it (its text fields left out), and the GM's statuses those bodies name.
  */
 export type SoloDoc = { gates: SoloDocGate[]; monsters: Record<string, MonsterTemplate>; statuses: Record<string, StatusDef> };
 /*
@@ -1175,8 +1178,8 @@ export type SoloDoc = { gates: SoloDocGate[]; monsters: Record<string, MonsterTe
  * nested status defs), so one gate of many of them can pass `DOC_MAX` alone: such a gate is never sent, the world doc
  * does not mark it solo, and the GM's card says so (the same test builds one of 50 such monsters and sees it left out).
  */
-/** The bounds of the solo doc's reader besides `DOC_MAX`: roster lines a gate (a gate's 50 and its boss), monsters, statuses. */
-export const SOLO_DOC = { lines: 51, monsters: 400, statuses: 400 } as const;
+/** The bounds of the solo doc's reader besides `DOC_MAX`: roster lines a gate (monsters, boss, and companions), monsters, statuses. */
+export const SOLO_DOC = { lines: 101, monsters: 400, statuses: 400 } as const;
 /** The world doc's bounds: at most `WORLD_GATES` gates, each name at most `WORLD_NAME_MAX` characters (gates/world.ts `worldDoc` keeps within them). */
 export const WORLD_GATES = 40, WORLD_NAME_MAX = 60;
 /** The world day, the GM's session count (`world.session`: the session a player's facts belong to) and the gates players see. */
@@ -1509,22 +1512,43 @@ function worldGate(v: unknown): WorldGate {
 }
 const optScale = (v: unknown): number | undefined => {
   if (v === undefined) return undefined;
-  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 100) return refuse();
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > SOLO_SCALE_MAX) return refuse();
   return v;
 };
-/** A solo gate of the solo doc: its id, name, rank, whether its last line is the boss, its lines. */
+const LINE_SIDES = ['party', 'foe'] as const satisfies readonly Side[];
+const lineSkill = (v: unknown): 1 | 2 | 3 | 4 | 5 => {
+  const n = int(1, 5)(v);
+  return n === 1 || n === 2 || n === 3 || n === 4 || n === 5 ? n : refuse();
+};
+/** A solo gate of the solo doc: its id, name, rank, whether its monster roster ends with a boss, optional gate-level non-boss scale, and its lines. */
 function soloGate(v: unknown): SoloDocGate {
   const o = obj(v);
+  const ghp = optScale(own(o, 'hp'));
+  const gdealt = optScale(own(o, 'dealt'));
   return {
     id: need(parseGateId(own(o, 'id'))), name: text(WORLD_NAME_MAX)(own(o, 'name')), rank: choiceOf(RANKS)(own(o, 'rank')), boss: bool(own(o, 'boss')),
+    ...(ghp !== undefined ? { hp: ghp } : {}),
+    ...(gdealt !== undefined ? { dealt: gdealt } : {}),
     lines: listOf(own(o, 'lines'), SOLO_DOC.lines, l => {
       const x = obj(l);
-      const hp = optScale(own(x, 'hp')), dealt = optScale(own(x, 'dealt'));
-      return { m: id(own(x, 'm')), n: int(1, MONSTER_BOUNDS.copies)(own(x, 'n')), ...(hp !== undefined ? { hp } : {}), ...(dealt !== undefined ? { dealt } : {}) };
+      const rawAs = own(x, 'as');
+      const as = rawAs === undefined ? undefined : choiceOf(LINE_SIDES)(rawAs);
+      const hp = as === 'party' ? undefined : optScale(own(x, 'hp'));
+      const dealt = as === 'party' ? undefined : optScale(own(x, 'dealt'));
+      const rawSkill = as !== undefined ? own(x, 'skill') : undefined;
+      const skill = rawSkill === undefined ? undefined : lineSkill(rawSkill);
+      return {
+        m: id(own(x, 'm')),
+        n: int(1, MONSTER_BOUNDS.copies)(own(x, 'n')),
+        ...(hp !== undefined ? { hp } : {}),
+        ...(dealt !== undefined ? { dealt } : {}),
+        ...(as !== undefined ? { as } : {}),
+        ...(skill !== undefined ? { skill } : {}),
+      };
     }),
   };
 }
-/** The solo doc, within `DOC_MAX`: each monster read by `parseMonster`, each status by `parseStatusDef`, a bad entry dropped. */
+/** The solo doc, within `DOC_MAX`: each body read by `parseMonster`, each status by `parseStatusDef`, a bad entry dropped. */
 function soloDocOf(data: unknown): SoloDoc {
   if (JSON.stringify(data).length > DOC_MAX) return refuse();
   const o = obj(data), monsters: Record<string, MonsterTemplate> = {}, statuses: Record<string, StatusDef> = {};

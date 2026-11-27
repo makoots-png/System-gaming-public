@@ -20,6 +20,7 @@ import { hunterSheet } from './hunter/sheet.ts';
 import { neutralSeed } from './hunter/identity.ts';
 import { newGate, parseGate } from './gates/gate.ts';
 import type { Gate, GateMonster, GateType } from './gates/gate.ts';
+import type { GateDifficulty } from './gates/difficulty.ts';
 import { clearGoldEach } from './gates/pay.ts';
 import { spawnGate } from './gates/world.ts';
 import { saveEntry } from './library.ts';
@@ -98,12 +99,13 @@ export const PREGENS: readonly StarterPregen[] = [
 /** Name of the sample hunter who starts with unspent creation points for solo testing. */
 export const STARTER_UNSPENT_HUNTER = 'Tessa Corbin';
 
-/** Fixed authored E-rank gate for the first mission: Day 6 of 7 (`breakDay: today + 1`), two waves, class offer on boss fall. */
+/** Fixed authored E-rank gate for the first mission: Day 6 of 7 (`breakDay: today + 1`), two waves, difficulty 1, class offer on boss fall. */
 export const STARTER_GATE: {
   readonly name: string;
   readonly rank: Rank;
   readonly type: GateType;
   readonly classOffer: true;
+  readonly difficulty: GateDifficulty;
   readonly bossId: MonsterId;
   readonly monsters: readonly GateMonster[];
   readonly notes: string;
@@ -112,6 +114,7 @@ export const STARTER_GATE: {
   rank: 'E',
   type: 'normal',
   classOffer: true,
+  difficulty: { gate: { at: 'set', level: 3 }, boss: { at: 'own', level: 1 } },
   bossId: seedId<'m'>('head-usher'),
   monsters: [
     { monsterId: seedId<'m'>('goblin'), count: 1, wave: 1 },
@@ -283,6 +286,7 @@ export function starterCampaign(
     breakDay: today + 1,
     monsters: STARTER_GATE.monsters.map(m => ({ ...m })),
     bossId: STARTER_GATE.bossId,
+    difficulty: STARTER_GATE.difficulty,
     notes: STARTER_GATE.notes,
     classOffer: STARTER_GATE.classOffer,
     bossFell: false,

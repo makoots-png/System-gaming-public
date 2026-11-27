@@ -42,7 +42,7 @@ export type Loot = { gold: number; items: ItemGrant[] };
  * and each of `traits` changes its body by its rule (`RULES.fight.traits`; absent, none). A seed row names a trait where
  * its words ask for one ("slow", "armoured"), so its body comes from rules and not from a hand-set factor.
  */
-export type MonsterTweak = { hp?: number; stats?: Partial<Record<StatKey, number>>; traits?: MonsterTrait[] };
+export type MonsterTweak = { hp?: number; dealt?: number; stats?: Partial<Record<StatKey, number>>; traits?: MonsterTrait[] };
 /**
  * A monster the GM keeps. Its body is a hunter of its rank's first level built 2:1 by its `archetype`, times its `kind`'s
  * factors, with its `tweak` (src/core/hunter/derive.ts `monsterSheet`). In a fight it attacks with its archetype's attack
@@ -125,7 +125,7 @@ export const SEEDS: readonly MonsterSeed[] = [
     ['Wall-Colored Coat: blends into dry stone until the lamps go out',
       'Clipped Speech: speaks short fragments of an unknown language while moving to empty a chair'],
     'A tall figure in a gray coat the color of dry stone. It grabs hunters by the shoulders to force them back into a seat.'],
-  ['head-usher', 'Head Usher', 'E', 'Humanoid', 'brute', 'boss', { hp: 0.85, stats: { ins: 4 }, scripted: true },
+  ['head-usher', 'Head Usher', 'E', 'Humanoid', 'brute', 'boss', { hp: 0.38, stats: { str: -16, ins: 4 }, scripted: true },
     [{ kind: 'strike', name: 'Iron Grasp', feet: 5, applies: status('restrained', 2) }, { kind: 'strike', name: 'Gavel Blow', heavy: true }],
     ['Measured Step: moves with rehearsed timing and never raises its voice',
       'Empty Chair: when it falls, the extra chair is pushed back and the hall doors open'],
@@ -287,10 +287,11 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.trim(
 function tweakOf(v: unknown): MonsterTweak {
   const t = isObj(v) ? v : {};
   const hp = typeof t.hp === 'number' && Number.isFinite(t.hp) && t.hp > 0 ? Math.min(MONSTER_BOUNDS.hp, t.hp) : null;
+  const dealt = typeof t.dealt === 'number' && Number.isFinite(t.dealt) && t.dealt > 0 && t.dealt !== 1 ? Math.min(MONSTER_BOUNDS.hp, t.dealt) : null;
   const raw = isObj(t.stats) ? t.stats : {}, stats: Partial<Record<StatKey, number>> = {};
   for (const k of STAT_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -MONSTER_BOUNDS.stat, MONSTER_BOUNDS.stat, 0); if (n) stats[k] = n; }
   const named = Array.isArray(t.traits) ? t.traits : [], traits = MONSTER_TRAITS.filter(k => named.includes(k));
-  return { ...(hp === null ? {} : { hp }), ...(Object.keys(stats).length ? { stats } : {}), ...(traits.length ? { traits } : {}) };
+  return { ...(hp === null ? {} : { hp }), ...(dealt === null ? {} : { dealt }), ...(Object.keys(stats).length ? { stats } : {}), ...(traits.length ? { traits } : {}) };
 }
 
 /**

@@ -1,7 +1,9 @@
 // One whole session at a table, a GM phone and two player phones in one room, played stage by stage: a fight in which a
-// hunter dies and is raised, a rest, the GM's fudge on a roll, a trade, the party stash, the fight's end paying out. Each
-// stage is a named step, so a red run says which stage broke. Every stage has its own test file that goes deeper; this
-// one proves they work in one room, one after the other, on what each phone shows.
+// hunter dies and is raised, the fight's end paying out and releasing the room's hunters (Start fight checks live room
+// players by default via defaultParty, so Kai and Mira are held by the GM's fight until it ends), a rest, the GM's
+// fudge on a roll, a trade, and the party stash. Each stage is a named step, so a red run says which stage broke. Every
+// stage has its own test file that goes deeper; this one proves they work in one room, one after the other, on what
+// each phone shows.
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { STASH_WORDS } from '../../src/core/trade/stash.ts';
@@ -111,7 +113,43 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     }
   });
 
-  await test.step('stage 2, a rest: Mira, hurt, gets a quarter of her health and mana back, and a third rest in the gate is refused', async () => {
+  await test.step('stage 2, the fight\'s end: the monsters fall, the GM ends the fight, and the XP it names is paid to the hunters in it', async () => {
+    await go(gm, 'status');
+    const [xpBefore, xpNeed] = ((await gm.locator('#view-status [data-xpnums]').innerText()).match(/^(\d+) \/ (\d+)$/) ?? []).slice(1).map(Number) as [number, number];
+    await go(gm, 'combat');
+    const monsters = await gm.evaluate(() => hunterApp.store.get().fight.rows.filter((r: any) => r.kind !== 'hunter').map((r: any) => r.id as string));
+    expect(monsters.length, 'the den has monsters').toBeGreaterThan(0);
+    for (const id of monsters) {
+      const row = combat(gm).locator(`.cmb-row[data-key="${id}"]`);
+      await row.locator('[data-pick]').evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
+      await row.locator('[data-pick]').tap();
+      await tapCombat(gm, '[data-defeat]');
+      await expect(row).toHaveClass(/\bdead\b/);
+    }
+    await tapCombat(gm, '[data-end]');
+    const win = gm.locator('.sys-overlay.show', { hasText: 'Fight over' });
+    await expect(win).toBeVisible();
+    const each = Number(((await win.innerText()).match(/Each hunter receives (\d+) XP/) ?? [])[1]);
+    expect(each, 'the window names the XP each hunter gets').toBeGreaterThan(0);
+    await win.locator('.sys-actions button', { hasText: 'Award XP to party' }).tap();
+    await expect(win).toHaveCount(0);
+    await dismissAll(gm, 4);
+    await expect(combat(gm).locator('.cmb-head').first()).toContainText('No fight');
+    await go(gm, 'status');
+    let wantXp = xpBefore + each, wantNeed = xpNeed;
+    while (wantXp >= wantNeed) { wantXp -= wantNeed; wantNeed += RULES.xpPerLevel; }
+    await expect(gm.locator('#view-status [data-xpnums]')).toHaveText(`${wantXp} / ${wantNeed}`);
+    for (const p of [kai, mira]) {
+      await dismissAll(p, 4);
+      await go(p, 'combat');
+      await expect(combat(p).locator('[data-idle]')).toHaveText('The GM is not running a fight.');
+      await expect(combat(p).locator('.tb-row')).toHaveCount(0);
+      await dismissAll(p, 4);
+    }
+  });
+
+  await test.step('stage 3, a rest: Mira, hurt, gets a quarter of her health and mana back, and a third rest in the gate is refused', async () => {
+    await dismissAll(mira, 4);
     await go(mira, 'status');
     for (let i = 0; i < 2; i++) {
       await mira.locator('#view-status [data-hp="-5"]').first().tap();
@@ -135,7 +173,8 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
   });
 
-  await test.step('stage 3, the GM\'s fudge: a table weight of +2 moves Kai\'s die, and a forced 20 is the next roll, on his tray', async () => {
+  await test.step('stage 4, the GM\'s fudge: a table weight of +2 moves Kai\'s die, and a forced 20 is the next roll, on his tray', async () => {
+    await dismissAll(kai, 4);
     const key = await kai.evaluate(() => hunterApp.api.sync.myKey(hunterApp.store.active().id) as string);
     const bonus = await kai.evaluate(() => hunterApp.api.hunter.sheet(hunterApp.store.active()).checks.bonus.str as number);
     await go(gm, 'gm');
@@ -158,7 +197,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: KAI }).locator('[data-weightline]')).not.toContainText('Next d20 forced');
   });
 
-  await test.step('stage 4, a trade: Mira offers Kai a potion and Kai accepts it', async () => {
+  await test.step('stage 5, a trade: Mira offers Kai a potion and Kai accepts it', async () => {
     await mira.evaluate(g => hunterApp.api.inventory.addItem(hunterApp.store.active().id, g), adhoc({ name: POTION, rar: 'common', type: 'consumable' }, 2));
     await expect.poll(() => kai.evaluate(() => hunterApp.api.sync.faces().map((f: any) => f.name)), { timeout: 20_000 }).toContain(MIRA);
     const panel = await bag(mira, 'Items');
@@ -183,7 +222,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     await expect(mira.locator('[data-panel="inventory"] [data-tab="offers"]')).toHaveText('Offers', { timeout: 20_000 });
   });
 
-  await test.step('stage 5, the party stash: Kai puts the potion in and Mira takes it out', async () => {
+  await test.step('stage 6, the party stash: Kai puts the potion in and Mira takes it out', async () => {
     const panel = await bag(kai, 'Items');
     await panel.getByRole('button', { name: `Give ${POTION}` }).tap();
     const win = kai.locator('.sys-overlay.show', { hasText: `Give ${POTION}` });
@@ -209,37 +248,5 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     await expect(potions(mira).locator('.inv-qty')).toHaveText('×2');
     await expect((await bag(mira, 'Stash')).locator('[data-tr-list="stash"] .empty')).toHaveText('The stash is empty.', { timeout: 20_000 });
     await expect(gm.locator('#gm-trade [data-tr-list="gm-stash"]')).toHaveText('The stash is empty.', { timeout: 20_000 });
-  });
-
-  await test.step('stage 6, the fight\'s end: the monsters fall, the GM ends the fight, and the XP it names is paid to the hunters in it', async () => {
-    await go(gm, 'status');
-    const [xpBefore, xpNeed] = ((await gm.locator('#view-status [data-xpnums]').innerText()).match(/^(\d+) \/ (\d+)$/) ?? []).slice(1).map(Number) as [number, number];
-    await go(gm, 'combat');
-    const monsters = await gm.evaluate(() => hunterApp.store.get().fight.rows.filter((r: any) => r.kind !== 'hunter').map((r: any) => r.id as string));
-    expect(monsters.length, 'the den has monsters').toBeGreaterThan(0);
-    for (const id of monsters) {
-      const row = combat(gm).locator(`.cmb-row[data-key="${id}"]`);
-      await row.locator('[data-pick]').evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
-      await row.locator('[data-pick]').tap();
-      await tapCombat(gm, '[data-defeat]');
-      await expect(row).toHaveClass(/\bdead\b/);
-    }
-    await tapCombat(gm, '[data-end]');
-    const win = gm.locator('.sys-overlay.show', { hasText: 'Fight over' });
-    await expect(win).toBeVisible();
-    const each = Number(((await win.innerText()).match(/Each hunter receives (\d+) XP/) ?? [])[1]);
-    expect(each, 'the window names the XP each hunter gets').toBeGreaterThan(0);
-    await win.locator('.sys-actions button', { hasText: 'Award XP to party' }).tap();
-    await expect(win).toHaveCount(0);
-    await expect(combat(gm).locator('.cmb-head').first()).toContainText('No fight');
-    await go(gm, 'status');
-    let wantXp = xpBefore + each, wantNeed = xpNeed;
-    while (wantXp >= wantNeed) { wantXp -= wantNeed; wantNeed += RULES.xpPerLevel; }
-    await expect(gm.locator('#view-status [data-xpnums]')).toHaveText(`${wantXp} / ${wantNeed}`);
-    for (const p of [kai, mira]) {
-      await go(p, 'combat');
-      await expect(combat(p).locator('[data-idle]')).toHaveText('The GM is not running a fight.');
-      await expect(combat(p).locator('.tb-row')).toHaveCount(0);
-    }
   });
 });

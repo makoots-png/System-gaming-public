@@ -21,7 +21,7 @@ import { sensible } from '../src/core/combat/policy.ts';
 import { difficultyFactor } from '../src/core/gates/difficulty.ts';
 import { xpOf } from '../src/core/registry/monsters.ts';
 import type { NewRow } from '../src/core/combat/fight-types.ts';
-import { act1SampleParty, act1WaveFoes } from './fixtures/act1.ts';
+import { act1BareParty, act1SampleParty, act1WaveFoes } from './fixtures/act1.ts';
 import { hunter, monster, playFight } from './models/fight-sim.ts';
 import type { Policy, SimRow } from './models/fight-sim.ts';
 import { simTest, workBudget } from './models/sim-budget.ts';
@@ -202,10 +202,12 @@ describe('NPC simulations (npc-final.md section 5)', () => {
 
   simTest('Row 3a: Act 1 Wave 1 (4p + Support ally, 1p + Support ally) does not trivialize 4p and lifts 1p to >= 92%', () => {
     const party4 = act1SampleParty(4, 1);
-    const party1 = act1SampleParty(1, 1);
+    const party1 = act1BareParty(1, 1);
     const ally = act1AllyNpc('support');
-    const foes4 = act1WaveFoes(1, 4);
+    const supW = RULES.fight.partyScale.allyWeight.support;
+    const foes4 = act1WaveFoes(1, 4 + supW);
     const foes1 = act1WaveFoes(1, 1);
+    const foes1Ally = act1WaveFoes(1, 1 + supW);
 
     let rounds4 = 0, playerDmg4 = 0, npcDmg4 = 0, wins4 = 0;
     for (let seed = 1; seed <= RUNS; seed++) {
@@ -221,7 +223,7 @@ describe('NPC simulations (npc-final.md section 5)', () => {
     let wins1Base = 0, wins1Ally = 0;
     for (let seed = 1; seed <= RUNS; seed++) {
       if (playFight({ rows: [...party1, ...foes1], tallyDamage: false }, seed).winner === 'party') wins1Base++;
-      if (playFight({ rows: [...party1, ally, ...foes1], tallyDamage: false }, seed).winner === 'party') wins1Ally++;
+      if (playFight({ rows: [...party1, ally, ...foes1Ally], tallyDamage: false }, seed).winner === 'party') wins1Ally++;
     }
     const rate1Base = wins1Base / RUNS, rate1Ally = wins1Ally / RUNS;
     console.log(`  [NPC Row 3a Act1] 4p+Support: win=${(wins4 / RUNS * 100).toFixed(1)}%, rounds=${meanRounds4.toFixed(2)}, playerDmg=${(playerShare4 * 100).toFixed(1)}%; 1p: ${(rate1Base * 100).toFixed(1)}% -> ${(rate1Ally * 100).toFixed(1)}%`);

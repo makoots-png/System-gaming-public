@@ -42,6 +42,8 @@ import { dayKey } from '../src/core/day.ts';
 import { SHOP_ITEMS, parseItem } from '../src/core/registry/items.ts';
 import { gatePreset } from '../src/core/gates/preset.ts';
 import { difficultyFactor, withDifficulty } from '../src/core/gates/difficulty.ts';
+import { gateFoeScale } from '../src/core/gates/party-scale.ts';
+import { newNpc, npcTierPreset, npcXp } from '../src/core/registry/npcs.ts';
 import { builtInItemId, fightId, presetLineId } from '../src/core/ids.ts';
 import { bagOf, putItem } from '../src/core/hunter/inventory.ts';
 import { itemDefDataOf, refGrant, resolveGrant } from '../src/core/registry/item-book.ts';
@@ -698,23 +700,26 @@ describe('a world gate open to solo runs, in a room', () => {
     expect(soloPlan({ ...s, gates: [] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'gone' });
   });
 
-  test('local soloReady and remote soloDoc/soloTargets scale monsters by gate and boss difficulty without colliding across gates', () => {
+  test('local soloReady and remote soloDoc/soloTargets scale monsters by gate, boss difficulty, and solo headcount without colliding across gates', () => {
     const kasakaId = seedId<'m'>('kasaka') as MonsterId;
+    const seeds = seedMonsters(RULES);
+    const gobArch = seeds.find(m => m.id === goblin)!.archetype;
+    const kasArch = seeds.find(m => m.id === kasakaId)!.archetype;
     const gEasy = withDifficulty({ ...worldGate, id: 'g-easy' as GateId, rank: 'D' as const, monsters: [{ monsterId: goblin, count: 2 }], bossId: kasakaId }, [{ type: 'setGate', level: 1 }]);
     const gHard = withDifficulty({ ...worldGate, id: 'g-hard' as GateId, rank: 'D' as const, monsters: [{ monsterId: goblin, count: 2 }], bossId: kasakaId }, [{ type: 'setGate', level: 8 }, { type: 'setBoss', level: 10 }]);
     const s = { ...alone(), gates: [gEasy, gHard] };
 
-    // Local soloReady applies pack scale to goblins and boss scale to Kasaka
+    // Local soloReady applies pack scale and boss scale for headcount = 1 (solo hunter)
     const readyHard = ok(soloReady(s, H1, { kind: 'world', id: gHard.id }, ctx()));
-    const packScale8 = difficultyFactor('normal', 'E', 8, RULES);
-    const bossScale10 = difficultyFactor('boss', 'D', 10, RULES);
+    const packScale8 = gateFoeScale('normal', 'E', 8, 1, RULES, gobArch);
+    const bossScale10 = gateFoeScale('boss', 'D', 10, 1, RULES, kasArch);
     expect(readyHard.target.monsters[0]!.monster.tweak.hp).toBeCloseTo(packScale8.hp, 5);
     expect(readyHard.target.monsters[0]!.monster.tweak.dealt).toBeCloseTo(packScale8.dealt, 5);
     // Kasaka seed has base tweak.hp = 0.9
     expect(readyHard.target.monsters[1]!.monster.tweak.hp).toBeCloseTo(0.9 * bossScale10.hp, 5);
     expect(readyHard.target.monsters[1]!.monster.tweak.dealt).toBeCloseTo(bossScale10.dealt, 5);
 
-    // Remote soloDoc sends Kasaka once unscaled in doc.monsters, with per-line hp/dealt on each gate
+    // Remote soloDoc sends Kasaka once unscaled in doc.monsters, with per-line hp/dealt on each gate (headcount = 1)
     const built = soloDoc(s, RULES, DOC_MAX).doc;
     expect(built.monsters[kasakaId]!.tweak.hp).toBe(0.9);
     const wire = JSON.parse(JSON.stringify(built));
@@ -723,7 +728,7 @@ describe('a world gate open to solo runs, in a room', () => {
     const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), parsedSolo);
     const tEasy = targets.find(t => t.gate.id === gEasy.id)!;
     const tHard = targets.find(t => t.gate.id === gHard.id)!;
-    const bossScale1 = difficultyFactor('boss', 'D', 1, RULES);
+    const bossScale1 = gateFoeScale('boss', 'D', 1, 1, RULES, kasArch);
     expect(tEasy.monsters[1]!.monster.tweak.hp).toBeCloseTo(0.9 * bossScale1.hp, 2);
     expect(tHard.monsters[1]!.monster.tweak.hp).toBeCloseTo(0.9 * bossScale10.hp, 2);
     expect(tHard.monsters[1]!.monster.tweak.dealt).toBeCloseTo(bossScale10.dealt, 2);
@@ -797,6 +802,26 @@ describe('a world gate open to solo runs, in a room', () => {
     expect(out.gates[0]!.preset.at).toBe('recommended');
     const posted = out.settings.sync.outbox!.at(-1)!.letter;
     expect(posted.kind === 'event' && posted.event.payload).toMatchObject({ verdict: 'refused', why: 'stash-full', to: [KEY] });
+  });
+
+  test('a solo clear of a world gate with foe NPCs pays foe NPC XP (and never ally NPC XP) both locally and in soloPlan', () => {
+    const ally = { ...newNpc({ name: 'Guide', rank: 'E', defaultSide: 'party' }), id: 'npc_s1' as never };
+    const foe = { ...newNpc({ name: 'Raider', rank: 'E', ...npcTierPreset('elite'), defaultSide: 'foe' }), id: 'npc_s2' as never };
+    const gateWithNpcs = {
+      ...worldGate,
+      npcs: [
+        { npcId: ally.id, count: 1, side: 'party' as const },
+        { npcId: foe.id, count: 2, side: 'foe' as const },
+      ],
+    };
+    const base = alone();
+    const s = { ...base, gates: [gateWithNpcs], library: { ...base.library, npcs: [ally, foe] } };
+    const expectedDue = 126 + npcXp(foe, RULES) * 2;
+    const plan = soloPlan(s, paidRun, RULES);
+    expect(plan).toEqual({ kind: 'paid', due: expectedDue, xp: expectedDue * RULES.gateParty, crystal: 48, party: RULES.gateParty });
+    const ran = ok(soloRan(s, H1, WORLD, runOf(s, endOf('won', {})), NO_LOOT, { day, ready: ctx() }));
+    expect(ran.xp).toBe(expectedDue * RULES.gateParty);
+    expect(ran.save.gates[0]!.xpPaid).toBe(expectedDue);
   });
 });
 

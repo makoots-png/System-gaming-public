@@ -61,6 +61,7 @@ import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { difficultyFactor } from '../src/core/gates/difficulty.ts';
 import type { DifficultyLevel } from '../src/core/gates/difficulty.ts';
+import { gateFoeScale } from '../src/core/gates/party-scale.ts';
 import { place } from '../src/core/combat/space.ts';
 import { isDamage } from '../src/core/combat/damage-type.ts';
 import { reduce } from '../src/core/combat/fight.ts';
@@ -538,16 +539,17 @@ const SCRIPT_ROWS: readonly Row[] = [
 ];
 
 // ── gate and boss difficulty slider (the owner, Nov 22, QD row 8; retuned for geared parties, t157u): rows D1 to D5 ──
+// Routed through `gateFoeScale` at headcount 3 (pinned to exact 1 / 1) so the difficulty rows certify the real app path.
 const vsScaledBoss = (rank: Rank, level: DifficultyLevel, archetype: MonsterArchetype = 'brute') => {
   const rows = once(() => {
-    const scale = difficultyFactor('boss', rank, level, RULES, archetype);
+    const scale = gateFoeScale('boss', rank, level, 3, RULES, archetype);
     return [...gearedPartyOf(MIXED, rank), monster(rank, archetype, 'boss', 'boss', RULES, [], scale)];
   });
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
 };
 const vsScaledPack = (rank: Rank, level: DifficultyLevel) => {
   const rows = once(() => {
-    const scale = difficultyFactor('normal', rank, level, RULES);
+    const scale = gateFoeScale('normal', rank, level, 3, RULES);
     return [...party(MIXED, rank), ...[1, 2, 3].map(i => monster(rank, 'brute', 'normal', `brute-${i}`, RULES, [], scale))];
   });
   return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
@@ -983,6 +985,9 @@ describe('Act 1 "The Empty Seat" Wave 1 and Wave 2 balance (1 to 6 players, samp
           expect(res.capped).toBe(0);
           expect(res.meanRounds).toBeGreaterThanOrEqual(1);
           expect(res.meanRounds).toBeLessThanOrEqual(25);
+          if (wave === 1 && players === 1) {
+            expect(res.winRate).toBeGreaterThanOrEqual(kind === 'sample' ? 0.90 : 0.55);
+          }
           if (wave === 1 && players >= 2) {
             expect(res.winRate).toBeGreaterThanOrEqual(0.95);
             expect(res.deathRate).toBeLessThanOrEqual(0.45);
@@ -990,10 +995,7 @@ describe('Act 1 "The Empty Seat" Wave 1 and Wave 2 balance (1 to 6 players, samp
           if (wave === 1 && players === 4) {
             expect(res.deathRate).toBeLessThanOrEqual(kind === 'sample' ? 0.20 : 0.30);
           }
-          if (wave === 1 && kind === 'sample' && players === 1) {
-            expect(res.winRate).toBeGreaterThanOrEqual(0.70);
-          }
-          if (wave === 2 && players >= 2) {
+          if (wave === 2) {
             expect(res.winRate).toBeGreaterThanOrEqual(0.90);
             if (players === 4) expect(res.deathRate).toBeLessThanOrEqual(0.25);
           }

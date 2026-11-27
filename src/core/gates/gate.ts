@@ -36,7 +36,7 @@ export type GateNpc = { npcId: NpcId; count: number; side: Side; wave?: GateWave
 /** What every gate has. `xpPaid` is all the XP this gate has paid out: fights in it that awarded XP, and its Clear. */
 export type GateFields = {
   id: GateId; name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null;
-  /** NPCs placed in this gate's raid (GM-only, never exposed to players in `shownOf`, excluded from solo runs). */
+  /** NPCs placed in this gate's raid (GM-only in worldDoc/shownOf; join solo runs counted through partyHeadcount). */
   npcs: GateNpc[];
   notes: string; createdDay: number; xpPaid: number;
   /** The battle map its fights are fought on (an id in the GM's `library.maps`), or null for the open arena. */

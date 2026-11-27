@@ -31,6 +31,7 @@ import type { StatBlock } from './registry/monsters.ts';
 import type { Npc } from './registry/npcs.ts';
 import type { Gate, GateId, GateType } from './gates/gate.ts';
 import type { DifficultyLevel, DifficultyScale } from './gates/difficulty.ts';
+import type { HeadcountRow } from './gates/party-scale.ts';
 import type { WorldWhy } from './gates/world.ts';
 import type { ForcedFace, NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
@@ -142,8 +143,8 @@ export type CombatApi = {
   /** Rows join the fight (a new one in setup when there is none; while it runs each rolls its opening). Answers how many joined. */
   add(list: JoinRow[]): number;
   isActive(): boolean;
-  /** Starts a fight from a gate or the bestiary: asks the GM who fights (and which wave on a wave gate), adds them with `cs`, and starts it. */
-  startFlow(cs: JoinRow[], o?: { gateId?: string; title?: string; body?: string; waves?: readonly { readonly id: string; readonly label: string; readonly rows: (joining?: boolean) => JoinRow[] }[]; wave?: string }): Promise<boolean>;
+  /** Starts a fight from a gate or the bestiary: asks the GM who fights (and which wave on a wave gate), adds them, and starts it (gate fights scale foes in core at start). */
+  startFlow(cs: JoinRow[], o?: { gateId?: string; title?: string; body?: string; buildFoes?: (joining?: boolean) => JoinRow[]; rosterRows?: (joining?: boolean) => readonly HeadcountRow[]; scalesWithParty?: boolean; waves?: readonly { readonly id: string; readonly label: string; readonly rows: (joining?: boolean) => JoinRow[]; readonly rosterRows?: (joining?: boolean) => readonly HeadcountRow[] }[]; wave?: string }): Promise<boolean>;
   /** One party reward window for rewards already given in one step (pay.ts): each hunter's lines and level-ups, listed together. */
   showParty(granted: readonly { hid: string; g: Granted }[], o?: { title?: string; body?: string; lines?: string[] }): Promise<void>;
   /** False when another GM phone runs a fight and the GM declines to replace it. */
@@ -701,6 +702,8 @@ export type SyncApi = {
   once(eid: EventId, write: Step<Save>): boolean;
   /** The players' sheets, on the room's GM phone; none on any other phone. */
   remoteSheets(): RemoteSheet[];
+  /** Current time adjusted to the room server's clock (`Date.now() + srvSkew`), for comparing server-stamped presence. */
+  serverNow(): number;
   /** The other players' hunters as faces (protocol.ts `HunterFace`), on a player's phone in a room; none on any other phone. */
   faces(): RoomFace[];
   myKey(hid: HunterId): SheetKey;

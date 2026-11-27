@@ -39,6 +39,7 @@ import { crowded } from './summons.ts';
 import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseStep } from './rise.ts';
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
 import { NPC_SKILLS } from '../registry/npcs.ts';
+import { partyHeadcount, partyScaleFactor, scaleTweak } from './party-scale.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
 import { adjustRollStep, bloodExtractionCheck, clearRollAdjust, extractionCheck, plainRollCheckText, rollCheckText, validExtractRoll, validForcedFace, validRollAdjust } from './roll-adjust.ts';
@@ -79,6 +80,25 @@ function rowFrom(nr: NewRow, place: Place, at: Tick, tie: number, R: Rules): Bod
   const { stats, sheet } = modified(nr.origin, nr.statuses, R);
   return { ...nr, place, stats, sheet, speed: sheet.speed, at, tie };
 }
+/**
+ * Scales a gate foe row (monster or foe NPC) to weighted party headcount `head` using `partyScaleFactor`, updating
+ * `origin.tweak`, recomputing `stats`/`sheet`, and adjusting HP through `rowLifeAfter`. Party rows, ally NPCs, shadows,
+ * and summons return unchanged.
+ */
+function scaleRowForParty(r: Body, head: number, R: Rules): Body {
+  if (r.side !== 'foe' || r.origin.kind !== 'monster') return r;
+  const kind = r.kind === 'monster' ? r.origin.monsterKind : r.kind === 'hunter' && r.npc ? 'normal' : null;
+  if (!kind) return r;
+  const s = partyScaleFactor(head, kind, r.origin.rank, R);
+  if (s.hp === 1 && s.dealt === 1) return r;
+  const origin = { ...r.origin, tweak: scaleTweak(r.origin.tweak, s) };
+  const { stats, sheet } = modified(origin, r.statuses, R);
+  const scaled: Body = { ...r, origin, stats, sheet, speed: sheet.speed };
+  if (!isUp(r)) return scaled;
+  const curHp = rowHp(r), oldMax = Math.max(1, r.sheet.hpMax);
+  const nextHp = curHp >= oldMax ? sheet.hpMax : Math.max(1, Math.min(sheet.hpMax, Math.round(curHp * (sheet.hpMax / oldMax))));
+  return rowLifeAfter(scaled, { type: 'setHp', hp: nextHp });
+}
 const openingOf = (b: { speed: number; sheet: Body['sheet'] }, o: Opening, now: Tick, R: Rules): Tick => opening(now, b.speed, o.d20 + b.sheet.opening, R.fight);
 
 /**
@@ -92,10 +112,15 @@ const joined = (nr: NewRow, now: Tick): NewRow => now === 0 ? nr : mythicJoined(
 /**
  * Rows join, all or none, their statuses from the fight's now (`joined`; 0 in setup). A row without a free place takes
  * its side's next free start (a map's), else its side's default place. While running each needs its opening.
+ * Mid-fight joins never change `sizedFor` or resize existing rows; gate foes added into a running `sizedFor` fight
+ * (`cmd.partyScaled: true`) enter scaled to that locked `sizedFor`.
  */
 function add<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add' }>, ctx: Ctx): Result | F {
   const R = ctx.rules;
-  let g: F = f;
+  let g: F = f.phase === 'setup' && cmd.partyScaled && !f.partyScaled ? { ...f, partyScaled: true as const } as F : f;
+  if (g.phase === 'running' && cmd.partyScaled && g.sizedFor === undefined) {
+    g = { ...g, sizedFor: Math.max(1, partyHeadcount([...g.rows, ...cmd.rows], R)) } as F;
+  }
   if (f.rows.length + cmd.rows.length > MAX_ROWS) return refused(f, 'tooMany');
   for (const nr of cmd.rows) {
     if (rowOf(g, nr.id)) return refused(f, 'duplicate');
@@ -111,7 +136,10 @@ function add<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add
     if (!place) return refused(f, 'noPlace');
     const o = cmd.openings.find(x => x.id === nr.id);
     if (g.phase === 'running' && !o) return refused(f, 'needsRoll');
-    const base = rowFrom(joined(nr, g.phase === 'running' ? g.now : tick(0)), place, tick(0), 0, R);
+    let base = rowFrom(joined(nr, g.phase === 'running' ? g.now : tick(0)), place, tick(0), 0, R);
+    if (g.phase === 'running' && cmd.partyScaled && g.sizedFor !== undefined) {
+      base = scaleRowForParty(base, g.sizedFor, R);
+    }
     const row = g.phase === 'running' && o ? { ...base, at: openingOf(base, o, g.now, R), tie: o.tie } : base;
     g = { ...g, rows: [...g.rows, row] };
   }
@@ -125,7 +153,10 @@ const addTo = <F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'a
 };
 const create: Step<'none', 'add'> = (_f, cmd, ctx) => {
   const grid = cmd.grid ?? openGrid(ctx.rules.fight.grid.w, ctx.rules.fight.grid.h);
-  const setup: Setup = { phase: 'setup', id: cmd.fightId, grid, zones: cmd.zones ?? [], fog: cmd.fog ?? null, rows: [], log: [], banked: 0, had: {}, fudge: NO_FUDGE };
+  const setup: Setup = {
+    phase: 'setup', id: cmd.fightId, grid, zones: cmd.zones ?? [], fog: cmd.fog ?? null, rows: [], log: [], banked: 0, had: {}, fudge: NO_FUDGE,
+    ...(cmd.partyScaled ? { partyScaled: true as const } : {}),
+  };
   const r = add(setup, cmd, ctx);
   return 'effects' in r ? { fight: null, effects: r.effects } : done(r, []);
 };
@@ -150,20 +181,26 @@ const removeRunning: Step<'running', 'remove'> = (f, cmd, ctx) => {
   return done(cmd.id === f.currentId || !rowOf(h, h.currentId) ? startTurn(h, ctx, fx) : overIf(h, fx, ctx.rules) ?? h, fx);
 };
 
-/** Every row's first turn from its opening roll; then the first turn starts. Both sides need someone up who holds the side. */
+/** Every row's first turn from its opening roll; then the first turn starts. Both sides need someone up who holds the side. Gate fights (`partyScaled`) size foes here from the party rows present and lock `sizedFor`. */
 const start: Step<'setup', 'start'> = (f, cmd, ctx) => {
   const R = ctx.rules;
   if (!f.rows.some(r => r.side === 'party' && holdsSide(r, f.rows)) || !f.rows.some(r => r.side === 'foe' && holdsSide(r, f.rows))) return refused(f, 'needBothSides');
+  const sizedFor = f.partyScaled ? Math.max(1, partyHeadcount(f.rows, R)) : undefined;
   const rows: Body[] = [];
   for (const r of f.rows) {
     const o = cmd.openings.find(x => x.id === r.id);
     if (!o) return refused(f, 'needsRoll');
-    const row = !R.fight.mythic.scripts && playsScript(r) ? unscriptedRow(r, R) : r;
+    const base = !R.fight.mythic.scripts && playsScript(r) ? unscriptedRow(r, R) : r;
+    const row = sizedFor !== undefined ? scaleRowForParty(base, sizedFor, R) : base;
     // a surprised side's openings come `kit.surprise` rounds later, but an alert row's (kits design 8.7.5)
     const late = cmd.surprised === row.side && !holds(row, 'alert') ? R.fight.kit.surprise * R.fight.round : 0;
     rows.push({ ...row, at: tick(openingOf(row, o, tick(0), R) + late), tie: o.tie });
   }
-  const running: Running = { ...f, phase: 'running', rows, now: tick(0), currentId: rows[0]!.id, pending: [] };
+  const { partyScaled: _ps, ...restSetup } = f;
+  const running: Running = {
+    ...restSetup, phase: 'running', rows, now: tick(0), currentId: rows[0]!.id, pending: [],
+    ...(sizedFor !== undefined ? { sizedFor } : {}),
+  };
   const fx: Fx = [];
   // who stands in a zone as the fight begins holds it from time 0
   const begins = cmd.surprised ? `The fight begins. The ${cmd.surprised === 'party' ? 'party is' : 'foes are'} surprised.` : 'The fight begins.';

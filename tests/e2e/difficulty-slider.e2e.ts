@@ -1,8 +1,9 @@
 import { mkdir } from 'node:fs/promises';
 import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, go, gateByName, chooseList, ROOM_CODE, type Page } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
-import { DIFFICULTY_WORDS, difficultyFactor, scaleMonsterForGate } from '../../src/core/gates/difficulty.ts';
+import { DIFFICULTY_WORDS, difficultyFactor } from '../../src/core/gates/difficulty.ts';
 import type { DifficultyLevel, GateDifficulty } from '../../src/core/gates/difficulty.ts';
+import { PARTY_SCALE_WORDS, gateFoeScale, scaleMonsterForParty } from '../../src/core/gates/party-scale.ts';
 import { monsterSheetOf, seedMonsters } from '../../src/core/registry/monsters.ts';
 
 const SHOT_DIR = process.env.DIFFICULTY_SHOTS || '';
@@ -48,8 +49,9 @@ test('GM spawns a gate at custom difficulty, overrides and clears boss difficult
 
   const cerberus = seedMonsters(RULES).find(m => m.id === 'seed:cerberus')!;
   const defLevel = RULES.fight.difficulty.default as DifficultyLevel;
-  const cerbHpAt = (lvl: DifficultyLevel) =>
-    monsterSheetOf(scaleMonsterForGate(cerberus, { difficulty: { gate: { at: 'set', level: lvl }, boss: { at: 'follows' } } }, 'boss', RULES), RULES).hpMax;
+  const partyCount = await gm.evaluate(() => hunterApp.store.get().hunters.length);
+  const cerbHpAt = (lvl: DifficultyLevel, head = partyCount) =>
+    monsterSheetOf(scaleMonsterForParty(cerberus, { difficulty: { gate: { at: 'set', level: lvl }, boss: { at: 'follows' } } }, 'boss', head, RULES), RULES).hpMax;
 
   // 1. Gates spawn form: verify default phrase, drag to difficulty 8, check 390 px fit, capture shot, spawn C-rank gate
   const spawnForm = gm.locator('#view-gates form.gt-spawn');
@@ -74,13 +76,14 @@ test('GM spawns a gate at custom difficulty, overrides and clears boss difficult
     const g = hunterApp.store.get().gates[0];
     return { spawnedId: g.id as string, spawnedBoss: hunterApp.api.bestiary.get(g.bossId) };
   });
-  const bossHpAt = (m: any, lvl: DifficultyLevel) =>
-    monsterSheetOf(scaleMonsterForGate(m, { difficulty: { gate: { at: 'set', level: lvl }, boss: { at: 'follows' } } }, 'boss', RULES), RULES).hpMax;
+  const bossHpAt = (m: any, lvl: DifficultyLevel, head = partyCount) =>
+    monsterSheetOf(scaleMonsterForParty(m, { difficulty: { gate: { at: 'set', level: lvl }, boss: { at: 'follows' } } }, 'boss', head, RULES), RULES).hpMax;
 
   const card = gateCard(gm, spawnedId);
   await expect(card).toBeVisible();
   const diff8: GateDifficulty = { gate: { at: 'set', level: 8 }, boss: { at: 'follows' } };
   await expect(card.locator('[data-diff-summary]')).toHaveText(DIFFICULTY_WORDS.cardSummary(diff8, true, RULES));
+  await expect(card.locator('[data-party-size]')).toHaveText(PARTY_SCALE_WORDS.cardSize(partyCount));
 
   const hp5 = bossHpAt(spawnedBoss, 5);
   const hp8 = bossHpAt(spawnedBoss, 8);
@@ -160,15 +163,16 @@ test('GM spawns a gate at custom difficulty, overrides and clears boss difficult
   await eform4.locator('button[type="submit"]').tap();
 
   const expectedEditedHp = monsterSheetOf(
-    scaleMonsterForGate(
+    scaleMonsterForParty(
       { ...cerberus, tweak: { hp: 2, stats: { str: 6 }, traits: ['armored'] } },
       { difficulty: diff8 },
       'boss',
+      partyCount,
       RULES,
     ),
     RULES,
   ).hpMax;
-  const expectedFactor = difficultyFactor('boss', 'C', 8, RULES);
+  const expectedFactor = gateFoeScale('boss', 'C', 8, partyCount, RULES, cerberus.archetype);
   await expect(cardAfter.locator('.gt-mons li.boss')).toContainText(`HP ${expectedEditedHp.toLocaleString('en-US')}`);
 
   await cardAfter.locator('[data-act="encounter"]').tap();
@@ -244,8 +248,10 @@ test('room players never see gate difficulty, while solo-open gates carry scaled
   const pCard = gateCard(player, gateId);
   await expect(pCard).toBeVisible();
   await expect(pCard.locator('[data-diff-summary]')).toHaveCount(0);
+  await expect(pCard.locator('[data-party-size]')).toHaveCount(0);
   await expect(pCard).not.toContainText('Difficulty');
   await expect(pCard).not.toContainText('of 10');
+  await expect(pCard).not.toContainText('Sized for');
 
   const worldHasDifficulty = await player.evaluate((id: string) => {
     const w = hunterApp.api.sync.doc('world');
@@ -254,13 +260,15 @@ test('room players never see gate difficulty, while solo-open gates carry scaled
   }, gateId);
   expect(worldHasDifficulty, 'world doc never exposes difficulty to players').toBe(false);
 
-  // Solo doc carries the rounded hp/dealt scaling on the boss line without exposing difficulty on the card
-  const bossLine = await player.evaluate((id: string) => {
+  // Solo doc carries the rounded hp/dealt scaling on the boss line (headcount = 1) without exposing difficulty on the card
+  const { bossLine, bossArch } = await player.evaluate((id: string) => {
     const s = hunterApp.api.sync.doc('solo');
     const g = s?.gates?.find((x: any) => x.id === id);
-    return g ? g.lines[g.lines.length - 1] : null;
+    const line = g ? g.lines[g.lines.length - 1] : null;
+    const mon = line ? s?.monsters?.[line.m] : null;
+    return { bossLine: line, bossArch: mon?.archetype ?? 'brute' };
   }, gateId);
-  const expected10 = difficultyFactor('boss', 'C', 10, RULES);
+  const expected10 = gateFoeScale('boss', 'C', 10, 1, RULES, bossArch);
   expect(bossLine).not.toBeNull();
   expect(bossLine.hp).toBeCloseTo(expected10.hp, 2);
   expect(bossLine.dealt).toBeCloseTo(expected10.dealt, 2);

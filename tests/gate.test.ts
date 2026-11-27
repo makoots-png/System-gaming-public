@@ -3,9 +3,11 @@ import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown,
 import { DEFAULT_DIFFICULTY, withDifficulty } from '../src/core/gates/difficulty.ts';
 import type { Gate, GateEvent, GateEventType, GateStatus, MonsterId, NpcId } from '../src/core/gates/gate.ts';
 import { worldDoc } from '../src/core/gates/world.ts';
-import { soloDoc, soloFight, soloReady } from '../src/core/gates/solo.ts';
-import { DOC_MAX } from '../src/core/protocol.ts';
-import { newNpc, npcTierPreset, npcXp } from '../src/core/registry/npcs.ts';
+import { soloDoc, soloFight, soloReady, soloTargets } from '../src/core/gates/solo.ts';
+import { DOCS, DOC_MAX } from '../src/core/protocol.ts';
+import { gateFoeScale } from '../src/core/gates/party-scale.ts';
+import { newNpc, npcSheet, npcTierPreset, npcXp } from '../src/core/registry/npcs.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { RULES } from '../src/core/rules.ts';
 import { newHunter, newSave } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -493,50 +495,176 @@ describe('gate NPC placements (parse, waves, XP, secrecy, solo exclusion)', () =
     expect(JSON.stringify(doc)).not.toContain('npcs');
   });
 
-  test('fork 5 default: soloReady, soloFight, and soloDoc exclude gate NPCs', () => {
+  test('fork 5: gate NPCs join solo runs counted through partyHeadcount, scaling foes and keeping allies unscaled, carrying full fight bodies on soloDoc with GM notes stripped', () => {
     const h = { ...newHunter(RULES), id: 'h1' as never, name: 'Jin' };
+    const sampleAbility = seedMonsters(RULES).find(m => m.abilities.length)!.abilities[0]!;
+    const allyNpc = {
+      ...newNpc({ name: 'Mira Guide', rank: 'E', archetype: 'skirmisher', defaultSide: 'party', skill: 4, abilities: [sampleAbility], statuses: [{ key: 'hasted', rounds: 2 }], notes: 'Secret ally note' }),
+      id: nid('npc_1'),
+    };
+    const foeNpc = {
+      ...newNpc({ name: 'Rival Raider', rank: 'E', archetype: 'brute', ...npcTierPreset('elite'), defaultSide: 'foe', skill: 2, abilities: [sampleAbility], statuses: [{ key: 'poisoned', rounds: 2 }], notes: 'Secret foe note' }),
+      id: nid('npc_2'),
+    };
     const withMonstersAndNpcs: Gate = {
       ...den('detected'),
       solo: true,
       monsters: [{ monsterId: seedId<'m'>('goblin'), count: 2 }],
       bossId: null,
       npcs: [
-        { npcId: nid('npc_1'), count: 1, side: 'party' },
-        { npcId: nid('npc_2'), count: 2, side: 'foe' },
+        { npcId: allyNpc.id, count: 1, side: 'party' },
+        { npcId: foeNpc.id, count: 2, side: 'foe' },
       ],
     };
-    const npcOnlyGate: Gate = {
+    const foeNpcOnlyGate: Gate = {
       ...den('detected'),
       id: 'g-npc-only' as never,
       solo: true,
       monsters: [],
       bossId: null,
-      npcs: [{ npcId: nid('npc_2'), count: 2, side: 'foe' }],
+      npcs: [{ npcId: foeNpc.id, count: 2, side: 'foe' }],
     };
-    const save = { ...newSave(dev('d')), hunters: [h], gates: [withMonstersAndNpcs, npcOnlyGate] };
+    const allyOnlyGate: Gate = {
+      ...den('detected'),
+      id: 'g-ally-only' as never,
+      solo: true,
+      monsters: [],
+      bossId: null,
+      npcs: [{ npcId: allyNpc.id, count: 1, side: 'party' }],
+    };
+    const baseSave = newSave(dev('d'));
+    const save = {
+      ...baseSave,
+      hunters: [h],
+      gates: [withMonstersAndNpcs, foeNpcOnlyGate, allyOnlyGate],
+      library: { ...baseSave.library, npcs: [allyNpc, foeNpc] },
+    };
     const ctx = { R: RULES, route: 'local' as const, held: false, nowMs: Date.now() };
 
+    // 1 hunter + 1 Support ally gate NPC = weighted headcount 1 + allyWeight.support (2 foe NPCs do NOT inflate headcount).
     const ready = soloReady(save, h.id, { kind: 'world', id: withMonstersAndNpcs.id }, ctx);
     expect(isRefused(ready)).toBe(false);
+    const expectedHead = 1 + RULES.fight.partyScale.allyWeight.support;
+    const scaleHead = gateFoeScale('normal', 'E', 5, expectedHead, RULES, 'brute');
+    const gobScaleHead = gateFoeScale('normal', 'E', 5, expectedHead, RULES, 'skirmisher');
     if (!isRefused(ready)) {
       expect(ready.target.monsters).toHaveLength(1);
-      expect(ready.target.monsters[0]!.count).toBe(2);
+      expect(ready.target.monsters[0]!.monster.tweak.hp).toBeCloseTo(gobScaleHead.hp, 5);
+      expect(ready.target.npcs).toHaveLength(2);
+      const tAlly = ready.target.npcs!.find(n => n.side === 'party')!;
+      const tFoe = ready.target.npcs!.find(n => n.side === 'foe')!;
+      expect(tAlly.npc.tweak.hp).toBe(allyNpc.tweak.hp);
+      expect(tAlly.npc.tweak.dealt).toBe(allyNpc.tweak.dealt);
+      expect(tFoe.npc.tweak.hp).toBeCloseTo(foeNpc.tweak.hp * scaleHead.hp, 5);
+      expect(tFoe.npc.tweak.dealt).toBeCloseTo(foeNpc.tweak.dealt * scaleHead.dealt, 5);
+
       const fight = soloFight(ready.h, ready.target, RULES)!;
-      expect(fight.fight.rows.filter(r => r.kind === 'hunter' && r.npc)).toHaveLength(0);
+      const allyRows = fight.fight.rows.filter(r => r.kind === 'hunter' && r.npc && r.side === 'party');
+      const foeNpcRows = fight.fight.rows.filter(r => r.kind === 'hunter' && r.npc && r.side === 'foe');
+      expect(allyRows).toHaveLength(1);
+      expect(allyRows[0]!.sheet.hpMax).toBe(npcSheet(allyNpc, RULES).hpMax);
+      expect(foeNpcRows).toHaveLength(2);
       expect(fight.fight.rows.filter(r => r.kind === 'monster')).toHaveLength(2);
     }
 
-    // A gate with only NPCs has no solo monsters and refuses as empty.
-    expect(soloReady(save, h.id, { kind: 'world', id: npcOnlyGate.id }, ctx)).toEqual({ ok: false, why: 'empty' });
+    // A gate with only foe NPCs has valid foes (headcount = 1); a gate with only ally NPCs refuses as empty.
+    const foeOnlyReady = soloReady(save, h.id, { kind: 'world', id: foeNpcOnlyGate.id }, ctx);
+    expect(isRefused(foeOnlyReady)).toBe(false);
+    if (!isRefused(foeOnlyReady)) {
+      const scale1 = gateFoeScale('normal', 'E', 5, 1, RULES, 'brute');
+      expect(foeOnlyReady.target.npcs![0]!.npc.tweak.hp).toBeCloseTo(foeNpc.tweak.hp * scale1.hp, 5);
+    }
+    expect(soloReady(save, h.id, { kind: 'world', id: allyOnlyGate.id }, ctx)).toEqual({ ok: false, why: 'empty' });
 
-    // soloDoc carries the solo gates (monster lines only, empty for the NPC-only gate) and zero NPC entries.
+    // soloDoc carries full NPC fight bodies (tier, tweak, abilities, statuses, line skill) so room solo matches local solo, while stripping GM notes.
     const published = soloDoc(save, RULES, DOC_MAX);
-    expect(published.doc.gates).toHaveLength(2);
-    expect(published.doc.gates[0]!.id).toBe(withMonstersAndNpcs.id);
-    expect(published.doc.gates[0]!.lines).toHaveLength(1);
-    expect(published.doc.gates[1]!.id).toBe(npcOnlyGate.id);
-    expect(published.doc.gates[1]!.lines).toEqual([]);
-    expect(JSON.stringify(published.doc)).not.toContain('npc_');
+    const wireRaw = JSON.stringify(published.doc);
+    expect(wireRaw).not.toContain('Secret ally note');
+    expect(wireRaw).not.toContain('Secret foe note');
+    expect(published.doc.monsters[foeNpc.id]!.kind).toBe('elite');
+    expect(published.doc.monsters[foeNpc.id]!.abilities).toHaveLength(1);
+    expect(published.doc.monsters[foeNpc.id]!.statuses).toEqual([{ key: 'poisoned', rounds: 2 }]);
+    expect(published.doc.monsters[allyNpc.id]!.tweak.hp).toBeCloseTo(allyNpc.tweak.hp, 6);
+    expect(published.doc.monsters[allyNpc.id]!.abilities).toHaveLength(1);
+    expect(published.doc.statuses.poisoned).toBeDefined();
+    expect(published.doc.statuses.hasted).toBeDefined();
+    const parsedSolo = DOCS.solo(JSON.parse(wireRaw))!;
+    expect(parsedSolo).not.toBeNull();
+
+    const world = worldDoc(save, 1, new Set(published.doc.gates.map(g => g.id)), 0);
+    const customSkillRules = { fight: { ...RULES.fight, npc: { ...RULES.fight.npc, defaultSkill: 5 } } };
+    const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), parsedSolo, customSkillRules);
+    const tMixed = targets.find(t => t.gate.id === withMonstersAndNpcs.id)!;
+    expect(tMixed.monsters[0]!.monster.tweak.hp).toBeCloseTo(gobScaleHead.hp, 2);
+    const remoteAlly = tMixed.npcs?.find(n => n.side === 'party')!;
+    const remoteFoe = tMixed.npcs?.find(n => n.side === 'foe')!;
+    expect(remoteAlly.npc.tier).toBe(allyNpc.tier);
+    expect(remoteAlly.npc.tweak.hp).toBeCloseTo(allyNpc.tweak.hp, 6);
+    expect(remoteAlly.npc.tweak.dealt).toBeCloseTo(allyNpc.tweak.dealt, 6);
+    expect(remoteAlly.npc.abilities).toHaveLength(1);
+    expect(remoteAlly.npc.statuses).toEqual([{ key: 'hasted', rounds: 2 }]);
+    expect(remoteAlly.npc.skill as number).toBe(4);
+    expect(remoteFoe.npc.tier).toBe('elite');
+    expect(remoteFoe.npc.tweak.hp).toBeCloseTo(foeNpc.tweak.hp * scaleHead.hp, 2);
+    expect(remoteFoe.npc.tweak.dealt).toBeCloseTo(foeNpc.tweak.dealt * scaleHead.dealt, 2);
+    expect(remoteFoe.npc.abilities).toHaveLength(1);
+    expect(remoteFoe.npc.statuses).toEqual([{ key: 'poisoned', rounds: 2 }]);
+    expect(remoteFoe.npc.skill as number).toBe(2);
+
+    // Older solo docs without line `skill` fall back to `R.fight.npc.defaultSkill`.
+    const legacyDoc = {
+      ...parsedSolo,
+      gates: parsedSolo.gates.map(g => ({ ...g, lines: g.lines.map(({ skill: _s, ...rest }) => rest) })),
+    };
+    const legacyMixed = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), legacyDoc, customSkillRules).find(t => t.gate.id === withMonstersAndNpcs.id)!;
+    expect(legacyMixed.npcs?.find(n => n.side === 'party')!.npc.skill as number).toBe(5);
+    expect(legacyMixed.npcs?.find(n => n.side === 'foe')!.npc.skill as number).toBe(5);
+  });
+
+  test('room solo preserves per-line scale when a non-boss monster sits in the boss slot with its own difficulty', () => {
+    const h = { ...newHunter(RULES), id: 'h1' as never, name: 'Jin' };
+    const goblin = seedMonsters(RULES).find(m => m.id === seedId<'m'>('goblin'))!;
+    const eliteFoe = { ...seedMonsters(RULES).find(m => m.kind === 'elite')! };
+    const gate: Gate = {
+      ...den('detected'),
+      id: 'g-own-nonboss' as never,
+      rank: eliteFoe.rank,
+      solo: true,
+      difficulty: { gate: { at: 'set', level: 3 }, boss: { at: 'own', level: 9 } },
+      monsters: [{ monsterId: goblin.id, count: 2 }],
+      bossId: eliteFoe.id,
+    };
+    const baseSave = newSave(dev('d'));
+    const save = { ...baseSave, hunters: [h], gates: [gate] };
+    const local = soloReady(save, h.id, { kind: 'world', id: gate.id }, { R: RULES, route: 'local', held: false, nowMs: Date.now() });
+    expect(isRefused(local)).toBe(false);
+    if (isRefused(local)) return;
+
+    const published = soloDoc(save, RULES, DOC_MAX);
+    expect(published.left).toEqual([]);
+    const wireGate = published.doc.gates[0]!;
+    const packLine = wireGate.lines.find(l => l.m === goblin.id)!;
+    const bossLine = wireGate.lines.find(l => l.m === eliteFoe.id)!;
+    // Pack monster shares gate-level scale; non-boss monster in the boss slot carries its own diff-9 scale.
+    expect(packLine.hp).toBeUndefined();
+    expect(packLine.dealt).toBeUndefined();
+    expect(bossLine.hp).toBeDefined();
+    expect(bossLine.dealt).toBeDefined();
+
+    const parsedSolo = DOCS.solo(JSON.parse(JSON.stringify(published.doc)))!;
+    expect(parsedSolo).toEqual(published.doc);
+    const world = worldDoc(save, 1, new Set([gate.id]), 0);
+    const remote = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), parsedSolo, RULES)[0]!;
+    const expectedPack = gateFoeScale(goblin.kind, goblin.rank, 3, 1, RULES, goblin.archetype);
+    const expectedBoss = gateFoeScale(eliteFoe.kind, eliteFoe.rank, 9, 1, RULES, eliteFoe.archetype);
+    const remotePack = remote.monsters.find(m => m.id === goblin.id)!;
+    const remoteBoss = remote.monsters.find(m => m.id === eliteFoe.id)!;
+    expect(remotePack.monster.tweak.hp).toBeCloseTo((goblin.tweak.hp ?? 1) * expectedPack.hp, 2);
+    expect(remotePack.monster.tweak.dealt).toBeCloseTo((goblin.tweak.dealt ?? 1) * expectedPack.dealt, 2);
+    expect(remoteBoss.monster.tweak.hp).toBeCloseTo((eliteFoe.tweak.hp ?? 1) * expectedBoss.hp, 2);
+    expect(remoteBoss.monster.tweak.dealt).toBeCloseTo((eliteFoe.tweak.dealt ?? 1) * expectedBoss.dealt, 2);
+    expect(remoteBoss.monster.tweak.hp).toBeCloseTo(local.target.monsters.find(m => m.id === eliteFoe.id)!.monster.tweak.hp ?? 1, 2);
+    expect(remoteBoss.monster.tweak.dealt).toBeCloseTo(local.target.monsters.find(m => m.id === eliteFoe.id)!.monster.tweak.dealt ?? 1, 2);
   });
 });
 

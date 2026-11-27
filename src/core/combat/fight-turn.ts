@@ -210,7 +210,11 @@ export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): En
   const xp = down.reduce((n, r) => r.side === 'foe' ? n + r.xp : n, f.banked);
   const summary: Summary = { rounds: roundsOf(now, R, 'near'), winner, down: down.map(r => r.id), xp, ...(restedIds.length ? { rested: after.rested } : {}) };
   fx.push({ type: 'ended', summary });
-  let out: Ended = { phase: 'ended', id: f.id, grid: f.grid, zones: f.zones, fog: f.fog, rows: after.rows, log: f.log, banked: f.banked, had: f.had, now, summary };
+  const sizedFor = f.phase !== 'setup' ? f.sizedFor : undefined;
+  let out: Ended = {
+    phase: 'ended', id: f.id, grid: f.grid, zones: f.zones, fog: f.fog, rows: after.rows, log: f.log, banked: f.banked, had: f.had, now, summary,
+    ...(sizedFor !== undefined ? { sizedFor } : {}),
+  };
   if (restedIds.length) {
     const names = restedIds.map(id => { const r = after.rows.find(x => x.id === id); return `${r ? r.name : id} ${after.rested[id]}`; });
     out = logged(out, line(`Fatigue recovered: ${names.join(', ')}.`, restedIds), R);

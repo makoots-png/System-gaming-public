@@ -48,8 +48,8 @@ type Shared = {
  * the party saw it, '0' never), so the room's doc keeps a wall the party saw once drawn after it is out of sight.
  */
 export type Fog = { readonly sight: Tiles; readonly seen: string };
-/** Being built: rows join and stand in their places; nobody has a turn yet (`at` and `tie` are 0 until `start`). */
-export type Setup = Shared & { readonly phase: 'setup'; readonly fudge: Fudge };
+/** Being built: rows join and stand in their places; nobody has a turn yet (`at` and `tie` are 0 until `start`). `partyScaled` marks a gate fight whose foes scale in core at `start` to the party rows actually present. */
+export type Setup = Shared & { readonly phase: 'setup'; readonly fudge: Fudge; readonly partyScaled?: true };
 /** A use held while a hunter picks its dodge tile: `act` (a mythic omen landing too) or `release`. */
 export type HeldUse = Extract<Command, { readonly type: 'act' | 'release' }>;
 /**
@@ -62,17 +62,18 @@ export type DodgeWait = { readonly n: number; readonly use: HeldUse; readonly to
  * Under way: `now` is the time of the current turn, `currentId` whose it is. `pending` are the per-round ops due at a
  * turn start whose dice the edge has been asked to roll (a `rollSettle` effect) and that a `settle` command pays.
  * `dodge`, when present, holds a use waiting for a caught hunter to pick its dodge tile; `dodges` counts prompts opened
- * so every prompt gets a fresh monotonic `n`.
+ * so every prompt gets a fresh monotonic `n`. `sizedFor`, when present, is the weighted party headcount locked at
+ * `start` for a gate fight; mid-fight joins never change it.
  */
 export type Running = Shared & {
   readonly phase: 'running'; readonly now: Tick; readonly currentId: CombatantId; readonly pending: readonly DueTurn[]; readonly fudge: Fudge;
-  readonly dodge?: DodgeWait; readonly dodges?: number;
+  readonly dodge?: DodgeWait; readonly dodges?: number; readonly sizedFor?: number;
 };
 /**
  * Over: a side had nobody up, or the GM ended it. The rows and the log stay for the summary screen until `clear`. It
  * holds no `fudge`: the GM's weight ends with the fight, and the next one starts at 0.
  */
-export type Ended = Shared & { readonly phase: 'ended'; readonly now: Tick; readonly summary: Summary };
+export type Ended = Shared & { readonly phase: 'ended'; readonly now: Tick; readonly summary: Summary; readonly sizedFor?: number };
 
 /** The faces a GM may force a row's next d20 roll to (notes-8-fudge.md section 2). */
 export const FORCED_FACES = [1, 20] as const;
@@ -145,6 +146,8 @@ export type Command =
     readonly zones?: readonly Zone[]; readonly fog?: Fog | null;
     /** The tiles a row of each side takes, in order, before its side's default line (a saved map's starts). */
     readonly starts?: { readonly party: readonly Place[]; readonly foe: readonly Place[] };
+    /** Marks a gate fight to scale foes in core at `start` (or scales newly joined gate foes to the running fight's locked `sizedFor`). */
+    readonly partyScaled?: boolean;
   }
   /** A row leaves. */
   | { readonly type: 'remove'; readonly id: CombatantId }

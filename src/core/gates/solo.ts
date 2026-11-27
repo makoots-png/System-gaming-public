@@ -20,7 +20,7 @@ import { hunterSheet } from '../hunter/sheet.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { dueAt } from '../day.ts';
 import { fightId } from '../ids.ts';
-import type { GateId, HunterId, MonsterId, PersonalGateId, ShadowId } from '../ids.ts';
+import type { GateId, HunterId, MonsterId, NpcId, PersonalGateId, ShadowId } from '../ids.ts';
 import type { Hunter, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -39,14 +39,19 @@ import { resolveGrant } from '../registry/item-book.ts';
 import type { ItemGrant } from '../registry/item-book.ts';
 import { monsterXp, parseMonster, seedMonsters, tweakOfMonster } from '../registry/monsters.ts';
 import type { Monster, MonsterTemplate } from '../registry/monsters.ts';
+import { NPC_TIERS, clampNpcSkill, npcXp } from '../registry/npcs.ts';
+import type { Npc } from '../registry/npcs.ts';
+import { oneOf } from '../one-of.ts';
+import { RULES } from '../rules.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
+import type { Side } from '../combat/space.ts';
 import { combatantId } from '../combat/ability-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { reduce } from '../combat/fight.ts';
 import { shadowFieldCap } from '../combat/fight-types.ts';
 import type { NewRow, Setup } from '../combat/fight-types.ts';
-import { hunterRow, monsterRows, shadowRow } from '../combat/rows.ts';
-import type { RowMonster } from '../combat/rows.ts';
+import { hunterRow, monsterRows, npcRows, shadowRow } from '../combat/rows.ts';
+import type { RowMonster, RowNpc } from '../combat/rows.ts';
 import { CAP_ROUNDS } from '../combat/play.ts';
 import { fateLine, wonLine } from '../combat/odds.ts';
 import type { OddsRead, RunEnd, RunOutcome, Weighed } from '../combat/odds.ts';
@@ -58,12 +63,13 @@ import type { SpawnMonster } from './spawn.ts';
 import { enteredAlone, worldOrder } from './world.ts';
 import { gateFact, settleClear, shareEach } from './pay.ts';
 import type { Seat } from '../role.ts';
-import { EARNED_WHAT_MAX, WORLD_NAME_MAX, newEvent } from '../protocol.ts';
+import { EARNED_WHAT_MAX, SOLO_SCALE_MAX, WORLD_NAME_MAX, newEvent } from '../protocol.ts';
 import { pendingHeard, rewardSeatOf, selfPay } from '../hunter/pending.ts';
 import type { RewardSeat } from '../hunter/pending.ts';
 import { stashCanHold, stashDeposit } from '../trade/stash.ts';
 import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
-import { difficultyFactor, effectiveBossLevel, effectiveGateLevel, scaleMonsterForGate, scaleRowMonster } from './difficulty.ts';
+import { effectiveBossLevel, effectiveGateLevel, scaleRowMonster } from './difficulty.ts';
+import { gateFoeScale, gateNpcHeadcountRows, partyHeadcount, scaleMonsterForParty, scaleNpcForParty, scaleRowNpc } from './party-scale.ts';
 import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloDocLine, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { askPosted } from '../sync/asked.ts';
@@ -185,11 +191,14 @@ export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   'stash-full': 'The party stash is full. Take something out of the stash or change the clear rewards, then enter again.',
 };
 
-/** What a run is played against: the gate's name and rank, its monsters as rows read them, each with its count, and the statuses they name. */
+/** One gate NPC line in a solo run: its id, its combat body (foe NPCs already scaled, ally NPCs unscaled), count, and side. */
+export type SoloTargetNpc = { readonly id: NpcId; readonly npc: RowNpc; readonly count: number; readonly side: Side };
+/** What a run is played against: the gate's name and rank, its monsters and optional gate NPCs as rows read them, each with its count, and the statuses they name. */
 export type SoloTarget = {
   readonly gate: SoloGate; readonly name: string; readonly rank: Rank; readonly boss: boolean;
   readonly monsters: readonly { readonly id: MonsterId; readonly monster: RowMonster; readonly count: number }[];
-  /** The statuses the monsters name that the rules may lack (a room's GM statuses); laid over `conditions` for this fight only. */
+  readonly npcs?: readonly SoloTargetNpc[];
+  /** The statuses the monsters and NPCs name that the rules may lack (a room's GM statuses); laid over `conditions` for this fight only. */
   readonly statuses: Readonly<Record<string, StatusDef>>;
 };
 
@@ -215,7 +224,12 @@ const roster = (list: readonly GateMonster[], bossId: MonsterId | null, find: (i
  * gate only by the hunter this phone plays there, and not while a run of it waits). A Penalized hunter may enter
  * (notes-2-solo.md 9). Run before the play and again inside the write.
  */
-export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hid: string, gate: SoloGate, c: ReadyCtx): { readonly h: Hunter; readonly target: SoloTarget } | Refused<SoloRefusal> {
+export function soloReady(
+  save: Pick<Save, 'hunters' | 'gates' | 'monsters'> & { readonly library?: Pick<Save['library'], 'npcs'> },
+  hid: string,
+  gate: SoloGate,
+  c: ReadyCtx,
+): { readonly h: Hunter; readonly target: SoloTarget } | Refused<SoloRefusal> {
   const h = save.hunters.find(x => x.id === hid);
   if (!h) return refuse('no-hunter');
   if (c.held) return refuse('fight');
@@ -235,7 +249,8 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
     const t = c.room?.targets.find(x => x.gate.kind === 'world' && x.gate.id === gate.id);
     if (!t) return refuse('not-solo');
     if (c.room?.waiting.includes(gate.id)) return refuse('waiting');
-    return t.monsters.length ? { h, target: t } : refuse('empty');
+    const hasFoes = t.monsters.length > 0 || (t.npcs?.some(n => n.side === 'foe') ?? false);
+    return hasFoes ? { h, target: t } : refuse('empty');
   }
   const g = save.gates.find(x => x.id === gate.id);
   if (!g) return refuse('gone');
@@ -243,14 +258,33 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
   if (!g.solo) return refuse('not-solo');
   const all = [...seeds, ...save.monsters];
   const find = (id: MonsterId) => all.find(m => m.id === id) ?? null;
+  const allNpcs = save.library?.npcs ?? [];
+  const findNpc = (id: NpcId) => allNpcs.find(n => n.id === id) ?? null;
+  const resolvedNpcs = (g.npcs ?? []).flatMap(entry => {
+    const npc = findNpc(entry.npcId);
+    return npc ? [{ entry, npc }] : [];
+  });
+  const headcount = partyHeadcount([
+    { kind: 'hunter', side: 'party' },
+    ...gateNpcHeadcountRows(resolvedNpcs.map(({ entry, npc }) => ({
+      side: entry.side, count: entry.count, tier: npc.tier, tweak: npc.tweak,
+    })), c.R),
+  ], c.R);
   const monsters: { id: MonsterId; monster: RowMonster; count: number }[] = [];
   for (const m of g.monsters) {
     const x = find(m.monsterId);
-    if (x) monsters.push({ id: m.monsterId, monster: scaleMonsterForGate(x, g, 'pack', c.R), count: m.count });
+    if (x) monsters.push({ id: m.monsterId, monster: scaleMonsterForParty(x, g, 'pack', headcount, c.R), count: m.count });
   }
   const boss = g.bossId ? find(g.bossId) : null;
-  if (boss && g.bossId) monsters.push({ id: g.bossId, monster: scaleMonsterForGate(boss, g, 'boss', c.R), count: 1 });
-  return monsters.length ? { h, target: { gate, name: g.name, rank: g.rank, boss: g.bossId !== null, monsters, statuses: {} } } : refuse('empty');
+  if (boss && g.bossId) monsters.push({ id: g.bossId, monster: scaleMonsterForParty(boss, g, 'boss', headcount, c.R), count: 1 });
+  const npcs: SoloTargetNpc[] = resolvedNpcs.map(({ entry, npc }) => ({
+    id: entry.npcId,
+    npc: scaleNpcForParty(npc, entry.side, g, headcount, c.R),
+    count: entry.count,
+    side: entry.side,
+  }));
+  const hasFoes = monsters.length > 0 || npcs.some(n => n.side === 'foe');
+  return hasFoes ? { h, target: { gate, name: g.name, rank: g.rank, boss: g.bossId !== null, monsters, ...(npcs.length ? { npcs } : {}), statuses: {} } } : refuse('empty');
 }
 
 /**
@@ -271,12 +305,17 @@ const harder = (m: RowMonster, R: Pick<Rules, 'solo'>): RowMonster => {
   const each = Math.sqrt(R.solo.autoHarder), t = tweakOfMonster(m.tweak);
   return { ...m, tweak: { hp: t.hp * each, dealt: t.dealt * each, stats: t.stats, traits: t.traits } };
 };
+const harderNpc = (n: RowNpc, R: Pick<Rules, 'solo'>): RowNpc => {
+  const each = Math.sqrt(R.solo.autoHarder);
+  return scaleRowNpc(n, { hp: each, dealt: each });
+};
 /**
  * The fight of hunter `h` against `t`, in setup, made by the reducer's own `add` on the open arena: the hunter's row
- * (`hunterRow`), a row for each summoned shadow, then each roster line's monsters (`monsterRows`) made harder by the
- * rule (`harder`), with the target's statuses over the rules' for this fight only (`R` of the answer: the run plays by
- * it). The one builder of a solo fight: the odds a gate's card shows play this value, the fight with its rules
- * (`OddsApi.paintSolo` takes no other rules), and so does the run. Null when the reducer refuses it.
+ * (`hunterRow`), a row for each summoned shadow, any gate ally NPCs (unscaled, party side), then each roster line's
+ * monsters (`monsterRows`) and foe NPCs made harder by the rule (`harder` / `harderNpc`), with the target's statuses
+ * over the rules' for this fight only (`R` of the answer: the run plays by it). The one builder of a solo fight: the
+ * odds a gate's card shows play this value, the fight with its rules (`OddsApi.paintSolo` takes no other rules), and so
+ * does the run. Null when the reducer refuses it.
  */
 export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null {
   const R = withStatuses(R0, t.statuses);
@@ -284,7 +323,17 @@ export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null
   const rows: NewRow[] = [hunterRow(h, me, R)];
   const cap = shadowFieldCap(hunterSheet(h, R).sheet.shadows);
   h.shadows.filter(s => s.summoned).slice(0, cap).forEach((s, i) => { const id = combatantId(`solo-s${i}`); shadows[id] = s.id; rows.push(shadowRow(s, h.id, me, id, R)); });
+  (t.npcs ?? []).forEach((n, i) => {
+    if (n.side === 'party') {
+      rows.push(...npcRows(n.npc, Array.from({ length: n.count }, (_, k) => combatantId(`solo-na${i}-${k}`)), R, { side: 'party' }));
+    }
+  });
   t.monsters.forEach((m, i) => rows.push(...monsterRows(harder(m.monster, R), Array.from({ length: m.count }, (_, k) => combatantId(`solo-m${i}-${k}`)), R)));
+  (t.npcs ?? []).forEach((n, i) => {
+    if (n.side === 'foe') {
+      rows.push(...npcRows(harderNpc(n.npc, R), Array.from({ length: n.count }, (_, k) => combatantId(`solo-nf${i}-${k}`)), R, { side: 'foe' }));
+    }
+  });
   const r = reduce(null, { type: 'add', fightId: fightId('solo'), rows, openings: [] }, { rules: R });
   return r.fight?.phase === 'setup' ? { fight: r.fight, hunter: me, shadows, R } : null;
 }
@@ -386,8 +435,11 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
   } else if (run.route === 'local') {
     if (outcome === 'won') {
       // the gate's Clear for a party of one: active preset if set (no roll), else its whole pot of XP due, gold rolled, and crystal salvage
-      const g = save.gates.find(x => x.id === gate.id)!, all = [...seedMonsters(R), ...save.monsters];
-      const due = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
+      const g = save.gates.find(x => x.id === gate.id)!, all = [...seedMonsters(R), ...save.monsters], allNpcs = save.library?.npcs ?? [];
+      const due = xpDue(g, id => {
+        const m = all.find(x => x.id === id); if (m) return monsterXp(m, R);
+        const n = allNpcs.find(x => x.id === id); return n ? npcXp(n, R) : 0;
+      });
       if (isActivePreset(g.preset)) {
         const preset = g.preset, soloPayee = { kind: 'local' as const, hid: h.id }, part = partitionPresetItems(preset, [soloPayee]);
         xp = preset.xp;
@@ -441,41 +493,127 @@ const docMonster = (m: Monster): MonsterTemplate => {
   const { auto: _auto, placeholder: _placeholder, scripted: _scripted, ...fight } = parseMonster({ ...m, notes: [], desc: '', loot: { gold: 0, items: [] } })!;
   return fight;
 };
-/** The statuses a monster names by key at its start, as the GM's rules hold them. */
-const namedStatuses = (m: Monster, R: Rules): Record<string, StatusDef> =>
+/**
+ * An NPC as the solo doc carries it: its full fight body (tier, tweak, abilities, starting statuses, optional icon) so
+ * the player's phone plays the exact same fight as local solo runs, with GM-only notes left out. Solo views keep
+ * abilities, tier, notes, and play skill off screen.
+ */
+const docNpcBody = (n: Npc): MonsterTemplate => {
+  const { auto: _auto, placeholder: _placeholder, scripted: _scripted, ...fight } = parseMonster({
+    name: n.name,
+    rank: n.rank,
+    type: '',
+    archetype: n.archetype,
+    kind: n.tier,
+    tweak: n.tweak,
+    abilities: n.abilities,
+    statuses: n.statuses,
+    ...(n.icon ? { icon: n.icon } : {}),
+    desc: '',
+    notes: [],
+    loot: { gold: 0, items: [] },
+  })!;
+  return fight;
+};
+/** The statuses a monster or NPC names by key at its start, as the GM's rules hold them. */
+const namedStatuses = (m: Pick<Monster, 'statuses'>, R: Rules): Record<string, StatusDef> =>
   Object.fromEntries(m.statuses.flatMap(x => { const defs: Readonly<Record<string, StatusDef>> = R.conditions; return Object.hasOwn(defs, x.key) ? [[x.key, defs[x.key]!]] : []; }));
 
 const round3 = (n: number): number => Math.round(n * 1000) / 1000;
-const scaledLine = (m: Monster | undefined, id: string, n: number, role: 'pack' | 'boss', g: Gate, R: Rules): SoloDocLine => {
-  if (!m) return { m: id, n };
-  const level = role === 'boss' ? effectiveBossLevel(g.difficulty, R) : effectiveGateLevel(g.difficulty, R);
-  const s = difficultyFactor(m.kind, m.rank, level, R, m.archetype);
-  const hp = round3(s.hp), dealt = round3(s.dealt);
-  return { m: id, n, ...(hp !== 1 ? { hp } : {}), ...(dealt !== 1 ? { dealt } : {}) };
-};
+const validWireScale = (hp: number, dealt: number): boolean =>
+  Number.isFinite(hp) && hp > 0 && hp <= SOLO_SCALE_MAX && Number.isFinite(dealt) && dealt > 0 && dealt <= SOLO_SCALE_MAX;
 
 /**
  * The room's solo doc as the GM's phone publishes it: the gates of the world doc open to solo runs that can still be
- * cleared, in its order, each with its roster as monster keys and counts (its boss last, with optional difficulty `hp`
- * and `dealt` factors); each monster once, by value; and the statuses those monsters name. A gate is added whole while
- * the doc's JSON stays within `max` (`DOC_MAX`); the gates left out are answered, so the world doc marks solo only what
- * this doc holds and the GM's card says why.
+ * cleared, in its order, each with its roster as body keys and counts (monsters, boss, and gate companions counted
+ * through weighted `partyHeadcount`). Foes matching the gate's non-boss scale share one gate-level `hp`/`dealt`; any
+ * line whose scale differs (bosses, or a non-boss monster in the boss slot with its own difficulty) carries its own
+ * `hp`/`dealt`. NPC bodies carry their full fight body (with GM notes stripped) and line `skill`, matching monsters;
+ * solo views display only name and side. A gate whose scale exceeds `SOLO_SCALE_MAX` or whose addition exceeds `max`
+ * (`DOC_MAX`) is left out in `left` so `DOCS.solo` never rejects the whole doc.
  */
-export function soloDoc(save: Pick<Save, 'gates' | 'monsters'>, R: Rules, max: number): { readonly doc: SoloDoc; readonly left: readonly GateId[] } {
-  const all = [...seedMonsters(R), ...save.monsters], left: GateId[] = [];
+export function soloDoc(
+  save: Pick<Save, 'gates' | 'monsters'> & { readonly library?: Pick<Save['library'], 'npcs'> },
+  R: Rules,
+  max: number,
+): { readonly doc: SoloDoc; readonly left: readonly GateId[] } {
+  const all = [...seedMonsters(R), ...save.monsters], allNpcs = save.library?.npcs ?? [], left: GateId[] = [];
   let doc: SoloDoc = { gates: [], monsters: {}, statuses: {} };
   for (const g of worldOrder(save.gates)) {
     if (!g.solo || !can(g, 'clear')) continue;
     const find = (id: string) => all.find(x => x.id === id);
+    const findNpc = (id: string) => allNpcs.find(x => x.id === id);
+    const resolvedNpcs = (g.npcs ?? []).flatMap(entry => {
+      const npc = findNpc(entry.npcId);
+      return npc ? [{ entry, npc }] : [];
+    });
+    const headcount = partyHeadcount([
+      { kind: 'hunter', side: 'party' },
+      ...gateNpcHeadcountRows(resolvedNpcs.map(({ entry, npc }) => ({
+        side: entry.side, count: entry.count, tier: npc.tier, tweak: npc.tweak,
+      })), R),
+    ], R);
+    const gateLevel = effectiveGateLevel(g.difficulty, R);
+    const packRaw = gateFoeScale('normal', g.rank, gateLevel, headcount, R);
+    const packHp = round3(packRaw.hp), packDealt = round3(packRaw.dealt);
+    let scaleOk = true, hasGateScaleLine = false;
+    const foeScaleLine = (
+      id: string,
+      n: number,
+      s: { readonly hp: number; readonly dealt: number },
+      extra: Partial<SoloDocLine> = {},
+    ): SoloDocLine => {
+      const hp = round3(s.hp), dealt = round3(s.dealt);
+      if (!validWireScale(hp, dealt)) scaleOk = false;
+      if (hp === packHp && dealt === packDealt) {
+        hasGateScaleLine = true;
+        return { m: id, n, ...extra };
+      }
+      return {
+        m: id,
+        n,
+        ...(hp !== 1 || packHp !== 1 ? { hp } : {}),
+        ...(dealt !== 1 || packDealt !== 1 ? { dealt } : {}),
+        ...extra,
+      };
+    };
+    const monsterLine = (m: Monster | undefined, id: string, n: number, role: 'pack' | 'boss'): SoloDocLine => {
+      if (!m) return { m: id, n };
+      const level = role === 'boss' ? effectiveBossLevel(g.difficulty, R) : gateLevel;
+      return foeScaleLine(id, n, gateFoeScale(m.kind, m.rank, level, headcount, R, m.archetype));
+    };
     const lines: SoloDocLine[] = [
-      ...g.monsters.map(m => scaledLine(find(m.monsterId), m.monsterId as string, m.count, 'pack', g, R)),
-      ...(g.bossId ? [scaledLine(find(g.bossId), g.bossId as string, 1, 'boss', g, R)] : []),
+      ...g.monsters.map(m => monsterLine(find(m.monsterId), m.monsterId as string, m.count, 'pack')),
+      ...(g.bossId ? [monsterLine(find(g.bossId), g.bossId as string, 1, 'boss')] : []),
+      ...resolvedNpcs.map(({ entry, npc }) => {
+        if (entry.side === 'foe') {
+          return foeScaleLine(
+            entry.npcId as string,
+            entry.count,
+            gateFoeScale('normal', npc.rank, gateLevel, headcount, R, npc.archetype),
+            { as: 'foe', skill: npc.skill },
+          );
+        }
+        return { m: entry.npcId as string, n: entry.count, as: 'party' as const, skill: npc.skill };
+      }),
     ];
-    const found = lines.flatMap(l => { const m = find(l.m); return m ? [m] : []; });
+    if (hasGateScaleLine && !validWireScale(packHp, packDealt)) scaleOk = false;
+    if (!scaleOk) { left.push(g.id); continue; }
+    const found = lines.flatMap(l => { if (l.as !== undefined) return []; const m = find(l.m); return m ? [m] : []; });
+    const foundNpcs = resolvedNpcs.map(x => x.npc);
     const next: SoloDoc = {
-      gates: [...doc.gates, { id: g.id, name: g.name.slice(0, WORLD_NAME_MAX), rank: g.rank, boss: g.bossId !== null, lines }],
-      monsters: { ...doc.monsters, ...Object.fromEntries(found.map(m => [m.id, docMonster(m)])) },
-      statuses: Object.assign({}, doc.statuses, ...found.map(m => namedStatuses(m, R))),
+      gates: [...doc.gates, {
+        id: g.id, name: g.name.slice(0, WORLD_NAME_MAX), rank: g.rank, boss: g.bossId !== null,
+        ...(hasGateScaleLine && packHp !== 1 ? { hp: packHp } : {}),
+        ...(hasGateScaleLine && packDealt !== 1 ? { dealt: packDealt } : {}),
+        lines,
+      }],
+      monsters: {
+        ...doc.monsters,
+        ...Object.fromEntries(found.map(m => [m.id, docMonster(m)])),
+        ...Object.fromEntries(foundNpcs.map(n => [n.id, docNpcBody(n)])),
+      },
+      statuses: Object.assign({}, doc.statuses, ...found.map(m => namedStatuses(m, R)), ...foundNpcs.map(n => namedStatuses(n, R))),
     };
     if (JSON.stringify(next).length <= max) doc = next; else left.push(g.id);
   }
@@ -484,21 +622,46 @@ export function soloDoc(save: Pick<Save, 'gates' | 'monsters'>, R: Rules, max: n
 
 /**
  * The room's solo gates as a player's phone plays them: each gate the world doc marks solo and that can still be
- * cleared, with its roster from the solo doc (a line whose monster the doc lacks is left out, each scaled by the line's
- * optional difficulty `hp`/`dealt`) and the doc's statuses.
+ * cleared, with its roster from the solo doc (each foe scaled by its per-line scale when present, else the gate's
+ * `hp`/`dealt`, allies never scaled) and the doc's statuses. NPC lines read their carried `skill`, falling back to
+ * `R.fight.npc.defaultSkill` for older docs.
  */
-export function soloTargets(world: WorldDoc | null, doc: SoloDoc | null): SoloTarget[] {
+export function soloTargets(world: WorldDoc | null, doc: SoloDoc | null, R: Pick<Rules, 'fight'> = RULES): SoloTarget[] {
   if (!world || !doc) return [];
+  const defaultSkill = clampNpcSkill(R.fight.npc.defaultSkill, 3);
   return world.gates.flatMap(w => {
     const g = doc.gates.find(x => x.id === w.id);
     if (!w.solo || !g || !can(w, 'clear')) return [];
-    const monsters = g.lines.flatMap(l => {
+    const gateScale = g.hp !== undefined || g.dealt !== undefined ? { hp: g.hp ?? 1, dealt: g.dealt ?? 1 } : undefined;
+    const monsters: { id: MonsterId; monster: RowMonster; count: number }[] = [];
+    const npcs: SoloTargetNpc[] = [];
+    for (const l of g.lines) {
       const m = doc.monsters[l.m];
-      if (!m) return [];
-      const scaled = l.hp !== undefined || l.dealt !== undefined ? scaleRowMonster(m, { hp: l.hp ?? 1, dealt: l.dealt ?? 1 }) : m;
-      return [{ id: l.m as MonsterId, monster: scaled, count: l.n }];
-    });
-    return [{ gate: { kind: 'world' as const, id: g.id }, name: g.name, rank: g.rank, boss: g.boss, monsters, statuses: doc.statuses }];
+      if (!m) continue;
+      const lineScale = l.hp !== undefined || l.dealt !== undefined ? { hp: l.hp ?? 1, dealt: l.dealt ?? 1 } : undefined;
+      if (l.as !== undefined) {
+        const base: RowNpc = {
+          name: m.name,
+          rank: m.rank,
+          archetype: m.archetype,
+          tier: oneOf(m.kind, NPC_TIERS, 'normal'),
+          tweak: tweakOfMonster(m.tweak),
+          defaultSide: l.as,
+          skill: l.skill ?? defaultSkill,
+          abilities: m.abilities,
+          statuses: m.statuses,
+          ...(m.icon ? { icon: m.icon } : {}),
+        };
+        const scale = l.as === 'foe' ? (lineScale ?? gateScale) : undefined;
+        const scaled = scale ? scaleRowNpc(base, scale) : base;
+        npcs.push({ id: l.m as NpcId, npc: scaled, count: l.n, side: l.as });
+      } else {
+        const scale = lineScale ?? gateScale;
+        const scaled = scale ? scaleRowMonster(m, scale) : m;
+        monsters.push({ id: l.m as MonsterId, monster: scaled, count: l.n });
+      }
+    }
+    return [{ gate: { kind: 'world' as const, id: g.id }, name: g.name, rank: g.rank, boss: g.boss, monsters, ...(npcs.length ? { npcs } : {}), statuses: doc.statuses }];
   });
 }
 
@@ -529,7 +692,7 @@ export const PLAN_TABLE: { readonly [G in SoloGateFound]: { readonly [O in RunOu
 const gateFound = (g: Gate | undefined, stashFull: boolean): SoloGateFound =>
   (!g ? 'gone' : !can(g, 'clear') ? (g.status === 'cleared' ? 'cleared' : 'closed') : stashFull ? 'stashFull' : g.solo ? 'open' : 'notSolo');
 /** The plan for run `p` on the GM's save as it stands (`PLAN_TABLE`): the one rule, asked again inside the write (`soloTaken`). */
-export function soloPlan(save: Pick<Save, 'gates' | 'monsters'> & Partial<Pick<Save, 'stash' | 'seq'>>, p: SoloRunPayload, R: Rules): SoloPlan {
+export function soloPlan(save: Pick<Save, 'gates' | 'monsters'> & Partial<Pick<Save, 'stash' | 'seq'>> & { readonly library?: Pick<Save['library'], 'npcs'> }, p: SoloRunPayload, R: Rules): SoloPlan {
   const g = save.gates.find(x => x.id === p.gate);
   const stashFull = !!(g && isActivePreset(g.preset) && save.stash && !stashCanHold(save.stash, (save.seq ?? 0) + 2, partitionPresetItems(g.preset, [{ kind: 'remote', key: p.by }]).stash, R));
   const cell = PLAN_TABLE[gateFound(g, stashFull)][p.outcome];
@@ -537,7 +700,11 @@ export function soloPlan(save: Pick<Save, 'gates' | 'monsters'> & Partial<Pick<S
   if (cell !== 'pay') return { kind: 'refused', why: cell };
   // the table pays only a gate it found (open or notSolo)
   if (g!.preset.at === 'paid') return { kind: 'paid', due: 0, xp: 0, crystal: 0, party: R.gateParty };
-  const all = [...seedMonsters(R), ...save.monsters], due = xpDue(g!, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
+  const all = [...seedMonsters(R), ...save.monsters], allNpcs = save.library?.npcs ?? [];
+  const due = xpDue(g!, id => {
+    const m = all.find(x => x.id === id); if (m) return monsterXp(m, R);
+    const n = allNpcs.find(x => x.id === id); return n ? npcXp(n, R) : 0;
+  });
   return { kind: 'paid', due, xp: shareEach(due, 1, R.gateParty), crystal: clearCrystalEach(g!, 1, R), party: R.gateParty };
 }
 /** The `soloAnswer` body for run `p` under `plan`: cleared, refused, or null for a report, which needs none. */
@@ -635,6 +802,7 @@ export const SOLO_WORDS = {
   notNow: 'Not now',
   running: (round: number, moves: number): string => `Round ${round}, ${moves} move${moves === 1 ? '' : 's'} played`,
   open: 'Open to solo runs',
+  openNpcNote: 'Solo gate cards show players only an NPC\'s name and side. GM notes stay on your phone.',
   tooBig: 'Too many custom monsters to sync to players. Open fewer gates to solo runs, or use fewer custom monsters in this gate.',
   none: 'No personal gate is open. The System opens one every few hours.',
   dismiss: 'Dismiss',

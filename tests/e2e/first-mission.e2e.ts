@@ -47,7 +47,17 @@ async function finishCurrentFight(gm: Page): Promise<void> {
   await awardBtn.tap();
 }
 
-/** Dismisses queued reward/level windows until the Gate cleared? prompt sits on top. */
+/** Dismisses any earlier queued System window (e.g. Wave 1 fight XP award) until `title` sits on top, then answers it. */
+async function waitAndAnswerWindow(page: Page, title: string): Promise<void> {
+  const wanted = modalWin(page, title);
+  const otherPrimary = page.locator('.sys-overlay.show', { hasNotText: title }).locator('.sys-actions button.primary').first();
+  await expect.poll(async () => {
+    if (await wanted.isVisible()) return true;
+    if (await otherPrimary.isVisible()) await otherPrimary.tap();
+    return false;
+  }, { timeout: 20_000, message: `System window "${title}"` }).toBe(true);
+  await answerWindow(page, title);
+}
 async function waitForGateClearedModal(gm: Page) {
   const clearedDlg = modalWin(gm, 'Gate cleared?');
   const otherPrimary = gm.locator('.sys-overlay.show', { hasNotText: 'Gate cleared?' }).locator('.sys-actions button.primary').first();
@@ -164,15 +174,13 @@ test('full GM + remote player room run of The Empty Seat reaches unique-class pi
     await gm.locator('#gm-stories .st-card [data-st-open]').tap();
     await storyWin(gm).locator('[data-st-go]').tap();
     await answerEachWindow(gm, 'TRIAL ISSUED', PREGENS.length);
-    await expect(p1.locator('.sys-overlay.show', { hasText: 'TRIAL ISSUED' })).toBeVisible({ timeout: 20_000 });
-    await answerWindow(p1, 'TRIAL ISSUED');
+    await waitAndAnswerWindow(p1, 'TRIAL ISSUED');
 
     // Chapter 4: Final Objective (03:14)
     await gm.locator('#gm-stories .st-card [data-st-open]').tap();
     await storyWin(gm).locator('[data-st-go]').tap();
     await answerEachWindow(gm, 'FINAL OBJECTIVE', PREGENS.length);
-    await expect(p1.locator('.sys-overlay.show', { hasText: 'FINAL OBJECTIVE' })).toBeVisible({ timeout: 20_000 });
-    await answerWindow(p1, 'FINAL OBJECTIVE');
+    await waitAndAnswerWindow(p1, 'FINAL OBJECTIVE');
 
     // Wave 2 fight
     await go(gm, 'gates');
@@ -203,6 +211,7 @@ test('full GM + remote player room run of The Empty Seat reaches unique-class pi
     await dismissAll(p1);
     const p1Offer = p1.locator('[data-co-modal]');
     await expect(p1Offer).toBeVisible({ timeout: 20_000 });
+    await dismissAll(p1);
     await expect(p1Offer).toContainText(OFFER_WORDS.openBody);
     await p1Offer.locator('[data-co-pick="Hemomancer"]').tap();
     await expect(p1Offer.locator('[data-co-picked]')).toContainText(OFFER_WORDS.alreadyPickedLine('Hemomancer'), { timeout: 20_000 });
@@ -241,8 +250,7 @@ test('full GM + remote player room run of The Empty Seat reaches unique-class pi
     await storyWin(gm).locator('[data-st-go]').tap();
     await answerEachWindow(gm, 'TRIAL COMPLETE', PREGENS.length);
 
-    await expect(p1.locator('.sys-overlay.show', { hasText: 'TRIAL COMPLETE' })).toBeVisible({ timeout: 20_000 });
-    await answerWindow(p1, 'TRIAL COMPLETE');
+    await waitAndAnswerWindow(p1, 'TRIAL COMPLETE');
     await expect.poll(
       () => p1.evaluate(() => hunterApp.store.active().titles.some((t: any) => t.name === 'Guest' && t.bonus.dis === 1)),
       { timeout: 20_000 },

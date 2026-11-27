@@ -16,7 +16,7 @@ import { BONUS_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { grantRefusalIdOf } from '../src/core/ids.ts';
 import { SHOP_MAX, newHunter } from '../src/core/save.ts';
-import { RULES, domainOf } from '../src/core/rules.ts';
+import { RULES, domainOf, rulesOf } from '../src/core/rules.ts';
 import { MYTHIC_IDS, mythicScriptOf, omensOf } from '../src/core/registry/mythics.ts';
 import { roomRulesOf, withRoomRules } from '../src/core/hunter/build.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -1641,17 +1641,45 @@ describe('the other room docs', () => {
   });
 
   // The solo doc's arithmetic is the comment above SOLO_DOC in protocol.ts: built within DOC_MAX, every built-in monster
-  // fits with room to spare, and a gate of a GM's monsters at their bounds can pass DOC_MAX alone and is left out.
-  test('the worst-case solo doc on the wire: every built-in monster in solo gates, read back whole; a gate past the bound left out and not marked', () => {
-    const seeds = seedMonsters(RULES), gate = (i: number, lines: Gate['monsters'], boss: string | null = null): Gate =>
-      ({ ...newGate(), id: `g${i + 1}` as GateId, name: 'N'.repeat(80), rank: 'E', monsters: lines, bossId: boss as never, solo: true });
-    const gates = many(40, i => gate(i, [0, 1, 2].map(k => ({ monsterId: seeds[(3 * i + k) % seeds.length]!.id, count: 26 })), seeds[i % seeds.length]!.id));
-    const built = soloDoc({ gates, monsters: [] }, RULES, DOC_MAX), wire = JSON.stringify(built.doc);
-    console.log(`the worst-case solo doc of built-in monsters: ${wire.length} characters (gates ${JSON.stringify(built.doc.gates).length}, monsters ${JSON.stringify(built.doc.monsters).length}, ${Object.keys(built.doc.monsters).length} of them; the largest ${Math.max(...Object.values(built.doc.monsters).map(m => JSON.stringify(m).length))})`);
-    expect(built.left).toEqual([]);
-    expect(wire.length, 'the built-in monsters leave room for the GM\'s monsters: 66% of DOC_MAX at most (a stat op\'s amount is a formula since item-stats 6.2, 25 characters a value more than a number; the three mythic seeds of notes-11 B.6 and the three Act 1 scripted E-rank seeds add about 1,000 characters each)').toBeLessThanOrEqual(DOC_MAX * 0.66);
-    expect(DOCS.solo(JSON.parse(wire))).toEqual(built.doc);
+  // plus full companion NPC bodies (abilities, statuses, tweak, tier, skill) fit with room to spare, non-boss lines share
+  // one gate-level scale, gates past SOLO_SCALE_MAX or DOC_MAX are left out via `left` without rejecting the doc.
+  test('the worst-case solo doc on the wire: every built-in monster and full NPC bodies in solo gates, read back whole; gates past DOC_MAX or SOLO_SCALE_MAX left out and not marked', () => {
+    const seeds = seedMonsters(RULES), gate = (i: number, lines: Gate['monsters'], boss: string | null = null, npcs: Gate['npcs'] = []): Gate =>
+      ({ ...newGate(), id: `g${i + 1}` as GateId, name: 'N'.repeat(80), rank: 'E', monsters: lines, bossId: boss as never, ...(npcs?.length ? { npcs } : {}), solo: true });
     const hex = seeds.find(m => m.abilities.length)!.abilities[0]!;
+    const npcAbs = (prefix: string) => many(4, k => ({ ...hex, id: `${prefix}${k}` as never, name: 'A'.repeat(40) }));
+    const sampleNpcs = [
+      { id: 'npc_w1' as never, name: 'Vanguard Ally', rank: 'E' as const, archetype: 'brute' as const, tier: 'elite' as const, tweak: { hp: 1.08, dealt: 0.93, stats: { str: 4 }, traits: ['tough' as const] }, defaultSide: 'party' as const, skill: 4 as const, abilities: npcAbs('na'), statuses: [{ key: 'hasted', rounds: 2 }], notes: 'GM note' },
+      { id: 'npc_w2' as never, name: 'Rival Captain', rank: 'E' as const, archetype: 'skirmisher' as const, tier: 'boss' as const, tweak: { hp: 1.25, dealt: 1.1, stats: { agi: 4 }, traits: ['fast' as const] }, defaultSide: 'foe' as const, skill: 5 as const, abilities: npcAbs('nf'), statuses: [{ key: 'poisoned', rounds: 2 }], notes: 'GM foe note' },
+    ];
+    const gates = many(40, i => gate(
+      i,
+      [0, 1, 2].map(k => ({ monsterId: seeds[(3 * i + k) % seeds.length]!.id, count: 26 })),
+      seeds[i % seeds.length]!.id,
+      i === 0 ? [{ npcId: sampleNpcs[0]!.id, count: 1, side: 'party' as const }, { npcId: sampleNpcs[1]!.id, count: 2, side: 'foe' as const }] : [],
+    ));
+    const built = soloDoc({ gates, monsters: [], library: { npcs: sampleNpcs } }, RULES, DOC_MAX), wire = JSON.stringify(built.doc);
+    console.log(`the worst-case solo doc of built-in monsters + full NPCs: ${wire.length} characters (${((wire.length / DOC_MAX) * 100).toFixed(1)}% of DOC_MAX; gates ${JSON.stringify(built.doc.gates).length}, monsters ${JSON.stringify(built.doc.monsters).length}, statuses ${JSON.stringify(built.doc.statuses).length}, ${Object.keys(built.doc.monsters).length} bodies; largest ${Math.max(...Object.values(built.doc.monsters).map(m => JSON.stringify(m).length))})`);
+    expect(built.left).toEqual([]);
+    // Measured: 40 gates + 29 built-in monsters + 2 full 4-ability NPC bodies + statuses = 45,414 chars (73.2% of DOC_MAX), leaving 16,586 chars under DOC_MAX.
+    expect(wire.length, 'the built-in monsters + full NPC bodies fit under 75% of DOC_MAX').toBeLessThanOrEqual(DOC_MAX * 0.75);
+    // Non-boss lines omit per-line hp/dealt and share gate-level hp/dealt; NPC lines carry skill and full bodies.
+    const g1 = built.doc.gates[0]!;
+    expect(g1.hp).toBeDefined();
+    expect(g1.dealt).toBeDefined();
+    expect(g1.lines.filter(l => l.as !== undefined).every(l => l.hp === undefined && l.dealt === undefined && l.skill !== undefined)).toBe(true);
+    expect(built.doc.monsters[sampleNpcs[1]!.id]!.abilities).toHaveLength(4);
+    expect(DOCS.solo(JSON.parse(wire))).toEqual(built.doc);
+
+    // A gate whose computed scale exceeds SOLO_SCALE_MAX (100) is left out via `left` while valid gates still publish and pass DOCS.solo.
+    const extremeRules = rulesOf({ fight: { partyScale: { hpStep: 5, packHpStep: 5, allyWeight: { boss: 2 } } } });
+    const manyAllies = many(25, () => ({ npcId: sampleNpcs[1]!.id, count: 1, side: 'party' as const }));
+    const overScale = gate(41, [{ monsterId: seeds[0]!.id, count: 1 }], seeds.find(m => m.kind === 'boss')!.id, manyAllies);
+    const withOver = soloDoc({ gates: [overScale, gates[0]!], monsters: [], library: { npcs: sampleNpcs } }, extremeRules, DOC_MAX);
+    expect(withOver.left).toEqual([overScale.id]);
+    expect(withOver.doc.gates.map(g => g.id)).toEqual(['g1']);
+    expect(DOCS.solo(JSON.parse(JSON.stringify(withOver.doc)))).toEqual(withOver.doc);
+
     const heavy = (i: number): Monster => ({ ...seeds[0]!, id: `m${i + 1}` as never, name: 'H'.repeat(60), abilities: many(11, k => ({ ...hex, id: `a${k}` as never, name: 'A'.repeat(60) })) });
     const custom = many(50, heavy), big = gate(40, custom.map(m => ({ monsterId: m.id, count: 1 })));
     const withBig = soloDoc({ gates: [big, ...gates.slice(0, 2)], monsters: custom }, RULES, DOC_MAX);

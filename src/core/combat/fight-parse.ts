@@ -1113,21 +1113,26 @@ export function parseFight(raw: unknown, R: Rules): Fight | null {
   const shared = { id: fightId(id), grid, zones, fog, rows, log, banked, had };
   if (phase === 'ended') {
     const now = tickOf(raw.now), summary = summaryOf(raw.summary);
-    return now !== null && summary ? { phase, ...shared, now, summary } : null;
+    const sizedFor = raw.sizedFor === undefined ? undefined : num(raw.sizedFor, 1, 200);
+    return now !== null && summary && sizedFor !== null ? { phase, ...shared, now, summary, ...(sizedFor !== undefined ? { sizedFor } : {}) } : null;
   }
   const fudge = fudgeOf(raw.fudge, rows);
   if (!fudge) return null;
-  if (phase === 'setup') return { phase, ...shared, fudge };
+  if (phase === 'setup') {
+    const partyScaled = raw.partyScaled === undefined ? undefined : raw.partyScaled === true ? true as const : null;
+    return partyScaled === null ? null : { phase, ...shared, fudge, ...(partyScaled ? { partyScaled } : {}) };
+  }
   const now = tickOf(raw.now);
   if (now === null) return null;
   const currentId = idText(raw.currentId), pending = all(raw.pending, MAX_PENDING, x => pendingOf(x, R));
   if (!currentId || !rows.some(r => r.id === currentId) || !pending) return null;
   const dodges = raw.dodges === undefined ? undefined : whole(raw.dodges, 0, BIG);
   const dodge = raw.dodge === undefined ? undefined : dodgeOf(raw.dodge, grid, rows);
-  if (dodges === null || dodge === null) return null;
+  const sizedFor = raw.sizedFor === undefined ? undefined : num(raw.sizedFor, 1, 200);
+  if (dodges === null || dodge === null || sizedFor === null) return null;
   if (dodge && (pending.length > 0 || (dodges !== undefined && dodges < dodge.n))) return null;
   return {
     phase, ...shared, now, currentId: combatantId(currentId), pending, fudge,
-    ...(dodges !== undefined ? { dodges } : {}), ...(dodge ? { dodge } : {}),
+    ...(dodges !== undefined ? { dodges } : {}), ...(dodge ? { dodge } : {}), ...(sizedFor !== undefined ? { sizedFor } : {}),
   };
 }

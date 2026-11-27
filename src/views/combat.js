@@ -47,6 +47,7 @@ import { weighable } from '../core/combat/odds.ts';
 import { onDodge, onTurn } from '../core/protocol.ts';
 import { fightId, parseSheetKey } from '../core/ids.ts';
 import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootMoreLine, lootOffered, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
+import { PARTY_SCALE_WORDS, gateNpcHeadcountRows, partyHeadcount } from '../core/gates/party-scale.ts';
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
@@ -56,7 +57,7 @@ import { itemAbilityId, itemOfAbility } from '../core/registry/abilities.ts';
 import { newRewards } from '../core/rewards.ts';
 import { oneOf } from '../core/one-of.ts';
 import { runsFight } from '../core/role.ts';
-import { untouched } from '../core/party.ts';
+import { defaultParty } from '../core/party.ts';
 import { postNews } from '../core/sync/connection.ts';
 import * as motion from './motion.ts';
 import { bind, keyed, prepended } from './patch.ts';
@@ -344,18 +345,23 @@ export function register(app) {
 
   /**
    * Rows join: a new fight in setup when there is none; while it runs each joins at its opening roll. `gate` links a new
-   * fight to the gate it was started from. Answers how many joined.
-   * @param {JoinRow[]} list @param {import('../core/ids.ts').GateId | null} [gate]
+   * fight to the gate it was started from; `scaleParty` marks gate fights to size in core at `start` (or sizes newly
+   * added gate foes to the running fight's locked `sizedFor`). Answers how many joined.
+   * @param {JoinRow[]} list @param {import('../core/ids.ts').GateId | null} [gate] @param {boolean} [scaleParty]
    */
-  function add(list, gate) {
+  function add(list, gate, scaleParty = false) {
     if (!canRun()) return 0;
     const joins = (Array.isArray(list) ? list : [list]).filter(j => j && j.row);
     if (!joins.length) return 0;
     const f = fight(), monsters = Object.fromEntries(joins.flatMap(j => (j.monsterId ? [[j.row.id, j.monsterId]] : [])));
     // a new fight is fought on its gate's map, or on the open arena: one path for both (src/core/registry/maps.ts)
     const m = f ? null : mapOf(gate), rows = joins.map(j => j.row);
-    const fx = send({ type: 'add', fightId: f ? f.id : fightId(store.id('f')), rows, openings: running(f) ? rollOpenings(rows.map(r => r.id), cryptoRandom, openingWeights(f, rows)) : [], ...(m ? fightMapOf(m) : {}) },
-      { monsters, ...(gate ? { gate } : {}) });
+    const fx = send({
+      type: 'add', fightId: f ? f.id : fightId(store.id('f')), rows,
+      openings: running(f) ? rollOpenings(rows.map(r => r.id), cryptoRandom, openingWeights(f, rows)) : [],
+      ...(m ? fightMapOf(m) : {}),
+      ...(scaleParty ? { partyScaled: true } : {}),
+    }, { monsters, ...(gate ? { gate } : {}) });
     return refused(fx) ? 0 : rows.length;
   }
   /** The map a fight from `gate` is fought on: the one the gate names in the library, else the open arena. */
@@ -766,22 +772,65 @@ export function register(app) {
       actions: [{ label: 'Close', value: true, primary: true }] }).then(() => undefined);
   }
 
-  // Start-encounter dialog: optional wave picker + party checkboxes (all checked) + "Start the fight now", on the maker shell.
+  // Start-encounter dialog: optional wave picker + party checkboxes (defaults from `defaultParty`, saved ally NPCs optional) + live weighted headcount note + "Start the fight now", on the maker shell.
   function partyDialog(o) {
     const hs = store.get().hunters;
+    const rs = remoteList();
+    const R = rules();
+    const def = defaultParty(hs, rs, { inRoom: inRoomAsGM(), nowMs: A().sync.serverNow(), R });
+    const defHids = new Set(def.hunters.map(h => h.id));
+    const defRkeys = new Set(def.remotes.map(r => r.key));
+    const allies = A().npcs.list().filter(n => n.defaultSide === 'party');
+    const cur = fight();
+    const existing = cur ? cur.rows : [];
+    const have = haveKeys(cur);
+    const joining = Boolean(cur && cur.phase !== 'ended' && o.gateId && refs().gate === o.gateId);
     const wavesHtml = o.waves && o.waves.length
       ? `<fieldset class="cmb-party" data-wave-pick><legend>Fight wave</legend>${o.waves.map(w => `<label class="cmb-chk"><input type="radio" name="wave" value="${esc(w.id)}"${w.id === o.wave ? ' checked' : ''}> <span>${esc(w.label)}</span></label>`).join('')}</fieldset>`
+      : '';
+    const partyItems = [
+      ...hs.map(h => `<label class="cmb-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${defHids.has(h.id) ? ' checked' : ''}> <span>${esc(h.name)}</span></label>`),
+      ...rs.map(r => `<label class="cmb-chk"><input type="checkbox" name="rkey" value="${esc(r.key)}"${defRkeys.has(r.key) ? ' checked' : ''}> <span>${esc(r.data.name)}</span></label>`),
+    ].join('');
+    const alliesHtml = allies.length
+      ? `<fieldset class="cmb-party" data-npc-pick><legend>${esc(PARTY_SCALE_WORDS.alliesLegend)}</legend>${allies.map(n => `<label class="cmb-chk"><input type="checkbox" name="nid" value="${esc(n.id)}"> <span>${esc(n.name)} (${esc(n.rank)})</span></label>`).join('')}</fieldset>`
       : '';
     return A().maker.open({
       tag: '! Fight', title: o.title, save: 'Start fight', cls: 'cmbd', focus: win => win.querySelector('[data-apply]'),
       build(el) {
         el.innerHTML = `${o.body ? `<p class="n-body">${esc(o.body)}</p>` : ''}
           ${wavesHtml}
-          <fieldset class="cmb-party"><legend>Party</legend>${hs.length ? hs.map(h => `<label class="cmb-chk"><input type="checkbox" name="hid" value="${esc(h.id)}" checked> <span>${esc(h.name)}</span></label>`).join('') : '<p class="empty">No hunters yet.</p>'}</fieldset>
+          <fieldset class="cmb-party"><legend>Party</legend>${partyItems || '<p class="empty">No hunters yet.</p>'}</fieldset>
+          ${alliesHtml}
+          ${o.scalesWithParty ? '<p class="n-body" data-party-scale></p>' : ''}
           <label class="cmb-chk"><input type="checkbox" name="roll" checked> <span>Start the fight now</span></label>`;
+        const syncScale = () => {
+          const out = el.querySelector('[data-party-scale]');
+          if (!out) return;
+          if (joining && cur && cur.phase === 'running' && cur.sizedFor !== undefined) {
+            out.textContent = PARTY_SCALE_WORDS.dialogLocked(cur.sizedFor);
+            return;
+          }
+          const addLocal = [...el.querySelectorAll('input[name=hid]:checked')].filter(i => !have.ids.has(i.value)).length;
+          const addRemote = [...el.querySelectorAll('input[name=rkey]:checked')].filter(i => !have.rem.has(i.value)).length;
+          const addNpcRows = [...el.querySelectorAll('input[name=nid]:checked')].flatMap(i => {
+            const n = allies.find(x => x.id === i.value);
+            return n ? gateNpcHeadcountRows([{ side: 'party', count: 1, tier: n.tier, tweak: n.tweak }], R) : [];
+          });
+          const pickedWave = o.waves && o.waves.length ? o.waves.find(w => w.id === el.querySelector('input[name=wave]:checked')?.value) : null;
+          const gateRoster = pickedWave?.rosterRows ? pickedWave.rosterRows(joining) : (o.rosterRows ? o.rosterRows(joining) : []);
+          const hunterRows = Array.from({ length: addLocal + addRemote }, () => ({ kind: /** @type {const} */ ('hunter'), side: /** @type {const} */ ('party') }));
+          out.textContent = PARTY_SCALE_WORDS.dialogSize(partyHeadcount([...existing, ...hunterRows, ...addNpcRows, ...gateRoster], R));
+        };
+        if (o.scalesWithParty) {
+          syncScale();
+          el.addEventListener('change', syncScale);
+        }
         return {
           save: () => ({
             hids: [...el.querySelectorAll('input[name=hid]:checked')].map(i => i.value),
+            rkeys: [...el.querySelectorAll('input[name=rkey]:checked')].map(i => i.value),
+            nids: [...el.querySelectorAll('input[name=nid]:checked')].map(i => i.value),
             roll: Boolean(el.querySelector('input[name=roll]')?.checked),
             wave: el.querySelector('input[name=wave]:checked')?.value ?? null,
           }),
@@ -793,18 +842,23 @@ export function register(app) {
   async function startFlow(cs, o = {}) {
     if (!canRun()) return false;
     if (otherGMLive() && !(await confirmReplace())) return false;
-    const pick = await partyDialog({ title: o.title || 'Start fight', body: o.body, waves: o.waves, wave: o.wave });
+    const pick = await partyDialog({ gateId: o.gateId, title: o.title || 'Start fight', body: o.body, waves: o.waves, wave: o.wave, rosterRows: o.rosterRows, scalesWithParty: !!o.scalesWithParty });
     if (!pick) return false;
-    const curFight = fight();
-    const joining = Boolean(curFight && curFight.phase !== 'ended' && o.gateId && refs().gate === o.gateId);
-    const have = haveKeys(curFight).ids;
-    const hs = store.get().hunters.filter(h => pick.hids.includes(h.id) && !have.has(h.id)).map(hunterJoin);
+    const f = fight(), have = haveKeys(f);
+    const joining = Boolean(f && f.phase !== 'ended' && o.gateId && refs().gate === o.gateId);
+    const hs = store.get().hunters.filter(h => pick.hids.includes(h.id) && !have.ids.has(h.id)).map(hunterJoin);
+    const rs = remoteList().filter(r => pick.rkeys.includes(r.key) && !have.rem.has(r.key)).map(remoteJoin);
+    const ns = pick.nids.flatMap(nid => {
+      const npc = A().npcs.get(nid);
+      return npc ? npcRows(npc, [newId()], rules(), { side: 'party' }).map(row => ({ row, monsterId: null })) : [];
+    });
+    const partyJoins = [...hs, ...rs, ...ns];
     const pickedWave = o.waves && pick.wave ? o.waves.find(w => w.id === pick.wave) : null;
-    const waveRows = pickedWave ? pickedWave.rows(joining) : (cs || []);
+    const waveRows = pickedWave ? pickedWave.rows(joining) : o.buildFoes ? o.buildFoes(joining) : (cs || []);
     const foeRows = waveRows.filter(j => j.row.side === 'foe');
     const allyRows = waveRows.filter(j => j.row.side !== 'foe');
-    const joins = [...foeRows, ...hs, ...allyRows];
-    if (joins.length && !add(joins, o.gateId || null)) return false;
+    const joins = [...foeRows, ...partyJoins, ...allyRows];
+    if (joins.length && !add(joins, o.gateId || null, !!o.scalesWithParty)) return false;
     if (pick.roll) start();
     app.go('combat');
     return true;
@@ -1504,9 +1558,9 @@ export function register(app) {
         const h = ref && ref.kind === 'local' ? store.hunter(ref.hunterId) : null; if (h && !have.ids.has(h.id)) add([hunterJoin(h)]); return;
       }
       if (b.hasAttribute('data-addparty')) {
-        const have = haveKeys(f);
-        const rl = remoteList(), R = rules();
-        const hs = store.get().hunters.filter(h => !have.ids.has(h.id) && !(rl.length && untouched(h, R))).map(hunterJoin), rs = rl.filter(x => !have.rem.has(x.key)).map(remoteJoin);
+        const have = haveKeys(f), R = rules();
+        const def = defaultParty(store.get().hunters, remoteList(), { inRoom: inRoomAsGM(), nowMs: A().sync.serverNow(), R });
+        const hs = def.hunters.filter(h => !have.ids.has(h.id)).map(hunterJoin), rs = def.remotes.filter(x => !have.rem.has(x.key)).map(remoteJoin);
         if (hs.length + rs.length && add([...hs, ...rs])) { toast(`${hs.length + rs.length} hunter${hs.length + rs.length === 1 ? '' : 's'} added.`); }
         return;
       }

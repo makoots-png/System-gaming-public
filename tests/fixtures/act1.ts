@@ -6,7 +6,9 @@ import { combatantId } from '../../src/core/combat/ability-types.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
 import { freshSave, makeHunter } from '../../src/core/save.ts';
 import type { Hunter } from '../../src/core/save.ts';
-import { starterCampaign } from '../../src/core/starter.ts';
+import { starterCampaign, STARTER_GATE } from '../../src/core/starter.ts';
+import { waveRoster } from '../../src/core/gates/gate.ts';
+import { scaleMonsterForParty } from '../../src/core/gates/party-scale.ts';
 import { confirm, gainXp, raiseMany } from '../../src/core/hunter/progress.ts';
 import type { StatPoints } from '../../src/core/hunter/progress.ts';
 import { learnSkill } from '../../src/core/hunter/skills-held.ts';
@@ -79,23 +81,23 @@ export function givePotions(h: Hunter, qty: number, idNum: number): Hunter {
   return putItem(h, refGrant(HEALTH_POTION_E.defId, qty), saveId('i', idNum), RULES);
 }
 
-/** Wave 1 (Cannery Tunnels) or Wave 2 (Stone Hall) monsters per the table-scaling rules for `players` hunters. */
-export function act1WaveFoes(wave: 1 | 2, players: number): SimRow[] {
-  const specs: readonly (readonly [string, number])[] = wave === 1
-    ? players <= 2
-      ? [['goblin', 1], ['goblin-chief', 1]]
-      : players <= 4
-        ? [['goblin', 1], ['goblin-shaman', 1], ['goblin-chief', 1]]
-        : [['goblin', 2], ['goblin-shaman', 1], ['goblin-chief', 1]]
-    : players <= 2
-      ? [['head-usher', 1], ['usher', 1]]
-      : players <= 4
-        ? [['head-usher', 1], ['usher', 2]]
-        : [['head-usher', 1], ['usher', 3]];
+/** Wave 1 (Cannery Tunnels) or Wave 2 (Stone Hall) monsters built directly from `STARTER_GATE` through core `scaleMonsterForParty` (`gateFoeScale`). */
+export function act1WaveFoes(wave: 1 | 2, headcount: number): SimRow[] {
+  const roster = waveRoster({ monsters: [...STARTER_GATE.monsters], bossId: STARTER_GATE.bossId, npcs: [] }, wave);
+  const gate = { difficulty: STARTER_GATE.difficulty };
   const out: SimRow[] = [];
-  for (const [slug, count] of specs) {
-    const ids = Array.from({ length: count }, (_, i) => combatantId(`${slug}-${i + 1}`));
-    for (const row of monsterRows(seedMonster(slug), ids, RULES)) out.push({ row, policy: sensiblePolicy });
+  for (const gm of roster.monsters) {
+    const base = ACT1_MONSTERS.find(x => x.id === gm.monsterId);
+    if (!base) throw new Error(`missing starter gate monster ${gm.monsterId}`);
+    const scaled = scaleMonsterForParty(base, gate, 'pack', headcount, RULES);
+    const ids = Array.from({ length: gm.count }, (_, i) => combatantId(`${gm.monsterId}-${i + 1}`));
+    for (const row of monsterRows(scaled, ids, RULES)) out.push({ row, policy: sensiblePolicy });
+  }
+  if (roster.bossId) {
+    const boss = ACT1_MONSTERS.find(x => x.id === roster.bossId);
+    if (!boss) throw new Error(`missing starter gate boss ${roster.bossId}`);
+    const scaled = scaleMonsterForParty(boss, gate, 'boss', headcount, RULES);
+    for (const row of monsterRows(scaled, [combatantId('head-usher-1')], RULES)) out.push({ row, policy: sensiblePolicy });
   }
   return out;
 }

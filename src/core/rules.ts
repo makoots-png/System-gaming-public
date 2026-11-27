@@ -130,6 +130,8 @@ const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty m
 const DIFFICULTY_SPREAD = realIn(0.1, 1, 'upper difficulty slope (levels 6 to 10) for one rank, from 0.1 to 1');
 const DIFFICULTY_ARCHETYPE = realIn(0.1, 2, 'boss difficulty multiplier for one monster archetype, from 0.1 to 2');
 const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty multiplier applied to max HP. The rest applies to damage dealt');
+const PARTY_SCALE_FACTOR = realIn(0.1, 20, 'party-size multiplier on gate monster HP or damage dealt, from 0.1 to 20');
+const ALLY_WEIGHT = realIn(0, 2, 'headcount weight of one ally NPC preset in gate party-size scaling, from 0 to 2');
 const NPC_FACTOR = realIn(0.1, 10, 'NPC body multiplier on HP or damage dealt, from 0.1 to 10');
 const NPC_TEMP = realIn(0, 5, 'softmax temperature for NPC attack selection. 0 always picks the strongest attack, up to 5');
 const CLASS_TREE_MULT = realIn(0, 20, 'skill tree price multiplier, from 0 (free) to 20');
@@ -933,6 +935,27 @@ const SPEC = {
         brute: of(1.00, DIFFICULTY_ARCHETYPE),
         skirmisher: of(0.76, DIFFICULTY_ARCHETYPE),
         caster: of(0.68, DIFFICULTY_ARCHETYPE),
+      },
+    },
+    // Gate party-size scaling (t205u): scales gate monsters' and foe NPCs' HP and outgoing damage to the weighted
+    // party headcount at fight start (each player hunter = 1, each ally NPC weighted by preset in `allyWeight`, never
+    // foe NPCs). Index `n - 1` covers headcounts 1 to 6 with linear interpolation between whole heads and linear
+    // growth (`hpStep` / `dealtStep`) past 6. Headcount 3 is pinned to exact 1 / 1 so the 3-hunter difficulty anchor
+    // (~75% at level 5) holds unchanged. Bosses read `hp`/`dealt`; non-bosses and foe NPCs read `packHp`/`packDealt`.
+    partyScale: {
+      hp: each([0.335, 0.745, 1, 1.54, 2.2, 2.94], PARTY_SCALE_FACTOR),
+      dealt: each([0.2905, 0.536, 1, 1.01, 1.08, 1.11], PARTY_SCALE_FACTOR),
+      hpStep: real(0.75, 0, 5, 'extra boss max HP multiplier added per party member past 6, from 0 to 5'),
+      dealtStep: real(0.05, 0, 1, 'extra boss outgoing damage multiplier added per party member past 6, from 0 to 1'),
+      packHp: each([0.65, 0.82, 1, 1.28, 1.56, 1.85], PARTY_SCALE_FACTOR),
+      packDealt: each([0.64, 0.82, 1, 1.03, 1.06, 1.09], PARTY_SCALE_FACTOR),
+      packHpStep: real(0.3, 0, 5, 'extra non-boss max HP multiplier added per party member past 6, from 0 to 5'),
+      packDealtStep: real(0.03, 0, 1, 'extra non-boss outgoing damage multiplier added per party member past 6, from 0 to 1'),
+      allyWeight: {
+        support: of(0.2, ALLY_WEIGHT),
+        standard: of(0.25, ALLY_WEIGHT),
+        elite: of(0.3, ALLY_WEIGHT),
+        boss: of(0.4, ALLY_WEIGHT),
       },
     },
     // NPC builder (t190u): Support ally preset on top of `normal` (~0.65x HP and damage of a same-rank hunter),

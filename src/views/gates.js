@@ -5,7 +5,9 @@ import { parseItemDefId, parseNpcId, parsePresetLineId, parseSheetKey, presetLin
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown, gateXp as rosterXp, hasGateWaves, monsterId, newGate, parseGate, waveRoster, xpDue } from '../core/gates/gate.ts';
 import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, presetStep, refKey } from '../core/gates/preset.ts';
 import { OFFER_WORDS } from '../core/hunter/class-offer.ts';
-import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLevel, parseDifficultyLevel, scaleMonsterForGate, scaleNpcForGate, withDifficulty } from '../core/gates/difficulty.ts';
+import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLevel, parseDifficultyLevel, scaleNpcForGate, withDifficulty } from '../core/gates/difficulty.ts';
+import { PARTY_SCALE_WORDS, gateNpcHeadcountRows, partyHeadcount, scaleMonsterForParty, scaleNpcForParty } from '../core/gates/party-scale.ts';
+import { defaultParty } from '../core/party.ts';
 import { bossDifficultyHtml, difficultySliderHtml, readEditDifficultyEvents, wireDifficultyLive } from './difficulty-control.js';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
@@ -112,7 +114,16 @@ export function register(app) {
   const startSession = backup => moveDay('session-start', s => sessionStarted(s, backup, stamp()));
 
   // ── encounter hand-off ──
-  /** Builds combatant rows for one wave slice of gate `g` (`1`, `2`, or `'all'`), scaling monsters and foe NPCs only. When `joining` is true (adding a wave into a running fight of this gate), untagged All-waves NPCs are omitted so they are not duplicated. */
+  /** Resolved gate NPCs for wave slice `pick` as weighted `HeadcountRow` entries (omitting untagged All-waves NPCs when `joining` a running fight of this gate). */
+  const gateRosterRows = (g, pick, joining = false) => gateNpcHeadcountRows(
+    waveRoster(g, pick).npcs.flatMap(entry => {
+      if (joining && entry.wave === undefined) return [];
+      const n = npcOf(entry.npcId);
+      return n ? [{ side: entry.side, count: entry.count, tier: n.tier, tweak: n.tweak }] : [];
+    }),
+    app.rules(),
+  );
+  /** Builds combatant rows for one wave slice of gate `g` (`1`, `2`, or `'all'`), applying only gate difficulty (party-size scaling runs in core at fight `start`, or locks to `sizedFor` on mid-fight wave joins). When `joining` is true, untagged All-waves NPCs are omitted so they are not duplicated. */
   function gateCombatants(g, pick, joining = false) {
     const R = app.rules(), gateLevel = effectiveGateLevel(g.difficulty, R), bossLevel = effectiveBossLevel(g.difficulty, R);
     const slice = waveRoster(g, pick), cs = [];
@@ -150,14 +161,15 @@ export function register(app) {
           ...s.npcs.map(x => `${x.count} ${npcOf(x.npcId)?.name || 'Unknown NPC'} (${x.side === 'party' ? 'ally' : 'foe'})`),
         ].join(', ');
         const waves = [
-          { id: '1', label: `Wave 1 (${countOf(s1)}: ${namesOf(s1)})`, rows: joining => gateCombatants(g, 1, joining) },
-          { id: '2', label: `Wave 2 (${countOf(s2)}: ${namesOf(s2)})`, rows: joining => gateCombatants(g, 2, joining) },
-          { id: 'all', label: `${sAll.npcs.length ? 'All waves' : 'All monsters'} (${countOf(sAll)})`, rows: joining => gateCombatants(g, 'all', joining) },
+          { id: '1', label: `Wave 1 (${countOf(s1)}: ${namesOf(s1)})`, rows: joining => gateCombatants(g, 1, joining), rosterRows: joining => gateRosterRows(g, 1, joining) },
+          { id: '2', label: `Wave 2 (${countOf(s2)}: ${namesOf(s2)})`, rows: joining => gateCombatants(g, 2, joining), rosterRows: joining => gateRosterRows(g, 2, joining) },
+          { id: 'all', label: `${sAll.npcs.length ? 'All waves' : 'All monsters'} (${countOf(sAll)})`, rows: joining => gateCombatants(g, 'all', joining), rosterRows: joining => gateRosterRows(g, 'all', joining) },
         ];
         return api.combat.startFlow([], {
           gateId: g.id,
           title: `Start fight: ${g.name}`,
           body: `Choose a wave and who fights in this ${g.rank}-rank gate.`,
+          scalesWithParty: true,
           waves,
           wave: String(activeGateWave(g)),
         });
@@ -172,7 +184,14 @@ export function register(app) {
       ...(npcCount ? [`${npcCount} NPC${npcCount === 1 ? '' : 's'}`] : []),
     ];
     // the combat view links the fight to the gate and marks the gate as fought in the same write (fight-save.ts `fought`)
-    return api.combat.startFlow(cs, { gateId: g.id, title: `Start fight: ${g.name}`, body: `${parts.join(' and ')} from this ${g.rank}-rank gate. Choose who fights.` });
+    return api.combat.startFlow([], {
+      gateId: g.id,
+      title: `Start fight: ${g.name}`,
+      body: `${parts.join(' and ')} from this ${g.rank}-rank gate. Choose who fights.`,
+      scalesWithParty: true,
+      rosterRows: joining => gateRosterRows(g, 'all', joining),
+      buildFoes: joining => gateCombatants(g, 'all', joining),
+    });
   }
 
   function enter(id) {
@@ -332,7 +351,7 @@ export function register(app) {
   }
 
   /** The room's solo gates as this phone plays them: from the room's docs on a player's phone. */
-  const roomTargets = () => (app.seat() === 'player' ? soloTargets(sync().doc('world'), sync().doc('solo')) : []);
+  const roomTargets = () => (app.seat() === 'player' ? soloTargets(sync().doc('world'), sync().doc('solo'), app.rules()) : []);
   /** What `soloReady` reads of the phone now, for hunter `hid`: where a world gate's run settles now (`soloRoute`) among it. */
   function readyCtx(hid) {
     const seat = app.seat(), code = room(), bound = sync().bound(), route = soloRoute(seat, code);
@@ -533,22 +552,36 @@ export function register(app) {
 
       /** The gates open to solo runs that the room's solo doc cannot hold (gates/solo.ts `soloDoc`), on the room's GM phone. */
       const soloLeft = () => (app.seat() === 'gm' ? soloShared().left : []);
-      const sigOf = g => JSON.stringify([g, day(), app.isGM(), app.rules().fight.difficulty, (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, (g.npcs || []).map(x => { const n = npcOf(x.npcId); return n ? [n.name, n.rank, n.tier, n.tweak] : null; }), soloLeft().includes(g.id), !!store.get().classOffer]);
+      /** Headcount shown on a GM gate card: live fight headcount if fighting this gate, else current hunters/room players (fallback `gateParty`) plus the gate's own ally NPCs for the active wave. */
+      const previewSize = g => {
+        const s = store.get(), R = app.rules();
+        if (s.fight && s.fightRefs && s.fightRefs.gate === g.id) {
+          if (s.fight.phase !== 'setup') {
+            return s.fight.sizedFor !== undefined ? { head: s.fight.sizedFor, locked: true, showNote: true } : { head: R.gateParty, locked: true, showNote: false };
+          }
+          return { head: Math.max(1, partyHeadcount(s.fight.rows, R)), locked: false, showNote: true };
+        }
+        const def = defaultParty(s.hunters, remotes(), { inRoom: app.seat() === 'gm', nowMs: sync().serverNow(), R });
+        const baseCount = def.hunters.length + def.remotes.length || R.gateParty;
+        const baseRows = Array.from({ length: baseCount }, () => ({ kind: /** @type {const} */ ('hunter'), side: /** @type {const} */ ('party') }));
+        return { head: Math.max(1, partyHeadcount([...baseRows, ...gateRosterRows(g, activeGateWave(g), false)], R)), locked: false, showNote: true };
+      };
+      const sigOf = g => JSON.stringify([g, day(), app.isGM(), app.rules().fight.difficulty, app.rules().fight.partyScale, previewSize(g), (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, (g.npcs || []).map(x => { const n = npcOf(x.npcId); return n ? [n.name, n.rank, n.tier, n.tweak] : null; }), soloLeft().includes(g.id), !!store.get().classOffer]);
       // the one countdown (gate.ts `countdown`), as a player's card reads it; a red gate open still adds its inside time
       const timer = g => { const c = countdown(g, day()); return g.type === 'red' && active(g) && g.status !== 'broken' ? `${c.words} · time inside runs 10x faster` : c.words; };
       const timerCls = g => countdown(g, day()).tone ?? '';
 
       function cardHtml(g) {
-        const gm = app.isGM(), R = app.rules();
-        const monLi = m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(mo, g, 'pack', R), R).hpMax)}</span>` : ''}</li>`; };
+        const gm = app.isGM(), R = app.rules(), { head, locked, showNote } = previewSize(g);
+        const monLi = m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForParty(mo, g, 'pack', head, R), R).hpMax)}</span>` : ''}</li>`; };
         const npcLi = x => {
           const n = npcOf(x.npcId), role = x.side === 'party' ? 'Ally NPC' : 'Foe NPC';
-          const hp = n ? npcSheet(scaleNpcForGate(n, x.side, g, R), R).hpMax : null;
+          const hp = n ? npcSheet(scaleNpcForParty(n, x.side, g, head, R), R).hpMax : null;
           const stats = n ? (x.side === 'foe' ? `${ui.fmt(npcXp(n, R))} XP · HP ${ui.fmt(hp)}` : `HP ${ui.fmt(hp)}`) : '';
           return `<li data-gate-npc="${esc(x.npcId)}"><span class="cnt">×${esc(x.count)}</span><span>${esc(n ? n.name : 'Unknown NPC')}</span><span class="mx">${esc(role)}${stats ? ` · ${stats}` : ''}</span></li>`;
         };
         const boss = g.bossId ? monsterOf(g.bossId) : null;
-        const bossLi = g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(boss, g, 'boss', R), R).hpMax)}</span>` : ''}</li>` : '';
+        const bossLi = g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForParty(boss, g, 'boss', head, R), R).hpMax)}</span>` : ''}</li>` : '';
         const rosterHtml = hasGateWaves(g)
           ? (() => {
               const w1 = waveRoster(g, 1), w2 = waveRoster(g, 2);
@@ -578,6 +611,7 @@ export function register(app) {
           <div class="gt-timer ${timerCls(g)}">${esc(timer(g))}</div>
           <ul class="gt-mons" aria-label="Monsters">${rosterHtml}</ul>
           <div class="gt-notes" data-gate-xp>Gate XP per hunter (for ${app.rules().gateParty} hunters, higher for fewer): <span data-xp-val>${ui.fmt(gateXp(g))}</span></div>
+          ${gm && showNote ? `<div class="gt-notes" data-party-size>${esc(locked ? PARTY_SCALE_WORDS.cardLocked(head) : PARTY_SCALE_WORDS.cardSize(head))}</div>` : ''}
           ${gm ? `<div class="gt-notes" data-diff-summary>${esc(DIFFICULTY_WORDS.cardSummary(g.difficulty, !!g.bossId, R))}</div>` : ''}
           ${pLine}${paidList}
           ${gm && g.mapId && api.maps.get(g.mapId) ? `<div class="gt-notes">Map: ${esc(api.maps.get(g.mapId).name)}</div>` : ''}
@@ -747,6 +781,7 @@ export function register(app) {
           ${ui.field('Battle map', `<select name="map"><option value="">Open arena</option>${api.maps.list().map(m => `<option value="${esc(m.id)}"${m.id === g.mapId ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select>`)}
           ${ui.field('Notes', `<textarea name="notes" rows="2" maxlength="500">${esc(g.notes)}</textarea>`)}
           <label class="gt-chk"><input type="checkbox" name="solo"${g.solo ? ' checked' : ''}><span>${esc(SOLO_WORDS.open)}</span></label>
+          <div class="gt-notes" data-solo-npc-note>${esc(SOLO_WORDS.openNpcNote)}</div>
           <template data-row-tpl>${row({ monsterId: all[0]?.id || '', count: 1 })}</template>
           <template data-npc-tpl>${nrow({ npcId: allNpcs[0]?.id || '', count: 1, side: allNpcs[0]?.defaultSide || 'party' })}</template>
           <div class="dlg-actions"><button type="button" data-act="cancel-panel">Cancel</button><button type="submit" class="primary">Save gate</button></div></form>`;
@@ -775,7 +810,10 @@ export function register(app) {
         const sy = store.get().settings.sync, code = room();
         const waiting = gate.kind === 'world' && code ? (sy.asked || []).find(x => x.kind === 'solo' && x.room === code && x.hid === h.id && x.gate === gate.id) : null;
         const away = waiting && mayDismiss(waiting, sy.outbox || []);
-        const mons = target ? target.monsters.map(m => `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(m.monster.name)}</span></li>`).join('') : '';
+        const mons = target ? [
+          ...target.monsters.map(m => `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(m.monster.name)}</span></li>`),
+          ...(target.npcs || []).map(n => `<li><span class="cnt">×${esc(n.count)}</span><span>${esc(n.npc.name)}</span><span class="mx">${esc(n.side === 'party' ? 'Ally NPC' : 'Foe NPC')}</span></li>`),
+        ].join('') : '';
         const line = waiting ? waitWords(waiting, sy.outbox || []) : isRefused(ready) ? SOLO_REFUSAL_WORDS[ready.why] : '';
         const acts = away ? `<button type="button" data-solo-dismiss="${esc(waiting.id)}">${esc(SOLO_WORDS.dismiss)}</button>`
           : target ? `<button type="button" class="primary" data-solo-enter${mayEnter(runPhase) ? '' : ' disabled'}>${esc(SOLO_WORDS.enter)}</button>` : '';

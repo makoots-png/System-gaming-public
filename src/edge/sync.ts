@@ -38,7 +38,7 @@
 // same write as what the page's events land on a player's phone and what the page says of offers on every phone (`apply`,
 // `landPage`), so a reload never finds one without the other.
 // The save's `outbox` only here, with a step of src/core/sync/outbox.ts (`boxDo`, and `rebound` at a bind).
-import { setActive } from '../core/party.ts';
+import { serverNowMs, setActive } from '../core/party.ts';
 import { stepTime } from '../core/day.ts';
 import { BUILD } from './build.ts';
 import { reported } from './report.ts';
@@ -718,7 +718,8 @@ export function register(app: SyncHost): void {
 
   // ── the hunter this phone sends (settings.sync.boundHunterId), not whichever is active ──
   const myKey = (hid: HunterId): SheetKey => sheetKeyOf(deviceId(), hid);
-  const srvNow = (): string => new Date(Date.now() + srvSkew).toISOString(); // a skewed phone clock cannot defeat the removal stamp
+  const serverNow = (): number => serverNowMs(Date.now(), srvSkew); // server-adjusted ms for presence and removal clocks
+  const srvNow = (): string => new Date(serverNow()).toISOString(); // a skewed phone clock cannot defeat the removal stamp
   /**
    * The bound hunter, or none: never whichever is shown. A join binds one (`bindJoin`), "Play as" another (`switchTo`), a
    * delete the first left (party.ts `removeHunter`), each through src/core/sync/bind.ts, and a save read in a room binds
@@ -760,7 +761,7 @@ export function register(app: SyncHost): void {
   };
   const keyFor = (code: RoomCode): GmKey | null => (sy().gmKeys || {})[code] ?? null;
   /** A join of `code`, reading on from where this phone stopped when it last went out of that room (seen.ts `seenFrom`). */
-  const joining = (code: RoomCode, key: GmKey | null): Extract<LinkEvent, { type: 'join' }> => ({ type: 'join', code, key, from: seenFrom(sy().seen, code, Date.now() + srvSkew) });
+  const joining = (code: RoomCode, key: GmKey | null): Extract<LinkEvent, { type: 'join' }> => ({ type: 'join', code, key, from: seenFrom(sy().seen, code, serverNow()) });
   async function create(): Promise<string> { return begin({ type: 'create' }); }
   /** Join the room in `text` (a code, a link, a message). With the room's GM key in the ring, reopen it as GM. */
   async function joinRoom(text: unknown, o: { hunterId?: string; name?: string } = {}): Promise<string> {
@@ -1140,12 +1141,12 @@ export function register(app: SyncHost): void {
   function showKicked(answer: unknown, gen: Gen): void {
     const data = DOCS.kicked(isObj(answer) ? answer.kicked : null);
     if (!data || shown.gen !== gen || link.gen !== gen) return;
-    shown = { ...shown, docs: { ...shown.docs, kicked: { at: new Date(Date.now() + srvSkew).toISOString(), from: deviceId() as DeviceId, data } } };
+    shown = { ...shown, docs: { ...shown.docs, kicked: { at: new Date(serverNow()).toISOString(), from: deviceId() as DeviceId, data } } };
     app.emit('sync:docs', { docs: shown.docs });
   }
   /** Removed less than 10 minutes ago: `[{ key, name, at }]`. */
   function recentKicks(): { key: string; at: string; name: string }[] {
-    const d0 = doc('kicked'), now = Date.now() + srvSkew, names: Record<string, string> = d0?.names ?? {};
+    const d0 = doc('kicked'), now = serverNow(), names: Record<string, string> = d0?.names ?? {};
     return Object.entries(d0?.keys ?? {}).filter(([, t]) => now - Date.parse(t) < KICK_MS).map(([key, at]) => ({ key, at, name: names[key] || 'Hunter' }));
   }
   /** The GM frees a device's claim on its sheets, so the player's phone (or a new one) can claim them on its next write. */
@@ -1365,7 +1366,7 @@ export function register(app: SyncHost): void {
   const nInt = (x: unknown, max = 99999): number => Math.max(-max, Math.min(max, Math.trunc(Number(x)) || 0));
   /** The GM's list of sheets, online (polled in the last 15 s), away, or unknown when the server sent no presence. */
   function roster(): ReturnType<SyncApi['roster']> {
-    const now = Date.now() + srvSkew, presenceOk = view().presenceOk;
+    const now = serverNow(), presenceOk = view().presenceOk;
     return remoteSheets().map((r): ReturnType<SyncApi['roster']>[number] => {
       const d = r.data, polled = Date.parse(r.polledAt || ''), at = Date.parse(r.polledAt || r.at || '');
       return {
@@ -1380,7 +1381,7 @@ export function register(app: SyncHost): void {
 
   // ── public API: the names the views use ──
   app.api.sync = { // checked against SyncApi in src/core/api.ts
-    status, conn, detail, room, event, stamp, once, remoteSheets, faces, myKey, doc, docAt, table, inviteLink,
+    status, conn, detail, room, event, stamp, once, remoteSheets, serverNow, faces, myKey, doc, docAt, table, inviteLink,
     post: (ev, o) => (ev ? postLetter({ kind: 'event', event: ev }, o?.key ?? null) : { ok: false, why: 'notEvent' }),
     flush: (): void => { flush(); },
     publish: (name, build) => { publishers.set(name, build); },
