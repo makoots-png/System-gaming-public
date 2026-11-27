@@ -171,8 +171,8 @@ export function register(app) {
   app.on('sync:docs', freshen);
   app.on('change', freshen);
 
-  /** Collapsible 3-minute San Francisco primer read aloud before Session 1 (src/core/first-run.ts `WORLD_PRIMER`). */
-  const primerHtml = () => `<details class="ob-primer" data-primer><summary>Read aloud: San Francisco primer</summary><div class="ob-primer-body">${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details>`;
+  /** Collapsible 4-minute world primer read aloud before Session 1 (src/core/first-run.ts `WORLD_PRIMER`). */
+  const primerHtml = () => `<details class="ob-primer" data-primer><summary>Read aloud: World primer</summary><div class="ob-primer-body">${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details>`;
   /** Shows or hides the primer drawer inside an open ? Quick Start window based on seat and room rules. */
   function syncPrimer() {
     const slot = root && root.querySelector('[data-primer-slot]');
@@ -186,7 +186,7 @@ export function register(app) {
 
   function welcome() {
     const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Window active</h2>
-      <p>Every person has had a System window since Day Zero. Choose whether you are a player or the GM for this table.</p>
+      <p>Every person has had a System window since the night the first gate opened. Choose whether you are a player or the GM for this table.</p>
       <div class="ob-act"><button type="button" class="primary" data-focus data-yes>Set up</button><button type="button" data-skip>Skip setup</button></div>`, ABOUT);
     w.querySelector('[data-yes]').addEventListener('click', () => go({ type: 'accept' }));
     w.querySelector('[data-skip]').addEventListener('click', skip);

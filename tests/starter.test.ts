@@ -11,19 +11,23 @@ import {
 } from '../src/core/starter.ts';
 import { LIMITS, createHunter, freshSave, repairSave } from '../src/core/save.ts';
 import type { ParseEnv, Save } from '../src/core/save.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RULES, clearOf, priceBaseOf } from '../src/core/rules.ts';
+import type { Rules } from '../src/core/rules.ts';
 import { dayKey } from '../src/core/day.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import { available, capDisplayChip } from '../src/core/hunter/progress.ts';
+import { available, capDisplayChip, capDisplayLevel } from '../src/core/hunter/progress.ts';
+import { debtPayoffClears, raiseOwes } from '../src/core/hunter/revive-standing.ts';
 import { hpOf } from '../src/core/hunter/vitals.ts';
 import { bagOf, wornOf } from '../src/core/hunter/inventory.ts';
 import { resolveGrant } from '../src/core/registry/item-book.ts';
 import { activeGateWave, hasGateWaves, parseGate, waveRoster } from '../src/core/gates/gate.ts';
+import { clearGoldEach } from '../src/core/gates/pay.ts';
 import { CHAPTER_MAX, STORY_BOUNDS, chapterSize, parseStory } from '../src/core/story/story.ts';
+import { missingRequired, runStep } from '../src/core/story/run.ts';
 import { REWARD_BOUNDS, WORDS_BOUNDS } from '../src/core/rewards.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { saveId, seedId } from '../src/core/ids.ts';
-import { dev } from './fixtures/ids.ts';
+import { dev, hid, srid, stid } from './fixtures/ids.ts';
 
 const NOW = new Date('2026-11-12T12:00:00.000Z');
 const env = (): ParseEnv => ({ now: NOW, newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') });
@@ -184,6 +188,77 @@ describe('the starter campaign, one atomic step', () => {
     expect(story.chapters[1]!.quest?.title).toBe('Tidewall Cannery Gate');
     expect(story.chapters[1]!.quest?.rewards).toMatchObject({ xp: 100, points: 1 });
     expect(story.chapters[4]!.rewards.title).toMatchObject({ name: 'Guest', bonus: { dis: 1 } });
+  });
+
+  test('Pim\'s Beat 1 card is required, bridges from awakening to the Bureau seat, and stays pinned to RULES for wages, poverty, revive ladder, and level cap', () => {
+    const story = { ...starterStory(RULES), id: stid('st1') };
+    const beat1 = story.chapters[0]!;
+    expect(beat1.required).toBe(true);
+    expect(beat1.note).toContain('Required (do not skip).');
+
+    // Starting the story always opens Beat 1 first, and an unopened required Beat 1 blocks skipping straight to Chapter 2.
+    const ref = { kind: 'local' as const, hunterId: hid('h1') };
+    const started = runStep(null, { type: 'turnOn', id: srid('sr1'), story: story.id, who: { at: 'table' }, to: [ref], at: stamp.at, session: 1 }, story);
+    expect(isRefused(started)).toBe(false);
+    if (!isRefused(started)) {
+      expect(started.run.state).toEqual({ at: 'running', chapter: 0 });
+      expect(started.fx).toEqual({ type: 'deliver', chapter: 0, to: [ref] });
+      expect(missingRequired(started.run, story, 1)).toBeNull();
+    }
+    const withoutBeat1 = { id: srid('sr1'), story: story.id, name: story.name, who: { at: 'table' as const }, state: { at: 'running' as const, chapter: 0 }, opens: 1, opened: [] };
+    expect(missingRequired(withoutBeat1, story, 1)).toBe(0);
+    expect(runStep(withoutBeat1, { type: 'open', chapter: 1, seen: 1, to: [ref], at: stamp.at, session: 1 }, story)).toEqual({ ok: false, why: 'required' });
+
+    // Awakening-to-Bureau-seat bridge (Item E).
+    expect(beat1.note).toContain('three-day fever');
+    expect(beat1.note).toContain("San Francisco's Bureau hall");
+    expect(beat1.note).toContain('public board');
+
+    // Wages, why most hunters stay poor, revive ladder, and level cap pinned to default RULES.
+    const eCap = capDisplayLevel('E', RULES)!;
+    const eGold = clearGoldEach(RULES, 'E', RULES.gateParty);
+    const eMid = Math.round(clearOf(RULES, 'E'));
+    const eBase = priceBaseOf(RULES, 'E');
+    const laborerDay = Math.round(eBase * 0.12);
+    const entryFee = Math.round(eBase * 0.1);
+    const eDebt = raiseOwes('debt', 'E', RULES);
+    const eClears = debtPayoffClears(eDebt, 'E', RULES)!;
+    const eCrystal = Math.round(RULES.revivePrices * eBase);
+
+    expect(beat1.words.line).toContain(`Cap: ${eCap}.`);
+    expect(beat1.quest?.desc).toContain(`${entryFee}-gold entry fee`);
+    expect(beat1.quest?.desc).toContain(`${eGold.low} to ${eGold.high} gold`);
+    expect(beat1.quest?.desc).toContain(`${laborerDay} gold a day`);
+    expect(beat1.note).toContain(`a laborer earns ${laborerDay} gold a day`);
+    expect(beat1.note).toContain(`${eGold.low} to ${eGold.high} gold per hunter (average ${eMid})`);
+    expect(beat1.note).toContain('most stay poor');
+    expect(beat1.note).toContain('first return within an hour is free');
+    expect(beat1.note).toContain(`${eDebt.toLocaleString('en-US')} gold in debt (about ${eClears} E-rank clears to pay off)`);
+    expect(beat1.note).toContain(`${eCrystal.toLocaleString('en-US')}-gold Resurrection Crystal`);
+    expect(beat1.note).toContain('None of it works on anyone who never awakened.');
+    expect(beat1.note).toContain(`stops at level ${eCap} (Cap: ${eCap})`);
+
+    // Rules-drift check: custom RULES numbers flow straight into Beat 1 without truncation.
+    const custom: Rules = {
+      ...RULES,
+      rankLevels: { ...RULES.rankLevels, D: 13 },
+      priceBase: { ...RULES.priceBase, E: 200 },
+      loot: { ...RULES.loot, E: { ...RULES.loot.E, gold: [300, 700] } },
+      reviveDebtPrices: { ...RULES.reviveDebtPrices, E: 6 },
+      revivePrices: 15,
+    };
+    const customStory = starterStory(custom);
+    const customBeat1 = customStory.chapters[0]!;
+    expect(parseStory(JSON.parse(JSON.stringify(customStory)))).toEqual(customStory);
+    expect(customBeat1.words.line).toContain('Cap: 12.');
+    expect(customBeat1.quest?.desc).toContain('20-gold entry fee');
+    expect(customBeat1.quest?.desc).toContain('300 to 700 gold');
+    expect(customBeat1.quest?.desc).toContain('24 gold a day');
+    expect(customBeat1.note).toContain('a laborer earns 24 gold a day');
+    expect(customBeat1.note).toContain('300 to 700 gold per hunter (average 500)');
+    expect(customBeat1.note).toContain('1,200 gold in debt (about 5 E-rank clears to pay off)');
+    expect(customBeat1.note).toContain('3,000-gold Resurrection Crystal');
+    expect(customBeat1.note).toContain('stops at level 12 (Cap: 12)');
   });
 
   test('every generated id is unique and the log begins with Campaign begun', () => {

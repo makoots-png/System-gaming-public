@@ -124,7 +124,7 @@ Feat, award, title, quest, and item names may have style, and a System window's 
 - Allowed name: "Held the Mask"
 - Required description: "You stayed in character during a hard scene. You get 1 ability point."
 
-In-world flavor (System messages, item lore, monster descriptions) may carry tone, as long as it stays literal, clear, and spelled in American English. No riddles or aphorisms. For example, rename `Jaws Like a Harbour` (`src/core/registry/monsters.ts`) to `Jaws Like a Harbor`.
+In-world flavor (System messages, item lore, monster descriptions) may carry tone, as long as it stays literal, clear, and spelled in American English. No riddles or aphorisms. For example, rename `Jaws Like a Harbour` (`src/core/registry/monsters.ts`) to `Jaws Like a Harbor`. The read-aloud world primer (`WORLD_PRIMER` in `src/core/first-run.ts`) is the owner's in-world speech and is exempt from the UI voice rules. The drawer labels and tips around it follow this guide.
 
 ## 5. Buttons, labels, headings, and chips
 

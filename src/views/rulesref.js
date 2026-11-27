@@ -4,7 +4,7 @@ import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { SLOTS, SLOT_LABELS, WEAR_LIMIT } from '../core/registry/items.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, KEYSTONE_WORDS, borrowLine, checkExample, crystalLines, crystalRows, deathLine, defenceLines, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, penetrationLine, pointsLine, saleLine, saleRows, dailyPointsLine, shadowLines, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, KEYSTONE_WORDS, borrowLine, checkExample, crystalLines, crystalRows, deathLine, defenceLines, gateBreakLine, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, penetrationLine, pointsLine, saleLine, saleRows, dailyPointsLine, shadowLines, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { GUILD_TABLE_PERKS, guildDisplayName, guildSheetLine } from '../core/hunter/guild.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
@@ -200,7 +200,7 @@ export function register(app) {
         table(['Type', 'Notes'], [['Normal', 'A standard dungeon. You may leave at any time.'],
           ['Red', `No exit until the boss dies. DCs inside +${R.gateSpawn.redDcBonus}. Time inside runs ×10.`], ['Double', 'A hidden second dungeon. The GM reveals it.'],
           ['Break', 'A gate that is not cleared by its break day. Its monsters break out into the world.']]),
-        p(`Break day = day created + break days by rank (${RANKS.filter(r => rt[r]).map(r => `${esc(r)} ${rt[r].breakDays}`).join(', ')}). The world day advances only with the GM's Advance day button.`),
+        p(esc(gateBreakLine(R))),
         ...gatePayLines(R).map(l => p(esc(l))),
         ...soloLines(R).map(l => p(esc(l))),
       ] },

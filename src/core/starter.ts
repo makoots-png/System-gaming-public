@@ -9,8 +9,9 @@ import type { ItemSeed } from './registry/items.ts';
 import type { ItemGrant } from './registry/item-book.ts';
 import { STARTER_SKILLS, skillOf } from './registry/skills.ts';
 import type { SkillDef } from './registry/skills.ts';
-import { confirm, raiseMany, setCapDisplay } from './hunter/progress.ts';
+import { capDisplayLevel, confirm, raiseMany, setCapDisplay } from './hunter/progress.ts';
 import type { StatPoints } from './hunter/progress.ts';
+import { debtPayoffClears, raiseOwes } from './hunter/revive-standing.ts';
 import { setJob } from './hunter/classes.ts';
 import { learnSkill } from './hunter/skills-held.ts';
 import { equip, putItem } from './hunter/inventory.ts';
@@ -19,6 +20,7 @@ import { hunterSheet } from './hunter/sheet.ts';
 import { neutralSeed } from './hunter/identity.ts';
 import { newGate, parseGate } from './gates/gate.ts';
 import type { Gate, GateMonster, GateType } from './gates/gate.ts';
+import { clearGoldEach } from './gates/pay.ts';
 import { spawnGate } from './gates/world.ts';
 import { saveEntry } from './library.ts';
 import { newRewards } from './rewards.ts';
@@ -31,6 +33,7 @@ import { isRefused, refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 import { makeHunter } from './save.ts';
 import type { Hunter, Rank, Save } from './save.ts';
+import { RULES, clearOf, priceBaseOf } from './rules.ts';
 import type { Rules } from './rules.ts';
 import { builtInItemId, saveId, seedId } from './ids.ts';
 import type { IdOf, MonsterId } from './ids.ts';
@@ -130,24 +133,38 @@ const chapter = (c: Partial<Chapter> & Pick<Chapter, 'name' | 'words'>): Chapter
 });
 
 /** Builds the 5-chapter `The Empty Seat` Story template (Health Potion (E) travels as a built-in ref grant). */
-export function starterStory(_R?: Rules): StoryTemplate {
+export function starterStory(R: Rules = RULES): StoryTemplate {
   const twoPotions: ItemGrant = { kind: 'ref', defId: HEALTH_POTION_E.defId, qty: 2 };
+  const eCap = capDisplayLevel('E', R) ?? 9;
+  const eGold = clearGoldEach(R, 'E', R.gateParty);
+  const eMid = Math.round(clearOf(R, 'E'));
+  const eBase = priceBaseOf(R, 'E');
+  const laborerDay = Math.max(1, Math.round(eBase * 0.12));
+  const entryFee = Math.max(1, Math.round(eBase * 0.1));
+  const eDebt = raiseOwes('debt', 'E', R);
+  const eDebtClears = debtPayoffClears(eDebt, 'E', R);
+  const eCrystal = Math.round(R.revivePrices * eBase);
+  const debtText = eDebtClears !== null
+    ? `${eDebt.toLocaleString('en-US')} gold in debt (about ${eDebtClears} E-rank clear${eDebtClears === 1 ? '' : 's'} to pay off)`
+    : `${eDebt.toLocaleString('en-US')} gold in debt`;
+  const crystalText = eCrystal.toLocaleString('en-US');
   return {
     name: STARTER_STORY_NAME,
-    when: 'Start in Session 1 at the Halfway House to open Chapter 1 for the table.',
+    when: 'Start in Session 1 at the Halfway House to open Chapter 1 (required) for the table.',
     for: 'table',
     chapters: [
       chapter({
         name: 'Seat Assigned',
+        required: true,
         words: {
           title: 'SEAT ASSIGNED',
-          line: 'The Bureau assigned your party to Tidewall Cannery Gate (E-rank, breaks tomorrow). Collect your license from Pim Aldous at the Halfway House. Level 1. Cap: 9.',
+          line: `The Bureau assigned your party to Tidewall Cannery Gate (E-rank, breaks tomorrow). Collect your license from Pim Aldous at the Halfway House. Level 1. Cap: ${eCap}.`,
         },
         rewards: { ...newRewards(), items: [twoPotions] },
         quest: {
           kind: 'main',
           title: "Thursday's Gate",
-          desc: "Collect your license from seat clerk Pim Aldous at the Halfway House, pay the 10-gold entry fee, and reach Tidewall Cannery Gate before dark. A Clear pays about 100 gold per hunter (eight days of a laborer's pay). Your daily quest does not heal wounds.",
+          desc: `Collect your license from seat clerk Pim Aldous at the Halfway House, pay the ${entryFee}-gold entry fee, and reach Tidewall Cannery Gate before dark. An E-rank Clear pays ${eGold.low} to ${eGold.high} gold per hunter (a laborer earns ${laborerDay} gold a day). Your daily quest does not heal wounds.`,
           objectives: [
             { label: 'Collect your license from Pim Aldous', target: 1, progress: 0 },
             { label: 'Reach Tidewall Cannery Gate', target: 1, progress: 0 },
@@ -157,7 +174,14 @@ export function starterStory(_R?: Rules): StoryTemplate {
           dueHours: null,
           penaltyText: '',
         },
-        note: 'Read the Halfway House scene. Pim reads the revive ladder (free return takes a memory, second brings debt, third needs a crystal). An older man does squats in the queue. The license has one extra paid line with no name. Pim assumes someone is late. At the cordon, watches stop near the light.',
+        note: [
+          'Required (do not skip).',
+          "Bridge: you survived the three-day fever a few weeks back, registered as E-rank at San Francisco's Bureau hall, and got your license. This morning your names came up on the public board.",
+          `Halfway House scene. Wages and poverty: a laborer earns ${laborerDay} gold a day. An E-rank Clear pays ${eGold.low} to ${eGold.high} gold per hunter (average ${eMid}) after a ${entryFee}-gold entry fee, but unsigned hunters wait months for seats and spend gold on potions and gear, so most stay poor while a few at the top grow rich.`,
+          `Revive ladder (Pim reads the card): first return within an hour is free (takes a memory), second puts you ${debtText}, and third and after need a pre-bought ${crystalText}-gold Resurrection Crystal within an hour (gold after death does not help). None of it works on anyone who never awakened.`,
+          `Level cap: an E-rank hunter stops at level ${eCap} (Cap: ${eCap}).`,
+          'An older man does squats in the queue. The license has one extra paid line with no name. Pim assumes someone is late. At the cordon, watches stop near the light.',
+        ].join(' '),
       }),
       chapter({
         name: 'Gate Entered',

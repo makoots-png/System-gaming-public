@@ -21,7 +21,7 @@ tower serials.
 | Rank is fixed at awakening, and only the protagonist can level | By the owner's ruling every hunter levels up to a cap set by rank, and a trial gate removes the cap | I added a very few other hunters who are uncapped, as a secret for the GM |
 | In Omniscient Reader's Viewpoint, higher beings watch the scenarios and pay the people in them | The audience, the sponsors and the scenarios of `story.md`, at the owner's suggestion | The gold that every Clear pays is the audience's money, and the monsters are the casts of earlier seasons. Those are mine |
 | Hunters earn from monster cores and carcasses | The harvest | I split the income. The System's gold goes to the hunters and the harvest goes to the rights holder. This gives guilds a reason to exist |
-| A gate that is left alone breaks | The game's break days | I used them for Day Zero, so the S gate broke first |
+| A gate that is left alone breaks | Every gate breaks seven days after it opens and closes behind its monsters | Used for Day Zero's Long Week in London and every gate since |
 | S-ranks act as national weapons | The Abstention, and cities that pay an S-rank to live there | I left out power tiers above S |
 
 ## 2. Dungeon economies

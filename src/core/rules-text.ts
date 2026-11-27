@@ -372,6 +372,20 @@ export function shadowLines(R: Pick<Rules, 'extractJobs' | 'shadow' | 'fight'>):
 }
 
 /**
+ * When a world gate breaks (`gates/spawn.ts` `rollGate` reading `rankTable[rank].breakDays`, `gates/world.ts`
+ * `advanceDay`): one shared count when every rank matches (default 7 days), or the per-rank list when the GM
+ * overrides any rank.
+ */
+export function gateBreakLine(R: Pick<Rules, 'rankTable'>): string {
+  const days = RANKS.map(r => R.rankTable[r].breakDays);
+  const allSame = days.every(d => d === days[0]);
+  const rule = allSame
+    ? `Every gate breaks ${days[0]} ${days[0] === 1 ? 'day' : 'days'} after it opens (day created + ${days[0]}).`
+    : `Break day = day created + break days by rank (${RANKS.map(r => `${r} ${R.rankTable[r].breakDays}`).join(', ')}).`;
+  return `${rule} The world day advances only with the GM's Advance day button.`;
+}
+
+/**
  * How a world gate pays (gates/pay.ts `shareEach`, design 4.1): its gold roll and its XP one pot of `gateParty` shares
  * among the hunters it pays; each one's share of 100 from 1 hunter to two past the party; a fight from a gate shared the
  * same way and one from no gate whole to each; a solo run of a world gate a party of one.

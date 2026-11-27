@@ -99,9 +99,17 @@ describe('what is refused and what takes its default', () => {
 });
 
 describe('the bounds', () => {
-  test('a story\'s name is 60, its "when" line 200; a chapter\'s name 60, its window title 60 and line 200, its note 300', () => {
+  test('a story\'s name is 60, its "when" line 200; a chapter\'s name 60, its window title 60 and line 200, its note 1200', () => {
     const r = read({ name: BIG, when: BIG, chapters: [{ name: BIG, words: { title: BIG, line: BIG }, note: BIG }] })!, c = r.chapters[0]!;
-    expect([r.name.length, r.when.length, c.name.length, c.words.title.length, c.words.line.length, c.note.length]).toEqual([60, 200, 60, 60, 200, 300]);
+    expect([r.name.length, r.when.length, c.name.length, c.words.title.length, c.words.line.length, c.note.length]).toEqual([60, 200, 60, 60, 200, 1200]);
+  });
+
+  test('a required chapter keeps its GM-only flag through parseStory and adds no bytes to chapterSize', () => {
+    const req = chapter({ required: true });
+    expect(req.required).toBe(true);
+    expect(chapterSize(req)).toBe(chapterSize(OFFER));
+    expect('required' in chapter({ required: false })).toBe(false);
+    expect('required' in chapter({ required: 'yes' })).toBe(false);
   });
 
   test(`at most ${CHAPTERS_MAX} chapters: the first that read are kept`, () => {

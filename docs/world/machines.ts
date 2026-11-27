@@ -35,9 +35,9 @@ const MACHINES: readonly Machine[] = [
       'Party inside': 'A party is in the gate. A red gate has sealed behind it.',
       'Cleared': 'The boss is dead. The gate is empty and stays open. Reclaimers may work.',
       'Second area open': 'A double gate: the door beyond the boss\'s room has been opened, and the second boss lives.',
-      'Broken': 'The break day came. The monsters are in the street.',
+      'Broken': 'Day 7 came. All monsters funnel out into the world and the gate closes behind them.',
       'Closed': 'The gate is gone.',
-      'Standing open': 'The gate did not close and nobody knows why. Port Sarn\'s is one.',
+      'Standing open': 'A rare cleared gate that did not close on day 7. Nobody knows why. The Scar\'s B gate is one.',
     },
     steps: [
       { from: 'Unfound', on: 'someone reports it', to: 'Reported' },
@@ -64,8 +64,7 @@ const MACHINES: readonly Machine[] = [
       { from: 'Second area open', on: 'the party leaves', when: 'the gate is not red, and the second boss still lives', to: 'Second area open' },
       { from: 'Second area open', on: 'the whole party dies', when: 'the second boss still lives', to: 'Second area open' },
       { from: 'Second area open', on: 'the break day comes', to: 'Broken' },
-      { from: 'Broken', on: 'hunters kill everything that came out', to: 'Closed' },
-      { from: 'Broken', on: 'the monsters go back in', when: 'nobody could kill them', to: 'Standing open' },
+      { from: 'Broken', on: 'the last monster funnels out', to: 'Closed' },
     ],
   },
   {
@@ -116,7 +115,7 @@ const MACHINES: readonly Machine[] = [
     start: 'Resident',
     ends: ['Dead of the fever', 'Uncapped'],
     states: {
-      'Resident': 'The window reads "Resident. Level 0. Cap: 0."',
+      'Resident': 'The window reads "Resident, level 0" and opens the Resident Store (everyday goods and essentials, active since the first hunter awakened).',
       'In the fever': 'Three days above 40 degrees, with blue veins at the wrists.',
       'Dead of the fever': 'About one person in sixty does not come out of it.',
       'Hunter, below the cap': 'The window shows a job, a rank and a level. XP raises the level.',
@@ -451,7 +450,7 @@ const MACHINES: readonly Machine[] = [
     states: {
       'First half': 'Twenty years of gates. The System has stated no goal. Acts 1 and 2.',
       'Second half': 'An uncapped party crosses the broadcast\'s cast and viewer threshold, so the System issues scenarios and viewers sponsor hunters. Acts 3 and 4.',
-      'Finale': 'The first season\'s winners come through Port Sarn\'s gate. Act 5.',
+      'Finale': 'An SSS-rank gate opens, sits seven days, and releases something higher than mythic (the first season\'s winners) before closing behind them. Act 5.',
       'Season complete': 'Earth won. Every uncapped hunter is offered the Finale contract.',
       'Earth is lost': 'The Finale won. Earth\'s people become the next world\'s monsters.',
       'Control room': 'The party is among the Hosts. Act 6.',

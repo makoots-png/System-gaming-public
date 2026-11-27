@@ -214,6 +214,6 @@ export const battleMap: Walk<Omit<BattleMap, 'id'>> = fields<Omit<BattleMap, 'id
 /** A feat: its reward. */
 export const feat: Walk<FeatDef> = fields<FeatDef>({ name: none, window: none, desc: none, show: none, rule: none, rewards, off: none });
 const quest = fields<ChapterQuest>({ kind: none, title: none, desc: none, objectives: none, rewards, onFail: rewards, dueHours: none, penaltyText: none });
-const chapter = fields<Chapter>({ name: none, words: none, rewards, quest, note: none });
+const chapter = fields<Chapter>({ name: none, words: none, rewards, quest, note: none, required: none });
 /** A story without its id: each chapter's reward and its quest's rewards. */
 export const story: Walk<StoryTemplate> = fields<StoryTemplate>({ name: none, when: none, for: none, chapters: list(chapter) });

@@ -66,12 +66,13 @@ gate to the party's rank.
 2. **Stonemarket.** Three covered streets behind the Helix works where dealers assay and sell crystal. Blue
    crystal dust covers every surface. Use it when the party sells a core or wants to learn prices. The exchange
    rings a bell when someone weighs an A core, and trading stops while people look.
-3. **The Scar.** Two kilometres of ruins in the east of the city, left by the B break of Year 1. People live there
-   in sheds and hold a market on Sundays. The gate that never closes is on the lowest level of a flooded car park.
-   Use the Scar for any unlicensed business.
+3. **The Scar.** Two kilometres of ruins in the east of the city, left by the B break of Year 1. That gate closed
+   after its monsters funnelled out. People live in the ruins in sheds and hold a market on Sundays. A later cleared B
+   gate on the lowest level of a flooded car park never closed on day 7, and nobody knows why. Use the Scar for any
+   unlicensed business.
 4. **The Quiet Mile.** A straight street in the Crown where a pack of D-rank monsters killed nine hundred people
-   on day 6 of the Long Week. It is closed to traffic. Each victim has a small brass plate in the pavement. Use it
-   for a private meeting. By custom hunters carry no weapons there.
+   during San Francisco's first wave of breaks in Year 0. It is closed to traffic. Each victim has a small brass plate
+   in the pavement. Use it for a private meeting. By custom hunters carry no weapons there.
 5. **The Ninth Hour's tower.** Forty storeys of grey stone with no sign, above a public square. The square has
    the shortest response time in the city. A light on the top floor shows that Amara Nkemelu is at home, and
    residents check for it.
@@ -79,15 +80,18 @@ gate to the party's rank.
    conversation that nobody will overhear. Several hundred capped hunters do the daily quest here together afterwards.
 7. **The Last Lantern.** Redline's bar in Tidewall. A board behind the counter lists jobs and day rates. A healer
    sees patients in the back room. Use it when the party hires a fifth member or looks for work.
-8. **The entrance to a gate.** A gate is a sheet of light somewhat taller than a door. Around it are a rope, a
-   cordon tent and a board with the gate's rank and days left. The air within a metre of it is cold, and watches
-   stop there. Most sessions include one.
+8. **The entrance to a gate.** An ordinary small gate is a sheet of light somewhat taller than a door; the largest
+   gates can yawn thousands of feet wide, as London's SS maw did on Day Zero. Around a posted gate are a rope, a cordon
+   tent and a board with the gate's rank and days left until day 7. The air within a metre of it is cold, and watches,
+   cameras and robots die at the threshold. Most sessions include one.
 9. **The hunter hospital car park.** It lies between the hunter hospital and the general hospital. Staff from
    both use it, and the Once-Born League holds a vigil there most nights. Use it for a scene about who can be
    raised and who cannot.
-10. **Port Sarn.** A harbour city six hundred kilometres up the coast. Two million people lived there until day 2
-    of Year 0. Many buildings still stand. The S gate is in the fish market. The Accord's inspectors patrol a
-    fence around the whole city. Use it late in a campaign.
+10. **London and monster-held England.** The first gate on Earth opened in London at 03:14 UTC on Day Zero: an SS
+    gaping maw thousands of feet wide, the only SS gate ever recorded. Seven days later it broke, a towering mythic land
+    dragon and its host funnelled out, and the gate closed behind them. Over 97% of the population died in five days.
+    England remains under monster control twenty years later, ringed by Accord sea and air patrols. Use it as the
+    benchmark of catastrophe or a late-campaign horizon.
 11. **The Salt Locker, Tidewall (proposed, needs the owner).** A cold-storage warehouse behind the fish docks where
     veterans past their debt revive rent lockers for wills, spare keys, and pre-bought crystals held by trusted
     friends. Beside the counter hangs a corkboard of "Missing Memories" pinned up by hunters suffering first-return
@@ -99,41 +103,24 @@ gate to the party's rank.
 
 ## 3. The primer
 
-Read this to new players. It takes about three minutes.
+Read this to new players. It takes about four minutes. Copy of record (the owner's rewrite, Nov 27, 2026); `WORLD_PRIMER` in `src/core/first-run.ts` matches it string for string.
 
-> Twenty years ago, gates opened all over the world. They looked like doors made of light. Nothing came out of
-> them at first.
+> About twenty years ago is when the gates started appearing all over the world. The first one opened in London. A big gaping maw thousands of feet wide, the largest gate we've seen to date. The world stopped, people thought it was aliens, the government, something divine. The governments of the world put a committee together, they tried to send cameras and robots in first. They shut down halfway through the gate. Then we sent people through. The best, we were told. Teams of special operators with the best weaponry we had that never came back. Then we sat on our asses, deliberating. We considered sending in more people, explosives, even nukes.
 >
-> Two days later the largest gate broke. Monsters came out and destroyed a city of two million people in a day.
-> Over the next five days every other gate broke too, in every country. About one person in twenty died in the
-> three years that followed.
+> Seven days later it broke open. News was broadcasted as London fell. The first monster that came out… bigger than anything we've ever seen. A land dragon that towered over the skyscrapers. Over the next five days everyone who didn't manage to escape by boat or plane died. Over 97% of the population died. England is still under monster control to this day.
 >
-> Some people changed. They had a fever for three days and came out of it stronger and faster than anyone else.
-> About one person in five hundred changes this way. They are called hunters, and nobody knows why it happens to
-> them.
+> Then gates started opening elsewhere. Shanghai, San Francisco, Tokyo, Melbourne, Madrid, major cities. Always 7 days after they showed up, they would break. We tried to fight what came out of them, but bullets only work on the small ones, tank shells and missiles only for the medium ones. When we nuked New York we managed to stop the creatures that came out of a large-ish gate.
 >
-> New gates still open every day. Each gate has a rank from E to S and a deadline. An E gate breaks after seven
-> days and an S gate after two. If hunters go in and kill the boss, the gate closes. If nobody does, the monsters
-> come out.
+> Around that same time, some people started changing. They came down with a fever for three days and walked out of it stronger and faster than anyone else. It still happens, though it's rare. About one in every five hundred people becomes a hunter, and nobody knows why it happens to them, but they have the unique ability to deal with the monsters. Their powers make it possible for us to actually fight back. As we hunters started getting our footing, gates became more of an opportunity than a horror.
 >
-> Something pays hunters for this work. It gives them gold and sells them things that nobody can make, such as a
-> potion that closes a wound and a crystal that brings a dead hunter back to life. The System raises a dead hunter
-> once for free, once on debt, and after that only with a crystal bought before death and used within an hour. Gold
-> in your pocket after death does nothing, and none of it works on anyone who never awakened. People call this
-> something the System.
+> New gates are still popping up every day. We've started rating them E to S. We've discovered that if hunters go in and kill the boss, the gate closes. If nobody clears it in time, the gate breaks and the monsters come out.
 >
-> Everyone has the System. On the first night every person alive saw a window that only they could see. For most
-> people it says "Resident, level 0" and does nothing. A hunter's window shows a level, quests and a rank. It
-> also shows a cap. An E-rank's level stops at 9, and nothing they do will raise it. The System has never said
-> what the game is for or why it stops people where it does.
+> There's something people call the System that pays hunters for this work. It pays them in gold and has a shop with things imbued with the same energy the hunters have. You can buy a potion that closes a wound, or a resurrection crystal that brings a dead hunter back to life.
 >
-> Cities run on crystal that crews cut out of cleared gates. Rent depends on how quickly hunters can reach your
-> street. Everyone uses the System's gold as money. A bowl of noodles costs under half a gold, a laborer earns twelve a
-> day, and an E-rank hunter earns a hundred for clearing a gate. Guilds control most of the gates, and a
-> government office called the Bureau controls the rest. Most hunters are poor and a few are very rich.
+> Regular people have the System too. On the first night, everyone alive saw a window that only they could see. For most people it reads "Resident, level 0," and gives them access to a shop, that's it. A hunter's window lists a level, quests, a rank, and a cap. From the moment you're chosen as a hunter, how strong you can get is set in stone. It's almost like a fucked up little game we've all been forced to play.
 >
-> You live in San Francisco, a port city of 800,000 people. You became a hunter recently. The Bureau has given you
-> a rank and a license. Your window says level 1 and tells you where you will stop. You have a seat in a gate on
-> Thursday.
+> Like I said, these days it's ended up being seen as more of a boon. Turns out crystals we can find inside of the gates are an amazing energy source. Entire cities run on crystal. At this point, everyone uses the System's gold as money, transferring it from person to person. Things like restaurants or grocery stores only really exist as a novelty, everything you'd need for food can be bought from the store, from fresh veggies to cup noodles to gourmet Michelin-star-esque meals, and it's all better than anything from before.
 >
-> What do you do?
+> Guilds control most of the gates, they buy rights to them from the government office called the Bureau. Sometimes people try to sneak in to clear them for item drops to sell, but you can get in a lot of trouble for this.
+>
+> You just got the call, how will you answer?

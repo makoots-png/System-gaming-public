@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides } from '../src/core/overrides.ts';
 import { canExtract, rewardJobs, BONUS_HUNDREDTHS, BONUS_KEYS, BONUS_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, tradeRuleSet, resetTable, saveRuleNumbers, writeTable, xpToNext } from '../src/core/rules.ts';
-import { packRange } from '../src/core/gates/spawn.ts';
+import { packRange, rollGate } from '../src/core/gates/spawn.ts';
 import { RANKS as SAVE_RANKS, RARITIES, SLOTS } from '../src/core/save.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -11,7 +11,6 @@ import { SHEET_LABELS, kitGear, pointsAt, sheetOf, split } from '../src/core/hun
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 
 const rising = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x > xs[i - 1]!);
-const falling = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x < xs[i - 1]!);
 const keys = (o: object): string[] => Object.keys(o).sort();
 
 test('the rules and the save name the same ranks and rarities, in the same order', () => {
@@ -33,13 +32,29 @@ test('a higher rank needs a higher level, starting at level 1, and gives a large
   expect(rising(RANKS.map(r => RULES.rankBonus[r]))).toBe(true);
 });
 
-test('a higher rank has harder checks and more XP, and its gate breaks sooner', () => {
+test('a higher rank has harder checks and more XP', () => {
   const rows = RANKS.map(r => RULES.rankTable[r]);
   expect(rising(rows.map(x => x.xp))).toBe(true);
   for (const i of [0, 1, 2]) expect(['dc', i, rising(rows.map(x => x.dc[i]!))]).toEqual(['dc', i, true]);
   for (const x of rows) expect(rising(x.dc)).toBe(true); // easy, medium, hard
-  expect(falling(rows.map(x => x.breakDays))).toBe(true);
-  expect(rows.at(-1)!.breakDays).toBeGreaterThanOrEqual(1);
+});
+
+test('every rank breaks at 7 days by default, and a GM can still override breakDays per rank', () => {
+  for (const rank of RANKS) {
+    expect(RULES.rankTable[rank].breakDays, `${rank}-rank default breakDays`).toBe(7);
+    expect(rollGate(RULES, { rank, type: 'normal' }, [], () => 0).breakDays, `${rank}-rank rolled breakDays`).toBe(7);
+  }
+  const { overrides, refused } = parseOverrides({ rankTable: { S: { breakDays: 3 }, A: { breakDays: 0 }, B: { breakDays: 366 } } });
+  expect(overrides).toEqual({ rankTable: { S: { breakDays: 3 }, A: {}, B: {} } });
+  expect(refused.map(r => [r.path, r.reason])).toEqual([
+    ['rankTable.A.breakDays', 'range'],
+    ['rankTable.B.breakDays', 'range'],
+  ]);
+  const R = rulesOf(overrides);
+  for (const rank of RANKS) {
+    expect(R.rankTable[rank].breakDays).toBe(rank === 'S' ? 3 : 7);
+    expect(rollGate(R, { rank, type: 'normal' }, [], () => 0).breakDays).toBe(rank === 'S' ? 3 : 7);
+  }
 });
 
 test('mean world-gate clears to reach the next rank stay between 12 and 18 and rise gently from E to A, while S gates stay under 2.5 levels at level 70', () => {

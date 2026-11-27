@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, defenceLines, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, penetrationLine, pointsLine, saleLine, saleRows, shadowLines, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, defenceLines, gateBreakLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, penetrationLine, pointsLine, saleLine, saleRows, shadowLines, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { rollGate } from '../src/core/gates/spawn.ts';
 import { SHEET_LABELS } from '../src/core/hunter/derive.ts';
 import { extractAttemptsMax } from '../src/core/combat/extraction.ts';
 import { SHADOW_KINDS } from '../src/core/combat/rows.ts';
@@ -30,7 +31,7 @@ import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
 import { RARITIES, SHOP_ITEMS, itemOf, parseItem, priceOf, valueOf } from '../src/core/registry/items.ts';
 import { newHunter } from '../src/core/save.ts';
 import { isRefused as refused } from '../src/core/save-step.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RANKS, RULES, rulesOf } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
@@ -336,6 +337,29 @@ test('the armor cut the Rules page states is what afterDefence takes off a hit w
 });
 
 describe('the world gate\'s lines', () => {
+  test('the gate break line states the shared 7-day default across every rank and matches rollGate', () => {
+    for (const rank of RANKS) expect(rollGate(RULES, { rank, type: 'normal' }, [], () => 0).breakDays).toBe(7);
+    const line = gateBreakLine(RULES);
+    expect(line).toBe('Every gate breaks 7 days after it opens (day created + 7). The world day advances only with the GM\'s Advance day button.');
+    expect(line).not.toMatch(/\b(D 6|C 5|B 4|A 3|S 2)\b/);
+  });
+
+  test('the gate break line uses singular "1 day" when every rank is set to 1 and lists ranks when overridden', () => {
+    const allOne = rulesOf({ rankTable: Object.fromEntries(RANKS.map(r => [r, { breakDays: 1 }])) });
+    expect(gateBreakLine(allOne)).toBe('Every gate breaks 1 day after it opens (day created + 1). The world day advances only with the GM\'s Advance day button.');
+
+    const custom = rulesOf({ rankTable: { S: { breakDays: 3 } } });
+    const expectedList = RANKS.map(r => `${r} ${rollGate(custom, { rank: r, type: 'normal' }, [], () => 0).breakDays}`).join(', ');
+    expect(gateBreakLine(custom)).toBe(`Break day = day created + break days by rank (${expectedList}). The world day advances only with the GM's Advance day button.`);
+  });
+
+  test('the Rules page renders gate break days from gateBreakLine and live rankTable rules rather than hardcoded counts', async () => {
+    const src = await Bun.file(`${import.meta.dir}/../src/views/rulesref.js`).text();
+    expect(src).toContain('gateBreakLine(R)');
+    expect(src).toContain('rt[r].breakDays');
+    expect(src).not.toMatch(/E 7,\s*D 6|S 2/);
+  });
+
   test('say the gate is made for a party of 4 whose gold and XP are one pot, and each share of 100 from 1 to 6 hunters', () => {
     const [pot, shares] = gatePayLines(RULES);
     expect(pot).toBe('A world gate is sized for a party of 4. Its total gold and XP equal 4 shares split evenly among the hunters in the gate, rounded down. Fewer hunters get more each. With more than 4 hunters, the total reward shrinks.');

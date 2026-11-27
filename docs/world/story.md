@@ -16,8 +16,11 @@ Tell the players none of this. Each act reveals one part.
 business, and Earth is its current season. They have run the same game on other worlds before Earth.
 
 **The audience pays, and their payment is the gold.** Viewers from many worlds watch hunters clear gates. The gold
-a Clear pays is the viewers' money, less the Hosts' cut. The Shop is the Hosts' store, and every potion bought
-there returns gold to them. Earth rebuilt its economy on tips from people who watch its citizens die.
+a Clear pays is the viewers' money, less the Hosts' cut. The Shop — both the hunter Shop and the Resident Store that
+feeds every person on Earth at fractions of a gold — is the Hosts' store, and every meal or potion bought there returns
+gold to them while dismantling Earth's old supply chains. Twenty years on, humanity calls the gates a boon because the
+Store feeds everyone and crystal lights the cities. That comfort is the Hosts' trap: Earth rebuilt its economy and its
+dinner table on tips from people who watch its citizens die.
 
 **The caps are casting.** A broadcast needs a few leads and a large number of people who can be killed. The Hosts
 assign each human a rank at awakening and cap the level at that rank. A person who never awakens is a Resident,
@@ -31,26 +34,27 @@ strip their windows, lock their bodies into monster forms, and place them in gat
 world. An E-rank goblin warren is a street of some earlier world's Residents. A boss is one of its S-ranks. Most
 no longer remember. Some do.
 
-**The game does prepare its players for something real.** The Hosts call it the Finale. It is an enemy that
-destroys worlds, and it reaches every world the Hosts broadcast from, because the Hosts lead it there. A season
-ends when it arrives. The Hosts sell the Finale as the last episode and tell each world that a winner is released.
-One world has won, the first, and the Hosts did not release it. They offered its champions a contract, and those
-champions have been the Finale of every season since.
+**The game does prepare its players for something real.** The Hosts call it the Finale. It is an enemy **higher than
+mythic** that arrives through an **SSS-rank gate** (above S and even above London's lone SS maw) and destroys worlds,
+reaching every world the Hosts broadcast from because the Hosts lead it there. A season ends when it arrives. The Hosts
+sell the Finale as the last episode and tell each world that a winner is released. One world has won, the first, and the
+Hosts did not release it. They offered its champions a contract, and those transcendent champions — forged across eleven
+seasons past every cap and mythic tier — have been the Finale of every season since.
 
 **The Hosts could have armed every world and warned it.** They chose to sell tickets. That is the reason to kill
 them.
 
 ## 2. What every human sees
 
-Every person on Earth has had a window since 03:14 UTC on Day Zero. This is public knowledge, and it is the
-strangest ordinary fact in the world.
+Every person on Earth has had a window since 03:14 UTC on Day Zero (the night the first gate opened in London). This is
+public knowledge, and it is the strangest ordinary fact in the world.
 
 | | A Resident (never awakened) | A hunter |
 |---|---|---|
-| Window | Name, "Resident", level 0, and a line that reads "Cap: 0" | Name, job, rank, level, stats, quests, and a line that reads "Cap:" with the top level of the rank |
+| Window | Name, `"Resident, level 0"`, and `"Cap: 0"` | Name, job, rank, level, stats, quests, and a line that reads "Cap:" with the top level of the rank |
 | Quests | Only during a break nearby. The usual one is "Survive: 10:00" | A daily quest, the System's quests, and on rare occasions a personal gate |
 | Rewards | Nothing a Resident can see | XP up to the cap, gold, titles (dailies never heal or restore a hunter) |
-| The Shop and Inventory | No | Yes |
+| The Shop and Inventory | Resident Store (everyday goods and essentials, active since the first hunter awakened); no hunter shelf or Inventory | Full hunter Shop (mana-imbued items, potions, gear, crystals) and Inventory |
 
 Three facts follow, and people in the world have noticed the first two:
 
@@ -121,10 +125,15 @@ gold, and the party still has E-rank HP, E-rank gear, and an E-rank Bureau licen
   proposed buyer handle, needs the owner) pays a Season 12 Host off the books to run an unscheduled, old-format open
   trial inside a routine Bureau E-rank gate (`Tidewall Cannery Gate`, Day 6 of 7). The buyer prepays a seed package
   from the Hosts' vault: six Wave 1 unique class licenses and an early cap waiver.
-  - **Beat 1 (The Halfway House):** Bureau seat clerk Pim Aldous stamps the party's E-rank license (10-gold entry fee
-    per hunter, ~100-gold Clear against a 12-gold daily wage), reads the revive ladder off a card, and issues 2 Health
-    Potions (E) per hunter. An unnamed man in his fifties does squats in the queue (`The crying man`). The stamped
-    license lists one extra paid line with no name. Pim assumes someone is late.
+  - **Beat 1 (The Halfway House):** Open with a two-line bridge from the primer's final line (`"You just got the call,
+    how will you answer?"`, which is the awakening itself): you survived the three-day fever a few weeks back, registered
+    at San Francisco's Bureau hall as E-rank, and this morning your license finally drew a seat. Year 20 feels
+    comfortable on the surface — commuters pull hot Store breakfasts out of their windows and treat an E-gate cordon like
+    roadwork — which sharpens the wrongness inside. Bureau seat clerk Pim Aldous stamps the party's E-rank license
+    (10-gold entry fee per hunter, ~100-gold Clear against a 12-gold daily wage), reads the revive ladder off a card
+    (required — the primer no longer carries it), and issues 2 Health Potions (E) per hunter. An unnamed man in his
+    fifties does squats in the queue (`The crying man`). The stamped license lists one extra paid line with no name. Pim
+    assumes someone is late.
   - **Beat 2 (The cannery tunnels, Fight 1):** inside the gate, the System window states that the party holds one more
     seat than it has hunters, the extra fee is paid, and the seat holder is present. During the fight against the
     goblin pack, the Goblin Chief backs away from an empty tile beside the party and counts one finger too many as it
@@ -235,11 +244,12 @@ The System speaks to every window in San Francisco at once, issuing **scenarios*
     Halfway House.
 - **Playable horror beat (the Scarside count; proposed, needs the owner):** every window in San Francisco displays
   `"Scenario: Scarside's population must fall by 400 before dawn. Penalty: Scarside loses power and Shop access for
-  one year."` The wording says **population**, not deaths. Colonel Yun's Corps seals Scarside's bridges to prevent
-  a stampede; a guild crew and the Plain Men both move in to settle the count in blood. The party can either force a
-  bridge open and evacuate 400 families out of Scarside's boundary before dawn (losing their Bureau licences and
-  making an enemy of Yun, while `The Bettor` tips against them and `Quiet Benefactor` tips for them) or let the
-  district tear itself apart.
+  one year."` Because every Resident buys daily food from the Resident Store, losing Shop access does not merely mean
+  no potions — it cuts the entire district off from its food supply. The wording says **population**, not deaths. Colonel
+  Yun's Corps seals Scarside's bridges to prevent a stampede; a guild crew and the Plain Men both move in to settle the
+  count in blood. The party can either force a bridge open and evacuate 400 families out of Scarside's boundary before
+  dawn (losing their Bureau licences and making an enemy of Yun, while `The Bettor` tips against them and `Quiet
+  Benefactor` tips for them) or let the district tear itself apart.
 - **The choice of the act:** sponsors pay more for cruelty. A hunter can refuse and stay poor beside rivals, or
   accept and pull ahead.
 - **Planting Act 6's twist (proposed, needs the owner):**
@@ -274,16 +284,22 @@ moons.
   Seasons 1 to 11 for **50 gold each** (a birthday song, a wedding vow, a street map of Season 1's capital). Buying
   a 50-gold keepsake gives a party member a flash of Season 1's five champions before they signed the contract.
 - **How it ends:** Sorin's terminal log shows the Tide's 3% annual curve is not natural growth. It is the season's
-  countdown clock, and Port Sarn's standing S gate is the stage door for the Finale.
+  countdown clock, ending when an **SSS-rank gate** — a rank above S and above London's lone SS maw, holding something
+  **higher than mythic** — opens as the stage door for the Finale.
 
 ### Act 5, rank S: the Finale
 
-The countdown ends. Port Sarn's twenty-year-old S gate widens, and the first season's winners walk out. Every
-earlier season except the first lost to them.
+The countdown ends. An **SSS-rank gate** tears open — larger and stranger than London's Day Zero SS gate, the first
+SSS gate Earth has ever seen — and sits for seven days while every Bureau and news feed on the planet watches in
+dread, mirroring the Long Week. On day 7 it breaks, releases something **higher than mythic**, and **closes behind**
+them (a broken gate always closes; there is no going back). Out of the SSS breach walk the first season's winners —
+transcendent champions forged past every cap and mythic tier across eleven seasons. Every earlier season except the
+first lost to them.
 
-- **The five Season 1 champions (proposed, needs the owner):** each is past level 70, tired, polite, and trapped by a
-  contract that keeps their own world alive as long as they end every later season. Run them across a multi-stage
-  siege rather than one room brawl:
+- **The five Season 1 champions (above-mythic tier; proposed, needs the owner):** each has grown past level 70 and past
+  anything Earth's mythics (even the London dragon) can match — tired, polite, and trapped by a contract that keeps
+  their own world alive as long as they end every later season. Run them across a multi-stage siege rather than one
+  room brawl:
   1. **Kaelen Vane (Tanker, their leader):** carries a battered shield patched with four seasons' alloys. Calls out
      his heavy strikes a second early so defenders can drag civilians clear.
   2. **Sera Lin (Healer):** tends wounded Earth Residents between engagements if nobody shoots at her, then kills
@@ -293,24 +309,25 @@ earlier season except the first lost to them.
   4. **Tova Hren (Mage):** levels districts from a kilometre away to end the Finale quickly so Earth suffers less.
   5. **Branek (Necromancer):** refuses to extract a single shadow from Earth's dead, fighting only with the frayed,
      centuries-old shadows of his own original world.
-- **Uniting San Francisco (proposed, needs the owner):** San Francisco's factions have every reason to distrust an uncapped party.
-  Give each faction a concrete price for joining the line at Port Sarn:
+- **Uniting San Francisco during the seven-day countdown (proposed, needs the owner):** San Francisco's factions have
+  every reason to distrust an uncapped party. Use the seven days before the SSS gate breaks to broker a coalition on
+  home ground (place the SSS maw over San Francisco Bay or the Pacific coast within reach of the city's guilds):
   - **Ironwake:** Reinholt wants the Bureau to bury the Year 7 sealing (or, if Ines Carvalho replaced him, Ironwake
     marches at once on the promise that the party holds the front beside them).
   - **Aurelian:** Sato wants live broadcast rights until Six or Dax Verrault breaks her hold.
-  - **The Ninth Hour:** Amara Nkemelu marches immediately if the party covers San Francisco's seawall while she anchors the
-    harbour line.
+  - **The Ninth Hour:** Amara Nkemelu marches immediately if the party covers San Francisco's seawall while she anchors
+    the bay line.
   - **The Once-Born League and Plain Men:** bring their crystal-tipped munitions only if the party swears that
-    unawakened witnesses will hear whatever truth lies inside Port Sarn's gate.
+    unawakened witnesses will hear whatever truth comes out of the SSS gate.
 - **The cost:** San Francisco, or most of it. The Finale should destroy a district or place the players built ties to.
 - **Branch A, Earth wins:** the five fall, thanking the party as they die. Every window on Earth displays
-  `"Season 12 complete. Thank you for playing."` No gate closes and nobody is released. The viewer count hits its
+  `"Season 12 complete. Thank you for playing."` Gates keep opening and nobody is released. The viewer count hits its
   highest number of the campaign. Then a private window opens for every uncapped hunter on Earth: the same Finale
   contract.
 - **Branch B, Earth is lost (`machines.md`, `The season`; proposed, needs the owner):** if the five break Earth's
-  lines, San Francisco burns and every window displays `"Season failed. Processing cast."` Before the Hosts can strip the
-  survivors' windows, Marek Osei drags the battered party through a maintenance seam behind Port Sarn's fish-market
-  gate directly into Act 6's control room.
+  lines, San Francisco burns and every window displays `"Season failed. Processing cast."` Before the Hosts can strip
+  the survivors' windows, Marek Osei drags the battered party through a Host maintenance seam left behind where the
+  SSS gate collapsed directly into Act 6's control room.
 
 ### Act 6, past S: the control room
 
@@ -342,8 +359,9 @@ fluorescent corridor and the floor where the Hosts work.
   - **Leave the seat empty:** the Hosts are dead and nobody runs the game. Gates keep opening, and no scenarios,
     caps, or sponsors are ever set again, which also means nobody can lift existing caps or cancel Season 13.
   - **Take the seat:** the party runs the office. They can lift every cap on Earth and pull Season 13 off the
-    schedule, yet the Shop's potions that keep Earth's hospitals running depend on viewer gold, so shutting off the
-    broadcast starves the Shop. Either way, the Hosts' employers will eventually send new staff.
+    schedule, yet the Shop's potions that keep Earth's hospitals running — and the Resident Store that feeds every city
+    on Earth — depend on viewer gold, so shutting off the broadcast starves both hospitals and dinner tables. Either
+    way, the Hosts' employers will eventually send new staff.
 
 ## 5. Story arcs
 
@@ -422,9 +440,9 @@ nearly right, and the party can meet each:
 - **The Open Hand** believes monsters are refugees. They are closer to prisoners.
 - **Helix's engineers** know that every crystal core hums at 03:14. It is the broadcast's carrier signal.
 
-## 9. The owner's rulings on the story (Nov 20 and Nov 26)
+## 9. The owner's rulings on the story (Nov 20, Nov 26, and Nov 27)
 
-- The Finale is the first season's winners.
+- The Finale is the first season's winners, emerging from an **SSS-rank gate** as something **higher than mythic** (t201u).
 - The party cannot turn the game off.
 - One of the other uncapped hunters betrays the party. This file makes it Sabine Okoro.
 - Viewers have names, and a friend may play a sponsor.
@@ -437,3 +455,8 @@ nearly right, and the party can meet each:
   Seat`, inside `Tidewall Cannery Gate`), lifting the party's cap (`Cap: none`) and granting Wave 1 Mythic/Epic unique
   class access. The Hosts' formal wrong-colored gate and worst-hour memory room moves to Act 2 (Level 20) as a Network
   Audit.
+- **World primer rewrite and lore rulings (Nov 27, t200u & t201u):** London's giant SS gate opened first at 03:14 UTC
+  on Day Zero, broke after seven days, released the mythic land dragon (holding England), and closed; mythics spawn only
+  in SS dungeons (London's is the only SS gate ever); every gate breaks 7 days after opening and closes after breaking;
+  the Resident Store has worked since the first hunter awakened and sells everyday goods and essentials at slashed food
+  prices; "the call" in the primer's last line is the awakening itself, bridged in Beat 1 into the Bureau seat.

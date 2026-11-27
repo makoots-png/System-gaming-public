@@ -22,11 +22,11 @@ import { isRefused } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 
 /**
- * The bounds of a story. Names as a bundle's (60), the "when" line as a window's line (200), a note as a quest's penalty
- * text (300); a chapter's quest keeps the quest's own bounds, with at most 10 objectives (the room's) and a due time of at
- * most 999 hours (the quest form's "Due in hours").
+ * The bounds of a story. Names as a bundle's (60), the "when" line as a window's line (200), a GM-only note up to 1,200
+ * characters (never sent over the room wire); a chapter's quest keeps the quest's own bounds, with at most 10 objectives
+ * (the room's) and a due time of at most 999 hours (the quest form's "Due in hours").
  */
-export const STORY_BOUNDS = { name: 60, when: 200, chapterName: 60, note: 300, questTitle: 120, questDesc: 500, penaltyText: 300, objectives: 10, dueHours: 999 } as const;
+export const STORY_BOUNDS = { name: 60, when: 200, chapterName: 60, note: 1200, questTitle: 120, questDesc: 500, penaltyText: 300, objectives: 10, dueHours: 999 } as const;
 /** The most chapters a story holds. */
 export const CHAPTERS_MAX = 16;
 /**
@@ -58,6 +58,8 @@ export type Chapter = {
   readonly quest: ChapterQuest | null;
   /** Only the GM reads it: what to ask the table, or when the GM thinks the chapter is done. */
   readonly note: string;
+  /** Only on the GM's phone: when true, the GM cannot skip past this chapter before opening it. */
+  readonly required?: boolean;
 };
 export type Story = {
   readonly id: StoryId; readonly name: string;
@@ -111,6 +113,7 @@ function parseChapter(v: unknown): Chapter | null {
   return {
     name: text(v.name, STORY_BOUNDS.chapterName), words, rewards: parseRewards(v.rewards) ?? newRewards(),
     quest: parseChapterQuest(v.quest), note: text(v.note, STORY_BOUNDS.note),
+    ...(v.required === true ? { required: true } : {}),
   };
 }
 

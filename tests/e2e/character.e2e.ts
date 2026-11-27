@@ -1,10 +1,10 @@
 import type { Page } from '@playwright/test';
-import { RULES } from '../../src/core/rules.ts';
+import { RANKS, RULES } from '../../src/core/rules.ts';
 import { parseOverrides, refusalWords } from '../../src/core/overrides.ts';
 import { restRefusalWords } from '../../src/core/hunter/rests.ts';
 import { RAISE_TITLE } from '../../src/core/hunter/revive-standing.ts';
 import { DIED_WORDS } from '../../src/core/hunter/vitals.ts';
-import { deathLine, naturalLines, penetrationLine, pointsLine, shadowLines, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
+import { deathLine, gateBreakLine, naturalLines, penetrationLine, pointsLine, shadowLines, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
 import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList, adhoc, addLibraryItem } from './helpers.ts';
 
 const lifeWord = (p: Page) => p.locator('#view-status [data-death] [data-life]');
@@ -677,7 +677,14 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
   await expect(p.locator('#view-rules')).toContainText(deathLine(RULES));
   await expect(p.locator('#view-rules')).not.toContainText('death save');
   await expect(p.locator('#view-rules')).not.toContainText('Unconscious');
-  await test.step('the Gates section tells solo runs and the personal gates, the first of them the even one', async () => {
+  await test.step('the Gates and Rank table sections state the 7-day break rule across every rank and solo/personal gates', async () => {
+    await expect(p.locator('#rr-gates')).toContainText(gateBreakLine(RULES));
+    const rankRows = p.locator('#rr-ranktable tbody tr');
+    await expect(rankRows).toHaveCount(RANKS.length);
+    for (let i = 0; i < RANKS.length; i++) {
+      await expect(rankRows.nth(i).locator('th')).toHaveText(RANKS[i]!);
+      await expect(rankRows.nth(i).locator('td').last()).toHaveText(String(RULES.rankTable[RANKS[i]!].breakDays));
+    }
     for (const line of soloLines(RULES)) await expect(p.locator('#rr-gates')).toContainText(line);
   });
   await test.step('the Armor and Shadows sections agree with the live labels and extraction rules', async () => {

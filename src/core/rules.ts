@@ -159,11 +159,11 @@ const SPEC = {
   // S-rank gates award ~1.6 levels at level 70 instead of jumping 7+ levels per clear.
   rankTable: {
     E: { dc: each([10, 13, 16], DC), xp: of(63, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
-    D: { dc: each([14, 17, 20], DC), xp: of(140, MONSTER_XP), breakDays: of(6, BREAK_DAYS) },
-    C: { dc: each([20, 24, 28], DC), xp: of(380, MONSTER_XP), breakDays: of(5, BREAK_DAYS) },
-    B: { dc: each([27, 31, 35], DC), xp: of(560, MONSTER_XP), breakDays: of(4, BREAK_DAYS) },
-    A: { dc: each([35, 40, 45], DC), xp: of(1000, MONSTER_XP), breakDays: of(3, BREAK_DAYS) },
-    S: { dc: each([45, 50, 55], DC), xp: of(1600, MONSTER_XP), breakDays: of(2, BREAK_DAYS) },
+    D: { dc: each([14, 17, 20], DC), xp: of(140, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
+    C: { dc: each([20, 24, 28], DC), xp: of(380, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
+    B: { dc: each([27, 31, 35], DC), xp: of(560, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
+    A: { dc: each([35, 40, 45], DC), xp: of(1000, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
+    S: { dc: each([45, 50, 55], DC), xp: of(1600, MONSTER_XP), breakDays: of(7, BREAK_DAYS) },
   },
   fatigue: {
     penaltyAt: whole(50, 0, 1000, 'fatigue level where check penalties start. Values above max fatigue disable the penalty'),
@@ -436,7 +436,7 @@ const SPEC = {
   // room's `rules` doc carries it to the players. Off refuses a new offer and an accept at the tap, never a refuse, a take
   // back, a stop or the read of an end (notes-5-trade.md 2.2)
   trade: { on: true },
-  // world primer (first-run.ts, views/onboard.js): `on` is the GM's switch that unlocks the San Francisco primer drawer for
+  // world primer (first-run.ts, views/onboard.js): `on` is the GM's switch that unlocks the world primer drawer for
   // players in a room. Off by default; the GM and solo mode (no room) always see it. The room's `rules` doc carries it.
   primer: { on: false },
   // The reworked fight's numbers (docs/agent-handoff/rw/design.md; scripts/rw-paper.ts prints the tables they make).
@@ -1099,7 +1099,7 @@ export const tradeRuleSet = <S extends { readonly rulesOverrides: unknown }>(sav
   const ov = recOf(save.rulesOverrides);
   return { ...save, rulesOverrides: { ...ov, trade: { ...recOf(ov.trade), on } } };
 };
-/** The save with the GM's primer switch (`primer.on`) set to `on`, the other overrides kept: shows or hides the San Francisco primer for players in a room. */
+/** The save with the GM's primer switch (`primer.on`) set to `on`, the other overrides kept: shows or hides the world primer for players in a room. */
 export const primerRuleSet = <S extends { readonly rulesOverrides: unknown }>(save: S, on: boolean): S => {
   const ov = recOf(save.rulesOverrides);
   return { ...save, rulesOverrides: { ...ov, primer: { ...recOf(ov.primer), on } } };

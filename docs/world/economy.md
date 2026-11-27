@@ -215,8 +215,14 @@ that price. Four things follow.
 - No item sells for less than a quarter of the Shop's price, because the seller can go to the Shop.
 - Hunters trade with each other between those two prices. A fence pays 40% of the Shop's price. A used-gear stall
   sells at 70%. A hunter sells to the Shop only when they need gold the same hour.
-- The unawakened cannot open the Shop. They buy through runners, who are licensed E-ranks that buy to order and add
-  20%. A runner with one hospital's potion contract needs no other customer.
+- The unawakened cannot open the hunter Shop (mana-imbued potions, gear, catalysts, or Resurrection Crystals). They
+  still buy Health Potions and Elixirs through runners, who are licensed E-ranks that buy to order and add 20%. A
+  runner with one hospital's potion contract needs no other customer.
+- **The Resident Store (Nov 27 ruling; lore and docs only).** Since the first hunter awakened in Year 0, every
+  `"Resident, level 0"` window has opened the **Resident Store**, which sells everyday goods, household essentials,
+  fresh produce, cup noodles, and gourmet Michelin-level meals directly for System gold — never hunter-shelf mana items.
+  Because the Store's food is cheaper and better than pre-gate food, ordinary grocery stores and restaurants survive
+  only as novelties or monster-meat specialty kitchens. Section 4 gives the slashed Store food prices and the city math.
 
 The Shop does not stock named drops, the plus grade of the high tiers, or items a maker made. Those have no
 ceiling. They sell at auction on Ledger Row, often for several times the price of their tier.
@@ -303,9 +309,47 @@ The script stores each price as a number of labourer-days, so the prices move wi
 | A reclaimer (carcass crew), a day in a gate | 30 | 2.5 | when paid a wage; most crews take a quarter of the harvest |
 <!-- /prices:everyday -->
 
-Compared with the world before the gates, electricity costs less, because crystal reactors make it. Anything that
-crosses open country costs more, because it travels in a guarded convoy and is insured against breaks. Few people
-can afford to fly. Every household in an Amber zone keeps a packed go-bag for each person.
+Compared with the world before the gates, electricity costs less, because crystal reactors make it, and everyday food
+costs almost nothing, because the Resident Store replaced groceries and farms. Anything that crosses open country still
+costs more, because it travels by escorted rail or convoy and is insured against breaks. Few people can afford to fly.
+Every household in an Amber zone keeps a packed go-bag for each person.
+
+### The Resident Store: slashed food prices and city math
+
+*(Added under the owner's Nov 27 rulings, t200u: lore and docs only — no player shop items are added to the app, and
+`prices.ts` has not been modified yet, so the `<!-- prices:everyday -->` and `<!-- prices:model-flows -->` blocks above
+still reflect the pre-Store baseline. The restaurant and street-meal rows in `<!-- prices:everyday -->` — 0.4 gold for
+street noodles, 6 gold in Saltmarket, 36 gold in the Crown — now represent **novelty dining, live kitchens, and
+real-world heritage or monster-meat meals**, not daily calories.)*
+
+At old grocery prices (9 gold/week, ~39 gold/month per adult), 800,000 San Francisco residents buying all their food
+from the System Store would burn **31.2 million gold a month** — over 16 times the city's **1.9 million gold/month**
+gate mint — collapsing the currency unless wages rescaled or Store food was priced in fractions of a bit. To keep
+the owner's Nov 20 wage anchor intact (**12 gold/day** labourer, **400 gold/month** median, **100 gold** E Clear), the
+Hosts subsidize the Resident Store as a loss-leader:
+
+| Resident Store item | Gold | Bits (1/100 gold) | Note |
+|---|---|---|---|
+| Everyday staple meal (fresh produce, cup noodles, bread, rice) | 0.003 | 0.3 bits | Better than pre-gate food |
+| Full day's everyday meals and basic household essentials (one adult) | 0.01 | 1 bit | Under 0.1% of a labourer's 12-gold day |
+| One week of everyday food and basics (one adult) | 0.07 | 7 bits | Replaces the old 9-gold grocery basket |
+| One month of everyday food and basics (one adult) | 0.30 | 30 bits | Affordable even on the lowest wage |
+| Gourmet Michelin-level Store meal (one adult) | 0.02 | 2 bits | Ordinary workers eat gourmet meals routinely |
+| Typical Resident Store spend (everyday + 2 to 5 gourmet meals/month) | 0.35 to 0.40 | 35 to 40 bits | Average 0.375 gold/person/month (4.5 gold/year) |
+
+**City-wide gold math (San Francisco, 800,000 people, 1.9M gold/month minted):**
+
+- **Resident Store burn:** `800,000 people × 0.35 to 0.40 gold/month = 280,000 to 320,000 gold/month` (**0.28M to 0.32M**,
+  or **15% to 17%** of San Francisco's 1.9M monthly mint).
+- **Existing Shop sinks (unchanged):** hunters' staples, gear, stones, seeds, and books (~0.8M, 44% of mint) plus
+  Residents' hunter-shelf medicine bought through runners (~0.4M, 20% of mint) = **~1.2M/month** (65% of mint).
+- **Combined Shop burn:** `1.2M + 0.30M ≈ 1.50M/month` (**~79% to 82%** of the 1.9M mint).
+- **Left in circulation:** `1.9M − 1.50M ≈ 0.38M to 0.42M/month` (**~20% to 22%** of the mint), staying squarely inside
+  the model's healthy **15% to 40%** growth band.
+- **Wages stay untouched:** because the Resident Store drains 0.30M/month instead of 31M/month, the 12-gold daily wage,
+  400-gold median month, 100-gold E Clear, rents, and potion prices all hold without rescaling — and the Hosts achieve
+  their trap: food is practically free, nobody farms, and cutting off Shop access (Act 3's Scarside penalty, Act 6's
+  Seat) starves a city within days.
 
 ## 5. Housing by district
 
@@ -396,16 +440,18 @@ section 4).
 A gate produces two kinds of income. The System pays the hunters who clear it in gold and drops. That is the game's
 Clear, and it belongs to the hunters. The gate also holds mana crystal in its walls and monster carcasses on its
 floor. That is the harvest, and it belongs to whoever holds the gate's **rights**. A crew of reclaimers cuts the
-harvest out after the Clear. They must finish before the day the gate would have broken, because a cleared gate
-closes on that day.
+harvest out after the Clear. They must finish before **day 7**, because **every gate breaks 7 days after it opens**
+regardless of rank (and a cleared gate closes on day 7; a broken gate closes as soon as its monsters funnel out). *(Note:
+the `Breaks on day` column in the generated `<!-- prices:gates -->` table below still shows the old 7-to-2 schedule until
+`prices.ts` is updated alongside the `gate-7d` app lane.)*
 
 There are two kinds of gate.
 
 - **A public gate.** The Bureau holds the rights. A licensed party pays an entry fee for each hunter, equal to a tenth
   of the gate's Clear. The party keeps its gold and drops. The Bureau's own crews take the harvest. The game plays
   this way today: a Clear pays the party no harvest.
-- **An auctioned gate.** The Bureau sells the rights to about half of all gates within hours of reading them. The
-  holder pays the bid and sends its own hunters, who pay no entry fee. The holder pays a crew a quarter of the
+- **An auctioned gate.** Guilds control most of the gates by buying rights from the Bureau within hours of reading them.
+  The holder pays the bid and sends its own hunters, who pay no entry fee. The holder pays a crew a quarter of the
   harvest and pays the state a fifth. The rest is the holder's. Winning bids average 60% of that expected net,
   because some raids fail and the holder still owes the bid.
 
@@ -417,11 +463,11 @@ carry the risk of the wait.
 | Gate | Breaks on day | Gold pot (party of 4) | One Clear | Entry fee for each hunter | Harvest | Crew's share | State levy | Holder nets | Rights at auction | Harvest if ripe (last day) |
 |---|---|---|---|---|---|---|---|---|---|---|
 | E | 7 | 400 | 100 | 10 | 600 | 150 | 120 | 330 | 198 | 900 |
-| D | 6 | 1,300 | 325 | 33 | 1,950 | 488 | 390 | 1,073 | 644 | 2,925 |
-| C | 5 | 5,000 | 1,250 | 125 | 7,500 | 1,875 | 1,500 | 4,125 | 2,475 | 11,250 |
-| B | 4 | 20,000 | 5,000 | 500 | 30,000 | 7,500 | 6,000 | 16,500 | 9,900 | 45,000 |
-| A | 3 | 76,000 | 19,000 | 1,900 | 114,000 | 28,500 | 22,800 | 62,700 | 37,620 | 171,000 |
-| S | 2 | 300,000 | 75,000 | 7,500 | 450,000 | 112,500 | 90,000 | 247,500 | 148,500 | 675,000 |
+| D | 7 | 1,300 | 325 | 33 | 1,950 | 488 | 390 | 1,073 | 644 | 2,925 |
+| C | 7 | 5,000 | 1,250 | 125 | 7,500 | 1,875 | 1,500 | 4,125 | 2,475 | 11,250 |
+| B | 7 | 20,000 | 5,000 | 500 | 30,000 | 7,500 | 6,000 | 16,500 | 9,900 | 45,000 |
+| A | 7 | 76,000 | 19,000 | 1,900 | 114,000 | 28,500 | 22,800 | 62,700 | 37,620 | 171,000 |
+| S | 7 | 300,000 | 75,000 | 7,500 | 450,000 | 112,500 | 90,000 | 247,500 | 148,500 | 675,000 |
 <!-- /prices:gates -->
 
 San Francisco has 800,000 people, 1,600 hunters and 400 world gates a month:
@@ -767,3 +813,5 @@ do not give, or where the numbers have a result that the world had to explain.
 | 14 | Ruled since: a raising costs 3.33% of the hunter's level, rounded up (design ruling 9) | The story uses it beside the System's collateral (`story.md`, section 3) | Closed by the owner's ruling |
 | 15 | The game has no crafting, professions, materials beyond one shard, enhancement, seeds, skill books, food, thrown items, escape stones or gate keys | the owner said yes to all of them on Nov 20, and no to scrolls and to charms that prevent a death. `items.md` gives the types, prices, five professions with a skill tree each, and the crafting rules | New item types and a crafting system. `items.md` section 7 lists the open proposals |
 | 16 | Automatic System messages and rewards | the owner's ruling: every System message and every reward must be editable and approved by the GM before players see it | Route every System text and reward (including sponsor tips and scenarios) through a GM edit-and-approve queue |
+| 17 | Resident Store (everyday goods and essentials, active since the first hunter awakened) | Slashed food prices (`0.01` gold/day, `0.02` gourmet, `0.35–0.40`/month; 0.30M/month city burn) keep wages intact and leave ~20% of the mint in circulation (section 4) | Lore and GM docs only per the owner (Nov 27, t200u); no player shop items or Resident UI in the app |
+| 18 | Gate break timing (`RULES.rankTable[rank].breakDays`) | the owner ruled (Nov 27, t200u) that every gate breaks 7 days after it opens regardless of rank, and closes after breaking | App rule change ships in `gate-7d`; update `prices.ts` in the economy pass |

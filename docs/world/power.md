@@ -8,11 +8,14 @@ awakened with. `story.md` gives the GM the reasons.
 
 ## 1. Everyone has a window
 
-At 03:14 UTC on Day Zero every person on Earth saw a window that nobody else could see. It showed their name, the
-word "Resident", "Level 0" and "Cap: 0". It has been there ever since. A child's window appears at birth.
+At 03:14 UTC on Day Zero — the night the first gate opened in London — every person on Earth saw a window that nobody
+else could see. For most people it reads `"Resident, level 0"` (with `"Cap: 0"`). It has been there ever since. A
+child's window appears at birth.
 
-A Resident's window does nothing most of the time. During a break nearby it shows a quest, usually "Survive:
-10:00" with a timer. It names no reward.
+Since the first hunter awakened in Year 0, a Resident's window has granted access to the **Resident Store**, which sells
+everyday goods, food and household essentials for System gold (`economy.md`, section 4). It sells no mana-imbued hunter
+items (no potions, gear, catalysts or crystals) and gives no Inventory. During a break nearby the window also shows a
+quest, usually `"Survive: 10:00"` with a timer. It names no reward.
 
 People call the thing behind the window the System. It has never stated a purpose.
 
@@ -36,7 +39,7 @@ A new hunter gets these things at once:
 
 - A body that carries mana. It is stronger and faster than before, tires more slowly, and is harder to kill.
 - An Inventory, which is a storage space that only the hunter can reach.
-- Access to the Shop, which sells for gold.
+- Access to the hunter Shop, which sells mana-imbued potions, gear, catalysts and crystals for gold (beyond the everyday goods in the Resident Store).
 - A level, quests and a daily quest (section 3).
 
 ## 3. What awakening costs
@@ -234,10 +237,10 @@ behind them.
   rank, posts it, and then licenses a party or sells the rights. The inside is a different place each time, such as
   a cave system, a flooded temple or a fortress. It holds a pack of monsters and a boss. The gate is cleared when
   the boss dies.
-- **The break day.** A gate that nobody clears breaks, and everything inside comes out. An E gate breaks on day 7,
-  D on day 6, C on day 5, B on day 4, A on day 3 and S on day 2. A cleared gate does not break. It stays open and
-  empty until its break day and then closes. Reclaimers work during that time.
-- **Holding a gate.** The crystal grows as the break day approaches, and the boss grows more dangerous without
+- **The break day.** Every gate breaks **seven days after it opens**, regardless of rank. When a gate breaks, all of
+  its monsters funnel out into the world and **the gate closes behind them** (nothing goes back in). A cleared gate
+  does not break; it stays open and empty until day 7 and then closes. Reclaimers work during that time.
+- **Holding a gate.** The crystal grows as day 7 approaches, and the boss grows more dangerous without
   changing rank. A rights holder earns more by clearing late (`economy.md`, section 8).
 - **Red gates.** About one gate in ten is red. It seals behind the party. Nobody can leave or enter until the boss
   or the party is dead, and every check inside is harder. From outside, a red gate looks like any other.
@@ -248,8 +251,14 @@ behind them.
   no crystal to harvest. A cleared one pays gold and, one time in four, an item.
 - **A world gate cleared alone.** One hunter takes the whole pot, which is four Clears, and four shares of the XP.
   This is legal. Guild contracts forbid it.
-- **Gates that never close.** The S gate in Port Sarn has stayed open for twenty years. A few other gates have
-  also stayed open, and nobody knows why. One is a B gate in a flooded car park in the Scar (`seeds.md`).
+- **Gates that never close.** A broken gate always closes once its monsters funnel out. Only a very few *cleared*
+  gates have failed to close on day 7, and nobody knows why. One is a B gate in a flooded car park in the Scar
+  (`seeds.md`).
+- **SS gates, mythics, and beyond.** Only one gate above S has ever been recorded: London's Day Zero **SS** gate, which
+  broke after seven days and closed behind its monsters. Mythic-tier monsters spawn only in SS dungeons — never inside
+  ordinary E to S gates — so the towering land dragon holding England is Earth's confirmed mythic, and any other mythic
+  remnants that escaped London's break remain confined to England or uncharted dead zones. *For the GM only:* the Act 5
+  Finale opens an **SSS-rank gate** holding something higher than mythic (`story.md`, Act 5).
 - **Death and Resurrection Crystals.** Death follows the owner's revive ladder (`machines.md`, `Revive standing` and
   `A death`): a hunter's first revive within an hour is free of gold cost; the second is one revive on debt (ten
   Clears); after that, no System revive is offered. From the third death on, only a GM grant or a Resurrection
@@ -261,8 +270,9 @@ behind them.
 ## 9. What people think the System is
 
 In San Francisco's polls a third of people say the System is a machine that someone else left behind. A quarter say it
-is a god. A fifth say it is the Earth. The rest give other answers or none. Millions of people have asked their
-window what it is. It has never answered.
+is a god. A fifth say it is the Earth. The rest give other answers or none — and hunters at bars openly call it a
+fucked-up game everyone was forced to play. Millions of people have asked their window what it is. It has never
+answered.
 
 Every hunter knows these things from experience:
 

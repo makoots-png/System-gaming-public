@@ -32,15 +32,6 @@ function extractSeedsPrimer(markdown: string): string[] {
   return paragraphs;
 }
 
-/** Applies the documented American-spelling and voice-lint adaptations from docs/world/seeds.md to WORLD_PRIMER. */
-const adaptPrimerForApp = (p: string): string => p
-  .replace(/\blabourer\b/g, 'laborer')
-  .replace(/\blicence\b/g, 'license')
-  .replace(
-    "A hunter's window shows a level, quests and a rank. It also shows a cap.",
-    "A hunter's window lists a level, quests, and a rank. It also lists a cap.",
-  );
-
 const CODE = room('ABC234');
 const player = (o: Partial<Extract<FirstRunFacts, { role: 'player' }>> = {}): FirstRunFacts =>
   ({ role: 'player', points: 5, rooms: true, room: null, joining: null, ...o });
@@ -140,25 +131,22 @@ describe('the sentences a new person reads', () => {
   test('LOADED.starter names The Empty Seat, Tessa Corbin, the primer, and Start a story', () => {
     expect(LOADED.starter).toContain(STARTER_STORY_NAME);
     expect(LOADED.starter).toContain(STARTER_UNSPENT_HUNTER);
-    expect(LOADED.starter).toContain('Read aloud: San Francisco primer');
+    expect(LOADED.starter).toContain('Read aloud: World primer');
     expect(LOADED.starter).toContain('Start a story');
     expect(LOADED.starter).toContain('Chapter 1');
   });
 
-  test('WORLD_PRIMER carries the 9 San Francisco primer paragraphs in American English', () => {
-    expect(WORLD_PRIMER).toHaveLength(9);
+  test('WORLD_PRIMER carries the owner\'s 10 world primer paragraphs', () => {
+    expect(WORLD_PRIMER).toHaveLength(10);
     const full = WORLD_PRIMER.join('\n\n');
+    expect(full).toContain('London');
     expect(full).toContain('San Francisco');
-    expect(full).toContain('laborer');
-    expect(full).toContain('license');
-    expect(full).not.toMatch(/\b(labourer|licence)\b/i);
-    expect(WORLD_PRIMER[WORLD_PRIMER.length - 1]).toBe('What do you do?');
   });
 
   test('WORLD_PRIMER matches docs/world/seeds.md section 3 paragraph for paragraph', async () => {
     const seeds = await Bun.file(`${ROOT}/docs/world/seeds.md`).text();
-    const expected = extractSeedsPrimer(seeds).map(adaptPrimerForApp);
-    expect(expected).toHaveLength(9);
+    const expected = extractSeedsPrimer(seeds);
+    expect(expected).toHaveLength(10);
     expect(WORLD_PRIMER).toEqual(expected);
   });
 
@@ -183,7 +171,7 @@ describe('the sentences a new person reads', () => {
     ].join('\n');
 
     const checks: readonly { readonly label: string; readonly referencedIn: string; readonly uiSource: string; readonly uiFile: string }[] = [
-      { label: 'Read aloud: San Francisco primer', referencedIn: LOADED.starter, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
+      { label: 'Read aloud: World primer', referencedIn: LOADED.starter, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
       { label: 'Start a story', referencedIn: LOADED.starter, uiSource: storyRunSrc, uiFile: 'src/core/story/run.ts' },
       { label: 'Confirm allocation', referencedIn: stepText, uiSource: rulesTextSrc, uiFile: 'src/core/rules-text.ts' },
       { label: 'Mark as raiding', referencedIn: notes, uiSource: gatesSrc, uiFile: 'src/views/gates.js' },

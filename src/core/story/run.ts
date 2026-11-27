@@ -72,13 +72,13 @@ export type RunEvent =
 /**
  * Why a move was refused. `running`: that run is already on. `ended`: it has ended. `no-run`: there is no such run.
  * `moved`: it was opened since the window or the tap was drawn. `no-chapter`: the story has no such chapter now.
- * `nobody`: no hunter at the table to give it to. `no-story`: the story is no longer in the library. `full`: `RUNNING_MAX`
- * stories run already. `too-large`: the chapter is past `CHAPTER_MAX` and a player's hunter would be sent it.
- * `one-for-unique`: a chapter granting a unique class was opened for more than one hunter. `unique-job`: the unique
- * class claim was blocked (`uniqueJobBlock`).
+ * `required`: an earlier required chapter has not been opened yet. `nobody`: no hunter at the table to give it to.
+ * `no-story`: the story is no longer in the library. `full`: `RUNNING_MAX` stories run already. `too-large`: the
+ * chapter is past `CHAPTER_MAX` and a player's hunter would be sent it. `one-for-unique`: a chapter granting a unique
+ * class was opened for more than one hunter. `unique-job`: the unique class claim was blocked (`uniqueJobBlock`).
  */
 export type RunRefusal =
-  | 'running' | 'ended' | 'no-run' | 'moved' | 'no-chapter' | 'nobody' | 'no-story' | 'full' | 'too-large'
+  | 'running' | 'ended' | 'no-run' | 'moved' | 'no-chapter' | 'required' | 'nobody' | 'no-story' | 'full' | 'too-large'
   | 'one-for-unique' | 'unique-job';
 /** Extra detail carried on a `unique-job` refusal from `storyMove` for `storyRefusalWords`. */
 export type UniqueJobStoryRefusal = Refused<'unique-job'> & { readonly refusal: UniqueJobRefusal; readonly targetName: string };
@@ -111,6 +111,7 @@ export const TABLE: { readonly [S in (typeof RUN_STATES)[number]]: { readonly [E
       if (e.seen !== r.opens) return refuse('moved');
       if (!story) return refuse('no-story');
       if (!Number.isInteger(e.chapter) || e.chapter < 0 || e.chapter >= story.chapters.length) return refuse('no-chapter');
+      if (missingRequired(r, story, e.chapter) !== null) return refuse('required');
       if (!e.to.length) return refuse('nobody');
       // a hunter ticked who is not one of a chosen run's joins it, so the next chapters preselect it too
       const was = r.who, who: Who = was.at === 'table' ? was : { at: 'hunters', refs: [...was.refs, ...e.to.filter(t => !was.refs.some(x => sameRef(x, t)))] };
@@ -136,6 +137,13 @@ export function runStep(run: StoryRun | null, e: RunEvent, story: Story | null):
 }
 
 // ── reading a run ──
+/** The first required chapter before `chapter` (0-based) that has not been opened yet, or null when none blocks it. */
+export function missingRequired(run: Pick<StoryRun, 'opened'>, story: Pick<Story, 'chapters'>, chapter: number): number | null {
+  for (let i = 0; i < Math.min(chapter, story.chapters.length); i++) {
+    if (story.chapters[i]?.required && !run.opened.some(o => o.chapter === i)) return i;
+  }
+  return null;
+}
 /** Whether `ref` has had chapter `chapter` of `run`. */
 export const hadChapter = (run: StoryRun, chapter: number, ref: HunterRef): boolean =>
   run.opened.some(o => o.chapter === chapter && o.to.some(t => sameRef(t, ref)));
@@ -355,6 +363,7 @@ export const RUN_REFUSAL_WORDS: { readonly [K in RunRefusal]: (chapter: number) 
   'no-run': () => 'This story is not running.',
   moved: n => `This story changed while the window was open. It is at chapter ${n} now.`,
   'no-chapter': n => `This story has no chapter ${n} now. It was changed in the Workshop.`,
+  required: n => `Open chapter ${n} first. That chapter is required.`,
   nobody: () => 'Pick at least one hunter.',
   'no-story': () => 'This story is no longer in your Workshop. You can end it.',
   full: () => `You can run at most ${RUNNING_MAX} stories at once. End one first.`,
@@ -425,6 +434,8 @@ export const STORY_WORDS = {
   waits: (names: readonly string[]) => `Saved. ${andList(names)} will get it when your phone reconnects to the room server.`,
   running: 'running',
   openedMark: 'opened',
+  requiredMark: 'Required',
+  requiredNote: 'Required (do not skip).',
   notSaved: 'Not saved. Nothing was given.',
   deleteRunning: (name: string) => `End ${name} in the GM view before you delete it.`,
 };

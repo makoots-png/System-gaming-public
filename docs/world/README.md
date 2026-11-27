@@ -24,43 +24,55 @@ numbers disagree.
 
 ## The setting in ten points
 
-1. In Year 0 gates opened across the world. The highest-ranked gates broke first, on the game's break days: the S
-   gate on day 2 and the E gates on day 7. About one person in twenty died in the next three years.
-2. About one person in five hundred awakens as a hunter after a three-day fever. A hunter gets a stronger body, an
-   Inventory and access to the Shop.
+1. In Year 0 at 03:14 UTC the first gate opened in London: a giant **SS** maw thousands of feet wide, the only SS gate
+   ever recorded. For seven days (the Long Week) the world watched and failed to probe it. On day 7 it broke, a mythic
+   land dragon and its host funnelled out, the gate closed behind them, and over 97% died in five days; England is still
+   held by monsters. Second-wave gates then hit Shanghai, San Francisco, Tokyo, Melbourne, Madrid, New York (nuked to
+   halt a break) and cities worldwide. Every gate breaks 7 days after it opens and closes after breaking. About one
+   person in twenty died in the next three years.
+2. About one person in five hundred awakens as a hunter after a three-day fever. Every human got a window on the first
+   night (`"Resident, level 0"`). Since the first hunter awakened, Residents have had the **Resident Store** (everyday
+   goods and essentials, including slashed-price food). A hunter gets a stronger body, an Inventory, and access to the
+   hunter Shop (mana-imbued potions, gear and crystals).
 3. The System pays hunters in gold. Nobody else can create gold, and it became the world's money.
-4. Gold replaced the dollar. A labourer earns 12 gold a day and the median wage is 400 a month. An E Clear is
-   100. Hunters tend to be richer than other people, and a working E-rank is only a little richer than a labourer.
+4. Gold replaced the dollar. A labourer earns 12 gold a day, the median wage is 400 a month, and an E Clear is 100.
+   Resident Store food is slashed to fractions of a gold (`0.01` gold/day for everyday meals, `0.02` for gourmet) so the
+   city's gold math closes without moving wages; restaurants and grocers survive only as novelties. Hunters tend to be
+   richer than other people, and a working E-rank is only a little richer than a labourer.
 5. A gate pays the hunters who clear it in gold and drops. It pays whoever holds its rights in crystal and
-   carcasses. Guilds buy rights and give their members seats.
+   carcasses. Guilds control most gates by buying rights from the Bureau and give their members seats.
 6. Cities run on power from gate crystal. Rent depends on how fast hunters can reach a street.
 7. Death follows the revive ladder: a hunter's first revive is free, the second is one revive on debt, and after
    that none unless the GM grants one or a pre-bought Resurrection Crystal (ten Clears) is used within an hour (gold
    held after death does not help). None of this works on an unawakened person. That difference is the main political
    conflict.
-8. Every human has a System window. A Resident's reads level 0. A hunter levels up to the cap of the rank they
-   awakened with and then stops. A higher level slows ageing, and an S-rank may live to about 240.
+8. Every human has a System window. A Resident's reads `"Resident, level 0"`. A hunter levels up to the cap of the rank
+   they awakened with and then stops. A higher level slows ageing, and an S-rank may live to about 240.
 9. A trial gate removes a cap. Almost nobody knows this. The players' party clears an off-books trial in Mission 1
    (`The Empty Seat`), lifting their cap and opening Wave 1 unique classes while still registered E-ranks, and must
    hide both until Act 2's Network Audit. A very few other hunters have passed a trial and hide it.
-10. The System has never stated a purpose. `story.md` tells the GM what the game is, who runs it and how the
-    party ends it. The tone is bleak, with horror in every act.
+10. The System has never stated a purpose. Twenty years on, crystal power and cheap Store food make gates feel like a
+    boon on the surface — which is the Hosts' trap. `story.md` tells the GM what the game is, who runs it, how the
+    campaign turns bleak with horror in every act, and how an SSS-rank Finale gate ends the season.
 
 ## Names
 
-- **San Francisco** is the city, a port of 800,000 people.
+- **San Francisco** is the campaign city, a port of 800,000 people.
+- **The Long Week** is the seven days between London's SS gate opening (Day Zero, 03:14 UTC) and its break on day 7.
+- **London and England** fell in five days after day 7 and remain under monster control, held by the mythic land dragon.
+- **The Resident Store** is the everyday-goods shop inside every Resident's window, active since the first hunter awakened.
 - **The Bureau** reads gates and hunters, licenses parties and auctions gate rights. Its hall is the Halfway House.
 - **The guilds** are Ironwake, the Lantern Company, Aurelian, the Ninth Hour, the Gravewardens and Redline.
 - **Helix** makes the city's power from crystal. **Paragon** sells insurance.
-- **The Stair** sells illegal seats in gates and buys stolen drops.
+- **The Stair** sells illegal seats in gates and buys stolen drops from poachers.
 - **The Once-Born League** campaigns for the unawakened.
 - **A liner** is an ordinary guild raider.
 - **A re-awakening** is a second awakening that raises a hunter's rank once. Fewer than thirty are on record.
 
 ## The owner's rulings
 
-the owner answered the folder's five questions on Nov 20 and added rulings in follow-up passes (including the Act 1
-redesign). The files follow his answers.
+the owner answered the folder's five questions on Nov 20 and added rulings in follow-up passes (the Act 1 redesign on Nov 26,
+and the world primer rewrite plus t200u/t201u answers on Nov 27). The files follow his answers.
 
 1. Every human has the System, and the game was forced on them. Every hunter levels up to a cap set by their
    rank, and a special dungeon removes the cap. The party grows strongest, fights what the game was preparing them
@@ -78,6 +90,13 @@ redesign). The files follow his answers.
    Wave 1 Mythic/Epic unique class access and lifting the level cap (`Cap: none`). Hard level caps stay out of app XP
    math (each hunter carries a per-hunter display-only cap chip), and the Hosts' worst-hour memory room moves to Act 2
    (Level 20) as a Network Audit.
+10. World primer rewrite and follow-up rulings (Nov 27, t200u & t201u): real-Earth history with London's SS gate first
+    (7 days -> mythic land dragon -> >97% dead in 5 days -> England monster-held; second wave in major cities; New York
+    nuked); every gate breaks 7 days after opening and closes behind its monsters; mythics spawn only in SS dungeons
+    (London's is the only SS gate ever); the Resident Store has worked since the first hunter awakened and sells
+    everyday goods and essentials at slashed food prices (lore/docs only, no player shop items); the Act 5 Finale door
+    is a new SSS-rank gate holding something higher than mythic; and "the call" in the primer's last line is the
+    awakening itself (bridged into Beat 1).
 
 ## Keeping the folder correct
 

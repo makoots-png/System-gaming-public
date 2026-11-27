@@ -68,7 +68,7 @@ export function storyMaker(app, story) {
           <label class="field chk"><input type="checkbox" id="stm-hasq"${c.quest ? ' checked' : ''}><span>Issues a quest</span></label>
           <div data-stm-q></div>
           <div class="stm-acts"><button type="button" data-chup${i === 0 ? ' disabled' : ''}>Move up</button><button type="button" data-chdown${i === chapters.length - 1 ? ' disabled' : ''}>Move down</button>
-            <button type="button" class="danger" data-chrm${chapters.length === 1 ? ' disabled' : ''}>Remove</button></div></div>` : ''}</li>`;
+            <button type="button" class="danger" data-chrm${chapters.length === 1 || c.required ? ' disabled' : ''}>Remove</button></div></div>` : ''}</li>`;
       }
       /** The open chapter as its fields hold it now. */
       function current() {
@@ -76,6 +76,7 @@ export function storyMaker(app, story) {
         return {
           name: $('#stm-cname').value, words: { title: $('#stm-wtitle').value, line: $('#stm-wline').value }, note: $('#stm-note').value,
           rewards: rewards ? rewards.value() : c.rewards, quest: $('#stm-hasq').checked ? (quest ? quest.value() : c.quest || newChapterQuest()) : null,
+          ...(c.required ? { required: true } : {}),
         };
       }
       /** The chapters with the open one read from its fields. */
@@ -110,7 +111,7 @@ export function storyMaker(app, story) {
 
       body.addEventListener('click', e => {
         const b = /** @type {Element} */ (e.target).closest('button'); if (!b || !body.contains(b) || b.closest('[data-stm-rw], [data-stm-q]')) return;
-        if (b.hasAttribute('data-chrm') && chapters.length > 1) { chapters.splice(open, 1); open = -1; draw(); return; }
+        if (b.hasAttribute('data-chrm') && chapters.length > 1 && !chapters[open]?.required) { chapters.splice(open, 1); open = -1; draw(); return; }
         const to = b.hasAttribute('data-chup') ? open - 1 : b.hasAttribute('data-chdown') ? open + 1 : null;
         const moves = b.hasAttribute('data-chopen') || (b.hasAttribute('data-chadd') && chapters.length < CHAPTERS_MAX) || (to !== null && to >= 0 && to < chapters.length);
         if (!moves || !mayClose()) return;

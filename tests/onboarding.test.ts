@@ -169,7 +169,7 @@ describe('first-run setup and the quick start', () => {
     expect(STARTS).toEqual([SHUT]);
   });
 
-  test('onboarding UI replaces the dodging No welcome with Day Zero copy, adds the sample-hunters toggle, and renders the San Francisco primer drawer', async () => {
+  test('onboarding UI replaces the dodging No welcome with first-gate copy, adds the sample-hunters toggle, and renders the world primer drawer', async () => {
     const [coreSrc, viewSrc] = await Promise.all([
       Bun.file(`${import.meta.dir}/../src/core/onboarding.ts`).text(),
       Bun.file(`${import.meta.dir}/../src/views/onboard.js`).text(),
@@ -178,7 +178,7 @@ describe('first-run setup and the quick start', () => {
     expect(coreSrc).not.toContain('"Accept?"');
 
     expect(viewSrc).toContain('Window active');
-    expect(viewSrc).toContain('Every person has had a System window since Day Zero. Choose whether you are a player or the GM for this table.');
+    expect(viewSrc).toContain('Every person has had a System window since the night the first gate opened. Choose whether you are a player or the GM for this table.');
     expect(viewSrc).toContain('>Set up</button>');
     expect(viewSrc).toContain('>Skip setup</button>');
     expect(viewSrc).not.toContain('You have been chosen as a Player');
@@ -189,7 +189,7 @@ describe('first-run setup and the quick start', () => {
     expect(viewSrc).toContain('Include 4 sample hunters');
     expect(viewSrc).toContain('starterStep(app, { includePregens })');
 
-    expect(viewSrc).toContain('Read aloud: San Francisco primer');
+    expect(viewSrc).toContain('Read aloud: World primer');
     expect(viewSrc).toContain('WORLD_PRIMER');
     expect(viewSrc.match(/primerHtml\(\)/g)?.length ?? 0).toBe(2);
   });

@@ -3,18 +3,18 @@ import { PRIMER_WORDS, WORLD_PRIMER } from '../../src/core/first-run.ts';
 
 const OB = '.ob-overlay';
 
-test('solo mode without a room keeps showing the San Francisco primer in ? Quick Start', async ({ device }) => {
+test('solo mode without a room keeps showing the world primer in ? Quick Start', async ({ device }) => {
   const solo = (await device('solo', { viewport: { width: 360, height: 640 } })).page;
   await onboardPlayer(solo, 'Solo Reader');
   await solo.locator('#help-btn').tap();
   const guide = solo.locator(OB, { has: solo.locator('h2', { hasText: 'How it works' }) });
   await expect(guide).toBeVisible();
-  await expect(guide.locator('[data-primer] summary')).toHaveText('Read aloud: San Francisco primer');
+  await expect(guide.locator('[data-primer] summary')).toHaveText('Read aloud: World primer');
   await guide.locator('[data-ok]').tap();
   await expect(solo.locator(OB)).toHaveCount(0);
 });
 
-test('the San Francisco primer is hidden from room players until the GM unlocks it, syncs live and on rejoin, and hides again when locked', async ({ device }) => {
+test('the world primer is hidden from room players until the GM unlocks it, syncs live and on rejoin, and hides again when locked', async ({ device }) => {
   const gm = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
   const player = (await device('player', { viewport: { width: 360, height: 640 } })).page;
 
@@ -27,7 +27,7 @@ test('the San Francisco primer is hidden from room players until the GM unlocks 
   await test.step('the GM always sees the primer in ? Quick Start even while locked for players', async () => {
     await gm.locator('#help-btn').tap();
     const guide = gm.locator(OB, { has: gm.locator('h2', { hasText: 'How it works' }) });
-    await expect(guide.locator('[data-primer] summary')).toHaveText('Read aloud: San Francisco primer');
+    await expect(guide.locator('[data-primer] summary')).toHaveText('Read aloud: World primer');
     await guide.locator('[data-ok]').tap();
     await expect(gm.locator(OB)).toHaveCount(0);
   });
@@ -68,7 +68,7 @@ test('the San Francisco primer is hidden from room players until the GM unlocks 
     await expect.poll(() => player.evaluate(() => hunterApp.api.sync.doc('rules')?.primer.on ?? false), { timeout: 20_000 }).toBe(true);
     await player.locator('#help-btn').tap();
     const guide = player.locator(OB, { has: player.locator('h2', { hasText: 'How it works' }) });
-    await expect(guide.locator('[data-primer] summary')).toHaveText('Read aloud: San Francisco primer');
+    await expect(guide.locator('[data-primer] summary')).toHaveText('Read aloud: World primer');
     await guide.locator('[data-ok]').tap();
   });
 
@@ -90,7 +90,7 @@ test('the San Francisco primer is hidden from room players until the GM unlocks 
 
     await gm.locator('#help-btn').tap();
     const gGuide = gm.locator(OB, { has: gm.locator('h2', { hasText: 'How it works' }) });
-    await expect(gGuide.locator('[data-primer] summary')).toHaveText('Read aloud: San Francisco primer');
+    await expect(gGuide.locator('[data-primer] summary')).toHaveText('Read aloud: World primer');
     await gGuide.locator('[data-ok]').tap();
   });
 });

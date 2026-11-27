@@ -2,7 +2,7 @@
 // (ruling 1), who a chapter goes to, the one write of a move, the save's bounds, and the proof that nothing but the GM's
 // tap moves a story (notes-1-stories.md 3.4, point 7).
 import { describe, expect, test } from 'bun:test';
-import { ENDED_KEPT, OPENED_MAX, RUNNING_MAX, keptRuns, nextChapter, parseStoryRun, runStep, storyMove, whoFor } from '../src/core/story/run.ts';
+import { ENDED_KEPT, OPENED_MAX, RUNNING_MAX, RUN_REFUSAL_WORDS, keptRuns, missingRequired, nextChapter, parseStoryRun, runStep, storyMove, whoFor } from '../src/core/story/run.ts';
 import type { MoveCtx, MoveRoom, RunEvent, StoryRun, Who } from '../src/core/story/run.ts';
 import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
@@ -111,6 +111,20 @@ describe('the machine, cell by cell', () => {
   test('the next chapter is the one after the run\'s, and none at the last', () => {
     expect(nextChapter(onFor(), WAGER)).toBe(1);
     expect(nextChapter(ok(runStep(onFor(), open(3, 1, [BRAKK]), WAGER)).run, WAGER)).toBeNull();
+  });
+
+  test('running: an open cannot skip past an unopened required chapter, and succeeds once it has been opened', () => {
+    const gated: Story = {
+      ...WAGER,
+      chapters: WAGER.chapters.map((c, i) => (i === 1 ? { ...c, required: true } : c)),
+    };
+    const r0 = ok(runStep(null, turnOn(FOR_BRAKK, [BRAKK]), gated)).run;
+    expect(missingRequired(r0, gated, 2)).toBe(1);
+    expect(runStep(r0, open(2, 1, [BRAKK]), gated)).toEqual({ ok: false, why: 'required' });
+    expect(RUN_REFUSAL_WORDS.required(2)).toBe('Open chapter 2 first. That chapter is required.');
+    const r1 = ok(runStep(r0, open(1, 1, [BRAKK]), gated)).run;
+    expect(missingRequired(r1, gated, 2)).toBeNull();
+    expect(ok(runStep(r1, open(2, 2, [BRAKK]), gated)).run.state).toEqual({ at: 'running', chapter: 2 });
   });
 });
 

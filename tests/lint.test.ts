@@ -4,6 +4,7 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from 'bun:test';
+import { PRIMER_WORDS, WORLD_PRIMER } from '../src/core/first-run.ts';
 import { GATE_STATUSES } from '../src/core/gates/gate.ts';
 import { lex } from '../scripts/deps.ts';
 import { PACK_KINDS } from '../src/core/pack.ts';
@@ -2348,6 +2349,12 @@ function joinedLiteralsOf(file: string, src: string): Words[] {
   return out;
 }
 
+/**
+ * The owner's read-aloud world primer body (`WORLD_PRIMER` in `src/core/first-run.ts`) is in-world speech and exempt from
+ * UI voice lints (`docs/guide/voice.md`). Drawer labels (`PRIMER_WORDS`, `LOADED`, `src/views/onboard.js`) stay linted.
+ */
+const EXEMPT_PRIMER_BODY = new Set(WORLD_PRIMER.map(p => p.replace(/\s+/g, ' ').trim()));
+
 async function proseLiterals(): Promise<Words[]> {
   const files = [
     ...(await readdir(`${ROOT}/src`, { recursive: true })).filter(n => /^(views|core|edge)\/.*\.(ts|js)$/.test(n) && !n.endsWith('.d.ts')),
@@ -2361,8 +2368,10 @@ async function proseLiterals(): Promise<Words[]> {
       for (const m of text.matchAll(/[^<>]+/g)) {
         const piece = m[0];
         if (looksLikeProse(piece)) {
+          const cleaned = piece.replace(/\s+/g, ' ').trim();
+          if (name === 'core/first-run.ts' && EXEMPT_PRIMER_BODY.has(cleaned)) continue;
           const pieceLine = w.line + text.slice(0, m.index).split('\n').length - 1;
-          all.push({ ...w, line: pieceLine, text: piece.replace(/\s+/g, ' ').trim() });
+          all.push({ ...w, line: pieceLine, text: cleaned });
         }
       }
     }
@@ -2388,6 +2397,17 @@ test('the literal reader of the voice rules finds strings and template text, and
     'x',
     'Hi 2 friend',
   ]);
+});
+
+test('the UI voice lint exempts only the WORLD_PRIMER body, not the primer drawer labels around it', async () => {
+  const all = await proseLiterals();
+  const firstRunTexts = new Set(all.filter(w => w.file === 'src/core/first-run.ts').map(w => w.text));
+  const onboardTexts = new Set(all.filter(w => w.file === 'src/views/onboard.js').map(w => w.text));
+  for (const p of WORLD_PRIMER) expect(firstRunTexts.has(p), 'primer body paragraph is exempt').toBe(false);
+  expect(firstRunTexts.has(PRIMER_WORDS.title), 'PRIMER_WORDS.title stays linted').toBe(true);
+  expect(firstRunTexts.has(PRIMER_WORDS.hidden), 'PRIMER_WORDS.hidden stays linted').toBe(true);
+  expect(firstRunTexts.has(PRIMER_WORDS.shown), 'PRIMER_WORDS.shown stays linted').toBe(true);
+  expect(onboardTexts.has('Read aloud: World primer'), 'drawer summary label stays linted').toBe(true);
 });
 
 test('no em dash in a player- or GM-facing string (voice.md: use a period, comma, colon or parentheses)', async () => {

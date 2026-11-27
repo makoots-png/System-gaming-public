@@ -21,7 +21,7 @@ large city has factions like them.
 
 ### Ironwake
 
-Ironwake is the oldest guild in San Francisco. A party that defended the river bridges in the Break Years founded it in
+Ironwake is the oldest guild in San Francisco. A party that defended the bay bridges in the Break Years founded it in
 Year 2. It has sixty-seven hunters and a hall on Ledger Row. An agreement older than the auction law gives it
 first refusal on a fifth of the city's auctioned gates.
 
@@ -187,10 +187,12 @@ commands the unawakened infantry of the cordon.
 
 ### The Accord and the Abstention
 
-The Accord is international law. Its secretariat is in San Francisco's old customs house, and its inspectors may enter
-any Bureau. The Abstention is an unwritten agreement among the S-ranks, and each of them keeps it because the
-others would kill one who broke it. *Hook:* both assume that rank is fixed. An Accord inspector has asked the San Francisco office for its file on hunters
-who grow, and so has Tomas Reyes-Lindahl.
+The Accord is international law, grown out of the committee world governments assembled during the Long Week. Its
+secretariat is in San Francisco's old customs house, its inspectors may enter any Bureau, and its joint sea and air
+patrols maintain the exclusion cordon around monster-held England. The Abstention is an unwritten agreement among the
+S-ranks, and each of them keeps it because the others would kill one who broke it. *Hook:* both assume that rank is
+fixed. An Accord inspector has asked the San Francisco office for its file on hunters who grow, and so has Tomas
+Reyes-Lindahl.
 
 ## 4. Corporations
 
@@ -280,10 +282,10 @@ members. Its actions have led to about two hundred deaths in San Francisco.
   year it wants to hide a gate for a week.
 - **Competes over:** unfound gates, against spotters and neighbours.
 - **Figure:** **Baptiste Roux**, called Uncle. Unawakened, a retired schoolteacher. *Hook:* his class of
-  eight-year-olds died on day 7 of the Long Week. He also says he once saw a monster come out of a gate and sit
-  down without attacking anyone. Both statements are true.
+  eight-year-olds died during San Francisco's first wave of breaks in Year 0. He also says he once saw a monster come
+  out of a gate and sit down without attacking anyone. Both statements are true.
 - **Recruits:** people who have lost family to breaks.
-- **A party meets it:** in a cellar, on day 6 of an unreported D gate, where twelve members are sitting in front
+- **A party meets it:** in a cellar, on day 7 of an unreported D gate, where twelve members are sitting in front
   of the gate.
 
 ## 6. Criminals
@@ -291,8 +293,9 @@ members. Its actions have led to about two hundred deaths in San Francisco.
 ### The Stair
 
 The Stair sells unlicensed seats. A hunter with no guild and no place in the Bureau's queue pays half a Clear of the
-gate's rank and enters with a party the Stair has arranged. The Stair also forges licences, buys drops at 40% of the Shop's price,
-launders gold through runners, and lends for crystals at five percent a month.
+gate's rank and enters with a party the Stair has arranged. It also fences drops for poachers who sneak into held gates
+on their own to clear them for item drops to sell, forges licences, buys drops at 40% of the Shop's price, launders
+gold through runners, and lends for crystals at five percent a month.
 
 - **Wants:** the licence laws to stay in force, because an open market in seats would end its trade.
 - **Competes over:** gates, by bribing guild staff for seats, and debtors, against the Ledger.
@@ -326,7 +329,9 @@ the Bureau listed as unentered, with an empty crystal case strapped to their bel
 
 ### The Once-Born League
 
-The League campaigns for the rights of unawakened people. It was founded outside a hospital in Year 9.
+The League campaigns for the rights of unawakened people. It was founded outside a hospital in Year 9. Even with
+everyday food and goods flowing from the Resident Store, Residents are locked out of the hunter shelf's potions and
+crystals and cannot be raised from death.
 
 - **Wants:** equal legal standing for people who cannot be raised. This year it wants a public trial of a crystal
   on an unawakened volunteer. In the long term it wants courts that can hold a hunter.

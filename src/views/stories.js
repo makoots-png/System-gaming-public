@@ -10,7 +10,7 @@
 // room, the players' (their sheets), to whom a move posts the chapter's message in the same write.
 import { closeWindow, css, esc, h, openWindow, trapTab } from './ui.js';
 import { enter } from './motion.ts';
-import { END_HOLD_MS, STORY_WORDS as W, atTable, givesLine, hadChapter, nameOf, nextChapter, openedLine, running, sameRef, storyMove, storyRefusalWords, whoFor } from '../core/story/run.ts';
+import { END_HOLD_MS, STORY_WORDS as W, atTable, givesLine, hadChapter, missingRequired, nameOf, nextChapter, openedLine, running, sameRef, storyMove, storyRefusalWords, whoFor } from '../core/story/run.ts';
 import { chapterWindow, storyMeta, whoseLine } from '../core/story/story.ts';
 import { grantLines, isEmptyReward } from '../core/rewards.ts';
 import { stepTime } from '../core/day.ts';
@@ -29,6 +29,7 @@ css('stories', `
 .st-card h3{margin:0;font-size:calc(17px*var(--ts));color:var(--ice);overflow-wrap:anywhere}
 .st-who,.st-at{font-size:calc(14px*var(--ts));color:var(--cyan-dim)}
 .st-note{font-size:calc(14px*var(--ts));color:var(--ice)}
+.st-req{font-size:calc(13px*var(--ts));font-weight:600;color:var(--gold)}
 .st-next{font-size:calc(14px*var(--ts));color:var(--gold)}
 .st-acts{display:flex;gap:8px}.st-acts button.primary{flex:1 1 auto;min-height:var(--control-h)}.st-acts .icon-btn{min-width:var(--control-h);min-height:var(--control-h)}
 .st-ended summary{min-height:var(--control-h);display:flex;align-items:center;cursor:pointer;color:var(--cyan)}
@@ -135,6 +136,7 @@ export function register(app) {
     const p = chapterWindow(c.words, grantLines(app.rules(), c.rewards), c.quest);
     return `<div class="lbl">${esc(W.playersSee)}</div><div class="st-prev k-quest"><div class="n-tag">${esc(p.tag)}</div><h3 class="n-big">${esc(p.title)}</h3>
       ${p.body ? `<p class="n-body">${esc(p.body)}</p>` : ''}${p.lines.length ? `<ul>${p.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}</div>
+      ${c.required ? `<p class="st-req">${esc(W.requiredNote)}</p>` : ''}
       ${c.note ? `<div class="lbl">${esc(W.yourNote)}</div><p>${esc(c.note)}</p>` : ''}`;
   }
   /** The hunters' chips: each at the table, pressed when picked, marked when it has had the chapter; a chosen hunter away greyed. */
@@ -160,7 +162,12 @@ export function register(app) {
       act() {
         const to = table.filter(r => st.picked.has(idOf(r)));
         const out = move(runId, (at, session) => ({ type: 'open', chapter: st.chapter, seen, to, at, session }));
-        if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); w.err.textContent = words(out, out.why === 'no-chapter' || out.why === 'too-large' || !now ? st.chapter + 1 : now.state.chapter + 1); return false; }
+        if (isRefused(out)) {
+          const now = S().storyRuns.find(r => r.id === runId);
+          const req = out.why === 'required' && now ? missingRequired(now, story, st.chapter) : null;
+          w.err.textContent = words(out, req !== null ? req + 1 : out.why === 'no-chapter' || out.why === 'too-large' || !now ? st.chapter + 1 : now.state.chapter + 1);
+          return false;
+        }
         told(W.opened(st.chapter, namesOf(out.run.opened.at(-1).to)), out);
         return true;
       },
@@ -254,6 +261,7 @@ export function register(app) {
     const opened = [...run.opened].reverse().find(o => o.chapter === at);
     return `<article class="st-card" data-run="${esc(run.id)}"><h3>${name}</h3><p class="st-who">${esc(forWho(run))}</p>
       <p class="st-at">${esc(W.at(at, story.chapters.length, c))} ${esc(openedLine(opened, S().world.session))}</p>
+      ${c && c.required ? `<p class="st-req">${esc(W.requiredMark)}</p>` : ''}
       ${c && c.note ? `<p class="st-note">${esc(W.note(c.note))}</p>` : ''}
       <p class="st-next">${n ? `${esc(W.next(next, n))} ${esc(givesLine(n, isEmptyReward(n.rewards)))}` : esc(W.last(story.chapters.length - 1))}</p>
       <div class="st-acts">${n ? `<button type="button" class="primary" data-st-open>${esc(W.open(next))}</button>` : `<button type="button" class="primary" data-st-end>${esc(W.end)}</button>`}

@@ -50,7 +50,7 @@ export function draftStep(d: Draft, e: DraftEvent): DraftStep {
  */
 export type ChapterQuestDraft = QuestFormDraft | ChapterQuest;
 /** A chapter as the story maker holds it, open or folded. */
-export type ChapterDraft = { readonly name: string; readonly words: SystemWords; readonly rewards: Rewards; readonly quest: ChapterQuestDraft | null; readonly note: string };
+export type ChapterDraft = { readonly name: string; readonly words: SystemWords; readonly rewards: Rewards; readonly quest: ChapterQuestDraft | null; readonly note: string; readonly required?: boolean };
 /** A story as the story maker holds it: what `parseStory` reads at Save. */
 export type StoryDraft = { readonly name: string; readonly when: string; readonly for: StoryFor; readonly chapters: readonly ChapterDraft[] };
 /**

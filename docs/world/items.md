@@ -15,7 +15,7 @@ This file proposes rules that the game does not have yet. `economy.md`, section 
 | Staple | Restores HP, mana or fatigue, or removes one status | A moment | The Shop, alchemists |
 | Tonic | Raises a stat or a resistance | One fight | The Shop, alchemists |
 | Thrown item | A bomb, a net or a flare: damage or a status on a target, with no cast time | A moment, priced as one fight | Alchemists. The Shop sells only common ones |
-| Food | A buff for the whole party | One gate | Cooks. The Shop sells none |
+| Food (gate buff) | A mana-infused meal that buffs the whole party | One gate | Cooks (from monster meat). The hunter Shop sells none; ordinary non-buff meals come from the Resident Store |
 | Escape stone | Takes the party out of a gate that is not red | One use | The Shop, at the gate's rank or higher |
 | Seed | Permanent stat points (E 1, D 1, C 2, B 3, A 4, S 5). Works only at its rank or below, up to 5 per rank, and respects a hunter's cap | For good | The Shop, artificers. Costs one Clear of its tier |
 | Skill book | One ability, learned permanently | For good | The Shop for built-in abilities, artificers for others |
@@ -61,7 +61,8 @@ the Clear of that rank times a share for the duration.
 The built-in consumables under this rule: Health Potion, Mana Potion and Stamina Tonic 10 gold; Greater Health
 Potion 33; Elixir of Life 500.
 
-For Residents this makes medicine cheap. A Health Potion costs 12 gold through a runner, which is a
+For Residents this makes hunter-shelf medicine cheap. Because the Resident Store sells only everyday goods and
+essentials (never potions or Elixirs), Residents still buy a Health Potion for 12 gold through a runner, which is a
 labourer's day. It still works at a tenth of its strength on a Resident, and a second one in a week still causes
 potion sickness (`economy.md`, section 6).
 
@@ -104,7 +105,9 @@ holding a gate to its last day.
 
 ## 4. Professions
 
-A hunter can learn two professions. A Resident can learn Reclaimer or Cook. A profession has its own level and six
+A hunter can learn two professions. A Resident can learn Reclaimer or Cook (in Year 20, ordinary meals come from the
+Resident Store, so Cooks work in novelty kitchens or prepare mana-infused monster-meat meals that grant gate buffs the
+Store does not sell). A profession has its own level and six
 tiers. The tier decides the rarity of what the crafter can make. A profession's level is not capped by the
 hunter's rank, so a capped E-rank can become a Grandmaster. This is the only ladder in the world that a cap does
 not stop.

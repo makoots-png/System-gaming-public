@@ -1,5 +1,5 @@
 // first-run.ts: what a new person is told once, in one place. What the site is (`ABOUT`), what a room is (`ROOM_IS`),
-// each role's way to one (`ROOM_PATH`), the San Francisco read-aloud primer (`WORLD_PRIMER`), what loaded (`LOADED`), the ?
+// each role's way to one (`ROOM_PATH`), the world read-aloud primer (`WORLD_PRIMER`), what loaded (`LOADED`), the ?
 // guide's tips (`TIPS`), and the next steps after setup (`nextSteps`). The Welcome window, Hunter created and Campaign
 // ready (src/views/onboard.js), the Room view (src/views/room.js) and the ? guide all read these, so their words cannot
 // drift apart. Pure: the view reads the facts from this phone and passes them in.
@@ -17,30 +17,31 @@ export const ROOM_PATH: Readonly<Record<Role, string>> = {
   player: 'Your GM creates the room and gives you its code or an invite link.',
 };
 
-/** Three-minute San Francisco primer read aloud to new players before Session 1 (synced with docs/world/seeds.md section 3). */
+/** Four-minute world primer read aloud to new players before Session 1 (synced with docs/world/seeds.md section 3). */
 export const WORLD_PRIMER: readonly string[] = [
-  'Twenty years ago, gates opened all over the world. They looked like doors made of light. Nothing came out of them at first.',
-  'Two days later the largest gate broke. Monsters came out and destroyed a city of two million people in a day. Over the next five days every other gate broke too, in every country. About one person in twenty died in the three years that followed.',
-  'Some people changed. They had a fever for three days and came out of it stronger and faster than anyone else. About one person in five hundred changes this way. They are called hunters, and nobody knows why it happens to them.',
-  'New gates still open every day. Each gate has a rank from E to S and a deadline. An E gate breaks after seven days and an S gate after two. If hunters go in and kill the boss, the gate closes. If nobody does, the monsters come out.',
-  'Something pays hunters for this work. It gives them gold and sells them things that nobody can make, such as a potion that closes a wound and a crystal that brings a dead hunter back to life. The System raises a dead hunter once for free, once on debt, and after that only with a crystal bought before death and used within an hour. Gold in your pocket after death does nothing, and none of it works on anyone who never awakened. People call this something the System.',
-  'Everyone has the System. On the first night every person alive saw a window that only they could see. For most people it says "Resident, level 0" and does nothing. A hunter\'s window lists a level, quests, and a rank. It also lists a cap. An E-rank\'s level stops at 9, and nothing they do will raise it. The System has never said what the game is for or why it stops people where it does.',
-  'Cities run on crystal that crews cut out of cleared gates. Rent depends on how quickly hunters can reach your street. Everyone uses the System\'s gold as money. A bowl of noodles costs under half a gold, a laborer earns twelve a day, and an E-rank hunter earns a hundred for clearing a gate. Guilds control most of the gates, and a government office called the Bureau controls the rest. Most hunters are poor and a few are very rich.',
-  'You live in San Francisco, a port city of 800,000 people. You became a hunter recently. The Bureau has given you a rank and a license. Your window says level 1 and tells you where you will stop. You have a seat in a gate on Thursday.',
-  'What do you do?',
+  'About twenty years ago is when the gates started appearing all over the world. The first one opened in London. A big gaping maw thousands of feet wide, the largest gate we\'ve seen to date. The world stopped, people thought it was aliens, the government, something divine. The governments of the world put a committee together, they tried to send cameras and robots in first. They shut down halfway through the gate. Then we sent people through. The best, we were told. Teams of special operators with the best weaponry we had that never came back. Then we sat on our asses, deliberating. We considered sending in more people, explosives, even nukes.',
+  'Seven days later it broke open. News was broadcasted as London fell. The first monster that came out… bigger than anything we\'ve ever seen. A land dragon that towered over the skyscrapers. Over the next five days everyone who didn\'t manage to escape by boat or plane died. Over 97% of the population died. England is still under monster control to this day.',
+  'Then gates started opening elsewhere. Shanghai, San Francisco, Tokyo, Melbourne, Madrid, major cities. Always 7 days after they showed up, they would break. We tried to fight what came out of them, but bullets only work on the small ones, tank shells and missiles only for the medium ones. When we nuked New York we managed to stop the creatures that came out of a large-ish gate.',
+  'Around that same time, some people started changing. They came down with a fever for three days and walked out of it stronger and faster than anyone else. It still happens, though it\'s rare. About one in every five hundred people becomes a hunter, and nobody knows why it happens to them, but they have the unique ability to deal with the monsters. Their powers make it possible for us to actually fight back. As we hunters started getting our footing, gates became more of an opportunity than a horror.',
+  'New gates are still popping up every day. We\'ve started rating them E to S. We\'ve discovered that if hunters go in and kill the boss, the gate closes. If nobody clears it in time, the gate breaks and the monsters come out.',
+  'There\'s something people call the System that pays hunters for this work. It pays them in gold and has a shop with things imbued with the same energy the hunters have. You can buy a potion that closes a wound, or a resurrection crystal that brings a dead hunter back to life.',
+  'Regular people have the System too. On the first night, everyone alive saw a window that only they could see. For most people it reads "Resident, level 0," and gives them access to a shop, that\'s it. A hunter\'s window lists a level, quests, a rank, and a cap. From the moment you\'re chosen as a hunter, how strong you can get is set in stone. It\'s almost like a fucked up little game we\'ve all been forced to play.',
+  'Like I said, these days it\'s ended up being seen as more of a boon. Turns out crystals we can find inside of the gates are an amazing energy source. Entire cities run on crystal. At this point, everyone uses the System\'s gold as money, transferring it from person to person. Things like restaurants or grocery stores only really exist as a novelty, everything you\'d need for food can be bought from the store, from fresh veggies to cup noodles to gourmet Michelin-star-esque meals, and it\'s all better than anything from before.',
+  'Guilds control most of the gates, they buy rights to them from the government office called the Bureau. Sometimes people try to sneak in to clear them for item drops to sell, but you can get in a lot of trouble for this.',
+  'You just got the call, how will you answer?',
 ];
 
-/** GM-facing copy for unlocking or hiding the San Francisco primer drawer for players in a room. */
+/** GM-facing copy for unlocking or hiding the world primer drawer for players in a room. */
 export const PRIMER_WORDS = {
-  title: 'San Francisco primer',
+  title: 'World primer',
   show: 'Show primer to players',
   hide: 'Hide primer from players',
-  hidden: 'Players cannot see the San Francisco primer yet.',
-  shown: 'Players can read the San Francisco primer in the ? guide.',
+  hidden: 'Players cannot see the world primer yet.',
+  shown: 'Players can read the world primer in the ? guide.',
 } as const;
 
 /**
- * Whether this phone shows the San Francisco primer drawer: always for the GM and in solo mode (no room),
+ * Whether this phone shows the world primer drawer: always for the GM and in solo mode (no room),
  * and for a player in a room only once the room's rules unlock it (`primer.on`).
  */
 export const showsPrimer = (seat: Seat, roomRules: Pick<Rules, 'primer'> | null): boolean =>
@@ -55,7 +56,7 @@ export const LOADED: Readonly<Record<'starter' | 'blank', string>> = {
     `The first mission is loaded: ${STARTER_STORY_NAME} (about 3 hours, 1 to 6 players).`,
     '1. Create a room and share the code, link, or QR code.',
     `2. Let each player make a hunter on their phone (or spend ${STARTER_UNSPENT_HUNTER}'s 12 points if testing alone).`,
-    '3. Open Read aloud: San Francisco primer below and read it to the table (3 minutes).',
+    '3. Open Read aloud: World primer below and read it to the table (4 minutes).',
     `4. Open GM -> Stories and tap Start a story for ${STARTER_STORY_NAME} to send Chapter 1 to every phone.`,
   ].join('\n'),
   blank: 'A blank campaign is ready for your own hunters, gates, and quests.',

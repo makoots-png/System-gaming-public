@@ -60,7 +60,7 @@ A sponsor pays for a hunter's face and name. Typical deals, in gold a year:
 
 | Hunter | Deal | Who pays |
 |---|---|---|
-| A D-rank who is liked in their district | 1,000 to 4,000 | A gym, a noodle chain, a tram advertisement |
+| A D-rank who is liked in their district | 1,000 to 4,000 | A gym, a novelty diner chain, a tram advertisement |
 | A C-rank on a city's Forty | 10,000 to 40,000 | Local brands, a bank, a gear stall |
 | A B-rank raid leader | 100,000 to 400,000 | National brands, Paragon Mutual, a carmaker |
 | An A-rank near the Hundred | 1 to 5 million | Most large companies. A guild A-rank nets about 780,000 a year from hunting, so sponsorship often pays more |
@@ -118,7 +118,7 @@ Each entry ends with a hook for the GM.
   the Abstention was agreed, and other S-ranks treat him as its spokesman. *Hook:* he believes a hunter who can
   grow would end the Abstention, and he has begun to investigate Okoro.
 - **Wen Castellanos**, called Grandmother. The oldest S-rank alive, at ninety-one. She awakened at seventy-one in
-  the Long Week and has aged five years since. *Hook:* every clinic that studies ageing wants to examine her, and
+  the first months of Year 0 and has aged five years since. *Hook:* every clinic that studies ageing wants to examine her, and
   she has now named a price.
 - **Bell Aoyagi.** B-rank Healer and the most-watched hunter in the world. She films at gates and has raised over
   four hundred hunters on camera, each with the family's consent. *Hook:* the Once-Born League has asked her to try
