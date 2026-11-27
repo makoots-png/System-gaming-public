@@ -760,10 +760,10 @@ const GRIEVOUS_ROWS: readonly Row[] = [
     low: 1.02, high: 1.25, lever: 'BUILT_IN_STATUSES.grievous and kit.shareCap' },
 ];
 
-// ── Hemomancer Crimson Vessels at C-rank (PR C, t186u) ──
-// A C-rank Mythic Hemomancer at 0/24 vessels already lifts a geared 3-hunter party to ~94.3% vs a classless-calibrated
-// diff-5 C boss (D1: 68–82%), so CV1 bounds both the 12/24 win-rate ceiling (<=98%) and the paired uplift of 12/24 over
-// 0/24 (-2 pp to +6 pp), confirming vessels add a modest, non-runaway bonus without nerfing base Hemomancer.
+// ── Hemomancer Crimson Vessels at C-rank (PR C, t186u; rank-rescaled extract-rank, t194u+t195u) ──
+// A C-rank Mythic Hemomancer at 0/120 vessels already lifts a geared 3-hunter party to ~94.3% vs a classless-calibrated
+// diff-5 C boss (D1: 68–82%), so CV1 bounds both the 27/120 (3 C-elites, +3/+3/+3) win-rate ceiling (<=98%) and the
+// paired uplift over 0/120 (-2 pp to +6 pp). Recorded BEFORE (12/24) and AFTER (27/120): 0.943 -> 0.957 (+1.3 pp).
 const vsHemoPartyBossD5C = (withVessels: boolean) => {
   const rows = once(() => {
     const scale = difficultyFactor('boss', 'C', 5, RULES);
@@ -778,18 +778,18 @@ const vsHemoPartyBossD5C = (withVessels: boolean) => {
 };
 const VESSEL_ROWS: readonly Row[] = [
   {
-    name: 'CV1 a C-rank party with a 12/24 Crimson Vessels Hemomancer stays within +6 pp of 0/24 and under 98% against a difficulty 5 C boss',
-    setup: 'hemo-12 v hemo-0 party boss d5 C',
+    name: 'CV1 a C-rank party with a 27/120 Crimson Vessels Hemomancer stays within +6 pp of 0/120 and under 98% against a difficulty 5 C boss',
+    setup: 'hemo-27 v hemo-0 party boss d5 C',
     runs: 2 * RUNS.quarter,
     measure: () => {
       const before = wins('hemo-0 party v boss d5 C', vsHemoPartyBossD5C(false), RUNS.quarter);
-      const after = wins('hemo-12 party v boss d5 C', vsHemoPartyBossD5C(true), RUNS.quarter);
-      expect(after.value).toBeGreaterThanOrEqual(0.70);
+      const after = wins('hemo-27 party v boss d5 C', vsHemoPartyBossD5C(true), RUNS.quarter);
+      expect(after.value).toBeGreaterThanOrEqual(0.75);
       expect(after.value).toBeLessThanOrEqual(0.98);
       return {
         value: after.value - before.value,
         se: Math.sqrt(before.se ** 2 + after.se ** 2),
-        note: `before 0/24 ${fmt(before.value)} (${before.note}), after 12/24 ${fmt(after.value)} (${after.note})`,
+        note: `before 0/120 ${fmt(before.value)} (${before.note}), after 27/120 ${fmt(after.value)} (${after.note})`,
       };
     },
     low: -0.02,

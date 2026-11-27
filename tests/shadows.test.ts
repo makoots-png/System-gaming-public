@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { SHADOW_CASES, SHADOW_COLUMNS, addShadow, can, extractDc, extractOutcome, healRestingShadows, healShadow, newShadowOf, noteShadow, renameShadow, risesAs, setShadowHp, shadowCase, shadowColumn, shadowMove, shadowState, stepShadow } from '../src/core/hunter/shadows.ts';
 import type { ShadowEvent, ShadowState } from '../src/core/hunter/shadows.ts';
-import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { hunterSheet, statBonus } from '../src/core/hunter/sheet.ts';
+import { pointsAt, split } from '../src/core/hunter/derive.ts';
+import { middleBudget } from '../src/core/registry/item-budget.ts';
+import { WEAR_LIMIT } from '../src/core/registry/items.ts';
+import { bloodExtractDc } from '../src/core/hunter/blood-vessels.ts';
 import { ARMY, WALK_EVENTS } from './models/shadow-events.ts';
 import { shadowSheet } from '../src/core/combat/rows.ts';
-import { RULES, domainOf } from '../src/core/rules.ts';
+import { RANKS, RULES, domainOf } from '../src/core/rules.ts';
 import { extractDiceExpr, extractDiceLabel, extractionCheck, plainRollCheckText, rollCheckText } from '../src/core/combat/roll-adjust.ts';
 import { parseOverrides } from '../src/core/overrides.ts';
 import { freshSave, parseSave } from '../src/core/save.ts';
@@ -141,13 +145,60 @@ describe('a shadow\'s life: resting or summoned with its HP, or released', () =>
   });
 });
 
-describe('the DC to extract a shadow (RULES.shadow: base 10, 3 a rank, a boss +5, never under 5)', () => {
+describe('the DC to extract a shadow (rank-driven gamble: dcBase + dcRank[foe] + dcPerRank * diff + kindDc, floor dcMin)', () => {
   const R = RULES.shadow;
-  test('a foe of the hunter\'s rank is the base; each rank above adds 3, each below takes 3; a boss adds 5', () => {
-    expect([extractDc('C', 'C', 'normal', R), extractDc('C', 'A', 'normal', R), extractDc('C', 'D', 'normal', R), extractDc('C', 'A', 'boss', R)]).toEqual([10, 16, 7, 21]);
+  test('the foe\'s absolute rank weighs heavily alongside rank difference and monster kind', () => {
+    expect([
+      extractDc('E', 'E', 'normal', R),
+      extractDc('C', 'C', 'normal', R),
+      extractDc('C', 'C', 'elite', R),
+      extractDc('C', 'C', 'boss', R),
+      extractDc('C', 'A', 'normal', R),
+      extractDc('C', 'A', 'boss', R),
+      extractDc('C', 'D', 'normal', R),
+      extractDc('S', 'S', 'normal', R),
+      extractDc('S', 'S', 'boss', R),
+    ]).toEqual([13, 36, 40, 44, 72, 80, 19, 84, 92]);
   });
-  test('far below the hunter it stops at the floor, 5, and the floor is the rule\'s', () => {
-    expect([extractDc('S', 'E', 'normal', R), extractDc('S', 'E', 'normal', { ...R, dcMin: 2 })]).toEqual([5, 2]);
+  test('far below the hunter it stops at the floor, dcMin (10), and respects dcMin overrides', () => {
+    expect([extractDc('S', 'E', 'normal', R), extractDc('S', 'E', 'normal', { ...R, dcMin: 2 })]).toEqual([10, 2]);
+  });
+  test('extraction no longer auto-passes at C, B, A, or S for geared Necromancer (Shadow & Arise) or Hemomancer (Blood)', () => {
+    // A d20 check auto-passes (95% on 2..20) whenever 2 + bonus >= dc. Verify every C/B/A/S rank requires a real roll (> 2).
+    for (const rank of ['C', 'B', 'A', 'S'] as const) {
+      const lvl = RULES.rankLevels[rank];
+      const pts = pointsAt(lvl, RULES);
+      const s = split('pre', 'pow', pts, RULES);
+      const gearPts = WEAR_LIMIT * middleBudget(RULES, rank);
+      const gMain = Math.round((gearPts * 2) / 3);
+      const gSec = Math.round(gearPts - gMain);
+      const rb = RULES.rankBonus[rank];
+      const necroBonus = statBonus(s.pre + gMain, RULES.fight) + rb;
+      const hemoVitPrimary = statBonus(s.pre + gMain, RULES.fight) + rb;
+      const hemoVitSecondary = statBonus(s.pow + gSec, RULES.fight) + rb;
+
+      // Shadow extraction against same-rank normal/elite/boss: rolling a 2 must FAIL
+      for (const kind of ['normal', 'elite', 'boss'] as const) {
+        const sdc = extractDc(rank, rank, kind, R);
+        expect(extractionCheck({ natural: 2, bonus: necroBonus, dc: sdc }).outcome, `Shadow ${rank} ${kind} DC ${sdc} vs +${necroBonus}`).toBe('failed');
+        const bdc = bloodExtractDc(rank, kind, RULES, rank);
+        expect(2 + hemoVitSecondary < bdc, `Blood pow:vit ${rank} ${kind} DC ${bdc} vs +${hemoVitSecondary}`).toBe(true);
+        expect(2 + hemoVitPrimary < bdc, `Blood vit:pow ${rank} ${kind} DC ${bdc} vs +${hemoVitPrimary}`).toBe(true);
+      }
+    }
+    // Even a maxed-out S-rank 32-node Necromancer (+75 pre, +81 Arise III) does not auto-pass S normal/elite/boss
+    expect(extractionCheck({ natural: 2, bonus: 75, dc: extractDc('S', 'S', 'normal', R) }).outcome).toBe('failed');
+    expect(extractionCheck({ natural: 2, bonus: 81, dc: extractDc('S', 'S', 'normal', R) }).outcome).toBe('failed');
+  });
+  test('higher-rank shadows scale sharply in HP across ranks E through S', () => {
+    const hps = RANKS.map(rank => shadowSheet({ name: 'Shade', rank, archetype: 'brute', grade: 'Normal' }, RULES).hpMax);
+    for (let i = 1; i < hps.length; i++) expect(hps[i]!).toBeGreaterThan(hps[i - 1]!);
+    // An S-rank normal shadow is tougher than both an E-rank boss (Marshal) and a C-rank elite shadow
+    const sNorm = shadowSheet({ name: 'S', rank: 'S', archetype: 'brute', grade: 'Normal' }, RULES).hpMax;
+    const eBoss = shadowSheet({ name: 'E', rank: 'E', archetype: 'brute', grade: 'Marshal' }, RULES).hpMax;
+    const cElite = shadowSheet({ name: 'C', rank: 'C', archetype: 'brute', grade: 'Elite' }, RULES).hpMax;
+    expect(sNorm).toBeGreaterThan(eBoss);
+    expect(sNorm).toBeGreaterThan(cElite);
   });
 });
 

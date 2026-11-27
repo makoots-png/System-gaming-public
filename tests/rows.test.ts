@@ -445,12 +445,15 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
 });
 
 describe('a shadow', () => {
-  test('has the body of its grade\'s kind: Normal a normal, Elite, Knight and Elite Knight an elite, Commander and Marshal a boss', () => {
+  test('has the body of its grade\'s kind scaled by corpse rank (RULES.shadow.rankHp / rankDealt)', () => {
     const KIND: Record<ShadowGrade, MonsterKind> = { Normal: 'normal', Elite: 'elite', Knight: 'elite', 'Elite Knight': 'elite', Commander: 'boss', Marshal: 'boss' };
+    const cTweak = { ...NO_TWEAK, hp: RULES.shadow.rankHp.C, dealt: RULES.shadow.rankDealt.C };
     for (const grade of SHADOW_GRADES) {
       const r = shadowRow(shadow({ grade, hp: 1e9 }), 'h1', id('c1'), id('x1'), RULES);
-      expect([grade, rowHp(r)]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
-      expect([grade, shadowSheet(shadow({ grade }), RULES).hpMax]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
+      const wantHp = monsterSheet('C', 'brute', KIND[grade], RULES, [], cTweak).hpMax;
+      expect([grade, rowHp(r)]).toEqual([grade, wantHp]);
+      expect([grade, shadowSheet(shadow({ grade }), RULES).hpMax]).toEqual([grade, wantHp]);
+      expect(r.origin.kind === 'monster' && r.origin.tweak.dealt).toBe(RULES.shadow.rankDealt.C);
     }
   });
 

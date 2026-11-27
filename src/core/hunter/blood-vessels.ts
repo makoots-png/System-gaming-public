@@ -35,16 +35,29 @@ export type VesselUpgradePlan = {
   readonly power: number;
 };
 
+/** Rank-driven power table for one Crimson Vessel: every rank strictly outranks the rank below it (1 at E normal to 40 at S boss). */
+export const VESSEL_POWER_TABLE: Readonly<Record<Rank, Readonly<Record<VesselKind, number>>>> = {
+  E: { normal: 1, elite: 2, boss: 3 },
+  D: { normal: 4, elite: 5, boss: 6 },
+  C: { normal: 7, elite: 9, boss: 11 },
+  B: { normal: 12, elite: 15, boss: 18 },
+  A: { normal: 19, elite: 23, boss: 27 },
+  S: { normal: 28, elite: 34, boss: 40 },
+};
+
+/** Maximum power of a single Crimson Vessel (S-rank boss) and total across `VESSEL_CAP` vessels (120). */
+export const VESSEL_POWER_MAX = VESSEL_POWER_TABLE.S.boss;
+export const VESSEL_TOTAL_MAX = VESSEL_POWER_MAX * VESSEL_CAP;
+
 /**
- * Derived power of one Crimson Vessel: `(rankIdx(rank) + 1) + (boss ? 2 : elite ? 1 : 0)`.
- * Runs from 1 (E-rank normal) to 8 (S-rank boss); sum across 3 vessels is 0 to 24.
+ * Derived power of one Crimson Vessel, driven primarily by corpse rank (E 1..3, D 4..6, C 7..11, B 12..18, A 19..27,
+ * S 28..40). Sum across 3 vessels runs from 0 to 120.
  */
 export function vesselPower(rank: Rank, kind: VesselKind): number {
-  const kindBonus = kind === 'boss' ? 2 : kind === 'elite' ? 1 : 0;
-  return rankIdx(rank) + 1 + kindBonus;
+  return VESSEL_POWER_TABLE[rank][kind];
 }
 
-/** Total derived power across up to `cap` held Crimson Vessels (0 to 24 at cap 3). */
+/** Total derived power across up to `cap` held Crimson Vessels (0 to 120 at cap 3). */
 export function vesselTotalPower(vessels: readonly BloodVessel[] | undefined, cap = VESSEL_CAP): number {
   if (!vessels?.length || cap <= 0) return 0;
   let sum = 0;
@@ -54,14 +67,15 @@ export function vesselTotalPower(vessels: readonly BloodVessel[] | undefined, ca
 
 /**
  * Passive stat/sheet bonus granted by held Crimson Vessels while the owning class is active and awakened.
- * Grants +0 to +6 Power, +0 to +6 Flat magic penetration, and +0 to +6 Ability haste (zero drain, Vitality, or flat HP).
+ * Scales with rank-driven vessel power (0 to 120 across 3 vessels): +0 to +12 Power, +0 to +12 Flat magic penetration,
+ * and +0 to +12 Ability haste (zero drain, Vitality, or flat HP).
  */
 export function vesselBonus(vessels: readonly BloodVessel[] | undefined, cap = VESSEL_CAP): ClassPerk {
   const total = vesselTotalPower(vessels, cap);
   if (total <= 0) return {};
-  const pow = Math.ceil(total / 4);
-  const resistPenFlat = total < 2 ? 0 : Math.floor((total + 2) / 4);
-  const haste = total < 3 ? 0 : Math.floor((total + 1) / 4);
+  const pow = Math.ceil(total / 10);
+  const resistPenFlat = total < 2 ? 0 : Math.floor((total + 8) / 10);
+  const haste = total < 3 ? 0 : Math.floor((total + 7) / 10);
   return {
     ...(pow > 0 ? { pow } : {}),
     ...(resistPenFlat > 0 ? { resistPenFlat } : {}),
@@ -69,13 +83,27 @@ export function vesselBonus(vessels: readonly BloodVessel[] | undefined, cap = V
   };
 }
 
+/** Per-rank Blood Extraction DC surcharge added on top of `RULES.rankTable[rank].dc` so C/B/A/S never auto-pass. */
+export const BLOOD_DC_RANK_ADD: Readonly<Record<Rank, number>> = { E: 0, D: 4, C: 8, B: 13, A: 18, S: 23 };
+/** Extra Blood Extraction DC per rank the monster is above the hunter (or subtracted per rank below). */
+export const BLOOD_DC_PER_RANK = 5;
+/** Minimum Blood Extraction DC floor. */
+export const BLOOD_DC_MIN = 10;
+
 /**
- * DC for a blood extraction check against a fallen monster of `rank` and `kind`:
- * `RULES.rankTable[rank].dc[0 | 1 | 2]` (`normal = 0`, `elite = 1`, `boss = 2`).
+ * DC for a blood extraction check against a fallen monster of `rank` and `kind` by a hunter of `hunterRank`
+ * (defaults to `rank` for same-rank callers):
+ * `max(BLOOD_DC_MIN, RULES.rankTable[rank].dc[0 | 1 | 2] + BLOOD_DC_RANK_ADD[rank] + BLOOD_DC_PER_RANK * (rankIdx(rank) - rankIdx(hunterRank)))`.
  */
-export function bloodExtractDc(rank: Rank, kind: MonsterKind, R: Pick<Rules, 'rankTable'>): number {
+export function bloodExtractDc(
+  rank: Rank,
+  kind: MonsterKind,
+  R: Pick<Rules, 'rankTable'>,
+  hunterRank: Rank = rank,
+): number {
   const idx = kind === 'normal' ? 0 : kind === 'elite' ? 1 : 2;
-  return R.rankTable[rank].dc[idx]!;
+  const base = R.rankTable[rank].dc[idx]!;
+  return Math.max(BLOOD_DC_MIN, base + BLOOD_DC_RANK_ADD[rank] + BLOOD_DC_PER_RANK * (rankIdx(rank) - rankIdx(hunterRank)));
 }
 
 /** Index of the weakest vessel in `vessels` (lowest `vesselPower`, earliest index on ties), or -1 when empty. */

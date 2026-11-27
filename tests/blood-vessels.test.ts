@@ -75,34 +75,44 @@ function saveWithHunter(patch?: (h: Hunter) => Hunter): Save {
 }
 
 describe('Crimson Vessels math, DCs, and upgrade rules (blood-vessels.ts)', () => {
-  test('bloodExtractDc reads RULES.rankTable[rank].dc[0|1|2] across every rank and kind', () => {
+  test('bloodExtractDc scales heavily with foe rank and rank difference across every rank and kind', () => {
+    // Same-rank DCs (hunterRank defaults to foe rank)
     expect(RANKS.map(r => VESSEL_KINDS.map(k => bloodExtractDc(r, k, RULES)))).toEqual([
       [10, 13, 16],
-      [14, 17, 20],
-      [20, 24, 28],
-      [27, 31, 35],
-      [35, 40, 45],
-      [45, 50, 55],
+      [18, 21, 24],
+      [28, 32, 36],
+      [40, 44, 48],
+      [53, 58, 63],
+      [68, 73, 78],
     ]);
+    // Rank difference: punching up adds +5 per rank, punching down subtracts 5 down to floor 10
+    expect(bloodExtractDc('C', 'boss', RULES, 'E')).toBe(46);
+    expect(bloodExtractDc('S', 'boss', RULES, 'C')).toBe(93);
+    expect(bloodExtractDc('E', 'normal', RULES, 'S')).toBe(10);
+    expect(bloodExtractDc('A', 'boss', RULES, 'S')).toBe(58);
   });
 
-  test('vesselPower spans 1 (E normal) through 8 (S boss), and total power spans 0 to 24 across 3 vessels', () => {
-    expect(vesselPower('E', 'normal')).toBe(1);
-    expect(vesselPower('E', 'elite')).toBe(2);
-    expect(vesselPower('E', 'boss')).toBe(3);
-    expect(vesselPower('C', 'normal')).toBe(3);
-    expect(vesselPower('A', 'boss')).toBe(7);
-    expect(vesselPower('S', 'normal')).toBe(6);
-    expect(vesselPower('S', 'elite')).toBe(7);
-    expect(vesselPower('S', 'boss')).toBe(8);
+  test('vesselPower is rank-driven (1 at E normal to 40 at S boss; every rank beats the rank below) and total spans 0 to 120', () => {
+    expect(RANKS.map(r => VESSEL_KINDS.map(k => vesselPower(r, k)))).toEqual([
+      [1, 2, 3],
+      [4, 5, 6],
+      [7, 9, 11],
+      [12, 15, 18],
+      [19, 23, 27],
+      [28, 34, 40],
+    ]);
+    // Strict rank dominance: every normal of rank R+1 strictly exceeds a boss of rank R
+    for (let i = 1; i < RANKS.length; i++) {
+      expect(vesselPower(RANKS[i]!, 'normal')).toBeGreaterThan(vesselPower(RANKS[i - 1]!, 'boss'));
+    }
 
     expect(vesselTotalPower([])).toBe(0);
-    expect(vesselTotalPower([mkVessel('A', 'S', 'boss'), mkVessel('B', 'S', 'boss'), mkVessel('C', 'S', 'boss')])).toBe(24);
+    expect(vesselTotalPower([mkVessel('A', 'S', 'boss'), mkVessel('B', 'S', 'boss'), mkVessel('C', 'S', 'boss')])).toBe(120);
     // Caps at VESSEL_CAP even if a longer array is passed
-    expect(vesselTotalPower([mkVessel('A', 'S', 'boss'), mkVessel('B', 'S', 'boss'), mkVessel('C', 'S', 'boss'), mkVessel('D', 'S', 'boss')])).toBe(24);
+    expect(vesselTotalPower([mkVessel('A', 'S', 'boss'), mkVessel('B', 'S', 'boss'), mkVessel('C', 'S', 'boss'), mkVessel('D', 'S', 'boss')])).toBe(120);
   });
 
-  test('vesselBonus gives +0..6 pow, +0..6 resistPenFlat, +0..6 haste with zero drain, vit, or hpMax', () => {
+  test('vesselBonus scales with rank from +0..12 pow, +0..12 resistPenFlat, +0..12 haste with zero drain, vit, or hpMax', () => {
     expect(vesselBonus(undefined)).toEqual({});
     expect(vesselBonus([])).toEqual({});
     // T = 1: immediate +1 pow on first extraction
@@ -111,13 +121,13 @@ describe('Crimson Vessels math, DCs, and upgrade rules (blood-vessels.ts)', () =
     expect(vesselBonus([mkVessel('Hobgoblin', 'E', 'elite')])).toEqual({ pow: 1, resistPenFlat: 1 });
     // T = 3: +1 pow, +1 resistPenFlat, +1 haste
     expect(vesselBonus([mkVessel('Goblin Chief', 'E', 'boss')])).toEqual({ pow: 1, resistPenFlat: 1, haste: 1 });
-    // T = 12 (three C elites, power 4 each): +3 / +3 / +3
+    // T = 27 (three C elites, power 9 each): +3 / +3 / +3
     expect(vesselBonus([mkVessel('A', 'C', 'elite'), mkVessel('B', 'C', 'elite'), mkVessel('C', 'C', 'elite')])).toEqual({ pow: 3, resistPenFlat: 3, haste: 3 });
-    // T = 18 (three S normals, power 6 each): +5 / +5 / +4
-    expect(vesselBonus([mkVessel('A', 'S', 'normal'), mkVessel('B', 'S', 'normal'), mkVessel('C', 'S', 'normal')])).toEqual({ pow: 5, resistPenFlat: 5, haste: 4 });
-    // T = 24 (three S bosses, power 8 each): +6 / +6 / +6
+    // T = 84 (three S normals, power 28 each): +9 / +9 / +9
+    expect(vesselBonus([mkVessel('A', 'S', 'normal'), mkVessel('B', 'S', 'normal'), mkVessel('C', 'S', 'normal')])).toEqual({ pow: 9, resistPenFlat: 9, haste: 9 });
+    // T = 120 (three S bosses, power 40 each): +12 / +12 / +12
     const maxBonus = vesselBonus([mkVessel('A', 'S', 'boss'), mkVessel('B', 'S', 'boss'), mkVessel('C', 'S', 'boss')]);
-    expect(maxBonus).toEqual({ pow: 6, resistPenFlat: 6, haste: 6 });
+    expect(maxBonus).toEqual({ pow: 12, resistPenFlat: 12, haste: 12 });
     expect(maxBonus.drain).toBeUndefined();
     expect(maxBonus.vit).toBeUndefined();
     expect(maxBonus.hpMax).toBeUndefined();
@@ -125,9 +135,9 @@ describe('Crimson Vessels math, DCs, and upgrade rules (blood-vessels.ts)', () =
 
   test('upgrade plan fills open slots below 3, strictly replaces the weakest at 3/3, and refuses equal or weaker monsters', () => {
     const eNorm = mkVessel('Goblin', 'E', 'normal'); // 1
-    const cBoss = mkVessel('Orc Chief', 'C', 'boss'); // 5
-    const aElite = mkVessel('High Orc', 'A', 'elite'); // 6
-    const sBoss = mkVessel('Ant King', 'S', 'boss'); // 8
+    const cBoss = mkVessel('Orc Chief', 'C', 'boss'); // 11
+    const aElite = mkVessel('High Orc', 'A', 'elite'); // 23
+    const sBoss = mkVessel('Ant King', 'S', 'boss'); // 40
 
     expect(vesselUpgradePlan([], 'E', 'normal')).toEqual({ ok: true, replaces: null, replaceIndex: null, power: 1 });
     const full = [cBoss, eNorm, aElite];
@@ -139,12 +149,12 @@ describe('Crimson Vessels math, DCs, and upgrade rules (blood-vessels.ts)', () =
 
     // Strictly stronger replaces weakest in place
     const plan = ok(vesselUpgradePlan(full, 'S', 'boss'));
-    expect(plan).toEqual({ ok: true, replaces: eNorm, replaceIndex: 1, power: 8 });
+    expect(plan).toEqual({ ok: true, replaces: eNorm, replaceIndex: 1, power: 40 });
     const next = ok(addVesselToList(full, sBoss));
     expect(next.replaced).toEqual(eNorm);
     expect(next.vessels).toEqual([cBoss, sBoss, aElite]);
 
-    // At 3 S-bosses (max power 8), nothing can replace
+    // At 3 S-bosses (max power 40), nothing can replace
     const maxed = [sBoss, sBoss, sBoss];
     expect(vesselUpgradePlan(maxed, 'S', 'boss')).toEqual({ ok: false, why: 'stronger-held' });
   });
@@ -192,7 +202,7 @@ describe('Crimson Vessels math, DCs, and upgrade rules (blood-vessels.ts)', () =
 
 describe('ClassSignature.extract seam, lifecycle, and sheet folding', () => {
   test('classPowers folds vesselBonus only while an awakened class with extract.kind === "blood" is active', () => {
-    const vessels = [mkVessel('Igris', 'A', 'boss'), mkVessel('Beru', 'S', 'boss')]; // power 7 + 8 = 15 -> pow +4, resistPenFlat +4, haste +4
+    const vessels = [mkVessel('Igris', 'A', 'boss'), mkVessel('Beru', 'S', 'boss')]; // power 27 + 40 = 67 -> pow +7, resistPenFlat +7, haste +7
     const h = {
       job: 'Hemomancer',
       jobDone: 'Hemomancer',
@@ -202,12 +212,12 @@ describe('ClassSignature.extract seam, lifecycle, and sheet folding', () => {
     // With extract spec wired (as in PR C): vessels fold into classPowers.bonus
     expect(classExtractOf(h, TEST_SIGNATURES)).toEqual(BLOOD_SPEC);
     const activeRes = classPowers(h, RULES, { signatures: TEST_SIGNATURES });
-    expect(activeRes.bonus).toEqual({ drain: 10, pow: 4, resistPenFlat: 4, haste: 4 });
+    expect(activeRes.bonus).toEqual({ drain: 10, pow: 7, resistPenFlat: 7, haste: 7 });
 
     // Shipped PR C wires HEMOMANCER_SIGNATURE.extract: live classExtractOf and classPowers fold vessels
     expect(classExtractOf(h)).toEqual(BLOOD_SPEC);
     const liveRes = classPowers(h, RULES);
-    expect(liveRes.bonus).toEqual({ drain: 10, shieldDrain: 4, pow: 4, resistPenFlat: 4, haste: 4 });
+    expect(liveRes.bonus).toEqual({ drain: 10, shieldDrain: 4, pow: 7, resistPenFlat: 7, haste: 7 });
 
     // Without extract spec on a signature: vessels do not alter that class's bonuses
     const unshippedRes = classPowers(h, RULES, { signatures: { Hemomancer: { className: 'Hemomancer', bonus: { drain: 10 } } } });
@@ -302,9 +312,9 @@ describe('ClassSignature.extract seam, lifecycle, and sheet folding', () => {
       className: 'Hemomancer',
       count: 1,
       cap: 3,
-      totalPower: 7,
-      bonus: { pow: 2, resistPenFlat: 2, haste: 2 },
-      items: [{ index: 0, name: 'Igris', rank: 'A', kind: 'boss', power: 7 }],
+      totalPower: 27,
+      bonus: { pow: 3, resistPenFlat: 3, haste: 3 },
+      items: [{ index: 0, name: 'Igris', rank: 'A', kind: 'boss', power: 27 }],
     });
   });
 
@@ -356,13 +366,13 @@ describe('ClassSignature.extract seam, lifecycle, and sheet folding', () => {
   test('hunterSheet reflects shipped Hemomancer Crimson Vessels bonuses (+pow, +resistPenFlat, +haste) with zero added sustain', () => {
     const base = ok(earnClass(newHunter(RULES), 'Hemomancer', { at: AT, activate: true, awaken: true, R: RULES }));
     const withV = ok(addBloodVessel(saveWithHunter(() => base), base.id, mkVessel('Ant King', 'S', 'boss'), STAMP, RULES)).save.hunters[0]!;
-    // One S-rank boss vessel (power 8) -> +2 pow, +2 resistPenFlat, +2 haste, zero drain or vit added
+    // One S-rank boss vessel (power 40) -> +4 pow, +4 resistPenFlat, +4 haste, zero drain or vit added
     const s0 = hunterSheet(base, RULES);
     const s1 = hunterSheet(withV, RULES);
-    expect(s1.stats.pow).toBe(s0.stats.pow + 2);
+    expect(s1.stats.pow).toBe(s0.stats.pow + 4);
     expect(s1.stats.vit).toBe(s0.stats.vit);
-    expect(s1.sheet.resistPenFlat).toBe(s0.sheet.resistPenFlat + 2);
-    expect(s1.sheet.haste).toBe(s0.sheet.haste + 2);
+    expect(s1.sheet.resistPenFlat).toBe(s0.sheet.resistPenFlat + 4);
+    expect(s1.sheet.haste).toBe(s0.sheet.haste + 4);
     expect(s1.sheet.drain).toBeCloseTo(s0.sheet.drain, 6);
   });
 });

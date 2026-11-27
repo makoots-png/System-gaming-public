@@ -4,6 +4,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, fightRow } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
+import { bloodExtractDc } from '../../src/core/hunter/blood-vessels.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { CLASS_UI_WORDS } from '../../src/core/hunter/class-view.ts';
 import { tiles } from '../../src/core/combat/space.ts';
@@ -222,7 +223,7 @@ test('GM forces natural 20 on shadow extraction and adjusts Arise by +40; player
   });
 });
 
-test('GM forces natural 20, adjusts by +45, and forces natural 1 on Hemomancer blood extraction; player phone shows no trace in vessels, toasts, logs, or wire', async ({ device }) => {
+test('GM forces natural 20, adjusts by +95, and forces natural 1 on Hemomancer blood extraction; player phone shows no trace in vessels, toasts, logs, or wire', async ({ device }) => {
   const gm = (await device('gm-blood')).page;
   const player = (await device('player-blood')).page;
 
@@ -348,7 +349,7 @@ test('GM forces natural 20, adjusts by +45, and forces natural 1 on Hemomancer b
 
     const logEntry = await gm.evaluate(() => hunterApp.store.get().fight?.log?.[0] ?? null);
     expect(logEntry?.text).toContain('GM forced 20');
-    expect(logEntry?.table).toContain(`20 + ${playerVitBonus} = ${20 + playerVitBonus} vs DC 55`);
+    expect(logEntry?.table).toContain(`20 + ${playerVitBonus} = ${20 + playerVitBonus} vs DC ${bloodExtractDc('S', 'boss', RULES, 'E')}`);
     expect(logEntry?.table).not.toMatch(/GM|forced/i);
     const rowAfter = await fightRow(gm, 'Bloodfang Monarch');
     expect(rowAfter.bled).toBe(true);
@@ -369,39 +370,39 @@ test('GM forces natural 20, adjusts by +45, and forces natural 1 on Hemomancer b
     await expect(vesselsBox).toContainText('Bloodfang Monarch');
   });
 
-  await test.step('GM adjusts A-rank boss blood extraction by +45 despite raw 2; player receives vessel with no trace', async () => {
+  await test.step('GM adjusts A-rank boss blood extraction by +95 despite raw 2; player receives vessel with no trace', async () => {
     await go(gm, 'combat');
     await combat(gm).locator('.cmb-pick', { hasText: 'Crimson Dreadlord' }).tap();
     const inp = card(gm).locator('[data-adjust-input]');
-    await inp.fill('45');
+    await inp.fill('95');
     await inp.blur();
-    await expect(inp).toHaveValue('45');
+    await expect(inp).toHaveValue('95');
 
     await card(gm).locator('[data-extract-blood]').tap();
     const dlg = gm.locator('.sys-overlay.show', { hasText: 'Blood Extraction' });
     await expect(dlg).toBeVisible();
-    await expect(dlg.locator('[data-adj-in]')).toHaveValue('45');
-    await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +45');
+    await expect(dlg.locator('[data-adj-in]')).toHaveValue('95');
+    await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +95');
 
     await gm.evaluate(() => { Math.random = () => (2 - 0.5) / 20; });
     await dlg.getByRole('button', { name: 'Extract blood' }).tap();
     await expect(dlg).toHaveCount(0);
 
     const logEntry = await gm.evaluate(() => hunterApp.store.get().fight?.log?.[0] ?? null);
-    expect(logEntry?.text).toContain('+ 45 GM =');
+    expect(logEntry?.text).toContain('+ 95 GM =');
     expect(logEntry?.table).toMatch(new RegExp(`^R\\d+: ${HUNTER} drains blood from Crimson Dreadlord for a Crimson Vessel\\.$`));
-    expect(logEntry?.table).not.toMatch(/GM|45|forced/i);
+    expect(logEntry?.table).not.toMatch(/GM|95|forced/i);
     const rowAfter = await fightRow(gm, 'Crimson Dreadlord');
     expect(rowAfter.bled).toBe(true);
     expect(rowAfter.adjust).toBeUndefined();
 
-    // GM dice log label/formula stays plain (natural 2 + playerVitBonus, no +45 or GM tag)
+    // GM dice log label/formula stays plain (natural 2 + playerVitBonus, no +95 or GM tag)
     await go(gm, 'dice');
     const firstRollMeta = gm.locator('#view-dice [data-hist] li').first().locator('.lm');
     await expect(firstRollMeta).toContainText('Extract blood: Crimson Dreadlord');
     await expect(firstRollMeta).toContainText(`[2] = ${2 + playerVitBonus}`);
     await expect(firstRollMeta).not.toContainText('GM');
-    await expect(firstRollMeta).not.toContainText('45');
+    await expect(firstRollMeta).not.toContainText('95');
 
     // Player's Classes panel updates to 2 / 3 with Crimson Dreadlord
     const vesselsBox = player.locator('#view-status [data-panel="classes"] [data-cls-vessels]');
@@ -431,7 +432,7 @@ test('GM forces natural 20, adjusts by +45, and forces natural 1 on Hemomancer b
 
     const logEntry = await gm.evaluate(() => hunterApp.store.get().fight?.log?.[0] ?? null);
     expect(logEntry?.text).toContain('GM forced 1');
-    expect(logEntry?.table).toContain(`1 + ${playerVitBonus} = ${1 + playerVitBonus} vs DC 10`);
+    expect(logEntry?.table).toContain(`1 + ${playerVitBonus} = ${1 + playerVitBonus} vs DC ${bloodExtractDc('E', 'normal', RULES, 'E')}`);
     expect(logEntry?.table).not.toMatch(/GM|forced/i);
     const rowAfter = await fightRow(gm, 'Iron Wolf');
     expect(rowAfter.bled).toBe(true);
@@ -449,7 +450,7 @@ test('GM forces natural 20, adjusts by +45, and forces natural 1 on Hemomancer b
     const joinedToasts = seenToasts.join('\n');
     expect(joinedToasts).toContain('Bloodfang Monarch (S-rank boss) fills a Crimson Vessel');
     expect(joinedToasts).toContain('Crimson Dreadlord (A-rank boss) fills a Crimson Vessel');
-    expect(joinedToasts).not.toMatch(/GM forced|GM \+45|\+ 45 GM|Force natural|Adjust next roll/i);
+    expect(joinedToasts).not.toMatch(/GM forced|GM \+95|\+ 95 GM|Force natural|Adjust next roll/i);
     expect(seenToasts.filter(t => /Extraction|Crimson Vessel|blood/i.test(t) && /Iron Wolf/i.test(t))).toEqual([]);
 
     // Player's session log records both extractions plainly with zero GM or force details
@@ -459,24 +460,24 @@ test('GM forces natural 20, adjusts by +45, and forces natural 1 on Hemomancer b
     const joinedLog = playerLogLines.join('\n');
     expect(joinedLog).toContain(`${HUNTER} extracted blood from Bloodfang Monarch (S-rank boss) into a Crimson Vessel.`);
     expect(joinedLog).toContain(`${HUNTER} extracted blood from Crimson Dreadlord (A-rank boss) into a Crimson Vessel.`);
-    expect(joinedLog).not.toMatch(/GM forced|GM \+45|\+ 45 GM|Force natural|Adjust next roll|forced/i);
+    expect(joinedLog).not.toMatch(/GM forced|GM \+95|\+ 95 GM|Force natural|Adjust next roll|forced/i);
 
     // Player's Status/Classes, Combat, and Dice views have zero trace
     const statusText = await player.locator('#view-status').innerText();
-    expect(statusText).not.toMatch(/GM forced|GM \+45|\+ 45 GM|Force natural|Adjust next roll/i);
+    expect(statusText).not.toMatch(/GM forced|GM \+95|\+ 95 GM|Force natural|Adjust next roll/i);
 
     await go(player, 'combat');
     const combatText = await player.locator('#view-combat').innerText();
-    expect(combatText).not.toMatch(/Adjust next roll|Force natural|GM forced|\+ 45 GM/i);
+    expect(combatText).not.toMatch(/Adjust next roll|Force natural|GM forced|\+ 95 GM/i);
     await expect(player.locator('#view-combat [data-adjust-box]')).toHaveCount(0);
 
     await go(player, 'dice');
     const diceText = await player.locator('#view-dice').innerText();
-    expect(diceText).not.toMatch(/Extract blood|GM forced|GM \+45|\+ 45 GM|Force natural|Adjust next roll/i);
+    expect(diceText).not.toMatch(/Extract blood|GM forced|GM \+95|\+ 95 GM|Force natural|Adjust next roll/i);
 
     // Every room wire response received by the player tab is clean, and bloodExtract events carry only { eid, to, vessel }
     const joinedWire = playerPayloads.join('\n');
-    expect(joinedWire).not.toMatch(/GM forced|GM \+45|\+ 45 GM|Force natural|Adjust next roll/i);
+    expect(joinedWire).not.toMatch(/GM forced|GM \+95|\+ 95 GM|Force natural|Adjust next roll/i);
     const bloodEvents = playerPayloads.flatMap(raw => {
       try {
         const parsed = JSON.parse(raw);

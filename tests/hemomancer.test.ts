@@ -519,61 +519,61 @@ describe('Hemomancer Crimson Vessels wiring (PR C)', () => {
     expect(classExtractOf(h)).toEqual(HEMOMANCER_SIGNATURE.extract);
   });
 
-  test('18/24 and 24/24 Crimson Vessels fold +pow, +resistPenFlat, and +haste under Class with zero added sustain', () => {
+  test('84/120 (3 S-normals) and 120/120 (3 S-bosses) Crimson Vessels fold rank-scaled +pow, +resistPenFlat, and +haste under Class with zero added sustain', () => {
     const base = makeHemoHunter(FULL_HEMO_NODES);
-    const with18 = {
+    const with84 = {
       ...base,
       classes: { ...base.classes, Hemomancer: { ...base.classes.Hemomancer!, vessels: [...HEMO_VESSELS_18] } },
     };
-    const with24 = {
+    const with120 = {
       ...base,
       classes: { ...base.classes, Hemomancer: { ...base.classes.Hemomancer!, vessels: [...HEMO_VESSELS_24] } },
     };
 
     const cp0 = classPowers(base, RULES);
-    const cp18 = classPowers(with18, RULES);
-    const cp24 = classPowers(with24, RULES);
-    expect(vesselBonus(HEMO_VESSELS_18)).toEqual({ pow: 5, resistPenFlat: 5, haste: 4 });
-    expect(vesselBonus(HEMO_VESSELS_24)).toEqual({ pow: 6, resistPenFlat: 6, haste: 6 });
+    const cp84 = classPowers(with84, RULES);
+    const cp120 = classPowers(with120, RULES);
+    expect(vesselBonus(HEMO_VESSELS_18)).toEqual({ pow: 9, resistPenFlat: 9, haste: 9 });
+    expect(vesselBonus(HEMO_VESSELS_24)).toEqual({ pow: 12, resistPenFlat: 12, haste: 12 });
 
-    expect((cp18.bonus.pow ?? 0) - (cp0.bonus.pow ?? 0)).toBe(5);
-    expect((cp18.bonus.resistPenFlat ?? 0) - (cp0.bonus.resistPenFlat ?? 0)).toBe(5);
-    expect((cp18.bonus.haste ?? 0) - (cp0.bonus.haste ?? 0)).toBe(4);
-    expect(cp18.bonus.drain).toBe(cp0.bonus.drain);
-    expect(cp18.bonus.shieldDrain).toBe(cp0.bonus.shieldDrain);
-    expect(cp18.bonus.vit).toBe(cp0.bonus.vit);
-    expect(cp18.bonus.hpMax).toBe(cp0.bonus.hpMax);
+    expect((cp84.bonus.pow ?? 0) - (cp0.bonus.pow ?? 0)).toBe(9);
+    expect((cp84.bonus.resistPenFlat ?? 0) - (cp0.bonus.resistPenFlat ?? 0)).toBe(9);
+    expect((cp84.bonus.haste ?? 0) - (cp0.bonus.haste ?? 0)).toBe(9);
+    expect(cp84.bonus.drain).toBe(cp0.bonus.drain);
+    expect(cp84.bonus.shieldDrain).toBe(cp0.bonus.shieldDrain);
+    expect(cp84.bonus.vit).toBe(cp0.bonus.vit);
+    expect(cp84.bonus.hpMax).toBe(cp0.bonus.hpMax);
 
-    expect((cp24.bonus.pow ?? 0) - (cp0.bonus.pow ?? 0)).toBe(6);
-    expect((cp24.bonus.resistPenFlat ?? 0) - (cp0.bonus.resistPenFlat ?? 0)).toBe(6);
-    expect((cp24.bonus.haste ?? 0) - (cp0.bonus.haste ?? 0)).toBe(6);
-    expect(cp24.bonus.drain).toBe(cp0.bonus.drain);
-    expect(cp24.bonus.shieldDrain).toBe(cp0.bonus.shieldDrain);
-    expect(cp24.bonus.vit).toBe(cp0.bonus.vit);
-    expect(cp24.bonus.hpMax).toBe(cp0.bonus.hpMax);
+    expect((cp120.bonus.pow ?? 0) - (cp0.bonus.pow ?? 0)).toBe(12);
+    expect((cp120.bonus.resistPenFlat ?? 0) - (cp0.bonus.resistPenFlat ?? 0)).toBe(12);
+    expect((cp120.bonus.haste ?? 0) - (cp0.bonus.haste ?? 0)).toBe(12);
+    expect(cp120.bonus.drain).toBe(cp0.bonus.drain);
+    expect(cp120.bonus.shieldDrain).toBe(cp0.bonus.shieldDrain);
+    expect(cp120.bonus.vit).toBe(cp0.bonus.vit);
+    expect(cp120.bonus.hpMax).toBe(cp0.bonus.hpMax);
 
     // Sheet and explain report the added bonuses under `class`
     const s0 = hunterSheet(base, RULES);
-    const s24 = hunterSheet(with24, RULES);
-    expect(s24.stats.pow).toBe(s0.stats.pow + 6);
-    expect(s24.stats.vit).toBe(s0.stats.vit);
-    expect(s24.sheet.resistPenFlat).toBe(s0.sheet.resistPenFlat + 6);
-    expect(s24.sheet.haste).toBe(s0.sheet.haste + 6);
-    expect(s24.sheet.drain).toBeCloseTo(s0.sheet.drain, 6);
+    const s120 = hunterSheet(with120, RULES);
+    expect(s120.stats.pow).toBe(s0.stats.pow + 12);
+    expect(s120.stats.vit).toBe(s0.stats.vit);
+    expect(s120.sheet.resistPenFlat).toBe(s0.sheet.resistPenFlat + 12);
+    expect(s120.sheet.haste).toBe(s0.sheet.haste + 12);
+    expect(s120.sheet.drain).toBeCloseTo(s0.sheet.drain, 6);
     const expPen0 = explain(base, 'resistPenFlat', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
-    const expPen24 = explain(with24, 'resistPenFlat', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
-    expect(expPen24 - expPen0).toBe(6);
+    const expPen120 = explain(with120, 'resistPenFlat', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
+    expect(expPen120 - expPen0).toBe(12);
     const expHaste0 = explain(base, 'haste', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
-    const expHaste24 = explain(with24, 'haste', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
-    expect(expHaste24 - expHaste0).toBe(6);
+    const expHaste120 = explain(with120, 'haste', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
+    expect(expHaste120 - expHaste0).toBe(12);
 
     // Combat row built through hunterRow carries the exact vessel bonuses
     const r0 = hunterRow(base, combatantId('h0'), KEYSTONES_ON);
-    const r24 = hunterRow(with24, combatantId('h24'), KEYSTONES_ON);
+    const r120 = hunterRow(with120, combatantId('h120'), KEYSTONES_ON);
     const rs0 = modified(r0.origin, r0.statuses, KEYSTONES_ON).sheet;
-    const rs24 = modified(r24.origin, r24.statuses, KEYSTONES_ON).sheet;
-    expect(rs24.resistPenFlat - rs0.resistPenFlat).toBe(6);
-    expect(rs24.haste - rs0.haste).toBe(6);
-    expect(rs24.drain).toBeCloseTo(rs0.drain, 6);
+    const rs120 = modified(r120.origin, r120.statuses, KEYSTONES_ON).sheet;
+    expect(rs120.resistPenFlat - rs0.resistPenFlat).toBe(12);
+    expect(rs120.haste - rs0.haste).toBe(12);
+    expect(rs120.drain).toBeCloseTo(rs0.drain, 6);
   });
 });

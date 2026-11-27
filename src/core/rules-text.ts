@@ -355,10 +355,18 @@ export function shadowLines(R: Pick<Rules, 'extractJobs' | 'shadow' | 'fight'>):
     })
     .filter(Boolean)
     .join(' ');
+  const byRank = RANKS.map(r => `${r} ${S.dcBase + S.dcRank[r]}`).join(', ');
+  const kindParts = [
+    ...(S.eliteDc > 0 ? [`+${S.eliteDc} for an elite`] : []),
+    ...(S.bossDc > 0 ? [`+${S.bossDc} for a boss`] : []),
+  ];
+  const kindText = kindParts.length ? `, ${kindParts.join(', ')}` : '';
+  const hpMults = RANKS.map(r => `${r} ${S.rankHp[r]}×`).join(', ');
+  const dmgMults = RANKS.map(r => `${r} ${S.rankDealt[r]}×`).join(', ');
   return [
     who,
-    `Extraction rolls d20 + Presence check bonus against DC ${S.dcBase} + ${S.dcPerRank} × (monster rank − hunter rank) + ${S.bossDc} for a boss (minimum ${S.dcMin}). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${S.maxAttempts} attempt${S.maxAttempts === 1 ? '' : 's'} per corpse.${extra}`,
-    `On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster's rank and archetype. Its grade sets its monster kind. ${grades}`,
+    `Extraction rolls d20 + Presence check bonus against the monster's rank DC (${byRank}) + ${S.dcPerRank} × (monster rank − hunter rank)${kindText} (minimum ${S.dcMin}). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${S.maxAttempts} attempt${S.maxAttempts === 1 ? '' : 's'} per corpse.${extra}`,
+    `On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster's rank and archetype. Its grade sets its monster kind. ${grades} Higher-rank shadows and risen minions scale by corpse rank. Rank multipliers for HP: ${hpMults}. Rank multipliers for damage: ${dmgMults}.`,
     `Army capacity = floor(${R.fight.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${r} ${S.summonMp[r]}`).join(', ')}. Unsummoning is free. Clearing a gate heals resting shadows to full HP.`,
   ];
 }

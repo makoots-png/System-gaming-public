@@ -5,6 +5,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, setupGoblinDenGM, go, answerWindow, chooseList, fightRow } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
+import { extractDc } from '../../src/core/hunter/shadows.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { tiles } from '../../src/core/combat/space.ts';
 import { cost, tick } from '../../src/core/combat/timeline.ts';
@@ -42,7 +43,7 @@ test('GM sets an uncapped adjustment and Force natural 20 on a corpse card and m
   await setupGoblinDenGM(page);
   await chooseList(page);
 
-  // Give Mira Vale awakened Necromancer and add a C-rank boss monster so DC is 21 (E hunter vs C boss)
+  // Give Mira Vale awakened Necromancer and add an E-rank boss monster so DC is 21 (E hunter vs E boss)
   await page.evaluate(() => hunterApp.store.update((d: any) => {
     const mira = d.hunters.find((h: any) => h.name === 'Mira Vale');
     const at = new Date().toISOString();
@@ -55,7 +56,7 @@ test('GM sets an uncapped adjustment and Force natural 20 on a corpse card and m
     mira.jobDone = 'Necromancer';
     d.settings.activeHunterId = mira.id;
     d.monsters.push({
-      id: 'm901', name: 'Igris the Bloodred', rank: 'C', type: '', archetype: 'brute', kind: 'boss',
+      id: 'm901', name: 'Igris the Bloodred', rank: 'E', type: '', archetype: 'brute', kind: 'boss',
       tweak: {}, abilities: [], notes: [], xp: 200, extractable: true, desc: '', statuses: [], loot: { gold: 0, items: [] },
     });
   }, 'test-setup'));
@@ -143,7 +144,7 @@ test('GM applies uncapped negative adjust and Force natural 1 to mid-fight Arise
   await go(page, 'combat');
   await combat(page).locator('[data-hsel]').selectOption({ label: 'Mira Vale' });
   await combat(page).locator('[data-addh]').tap();
-  await combat(page).locator('[data-qline]').fill('High Orc, C, brute');
+  await combat(page).locator('[data-qline]').fill('High Orc, E, brute');
   await combat(page).locator('[data-qadd]').tap();
   await combat(page).locator('[data-qline]').fill('Goblin Scout, E, brute');
   await combat(page).locator('[data-qadd]').tap();

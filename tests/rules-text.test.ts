@@ -153,10 +153,12 @@ describe('the shadow lines', () => {
     expect(canExtract(none, 'Necromancer')).toBe(false);
   });
 
-  test('state extraction DC, minimum DC, base attempts, and awakened Necromancer bonus attempts from the live rules', () => {
+  test('state extraction DC by monster rank, minimum DC, base attempts, and awakened Necromancer bonus attempts from the live rules', () => {
     const dcLine = shadowLines(RULES)[1]!;
-    expect(dcLine).toContain(`DC ${RULES.shadow.dcBase} + ${RULES.shadow.dcPerRank}`);
-    expect(dcLine).toContain(`+ ${RULES.shadow.bossDc} for a boss (minimum ${RULES.shadow.dcMin})`);
+    expect(dcLine).toContain(`E ${RULES.shadow.dcBase + RULES.shadow.dcRank.E}`);
+    expect(dcLine).toContain(`S ${RULES.shadow.dcBase + RULES.shadow.dcRank.S}`);
+    expect(dcLine).toContain(`+ ${RULES.shadow.dcPerRank} × (monster rank − hunter rank)`);
+    expect(dcLine).toContain(`+${RULES.shadow.eliteDc} for an elite, +${RULES.shadow.bossDc} for a boss (minimum ${RULES.shadow.dcMin})`);
     expect(extractDc('S', 'E', 'normal', RULES.shadow)).toBe(RULES.shadow.dcMin);
     expect(dcLine).toContain(`up to ${RULES.shadow.maxAttempts} attempts per corpse.`);
     const awakenedTotal = extractAttemptsMax(RULES.shadow, RULES.shadow.classAttempts);
@@ -176,12 +178,16 @@ describe('the shadow lines', () => {
     expect(joined).not.toMatch(/roll adjustment|adjust roll|force natural/i);
   });
 
-  test('name every shadow grade in SHADOW_KINDS with its monster kind, and state army capacity and summon costs', () => {
+  test('name every shadow grade in SHADOW_KINDS with its monster kind, rank scaling multipliers, and army capacity/summon costs', () => {
     const [, , gradesLine, armyLine] = shadowLines(RULES);
     for (const grade of Object.keys(SHADOW_KINDS)) expect(gradesLine).toContain(grade);
     expect(gradesLine).toContain('Normal uses normal monster stats.');
     expect(gradesLine).toContain('Elite, Knight, and Elite Knight use elite monster stats.');
     expect(gradesLine).toContain('Commander and Marshal use boss monster stats.');
+    expect(gradesLine).toContain(`Rank multipliers for HP: E ${RULES.shadow.rankHp.E}×`);
+    expect(gradesLine).toContain(`S ${RULES.shadow.rankHp.S}×`);
+    expect(gradesLine).toContain(`Rank multipliers for damage: E ${RULES.shadow.rankDealt.E}×`);
+    expect(gradesLine).toContain(`S ${RULES.shadow.rankDealt.S}×`);
     expect(armyLine).toContain(`floor(${RULES.fight.shadowPerEff} × Presence's effective points)`);
     expect(armyLine).toContain(`E ${RULES.shadow.summonMp.E}`);
     expect(armyLine).toContain(`S ${RULES.shadow.summonMp.S}`);

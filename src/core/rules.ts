@@ -96,6 +96,8 @@ const GOLD = wholeIn(0, 1_000_000_000, 'gold amount. One billion is the maximum 
 const REVIVE_DEBT_PRICE = wholeIn(1, 1000, 'debt for a System revive in multiples of priceBase, from 1 to 1000');
 const WEIGHT = wholeIn(0, 1000, 'relative chance weight in this table. 0 means never chosen, and 1000 is the maximum');
 const SUMMON_MANA = wholeIn(0, 1000, 'mana cost to summon. High values can make a summon unpayable');
+const SHADOW_DC_RANK = wholeIn(0, 100, 'extra extraction DC added for the monster\'s rank, from 0 to 100');
+const SHADOW_SCALE = realIn(0.2, 3, 'rank multiplier on shadow and risen minion HP or damage dealt, from 0.2 to 3');
 const PACK = wholeIn(1, 26, 'number of monsters in a spawned pack. Must be at least 1 and at most 26');
 const SHARE_OF_SPAWNS = wholeIn(0, 100, 'percentage chance for personal gate spawns');
 const COST = wholeIn(10, 1000, 'action time in hundredths of a standard action. Under 10 causes rapid endless turns, and above 1000 makes one turn last ten actions');
@@ -367,8 +369,18 @@ const SPEC = {
   shadow: {
     maxAttempts: whole(3, 1, 20, 'shadow extraction attempts allowed per corpse. Must be at least 1'),
     classAttempts: whole(1, 0, 5, 'extra shadow extraction attempts per corpse while awakened Necromancer is active, from 0 to 5'),
-    dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'extra extraction DC per rank the monster is above the hunter, from 0 to 20'),
-    bossDc: whole(5, 0, 50, 'extra extraction DC for boss monsters, from 0 to 50'), dcMin: of(5, DC),
+    // Rank-driven extraction curve: the monster's absolute rank (`dcRank`) weighs heavily alongside the rank gap
+    // (`dcPerRank`) and kind (`eliteDc`, `bossDc`), so extraction stays a real roll from C-rank through S-rank.
+    dcBase: of(13, DC),
+    dcRank: { E: of(0, SHADOW_DC_RANK), D: of(11, SHADOW_DC_RANK), C: of(23, SHADOW_DC_RANK), B: of(35, SHADOW_DC_RANK), A: of(49, SHADOW_DC_RANK), S: of(71, SHADOW_DC_RANK) },
+    dcPerRank: whole(5, 0, 20, 'extra extraction DC per rank the monster is above the hunter, from 0 to 20'),
+    eliteDc: whole(4, 0, 50, 'extra extraction DC for elite monsters, from 0 to 50'),
+    bossDc: whole(8, 0, 50, 'extra extraction DC for boss monsters, from 0 to 50'),
+    dcMin: of(10, DC),
+    // Rank-driven payoff for shadows and risen minions: higher-rank corpses yield clearly stronger bodies while
+    // lower-rank corpses stay lean. Applied via monster tweak `{ hp, dealt }` on shadowOrigin and risenRow.
+    rankHp: { E: of(0.65, SHADOW_SCALE), D: of(0.75, SHADOW_SCALE), C: of(0.85, SHADOW_SCALE), B: of(0.95, SHADOW_SCALE), A: of(1.05, SHADOW_SCALE), S: of(1.2, SHADOW_SCALE) },
+    rankDealt: { E: of(0.65, SHADOW_SCALE), D: of(0.72, SHADOW_SCALE), C: of(0.8, SHADOW_SCALE), B: of(0.88, SHADOW_SCALE), A: of(0.94, SHADOW_SCALE), S: of(1, SHADOW_SCALE) },
     // Scaled to the real mana curve (manaBase 10 + capped(pow, 30)): a 2:1 Necromancer holds 12 (E) to 26 (S) mana,
     // and a 0-Power build holds 10, so S matches a major blast (10 mana) and a 2:1 S Necromancer fields two S-rank
     // shadows on a fresh bar (three on a 1:2 Power split or after one rest).

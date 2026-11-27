@@ -184,6 +184,8 @@ describe('Arise mid-fight flow, caps, lanes, and placement', () => {
     expect(risenRows.length).toBe(1);
     const risen = risenRows[0]!;
     expect(risen.name).toBe('Risen Goblin');
+    expect(risen.origin.kind === 'monster' && risen.origin.tweak.hp).toBe(RULES.shadow.rankHp.C);
+    expect(risen.origin.kind === 'monster' && risen.origin.tweak.dealt).toBe(RULES.shadow.rankDealt.C);
     expect(risen.owner).toBe(id('N'));
     expect(risen.until).toBeNull();
     expect(risen.rose).toBe(id('G1'));
@@ -477,7 +479,7 @@ describe('PR A: GM Adjust roll on Arise (20-face matrix, fudge isolation, spent/
     const arise = ariseAbility({ bonus: 0, maxRisen: 2, elitePerFight: 1 });
     const f0 = startFight('N', [
       caster('N', place(2, 2), [arise], 'E'),
-      monster('G1', place(4, 2), { dead: true, name: 'High Orc', rank: 'C' }),
+      monster('G1', place(4, 2), { dead: true, name: 'High Orc', rank: 'E', kind: 'elite' }),
       monster('Anchor', place(10, 10)),
     ]);
     const u = body(f0, 'N'), corpse0 = body(f0, 'G1') as MonsterRow;

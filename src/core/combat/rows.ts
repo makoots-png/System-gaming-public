@@ -353,14 +353,17 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
 
 // ── shadows ──
 
-const shadowOrigin = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | 'grade'>): Origin =>
-  ({ kind: 'monster', name: cut(s.name), rank: s.rank, archetype: s.archetype, monsterKind: SHADOW_KINDS[s.grade], tweak: NO_TWEAK });
+const shadowTweak = (rank: Rank, S: Rules['shadow']): Tweak =>
+  ({ ...NO_TWEAK, hp: S.rankHp[rank], dealt: S.rankDealt[rank] });
+
+const shadowOrigin = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | 'grade'>, R: Pick<Rules, 'shadow'>): Origin =>
+  ({ kind: 'monster', name: cut(s.name), rank: s.rank, archetype: s.archetype, monsterKind: SHADOW_KINDS[s.grade], tweak: shadowTweak(s.rank, R.shadow) });
 
 /** A shadow's sheet out of a fight, as its row starts with it: its max HP is the one its hunter's Shadows panel shows. */
-export const shadowSheet = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | 'grade'>, R: RowRules): Sheet => modified(shadowOrigin(s), [], R).sheet;
+export const shadowSheet = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | 'grade'>, R: RowRules): Sheet => modified(shadowOrigin(s, R), [], R).sheet;
 
 function shadowRowWith(s: RowShadow, owner: CombatantId, holder: ShadowHolder, id: CombatantId, R: RowRules): NewRow {
-  const origin = shadowOrigin(s);
+  const origin = shadowOrigin(s, R);
   const { sheet } = modified(origin, [], R);
   return {
     id, name: cut(s.name), side: 'party', kind: 'shadow', origin, tier: rankIdx(s.rank), place: null,

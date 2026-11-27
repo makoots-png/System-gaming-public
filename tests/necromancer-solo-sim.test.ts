@@ -4,6 +4,13 @@
 // 1 Elite, 2 Normal) running `monsterPolicy`, with 40 summon mana deducted from the starting bar.
 // Target: 4 gating rows vs MYTHIC_IDS at 75% to 98% aiming ~85% (hero must finish up to win), plus 1 reported
 // non-gating row (boss + 4 S-rank normals) exercising Arise and Reform.
+//
+// Recorded BEFORE / AFTER rows for branch `extract-rank` (rank-driven shadow/risen scaling: rankHp S=1.2, rankDealt S=1.0):
+//   - plain:                        BEFORE 100.0% (200/200, 6.3r) -> AFTER 100.0% (200/200, 6.3r) [unscripted boss]
+//   - angel-of-the-last-trumpet:    BEFORE  95.0% (190/200, 12.5r) -> AFTER  96.5% (193/200, 12.5r)
+//   - zaratan-the-island-that-wakes:BEFORE  76.0% (152/200, 15.0r) -> AFTER  77.0% (154/200, 15.0r)
+//   - the-fourth-rider:             BEFORE  81.5% (163/200, 10.5r) -> AFTER  84.0% (168/200, 10.4r)
+//   - plain + 4 S normals (adds):   BEFORE 100.0% (100/100, 7.5r, 4 Arise casts) -> AFTER 100.0% (100/100, 7.5r, 4 Arise casts)
 import { describe, expect } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -343,8 +350,15 @@ describe('Necromancer solo-army vs Mythic bosses (4 gating rows, target 75% to 9
 
     const u = fudged.rows.find(r => r.id === heroReady.id)!;
     const bonus = riseBonus(u, arise.raise!, SOLO_MYTHIC_RULES);
-    // Center dcBase so unadjusted Arise passes on 11..20 (50%), -10 passes only on nat 20 (5%), +10 passes on 2..20 (95%)
-    const simRules: Rules = { ...SOLO_MYTHIC_RULES, shadow: { ...SOLO_MYTHIC_RULES.shadow, dcBase: bonus + 11 } };
+    // Center riseDc at bonus + 11 (zeroing dcRank) so unadjusted Arise passes on 11..20 (50%), -10 passes only on nat 20 (5%), +10 passes on 2..20 (95%)
+    const simRules: Rules = {
+      ...SOLO_MYTHIC_RULES,
+      shadow: {
+        ...SOLO_MYTHIC_RULES.shadow,
+        dcBase: bonus + 11,
+        dcRank: { E: 0, D: 0, C: 0, B: 0, A: 0, S: 0 },
+      },
+    };
     const TRIALS = 200;
 
     const rateAt = (adj: number): number => {

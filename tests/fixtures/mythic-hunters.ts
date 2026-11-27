@@ -137,7 +137,7 @@ export function buildMythicSoloRow(
   return { row, policy: spec.policy };
 }
 
-/** Canonical Crimson Vessel tiers for Hemomancer balance sims: 12/24 (3 C-elites), 18/24 (3 S-normals), 24/24 (3 S-bosses). */
+/** Canonical Crimson Vessel tiers for Hemomancer balance sims: 27/120 (3 C-elites), 84/120 (3 S-normals), 120/120 (3 S-bosses). */
 export const HEMO_VESSELS_12: readonly BloodVessel[] = [
   { name: 'Orc Elite A', rank: 'C', kind: 'elite', at: AT },
   { name: 'Orc Elite B', rank: 'C', kind: 'elite', at: AT },

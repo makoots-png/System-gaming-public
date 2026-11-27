@@ -80,7 +80,9 @@ export function riseDc(user: Pick<Body, 'tier'>, corpse: Pick<Body, 'origin'>, R
   const userRank = RANKS[Math.max(0, Math.min(RANKS.length - 1, user.tier))]!;
   const foeRank = corpse.origin.kind === 'monster' ? corpse.origin.rank : userRank;
   const foeKind = corpse.origin.kind === 'monster' ? corpse.origin.monsterKind : 'normal';
-  return Math.max(R.shadow.dcMin, R.shadow.dcBase + R.shadow.dcPerRank * (rankIdx(foeRank) - rankIdx(userRank)) + (foeKind === 'boss' ? R.shadow.bossDc : 0));
+  const S = R.shadow;
+  const kindDc = foeKind === 'boss' ? S.bossDc : foeKind === 'elite' ? S.eliteDc : 0;
+  return Math.max(S.dcMin, S.dcBase + S.dcRank[foeRank] + S.dcPerRank * (rankIdx(foeRank) - rankIdx(userRank)) + kindDc);
 }
 
 /**
@@ -101,13 +103,15 @@ export const risePassed = (d20: number, bonus: number, dc: number, adjust = 0, f
 
 /**
  * Builds the fresh risen summon row for `corpse` raised by `user`: copies the corpse's monster origin (normal or elite,
- * `tweak: NO_TWEAK`, no kill `type`), full HP and mana, archetype basic attack, `until: null`, and `rose: corpse.id`.
+ * rank-scaled tweak `{ hp: rankHp, dealt: rankDealt }`, no kill `type`), full HP and mana, archetype basic attack,
+ * `until: null`, and `rose: corpse.id`.
  */
-export function risenRow(user: Pick<Body, 'id' | 'side'>, corpse: MonsterRow, id: CombatantId, R: OpRules & Pick<Rules, 'conditions' | 'dice'>): NewRow {
+export function risenRow(user: Pick<Body, 'id' | 'side'>, corpse: MonsterRow, id: CombatantId, R: OpRules & Pick<Rules, 'conditions' | 'dice' | 'shadow'>): NewRow {
   const mo = corpse.origin;
   if (mo.kind !== 'monster') throw new Error('risenRow expects a monster origin');
+  const tweak = { ...NO_TWEAK, hp: R.shadow.rankHp[mo.rank], dealt: R.shadow.rankDealt[mo.rank] };
   const origin: Origin = {
-    kind: 'monster', name: mo.name, rank: mo.rank, archetype: mo.archetype, monsterKind: mo.monsterKind, tweak: NO_TWEAK,
+    kind: 'monster', name: mo.name, rank: mo.rank, archetype: mo.archetype, monsterKind: mo.monsterKind, tweak,
     ...(mo.icon ? { icon: mo.icon } : {}),
   };
   const { sheet } = modified(origin, [], R);

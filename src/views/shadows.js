@@ -182,7 +182,7 @@ export function register(app) {
     const rank = oneOf(c.rank, RANKS, 'E');
     const plan = vesselUpgradePlan(active.entry.vessels, rank, kind, spec.cap);
     if (isRefused(plan)) { ui.toast('Blood extraction', BLOOD_REFUSAL_WORDS['stronger-held'], { kind: 'warning' }); return null; }
-    const dc = bloodExtractDc(rank, kind, R);
+    const dc = bloodExtractDc(rank, kind, R, h.rank);
     const bonus = A().hunter.sheet(h).checks.bonus[spec.stat];
     const statLabel = STAT_LABELS[spec.stat];
     const kindWord = kind === 'normal' ? '' : ` ${kind}`;

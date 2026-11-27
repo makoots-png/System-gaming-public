@@ -163,10 +163,22 @@ export function renameShadow<H extends Army>(h: H, sid: string, name: string): H
 /** The GM's notes, at most 500 characters. */
 export const noteShadow = <H extends Army>(h: H, sid: string, notes: string): H | Refused<'no-shadow'> => change(h, sid, s => ({ ...s, notes: String(notes ?? '').slice(0, 500) }));
 
+/** Rule slice read by `extractDc` (`RULES.shadow`). */
+export type ExtractDcRules = {
+  readonly dcBase: number;
+  readonly dcRank: Readonly<Record<Rank, number>>;
+  readonly dcPerRank: number;
+  readonly eliteDc: number;
+  readonly bossDc: number;
+  readonly dcMin: number;
+};
+
 /**
- * The DC to extract a shadow from a fallen foe of rank `foe` and kind `kind` for a hunter of rank `hunter`: the rules'
- * base, a step for each rank the foe is above the hunter (below, a step less), a boss's extra, never under `dcMin`.
+ * The DC to extract a shadow from a fallen foe of rank `foe` and kind `kind` for a hunter of rank `hunter`:
+ * `dcBase + dcRank[foe]` for the monster's absolute rank, plus `dcPerRank * (foe - hunter)` for the rank gap,
+ * plus `eliteDc` for an elite or `bossDc` for a boss, never under `dcMin`.
  */
-export function extractDc(hunter: Rank, foe: Rank, kind: string, R: { readonly dcBase: number; readonly dcPerRank: number; readonly bossDc: number; readonly dcMin: number }): number {
-  return Math.max(R.dcMin, R.dcBase + R.dcPerRank * (rankIdx(foe) - rankIdx(hunter)) + (kind === 'boss' ? R.bossDc : 0));
+export function extractDc(hunter: Rank, foe: Rank, kind: string, R: ExtractDcRules): number {
+  const kindDc = kind === 'boss' ? R.bossDc : kind === 'elite' ? R.eliteDc : 0;
+  return Math.max(R.dcMin, R.dcBase + R.dcRank[foe] + R.dcPerRank * (rankIdx(foe) - rankIdx(hunter)) + kindDc);
 }
