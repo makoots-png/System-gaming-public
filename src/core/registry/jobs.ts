@@ -48,13 +48,6 @@ const rareSteps = (
   { goal: 'task', title: `Rare Job Change 2/3: ${step2Title}`, desc: step2Desc, objectives: [{ label: step2Obj, target: 3 }] },
   { goal: 'task', title: `Rare Job Change 3/3: ${champion}`, desc: `Defeat the ${champion} to claim your Rare class.`, objectives: [{ label: `Defeat the ${champion}`, target: 1 }] },
 ];
-/** Default level-20 3-step chain for Rare classes without a bespoke branch trial yet. */
-const RARE_STEPS: JobDef['steps'] = rareSteps(
-  'The Trial Dungeon',
-  'Enter the Rare Job Change dungeon and survive the trial.',
-  'Survive trial waves',
-  'Trial Champion',
-);
 const BRAMBLEGUARD_STEPS = rareSteps(
   'The Briar Labyrinth',
   'Hold the line inside the Briar Labyrinth and endure three waves.',
@@ -96,6 +89,36 @@ const CLERIC_STEPS = rareSteps(
   'Hold the Shattered Sanctuary against three waves of dark creatures.',
   'Survive sanctuary waves',
   'Ashen Heretic',
+);
+const RUNEKNIGHT_STEPS = rareSteps(
+  'The Rune Vault',
+  'Break the warded halls of the Rune Vault through three waves.',
+  'Survive vault waves',
+  'Glyph Warden',
+);
+const DUELIST_STEPS = rareSteps(
+  'The Dueling Ring',
+  'Outmaneuver three waves of challengers in the Dueling Ring.',
+  'Survive ring waves',
+  'Blade Arbiter',
+);
+const ARTIFICER_STEPS = rareSteps(
+  'The Broken Foundry',
+  'Hold the Broken Foundry against three waves of rogue constructs.',
+  'Survive foundry waves',
+  'Clockwork Overseer',
+);
+const ORACLE_STEPS = rareSteps(
+  'The Drowned Observatory',
+  'Endure three waves of visions inside the Drowned Observatory.',
+  'Survive observatory waves',
+  'Blind Seer',
+);
+const STRIDER_STEPS = rareSteps(
+  'The Long Road',
+  'Outrun and clear three waves of ambushers along the Long Road.',
+  'Survive road waves',
+  'Pathless Hunter',
 );
 
 // Six Common starters (settled.md: Necromancer moved to unique Mythic).
@@ -139,17 +162,17 @@ export type ClassDef = {
 const RARER_CLASSES_RAW = {
   // Rare (12, not unique, two branches per Common starter, level-20 3-step chain)
   Berserker:    { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+vit', alloc: { str: 2, vit: 1 }, steps: BERSERKER_STEPS },
-  Runeknight:   { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+pow', alloc: { str: 2, pow: 1 }, steps: RARE_STEPS },
+  Runeknight:   { rarity: 'rare', unique: false, parent: 'Fighter',  pair: 'str+pow', alloc: { str: 2, pow: 1 }, steps: RUNEKNIGHT_STEPS },
   Nightblade:   { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'agi+ins', alloc: { agi: 2, ins: 1 }, steps: NIGHTBLADE_STEPS },
-  Duelist:      { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'str+agi', alloc: { agi: 2, str: 1 }, steps: RARE_STEPS },
+  Duelist:      { rarity: 'rare', unique: false, parent: 'Assassin', pair: 'str+agi', alloc: { agi: 2, str: 1 }, steps: DUELIST_STEPS },
   Pyromancer:   { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'pow+ctl', alloc: { pow: 2, ctl: 1 }, steps: PYROMANCER_STEPS },
-  Artificer:    { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 }, steps: RARE_STEPS },
+  Artificer:    { rarity: 'rare', unique: false, parent: 'Mage',     pair: 'ins+ctl', alloc: { ctl: 2, ins: 1 }, steps: ARTIFICER_STEPS },
   Brambleguard: { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'vit+dis', alloc: { vit: 2, dis: 1 }, steps: BRAMBLEGUARD_STEPS },
   Bastion:      { rarity: 'rare', unique: false, parent: 'Tanker',   pair: 'str+vit', alloc: { vit: 2, str: 1 }, steps: BASTION_STEPS },
   Cleric:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'dis+pre', alloc: { dis: 2, pre: 1 }, steps: CLERIC_STEPS },
-  Oracle:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'ins+pre', alloc: { pre: 2, ins: 1 }, steps: RARE_STEPS },
+  Oracle:       { rarity: 'rare', unique: false, parent: 'Healer',   pair: 'ins+pre', alloc: { pre: 2, ins: 1 }, steps: ORACLE_STEPS },
   Sniper:       { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+ctl', alloc: { agi: 2, ctl: 1 }, steps: SNIPER_STEPS },
-  Strider:      { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+vit', alloc: { agi: 2, vit: 1 }, steps: RARE_STEPS },
+  Strider:      { rarity: 'rare', unique: false, parent: 'Ranger',   pair: 'agi+vit', alloc: { agi: 2, vit: 1 }, steps: STRIDER_STEPS },
   // Epic (8, unique, in ship order)
   Chronokeeper: { rarity: 'epic', unique: true, recRank: 'A', pair: 'dis+ctl', alloc: { ctl: 2, dis: 1 } },
   Grimreaper:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'str+ins', alloc: { str: 2, ins: 1 } },

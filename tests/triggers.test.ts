@@ -652,3 +652,229 @@ describe('armyKill, minionDown, and reform (Wave 2 PR 2)', () => {
     expect(body(fClash, 'S1').place).not.toEqual(body(fClash, 'B').place);
   });
 });
+
+describe('Hook H1: blocked/lost hit counts and stacksBy on struck/critTaken triggers', () => {
+  const o = (target: string, x: Partial<Outcome>): Outcome => ({
+    target: id(target), avoid: 'caught', to: null, crit: false, raw: 40, dealt: 25, absorbed: 10, type: 'physical', statuses: [], threat: 0, stagger: 0, staggered: false, channelBroken: false, down: false, ...x,
+  });
+
+  test('eventsOf carries blocked and lost on struck and critTaken only', () => {
+    const list = eventsOf({ ops: [], kind: 'strike', channel: null }, id('A'), [o('M', { crit: true, raw: 40.4, dealt: 25, absorbed: 10 })], [], []);
+    const struck = list.find(e => e.event === 'struck')!;
+    const critTaken = list.find(e => e.event === 'critTaken')!;
+    const hitDealt = list.find(e => e.event === 'hitDealt')!;
+    const critDealt = list.find(e => e.event === 'critDealt')!;
+    const used = list.find(e => e.event === 'used')!;
+    // blocked = max(0, round(40.4) - 25 + 10) = 25; lost = max(0, 25 - 10) = 15
+    expect([struck.blocked, struck.lost]).toEqual([25, 15]);
+    expect([critTaken.blocked, critTaken.lost]).toEqual([25, 15]);
+    expect([hitDealt.blocked, hitDealt.lost, critDealt.blocked, critDealt.lost, used.blocked, used.lost]).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+
+    // Unshielded true damage: raw === dealt, absorbed === 0 -> blocked = 0, lost = dealt
+    const trueHit = eventsOf({ ops: [], kind: 'strike', channel: null }, id('A'), [o('M', { type: 'true', raw: 30, dealt: 30, absorbed: 0 })], [], []).find(e => e.event === 'struck')!;
+    expect([trueHit.blocked, trueHit.lost]).toEqual([0, 30]);
+
+    // Shielded true damage: blocked = absorbed, lost = dealt - absorbed
+    const shieldedTrue = eventsOf({ ops: [], kind: 'strike', channel: null }, id('A'), [o('M', { type: 'true', raw: 30, dealt: 30, absorbed: 18 })], [], []).find(e => e.event === 'struck')!;
+    expect([shieldedTrue.blocked, shieldedTrue.lost]).toEqual([18, 12]);
+  });
+
+  test('exact physical reflect from blocked across armor, guard reaction, shield, and true damage', () => {
+    const heavyOrigin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('heavy', RULES), perks: { hpMax: 200 } } };
+    const reflect = worn('Reflect', { on: 'struck', tag: null, to: 'other', limit: { kind: 'round' }, ops: [{ op: 'damage', type: 'physical', amount: f('0.25 * blocked'), when: 'use' }] });
+    const slash = ability('slash', '40');
+    const trueSlash = ability('true-slash', '40', { effect: { type: 'true', by: 'hand', formula: f('40') } });
+    const guardReact: Ability = {
+      ...abilityOf('support', { id: abilityId('guard-react'), name: 'Guard React', aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [{ op: 'guard', share: 0.5 }] }, RULES),
+      react: { when: 'before', reach: tiles(0) },
+    };
+    const atkSheet = modified(origin, [], RULES).sheet;
+    const defSheet = modified(heavyOrigin, [], RULES).sheet;
+
+    // 1. Armored + shielded physical hit (no guard)
+    const f1 = play(
+      ...duel(
+        row('A', 'party', [], { abilities: [slash, trueSlash] }),
+        row('M', 'foe', [on('reflect', reflect)], { origin: heavyOrigin, shield: { amount: 12, until: tick(5000) } }),
+      ),
+      use('A', 'M', slash),
+    );
+    const dealt1 = afterDefence(40, 'physical', atkSheet, defSheet, RULES);
+    const absorbed1 = Math.min(12, dealt1);
+    const blocked1 = Math.max(0, 40 - dealt1 + absorbed1);
+    const expectedReflect1 = afterDefence(0.25 * blocked1, 'physical', defSheet, atkSheet, RULES);
+    expect(atkSheet.hpMax - rowHp(body(f1, 'A'))).toBe(expectedReflect1);
+
+    // 2. Armored + shielded + 50% before guard reaction
+    const f2 = play(
+      ...duel(
+        row('A', 'party', [], { abilities: [slash] }),
+        row('M', 'foe', [on('reflect', reflect)], { origin: heavyOrigin, shield: { amount: 12, until: tick(5000) }, abilities: [HIT, guardReact], armed: { ability: guardReact.id, on: null, spent: false } }),
+      ),
+      use('A', 'M', slash),
+    );
+    const dealt2 = afterDefence(40 * 0.5, 'physical', atkSheet, defSheet, RULES);
+    const absorbed2 = Math.min(12, dealt2);
+    const blocked2 = Math.max(0, 40 - dealt2 + absorbed2);
+    const expectedReflect2 = afterDefence(0.25 * blocked2, 'physical', defSheet, atkSheet, RULES);
+    expect(blocked2).toBeGreaterThan(blocked1);
+    expect(atkSheet.hpMax - rowHp(body(f2, 'A'))).toBe(expectedReflect2);
+
+    // 3. Unshielded true damage reflects 0 (not 1)
+    const f3 = play(
+      ...duel(
+        row('A', 'party', [], { abilities: [trueSlash] }),
+        row('M', 'foe', [on('reflect', reflect)], { origin: heavyOrigin }),
+      ),
+      use('A', 'M', trueSlash),
+    );
+    expect(atkSheet.hpMax - rowHp(body(f3, 'A'))).toBe(0);
+
+    // 4. Shielded true damage reflects 0.25 * absorbed
+    const f4 = play(
+      ...duel(
+        row('A', 'party', [], { abilities: [trueSlash] }),
+        row('M', 'foe', [on('reflect', reflect)], { origin: heavyOrigin, shield: { amount: 20, until: tick(5000) } }),
+      ),
+      use('A', 'M', trueSlash),
+    );
+    expect(atkSheet.hpMax - rowHp(body(f4, 'A'))).toBe(afterDefence(0.25 * 20, 'physical', defSheet, atkSheet, RULES));
+  });
+
+  test('zero-value struck skips hit-count triggers before tripStep: no trip, no empty log line, and a real hit later in the same round still reflects', () => {
+    const heavyOrigin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('heavy', RULES), perks: { hpMax: 200 } } };
+    const bulwark = worn('Iron Bulwark', { on: 'struck', tag: null, to: 'other', limit: { kind: 'round' }, ops: [{ op: 'damage', type: 'physical', amount: f('0.25 * blocked'), when: 'use' }] });
+    const thorns = worn('Thorns', { on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('10'), when: 'use' }] });
+    const slash = ability('slash', '40');
+    const trueSlash = ability('true-slash', '40', { effect: { type: 'true', by: 'hand', formula: f('40') } });
+    const atkSheet = modified(origin, [], RULES).sheet;
+    const defSheet = modified(heavyOrigin, [], RULES).sheet;
+    const dealtHeavy = afterDefence(40, 'physical', atkSheet, defSheet, RULES);
+    const expectedReflect = afterDefence(0.25 * (40 - dealtHeavy), 'physical', defSheet, atkSheet, RULES);
+
+    // 1. Ironclad strikes a thorned foe: the 0/0 thorn hit does not trip Iron Bulwark or log it; the foe's real hit in the same round still reflects
+    const afterThorn = play(
+      ...duel(
+        row('A', 'party', [on('iron-bulwark', bulwark)], { origin: heavyOrigin, abilities: [slash] }),
+        row('M', 'foe', [on('thorns', thorns)], { abilities: [slash] }),
+      ),
+      use('A', 'M', slash),
+    );
+    expect(body(afterThorn, 'A').trips).toBeUndefined();
+    expect(afterThorn.log.some(l => l.text.includes("A's Iron Bulwark"))).toBe(false);
+    const mHpBeforeStrike = rowHp(body(afterThorn, 'M'));
+    const afterBossHit = reduce(afterThorn, use('M', 'A', slash), ctx).fight!;
+    expect(mHpBeforeStrike - rowHp(body(afterBossHit, 'M'))).toBe(expectedReflect);
+    expect(afterBossHit.log.some(l => l.text.includes("A's Iron Bulwark"))).toBe(true);
+
+    // 2. Unshielded true hit against Iron Bulwark does not trip it or log it; a physical hit later in the same round still reflects
+    const afterTrue = play(
+      ...duel(
+        row('A', 'party', [], { abilities: [trueSlash, slash] }),
+        row('M', 'foe', [on('iron-bulwark', bulwark)], { origin: heavyOrigin }),
+      ),
+      use('A', 'M', trueSlash),
+    );
+    expect(body(afterTrue, 'M').trips).toBeUndefined();
+    expect(afterTrue.log.some(l => l.text.includes("M's Iron Bulwark"))).toBe(false);
+    expect(atkSheet.hpMax - rowHp(body(afterTrue, 'A'))).toBe(0);
+    const afterPhys = reduce(afterTrue, use('A', 'M', slash), ctx).fight!;
+    expect(atkSheet.hpMax - rowHp(body(afterPhys, 'A'))).toBe(expectedReflect);
+    expect(afterPhys.log.some(l => l.text.includes("M's Iron Bulwark"))).toBe(true);
+  });
+
+  test('trigger hits carry blocked = 0 and lost = 0, so reflect never feeds reflect or Wrath/Grit loops', () => {
+    const heavyOrigin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('heavy', RULES), perks: { hpMax: 200 } } };
+    const wrath: StackDef = { label: 'Wrath', desc: '', ops: [], stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    const mirror = worn('Mirror',
+      { on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('0.25 * blocked'), when: 'use' }] },
+      { on: 'struck', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('wrath'), def: wrath, duration: null, stacksBy: f('blocked + lost') }] },
+    );
+    const slash = ability('slash', '40');
+    const sheet = modified(heavyOrigin, [], RULES).sheet;
+    const fight = play(
+      ...duel(
+        row('A', 'party', [on('mirror', mirror)], { origin: heavyOrigin, abilities: [slash] }),
+        row('M', 'foe', [on('mirror', mirror)], { origin: heavyOrigin }),
+      ),
+      use('A', 'M', slash),
+    );
+    const dealt = afterDefence(40, 'physical', sheet, sheet, RULES);
+    const blocked = 40 - dealt;
+    const reflected = afterDefence(0.25 * blocked, 'physical', sheet, sheet, RULES);
+    // M took only A's strike (zero reflect-of-reflect) and gained Wrath (clamped to stackAdd)
+    expect(sheet.hpMax - rowHp(body(fight, 'M'))).toBe(dealt);
+    expect(stacksOf(body(fight, 'M'), 'wrath')).toBe(RULES.fight.kit.stackAdd);
+    // A took M's reflect once, and gained 0 Wrath because M's trigger hit carried blocked = 0, lost = 0
+    expect(sheet.hpMax - rowHp(body(fight, 'A'))).toBe(reflected);
+    expect(stacksOf(body(fight, 'A'), 'wrath')).toBe(0);
+  });
+
+  test('stacksBy floors, clamps to 0..kit.stackAdd, skips at 0 with no statusGained or threshold, works on critTaken, and defaults to 0 outside struck/critTaken', () => {
+    const hiHpOrigin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: { hpMax: 200 } } };
+    const hpMax = modified(hiHpOrigin, [], RULES).sheet.hpMax;
+    const grit: StackDef = {
+      label: 'Grit', desc: '', ops: [],
+      stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'count', n: 2 }, to: { kind: 'bearer' }, ops: [addPain(1)], then: 'keep' } },
+    };
+    const spirit = worn('Spirit',
+      { on: 'struck', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('grit'), def: grit, duration: null, stacksBy: f('lost / (0.05 * hpmax)') }] },
+      { on: 'statusGained', key: statusKey('grit'), to: 'self', limit: { kind: 'each' }, ops: [{ op: 'mana', amount: f('1'), when: 'use' }] },
+    );
+    const hitTrue = (name: string, n: number) => ability(name, String(n), { effect: { type: 'true', by: 'hand', formula: f(String(n)) } });
+    const tiny = hitTrue('tiny', Math.max(1, Math.floor(0.05 * hpMax) - 1));
+    const oneStack = hitTrue('one', Math.ceil(0.05 * hpMax));
+    const huge = hitTrue('huge', Math.ceil(0.5 * hpMax));
+
+    // 1. Fully shielded hit -> lost = 0 -> 0 stacks, no statusGained (mana unchanged), no threshold
+    const shielded = play(
+      ...duel(row('A', 'party', [], { abilities: [oneStack] }), row('M', 'foe', [on('spirit', spirit)], { origin: hiHpOrigin, mana: 0, shield: { amount: 999, until: tick(5000) } })),
+      use('A', 'M', oneStack),
+    );
+    expect([stacksOf(body(shielded, 'M'), 'grit'), body(shielded, 'M').mana, stacksOf(body(shielded, 'M'), 'pain')]).toEqual([0, 0, 0]);
+
+    // 2. Tiny hit below 0.05 * hpMax -> floor < 1 = 0 -> skipped, no statusGained
+    const small = play(
+      ...duel(row('A', 'party', [], { abilities: [tiny] }), row('M', 'foe', [on('spirit', spirit)], { origin: hiHpOrigin, mana: 0 })),
+      use('A', 'M', tiny),
+    );
+    expect([stacksOf(body(small, 'M'), 'grit'), body(small, 'M').mana, stacksOf(body(small, 'M'), 'pain')]).toEqual([0, 0, 0]);
+
+    // 3. One-stack hit -> adds 1 stack, raises statusGained (+1 mana), threshold (at 2) not crossed
+    const one = play(
+      ...duel(row('A', 'party', [], { abilities: [oneStack] }), row('M', 'foe', [on('spirit', spirit)], { origin: hiHpOrigin, mana: 0 })),
+      use('A', 'M', oneStack),
+    );
+    expect([stacksOf(body(one, 'M'), 'grit'), body(one, 'M').mana, stacksOf(body(one, 'M'), 'pain')]).toEqual([1, 1, 0]);
+
+    // 4. Huge hit -> clamped to stackAdd (3), crosses threshold at 2 (Pain +1), raises statusGained (+1 mana)
+    const big = play(
+      ...duel(row('A', 'party', [], { abilities: [huge] }), row('M', 'foe', [on('spirit', spirit)], { origin: hiHpOrigin, mana: 0 })),
+      use('A', 'M', huge),
+    );
+    expect([stacksOf(body(big, 'M'), 'grit'), body(big, 'M').mana, stacksOf(body(big, 'M'), 'pain')]).toEqual([RULES.fight.kit.stackAdd, 1, 1]);
+
+    // 5. critTaken trigger receives exact blocked and lost on a natural 1 reaction (crit)
+    const atkSheet = modified(origin, [], RULES).sheet;
+    const critRaw = Math.ceil(0.08 * hpMax);
+    const critBase = hitTrue('crit-base', critRaw);
+    const critDealt = Math.max(1, Math.round(critRaw * atkSheet.critSize));
+    const expectedCritStacks = Math.min(RULES.fight.kit.stackAdd, Math.floor(critDealt / (0.05 * hpMax)));
+    expect(Math.floor(critRaw / (0.05 * hpMax))).toBe(1);
+    expect(expectedCritStacks).toBe(2);
+    const onCrit = worn('Crit Grit', { on: 'critTaken', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('grit'), def: grit, duration: null, stacksBy: f('lost / (0.05 * hpmax)') }] });
+    const critFight = play(
+      ...duel(row('A', 'party', [], { abilities: [critBase] }), row('M', 'foe', [on('on-crit', onCrit)], { origin: hiHpOrigin })),
+      use('A', 'M', critBase, 1),
+    );
+    expect(stacksOf(body(critFight, 'M'), 'grit')).toBe(expectedCritStacks);
+
+    // 6. Outside struck/critTaken (hitDealt trigger), blocked and lost default to 0
+    const offEvent = worn('Off Event', { on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('grit'), def: grit, duration: null, stacksBy: f('blocked + lost') }] });
+    const offFight = play(
+      ...duel(row('A', 'party', [on('off', offEvent)], { abilities: [oneStack] }), row('M', 'foe', [], { origin: hiHpOrigin })),
+      use('A', 'M', oneStack),
+    );
+    expect(stacksOf(body(offFight, 'A'), 'grit')).toBe(0);
+  });
+});

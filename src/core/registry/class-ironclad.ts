@@ -1,6 +1,6 @@
 // class-ironclad.ts: Epic Ironclad (vit+dis) signature kit and full 26-node / 23-buyable skill tree.
 // Pure static registry data. No gold literals: node and fork-flip prices come solely from RULES via classes.ts.
-// Wave 1 ships absorb-and-release Siege Charge (distinct from Brambleguard thorns) ahead of Wave 4's mitigated-damage bank.
+// Ships absorb-and-release Siege Charge plus Wave 4 true reflect on blocked damage (Hook H1).
 import { RULES } from '../rules.ts';
 import type { Perk } from '../rules.ts';
 import { parseFormula } from '../formula.ts';
@@ -33,6 +33,7 @@ const f = (text: string): Formula => {
 };
 const rounds = (n: number): Tick => tick(Math.round(n * R.fight.round));
 const EACH: Limit = { kind: 'each' };
+const ROUND: Limit = { kind: 'round' };
 const ONCE: Limit = { kind: 'fight', n: 1 };
 const LOW_HP_PCT = Math.round(R.fight.kit.lowHpAt * 100);
 
@@ -124,6 +125,8 @@ function makeBastion(o: {
   readonly resist: string;
   readonly takenPct: number;
   readonly chargePerHit: number;
+  readonly reflectFormula: string;
+  readonly reflectLimit: Limit;
   readonly lowHpTrigger: Trigger | null;
 }): ClassWorn {
   const triggers: Trigger[] = [
@@ -133,6 +136,13 @@ function makeBastion(o: {
       to: 'self',
       limit: EACH,
       ops: [{ op: 'applyStatus', key: KEY_CHARGE, def: SIEGE_CHARGE, duration: null, stacks: o.chargePerHit }],
+    },
+    {
+      on: 'struck',
+      tag: null,
+      to: 'other',
+      limit: o.reflectLimit,
+      ops: [{ op: 'damage', type: 'physical', when: 'use', amount: f(o.reflectFormula) }],
     },
     ...(o.lowHpTrigger ? [o.lowHpTrigger] : []),
   ];
@@ -154,22 +164,26 @@ function makeBastion(o: {
 const BASE_BASTION: ClassWorn = makeBastion({
   key: KEY_BASTION,
   label: 'Iron Bulwark',
-  desc: 'Adds 4 armor and 3 resist, and reduces damage taken by 10%. Taking a hit builds 1 Siege Charge (up to 5) that raises armor and adds damage to Shield Slam.',
+  desc: 'Adds 4 armor and 3 resist, and reduces damage taken by 10%. Taking a hit builds 1 Siege Charge (up to 5) that raises armor and adds damage to Shield Slam. Once a round when struck, you reflect 25% of blocked damage back as physical damage.',
   armor: '4',
   resist: '3',
   takenPct: -10,
   chargePerHit: 1,
+  reflectFormula: '0.25 * blocked',
+  reflectLimit: ROUND,
   lowHpTrigger: null,
 });
 
 const LIVING_BASTION: ClassWorn = makeBastion({
   key: KEY_BASTION_LIVING,
   label: 'Living Fortress',
-  desc: `Adds 10 armor and 8 resist, and reduces damage taken by 15%. Taking a hit builds 2 Siege Charge (up to 5). Once a fight below ${LOW_HP_PCT}% HP, gain a 20% max HP shield and safeguard for 1 round.`,
+  desc: `Adds 10 armor and 8 resist, and reduces damage taken by 15%. Taking a hit builds 2 Siege Charge (up to 5). Each time you are struck, you reflect 35% of blocked damage back as physical damage. Once a fight below ${LOW_HP_PCT}% HP, gain a 20% max HP shield and safeguard for 1 round.`,
   armor: '10',
   resist: '8',
   takenPct: -15,
   chargePerHit: 2,
+  reflectFormula: '0.35 * blocked',
+  reflectLimit: EACH,
   lowHpTrigger: {
     on: 'lowHp',
     to: 'self',

@@ -272,6 +272,7 @@ describe('registryView', () => {
       heldLocal: id => id === h0.id,
       heldRemote: k => k === remoteKey,
       remotes: [{ key: remoteKey, name: 'Mira Renamed' }],
+      signatures: { Seraph: { className: 'Seraph' }, Ironclad: { className: 'Ironclad' } },
       trees: { Hemomancer: buildSyntheticTree('Hemomancer', 'mythic') },
     });
 

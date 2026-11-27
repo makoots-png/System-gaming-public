@@ -4,17 +4,17 @@ import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { kitGear, NO_TWEAK, share } from '../src/core/hunter/derive.ts';
-import { parseFormula } from '../src/core/formula.ts';
+import { bareRefusal, evaluate, NO_KIT, parseFormula, printFormula, someFormula } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { openGrid, place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, tag } from '../src/core/combat/ability-types.ts';
 import {
-  OP_KINDS, addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dispelled, dueAmount, freeStatusKey, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, opsOffered, removeStatus, settle,
+  OP_KINDS, addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dispelled, dueAmount, freeStatusKey, FULL_HEAL, isControl, landLine, lasting, modified, modsOf, onSheet, opLines, opsOffered, removeStatus, settle,
   sheetStatuses, shielded, shieldGrown, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
-import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { parseAbility, parseLandOp, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { stackStep } from '../src/core/combat/stacks.ts';
 import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, helpful, holds, sheetAdds, STATUS_LIVES, statusStep, wardedDamage, withSheetOps } from '../src/core/combat/standing.ts';
@@ -23,6 +23,7 @@ import { isMythicStatusKey } from '../src/core/combat/mythic-types.ts';
 import { zoneId, zoneTone } from '../src/core/combat/zones.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { keystoneOf } from '../src/core/registry/keystones.ts';
+import { wornWorth } from '../src/core/registry/worth.ts';
 import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import { giverOf, payDue } from '../src/core/combat/fight-turn.ts';
 import { NO_PEN, afterDefence, channelBreaks, held, landOps } from '../src/core/combat/land.ts';
@@ -1137,5 +1138,120 @@ describe('offensive dispel of helpful statuses (Wave 3 Hook 2)', () => {
     const r = landOps(rows, [{ op: 'dispel', which: 'first', kind: 'helpful' }], src, [t.id], { id: src.id, tier: 0 }, tick(0), RULES);
     expect(r.landed[0]!.dealt).toBeGreaterThan(0);
     expect(rows.get(t.id)!.statuses.map(s => s.key)).toEqual(['void-brand', 'hasted']);
+  });
+});
+
+describe('Hook H1: blocked/lost formula counts and stacksBy land op', () => {
+  test('blocked and lost parse as count formulas, default to 0 in NO_KIT, refuse target. prefix, and fail bareRefusal', () => {
+    expect([f('blocked'), f('lost')]).toEqual([
+      { kind: 'count', name: 'blocked' },
+      { kind: 'count', name: 'lost' },
+    ]);
+    expect([printFormula(f('blocked')), printFormula(f('lost'))]).toEqual(['blocked', 'lost']);
+    expect([NO_KIT.blocked, NO_KIT.lost]).toEqual([0, 0]);
+    const b = bareBody(hunterOf(), RULES);
+    expect(evaluate(f('blocked + lost'), { user: b, target: b, charge: 0, dice: [] })).toBe(0);
+    expect(evaluate(f('0.25 * blocked + 0.5 * lost'), { user: b, target: b, charge: 0, dice: [], kit: { ...NO_KIT, blocked: 20, lost: 10 } })).toBe(10);
+    expect(parseFormula('target.blocked', RULES).ok).toBe(false);
+    expect(parseFormula('target.lost', RULES).ok).toBe(false);
+    expect(bareRefusal(f('blocked'))).toContain('blocked');
+    expect(bareRefusal(f('lost'))).toContain('lost');
+  });
+
+  test('parseLandOp and parseStatusDef preserve stacksBy, refuse invalid stacksBy, and omit stacksBy when absent so shipped defs stay byte-identical', () => {
+    const wrath: StackDef = { label: 'Wrath', desc: '', ops: [], stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    const plainApply = { op: 'applyStatus', key: statusKey('wrath'), def: wrath, duration: null };
+    const parsedPlain = parseLandOp(plainApply, RULES);
+    expect(parsedPlain).toEqual(plainApply);
+    expect('stacksBy' in parsedPlain!).toBe(false);
+
+    const dynApply = { ...plainApply, stacksBy: f('(blocked + 0.5 * lost) / (0.025 * hpmax)') };
+    const parsedDyn = parseLandOp(JSON.parse(JSON.stringify(dynApply)), RULES);
+    expect(parsedDyn).toEqual(dynApply);
+
+    expect(parseLandOp({ ...plainApply, stacksBy: { kind: 'bogus' } }, RULES)).toBeNull();
+
+    // Shipped keystone with applyStatus triggers round-tripped through parseStatusDef stays byte-identical (wire.defs omitted)
+    const ks = keystoneOf({ tier: 'confluence', pair: 'vit+dis' }, RULES);
+    expect(ks.worn).toBeDefined();
+    const key = freeStatusKey(ks.worn!.label, () => false);
+    const roundTripped = parseStatusDef(JSON.parse(JSON.stringify(ks.worn!)), RULES)!;
+    expect(roundTripped).toEqual(ks.worn!);
+    const h1 = body(hunterOf(), { id: combatantId('h1'), statuses: [status(key, roundTripped, null, { worn: true })] });
+    const f0 = reduce(null, { type: 'add', fightId: fightId('f-h1-shipped'), rows: [h1 as unknown as NewRow], openings: [] }, { rules: RULES }).fight!;
+    const doc = fightDoc(f0, RULES, { by: 'gm' as never, at: 'now', was: null, keyOf: () => null })!;
+    expect(fightWire(doc).defs).toBeUndefined();
+  });
+
+  test('landOps stacksBy floors average, clamps to 0..kit.stackAdd, skips at 0, and crosses thresholds on >= 1', () => {
+    const mark: StackDef = {
+      label: 'Mark', desc: '', ops: [],
+      stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, ops: [{ op: 'note', text: 'boom' }], then: 'spend' } },
+    };
+    const op = { op: 'applyStatus', key: statusKey('mark'), def: mark, duration: null, stacksBy: f('blocked / 10') } as const;
+    const t0 = body(hunterOf(), { id: combatantId('t') });
+
+    // blocked = 9 -> floor(0.9) = 0 -> applies nothing, no gained, no fired
+    const rows0 = new Map([[t0.id, t0]]);
+    const r0 = landOps(rows0, [op], t0, [t0.id], { id: t0.id, tier: 0 }, tick(0), RULES, { cross: true, hit: { blocked: 9, lost: 0 } });
+    expect(rows0.get(t0.id)!.statuses).toEqual([]);
+    expect([r0.landed[0]!.gained, r0.fired]).toEqual([[], []]);
+
+    // blocked = 25 -> floor(2.5) = 2 -> applies 2 stacks, below threshold 3
+    const rows2 = new Map([[t0.id, t0]]);
+    const r2 = landOps(rows2, [op], t0, [t0.id], { id: t0.id, tier: 0 }, tick(0), RULES, { cross: true, hit: { blocked: 25, lost: 0 } });
+    expect(rows2.get(t0.id)!.statuses[0]?.stacks).toBe(2);
+    expect([r2.landed[0]!.gained, r2.fired]).toEqual([[statusKey('mark')], []]);
+
+    // blocked = 999 -> clamped to stackAdd (3) -> crosses threshold 3 and spends
+    const rows3 = new Map([[t0.id, t0]]);
+    const r3 = landOps(rows3, [op], t0, [t0.id], { id: t0.id, tier: 0 }, tick(0), RULES, { cross: true, hit: { blocked: 999, lost: 0 } });
+    expect(rows3.get(t0.id)!.statuses).toEqual([]);
+    expect([r3.landed[0]!.gained, r3.fired.length]).toEqual([[statusKey('mark')], 1]);
+  });
+
+  test('landOps damage with raw <= 0 deals 0 instead of rule 12\'s 1-damage floor, while positive raw still floors at 1', () => {
+    const src = body(hunterOf(), { id: combatantId('u'), side: 'party' });
+    const t0 = body(hunterOf(), { id: combatantId('foe'), side: 'foe' });
+    const hp0 = rowHp(t0);
+
+    for (const [amount, hit] of [
+      [f('0'), undefined],
+      [f('-10'), undefined],
+      [f('0.25 * blocked'), { blocked: 0, lost: 30 }],
+    ] as const) {
+      const rows = new Map([[t0.id, t0], [src.id, src]]);
+      const r = landOps(rows, [{ op: 'damage', type: 'physical', amount, when: 'use' }], src, [t0.id], { id: src.id, tier: 0 }, tick(0), RULES, hit ? { hit } : {});
+      expect(r.landed[0]!.dealt).toBe(0);
+      expect(rowHp(rows.get(t0.id)!)).toBe(hp0);
+    }
+
+    const posRows = new Map([[t0.id, t0], [src.id, src]]);
+    const rPos = landOps(posRows, [{ op: 'damage', type: 'physical', amount: f('0.01'), when: 'use' }], src, [t0.id], { id: src.id, tier: 0 }, tick(0), RULES);
+    expect(rPos.landed[0]!.dealt).toBe(1);
+    expect(rowHp(posRows.get(t0.id)!)).toBe(hp0 - 1);
+  });
+
+  test('worth weighs a stacksBy applyStatus at kit.stackAdd and flags count in unweighed; someFormula and landLine work as exported', () => {
+    const burn: StackDef = {
+      label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: f('4'), when: 'turn' }],
+      stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null },
+    };
+    const dynDef: StatusDef = {
+      label: 'Dyn', desc: '', ops: [],
+      triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'round' }, ops: [{ op: 'applyStatus', key: statusKey('burn'), def: burn, duration: tick(2 * RULES.fight.round), stacksBy: f('blocked / 10') }] }],
+    };
+    const capDef: StatusDef = {
+      label: 'Cap', desc: '', ops: [],
+      triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'round' }, ops: [{ op: 'applyStatus', key: statusKey('burn'), def: burn, duration: tick(2 * RULES.fight.round), stacks: RULES.fight.kit.stackAdd }] }],
+    };
+    const wDyn = wornWorth(dynDef, RULES), wCap = wornWorth(capDef, RULES);
+    expect(wDyn.worth).toBeCloseTo(wCap.worth, 9);
+    expect(wDyn.unweighed).toContain('count');
+    expect(wCap.unweighed).not.toContain('count');
+    expect(someFormula(f('(blocked + 0.5 * lost) / (0.025 * hpmax)'), x => x.kind === 'count' && x.name === 'blocked')).toBe(true);
+    expect(someFormula(f('1d8 + phys'), x => x.kind === 'count')).toBe(false);
+    expect(landLine({ op: 'refund', pct: 25 }, null, RULES)).toBe("25% of an action's time back");
+    expect(landLine({ op: 'reform', hpShare: 0.5, mana: 15 }, null, RULES)).toBe('Reforms a fallen minion at 50% HP for 15 mana');
   });
 });

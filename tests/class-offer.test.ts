@@ -53,12 +53,6 @@ const MIRA_KEY: SheetKey = sheetKeyOf(MIRA_DEV, 'h1' as HunterId);
 const KAEL_KEY: SheetKey = sheetKeyOf(KAEL_DEV, 'h1' as HunterId);
 const D3_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p3')!, 'h1' as HunterId);
 const D4_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p4')!, 'h1' as HunterId);
-const D5_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p5')!, 'h1' as HunterId);
-const D6_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p6')!, 'h1' as HunterId);
-const D7_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p7')!, 'h1' as HunterId);
-const D8_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p8')!, 'h1' as HunterId);
-const D9_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p9')!, 'h1' as HunterId);
-const D10_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p10')!, 'h1' as HunterId);
 
 function gmSave(): Save {
   const base = freshSave(ENV, { onboarded: true });
@@ -233,7 +227,7 @@ describe('classOfferDocOf, DOCS.classOffer, classOfferFor & wire redaction', () 
     if (isRefused(c1)) return;
     s = c1.save;
 
-    const c2 = claimUniqueClass(s, 'Dreadnought', { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, holderCtx());
+    const c2 = claimUniqueClass(s, 'Grimreaper', { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, holderCtx());
     expect(isRefused(c2)).toBe(false);
     if (isRefused(c2)) return;
     s = c2.save;
@@ -248,11 +242,11 @@ describe('classOfferDocOf, DOCS.classOffer, classOfferFor & wire redaction', () 
     expect(doc.active).toBe(true);
     if (!doc.active) return;
 
-    // Canonical pool order, no outside-pool Dreadnought leak, NPC name redacted to ''.
+    // Canonical pool order, no outside-pool Grimreaper leak, NPC name redacted to ''.
     expect(Object.keys(doc.taken)).toEqual(['Bladefiend', 'Seraph']);
     expect(doc.taken.Bladefiend).toEqual({ who: 'gm', name: '' });
     expect(doc.taken.Seraph).toEqual({ who: KAEL_KEY, name: 'Kael Fresh' });
-    expect('Dreadnought' in doc.taken).toBe(false);
+    expect('Grimreaper' in doc.taken).toBe(false);
 
     // Protocol validation + classOfferFor scoping.
     const parsed = DOCS.classOffer(JSON.parse(JSON.stringify(doc)))!;
@@ -327,47 +321,45 @@ describe('pickClassFromOffer: races, 4+ Epics, 7th all-taken, stat fit, and copy
     if (isRefused(p2Alt)) return;
     expect(holderOf(p2Alt.save, 'Bladefiend')?.name).toBe('Kael');
 
-    // Wrong offer id, non-pool class, and mid-fight hunter are refused; wired Mythics like Necromancer are pickable.
+    // Wrong offer id, non-pool class, and mid-fight hunter are refused; wired Mythics (including Dreadnought and Godfist) are pickable.
     expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Rifthunter', 'co999-0', holderCtx())).toEqual({ ok: false, why: 'wrong-offer' });
-    expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Dreadnought', offer.id, holderCtx())).toEqual({ ok: false, why: 'not-in-pool' });
+    expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Grimreaper', offer.id, holderCtx())).toEqual({ ok: false, why: 'not-in-pool' });
     expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Rifthunter', offer.id, holderCtx(ROOM, () => false, k => k === D3_KEY))).toEqual({ ok: false, why: 'held' });
-    const p3Necro = pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Necromancer', offer.id, holderCtx());
-    expect(isRefused(p3Necro)).toBe(false);
-    if (!isRefused(p3Necro)) expect(holderOf(p3Necro.save, 'Necromancer')?.name).toBe('P3');
+    const p3Dread = pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Dreadnought', offer.id, holderCtx());
+    expect(isRefused(p3Dread)).toBe(false);
+    if (!isRefused(p3Dread)) expect(holderOf(p3Dread.save, 'Dreadnought')?.name).toBe('P3');
+    const p4Godfist = !isRefused(p3Dread)
+      ? pickClassFromOffer(p3Dread.save, { kind: 'remote', sheetKey: D4_KEY, name: 'P4' }, 'Godfist', offer.id, holderCtx())
+      : p3Dread;
+    expect(isRefused(p4Godfist)).toBe(false);
+    if (!isRefused(p4Godfist)) expect(holderOf(p4Godfist.save, 'Godfist')?.name).toBe('P4');
   });
 
-  test('full 6-Mythic + 3-Epic pool stays fair (no duplicates, Mythics before Epics, wire under limit), keeps Epic on Mythic grant, and next player sees allTaken notice', () => {
+  test('full derived Mythic + Epic pool stays fair (no duplicates, Mythics before Epics, wire under limit), keeps Epic on Mythic grant, and next player sees allTaken notice', () => {
     let { save: s, offer } = openClassOffer(gmSave(), { at: AT, room: ROOM, R: RULES });
-    const playerKeys: readonly [SheetKey, string][] = [
-      [MIRA_KEY, 'Mira'],
-      [KAEL_KEY, 'Kael'],
-      [D3_KEY, 'Sora'],
-      [D4_KEY, 'Bram'],
-      [D5_KEY, 'Tali'],
-      [D6_KEY, 'Vex'],
-      [D7_KEY, 'Nori'],
-      [D8_KEY, 'Jace'],
-      [D9_KEY, 'Lina'],
-    ];
-    expect(DEFAULT_OFFER_POOL).toHaveLength(playerKeys.length);
+    expect(MYTHIC_OFFER_POOL).toContain('Dreadnought');
+    expect(MYTHIC_OFFER_POOL).toContain('Godfist');
+    expect(DEFAULT_OFFER_POOL).toHaveLength(MYTHIC_OFFER_POOL.length + EPIC_OFFER_POOL.length);
+    const lateKey: SheetKey = sheetKeyOf(parseDeviceId('d-late')!, 'h1' as HunterId);
     for (let i = 0; i < DEFAULT_OFFER_POOL.length; i++) {
-      const [key, name] = playerKeys[i]!;
+      const key: SheetKey = sheetKeyOf(parseDeviceId(`d-pool-${i + 1}`)!, 'h1' as HunterId);
+      const name = `Player ${i + 1}`;
       const cls = DEFAULT_OFFER_POOL[i]!;
       const r = pickClassFromOffer(s, { kind: 'remote', sheetKey: key, name }, cls, offer.id, holderCtx());
       expect(isRefused(r)).toBe(false);
       if (isRefused(r)) return;
       s = r.save;
       // Duplicate claim on the just-claimed class is refused cleanly.
-      expect(pickClassFromOffer(s, { kind: 'remote', sheetKey: D10_KEY, name: 'Late' }, cls, offer.id, holderCtx())).toEqual({ ok: false, why: 'class-taken' });
+      expect(pickClassFromOffer(s, { kind: 'remote', sheetKey: lateKey, name: 'Late' }, cls, offer.id, holderCtx())).toEqual({ ok: false, why: 'class-taken' });
     }
 
-    // 10th player sees allTaken with 0 open, Mythics before Epics, and wire doc well under 64 KiB.
+    // Next player after all offered classes are taken sees allTaken with 0 open, Mythics before Epics, and wire doc well under 64 KiB.
     const doc = classOfferDocOf(s, AT);
     expect(doc.active).toBe(true);
     if (!doc.active) return;
     expect(DOCS.classOffer(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
     expect(new TextEncoder().encode(JSON.stringify(doc)).byteLength).toBeLessThan(8192);
-    const vm = classOfferView(doc, { hunter: newHunter(RULES), myWho: D10_KEY });
+    const vm = classOfferView(doc, { hunter: newHunter(RULES), myWho: lateKey });
     expect(vm.allTaken).toBe(true);
     expect(vm.openCount).toBe(0);
     expect(vm.totalCount).toBe(DEFAULT_OFFER_POOL.length);

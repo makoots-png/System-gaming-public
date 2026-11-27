@@ -149,4 +149,44 @@ describe('classPowers and classStatusDef', () => {
     expect(fold([nid('up')])[0]).toBe(lance);
     expect(classStatusDef('burn-ii', { Pyromancer: upSig }, { Pyromancer: upTree })).toEqual(burnUp);
   });
+
+  test('an upgrade-status gift also rewrites stacks prices and holds gates on folded actives', () => {
+    const mark: StatusDef = { label: 'Mark', desc: 'Mark', ops: [] };
+    const markUp: StatusDef = { label: 'Mark II', desc: 'Mark II', ops: [] };
+    const slash: Ability = {
+      ...mkAbility('slash', 'Slash'),
+      prices: [
+        { kind: 'stacks', key: statusKey('mark'), from: 'target', take: { kind: 'all' } },
+        { kind: 'hp', amount: { kind: 'flat', n: 5 } },
+      ],
+      gates: [
+        { kind: 'holds', key: statusKey('mark'), on: 'target', atLeast: 1 },
+        { kind: 'uses', per: 'fight', n: 2 },
+      ],
+    };
+    const other = mkAbility('other', 'Other');
+    const upSig: ClassSignature = { className: 'Runeknight', actives: [slash, other] };
+    const upTree: ClassTree = {
+      className: 'Runeknight',
+      rarity: 'common',
+      nodes: [
+        { id: nid('up'), depth: 1, name: 'Mastery', desc: 'Mastery', parents: [], gifts: [{ kind: 'upgrade-status', targetKey: statusKey('mark'), key: statusKey('mark-ii'), def: markUp }] },
+      ],
+    };
+    const res = classPowers(
+      { job: 'Runeknight', jobDone: 'Runeknight', classes: { Runeknight: { unlockedAt: '2026-01-01T00:00:00Z', nodes: [nid('up')] } } },
+      RULES,
+      { signatures: { Runeknight: upSig }, trees: { Runeknight: upTree } },
+    ).actives;
+    expect(res[0]!.prices).toEqual([
+      { kind: 'stacks', key: statusKey('mark-ii'), from: 'target', take: { kind: 'all' } },
+      { kind: 'hp', amount: { kind: 'flat', n: 5 } },
+    ]);
+    expect(res[0]!.gates).toEqual([
+      { kind: 'holds', key: statusKey('mark-ii'), on: 'target', atLeast: 1 },
+      { kind: 'uses', per: 'fight', n: 2 },
+    ]);
+    expect(res[1]).toBe(other);
+    void mark;
+  });
 });

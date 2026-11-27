@@ -16,7 +16,7 @@ import { cleansed, landEnd } from '../src/core/combat/land.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight, Running } from '../src/core/combat/fight.ts';
 import { fightDoc, fightWire, shippedStatusDef } from '../src/core/combat/fight-doc.ts';
-import { damageShare, rangeWith } from '../src/core/combat/standing.ts';
+import { damageShare, exposedOf, heldDieId, rangeWith } from '../src/core/combat/standing.ts';
 import { radiusAt } from '../src/core/combat/zones.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import { place, tiles } from '../src/core/combat/space.ts';
@@ -44,6 +44,11 @@ import { BERSERKER_SIGNATURE, BERSERKER_TREE } from '../src/core/registry/class-
 import { CLERIC_SIGNATURE, CLERIC_TREE } from '../src/core/registry/class-cleric.ts';
 import { NIGHTBLADE_SIGNATURE, NIGHTBLADE_TREE } from '../src/core/registry/class-nightblade.ts';
 import { BASTION_SIGNATURE, BASTION_TREE } from '../src/core/registry/class-bastion.ts';
+import { RUNEKNIGHT_SIGNATURE, RUNEKNIGHT_TREE } from '../src/core/registry/class-runeknight.ts';
+import { DUELIST_SIGNATURE, DUELIST_TREE } from '../src/core/registry/class-duelist.ts';
+import { ARTIFICER_SIGNATURE, ARTIFICER_TREE } from '../src/core/registry/class-artificer.ts';
+import { ORACLE_SIGNATURE, ORACLE_TREE } from '../src/core/registry/class-oracle.ts';
+import { STRIDER_SIGNATURE, STRIDER_TREE } from '../src/core/registry/class-strider.ts';
 import { chainStepsOf } from '../src/core/registry/jobs.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
@@ -58,7 +63,7 @@ const AT = '2026-11-25T12:00:00.000Z';
 const nid = (s: string): ClassNodeId => parseClassNodeId(s)!;
 
 type RareSpec = {
-  readonly name: 'Brambleguard' | 'Pyromancer' | 'Sniper' | 'Berserker' | 'Cleric' | 'Nightblade' | 'Bastion';
+  readonly name: 'Brambleguard' | 'Pyromancer' | 'Sniper' | 'Berserker' | 'Cleric' | 'Nightblade' | 'Bastion' | 'Runeknight' | 'Duelist' | 'Artificer' | 'Oracle' | 'Strider';
   readonly sig: ClassSignature;
   readonly tree: ClassTree;
   readonly file: string;
@@ -201,6 +206,98 @@ const RARE_SPECS: readonly RareSpec[] = [
       'bastion-phalanx-ward',
     ],
     activeIds: ['bastion-phalanx-guard', 'bastion-vanguard-slam'],
+  },
+  {
+    name: 'Runeknight',
+    sig: RUNEKNIGHT_SIGNATURE,
+    tree: RUNEKNIGHT_TREE,
+    file: 'src/core/registry/class-runeknight.ts',
+    stats: { str: 56, pow: 33 },
+    forks: [['rune-a5-l', 'rune-a5-r'], ['rune-b5-l', 'rune-b5-r']],
+    scalerForks: ['rune-a5-l', 'rune-b5-l'],
+    statusKeys: [
+      'rune-edge',
+      'rune-master',
+      'rune-mark',
+      'rune-mark-ii',
+      'rune-frost',
+    ],
+    activeIds: ['rune-sigil-bolt', 'rune-runeblade-slash'],
+  },
+  {
+    name: 'Duelist',
+    sig: DUELIST_SIGNATURE,
+    tree: DUELIST_TREE,
+    file: 'src/core/registry/class-duelist.ts',
+    stats: { agi: 56, str: 33 },
+    forks: [['duel-a5-l', 'duel-a5-r'], ['duel-b5-l', 'duel-b5-r']],
+    scalerForks: ['duel-a5-r', 'duel-b5-l'],
+    statusKeys: [
+      'duel-step',
+      'duel-grand-fencer',
+      'duel-poised',
+      'duel-poised-ii',
+      'duel-off-balance',
+      'duel-reprisal',
+    ],
+    activeIds: ['duel-lunge-thrust', 'duel-counterguard'],
+  },
+  {
+    name: 'Artificer',
+    sig: ARTIFICER_SIGNATURE,
+    tree: ARTIFICER_TREE,
+    file: 'src/core/registry/class-artificer.ts',
+    stats: { ctl: 56, ins: 33 },
+    forks: [['art-a5-l', 'art-a5-r'], ['art-b5-l', 'art-b5-r']],
+    scalerForks: ['art-a5-r', 'art-b5-l'],
+    statusKeys: [
+      'art-craft',
+      'art-grand-craft',
+      'art-jolted',
+      'art-shrapnel-jolt',
+    ],
+    activeIds: ['art-shock-mine', 'art-arc-turret'],
+  },
+  {
+    name: 'Oracle',
+    sig: ORACLE_SIGNATURE,
+    tree: ORACLE_TREE,
+    file: 'src/core/registry/class-oracle.ts',
+    stats: { pre: 56, ins: 33 },
+    forks: [['oracle-a5-l', 'oracle-a5-r'], ['oracle-b5-l', 'oracle-b5-r']],
+    scalerForks: ['oracle-a5-l', 'oracle-b5-l'],
+    statusKeys: [
+      'oracle-sight',
+      'oracle-seer',
+      'oracle-glimpse',
+      'oracle-favor',
+      'oracle-foreseen',
+      'oracle-twin-augury',
+      'oracle-clouded',
+      'oracle-doom',
+      'oracle-doom-ii',
+      'oracle-doom-shattered',
+    ],
+    activeIds: ['oracle-foretell', 'oracle-fated-bolt'],
+  },
+  {
+    name: 'Strider',
+    sig: STRIDER_SIGNATURE,
+    tree: STRIDER_TREE,
+    file: 'src/core/registry/class-strider.ts',
+    stats: { agi: 56, vit: 33 },
+    forks: [['strider-a5-l', 'strider-a5-r'], ['strider-b5-l', 'strider-b5-r']],
+    scalerForks: ['strider-a5-l', 'strider-b5-l'],
+    statusKeys: [
+      'strider-trailworn',
+      'strider-apex',
+      'strider-fleet',
+      'strider-fleet-ii',
+      'strider-windstride',
+      'strider-windward',
+      'strider-hamstrung',
+    ],
+    activeIds: ['strider-skirmish-shot', 'strider-bounding-leap'],
   },
 ];
 
@@ -1144,5 +1241,386 @@ describe('Rare class combat mechanics', () => {
     expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
     cf = r.fight as Running;
     expect(cf.rows.find(x => x.id === combatantId('h1'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+  });
+
+  test('Wave 4 Rares carry bespoke level-20 rareSteps chains, positive worth on every active, and zero Omen/Parry/Riposte collisions', () => {
+    const wave4Names: readonly RareSpec['name'][] = ['Runeknight', 'Duelist', 'Artificer', 'Oracle', 'Strider'];
+    const expectedChains: readonly [RareSpec['name'], string, string][] = [
+      ['Runeknight', 'Rare Job Change 2/3: The Rune Vault', 'Rare Job Change 3/3: Glyph Warden'],
+      ['Duelist', 'Rare Job Change 2/3: The Dueling Ring', 'Rare Job Change 3/3: Blade Arbiter'],
+      ['Artificer', 'Rare Job Change 2/3: The Broken Foundry', 'Rare Job Change 3/3: Clockwork Overseer'],
+      ['Oracle', 'Rare Job Change 2/3: The Drowned Observatory', 'Rare Job Change 3/3: Blind Seer'],
+      ['Strider', 'Rare Job Change 2/3: The Long Road', 'Rare Job Change 3/3: Pathless Hunter'],
+    ];
+    for (const [name, step2, step3] of expectedChains) {
+      const steps = chainStepsOf(name);
+      expect(steps[0]).toMatchObject({ goal: 'level', level: 20 });
+      expect(steps[1].title).toBe(step2);
+      expect(steps[2].title).toBe(step3);
+    }
+
+    const bannedWord = /\b(omen|parry|riposte)\b/i;
+    for (const name of wave4Names) {
+      const spec = RARE_SPECS.find(s => s.name === name)!;
+      const allActives = [
+        ...(spec.sig.actives ?? []),
+        ...spec.tree.nodes.flatMap(n => n.gifts.flatMap(g => (g.kind === 'replace-active' ? [g.active] : []))),
+      ];
+      for (const a of allActives) {
+        const w = abilityWorth(a, RULES, { rank: 'C' });
+        expect(w.worth, `${name} active ${a.name} worth > 0`).toBeGreaterThan(0);
+        expect(w.over, `${name} active ${a.name} over === false`).toBe(false);
+        expect(a.name, `${name} active ${a.name} no banned words`).not.toMatch(bannedWord);
+      }
+      if (spec.sig.worn) {
+        expect(spec.sig.worn.def.label).not.toMatch(bannedWord);
+        expect(spec.sig.worn.def.desc).not.toMatch(bannedWord);
+      }
+      for (const n of spec.tree.nodes) {
+        expect(n.name, `${name} node ${n.id} name`).not.toMatch(bannedWord);
+        expect(n.desc, `${name} node ${n.id} desc`).not.toMatch(bannedWord);
+      }
+      for (const k of spec.statusKeys) {
+        const def = classStatusDef(k)!;
+        expect(def.label, `${name} status ${k} label`).not.toMatch(bannedWord);
+        expect(def.desc, `${name} status ${k} desc`).not.toMatch(bannedWord);
+      }
+    }
+  });
+
+  test('Runeknight: Runic Edge shields and marks on spells; Runeblade Slash casts at 0 stacks and detonates Runemark; Master Runeblade raises cap to 4 and restores mana', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Runeknight')!;
+    const boltId = wornAbilityId(abilityId('rune-sigil-bolt'));
+    const slashId = wornAbilityId(abilityId('rune-runeblade-slash'));
+
+    // Base Runeblade Slash carries only the Runemark price (no stray Runemark II line before capstone)
+    const baseSlash = classPowers(makeRareHunter(spec, [], 'C'), RULES).actives.find(a => a.id === abilityId('rune-runeblade-slash'))!;
+    expect(baseSlash.prices).toEqual([{ kind: 'stacks', from: 'target', key: statusKey('rune-mark'), take: { kind: 'all' } }]);
+
+    // Runeblade Slash casts cleanly at 0 Runemark stacks
+    let f0 = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    const foeHpBeforeZero = rowHp(f0.rows.find(x => x.id === combatantId('m1'))!);
+    let r = reduce(f0, { type: 'act', by: combatantId('h1'), ability: slashId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const zeroStackDmg = foeHpBeforeZero - rowHp((r.fight as Running).rows.find(x => x.id === combatantId('m1'))!);
+    expect(zeroStackDmg).toBeGreaterThan(0);
+
+    // Sigil Bolt shields via Runic Edge and stacks 2 Runemark (1 from bolt + 1 from Runic Edge hitDealt trigger), then Runeblade Slash consumes all stacks for higher damage
+    let f = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: boltId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(f.rows.find(x => x.id === combatantId('h1'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(f.rows.find(x => x.id === combatantId('m1'))!.statuses.find(s => s.key === statusKey('rune-mark'))?.stacks).toBe(2);
+
+    const foeHpBeforeDet = rowHp(f.rows.find(x => x.id === combatantId('m1'))!);
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: slashId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const detDmg = foeHpBeforeDet - rowHp(f.rows.find(x => x.id === combatantId('m1'))!);
+    expect(detDmg).toBeGreaterThan(zeroStackDmg);
+    expect(f.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('rune-mark'))).toBe(false);
+
+    // Capstone Master Runeblade + Frost Sigil: rewrites Runeblade Slash's single price to rune-mark-ii, restores 4 mana, applies Runemark II (cap 4) and Rune Frost, and Runeblade Slash consumes Runemark II
+    const capNodes = fullNodesFor(spec.tree, ['rune-a5-r', 'rune-b5-l']);
+    const capSlash = classPowers(makeRareHunter(spec, capNodes, 'C'), RULES).actives.find(a => a.id === abilityId('rune-runeblade-slash'))!;
+    expect(capSlash.prices).toEqual([{ kind: 'stacks', from: 'target', key: statusKey('rune-mark-ii'), take: { kind: 'all' } }]);
+    let cf = startFight(spec, capNodes, place(3, 3), place(4, 3), 'C');
+    const mana0 = cf.rows.find(x => x.id === combatantId('h1'))!.mana;
+    r = reduce(cf, { type: 'act', by: combatantId('h1'), ability: boltId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    cf = r.fight as Running;
+    // Net mana after 5 mana cost (with 3% costCut -> 5) and +4 mana refund = mana0 - 1
+    expect(cf.rows.find(x => x.id === combatantId('h1'))!.mana).toBe(mana0 - 5 + 4);
+    expect(cf.rows.find(x => x.id === combatantId('m1'))!.statuses.find(s => s.key === statusKey('rune-mark-ii'))?.stacks).toBe(2);
+    expect(cf.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('rune-frost'))).toBe(true);
+    r = reduce(cf, { type: 'act', by: combatantId('h1'), ability: slashId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    cf = r.fight as Running;
+    expect(cf.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('rune-mark-ii'))).toBe(false);
+  });
+
+  test('Duelist: Measured Step grants Poised on move; Lunge Thrust hits at reach 2; Counterguard guards self; Feint Lunge shoves; Reprisal Guard counters when struck', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Duelist')!;
+    const lungeId = wornAbilityId(abilityId('duel-lunge-thrust'));
+    const guardId = wornAbilityId(abilityId('duel-counterguard'));
+
+    // Move grants Poised (+10% speed, attack advantage), then Lunge Thrust hits at 2 tiles and applies Off-Balance
+    let f = startFight(spec, [], place(2, 3), place(5, 3), 'C');
+    const speed0 = f.rows.find(x => x.id === combatantId('h1'))!.sheet.speed;
+    let r = reduce(f, { type: 'move', by: combatantId('h1'), to: place(3, 3) }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hPoised = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hPoised.statuses.some(s => s.key === statusKey('duel-poised'))).toBe(true);
+    expect(hPoised.sheet.speed).toBeGreaterThan(speed0);
+
+    // At (3,3) -> (5,3) is distance 2; Poised attack advantage asks for second d20
+    const foeHp0 = rowHp(f.rows.find(x => x.id === combatantId('m1'))!);
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: lungeId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [6] }, react: { [combatantId('m1')]: 10 }, second: { [combatantId('m1')]: 2 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(rowHp(f.rows.find(x => x.id === combatantId('m1'))!)).toBeLessThan(foeHp0);
+    expect(f.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('duel-off-balance'))).toBe(true);
+
+    // D5 Feint Lunge + Reprisal Guard: Feint Lunge shoves foe 1 tile away; Reprisal Guard counters when struck
+    const repNodes = fullNodesFor(spec.tree, ['duel-a5-l', 'duel-b5-l']);
+    let rf = startFight(spec, repNodes, place(3, 3), place(4, 3), 'C');
+    r = reduce(rf, { type: 'act', by: combatantId('h1'), ability: lungeId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    rf = r.fight as Running;
+    expect(rf.rows.find(x => x.id === combatantId('m1'))!.place).toEqual(place(5, 3));
+
+    // Arm Counterguard: Reprisal Guard (reach 0), move foe adjacent, foe strikes Duelist -> guard + shield + Poised Mastery + Reprisal Stance counter hits attacker!
+    let gf = startFight(spec, repNodes, place(3, 3), place(4, 3), 'C');
+    const gFoe0 = gf.rows.find(x => x.id === combatantId('m1'))!;
+    const gFoeHp0 = rowHp(gFoe0);
+    const duelistHp0 = rowHp(gf.rows.find(x => x.id === combatantId('h1'))!);
+    const unguarded = reduce(gf, { type: 'act', by: combatantId('m1'), ability: gFoe0.abilities[0]!.id, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [8] }, react: { [combatantId('h1')]: 1 } }, force: true }, { rules: RULES }).fight as Running;
+    const unguardedLoss = duelistHp0 - rowHp(unguarded.rows.find(x => x.id === combatantId('h1'))!);
+
+    gf = reduce(gf, { type: 'arm', by: combatantId('h1'), ability: guardId }, { rules: RULES }).fight as Running;
+    // Counterguard fires before the strike and grants Poised Mastery (defend advantage), so the strike asks for a second d20.
+    r = reduce(gf, { type: 'act', by: combatantId('m1'), ability: gFoe0.abilities[0]!.id, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [8] }, react: { [combatantId('h1')]: 1 }, second: { [combatantId('h1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    gf = r.fight as Running;
+    expect(duelistHp0 - rowHp(gf.rows.find(x => x.id === combatantId('h1'))!)).toBeLessThan(unguardedLoss);
+    expect(gf.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('duel-poised-ii'))).toBe(true);
+    expect(gf.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('duel-reprisal'))).toBe(true);
+    expect(rowHp(gf.rows.find(x => x.id === combatantId('m1'))!)).toBeLessThan(gFoeHp0);
+  });
+
+  test('Artificer: Clockwork Craft extends range and restores mana on impose; Shock Mine drops zone; Arc Turret summons construct; Cluster Mine composes with Shrapnel Coil', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Artificer')!;
+    const mineId = wornAbilityId(abilityId('art-shock-mine'));
+    const turretId = wornAbilityId(abilityId('art-arc-turret'));
+
+    let f = startFight(spec, [], place(2, 2), place(6, 2), 'C');
+    expect(rangeWith(8, f.rows.find(x => x.id === combatantId('h1'))!, RULES)).toBe(9);
+    const mana0 = f.rows.find(x => x.id === combatantId('h1'))!.mana;
+
+    // Shock Mine deals damage, imposes Jolted (-15% speed), triggers Clockwork Craft (+3 mana), and leaves a 3-round zone with end detonation
+    let r = reduce(f, { type: 'act', by: combatantId('h1'), ability: mineId, aim: place(6, 2), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(f.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('art-jolted'))).toBe(true);
+    expect(f.rows.find(x => x.id === combatantId('h1'))!.mana).toBe(mana0 - 5 + 3);
+    const zone = f.zones.find(z => z.name === 'Shock Mine');
+    expect(zone?.spares).toBe('party');
+    expect(zone?.end?.length).toBe(1);
+
+    // Arc Turret shields self and summons a 4-round caster construct
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: turretId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(f.rows.find(x => x.id === combatantId('h1'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(f.rows.some(x => x.kind === 'summon' && x.name === 'Arc Turret')).toBe(true);
+
+    // D5 Cluster Mine + Shrapnel Coil + Capstone Grand Artificer: keeps radius 3, adds 25% stagger via Shrapnel Jolt, extends range +2, and shields on impose
+    const plainClusterNodes = fullNodesFor(spec.tree, ['art-a5-l', 'art-b5-l']);
+    let pf = startFight(spec, plainClusterNodes, place(2, 2), place(8, 2), 'C');
+    const staggerMax0 = pf.rows.find(x => x.id === combatantId('m1'))!.stagger!.max;
+    r = reduce(pf, { type: 'act', by: combatantId('h1'), ability: mineId, aim: place(6, 2), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 5 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const plainFill = (r.fight as Running).rows.find(x => x.id === combatantId('m1'))!.stagger?.fill ?? 0;
+
+    const comboNodes = fullNodesFor(spec.tree, ['art-a5-l', 'art-b5-r']);
+    let cf = startFight(spec, comboNodes, place(2, 2), place(8, 2), 'C');
+    expect(rangeWith(8, cf.rows.find(x => x.id === combatantId('h1'))!, RULES)).toBe(10);
+    // Aim at (6,2): radius 3 reaches m1 at (8,2) (distance 2 <= 3)
+    r = reduce(cf, { type: 'act', by: combatantId('h1'), ability: mineId, aim: place(6, 2), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 5 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    cf = r.fight as Running;
+    const cm1 = cf.rows.find(x => x.id === combatantId('m1'))!;
+    expect(cm1.statuses.some(s => s.key === statusKey('art-shrapnel-jolt'))).toBe(true);
+    // Shrapnel Jolt adds 25% of stagger max on top of hit stagger (or breaks the bar if fill crossed max)
+    const comboFill = cm1.stagger!.max > staggerMax0 ? staggerMax0 : cm1.stagger!.fill;
+    expect(comboFill).toBeGreaterThan(plainFill);
+    expect(cf.rows.find(x => x.id === combatantId('h1'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+    const clusterZone = cf.zones.find(z => z.name === 'Cluster Mine');
+    expect(clusterZone?.ground.kind === 'around' ? clusterZone.ground.radius : 0).toBe(tiles(3));
+  });
+
+  test('Oracle: Second Sight grants alert and Glimpse + mana on support; Foretell splits favor from attack advantage; Fated Doom survives foe attacks and pops at expiry; Shattered Doom keeps exposed; Inevitable Doom pops on cure; Twin Augury shields allies', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Oracle')!;
+    const foretellId = wornAbilityId(abilityId('oracle-foretell'));
+    const boltId = wornAbilityId(abilityId('oracle-fated-bolt'));
+
+    let f = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    const mana0 = f.rows.find(x => x.id === combatantId('h1'))!.mana;
+    let r = reduce(f, { type: 'act', by: combatantId('h1'), ability: foretellId, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [4] }, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hAfter = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hAfter.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(hAfter.statuses.some(s => s.key === statusKey('oracle-favor'))).toBe(true);
+    expect(hAfter.statuses.some(s => s.key === statusKey('oracle-foreseen'))).toBe(true);
+    expect(hAfter.statuses.some(s => s.key === statusKey('oracle-glimpse'))).toBe(true);
+    expect(hAfter.mana).toBe(mana0 - 5 + 3);
+
+    // Fated Bolt spends Foreseen Strike (attack advantage) without removing Foretold Favor (d6 defend boost),
+    // and puts both Fated Doom and Clouded Fate on the foe.
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: boltId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 1 }, second: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hAfterBolt = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hAfterBolt.statuses.some(s => s.key === statusKey('oracle-foreseen'))).toBe(false);
+    expect(hAfterBolt.statuses.some(s => s.key === statusKey('oracle-favor'))).toBe(true);
+    const foe = f.rows.find(x => x.id === combatantId('m1'))!;
+    expect(foe.statuses.some(s => s.key === statusKey('oracle-doom'))).toBe(true);
+    expect(foe.statuses.some(s => s.key === statusKey('oracle-clouded'))).toBe(true);
+
+    // Doomed foe attacks Oracle: spends Clouded Fate (attack disadvantage) and Foretold Favor (d6 defend boost),
+    // while Fated Doom stays on the foe so its delayed blast still lands in play.
+    const favorDie = heldDieId(combatantId('h1'), statusKey('oracle-favor'), 0);
+    r = reduce(f, {
+      type: 'act',
+      by: combatantId('m1'),
+      ability: foe.abilities[0]!.id,
+      aim: combatantId('h1'),
+      rolls: { dice: { [combatantId('h1')]: [4] }, react: { [combatantId('h1')]: 8 }, second: { [combatantId('h1')]: 15 }, boost: { [favorDie]: 4 } },
+      force: true,
+    }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(f.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('oracle-favor'))).toBe(false);
+    const foeAfterStrike = f.rows.find(x => x.id === combatantId('m1'))!;
+    expect(foeAfterStrike.statuses.some(s => s.key === statusKey('oracle-clouded'))).toBe(false);
+    expect(foeAfterStrike.statuses.some(s => s.key === statusKey('oracle-doom'))).toBe(true);
+
+    // Advance turns through reduce until Fated Doom expires and pops its delayed damage on the foe.
+    const hpBeforePop = rowHp(foeAfterStrike);
+    let popped = false;
+    for (let step = 0; step < 20; step++) {
+      const tr = reduce(f, { type: 'endTurn', by: f.currentId }, { rules: RULES });
+      expect(tr.effects.filter(e => e.type === 'refused')).toEqual([]);
+      if (!tr.fight || tr.fight.phase !== 'running') break;
+      f = tr.fight;
+      const mNow = f.rows.find(x => x.id === combatantId('m1'))!;
+      if (!mNow.statuses.some(s => s.key === statusKey('oracle-doom'))) {
+        popped = true;
+        expect(rowHp(mNow)).toBeLessThan(hpBeforePop);
+        break;
+      }
+    }
+    expect(popped).toBe(true);
+
+    // Shattered Doom (oracle-b5-r) also survives the doomed foe's attack with exposed +2 intact.
+    const shatterNodes = fullNodesFor(spec.tree, ['oracle-a5-l', 'oracle-b5-r']);
+    let sf = startFight(spec, shatterNodes, place(3, 3), place(4, 3), 'C');
+    const baseExposed = exposedOf(sf.rows.find(x => x.id === combatantId('m1'))!);
+    r = reduce(sf, { type: 'act', by: combatantId('h1'), ability: boltId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [4] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    sf = r.fight as Running;
+    const sFoe = sf.rows.find(x => x.id === combatantId('m1'))!;
+    expect(sFoe.statuses.some(s => s.key === statusKey('oracle-doom-shattered'))).toBe(true);
+    expect(sFoe.statuses.some(s => s.key === statusKey('oracle-clouded'))).toBe(true);
+    r = reduce(sf, { type: 'act', by: combatantId('m1'), ability: sFoe.abilities[0]!.id, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [4] }, react: { [combatantId('h1')]: 8 }, second: { [combatantId('h1')]: 15 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    sf = r.fight as Running;
+    const sFoeAfter = sf.rows.find(x => x.id === combatantId('m1'))!;
+    expect(sFoeAfter.statuses.some(s => s.key === statusKey('oracle-clouded'))).toBe(false);
+    expect(sFoeAfter.statuses.some(s => s.key === statusKey('oracle-doom-shattered'))).toBe(true);
+    expect(exposedOf(sFoeAfter)).toBe(baseExposed + 2);
+
+    // Fated Doom cancels on cure/dispel, whereas Inevitable Doom detonates on cure/dispel reading Oracle's sup.
+    const baseDoom = statusOn(classStatusDef('oracle-doom')!, { key: statusKey('oracle-doom'), source: { id: hAfter.id, tier: hAfter.tier }, until: tick(2000), since: tick(0), settledAt: tick(0) });
+    const inevDoom = statusOn(classStatusDef('oracle-doom-ii')!, { key: statusKey('oracle-doom-ii'), source: { id: hAfter.id, tier: hAfter.tier }, until: tick(2000), since: tick(0), settledAt: tick(0) });
+    const baseDispel = cleansed({ ...foe, statuses: [baseDoom] }, { op: 'dispel', which: 'first' }, tick(500), RULES);
+    expect(baseDispel.gone.map(s => s.key)).toEqual([statusKey('oracle-doom')]);
+    expect(baseDispel.lands).toEqual([]);
+    expect(cleansed({ ...foe, statuses: [inevDoom] }, { op: 'dispel', which: 'first' }, tick(500), RULES).lands.map(s => s.key)).toEqual([statusKey('oracle-doom-ii')]);
+    const pop = landEnd(new Map([[hAfter.id, hAfter], [foe.id, foe]]), foe.id, inevDoom, tick(500), RULES);
+    expect(pop.dealt).toBeGreaterThan(10);
+
+    // D5 Twin Augury + Capstone Seer of Fate: shields Oracle and ally within 2 tiles, grants both favor and foreseen, spares adjacent foe
+    const twinNodes = fullNodesFor(spec.tree, ['oracle-a5-r', 'oracle-b5-l']);
+    const oracleRow = hunterRow(makeRareHunter(spec, twinNodes, 'C'), combatantId('h1'), RULES);
+    const allyRow = hunterRow(makeRareHunter(RARE_SPECS[0]!, [], 'C'), combatantId('h2'), RULES);
+    const dummy = monsterRows({ name: 'Target', rank: 'C', archetype: 'brute', kind: 'boss', tweak: { hp: 3 }, abilities: [], statuses: [] }, [combatantId('m1')], RULES)[0]!;
+    let af = reduce(null, { type: 'add', fightId: fightId('f-oracle-twin'), rows: [{ ...oracleRow, place: place(3, 3) }, { ...allyRow, place: place(5, 3) }, { ...dummy, place: place(4, 3) }], openings: [] }, { rules: RULES }).fight!;
+    af = reduce(af, { type: 'start', openings: [{ id: combatantId('h1'), d20: 20, tie: 3 }, { id: combatantId('h2'), d20: 10, tie: 2 }, { id: combatantId('m1'), d20: 1, tie: 1 }] }, { rules: RULES }).fight!;
+    r = reduce(af, { type: 'act', by: combatantId('h1'), ability: foretellId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    af = r.fight as Running;
+    expect(af.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('oracle-favor'))).toBe(true);
+    expect(af.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('oracle-foreseen'))).toBe(true);
+    expect(af.rows.find(x => x.id === combatantId('h2'))!.statuses.some(s => s.key === statusKey('oracle-favor'))).toBe(true);
+    expect(af.rows.find(x => x.id === combatantId('h2'))!.statuses.some(s => s.key === statusKey('oracle-foreseen'))).toBe(true);
+    expect(af.rows.find(x => x.id === combatantId('h2'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(af.rows.find(x => x.id === combatantId('m1'))!.shield).toBeNull();
+  });
+
+  test('Strider: Trailworn shields and grants Fleet on walk; Skirmish Shot shoves; Bounding Leap blinks and shields without triggering Trailworn and splits Windstride from Windward; Wild Recovery dispels and heals', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Strider')!;
+    const shotId = wornAbilityId(abilityId('strider-skirmish-shot'));
+    const leapId = wornAbilityId(abilityId('strider-bounding-leap'));
+
+    let f = startFight(spec, [], place(2, 3), place(6, 3), 'C');
+    const speed0 = f.rows.find(x => x.id === combatantId('h1'))!.sheet.speed;
+    let r = reduce(f, { type: 'move', by: combatantId('h1'), to: place(3, 3) }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hMoved = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hMoved.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(hMoved.statuses.some(s => s.key === statusKey('strider-fleet'))).toBe(true);
+    expect(hMoved.sheet.speed).toBeGreaterThan(speed0);
+
+    // Skirmish Shot hits from range and shoves target 1 tile away (6,3 -> 7,3)
+    const foeHp0 = rowHp(f.rows.find(x => x.id === combatantId('m1'))!);
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: shotId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(rowHp(f.rows.find(x => x.id === combatantId('m1'))!)).toBeLessThan(foeHp0);
+    expect(f.rows.find(x => x.id === combatantId('m1'))!.place).toEqual(place(7, 3));
+
+    // Fresh fight for Bounding Leap: proves exact 12% max HP shield (not Trailworn's), proves blink does not trigger Trailworn,
+    // and proves Windward (defend advantage) spends on an incoming hit while Windstride (+15% speed) stays.
+    let lf = startFight(spec, [], place(2, 3), place(2, 6), 'C');
+    const hLeapStart = lf.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hLeapStart.shield).toBeNull();
+    r = reduce(lf, { type: 'act', by: combatantId('h1'), ability: leapId, aim: place(2, 5), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    lf = r.fight as Running;
+    const hLeapt = lf.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hLeapt.place).toEqual(place(2, 5));
+    expect(hLeapt.shield?.amount).toBe(Math.round(0.12 * hLeapStart.sheet.hpMax));
+    expect(hLeapt.statuses.some(s => s.key === statusKey('strider-fleet'))).toBe(false);
+    expect(hLeapt.statuses.some(s => s.key === statusKey('strider-windstride'))).toBe(true);
+    expect(hLeapt.statuses.some(s => s.key === statusKey('strider-windward'))).toBe(true);
+
+    const lFoe = lf.rows.find(x => x.id === combatantId('m1'))!;
+    r = reduce(lf, { type: 'act', by: combatantId('m1'), ability: lFoe.abilities[0]!.id, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [4] }, react: { [combatantId('h1')]: 10 }, second: { [combatantId('h1')]: 12 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    lf = r.fight as Running;
+    const hAfterHit = lf.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hAfterHit.statuses.some(s => s.key === statusKey('strider-windward'))).toBe(false);
+    expect(hAfterHit.statuses.some(s => s.key === statusKey('strider-windstride'))).toBe(true);
+    expect(hAfterHit.sheet.speed).toBeGreaterThan(hLeapStart.sheet.speed);
+
+    // D5 Hamstring Volley + Wild Recovery + Capstone Apex Trailrunner: Hamstring adds stagger + slow, Wild Recovery heals + dispels + shields
+    const recNodes = fullNodesFor(spec.tree, ['strider-a5-r', 'strider-b5-r']);
+    let rf = startFight(spec, recNodes, place(2, 3), place(6, 3), 'C');
+    const hStart = rf.rows.find(x => x.id === combatantId('h1'))!;
+    const lowHp = Math.floor(hStart.sheet.hpMax * 0.5);
+    const slowDebuff = statusOn(classStatusDef('strider-hamstrung')!, { key: statusKey('strider-hamstrung'), source: { id: combatantId('m1'), tier: 2 }, until: tick(2000), since: tick(0), settledAt: tick(0) });
+    rf = {
+      ...rf,
+      rows: rf.rows.map(x => (x.id === combatantId('h1') ? { ...x, life: { at: 'up' as const, hp: lowHp }, statuses: [...x.statuses, slowDebuff] } : x)),
+    };
+    r = reduce(rf, { type: 'act', by: combatantId('h1'), ability: leapId, aim: place(2, 6), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    rf = r.fight as Running;
+    const hRec = rf.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hRec.place).toEqual(place(2, 6));
+    expect(rowHp(hRec)).toBeGreaterThan(lowHp);
+    expect(hRec.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(hRec.statuses.some(s => s.key === statusKey('strider-hamstrung'))).toBe(false);
+
+    r = reduce(rf, { type: 'act', by: combatantId('h1'), ability: shotId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    rf = r.fight as Running;
+    expect(rf.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('strider-hamstrung'))).toBe(true);
+    expect(rf.rows.find(x => x.id === combatantId('m1'))!.stagger?.fill ?? 0).toBeGreaterThan(0);
   });
 });

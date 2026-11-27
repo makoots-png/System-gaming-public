@@ -16,11 +16,11 @@ import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
 import { amountWords, bareRefusal, parseFormula, printFormula } from '../core/formula.ts';
 import { SHEET_LABELS } from '../core/hunter/derive.ts';
-import { OP_KINDS, opLines, opsOffered } from '../core/combat/effect-ops.ts';
+import { landLine, OP_KINDS, opLines, opsOffered } from '../core/combat/effect-ops.ts';
 import { LEVELS } from '../core/combat/sight-levels.ts';
 import { isFormulaKey } from '../core/combat/op-amount.ts';
 import { sheetOpCap } from '../core/combat/standing.ts';
-import { parseOp } from '../core/combat/fight-parse.ts';
+import { parseLandOp, parseOp } from '../core/combat/fight-parse.ts';
 import { RARITIES } from '../core/registry/items.ts';
 import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { isStateChip } from '../core/hunter/chips.ts';
@@ -245,12 +245,13 @@ const typed = (kind, v) => String(NUMBERS[kind].rounds ? roundsOf(v, rules(), 'n
 /** A row of the editor from an op. An op of a kind the editor has no row for is a row that keeps the op as it is. */
 function rowOf(o) {
   const r = {
-    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, follow: false, gwCut: '', text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
+    kind: o.op, mode: 'flat', q: '', tiers: blankTiers(), type: 'physical', stat: 'str', status: '', rounds: '', def: null, follow: false, gwCut: '', stacksBy: null, text: '', when: o.when || null, mirror: null, keep: null, chance: '', chMode: 'protect', on: 'all',
     addStacks: o.stacks === undefined ? '' : String(o.stacks), sheetKey: o.op === 'sheet' ? o.key : 'armor', shareOn: o.op === 'share' ? o.on : 'taken', side: o.side || 'attack',
     edgeKeep: o.op === 'edge' ? o.keep : 'better', tag: o.op === 'edge' && o.tag ? o.tag : '', spend: o.op === 'edge' ? !!o.spend : true, dieMode: o.op === 'boost' ? o.die.kind : 'die',
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
     which: o.which || 'first', dispelKind: o.op === 'dispel' && o.kind === 'helpful' ? 'helpful' : 'harmful', start: o.op === 'hidden' ? o.start : null, ends: o.op === 'hidden' ? { ...o.ends } : null, stayOn: o.op === 'stayHidden' ? o.on : null,
   };
+  if (o.op === 'refund' && o.chance === undefined) return { ...r, kind: 'keep', keep: o };
   if (o.op === 'stat') r.stat = o.key;
   if (formulaRow(r)) {
     if (o.op === 'damage') r.type = o.type;
@@ -265,6 +266,7 @@ function rowOf(o) {
     const rounds = d => (d ? String(roundsOf(d, rules(), 'near')) : '');
     r.status = o.key || ''; r.def = o.def || null;
     r.follow = o.follow === true || (!o.def && !!r.status);
+    r.stacksBy = o.stacksBy || null;
     const defCut = r.def && !hasTieredGrievousCut(r.def) ? grievousCutOf(r.def) : null;
     r.gwCut = !r.follow && defCut !== null ? String(defCut) : '';
     if (isTiers(o.duration)) { r.mode = 'rank'; r.tiers = o.duration.map(rounds); r.rounds = r.tiers[0]; } else r.rounds = rounds(o.duration);
@@ -436,15 +438,16 @@ function checkRow(app, r, item, statusKey = null) {
     : cut !== null ? (cut === baseCut ? baseDef : withGrievousCut(baseDef, cut, maxCut))
     : condCut !== null && condCut !== baseCut ? withGrievousCut(baseDef, condCut, maxCut) : baseDef;
   const live = follow ? { follow: true } : {};
+  const dyn = r.stacksBy ? { stacksBy: r.stacksBy } : {};
   if (r.mode === 'rank') {
     const all = r.tiers.map(x => { const t = String(x).trim(), n = Number(t); return t !== '' && Number.isInteger(n) && n >= 1 && n <= 999 ? n * R.fight.round : null; });
     const bad = all.flatMap((n, i) => (n === null ? [i] : []));
     if (bad.length) return fail(`At ${tierName(bad[0], item)}: rounds go from 1 to 999.`, bad);
-    return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more, ...live });
+    return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more, ...dyn, ...live });
   }
   const t = r.rounds.trim(), n = Number(t);
   if (t !== '' && !(Number.isInteger(n) && n >= 1 && n <= 999)) return fail('Rounds must be from 1 to 999. Leave empty so it lasts until removed.');
-  return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more, ...live });
+  return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more, ...dyn, ...live });
 }
 
 /**
@@ -459,7 +462,8 @@ function effects(app, box, o) {
   /** A row's own kind is always listed, so an echo kept after the trigger's event changed is shown, not dropped. */
   const kindsOf = r => (offered().includes(r.kind) || !ROW_KINDS[o.kind].includes(r.kind) ? offered() : [...offered(), r.kind]);
   const idle = r => r.kind === 'echo' && !offered().includes('echo');
-  const rows = (Array.isArray(o.ops) ? o.ops : []).flatMap(x => parseOp(x, rules()) || []).map(rowOf);
+  const readOp = o.kind === 'land' ? parseLandOp : parseOp;
+  const rows = (Array.isArray(o.ops) ? o.ops : []).flatMap(x => readOp(x, rules()) || []).map(rowOf);
   const tierLabels = item ? RARITIES.map(r => [RARITY_SHORT[r], r]) : RANKS.map(r => [r, `rank ${r}`]);
   const statuses = () => Object.entries(rules().conditions).filter(([k]) => !isStateChip(k)).map(([k, c]) => [k, String((c && c.label) || k)]);
   const raise = () => box.dispatchEvent(new Event('input', { bubbles: true }));
@@ -476,7 +480,7 @@ function effects(app, box, o) {
   };
   function rowHtml(r, i) {
     if (r.kind === 'keep') {
-      return `<div class="mk-fx" data-row="${i}"><div class="mk-fx-top"><span class="mk-keep">${esc(opLines([r.keep], null, rules()).join('; ') || r.keep.op)}</span>
+      return `<div class="mk-fx" data-row="${i}"><div class="mk-fx-top"><span class="mk-keep">${esc(landLine(r.keep, null, rules()) || r.keep.op)}</span>
         <button type="button" class="icon-btn" data-rm aria-label="Remove effect ${i + 1}">&times;</button></div><p class="mk-fx-err" data-err role="alert"></p></div>`;
     }
     const one = ONE_FORMULA.includes(r.kind), formula = formulaRow(r), number = numberRow(r), what = KIND_LABEL[r.kind];
@@ -652,12 +656,12 @@ function effects(app, box, o) {
     if (t.dataset.f === 'spend') { r.spend = t.checked; mark(i); return; }
     if (t.dataset.f === 'status') {
       if (t.value !== NEW_STATUS) {
-        r.status = t.value; r.def = null; r.gwCut = ''; r.follow = true;
+        r.status = t.value; r.def = null; r.gwCut = ''; r.stacksBy = null; r.follow = true;
         render(); raise(); return;
       }
       const made = o.newStatus ? await o.newStatus() : null;
       if (made && made.key) {
-        r.status = made.key; r.def = made.def || null; r.gwCut = ''; r.follow = true;
+        r.status = made.key; r.def = made.def || null; r.gwCut = ''; r.stacksBy = null; r.follow = true;
       }
       render(); raise();
     }
@@ -693,6 +697,7 @@ const DEFENCE_WORD = { armor: 'Armor', resist: 'Resist' };
 const FORMULA_NAMES = [
   ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks or fields this use spent'], ['field(KEY)', 'Its stacks on everyone'],
   ['held(KEY)', 'Rounds you held it'], ['target.missing', 'Target\'s missing HP share'], ['missing', 'Your missing HP share'], ['hits', 'Targets hit'], ['kills', 'Your kills this fight'],
+  ['blocked', 'Damage stopped by defense or shield'], ['lost', 'HP damage past your shield'],
 ];
 /** A lasting change in words on the maker's sample hunter (`SAMPLE_RANK`): `Armor: +10% of max HP (now 12)`. */
 const lastingLine = op => `On a sample rank ${SAMPLE_RANK} hunter: ${opLines([op], 0, rules(), sampleBody(SAMPLE_RANK, 'str', rules())).join('')}`;

@@ -29,6 +29,9 @@ import { builtInDefData, itemDefDataOf } from '../src/core/registry/item-book.ts
 import { saveItemDef } from '../src/core/library.ts';
 import { customId, stampSeq } from './fixtures/items.ts';
 import { parseSkill } from '../src/core/registry/skills.ts';
+import { parseFormula } from '../src/core/formula.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
+import { parseLandOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { mergePack, packOf, parsePack } from '../src/core/pack.ts';
 import {
   WORST_BUNDLE,
@@ -333,6 +336,53 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     const back = parseSkill(JSON.parse(JSON.stringify(tpl)));
     expect(back).toEqual(tpl);
     expect(back?.type === 'active' ? back.ability?.zoneAct : null).toEqual({ act: 'erase', name: 'Mire', by: 2 });
+  },
+
+  'stacks-by'() {
+    const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+    const wrath = parseStatusDef({
+      label: 'Wrath',
+      desc: 'Banked mitigation stacks.',
+      ops: [],
+      stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: null },
+    }, RULES)!;
+    const raw = {
+      label: 'Bastion Hull',
+      desc: 'Banks Wrath from blocked and lost damage, and reflects blocked physical hits.',
+      ops: [],
+      triggers: [
+        {
+          on: 'struck',
+          tag: null,
+          to: 'self',
+          limit: { kind: 'round' },
+          ops: [
+            { op: 'applyStatus', key: statusKey('wrath'), def: wrath, duration: null, stacksBy: f('(blocked + 0.5 * lost) / (0.025 * hpmax)') },
+            { op: 'refund', pct: 25 },
+          ],
+        },
+        {
+          on: 'struck',
+          tag: null,
+          to: 'other',
+          limit: { kind: 'round' },
+          ops: [
+            { op: 'damage', type: 'physical', amount: f('0.25 * blocked'), when: 'use' },
+            { op: 'reform', hpShare: 0.5, mana: 15 },
+          ],
+        },
+      ],
+    };
+    const parsed = parseStatusDef(raw, RULES)!;
+    expect(parseStatusDef(JSON.parse(JSON.stringify(parsed)), RULES)).toEqual(parsed);
+    const op = parsed.triggers?.[0]?.ops[0];
+    expect(op?.op === 'applyStatus' ? op.stacksBy : undefined).toEqual(f('(blocked + 0.5 * lost) / (0.025 * hpmax)'));
+    expect(parsed.triggers?.[0]?.ops[1]).toEqual({ op: 'refund', pct: 25 });
+    expect(parsed.triggers?.[1]?.ops[1]).toEqual({ op: 'reform', hpShare: 0.5, mana: 15 });
+    const plain = parseLandOp({ op: 'applyStatus', key: statusKey('wrath'), def: wrath, duration: null }, RULES)!;
+    expect('stacksBy' in plain).toBe(false);
+    expect(parseLandOp({ op: 'refund', pct: 25 }, RULES)).toEqual({ op: 'refund', pct: 25 });
+    expect(parseLandOp({ op: 'reform', hpShare: 0.5, mana: 15 }, RULES)).toEqual({ op: 'reform', hpShare: 0.5, mana: 15 });
   },
 
   npc() {

@@ -3,6 +3,9 @@ import type { Page } from '@playwright/test';
 import { CLASS_REFUSAL_WORDS, classNodeSaid, classSwapSaid } from '../../src/core/hunter/classes.ts';
 import { HOLDER_REFUSAL_WORDS, grantNotTakenLine, grantRefusedLine } from '../../src/core/hunter/class-holders.ts';
 import { CLASS_UI_WORDS, forkRefusalWords, nodeRefusalWords, swapRefusalWords } from '../../src/core/hunter/class-view.ts';
+import { UNIQUE_CLASS_NAMES } from '../../src/core/registry/jobs.ts';
+import { CLASS_SIGNATURES } from '../../src/core/registry/class-powers.ts';
+import { CLASS_TREES } from '../../src/core/registry/class-trees.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
 
 const modalWin = (page: Page, title: string) => page.locator('.sys-overlay.show', { hasText: title });
@@ -589,8 +592,9 @@ test('Wave 3 unique classes (Starforger, Nullweaver, Chronokeeper, Voidstalker):
       await expect(row).toBeVisible();
       await expect(row.locator('[data-cg-nokit]')).toHaveCount(0);
     }
-    // 13 wired unique classes (6 Mythics + 7 Epics) have kits; 5 unwired unique classes still show No kit yet.
-    await expect(regBox.locator('[data-cg-nokit]')).toHaveCount(5);
+    // Derive the unwired unique-class count (unique classes with neither a signature nor a tree) so new units do not collide.
+    const unwiredUniqueCount = UNIQUE_CLASS_NAMES.filter(cls => !CLASS_SIGNATURES[cls] && !CLASS_TREES[cls]).length;
+    await expect(regBox.locator('[data-cg-nokit]')).toHaveCount(unwiredUniqueCount);
   });
 
   await test.step('GM grants all 4 Wave 3 unique classes to the local hunter and opens each skill tree', async () => {
@@ -686,6 +690,133 @@ test('Wave 3 Rare classes (Berserker, Cleric, Nightblade, Bastion): setJob refus
     await warn.locator('button', { hasText: CLASS_UI_WORDS.payAction(15) }).tap();
     await expect(warn).toHaveCount(0);
     await expect(bastionTree.locator('[data-cls-node="bastion-root"]')).toHaveAttribute('data-cls-status', 'owned');
+    expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(485);
+  });
+});
+
+test('Wave 4 unique classes (Soulforger, Dreadnought, Godfist): GM registry shows kits ready, grants each class, and opens each skill tree', async ({ device }) => {
+  const page = (await device('gm-w4-unique')).page;
+  await onboardGM(page);
+  await dismissAll(page);
+
+  await go(page, 'gm');
+  const clsTog = page.locator('[data-tog="classes"]');
+  if ((await clsTog.getAttribute('aria-expanded')) !== 'true') await clsTog.tap();
+  const regBox = page.locator('#gm-classes');
+
+  const wave4Uniques = [
+    { name: 'Soulforger', rootId: 'soul-root', forks: 3 },
+    { name: 'Dreadnought', rootId: 'dread-root', forks: 6 },
+    { name: 'Godfist', rootId: 'god-root', forks: 6 },
+  ] as const;
+
+  await test.step('GM Unique-class registry shows all 3 Wave 4 unique classes with shipped kits (no No kit yet badge)', async () => {
+    for (const cls of wave4Uniques) {
+      const row = regBox.locator(`[data-cg-row="${cls.name}"]`);
+      await expect(row).toBeVisible();
+      await expect(row.locator('[data-cg-nokit]')).toHaveCount(0);
+    }
+    const unwiredUniqueCount = UNIQUE_CLASS_NAMES.filter(cls => !CLASS_SIGNATURES[cls] && !CLASS_TREES[cls]).length;
+    await expect(regBox.locator('[data-cg-nokit]')).toHaveCount(unwiredUniqueCount);
+  });
+
+  await test.step('GM grants all 3 Wave 4 unique classes to the local hunter and opens each skill tree', async () => {
+    for (const cls of wave4Uniques) {
+      await regBox.locator(`[data-cg-grant="${cls.name}"]`).tap();
+      const dlg = modalWin(page, CLASS_UI_WORDS.gmGrantTitle(cls.name));
+      await expect(dlg).toBeVisible();
+      await dlg.locator('.sys-actions button.primary').tap();
+      await expect(dlg).toHaveCount(0);
+    }
+    await expect(page.locator('#gm-hsum-classes')).toHaveText('3 of 18 held');
+
+    await go(page, 'status');
+    const panel = page.locator('#view-status [data-panel="classes"]');
+    for (const cls of wave4Uniques) {
+      const swapBtn = panel.locator(`[data-cls-swap="${cls.name}"]`);
+      if ((await swapBtn.count()) > 0) await swapBtn.tap();
+      await expect(panel.locator('[data-cls-active]')).toContainText(cls.name);
+      await expect(panel.locator('[data-cls-tree-empty]')).toHaveCount(0);
+      const tree = panel.locator(`[data-cls-tree="${cls.name}"]`);
+      await expect(tree).toBeVisible();
+      if ((await tree.getAttribute('open')) === null) await tree.locator('summary').tap();
+      await expect(tree.locator('[data-cls-fork]')).toHaveCount(cls.forks);
+      await expect(tree.locator(`[data-cls-node="${cls.rootId}"]`)).toHaveAttribute('data-cls-status', 'buyable');
+      await tree.locator(`[data-cls-buy="${cls.rootId}"]`).tap();
+      await expect(tree.locator(`[data-cls-node="${cls.rootId}"]`)).toHaveAttribute('data-cls-status', 'owned');
+    }
+  });
+});
+
+test('Wave 4 Rare classes (Artificer, Duelist, Oracle, Runeknight, Strider): setJob refuses unearned Rares and Wave 4 uniques, and locker opens each Rare tree and buys a root node', async ({ device }) => {
+  const page = (await device('solo-w4-rare')).page;
+  await onboardPlayer(page, 'Nori Wave4');
+  await dismissAll(page);
+  await go(page, 'status');
+
+  const panel = page.locator('#view-status [data-panel="classes"]');
+  const jobInput = panel.locator('[data-cls-job]');
+  const setBtn = panel.locator('[data-cls-job-set]');
+
+  await test.step('setJob refuses Wave 4 unique classes and unearned Wave 4 Rare classes', async () => {
+    for (const bad of ['Soulforger', 'Dreadnought', 'Godfist']) {
+      await jobInput.fill(bad);
+      await setBtn.tap();
+      await expect(page.locator('#toasts .toast-warning').last()).toContainText(CLASS_REFUSAL_WORDS['unique-class']);
+    }
+    for (const bad of ['Artificer', 'Duelist', 'Oracle', 'Runeknight', 'Strider']) {
+      await jobInput.fill(bad);
+      await setBtn.tap();
+      await expect(page.locator('#toasts .toast-warning').last()).toContainText(CLASS_REFUSAL_WORDS['not-earned']);
+    }
+  });
+
+  await test.step('earned Wave 4 Rare classes show shipped kits, open their 16-node trees with 2 Depth 5 forks, and allow buying Depth 1 Root', async () => {
+    await page.evaluate(() => {
+      hunterApp.store.update((d: any) => {
+        const h = d.hunters[0];
+        const at = new Date().toISOString();
+        h.gold = 500;
+        h.classes = {
+          Artificer: { unlockedAt: at, nodes: [] },
+          Duelist: { unlockedAt: at, nodes: [] },
+          Oracle: { unlockedAt: at, nodes: [] },
+          Runeknight: { unlockedAt: at, nodes: [] },
+          Strider: { unlockedAt: at, nodes: [] },
+        };
+        h.job = 'Artificer';
+        h.jobDone = 'Artificer';
+      }, 'test-setup');
+    });
+
+    const wave4Rares = [
+      { name: 'Artificer', rootId: 'art-root', rootName: 'Foundry Blueprints' },
+      { name: 'Duelist', rootId: 'duel-root', rootName: 'Ring Footwork' },
+      { name: 'Oracle', rootId: 'oracle-root', rootName: 'Observatory Clarity' },
+      { name: 'Runeknight', rootId: 'rune-root', rootName: 'Inscribed Hilt' },
+      { name: 'Strider', rootId: 'strider-root', rootName: 'Road Tested' },
+    ] as const;
+
+    for (const cls of wave4Rares) {
+      const swapBtn = panel.locator(`[data-cls-swap="${cls.name}"]`);
+      if ((await swapBtn.count()) > 0) await swapBtn.tap();
+      await expect(panel.locator('[data-cls-active]')).toContainText(cls.name);
+      await expect(panel.locator('[data-cls-tree-empty]')).toHaveCount(0);
+      const tree = panel.locator(`[data-cls-tree="${cls.name}"]`);
+      await expect(tree).toBeVisible();
+      if ((await tree.getAttribute('open')) === null) await tree.locator('summary').tap();
+      await expect(tree.locator('[data-cls-fork]')).toHaveCount(2);
+      await expect(tree.locator(`[data-cls-node="${cls.rootId}"]`)).toHaveAttribute('data-cls-status', 'buyable');
+    }
+
+    // Buy Strider's Depth 1 Root (15 gold at E rank) and verify gold deduction and owned status
+    const striderTree = panel.locator('[data-cls-tree="Strider"]');
+    await striderTree.locator('[data-cls-buy="strider-root"]').tap();
+    const warn = page.locator('.sys-overlay.show .sys-window.sys-warn');
+    await expect(warn).toContainText(CLASS_UI_WORDS.nodeWarnTitle('Road Tested'));
+    await warn.locator('button', { hasText: CLASS_UI_WORDS.payAction(15) }).tap();
+    await expect(warn).toHaveCount(0);
+    await expect(striderTree.locator('[data-cls-node="strider-root"]')).toHaveAttribute('data-cls-status', 'owned');
     expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(485);
   });
 });

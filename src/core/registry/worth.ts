@@ -14,7 +14,7 @@ import type { StatKey } from '../stats.ts';
 import { kitGear, monsterSheet, monsterStats, pointsAt, referenceBonus, sheetOf, split } from '../hunter/derive.ts';
 import type { Kit, Sheet } from '../hunter/derive.ts';
 import type { Stats } from '../stats.ts';
-import { average, NO_KIT } from '../formula.ts';
+import { average, NO_KIT, someFormula } from '../formula.ts';
 import type { Formula, Scope } from '../formula.ts';
 import { SKILL_ABILITIES } from './abilities.ts';
 import type { SkillRules } from './abilities.ts';
@@ -195,16 +195,9 @@ const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
   stayHidden: 'staying hidden', reveal: 'a reveal', stagger: 'a stagger', echo: 'copying statuses to a nearby ally or foe',
 };
 
-/** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent). `missing` is weighed at `missingMean`. */
-function readsCounts(f: Formula): boolean {
-  switch (f.kind) {
-    case 'stacks': case 'field': case 'held': case 'count': return true;
-    case 'number': case 'dice': case 'stat': case 'sheet': case 'charge': case 'missing': return false;
-    case 'negate': case 'fn': return readsCounts(f.arg);
-    case 'binary': case 'min': case 'max': return readsCounts(f.left) || readsCounts(f.right);
-    default: return f satisfies never;
-  }
-}
+/** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent, blocked, lost). `missing` is weighed at `missingMean`. */
+const readsCounts = (f: Formula): boolean =>
+  someFormula(f, x => x.kind === 'stacks' || x.kind === 'field' || x.kind === 'held' || x.kind === 'count');
 
 /**
  * What a worth is read for: the scope, whether each formula is read on its own best build instead (`ReadOn`), one
@@ -294,7 +287,11 @@ function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   if (o.op === 'delay') return atTier(o.ticks, at.tier) / actionTicks(R);
   if (o.op === 'extra') return 1;
   if (o.op === 'stagger') return o.share * breakWorth(R);
-  if (o.op === 'applyStatus') return statusWorth(o.def, o.stacks ?? 1, o.duration === null ? null : atTier(o.duration, at.tier) / R.fight.round, at, R, o.key);
+  if (o.op === 'applyStatus') {
+    const dyn = 'stacksBy' in o && o.stacksBy !== undefined;
+    if (dyn) at.miss.add('count');
+    return statusWorth(o.def, dyn ? R.fight.kit.stackAdd : (o.stacks ?? 1), o.duration === null ? null : atTier(o.duration, at.tier) / R.fight.round, at, R, o.key);
+  }
   if (o.op !== 'note') at.miss.add(o.op);
   return 0;
 }

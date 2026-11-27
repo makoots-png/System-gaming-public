@@ -405,7 +405,12 @@ function landOpOf(v: unknown, R: Rules, depth: number): LandOp | null {
     return hpShare === null || mana === null ? null : { op: 'reform', hpShare, mana };
   }
   const o = opOf(v, R, depth);
-  return o && (o.op === 'damage' || o.op === 'heal' || o.op === 'echo' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
+  if (!o) return null;
+  if (o.op === 'applyStatus' && isObj(v) && v.stacksBy !== undefined) {
+    const stacksBy = formulaOf(v.stacksBy, R);
+    return stacksBy ? { ...o, stacksBy } : null;
+  }
+  return o.op === 'damage' || o.op === 'heal' || o.op === 'echo' || oneOf(o.op, LAND_USE_OPS, null) ? o as LandOp : null;
 }
 const landOpsOf = (v: unknown, R: Rules, depth: number): LandOp[] | null =>
   Array.isArray(v) ? all(v.slice(0, R.fight.kit.triggerOps), R.fight.kit.triggerOps, x => landOpOf(x, R, depth)) : null;
@@ -493,6 +498,8 @@ export const parseStatusDef = (v: unknown, R: Rules, key?: string): StatusDef | 
 export const statusTooLarge = (v: unknown, R: Rules, key?: string): boolean => { const def = defOf(v, R, 0, key); return def !== null && !withinSize('status', def); };
 /** One op from outside data (an item's effects in a save, a pack, a form), read as a status's op is. */
 export const parseOp = (v: unknown, R: Rules): Op | null => opOf(v, R, 0);
+/** One land op from outside data (a trigger's, threshold's, or end's op in a save, a pack, or a form). */
+export const parseLandOp = (v: unknown, R: Rules): LandOp | null => landOpOf(v, R, 0);
 /** A status's key, def and source, which a fight's status and a sheet's share. */
 function keyDefSource(v: unknown, R: Rules): Pick<Status, 'key' | 'def' | 'source'> | null {
   if (!isObj(v) || !isObj(v.source)) return null;

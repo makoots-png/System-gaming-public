@@ -10,10 +10,12 @@ import { CLASS_ACTIVES_MAX, CLASS_BONUS_KEYS, CLASS_TREES, repairNodes } from '.
 import type { ClassBonusKey, ClassPerk, ClassTreeMap, ClassWorn, NodeGift } from './class-trees.ts';
 import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
 import { STARFORGER_SIGNATURE } from './class-starforger.ts';
+import { DREADNOUGHT_SIGNATURE } from './class-dreadnought.ts';
 import { NECROMANCER_SIGNATURE } from './class-necromancer.ts';
 import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
 import { NULLWEAVER_SIGNATURE } from './class-nullweaver.ts';
+import { GODFIST_SIGNATURE } from './class-godfist.ts';
 import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
 import { PACKLORD_SIGNATURE } from './class-packlord.ts';
 import { SERAPH_SIGNATURE } from './class-seraph.ts';
@@ -21,6 +23,7 @@ import { STORMCALLER_SIGNATURE } from './class-stormcaller.ts';
 import { GRIMREAPER_SIGNATURE } from './class-grimreaper.ts';
 import { CHRONOKEEPER_SIGNATURE } from './class-chronokeeper.ts';
 import { VOIDSTALKER_SIGNATURE } from './class-voidstalker.ts';
+import { SOULFORGER_SIGNATURE } from './class-soulforger.ts';
 import { BRAMBLEGUARD_SIGNATURE } from './class-brambleguard.ts';
 import { PYROMANCER_SIGNATURE } from './class-pyromancer.ts';
 import { SNIPER_SIGNATURE } from './class-sniper.ts';
@@ -28,6 +31,11 @@ import { BERSERKER_SIGNATURE } from './class-berserker.ts';
 import { CLERIC_SIGNATURE } from './class-cleric.ts';
 import { NIGHTBLADE_SIGNATURE } from './class-nightblade.ts';
 import { BASTION_SIGNATURE } from './class-bastion.ts';
+import { RUNEKNIGHT_SIGNATURE } from './class-runeknight.ts';
+import { DUELIST_SIGNATURE } from './class-duelist.ts';
+import { ARTIFICER_SIGNATURE } from './class-artificer.ts';
+import { ORACLE_SIGNATURE } from './class-oracle.ts';
+import { STRIDER_SIGNATURE } from './class-strider.ts';
 import { FIGHTER_SIGNATURE } from './class-fighter.ts';
 import { ASSASSIN_SIGNATURE } from './class-assassin.ts';
 import { MAGE_SIGNATURE } from './class-mage.ts';
@@ -89,10 +97,12 @@ export type ClassSignatureMap = Readonly<Partial<Record<ClassName, ClassSignatur
 export const CLASS_SIGNATURES: ClassSignatureMap = {
   Hemomancer: HEMOMANCER_SIGNATURE,
   Starforger: STARFORGER_SIGNATURE,
+  Dreadnought: DREADNOUGHT_SIGNATURE,
   Necromancer: NECROMANCER_SIGNATURE,
   Bladefiend: BLADEFIEND_SIGNATURE,
   Rifthunter: RIFTHUNTER_SIGNATURE,
   Nullweaver: NULLWEAVER_SIGNATURE,
+  Godfist: GODFIST_SIGNATURE,
   Seraph: SERAPH_SIGNATURE,
   Ironclad: IRONCLAD_SIGNATURE,
   Packlord: PACKLORD_SIGNATURE,
@@ -100,6 +110,7 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Grimreaper: GRIMREAPER_SIGNATURE,
   Chronokeeper: CHRONOKEEPER_SIGNATURE,
   Voidstalker: VOIDSTALKER_SIGNATURE,
+  Soulforger: SOULFORGER_SIGNATURE,
   Brambleguard: BRAMBLEGUARD_SIGNATURE,
   Pyromancer: PYROMANCER_SIGNATURE,
   Sniper: SNIPER_SIGNATURE,
@@ -107,6 +118,11 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Cleric: CLERIC_SIGNATURE,
   Nightblade: NIGHTBLADE_SIGNATURE,
   Bastion: BASTION_SIGNATURE,
+  Runeknight: RUNEKNIGHT_SIGNATURE,
+  Duelist: DUELIST_SIGNATURE,
+  Artificer: ARTIFICER_SIGNATURE,
+  Oracle: ORACLE_SIGNATURE,
+  Strider: STRIDER_SIGNATURE,
   Fighter: FIGHTER_SIGNATURE,
   Assassin: ASSASSIN_SIGNATURE,
   Mage: MAGE_SIGNATURE,
@@ -186,15 +202,20 @@ export function classPowers(
     }
   }
 
-  // Status upgrades apply after every replacement, rewriting top-level `applyStatus` ops on folded `actives` only
-  // (never recursing into `zone.ops`, `zone.end`, or nested status triggers).
+  // Status upgrades apply after every replacement, rewriting top-level `applyStatus` ops, `stacks` prices, and
+  // `holds` gates on folded `actives` only (never recursing into `zone.ops`, `zone.end`, or nested status triggers).
   for (const up of upgrades) {
     for (let i = 0; i < actives.length; i++) {
       const a = actives[i]!;
-      if (!a.ops.some(op => op.op === 'applyStatus' && op.key === up.targetKey)) continue;
+      const hasOp = a.ops.some(op => op.op === 'applyStatus' && op.key === up.targetKey);
+      const hasPrice = a.prices?.some(p => p.kind === 'stacks' && p.key === up.targetKey) ?? false;
+      const hasGate = a.gates?.some(g => g.kind === 'holds' && g.key === up.targetKey) ?? false;
+      if (!hasOp && !hasPrice && !hasGate) continue;
       actives[i] = {
         ...a,
-        ops: a.ops.map(op => (op.op === 'applyStatus' && op.key === up.targetKey ? { ...op, key: up.key, def: up.def } : op)),
+        ...(hasOp ? { ops: a.ops.map(op => (op.op === 'applyStatus' && op.key === up.targetKey ? { ...op, key: up.key, def: up.def } : op)) } : {}),
+        ...(hasPrice ? { prices: a.prices!.map(p => (p.kind === 'stacks' && p.key === up.targetKey ? { ...p, key: up.key } : p)) } : {}),
+        ...(hasGate ? { gates: a.gates!.map(g => (g.kind === 'holds' && g.key === up.targetKey ? { ...g, key: up.key } : g)) } : {}),
       };
     }
   }

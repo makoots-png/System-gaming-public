@@ -36,6 +36,7 @@ import { IRONCLAD_SIGNATURE, IRONCLAD_TREE } from '../src/core/registry/class-ir
 import { STORMCALLER_SIGNATURE, STORMCALLER_TREE } from '../src/core/registry/class-stormcaller.ts';
 import { CHRONOKEEPER_SIGNATURE, CHRONOKEEPER_TREE } from '../src/core/registry/class-chronokeeper.ts';
 import { VOIDSTALKER_SIGNATURE, VOIDSTALKER_TREE } from '../src/core/registry/class-voidstalker.ts';
+import { SOULFORGER_SIGNATURE, SOULFORGER_TREE } from '../src/core/registry/class-soulforger.ts';
 import type { ClassName } from '../src/core/registry/jobs.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
@@ -118,6 +119,18 @@ const EPICS: readonly EpicSpec[] = [
     branchARush: ['void-root', 'void-a2', 'void-a3x', 'void-a3y', 'void-a4x', 'void-a4y', 'void-a5-l', 'void-a6'],
     activeIds: ['void-rend', 'void-phase-blink', 'void-phantom-cut', 'void-abyssal-swap'],
     damagingActiveId: 'void-rend',
+  },
+  {
+    className: 'Soulforger',
+    sig: SOULFORGER_SIGNATURE,
+    tree: SOULFORGER_TREE,
+    stats: { pow: 106, dis: 58 },
+    canonicalForks: ['soul-a5-l', 'soul-b5-l', 'soul-c5-l'],
+    scalerForkNode: 'soul-c5-r',
+    capstoneWornKey: 'soul-forge-grand',
+    branchARush: ['soul-root', 'soul-a2', 'soul-a3x', 'soul-a3y', 'soul-a4x', 'soul-a4y', 'soul-a5-l', 'soul-a6'],
+    activeIds: ['soul-hammerfall', 'soul-temper', 'soul-anvil', 'soul-blade'],
+    damagingActiveId: 'soul-hammerfall',
   },
 ];
 
@@ -392,6 +405,7 @@ describe('Wave 1 Epics: Seraph, Ironclad, and Stormcaller trees, pricing, and in
       Stormcaller: 'haste',
       Chronokeeper: 'haste',
       Voidstalker: 'speed',
+      Soulforger: 'haste',
     };
     for (const spec of EPICS) {
       const wornPart = spec.sig.worn ? { worn: spec.sig.worn.def } : {};

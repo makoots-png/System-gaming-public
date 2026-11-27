@@ -1117,3 +1117,46 @@ describe('dodge-tile ask mode in resolve', () => {
     }
   });
 });
+
+describe('swap + shove throw order (suplex pin, Wave 4 A2)', () => {
+  // resolve.ts landUse runs swapped() before pushed(). Pairing move: { kind: 'swap' } with a shove away from user
+  // puts the user on the target's tile and throws the target k tiles behind the user's starting tile (k + 1 total
+  // displacement), breaking any held channel via moveBreaks. Flipping swapped/pushed would push target to (8, 5) then
+  // swap user to (8, 5) and target to (5, 5), failing both coordinate assertions below.
+  const suplex = ability('strike', {
+    move: { kind: 'swap' },
+    ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: tiles(2) }],
+  }, '1');
+
+  test('swap + shove (away from user, 2 tiles) puts user on target\'s tile, throws target 2 tiles behind user\'s start, and breaks a held channel', () => {
+    const u = body('u', hunterOrigin('bruiser'), place(5, 5), 'party');
+    const channeling = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {
+      channel: { ability: abilityId('m'), aim: place(0, 0), charge: 2, spent: 0, state: 'holding' },
+    }, { armor: 0, hpMax: 100, hold: share(0.15) });
+    const r = run(suplex, u, [u, channeling], channeling.id, rolls({ t: [] }, { t: 10 }));
+    expect(r.outcomes[0]!.avoid).toBe('caught');
+    // 1 damage is below hold * hpMax (15), so damage alone did not break the channel; moveBreaks did.
+    expect(r.outcomes[0]!.dealt).toBe(1);
+    expect(r.outcomes[0]!.channelBroken).toBe(false);
+    expect(find(r.bodies, 'u').place).toEqual(place(6, 5));
+    expect(find(r.bodies, 't').place).toEqual(place(3, 5));
+    expect(find(r.bodies, 't').channel?.state).toBe('broken');
+    expect(r.shoved).toContain(channeling.id);
+
+    // Contrast: without swap, the same shove moves target forward to (8, 5) and leaves user at (5, 5).
+    const plainShove = ability('strike', { ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: tiles(2) }] }, '1');
+    const pushedOnly = run(plainShove, u, [u, channeling], channeling.id, rolls({ t: [] }, { t: 10 }));
+    expect(find(pushedOnly.bodies, 'u').place).toEqual(place(5, 5));
+    expect(find(pushedOnly.bodies, 't').place).toEqual(place(8, 5));
+  });
+
+  test('applying a status with root on the same swap + shove ability cancels both swap and shove (the Wave 3 Orbital Pull trap)', () => {
+    const u = body('u', hunterOrigin('bruiser'), place(5, 5), 'party');
+    const foe = body('t', monsterOrigin('brute'), place(6, 5), 'foe');
+    const rootedSuplex = { ...suplex, ops: [...suplex.ops, statusOf('pinned', { op: 'root' })] };
+    const r = run(rootedSuplex, u, [u, foe], foe.id, rolls({ t: [] }, { t: 10 }));
+    expect(find(r.bodies, 'u').place).toEqual(place(5, 5));
+    expect(find(r.bodies, 't').place).toEqual(place(6, 5));
+    expect(r.shoved).toEqual([]);
+  });
+});

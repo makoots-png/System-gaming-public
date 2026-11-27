@@ -5,6 +5,9 @@ import { test, expect, onboardGM, onboardPlayer, go } from './helpers.ts';
 import { giveTitle } from '../../src/core/hunter/record.ts';
 import { newHunter } from '../../src/core/hunter/hunter.ts';
 import { RULES } from '../../src/core/rules.ts';
+import { parseFormula } from '../../src/core/formula.ts';
+import { statusKey } from '../../src/core/combat/effect-ops.ts';
+import { parseStatusDef } from '../../src/core/combat/fight-parse.ts';
 import type { Item } from '../../src/core/registry/items.ts';
 import type { ItemDefData } from '../../src/core/registry/item-book.ts';
 import { E2E_MAKER_IDS } from '../fixtures/maker-registry.ts';
@@ -47,8 +50,53 @@ import {
 const COVERED_E2E_IDS: readonly MakerId[] = [
   'status', 'item', 'skill', 'skill-swap', 'monster', 'npc', 'rewards', 'bundle', 'map', 'feat', 'story',
   'quest', 'gate', 'preset', 'title', 'guild', 'identity', 'rules-overrides', 'roll-tables',
-  'typed-weapon', 'true-ability', 'grievous-cut', 'dispel-helpful', 'zone-erase',
+  'typed-weapon', 'true-ability', 'grievous-cut', 'dispel-helpful', 'zone-erase', 'stacks-by',
 ];
+
+const mustFormula = (text: string) => {
+  const p = parseFormula(text, RULES);
+  if (!p.ok) throw new Error(p.error);
+  return p.formula;
+};
+
+const WORST_STATUS_STACKS_BY = parseStatusDef({
+  label: 'Hull Bank',
+  desc: 'Converts blocked and lost damage into Wrath stacks.',
+  ops: [],
+  triggers: [
+    {
+      on: 'struck',
+      tag: null,
+      to: 'self',
+      limit: { kind: 'round' },
+      ops: [
+        {
+          op: 'applyStatus',
+          key: statusKey('rt-wrath'),
+          def: parseStatusDef({
+            label: 'Wrath',
+            desc: 'Stored force.',
+            ops: [],
+            stack: { cap: 20, leave: { kind: 'never' }, keep: 'fight', threshold: null },
+          }, RULES)!,
+          duration: null,
+          stacksBy: mustFormula('(blocked + 0.5 * lost) / (0.025 * hpmax)'),
+        },
+        { op: 'refund', pct: 25 },
+      ],
+    },
+    {
+      on: 'struck',
+      tag: null,
+      to: 'other',
+      limit: { kind: 'round' },
+      ops: [
+        { op: 'damage', type: 'physical', amount: mustFormula('0.25 * blocked'), when: 'use' },
+        { op: 'reform', hpShare: 0.5, mana: 15 },
+      ],
+    },
+  ],
+}, RULES)!;
 
 /** A by-value item fixture as the def the library keys by its id: no `id`, no `qty`. */
 const defOf = ({ id: _id, qty: _qty, ...def }: Item): ItemDefData => def;
@@ -79,6 +127,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   await page.evaluate(f => hunterApp.store.update((d: any) => {
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
+    d.library.statuses['rt-stacks-by'] = f.statusStacksBy;
     d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous, f.skillDispelHelpful, f.skillZoneErase);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.npcs.push(f.npc);
@@ -90,6 +139,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   }, 'test-setup'), {
     statusOps: WORST_STATUS_OPS,
     statusKits: WORST_STATUS_KITS,
+    statusStacksBy: WORST_STATUS_STACKS_BY,
     skillActive: WORST_SKILL_ACTIVE,
     skillReaction: WORST_SKILL_REACTION,
     skillPassive: WORST_SKILL_PASSIVE,
@@ -120,6 +170,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   }[] = [
     { label: 'status (colored ops)', ws: 'status', id: 'rt-ops', overlay: '.fg-overlay', expected: WORST_STATUS_OPS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-ops']) },
     { label: 'status (uncolored kits + long bounds + Reach most)', ws: 'status', id: 'rt-kits', overlay: '.fg-overlay', expected: WORST_STATUS_KITS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-kits']) },
+    { label: 'stacks-by (status trigger applyStatus with dynamic stacksBy formula)', ws: 'status', id: 'rt-stacks-by', overlay: '.fg-overlay', expected: WORST_STATUS_STACKS_BY, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-stacks-by']) },
     { label: 'item (Bulwark Ring active.name)', ws: 'item', id: itemIds.bulwark, overlay: '.lf-overlay', expected: WORST_ITEMS.bulwark, read: () => libraryItem(itemIds.bulwark) },
     { label: 'item (worn weapon + worn icon/label + active)', ws: 'item', id: itemIds.worn, overlay: '.lf-overlay', expected: WORST_ITEMS.worn, read: () => libraryItem(itemIds.worn) },
     { label: 'item (finesse strike weapon with formula dice)', ws: 'item', id: itemIds.finesse, overlay: '.lf-overlay', expected: WORST_ITEMS.finesse, read: () => libraryItem(itemIds.finesse) },
@@ -195,6 +246,26 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     await expect(dlg).toHaveCount(0);
     const updated = await page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_ZONE_ERASE.id);
     expect(updated.ability.zoneAct).toEqual({ act: 'erase', name: null, by: 1 });
+  });
+
+  await test.step('formula helper chips include blocked and lost and insert their names', async () => {
+    const btn = page.locator(`#view-workshop [data-ws="skill"] [data-id="${WORST_SKILL_TRUE.id}"] [data-act="edit"]`);
+    await btn.scrollIntoViewIfNeeded();
+    await btn.tap();
+    const dlg = page.locator('.skm-overlay [role=dialog]');
+    await expect(dlg).toBeVisible();
+    const names = dlg.locator('details[data-group="names"]');
+    await names.locator('summary').tap();
+    const blockedChip = names.locator('[data-insert="blocked"]');
+    const lostChip = names.locator('[data-insert="lost"]');
+    await expect(blockedChip).toHaveText('Damage stopped by defense or shield');
+    await expect(lostChip).toHaveText('HP damage past your shield');
+    await blockedChip.tap();
+    await expect(dlg.locator('[data-formula]')).toHaveValue(/blocked/);
+    await lostChip.tap();
+    await expect(dlg.locator('[data-formula]')).toHaveValue(/lost/);
+    await dlg.locator('[data-cancel]').tap();
+    await expect(dlg).toHaveCount(0);
   });
 });
 

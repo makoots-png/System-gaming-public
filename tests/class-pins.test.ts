@@ -251,24 +251,273 @@ describe('PR 2 combat/sheet seam tripwire', () => {
   });
 });
 
-describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys, and name collisions', () => {
-  const WIRED_CLASSES: readonly ClassName[] = [
-    // Common (6)
-    'Assassin', 'Fighter', 'Healer', 'Mage', 'Ranger', 'Tanker',
-    // Rare (7)
-    'Bastion', 'Berserker', 'Brambleguard', 'Cleric', 'Nightblade', 'Pyromancer', 'Sniper',
-    // Epic (7)
-    'Chronokeeper', 'Grimreaper', 'Ironclad', 'Packlord', 'Seraph', 'Stormcaller', 'Voidstalker',
-    // Mythic (6)
-    'Bladefiend', 'Hemomancer', 'Necromancer', 'Nullweaver', 'Rifthunter', 'Starforger',
+describe('Wave 4 A8: Roster Lock (34/36 wired classes, signatures, trees, status keys, and name collisions)', () => {
+  // One class per line and counts derived from list lengths so parallel wave units merge cleanly.
+  const COMMON_WIRED: readonly ClassName[] = [
+    'Assassin',
+    'Fighter',
+    'Healer',
+    'Mage',
+    'Ranger',
+    'Tanker',
   ];
+  const RARE_WIRED: readonly ClassName[] = [
+    'Artificer',
+    'Bastion',
+    'Berserker',
+    'Brambleguard',
+    'Cleric',
+    'Duelist',
+    'Nightblade',
+    'Oracle',
+    'Pyromancer',
+    'Runeknight',
+    'Sniper',
+    'Strider',
+  ];
+  const EPIC_WIRED: readonly ClassName[] = [
+    'Chronokeeper',
+    'Grimreaper',
+    'Ironclad',
+    'Packlord',
+    'Seraph',
+    'Soulforger',
+    'Stormcaller',
+    'Voidstalker',
+  ];
+  const MYTHIC_WIRED: readonly ClassName[] = [
+    'Bladefiend',
+    'Dreadnought',
+    'Godfist',
+    'Hemomancer',
+    'Necromancer',
+    'Nullweaver',
+    'Rifthunter',
+    'Starforger',
+  ];
+  const WIRED_CLASSES: readonly ClassName[] = [
+    ...COMMON_WIRED,
+    ...RARE_WIRED,
+    ...EPIC_WIRED,
+    ...MYTHIC_WIRED,
+  ];
+  const UNWIRED_CLASSES: readonly ClassName[] = [
+    'Dawnbringer',
+    'Usurper',
+  ];
+
+  // Frozen Wave 1-3 node-name duplicates (zero-stale permit list: no new duplicates permitted in Wave 4+).
+  const LEGACY_NODE_NAME_DUPLICATES: Readonly<Record<string, readonly string[]>> = {
+    'flash step': ['Bladefiend.bf-b4x', 'Stormcaller.storm-b5-l'],
+    heartseeker: ['Assassin.asn-b4y', 'Rifthunter.rh-a4x'],
+    'keen eye': ['Assassin.asn-b2', 'Bladefiend.bf-c3y'],
+    'keen sight': ['Rifthunter.rh-a3y', 'Voidstalker.void-b3y'],
+    'lethal poise': ['Grimreaper.reaper-a3y', 'Nightblade.night-b4x'],
+    'piercing round': ['Rifthunter.rh-a5-l', 'Sniper.sniper-a5-l'],
+    'rift cadence': ['Rifthunter.rh-a2', 'Voidstalker.void-a3y'],
+    slipstream: ['Assassin.asn-a2', 'Chronokeeper.chrono-b3x', 'Rifthunter.rh-b6x'],
+    'unshaken mind': ['Bladefiend.bf-b4y', 'Nullweaver.null-c4y'],
+  };
+
+  function checkRosterLock(input: {
+    readonly allClasses: readonly string[];
+    readonly wired: readonly string[];
+    readonly unwired: readonly string[];
+    readonly sigKeys: readonly string[];
+    readonly treeKeys: readonly string[];
+    readonly registryFiles: readonly string[];
+    readonly wiredMythics: readonly string[];
+    readonly soloSpecClasses: readonly string[];
+    readonly offerPoolMythics: readonly string[];
+  }): string[] {
+    const errors: string[] = [];
+    const wiredSet = new Set(input.wired);
+    const unwiredSet = new Set(input.unwired);
+    const allSorted = [...input.allClasses].sort();
+    const partition = [...input.wired, ...input.unwired].sort();
+    if (wiredSet.size !== input.wired.length) errors.push('duplicate entry in wired class list');
+    if (unwiredSet.size !== input.unwired.length) errors.push('duplicate entry in unwired class list');
+    for (const cls of input.unwired) {
+      if (wiredSet.has(cls)) errors.push(`class "${cls}" listed in both wired and unwired`);
+    }
+    if (JSON.stringify(allSorted) !== JSON.stringify(partition)) {
+      errors.push(`wired + unwired partition does not match allClasses (${partition.length} vs ${allSorted.length})`);
+    }
+    const wiredSorted = [...input.wired].sort();
+    const sigSorted = [...input.sigKeys].sort();
+    const treeSorted = [...input.treeKeys].sort();
+    if (JSON.stringify(sigSorted) !== JSON.stringify(wiredSorted)) {
+      errors.push('CLASS_SIGNATURES keys do not match wired classes');
+    }
+    if (JSON.stringify(treeSorted) !== JSON.stringify(wiredSorted)) {
+      errors.push('CLASS_TREES keys do not match wired classes');
+    }
+    const expectedFiles = wiredSorted.map(c => `class-${c.toLowerCase()}.ts`).sort();
+    if (JSON.stringify([...input.registryFiles].sort()) !== JSON.stringify(expectedFiles)) {
+      errors.push('src/core/registry/class-*.ts files do not match wired classes');
+    }
+    const mythicsSorted = [...input.wiredMythics].sort();
+    if (JSON.stringify([...input.soloSpecClasses].sort()) !== JSON.stringify(mythicsSorted)) {
+      errors.push('MYTHIC_SOLO_SPECS classes do not match wired Mythics');
+    }
+    if (JSON.stringify([...input.offerPoolMythics].sort()) !== JSON.stringify(mythicsSorted)) {
+      errors.push('MYTHIC_OFFER_POOL does not match wired Mythics');
+    }
+    for (const cls of input.unwired) {
+      if (sigSorted.includes(cls) || treeSorted.includes(cls)) errors.push(`unwired class "${cls}" leaked into wired tables`);
+    }
+    return errors;
+  }
+
+  function diffNodeNameDuplicates(
+    trees: Readonly<Record<string, { readonly nodes: readonly { readonly id: string; readonly name: string }[] }>>,
+    permit: Readonly<Record<string, readonly string[]>>,
+  ): { readonly actual: Record<string, string[]>; readonly unexpected: string[]; readonly stale: string[] } {
+    const holdersByName = new Map<string, string[]>();
+    for (const cls of Object.keys(trees).sort()) {
+      for (const n of trees[cls]!.nodes) {
+        const key = n.name.toLowerCase();
+        const list = holdersByName.get(key) ?? [];
+        list.push(`${cls}.${n.id}`);
+        holdersByName.set(key, list);
+      }
+    }
+    const actual = Object.fromEntries(
+      [...holdersByName.entries()]
+        .filter(([, holders]) => holders.length > 1)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, holders]) => [name, [...holders].sort()]),
+    );
+    const unexpected: string[] = [];
+    const stale: string[] = [];
+    for (const [name, holders] of Object.entries(actual)) {
+      const allowed = permit[name];
+      if (!allowed || JSON.stringify(holders) !== JSON.stringify([...allowed].sort())) {
+        unexpected.push(`${name}: ${holders.join(', ')}`);
+      }
+    }
+    for (const name of Object.keys(permit)) {
+      if (!(name in actual)) stale.push(name);
+    }
+    return { actual, unexpected, stale };
+  }
+
+  function checkStatusKeyIntegrity(
+    defs: readonly { readonly cls: string; readonly key: string; readonly def: StatusDef }[],
+    refs: readonly { readonly cls: string; readonly key: string }[],
+    builtIns: Readonly<Record<string, unknown>>,
+  ): string[] {
+    const errors: string[] = [];
+    const owners = new Map<string, { readonly cls: string; readonly def: StatusDef }>();
+    for (const { cls, key, def } of defs) {
+      if (key in builtIns) errors.push(`${cls}: status key "${key}" collides with BUILT_IN_STATUSES`);
+      if (isMythicStatusKey(statusKey(key))) errors.push(`${cls}: status key "${key}" uses boss mythic- prefix`);
+      const prev = owners.get(key);
+      if (prev) {
+        if (prev.cls !== cls) errors.push(`status key "${key}" shared by ${prev.cls} and ${cls}`);
+        else if (JSON.stringify(prev.def) !== JSON.stringify(def)) errors.push(`status key "${key}" has divergent StatusDef in ${cls}`);
+      } else {
+        owners.set(key, { cls, def });
+      }
+    }
+    for (const { cls, key } of refs) {
+      if (!(key in builtIns) && !owners.has(key)) errors.push(`${cls}: orphan status key reference "${key}"`);
+    }
+    return errors;
+  }
+
+  test('pins 34/36 wired classes (6 Common, 12 Rare, 8 Epic, 8 Mythic; 2 unwired) with fail-capable negative self-tests', async () => {
+    expect(CLASS_NAMES).toHaveLength(36);
+    expect(WIRED_CLASSES).toHaveLength(34);
+    expect(UNWIRED_CLASSES).toHaveLength(2);
+    expect(COMMON_WIRED).toHaveLength(6);
+    expect(RARE_WIRED).toHaveLength(12);
+    expect(EPIC_WIRED).toHaveLength(8);
+    expect(MYTHIC_WIRED).toHaveLength(8);
+
+    const sigNames = (Object.keys(CLASS_SIGNATURES) as ClassName[]).sort();
+    const treeNames = (Object.keys(CLASS_TREES) as ClassName[]).sort();
+    const registryFiles = (await readdir(`${ROOT}/src/core/registry`))
+      .filter(f => f.startsWith('class-') && f.endsWith('.ts') && !['class-common.ts', 'class-powers.ts', 'class-trees.ts'].includes(f))
+      .sort();
+
+    const liveInput = {
+      allClasses: CLASS_NAMES,
+      wired: WIRED_CLASSES,
+      unwired: UNWIRED_CLASSES,
+      sigKeys: sigNames,
+      treeKeys: treeNames,
+      registryFiles,
+      wiredMythics: MYTHIC_WIRED,
+      soloSpecClasses: MYTHIC_SOLO_SPECS.map(s => s.className),
+      offerPoolMythics: MYTHIC_OFFER_POOL,
+    };
+    expect(checkRosterLock(liveInput)).toEqual([]);
+
+    // Fail-capable negative self-tests: every broken roster state fails loudly
+    expect(checkRosterLock({ ...liveInput, treeKeys: treeNames.filter(c => c !== 'Godfist') })).toContain(
+      'CLASS_TREES keys do not match wired classes',
+    );
+    expect(checkRosterLock({ ...liveInput, sigKeys: [...sigNames, 'Usurper'] })).toEqual([
+      'CLASS_SIGNATURES keys do not match wired classes',
+      'unwired class "Usurper" leaked into wired tables',
+    ]);
+    expect(checkRosterLock({ ...liveInput, registryFiles: [...registryFiles, 'class-usurper.ts'] })).toContain(
+      'src/core/registry/class-*.ts files do not match wired classes',
+    );
+    expect(checkRosterLock({ ...liveInput, soloSpecClasses: liveInput.soloSpecClasses.filter(c => c !== 'Dreadnought') })).toContain(
+      'MYTHIC_SOLO_SPECS classes do not match wired Mythics',
+    );
+    expect(checkRosterLock({ ...liveInput, offerPoolMythics: liveInput.offerPoolMythics.filter(c => c !== 'Godfist') })).toContain(
+      'MYTHIC_OFFER_POOL does not match wired Mythics',
+    );
+    expect(checkRosterLock({ ...liveInput, unwired: ['Dawnbringer'] })).toContain(
+      'wired + unwired partition does not match allClasses (35 vs 36)',
+    );
+
+    // Negative self-tests for frozen node-name duplicate permit list
+    const baseTrees = {
+      Alpha: { nodes: [{ id: 'a-1', name: 'Unique Step' }] },
+      Beta: { nodes: [{ id: 'b-1', name: 'Other Step' }] },
+    };
+    expect(diffNodeNameDuplicates(baseTrees, {})).toEqual({ actual: {}, unexpected: [], stale: [] });
+    const dupAdded = diffNodeNameDuplicates(
+      { ...baseTrees, Beta: { nodes: [{ id: 'b-1', name: 'Unique Step' }] } },
+      {},
+    );
+    expect(dupAdded.unexpected).toEqual(['unique step: Alpha.a-1, Beta.b-1']);
+    const stalePermit = diffNodeNameDuplicates(baseTrees, { 'old dup': ['Alpha.a-1', 'Beta.b-1'] });
+    expect(stalePermit.stale).toEqual(['old dup']);
+
+    // Negative self-tests for status key ownership and orphan references
+    const sampleDef: StatusDef = { label: 'Sample', desc: 'Test status.', ops: [] };
+    const altDef: StatusDef = { label: 'Sample Alt', desc: 'Divergent status.', ops: [{ op: 'hold' }] };
+    expect(checkStatusKeyIntegrity(
+      [
+        { cls: 'Godfist', key: 'god-sample', def: sampleDef },
+        { cls: 'Dreadnought', key: 'god-sample', def: sampleDef },
+        { cls: 'Godfist', key: 'god-div', def: sampleDef },
+        { cls: 'Godfist', key: 'god-div', def: altDef },
+        { cls: 'Godfist', key: 'stunned', def: sampleDef },
+        { cls: 'Godfist', key: 'mythic-bad', def: sampleDef },
+      ],
+      [{ cls: 'Godfist', key: 'god-missing' }],
+      BUILT_IN_STATUSES,
+    )).toEqual([
+      'status key "god-sample" shared by Godfist and Dreadnought',
+      'status key "god-div" has divergent StatusDef in Godfist',
+      'Godfist: status key "stunned" collides with BUILT_IN_STATUSES',
+      'Godfist: status key "mythic-bad" uses boss mythic- prefix',
+      'Godfist: orphan status key reference "god-missing"',
+    ]);
+  });
 
   test('every wired class has a paired signature and tree, matches registry class files, folds cleanly, and wires at 0 bytes', async () => {
     const sigNames = (Object.keys(CLASS_SIGNATURES) as ClassName[]).sort();
     const treeNames = (Object.keys(CLASS_TREES) as ClassName[]).sort();
     expect(sigNames).toEqual(treeNames);
     expect(sigNames).toEqual([...WIRED_CLASSES].sort());
-    expect(sigNames).toHaveLength(26);
+    expect(sigNames).toHaveLength(WIRED_CLASSES.length);
 
     const byRarity = {
       common: sigNames.filter(c => BUILT_IN_CLASSES[c].rarity === 'common'),
@@ -276,10 +525,10 @@ describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys,
       epic: sigNames.filter(c => BUILT_IN_CLASSES[c].rarity === 'epic'),
       mythic: sigNames.filter(c => BUILT_IN_CLASSES[c].rarity === 'mythic'),
     };
-    expect(byRarity.common).toHaveLength(6);
-    expect(byRarity.rare).toHaveLength(7);
-    expect(byRarity.epic).toHaveLength(7);
-    expect(byRarity.mythic).toHaveLength(6);
+    expect(byRarity.common).toHaveLength(COMMON_WIRED.length);
+    expect(byRarity.rare).toHaveLength(RARE_WIRED.length);
+    expect(byRarity.epic).toHaveLength(EPIC_WIRED.length);
+    expect(byRarity.mythic).toHaveLength(MYTHIC_WIRED.length);
 
     // Every src/core/registry/class-*.ts class module is wired in both tables
     const registryFiles = (await readdir(`${ROOT}/src/core/registry`))
@@ -520,7 +769,8 @@ describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys,
       for (const n of tree.nodes) {
         expect(nodeIds.has(n.id), `duplicate ClassNodeId "${n.id}" (${nodeIds.get(n.id)} vs ${cls})`).toBe(false);
         nodeIds.set(n.id, cls);
-        expect(reserved.has(n.name.toLowerCase()), `${cls}.${n.id} node "${n.name}" collides with reserved`).toBe(false);
+        const nk = n.name.toLowerCase();
+        expect(reserved.has(nk), `${cls}.${n.id} node "${n.name}" collides with reserved`).toBe(false);
         for (const g of n.gifts) {
           if (g.kind === 'replace-worn') {
             const lk = g.worn.def.label.toLowerCase();
@@ -537,6 +787,12 @@ describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys,
         }
       }
     }
+
+    const wiredTrees = Object.fromEntries(sigNames.map(c => [c, CLASS_TREES[c]!]));
+    const dupDiff = diffNodeNameDuplicates(wiredTrees, LEGACY_NODE_NAME_DUPLICATES);
+    expect(dupDiff.unexpected, 'every new class node name must be unique across all wired classes').toEqual([]);
+    expect(dupDiff.stale, 'frozen legacy duplicate list must stay free of stale entries').toEqual([]);
+    expect(dupDiff.actual).toEqual(LEGACY_NODE_NAME_DUPLICATES);
   });
 
   test('t207u Mythic offer pool pin: every registered, wired Mythic is in the offer pool and a fake extra Mythic fails the set check', () => {
@@ -570,7 +826,7 @@ describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys,
     const realWired = CLASS_NAMES
       .filter(c => BUILT_IN_CLASSES[c].rarity === 'mythic' && Boolean(CLASS_SIGNATURES[c]) && Boolean(CLASS_TREES[c]))
       .sort();
-    expect(realWired).toEqual(['Bladefiend', 'Hemomancer', 'Necromancer', 'Nullweaver', 'Rifthunter', 'Starforger']);
+    expect(realWired).toEqual(['Bladefiend', 'Dreadnought', 'Godfist', 'Hemomancer', 'Necromancer', 'Nullweaver', 'Rifthunter', 'Starforger']);
     expect([...MYTHIC_OFFER_POOL].sort()).toEqual(realWired);
     expect(poolMythicDiff(MYTHIC_OFFER_POOL, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });
     expect(poolMythicDiff(DEFAULT_OFFER_POOL, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });

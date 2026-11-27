@@ -591,7 +591,7 @@ test('a view computes no fight number: from the modules that work one out it imp
     'src/core/combat/space.ts': ['place', 'tiles', 'percent', 'openGrid', 'TERRAIN', 'TERRAINS'],
     'src/core/combat/timeline.ts': ['tick', 'roundOf', 'roundsOf'],
     'src/core/stats.ts': ['STAT_KEYS', 'STAT_LABELS', 'STAT_SHORT', 'above'], // `above`: the rules reference draws the curve it explains
-    'src/core/combat/effect-ops.ts': ['healsFully', 'reactionMayHold', 'OP_KINDS', 'describeStatus', 'freeStatusKey', 'opLines', 'opsOffered'],
+    'src/core/combat/effect-ops.ts': ['healsFully', 'reactionMayHold', 'OP_KINDS', 'describeStatus', 'freeStatusKey', 'landLine', 'opLines', 'opsOffered'],
     // the move an omen lands and the dice it asks for: the GM's Land button rolls them as any use's (`needs` above)
     'src/core/combat/fight-turn.ts': ['omenMove', 'omenNeeds'],
     'src/core/combat/fight-channel.ts': [],
@@ -3653,4 +3653,155 @@ test('no hasten op lands on its own user or bearer', async () => {
     }
   }
   expect(hits, 'hasteOn ignores t.id === user.id; use refund (or a self-curing statusGained refund trigger on a self-only active) instead of hasten').toEqual([]);
+});
+
+test('no shipped ability with swap or shove applies a status carrying root', async () => {
+  // resolve.ts landOps runs before swapped() and pushed(), so a status carrying { op: 'root' } applied by the same
+  // ability sets target stride to 0 and silently cancels both the swap and the shove (the Wave 3 Orbital Pull bug).
+  const { RULES } = await import('../src/core/rules.ts');
+  const { CLASS_SIGNATURES } = await import('../src/core/registry/class-powers.ts');
+  const { CLASS_TREES } = await import('../src/core/registry/class-trees.ts');
+  const { KEYSTONES } = await import('../src/core/registry/keystones.ts');
+  const { SKILL_ABILITIES, monsterAbility } = await import('../src/core/registry/abilities.ts');
+  const { SEEDS } = await import('../src/core/registry/monsters.ts');
+  const { exampleSkills } = await import('../src/core/registry/kit-examples.ts');
+  const { BUILT_IN_STATUSES } = await import('../src/core/registry/statuses.ts');
+  const { BUILT_IN_ITEMS, itemOf } = await import('../src/core/registry/items.ts');
+  const { abilityOf } = await import('../src/core/registry/ability-kinds.ts');
+  const { abilityId } = await import('../src/core/combat/ability-types.ts');
+  const { statusKey } = await import('../src/core/combat/effect-ops.ts');
+  const { tiles } = await import('../src/core/combat/space.ts');
+  const { tick } = await import('../src/core/combat/timeline.ts');
+
+  type StatusDefT = import('../src/core/combat/effect-ops.ts').StatusDef;
+  type AbilityT = import('../src/core/combat/ability-types.ts').Ability;
+  type NodeGiftT = import('../src/core/registry/class-trees.ts').NodeGift;
+  type TreeNodesT = { readonly nodes: readonly { readonly id: string; readonly gifts: readonly NodeGiftT[] }[] };
+  type SigActivesT = { readonly actives?: readonly AbilityT[] };
+
+  const movesTarget = (a: AbilityT): boolean => a.move?.kind === 'swap' || a.ops.some(o => o.op === 'shove');
+  const hasRoot = (def: StatusDefT): boolean =>
+    def.ops.some(o => o.op === 'root')
+    || ('stack' in def && !!def.stack?.threshold?.ops.some(o => o.op === 'applyStatus' && hasRoot(o.def)));
+  const statusHasRoot = (key: string, def: StatusDefT, follow?: true): boolean => {
+    if (hasRoot(def)) return true;
+    if (follow && key in BUILT_IN_STATUSES) return hasRoot(BUILT_IN_STATUSES[key as keyof typeof BUILT_IN_STATUSES]);
+    return false;
+  };
+  const scanAbility = (where: string, a: AbilityT, hits: string[], movedStatusKeys?: Set<string>): void => {
+    if (!movesTarget(a)) return;
+    for (const op of a.ops) {
+      if (op.op !== 'applyStatus') continue;
+      movedStatusKeys?.add(op.key);
+      if (statusHasRoot(op.key, op.def, op.follow)) {
+        hits.push(`${where} ${a.name}: swap/shove applies status "${op.key}" (${op.def.label}) carrying root`);
+      }
+    }
+  };
+  const scanClass = (cls: string, sig: SigActivesT, tree: TreeNodesT | undefined, hits: string[]): void => {
+    const movedKeys = new Set<string>();
+    for (const a of sig.actives ?? []) scanAbility(`${cls} base`, a, hits, movedKeys);
+    if (!tree) return;
+    for (const n of tree.nodes) {
+      for (const g of n.gifts) {
+        if (g.kind === 'replace-active') scanAbility(`${cls} ${n.id}`, g.active, hits, movedKeys);
+      }
+    }
+    for (const n of tree.nodes) {
+      for (const g of n.gifts) {
+        if (g.kind === 'upgrade-status' && movedKeys.has(g.targetKey) && hasRoot(g.def)) {
+          hits.push(`${cls} ${n.id} upgrade:${g.key}: upgrades swap/shove status "${g.targetKey}" to carry root`);
+        }
+      }
+    }
+  };
+
+  // Self-test: catches swap+root, shove+root, followed built-in root, and upgrade-status adding root (for both base and replace-active swap/shove actives); allows swap+shove+slow, plain root, and non-moving upgrade-status.
+  const rootDef: StatusDefT = { label: 'Pinned', desc: '', ops: [{ op: 'root' }] };
+  const slowDef: StatusDefT = { label: 'Crushed Stance', desc: '', ops: [{ op: 'speed', pct: -15 }, { op: 'share', on: 'dealt', pct: -15 }] };
+  const badSwap = abilityOf('strike', {
+    id: abilityId('lint-bad-swap'), name: 'Bad Swap', move: { kind: 'swap' },
+    ops: [{ op: 'applyStatus', key: statusKey('lint-pin'), def: rootDef, duration: tick(2000) }],
+  }, RULES);
+  const badShove = abilityOf('blast', {
+    id: abilityId('lint-bad-shove'), name: 'Orbital Pull',
+    ops: [{ op: 'shove', dir: 'toward', from: 'aim', tiles: tiles(2) }, { op: 'applyStatus', key: statusKey('lint-pin'), def: rootDef, duration: tick(2000) }],
+  }, RULES);
+  const badFollow = abilityOf('strike', {
+    id: abilityId('lint-bad-follow'), name: 'Bad Follow',
+    ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: tiles(1) }, { op: 'applyStatus', key: statusKey('restrained'), def: slowDef, duration: tick(2000), follow: true }],
+  }, RULES);
+  const goodSuplex = abilityOf('strike', {
+    id: abilityId('lint-good-suplex'), name: 'Heavenly Suplex', move: { kind: 'swap' },
+    ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: tiles(2) }, { op: 'applyStatus', key: statusKey('lint-slow'), def: slowDef, duration: tick(2000) }],
+  }, RULES);
+  const goodAltShove = abilityOf('strike', {
+    id: abilityId('lint-good-suplex'), name: 'Mountain Drop', move: { kind: 'swap' },
+    ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: tiles(3) }, { op: 'applyStatus', key: statusKey('lint-alt-slow'), def: slowDef, duration: tick(2000) }],
+  }, RULES);
+  const goodRoot = abilityOf('curse', {
+    id: abilityId('lint-good-root'), name: 'Plain Snare',
+    ops: [{ op: 'applyStatus', key: statusKey('lint-pin'), def: rootDef, duration: tick(2000) }],
+  }, RULES);
+  const goodPlainCurse = abilityOf('curse', {
+    id: abilityId('lint-good-curse'), name: 'Plain Hex',
+    ops: [{ op: 'applyStatus', key: statusKey('lint-hex'), def: slowDef, duration: tick(2000) }],
+  }, RULES);
+  const syntheticBad: string[] = [];
+  scanAbility('synthetic', badSwap, syntheticBad);
+  scanAbility('synthetic', badShove, syntheticBad);
+  scanAbility('synthetic', badFollow, syntheticBad);
+  expect(syntheticBad.length, 'rule catches swap+root, shove+root, and followed built-in root').toBe(3);
+
+  const syntheticGood: string[] = [];
+  scanAbility('synthetic', goodSuplex, syntheticGood);
+  scanAbility('synthetic', goodRoot, syntheticGood);
+  expect(syntheticGood, 'rule allows swap+shove with non-root statuses and non-moving roots').toEqual([]);
+
+  const syntheticTreeHits: string[] = [];
+  scanClass(
+    'Synthetic',
+    { actives: [goodSuplex, goodPlainCurse] },
+    {
+      nodes: [
+        { id: 'n-replace', gifts: [{ kind: 'replace-active', targetId: goodSuplex.id, active: goodAltShove }] },
+        { id: 'n-bad-base-upgrade', gifts: [{ kind: 'upgrade-status', targetKey: statusKey('lint-slow'), key: statusKey('lint-slow-2'), def: rootDef }] },
+        { id: 'n-bad-alt-upgrade', gifts: [{ kind: 'upgrade-status', targetKey: statusKey('lint-alt-slow'), key: statusKey('lint-alt-slow-2'), def: rootDef }] },
+        { id: 'n-ok-nonmoving-upgrade', gifts: [{ kind: 'upgrade-status', targetKey: statusKey('lint-hex'), key: statusKey('lint-hex-2'), def: rootDef }] },
+        { id: 'n-ok-slow-upgrade', gifts: [{ kind: 'upgrade-status', targetKey: statusKey('lint-slow'), key: statusKey('lint-slow-3'), def: slowDef }] },
+      ],
+    },
+    syntheticTreeHits,
+  );
+  expect(syntheticTreeHits.length, 'upgrade-status branch catches root added to base or replace-active swap/shove statuses and allows non-moving or non-root upgrades').toBe(2);
+  expect(syntheticTreeHits[0]).toContain('n-bad-base-upgrade');
+  expect(syntheticTreeHits[1]).toContain('n-bad-alt-upgrade');
+
+  const hits: string[] = [];
+  for (const [cls, sig] of Object.entries(CLASS_SIGNATURES)) {
+    if (!sig) continue;
+    scanClass(cls, sig, CLASS_TREES[cls as keyof typeof CLASS_TREES], hits);
+  }
+  for (const [tier, group] of Object.entries(KEYSTONES)) {
+    for (const [k, make] of Object.entries(group)) {
+      const ks = make(RULES);
+      if (ks.active) scanAbility(`keystone:${tier}:${k} ${ks.name}`, ks.active, hits);
+      if (ks.awakened?.active) scanAbility(`keystone:${tier}:${k} ${ks.name} awakened`, ks.awakened.active, hits);
+    }
+  }
+  for (const [name, make] of Object.entries(SKILL_ABILITIES)) {
+    const a = make(RULES);
+    if (a) scanAbility(`skill:${name}`, a, hits);
+  }
+  for (const sk of exampleSkills(RULES)) {
+    if (sk.type === 'active' && sk.ability) scanAbility(`example-skill:${sk.name}`, sk.ability, hits);
+  }
+  for (const [defId, seed] of BUILT_IN_ITEMS) {
+    const it = itemOf(RULES, seed);
+    if (it.active) scanAbility(`item:${defId} ${it.name}`, it.active, hits);
+  }
+  for (const seed of SEEDS) {
+    for (const spec of seed[7]) scanAbility(`monster:${seed[0]}`, monsterAbility(spec, RULES), hits);
+  }
+  expect(hits, 'landOps runs before swapped()/pushed(), so a root applied on a swap or shove ability cancels the movement; use slow/stagger/hold instead of root').toEqual([]);
 });

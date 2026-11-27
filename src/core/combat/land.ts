@@ -33,7 +33,7 @@ export const alive = (b: Body): boolean => isUp(b) || b.kind === 'hunter';
 
 // Rule 12 (balance plan section 9, R6): the damage type picks the defence and the pair of penetrations: armor
 // and the armor pair for a physical hit, resist and the resist pair for an arcane one, and 0 for true damage.
-// The percent comes off first, then the flat points; then the flat part of what is left comes off the hit, then the percentage; at least 1.
+// The percent comes off first, then the flat points; then the flat part of what is left comes off the hit, then the percentage; at least 1 for any positive raw hit (a land damage op with raw <= 0 deals 0).
 /** Zero penetration, for status ticks and other hits that carry no attacker penetration. */
 export const NO_PEN: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'> = {
   armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0,
@@ -265,6 +265,9 @@ export function landedWords(
   return out;
 }
 
+/** Hit values carried on `struck` and `critTaken` triggers (`blocked`: stopped by defense, guard, or shield; `lost`: HP lost past shield). */
+export type HitCounts = { readonly blocked: number; readonly lost: number };
+
 /**
  * Ops landing once on each of `targets`, from `source`, at their formulas' averages (no dice: design 1.3.6). `hitter` is
  * whose hit a damage op is for defence (rule 12) and whose sheet the formula reads as the user: the status's source for
@@ -275,7 +278,7 @@ export function landedWords(
  * that source, each as an entry of its own in `landed`, after the targets'.
  */
 export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hitter: Body | null, targets: readonly CombatantId[], source: Source, now: Tick, R: OpRules,
-  o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey; readonly gained?: Gained } = {}): { landed: Landed[]; fired: LandFired[] } {
+  o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey; readonly gained?: Gained; readonly hit?: HitCounts } = {}): { landed: Landed[]; fired: LandFired[] } {
   const landed: Landed[] = [], fired: LandFired[] = [];
   // what a move from a target gave the body that took it (the hitter), told after the targets
   const taken: Record<CombatantId, StatusKey[]> = {};
@@ -313,7 +316,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
         if (m) (m.holder === t.id ? gained : (taken[m.holder] ??= [])).push(m.key);
         continue;
       }
-      const r = landOne(op, user, hitter ? user : null, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false);
+      const r = landOne(op, user, hitter ? user : null, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false, o.hit);
       t = r.target; dealt += r.dealt;
       if (r.fired) fired.push(r.fired);
       if (r.gained) gained.push(r.gained);
@@ -424,11 +427,15 @@ export function landThreshold(rows: Map<CombatantId, Body>, f: LandFired, now: T
  * What the kits' formula names read outside a use (kits design 1.5): each body's stacks and lost share, and the user's
  * kills, within their rules' bounds; no field, rounds held or bodies hit, which only a use's snapshot has.
  */
-export function kitOf(user: Body, target: Body, R: OpRules): KitScope {
+export function kitOf(user: Body, target: Body, R: OpRules, hit?: HitCounts): KitScope {
   const K = R.fight.kit;
   const stacks = (b: Body) => Object.fromEntries(counting(b.statuses).map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
   const missing = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - rowHp(b) / b.sheet.hpMax)) : 0);
-  return { stacks: { user: stacks(user), target: stacks(target) }, field: {}, missing: { user: missing(user), target: missing(target) }, held: {}, hits: 0, kills: Math.min(K.kills, tallyOf(user).kills.length), spent: 0 };
+  return {
+    stacks: { user: stacks(user), target: stacks(target) }, field: {}, missing: { user: missing(user), target: missing(target) },
+    held: {}, hits: 0, kills: Math.min(K.kills, tallyOf(user).kills.length), spent: 0,
+    blocked: hit?.blocked ?? 0, lost: hit?.lost ?? 0,
+  };
 }
 
 /**
@@ -475,17 +482,20 @@ export function landMove(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op:
 
 /**
  * One land op on `t` at its average from `source`'s tier, read with `user` as the user, every amount times `times`; a
- * heal or a shield is `giver`'s to give (standing.ts `given`): the hitter, or null when no body lands it. A refund is time back on the bearer's own turn, which the
- * caller gives (triggers.ts); here it changes nothing.
+ * heal or a shield is `giver`'s to give (standing.ts `given`): the hitter, or null when no body lands it. A damage op
+ * whose raw average is 0 or less deals 0 (never rule 12's 1-damage floor, which applies only to positive raw hits). A
+ * refund is time back on the bearer's own turn, which the caller gives (triggers.ts); here it changes nothing.
  */
-function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean):
+function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean, hit?: HitCounts):
   { target: Body; dealt: number; fired: LandFired | null; gained: StatusKey | null; cured: StatusKey | null; lands: readonly Status[] } {
-  const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R) };
+  const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R, hit) };
   const at = (f: Tiered<Formula>) => average(atTier(f, source.tier), scope) * times;
   const none = { fired: null, gained: null, cured: null, lands: [] };
   switch (o.op) {
     case 'damage': {
-      const by = user === t ? null : user, raw = Math.max(0, at(o.amount)) * damageShare(by, t, R) * dealtBy(by), dealt = afterDefence(raw, o.type, user.sheet, t.sheet, R);
+      const by = user === t ? null : user, raw = Math.max(0, at(o.amount)) * damageShare(by, t, R) * dealtBy(by);
+      if (raw <= 0) return { target: t, dealt: 0, ...none };
+      const dealt = afterDefence(raw, o.type, user.sheet, t.sheet, R);
       const s = throughShield(t, dealt, now);
       return { target: hurt(s.target, wardedDamage(s.target, dealt - s.absorbed)), dealt, ...none };
     }
@@ -493,7 +503,13 @@ function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Sou
     case 'applyStatus': {
       // a status a safeguard or a spent ward refuses is not put on, and so not gained. A land op has no map, so a hide it
       // puts on is not asked whether a foe watches its body (triggers.ts, fight-turn.ts and fight-react.ts hold no grid here)
-      const p = landStatus(t, o, user, source, from, cross, false, now, R);
+      let applied: Extract<Op, { op: 'applyStatus' }> = o;
+      if (o.stacksBy) {
+        const n = clamp(Math.floor(average(o.stacksBy, scope)), 0, R.fight.kit.stackAdd);
+        if (n <= 0) return { target: t, dealt: 0, ...none };
+        applied = { ...o, stacks: n };
+      }
+      const p = landStatus(t, applied, user, source, from, cross, false, now, R);
       return { target: p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target, R) : p.target, dealt: 0, ...none, fired: p.fired, gained: p.put ? o.key : null };
     }
     case 'cureStatus': case 'dispel': {

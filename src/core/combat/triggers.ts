@@ -7,10 +7,12 @@
 
 import type { StatusKey, LandOp } from './effect-ops.ts';
 import type { Body, OpRules, Reach } from './effect-ops.ts';
+import { someFormula } from '../formula.ts';
+import type { Formula } from '../formula.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { isMinionOf, ownerOf } from './summons.ts';
 import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
-import { isStacking } from './op-amount.ts';
+import { atTier, isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
 import { counting, harmful } from './standing.ts';
 import { isDamage } from './damage-type.ts';
@@ -102,10 +104,26 @@ export const tripKey = (key: StatusKey, i: number): string => `${key}#${i}`;
 // ── the events a use raises (rule 19b) ──
 /**
  * One event on one bearer: what it was, the other body in it (the one hit, the striker, the one killed), the tags of the
- * ability behind it (none for a trigger's own hit) and, for a status gained or ended, its key.
+ * ability behind it (none for a trigger's own hit), for a status gained or ended its key, and for `struck`/`critTaken`
+ * raised by a use the damage stopped (`blocked`) and HP lost past shield (`lost`).
  */
-export type Raised = { readonly bearer: CombatantId; readonly event: TriggerEvent; readonly other: CombatantId | null; readonly tags: readonly Tag[]; readonly key: StatusKey | null };
-export const raised = (bearer: CombatantId, event: TriggerEvent, other: CombatantId | null = null, tags: readonly Tag[] = [], key: StatusKey | null = null): Raised => ({ bearer, event, other, tags, key });
+export type Raised = {
+  readonly bearer: CombatantId;
+  readonly event: TriggerEvent;
+  readonly other: CombatantId | null;
+  readonly tags: readonly Tag[];
+  readonly key: StatusKey | null;
+  readonly blocked?: number;
+  readonly lost?: number;
+};
+export const raised = (
+  bearer: CombatantId,
+  event: TriggerEvent,
+  other: CombatantId | null = null,
+  tags: readonly Tag[] = [],
+  key: StatusKey | null = null,
+  hit?: { readonly blocked: number; readonly lost: number },
+): Raised => ({ bearer, event, other, tags, key, ...(hit ? { blocked: hit.blocked, lost: hit.lost } : {}) });
 
 /**
  * Whether the fight's damage took a body under `kit.lowHpAt` of its max HP (item-stats design 3.1), the one test of the
@@ -161,8 +179,12 @@ export function eventsOf(a: Pick<Ability, 'ops' | 'kind' | 'channel' | 'tags'>, 
     const mine: Raised[] = [], theirs: Raised[] = [];
     const hit = isDamage(o.type) && o.avoid !== 'out' && o.dealt > 0;
     const now = rowIn(after, o.target);
-    if (hit) { mine.push(raised(by, 'hitDealt', o.target, tags)); theirs.push(raised(o.target, 'struck', by, tags)); }
-    if (o.crit) { mine.push(raised(by, 'critDealt', o.target, tags)); theirs.push(raised(o.target, 'critTaken', by, tags)); }
+    const hitVals = hit ? {
+      blocked: Math.max(0, Math.round(o.raw) - o.dealt + o.absorbed),
+      lost: Math.max(0, o.dealt - o.absorbed),
+    } : undefined;
+    if (hit) { mine.push(raised(by, 'hitDealt', o.target, tags)); theirs.push(raised(o.target, 'struck', by, tags, null, hitVals)); }
+    if (o.crit) { mine.push(raised(by, 'critDealt', o.target, tags)); theirs.push(raised(o.target, 'critTaken', by, tags, null, hitVals)); }
     if (o.down) {
       mine.push(raised(by, 'kill', o.target, tags));
       const ak = armyKillOf(user, now, tags);
@@ -224,6 +246,20 @@ function gainedOf(e: Raised): Gained | null {
 /** Whether any row could answer an event: a status with a trigger, or with stacks that leave on an event. */
 const answers = (bodies: readonly Body[]): boolean =>
   bodies.some(b => b.statuses.some(s => (s.def.triggers?.length ?? 0) > 0 || (isStacking(s.def) && s.def.stack.leave.kind === 'event')));
+/** Which hit counts (`blocked`, `lost`) `ops` read in their formulas at `tier`. */
+function hitCountsRead(ops: readonly LandOp[], tier: number): { readonly blocked: boolean; readonly lost: boolean } {
+  let blocked = false, lost = false;
+  const scan = (f: Formula): void => {
+    if (!blocked && someFormula(f, x => x.kind === 'count' && x.name === 'blocked')) blocked = true;
+    if (!lost && someFormula(f, x => x.kind === 'count' && x.name === 'lost')) lost = true;
+  };
+  for (const o of ops) {
+    if (o.op === 'damage' || o.op === 'heal' || o.op === 'mana' || o.op === 'fatigue') scan(atTier(o.amount, tier));
+    else if (o.op === 'shield') scan(o.amount);
+    else if (o.op === 'applyStatus' && o.stacksBy) scan(o.stacksBy);
+  }
+  return { blocked, lost };
+}
 
 /** What firing did: the rows after it, a log phrase for each trigger that fired and the rows those phrases name (`about`), how many fired, and the deepest depth one fired at (0: none). */
 export type TriggerFired = { readonly bodies: Body[]; readonly said: string[]; readonly about: CombatantId[]; readonly fires: number; readonly deepest: number };
@@ -260,6 +296,10 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           const cur = rows.get(b.id)!, key = tripKey(s.key, i);
           if (fires >= K.fires) return;
           const to = targetsOf(rows, cur, t.to, e);
+          if (e.event === 'struck' || e.event === 'critTaken') {
+            const reads = hitCountsRead(t.ops, s.source.tier);
+            if ((reads.blocked || reads.lost) && (!reads.blocked || (e.blocked ?? 0) <= 0) && (!reads.lost || (e.lost ?? 0) <= 0)) return;
+          }
           if (t.ops.some(o => o.op === 'reform')) {
             const reformMana = t.ops.reduce((n, o) => (o.op === 'reform' ? n + o.mana : n), 0);
             const canReform = isUp(cur) && cur.mana >= reformMana && to.some(id => {
@@ -280,7 +320,8 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           rows.set(bearer.id, bearer);
           // an echo reads the status gained or imposed that set it off (land.ts `echoed`); what it puts on is neither, so it never chains
           const g = gainedOf(e);
-          const r = landOps(rows, t.ops, bearer, to, s.source, now, R, { cross: true, event: e.key ?? s.key, ...(g ? { gained: g } : {}) });
+          const hit = e.event === 'struck' || e.event === 'critTaken' ? { blocked: e.blocked ?? 0, lost: e.lost ?? 0 } : undefined;
+          const r = landOps(rows, t.ops, bearer, to, s.source, now, R, { cross: true, event: e.key ?? s.key, ...(g ? { gained: g } : {}), ...(hit ? { hit } : {}) });
           for (const f of r.fired) landThreshold(rows, f, now, R);
           const parts = landedWords(r.landed, id => rows.get(id)?.name ?? id);
           about.push(bearer.id, ...r.landed.filter(l => l.dealt || l.healed || l.reformed).map(l => l.target));
@@ -289,7 +330,7 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
             if (l.down) withKill(rows, bearer.id, l.target);
             if (depth >= K.depth) continue;
             const targetNow = rows.get(l.target);
-            if (l.dealt > 0) next.push(raised(bearer.id, 'hitDealt', l.target), raised(l.target, 'struck', bearer.id));
+            if (l.dealt > 0) next.push(raised(bearer.id, 'hitDealt', l.target), raised(l.target, 'struck', bearer.id, [], null, { blocked: 0, lost: 0 }));
             if (l.down) {
               next.push(raised(bearer.id, 'kill', l.target), raised(l.target, 'down', bearer.id));
               const ak = armyKillOf(rows.get(bearer.id), targetNow);

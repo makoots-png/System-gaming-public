@@ -121,7 +121,8 @@ export type End = {
  * own turn, and a guard or a negate answers a use: a use's rules, which nothing lands outside one, so none is a land op.
  */
 export type LandOp =
-  | Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }>
+  | Exclude<Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }>, { readonly op: 'applyStatus' }>
+  | (Extract<Op, { readonly op: 'applyStatus' }> & { readonly stacksBy?: Formula })
   | Extract<Op, { readonly op: 'damage' | 'heal' | 'echo' }>
   | { readonly op: 'refund'; readonly pct: number }
   | { readonly op: 'reform'; readonly hpShare: number; readonly mana: number };
@@ -1110,7 +1111,7 @@ export function describeStatus(def: StatusDef, tier: number | null, R: DescribeR
   return [...describeStack(live, tier, R, statusKey), ...(live.triggers ?? []).map(t => triggerLine(t, tier, R)), ...(live.end ? [endLine(live.end, tier, R)] : [])];
 }
 /** A land op in words: time back, minion reform, or the op's own line. */
-const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string =>
+export const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string =>
   o.op === 'refund' ? `${o.pct}% of an action's time back`
     : o.op === 'reform' ? `Reforms a fallen minion at ${Math.round(o.hpShare * 100)}% HP for ${o.mana} mana`
       : opLine(o, tier, R);

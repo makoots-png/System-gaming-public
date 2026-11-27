@@ -24,7 +24,7 @@ async function onboardBlankGM(page: Page): Promise<void> {
   await dismissAll(page);
 }
 
-test('starter Goblin Den first fight prompts Offer classes, local hunters claim from 3 Mythics + 3 Epics, and GM panel offers anytime', async ({ device }) => {
+test('starter Goblin Den first fight prompts Offer classes, local hunters claim from wired Mythics + 3 Epics, and GM panel offers anytime', async ({ device }) => {
   const gm = (await device('gm-starter')).page;
   await setupGoblinDenGM(gm);
   await dismissAll(gm);
@@ -136,9 +136,16 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
       await expect(m.locator('[data-co-epic-note]')).toHaveText(OFFER_WORDS.epicKeepNote);
     }
 
-    // Verify 360px phone layout has zero horizontal overflow and the last Epic card is reachable inside the scrollable body.
-    const overflow = await p1.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
+    // Verify 360px phone layout has zero horizontal overflow (page and modal body) and the last Epic card is reachable inside the scrollable body.
+    const overflow = await p1.evaluate(() => {
+      const mid = document.querySelector('[data-co-modal] .co-mid');
+      return {
+        page: document.documentElement.scrollWidth - window.innerWidth,
+        modal: mid ? mid.scrollWidth - mid.clientWidth : 0,
+      };
+    });
+    expect(overflow.page).toBeLessThanOrEqual(1);
+    expect(overflow.modal).toBeLessThanOrEqual(1);
     const lastEpic = p1.locator(`[data-co-modal] [data-co-card="${EPIC_OFFER_POOL[EPIC_OFFER_POOL.length - 1]}"]`);
     await lastEpic.scrollIntoViewIfNeeded();
     await expect(lastEpic).toBeVisible();

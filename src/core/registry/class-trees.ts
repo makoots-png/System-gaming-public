@@ -14,10 +14,12 @@ import { isClassName } from './jobs.ts';
 import type { ClassName, ClassRarity } from './jobs.ts';
 import { HEMOMANCER_TREE } from './class-hemomancer.ts';
 import { STARFORGER_TREE } from './class-starforger.ts';
+import { DREADNOUGHT_TREE } from './class-dreadnought.ts';
 import { NECROMANCER_TREE } from './class-necromancer.ts';
 import { BLADEFIEND_TREE } from './class-bladefiend.ts';
 import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
 import { NULLWEAVER_TREE } from './class-nullweaver.ts';
+import { GODFIST_TREE } from './class-godfist.ts';
 import { IRONCLAD_TREE } from './class-ironclad.ts';
 import { PACKLORD_TREE } from './class-packlord.ts';
 import { SERAPH_TREE } from './class-seraph.ts';
@@ -25,6 +27,7 @@ import { STORMCALLER_TREE } from './class-stormcaller.ts';
 import { GRIMREAPER_TREE } from './class-grimreaper.ts';
 import { CHRONOKEEPER_TREE } from './class-chronokeeper.ts';
 import { VOIDSTALKER_TREE } from './class-voidstalker.ts';
+import { SOULFORGER_TREE } from './class-soulforger.ts';
 import { BRAMBLEGUARD_TREE } from './class-brambleguard.ts';
 import { PYROMANCER_TREE } from './class-pyromancer.ts';
 import { SNIPER_TREE } from './class-sniper.ts';
@@ -32,6 +35,11 @@ import { BERSERKER_TREE } from './class-berserker.ts';
 import { CLERIC_TREE } from './class-cleric.ts';
 import { NIGHTBLADE_TREE } from './class-nightblade.ts';
 import { BASTION_TREE } from './class-bastion.ts';
+import { RUNEKNIGHT_TREE } from './class-runeknight.ts';
+import { DUELIST_TREE } from './class-duelist.ts';
+import { ARTIFICER_TREE } from './class-artificer.ts';
+import { ORACLE_TREE } from './class-oracle.ts';
+import { STRIDER_TREE } from './class-strider.ts';
 import { FIGHTER_TREE } from './class-fighter.ts';
 import { ASSASSIN_TREE } from './class-assassin.ts';
 import { MAGE_TREE } from './class-mage.ts';
@@ -84,8 +92,8 @@ export const TREE_SHAPE: Readonly<Record<ClassRarity, TreeShape>> = {
 /**
  * What one skill-tree node grants when bought. Nodes may add a sheet bonus or conditional scaler, replace an
  * existing worn status or active ability by id, or upgrade a status the folded actives apply (`upgrade-status`).
- * `upgrade-status` rewrites top-level `applyStatus` ops on folded `actives` only; it does not recurse into
- * `zone.ops`, `zone.end`, or nested status triggers (those use `replace-active` or `replace-worn`).
+ * `upgrade-status` rewrites top-level `applyStatus` ops, `stacks` prices, and `holds` gates on folded `actives` only;
+ * it does not recurse into `zone.ops`, `zone.end`, or nested status triggers (those use `replace-active` or `replace-worn`).
  * Nodes never add a fifth active.
  */
 export type NodeGift =
@@ -127,10 +135,12 @@ export type ClassTreeMap = Readonly<Partial<Record<ClassName, ClassTree>>>;
 export const CLASS_TREES: ClassTreeMap = {
   Hemomancer: HEMOMANCER_TREE,
   Starforger: STARFORGER_TREE,
+  Dreadnought: DREADNOUGHT_TREE,
   Necromancer: NECROMANCER_TREE,
   Bladefiend: BLADEFIEND_TREE,
   Rifthunter: RIFTHUNTER_TREE,
   Nullweaver: NULLWEAVER_TREE,
+  Godfist: GODFIST_TREE,
   Seraph: SERAPH_TREE,
   Ironclad: IRONCLAD_TREE,
   Packlord: PACKLORD_TREE,
@@ -138,6 +148,7 @@ export const CLASS_TREES: ClassTreeMap = {
   Grimreaper: GRIMREAPER_TREE,
   Chronokeeper: CHRONOKEEPER_TREE,
   Voidstalker: VOIDSTALKER_TREE,
+  Soulforger: SOULFORGER_TREE,
   Brambleguard: BRAMBLEGUARD_TREE,
   Pyromancer: PYROMANCER_TREE,
   Sniper: SNIPER_TREE,
@@ -145,6 +156,11 @@ export const CLASS_TREES: ClassTreeMap = {
   Cleric: CLERIC_TREE,
   Nightblade: NIGHTBLADE_TREE,
   Bastion: BASTION_TREE,
+  Runeknight: RUNEKNIGHT_TREE,
+  Duelist: DUELIST_TREE,
+  Artificer: ARTIFICER_TREE,
+  Oracle: ORACLE_TREE,
+  Strider: STRIDER_TREE,
   Fighter: FIGHTER_TREE,
   Assassin: ASSASSIN_TREE,
   Mage: MAGE_TREE,
