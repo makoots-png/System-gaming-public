@@ -16,6 +16,9 @@ import { gateFought } from '../core/gates/world.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, extractAttemptsMax, UNTRIED } from '../core/combat/extraction.ts';
 import { ADJUST_HINT } from '../core/combat/roll-adjust.ts';
+import { activeClass } from '../core/hunter/class-locker.ts';
+import { VESSEL_KINDS, vesselUpgradePlan } from '../core/hunter/blood-vessels.ts';
+import { classExtractOf } from '../core/registry/class-powers.ts';
 import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/rise.ts';
 import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
@@ -726,8 +729,8 @@ export function register(app) {
     adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return NO_ROW; return answered(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
     revive: cid => { const r = rowOf(fight(), cid); return r ? revive(r) : NO_ROW; },
     spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return r ? answered(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)) : NO_ROW; },
-    // an extraction's roll and GM adjustment on the corpse's row (the fight's `extract`), and a risen shadow's join in the same write
-    extracted: (cid, by, roll, adjust, rose) => answered(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), roll, adjust }, null,
+    // an extraction's roll and GM adjustment on the corpse's row (the fight's `extract`), and a risen shadow or Crimson Vessel in the same write
+    extracted: (what, cid, by, roll, adjust, rose) => answered(send({ type: 'extract', what, id: combatantId(cid), by: combatantId(by), roll, adjust }, null,
       rose && rose.kind === 'local' ? rose.step : null, rose && rose.kind === 'remote' ? rose.event : null)),
     add: list => add(list), isActive: () => running(fight()),
     startFlow, showParty, okToReplace: async () => !otherGMLive() || confirmReplace(),
@@ -1084,14 +1087,23 @@ export function register(app) {
       }
     }
     const monsterId = refs().monsters[r.id], entry = monsterId ? A().bestiary.get(monsterId) : null;
-    // who may extract: each hunter the fight holds whose job may (rules' extractJobs), this phone's or a player's (its
-    // sheet as the room holds it), not the active hunter
+    // who may extract shadows: each hunter the fight holds whose job may (rules' extractJobs), this phone's or a player's
     const extractors = k.down && entry && entry.extractable !== false
       ? f.rows.flatMap(x => {
         const h = holderHunter(x);
         if (!h || !A().shadows.canExtract(h)) return [];
         const max = extractAttemptsMax(R.shadow, x.kind === 'hunter' && x.extractBonus ? x : h);
         return attemptsLeft(r.extraction ?? UNTRIED, max) > 0 ? [{ row: x, h }] : [];
+      }) : [];
+    // who may extract blood: post-fight only (`f.phase === 'ended'`), independent of shadow extraction, on non-mythic extractable corpses
+    const vKind = r.origin.kind === 'monster' ? oneOf(r.origin.monsterKind, VESSEL_KINDS, null) : null;
+    const bloodExtractors = f.phase === 'ended' && k.down && r.kind === 'monster' && !r.bled && entry && entry.extractable !== false && vKind
+      ? f.rows.flatMap(x => {
+        const h = holderHunter(x);
+        if (!h || !A().shadows.canExtractBlood(h)) return [];
+        const spec = classExtractOf(h), active = activeClass(h);
+        if (!spec || spec.kind !== 'blood' || active.kind !== 'earned') return [];
+        return isRefused(vesselUpgradePlan(active.entry.vessels, rankOf(r), vKind, spec.cap)) ? [] : [{ row: x, h, label: spec.label }];
       }) : [];
     const waitDodge = running(f) && !!f.dodge;
     const turnAct = now && !k.down && r.kind === 'monster' && running(f)
@@ -1107,7 +1119,10 @@ export function register(app) {
         + A().detail.panel('gm-card', `${r.id}|${s.key}`, () => ({ kind: 'status', key: s.key, label: s.def.label, def: s.def, tier: s.source.tier, ...(s.stacks ? { stacks: s.stacks } : {}), left: s.rounds }))).join('') || '<span class="empty">No statuses.</span>',
       fx: glance.map(([l, L]) => `<li><b>${esc(l)}</b>: ${esc(L.join(', '))}</li>`).join(''), noFx: !glance.length,
       lifeAct: lifeActHtml(r),
-      extract: extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract (${esc(x.h.name)})` : 'Extract'}</button>`).join(''),
+      extract: [
+        ...extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract shadow (${esc(x.h.name)})` : 'Extract shadow'}</button>`),
+        ...bloodExtractors.map(x => `<button type="button" data-fk="extract-blood-${esc(x.row.id)}" data-extract-blood="${esc(x.row.id)}">${bloodExtractors.length > 1 ? `${esc(x.label)} (${esc(x.h.name)})` : esc(x.label)}</button>`),
+      ].join(''),
       removeLabel: `Remove ${r.name} from the fight`,
       fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k), adjustRollBox: adjustRollCard(r, k, R),
     };
@@ -1400,6 +1415,22 @@ export function register(app) {
         const made = await A().shadows.extract(byRow.holder, corpse);
         if (made) { const c = el.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
         if (rowOf(fight(), r.id)) toast(made ? `${r.name} rises as a shadow.` : `Extraction of ${r.name} failed.`);
+        return;
+      }
+      if (b.hasAttribute('data-extract-blood')) {
+        const mid = refs().monsters[r.id], m = mid ? A().bestiary.get(mid) : null;
+        const o = r.origin.kind === 'monster' ? r.origin : null;
+        const exId = b.getAttribute('data-extract-blood'), byRow = exId ? rowOf(f, exId) : null;
+        if (!byRow || !byRow.holder || (byRow.holder.kind !== 'local' && byRow.holder.kind !== 'remote')) return;
+        /** @type {import('../core/api.ts').ExtractTarget} */
+        const corpse = {
+          id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
+          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: 0, adjust: r.kind === 'monster' ? (r.adjust ?? 0) : 0,
+          bled: r.kind === 'monster' && r.bled === true, ended: f.phase === 'ended',
+        };
+        const made = await A().shadows.extractBlood(byRow.holder, corpse);
+        if (made) { const c = el.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
+        return;
       }
     });
     render();

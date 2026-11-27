@@ -26,6 +26,8 @@ import { spendItem } from '../core/hunter/use.ts';
 import { heardStep } from '../core/item-refs.ts';
 import { heldItem } from '../core/hunter/inventory.ts';
 import { setShadowHp, shadowRises } from '../core/hunter/shadows.ts';
+import { addBloodVessel } from '../core/hunter/classes.ts';
+import { BLOOD_REFUSAL_WORDS } from '../core/hunter/blood-vessels.ts';
 import { record } from '../core/hunter/chronicle.ts';
 import { chapterLanded, whoseLine } from '../core/story/story.ts';
 import { weightHeard } from '../core/table-weight.ts';
@@ -189,6 +191,20 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     const next = shadowRises({ ...s, seq: ids.seq() }, h.id, p.shadow, id, { at: app.now(), cap: app.rules().logCap }, app.rules());
     if (isRefused(next)) return { save: s, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rose, but ${h.name}'s army is full.`, { kind: 'warning' }) };
     return { save: next, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rises and joins ${h.name}'s army.`, { kind: 'levelup' }) };
+  }) },
+  // the GM's phone rolled this hunter's post-fight blood extraction and it succeeded: store the Crimson Vessel on the
+  // hunter's blood-extracting class (core/hunter/classes.ts `addBloodVessel`), telling the player once applied
+  bloodExtract: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => {
+    const r = addBloodVessel(s, h.id, p.vessel, { at: app.now(), cap: app.rules().logCap }, app.rules());
+    if (isRefused(r)) {
+      const msg = r.why === 'stronger-held' ? BLOOD_REFUSAL_WORDS['stronger-held'] : `${p.vessel.name} blood extraction could not be saved.`;
+      return { save: s, tell: () => app.toast('Blood extraction', msg, { kind: 'warning' }) };
+    }
+    const kindWord = p.vessel.kind === 'normal' ? '' : ` ${p.vessel.kind}`;
+    const detail = r.replaced
+      ? `${p.vessel.name} (${p.vessel.rank}-rank${kindWord}) fills a Crimson Vessel for ${h.name}, replacing ${r.replaced.name}.`
+      : `${p.vessel.name} (${p.vessel.rank}-rank${kindWord}) fills a Crimson Vessel for ${h.name}.`;
+    return { save: r.save, tell: () => app.toast('! Extraction', detail, { kind: 'levelup' }) };
   }) },
   // the GM's fight wrote back this hunter's shadow's HP (0 dismisses it to resting): idempotent total through setShadowHp
   shadowHp: { once: true, land: (p, hids) => save => forEach(save, hids, (s, h) => {

@@ -76,7 +76,7 @@ export type Beside = {
   readonly also?: Step<Save> | null;
   /** The item the command uses up (`itemSpent`), or none. */
   readonly spent?: Spending | null;
-  /** The `shadow` message for a player's hunter whose extraction this command records raised one (shadows.js), or none. */
+  /** The `shadow` or `bloodExtract` message for a player's hunter whose extraction this command records succeeded (shadows.js), or none. */
   readonly risen?: RoomEvent | null;
   /** The `noted` messages of the players' hunters in a fight this command ended (fight-facts.ts `remoteFacts`), or none. */
   readonly noted?: readonly RoomEvent[];

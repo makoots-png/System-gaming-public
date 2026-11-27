@@ -15,6 +15,8 @@ import { CAP_ROUNDS } from './combat/play.ts';
 import { LIFE_STATES, parseLife } from './hunter/vitals.ts';
 import type { Life, LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
+import { parseBloodVessel } from './hunter/blood-vessels.ts';
+import type { BloodVessel } from './hunter/blood-vessels.ts';
 import { RAISES } from './hunter/revive-standing.ts';
 import type { Raise } from './hunter/revive-standing.ts';
 import { GUILD_ARCHETYPES, parseGuild } from './hunter/guild.ts';
@@ -363,6 +365,13 @@ export type SpentPayload = Base & { to: [SheetKey]; item: ItemId };
  */
 export type ShadowPayload = Base & { to: [SheetKey]; shadow: ShadowOrigin };
 /**
+ * Blood extracted for the player's hunter of `to` from a fallen monster after the GM's fight ended: the GM's phone
+ * rolled the hunter's blood extraction (src/views/shadows.js), the fight marked the corpse (`bled: true`), and this
+ * message, posted in the same write, stores the Crimson Vessel on the hunter's blood-extracting class
+ * (core/hunter/classes.ts `addBloodVessel`). Sealed to the GM and that phone; landed once by its id.
+ */
+export type BloodExtractPayload = Base & { to: [SheetKey]; vessel: BloodVessel };
+/**
  * The fight's write-back of a shadow on another phone (`sendRemoteShadow` in src/core/combat/fight-types.ts): its HP
  * as the fight's row holds it (0 dismisses it to resting, core/hunter/shadows.ts `setShadowHp`). Totals, so a repeat
  * changes nothing, and a newer one for the same hunter and shadow stands for an older one. Sealed to GM and that phone.
@@ -574,7 +583,7 @@ type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; dodge: DodgePayload; chain: ChainPayload;
-  coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; shadowHp: ShadowHpPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
+  coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; bloodExtract: BloodExtractPayload; shadowHp: ShadowHpPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload; capSet: CapSetPayload;
   classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload; classPick: ClassPickPayload;
@@ -751,6 +760,10 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), shadow: shadowOrigin(own(o, 'shadow')) };
   } },
+  bloodExtract: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
+    const to = toList(own(o, 'to'));
+    return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), vessel: need(parseBloodVessel(own(o, 'vessel'))) };
+  } },
   shadowHp: { gmOnly: true, ownSheet: false, audience: 'named', standsFor: p => `shadowHp ${p.to[0]} ${p.shadowId}`, read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), shadowId: need(parseSaveId<'sh'>(own(o, 'shadowId'))), hp: int(0, MAX_TOTAL)(own(o, 'hp')) };
@@ -883,7 +896,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'), stashAsk: entry('stashAsk'), stashAnswer: entry('stashAnswer'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'), dodge: entry('dodge'),
-  chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'), shadowHp: entry('shadowHp'),
+  chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'), bloodExtract: entry('bloodExtract'), shadowHp: entry('shadowHp'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
   systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'), capSet: entry('capSet'),

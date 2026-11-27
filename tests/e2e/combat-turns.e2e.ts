@@ -328,7 +328,7 @@ test('a goblin\'s corpse that crumbled on a natural 1 stays crumbled after the G
     // the extraction is a check rolled on the dice tray, which draws from Math.random (src/edge/roll.ts `trayRandom`)
     await page.evaluate(() => { Math.random = () => 0; });
     await card.locator('[data-extract]').tap();
-    await answerWindow(page, 'Shadow Extraction', 'Extract');
+    await answerWindow(page, 'Shadow Extraction', 'Extract shadow');
     await expect(page.locator('.sys-overlay.show', { hasText: 'corpse is destroyed' })).toBeVisible();
     await answerWindow(page, 'Extraction failed');
     await expect(card.locator('[data-extract]')).toHaveCount(0);
@@ -364,7 +364,7 @@ test('a goblin that rises on a natural 20 joins the Necromancer\'s army as the c
   await tapCombat(page, `[data-pick="${id}"]`);
   await page.evaluate(() => { Math.random = () => 0.99; });
   await combat(page).locator(`.cmb-card[data-cid="${id}"] [data-extract]`).tap();
-  await answerWindow(page, 'Shadow Extraction', 'Extract');
+  await answerWindow(page, 'Shadow Extraction', 'Extract shadow');
   const arise = page.locator('.sys-overlay.show', { hasText: 'ARISE' });
   await expect(arise).toBeVisible();
   expect(await army(), 'the shadow is in the army while ARISE asks its name').toEqual([goblin]);

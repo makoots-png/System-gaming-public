@@ -9,6 +9,8 @@ import { canonicalUniqueClass, isUniqueClass } from '../registry/jobs.ts';
 import type { UniqueClassName } from '../registry/jobs.ts';
 import { CLASS_LOCKER_CAP, CLASS_TREES, classTreeOf, repairNodes } from '../registry/class-trees.ts';
 import type { ClassTreeMap } from '../registry/class-trees.ts';
+import { parseBloodVessels } from './blood-vessels.ts';
+import type { BloodVessel } from './blood-vessels.ts';
 
 /** Shared maximum length of a class or job name across locker parsing, `jobOf`, and wire events. */
 export const CLASS_NAME_MAX = 60;
@@ -32,6 +34,8 @@ export type ClassEntry = {
   readonly registryId?: string;
   /** Unique id of this grant, so release plus re-grant to the same hunter resets tree nodes cleanly. */
   readonly grantId?: string;
+  /** Extracted Crimson Vessels stored on this class entry (at most `VESSEL_CAP` = 3). Absent when empty. */
+  readonly vessels?: readonly BloodVessel[];
 };
 
 /** A hunter's locker of every earned class, keyed by class name. */
@@ -93,11 +97,13 @@ export function parseClasses(
       }
       const registryId = parseRegistryId(v.registryId);
       const grantId = parseGrantId(v.grantId);
+      const vessels = parseBloodVessels(v.vessels, unlockedAt);
       out[name] = {
         unlockedAt,
         nodes,
         ...(registryId ? { registryId } : {}),
         ...(grantId ? { grantId } : {}),
+        ...(vessels ? { vessels } : {}),
       };
     }
   }

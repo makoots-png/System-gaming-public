@@ -566,7 +566,7 @@ test('the GM extracts a fallen monster with a player\'s Necromancer, and the sha
     // the extraction is a check rolled on the dice tray, which draws from Math.random (src/edge/roll.ts `trayRandom`)
     await gm.evaluate(() => { Math.random = () => 0.99; });
     await wolf.locator('[data-extract]').tap();
-    await answerWindow(gm, 'Shadow Extraction', 'Extract');
+    await answerWindow(gm, 'Shadow Extraction', 'Extract shadow');
     await expect.poll(async () => (await fightRow(gm, 'Frost Wolf')).extraction).toEqual({ at: 'gone', why: 'risen' });
     await expect(wolf.locator('[data-extract]')).toHaveCount(0);
     expect(await gm.evaluate(() => hunterApp.store.get().hunters.flatMap((h: any) => h.shadows)), 'no hunter of the GM\'s phone took it').toEqual([]);

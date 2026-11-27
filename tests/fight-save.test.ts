@@ -550,3 +550,21 @@ describe('post-fight fatigue recovery on local and remote sheets (A3)', () => {
     expect([p.save.hunters[0]!.fatigue, p.save.hunters[0]!.collapsed]).toEqual([RULES.fight.fatigueBase - REST, true]);
   });
 });
+
+describe('remote bloodExtract via Beside (PR B)', () => {
+  test('posts bloodExtract to the outbox atomically with MonsterRow.bled and refuses no-room without a room', () => {
+    const p = bleedingKai();
+    write(p, { type: 'adjust', id: id('c3'), hp: -9999 });
+    expect(p.save.fight?.phase).toBe('ended');
+    const r = reduce(p.save.fight, { type: 'extract', what: 'blood', id: id('c3'), by: id('c2'), roll: { natural: 18, bonus: 10, dc: 10 } }, ctxOf(p.save));
+    const ev = newEvent('bloodExtract', { to: [KAI], vessel: { name: 'Goblin', rank: 'E', kind: 'normal', at: AT } }, { device: 'd-gm', now: 99, rand: 0.25 })!;
+
+    // Without a room, neither the bled mark nor the event is written
+    expect(fought(p.save, r, { links: null, room: null, totals: [], risen: ev }, RULES)).toEqual({ ok: false, why: 'no-room' });
+
+    // With a room, MonsterRow.bled and the outbox bloodExtract event land in one write
+    const saved = ok(fought(p.save, r, { links: null, room: ROOM, totals: [], risen: ev }, RULES));
+    expect(saved.fight?.rows.find(x => x.id === id('c3'))?.bled).toBe(true);
+    expect((saved.settings.sync.outbox ?? []).some(e => e.letter.kind === 'event' && e.letter.event.type === 'bloodExtract')).toBe(true);
+  });
+});

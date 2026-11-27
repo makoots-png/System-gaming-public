@@ -2350,7 +2350,7 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
   const MAX = RULES.shadow.maxAttempts;
   const ROLLS = { failed: { natural: 5, bonus: 2, dc: 15 }, crumbled: { natural: 1, bonus: 10, dc: 10 }, risen: { natural: 12, bonus: 3, dc: 15 } } as const;
   const extract = (who: string, outcome: 'failed' | 'crumbled' | 'risen', by = 'A', adjust?: number): Command =>
-    ({ type: 'extract', id: id(who), by: id(by), roll: ROLLS[outcome], ...(adjust !== undefined ? { adjust } : {}) });
+    ({ type: 'extract', what: 'shadow', id: id(who), by: id(by), roll: ROLLS[outcome], ...(adjust !== undefined ? { adjust } : {}) });
   /** A against two monsters; M falls to the 999 hit, N stands, so the fight goes on. */
   const fallen = () => [add(row('A', 'party'), row('M', 'foe'), row('N', 'foe')), start(['A', 20], ['M', 10], ['N', 5]), hit('A', 'M', BIG)] as const;
 
@@ -2391,8 +2391,8 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     refuses(f0, extract('N', 'failed'), 'notNow');
     refuses(f0, extract('A', 'failed'), 'notMonster');
     refuses(f0, extract('ghost', 'failed'), 'unknown');
-    refuses(f0, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 21, bonus: 0, dc: 10 } }, 'needsRoll');
-    refuses(f0, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 0, dc: 10 }, adjust: RULES.shadow.adjustMax + 1 }, 'adjustValue');
+    refuses(f0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 21, bonus: 0, dc: 10 } }, 'needsRoll');
+    refuses(f0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 0, dc: 10 }, adjust: RULES.shadow.adjustMax + 1 }, 'adjustValue');
   });
 
   test('after the fight ends its corpses may still be tried, until the fight is closed', () => {
@@ -2416,7 +2416,7 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     // Standing +2 turns 9 + 4 = 13 vs DC 15 into 9 + 4 + 2 = 15 (risen), logs + 2 GM, and clears adjust
     const f1 = play(...fallen(), { type: 'adjustRoll', id: id('M'), n: 2 }).fight!;
     expect(body(f1, 'M').adjust).toBe(2);
-    const f2 = reduce(f1, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 9, bonus: 4, dc: 15 } }, ctx).fight!;
+    const f2 = reduce(f1, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 9, bonus: 4, dc: 15 } }, ctx).fight!;
     expect(body(f2, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
     expect(body(f2, 'M').adjust).toBeUndefined();
     expect(f2.log[0]!.text).toContain('M rises as a shadow (rolled 9 + 4 + 2 GM = 15 vs DC 15).');
@@ -2424,10 +2424,58 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     // Modal override adjust in ended fight overrides standing adjust and clears corpse.adjust on fail too
     const e0 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), n: 5 }).fight!;
     expect(body(e0, 'M').adjust).toBe(5);
-    const e1 = reduce(e0, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 5, dc: 15 }, adjust: -2 }, ctx).fight!;
+    const e1 = reduce(e0, { type: 'extract', what: 'shadow', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 5, dc: 15 }, adjust: -2 }, ctx).fight!;
     expect(body(e1, 'M').extraction).toEqual({ at: 'open', tried: 1 });
     expect(body(e1, 'M').adjust).toBeUndefined();
     expect(e1.log[0]!.text).toContain(`The extraction of M fails (rolled 10 + 5 - 2 GM = 13 vs DC 15, ${MAX - 1} left).`);
+  });
+
+  test('blood extraction is post-fight only, sets independent MonsterRow.bled, consumes adjust, and never collides with shadow extraction or Arise', () => {
+    const bloodPass: Command = { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 14, bonus: 33, dc: 45 }, adjust: 2 };
+    const bloodFail: Command = { type: 'extract', what: 'blood', id: id('M'), by: id('A'), roll: { natural: 1, bonus: 33, dc: 45 } };
+
+    // Refused while setup or running
+    const s0 = play(add(row('A', 'party'), row('M', 'foe'), row('N', 'foe')), { type: 'adjust', id: id('M'), hp: -999 }).fight!;
+    expect(s0.phase).toBe('setup');
+    refuses(s0, bloodPass, 'notNow');
+    const r0 = play(...fallen()).fight!;
+    refuses(r0, bloodPass, 'notNow');
+
+    // Accepted in ended fight: sets bled: true, clears adjust, logs breakdown, refuses 2nd attempt
+    const e0 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), n: 5 }).fight!;
+    const e1 = reduce(e0, bloodPass, ctx).fight!;
+    expect(body(e1, 'M').bled).toBe(true);
+    expect(body(e1, 'M').adjust).toBeUndefined();
+    expect(body(e1, 'M').extraction).toBeUndefined();
+    expect(e1.log[0]!.text).toContain('A drains blood from M for a Crimson Vessel (rolled 14 + 33 + 2 GM = 49 vs DC 45).');
+    refuses(e1, bloodPass, 'noAttempts');
+
+    // Round-trip parseFight keeps MonsterRow.bled and refuses bled on non-monsters or non-true values
+    const reparsed = parseFight(JSON.parse(JSON.stringify(e1)), RULES);
+    expect(reparsed).not.toBeNull();
+    expect(body(reparsed, 'M').bled).toBe(true);
+    const badHunter = JSON.parse(JSON.stringify(e1));
+    badHunter.rows[0].bled = true;
+    expect(parseFight(badHunter, RULES)).toBeNull();
+    const badVal = JSON.parse(JSON.stringify(e1));
+    badVal.rows[1].bled = false;
+    expect(parseFight(badVal, RULES)).toBeNull();
+
+    // Natural 1 blood failure marks bled: true without crumbling Necromancer's corpse, and shadow extraction still works after
+    const e2 = reduce(e0, bloodFail, ctx).fight!;
+    expect(body(e2, 'M').bled).toBe(true);
+    expect(body(e2, 'M').extraction).toBeUndefined();
+    expect(e2.log[0]!.text).toContain('A\'s blood extraction fails on M (rolled 1 + 33 + 5 GM = 39 vs DC 45).');
+    const afterShadow = reduce(e2, extract('M', 'risen'), ctx).fight!;
+    expect(body(afterShadow, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
+    expect(body(afterShadow, 'M').bled).toBe(true);
+
+    // Shadow extraction first (even crumbled) still leaves blood extraction open on the same corpse
+    const crumbledFirst = reduce(e0, extract('M', 'crumbled'), ctx).fight!;
+    expect(body(crumbledFirst, 'M').extraction).toEqual({ at: 'gone', why: 'crumbled' });
+    const thenBlood = reduce(crumbledFirst, bloodPass, ctx).fight!;
+    expect(body(thenBlood, 'M').bled).toBe(true);
+    expect(body(thenBlood, 'M').extraction).toEqual({ at: 'gone', why: 'crumbled' });
   });
 });
 

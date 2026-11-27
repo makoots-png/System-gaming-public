@@ -235,7 +235,7 @@ describe('Panel extraction +1 attempt ("Attempt 4 of 4")', () => {
     // Three failed attempts by Necromancer leave 1 attempt open -> UI displays "Attempt 4 of 4"
     const failRoll = { natural: 5, bonus: 0, dc: 15 };
     for (let i = 1; i <= 3; i++) {
-      const r = reduce(f, { type: 'extract', id: combatantId('m1'), by: combatantId('h-necro'), roll: failRoll }, { rules: RULES });
+      const r = reduce(f, { type: 'extract', what: 'shadow', id: combatantId('m1'), by: combatantId('h-necro'), roll: failRoll }, { rules: RULES });
       expect(r.effects.some(e => e.type === 'refused')).toBe(false);
       f = r.fight!;
     }
@@ -244,7 +244,7 @@ describe('Panel extraction +1 attempt ("Attempt 4 of 4")', () => {
 
     // Non-Necromancer has 0 attempts left and is refused
     expect(attemptsLeft(corpseAfter3.extraction!, extractAttemptsMax(RULES.shadow, other))).toBe(0);
-    const refusedOther = reduce(f, { type: 'extract', id: combatantId('m1'), by: combatantId('h-other'), roll: failRoll }, { rules: RULES });
+    const refusedOther = reduce(f, { type: 'extract', what: 'shadow', id: combatantId('m1'), by: combatantId('h-other'), roll: failRoll }, { rules: RULES });
     expect(refusedOther.effects).toContainEqual({ type: 'refused', reason: 'noAttempts' });
 
     // Awakened Necromancer sees left = 1 out of max = 4 -> "Attempt 4 of 4"
@@ -254,7 +254,7 @@ describe('Panel extraction +1 attempt ("Attempt 4 of 4")', () => {
     expect(`Attempt ${tried + 1} of ${max}`).toBe('Attempt 4 of 4');
 
     // 4th failure spends the corpse
-    const fourth = reduce(f, { type: 'extract', id: combatantId('m1'), by: combatantId('h-necro'), roll: failRoll }, { rules: RULES });
+    const fourth = reduce(f, { type: 'extract', what: 'shadow', id: combatantId('m1'), by: combatantId('h-necro'), roll: failRoll }, { rules: RULES });
     expect(fourth.effects.some(e => e.type === 'refused')).toBe(false);
     expect(fourth.fight!.rows.find(r => r.id === combatantId('m1'))!.extraction).toEqual({ at: 'gone', why: 'spent' });
     expect(extractionStep(UNTRIED, 'failed', 4)).toEqual({ at: 'open', tried: 1 });

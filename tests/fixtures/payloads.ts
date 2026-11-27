@@ -132,6 +132,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], shadow: { rank: 'C', archetype: 'brute', grade: 'Knight', monster: 'm7', name: 'Ice Bear' } },
     { eid: EID, to: [KEY], shadow: { rank: 'C', archetype: 'brute', grade: 'Knight', monster: 'm7', name: 'Ice Bear' } },
   ],
+  bloodExtract: [
+    { eid: EID, to: [KEY], vessel: { name: 'Igris the Bloodred', rank: 'A', kind: 'boss', at: '2026-11-26T12:00:00.000Z' } },
+    { eid: EID, to: [KEY], vessel: { name: 'Igris the Bloodred', rank: 'A', kind: 'boss', at: '2026-11-26T12:00:00.000Z' } },
+  ],
   shadowHp: [
     { eid: EID, to: [KEY], shadowId: 'sh1', hp: 14 },
     { eid: EID, to: [KEY], shadowId: 'sh1', hp: 14 },

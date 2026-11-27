@@ -11,7 +11,7 @@ import type { FightId, SheetKey } from '../ids.ts';
 import type { Body, Channel, Due, ShadowId, SheetStatus, Source, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Aim, UseRefusal as UseRefusal, Rolls } from './resolve.ts';
 import type { Zone, ZoneId } from './zones.ts';
-import type { ExtractRoll } from './roll-adjust.ts';
+import type { ExtractKind, ExtractRoll } from './roll-adjust.ts';
 import type { Answer, MythicRefusal } from './mythic.ts';
 import type { AnswerOutcome, OmenKey } from './mythic-types.ts';
 
@@ -214,11 +214,13 @@ export type Command =
    */
   | { readonly type: 'arm'; readonly by: CombatantId; readonly ability: AbilityId | null; readonly on?: CombatantId }
   /**
-   * An attempt to extract a shadow from fallen monster `id` with `roll` (and optional GM `adjust` overriding `corpse.adjust`):
-   * the reducer computes the outcome (roll-adjust.ts `extractionCheck`), records it on the row, clears `corpse.adjust`,
-   * and logs the full roll breakdown. No time passes; it may come after the fight ended, while its rows are the summary's record.
+   * An attempt to extract a shadow or blood from fallen monster `id` with `roll` (and optional GM `adjust` overriding
+   * `corpse.adjust`): the reducer computes the outcome (roll-adjust.ts `extractionCheck` / `bloodExtractionCheck`),
+   * records it on the row (`extraction` for `'shadow'`, independent `bled: true` for `'blood'`), clears `corpse.adjust`,
+   * and logs the full roll breakdown. Blood extraction is post-fight only (`phase === 'ended'`); shadow extraction may
+   * run in setup, running, or ended. No time passes.
    */
-  | { readonly type: 'extract'; readonly id: CombatantId; readonly by: CombatantId; readonly roll: ExtractRoll; readonly adjust?: number }
+  | { readonly type: 'extract'; readonly what: ExtractKind; readonly id: CombatantId; readonly by: CombatantId; readonly roll: ExtractRoll; readonly adjust?: number }
   /**
    * The GM sets the visible signed adjustment (`±RULES.shadow.adjustMax`) for the next extraction or Arise roll on
    * monster `id`. It sets, never adds, and 0 clears it. No time passes and nothing is logged until a roll consumes it.

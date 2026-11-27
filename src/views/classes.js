@@ -17,6 +17,7 @@ import {
   flipClassFork,
   forkFlipCost,
   nodeCost,
+  removeBloodVessel,
   setJob,
   swapClass,
   swapCost,
@@ -62,6 +63,8 @@ import { closeWindow, openWindow, trapTab } from './ui.js';
 
 const CSS = `
 .cls-active{border:1px solid var(--line-bright);background:rgba(10,26,46,.65);padding:10px 12px;margin-bottom:10px}
+.cls-vessels{border:1px solid var(--line);background:rgba(36,10,18,.45);padding:10px 12px;margin-bottom:10px}
+.cls-vessels .cls-list{margin:8px 0 0}
 .cls-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .cls-name{font-family:var(--font-display);font-weight:700;font-size:18px;color:var(--ice);overflow-wrap:anywhere}
 .cls-badges{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
@@ -370,6 +373,33 @@ export function register(app) {
     if (out.res) ui.toast('! Class', W.flippedToast(prev ? prev.to.name : out.res.toId, out.res.cost, out.res.dropped.length), { kind: 'good' });
   }
 
+  async function doRemoveVessel(hid, rawIndex) {
+    const idx = Number(rawIndex);
+    const h = store.hunter(hid);
+    const active = h && h.job && h.jobDone === h.job && Object.hasOwn(h.classes, h.job) ? h.classes[h.job] : null;
+    const item = active && active.vessels && Number.isInteger(idx) ? active.vessels[idx] : null;
+    if (!h || !item) return;
+    const ok = await ui.confirm({
+      title: W.vesselRemoveTitle,
+      body: W.vesselRemoveBody(item.name, item.rank, item.kind),
+      danger: true,
+      confirmLabel: W.vesselRemoveConfirm,
+    });
+    if (!ok) return;
+    const out = {
+      /** @type {import('../core/hunter/classes.ts').RemovedBloodVessel | null} */
+      res: null,
+    };
+    const w = store.apply('class-vessel-remove', s => {
+      const r = removeBloodVessel(s, hid, idx, classCtx(s, hid));
+      if (isRefused(r)) return r;
+      out.res = r;
+      return r.save;
+    });
+    if (!ui.wrote('! Class', w, CLASS_REFUSAL_WORDS)) return;
+    if (out.res) ui.toast('! Class', W.vesselRemovedToast(out.res.removed.name), { kind: 'info' });
+  }
+
   // ── Player panel on Status view ──
 
   function renderLockerPanel(el) {
@@ -511,7 +541,23 @@ export function register(app) {
         </div>`
       : '';
 
-    const html = `${offerBannerHtml}${activeHtml}
+    const vesselsHtml = vm.vessels
+      ? `<div class="cls-vessels" data-cls-vessels>
+          <div class="cls-head"><span class="r-name">${esc(W.vesselsHeading(vm.vessels.count, vm.vessels.cap))}</span></div>
+          <p class="cls-meta">${esc(W.vesselsHint(vm.vessels.className))}</p>
+          ${vm.vessels.count > 0 ? `<p class="cls-meta" data-cls-vessels-bonus>${esc(W.vesselsBonusLine(vm.vessels.bonus, vm.vessels.totalPower))}</p>` : ''}
+          ${vm.vessels.items.length
+            ? `<ul class="cls-list" data-cls-vessel-list>${vm.vessels.items.map(v => `<li class="cls-row" data-cls-vessel="${v.index}">
+                <div class="cls-row-main">
+                  <div class="cls-head"><span class="r-name">${esc(v.name)}</span><span class="cls-badges">${ui.rankBadge(v.rank)}${v.kind !== 'normal' ? `<span class="cls-tag">${esc(v.kind)}</span>` : ''}<span class="cls-tag">Power ${v.power}</span></span></div>
+                </div>
+                <div class="cls-row-acts"><button type="button" class="danger" data-cls-vessel-del="${v.index}" aria-label="Remove ${esc(v.name)} Crimson Vessel">${esc(W.vesselRemoveAction)}</button></div>
+              </li>`).join('')}</ul>`
+            : `<p class="empty" data-cls-vessels-empty>${esc(W.vesselsEmpty)}</p>`}
+        </div>`
+      : '';
+
+    const html = `${offerBannerHtml}${activeHtml}${vesselsHtml}
       <div class="lbl dv-sub">${esc(W.lockerHeading)}</div>
       <p class="cls-meta" data-cls-swap-line>${esc(vm.swapLine)}</p>
       ${lockerRows}
@@ -542,6 +588,7 @@ export function register(app) {
         if (b.dataset.clsSwap) { void doSwap(h.id, b.dataset.clsSwap); return; }
         if (b.dataset.clsBuy) { void doBuyNode(h.id, b.dataset.clsBuy); return; }
         if (b.dataset.clsFlipFrom && b.dataset.clsFlipTo) { void doFlipFork(h.id, b.dataset.clsFlipFrom, b.dataset.clsFlipTo); return; }
+        if (b.dataset.clsVesselDel !== undefined) { void doRemoveVessel(h.id, b.dataset.clsVesselDel); return; }
         if ('coOpen' in b.dataset) { offerUi.notice = ''; openOfferModal('player'); return; }
         if ('clsJobSet' in b.dataset) {
           const inp = el.querySelector('[data-cls-job]');

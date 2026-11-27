@@ -104,7 +104,10 @@ test('GM adjusts a shadow extraction roll via the corpse card and modal, reload 
     expect(natural + bonus, 'natural roll fails without GM adjustment').toBeLessThan(dc);
     expect(expectedTotal, 'adjusted roll passes DC').toBeGreaterThanOrEqual(dc);
 
-    await card(page).locator('[data-extract]').tap();
+    const extractBtn = card(page).locator('[data-extract]');
+    await expect(extractBtn).toHaveText('Extract shadow');
+    await expect(card(page).locator('[data-extract-blood]')).toHaveCount(0);
+    await extractBtn.tap();
     const dlg = page.locator('.sys-overlay.show', { hasText: 'Shadow Extraction' });
     await expect(dlg).toBeVisible();
     await expect(dlg.locator('[data-adj-val]')).toHaveText('+2');
@@ -116,7 +119,7 @@ test('GM adjusts a shadow extraction roll via the corpse card and modal, reload 
     await expect(dlg.locator('[data-adj-line]')).toHaveText('GM adjustment: +6');
 
     await page.evaluate(f => { Math.random = () => (f - 0.5) / 20; }, natural);
-    await dlg.getByRole('button', { name: 'Extract' }).tap();
+    await dlg.getByRole('button', { name: 'Extract shadow' }).tap();
     await answerWindow(page, 'ARISE', 'Arise');
 
     // Fight log shows the GM modifier and corpse.adjust is cleared

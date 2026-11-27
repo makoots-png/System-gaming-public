@@ -1,6 +1,6 @@
 // class-view.ts: pure view-models and voice.md-compliant copy builders for the player class locker, skill tree buyer,
 // fork flip modal, and GM unique-class registry (PR 3). Pure: no DOM, no storage, no network.
-import type { Rules } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import type { Role } from '../role.ts';
 import type { Hunter, Save } from '../save.ts';
 import { STAT_LABELS, STAT_SHORT } from '../stats.ts';
@@ -9,8 +9,10 @@ import { isRefused } from '../save-step.ts';
 import type { ClassNodeId, HunterId, SheetKey } from '../ids.ts';
 import type { HoldersDoc } from '../protocol.ts';
 import { FAMILY, nameOf as scalerNameOf } from '../registry/scalers.ts';
-import { CLASS_SIGNATURES } from '../registry/class-powers.ts';
+import { CLASS_SIGNATURES, classExtractOf } from '../registry/class-powers.ts';
 import type { ClassSignatureMap } from '../registry/class-powers.ts';
+import { VESSEL_CAP, vesselBonus, vesselPower, vesselTotalPower } from './blood-vessels.ts';
+import type { VesselKind } from './blood-vessels.ts';
 import {
   BUILT_IN_CLASSES,
   UNIQUE_CLASS_NAMES,
@@ -28,7 +30,7 @@ import {
   classTreeOf,
   forkTwinOf,
 } from '../registry/class-trees.ts';
-import type { ClassNodeDef, ClassTree, ClassTreeMap, NodeGift, TreeDepth } from '../registry/class-trees.ts';
+import type { ClassNodeDef, ClassPerk, ClassTree, ClassTreeMap, NodeGift, TreeDepth } from '../registry/class-trees.ts';
 import { activeClass } from './class-locker.ts';
 import type { ActiveClass, ClassHolder } from './class-locker.ts';
 import { CLASS_REFUSAL_WORDS, forkFlipCost, nodeCost, planForkFlip, swapCost } from './classes.ts';
@@ -188,6 +190,25 @@ export const CLASS_UI_WORDS = {
   gmLocalKind: 'This phone',
   gmRemoteKind: 'Player phone',
   gmNpcKind: 'NPC',
+  // Crimson Vessels (blood extraction aspect)
+  vesselsHeading: (count: number, cap: number): string => `Crimson Vessels (${count} / ${cap})`,
+  vesselsHint: (className: string): string =>
+    `Extract blood from defeated monsters after a fight to raise your Power, Flat magic penetration, and Ability haste while ${className} is active.`,
+  vesselsEmpty: 'No Crimson Vessels yet. Defeat a monster, end the fight, then tap Extract blood.',
+  vesselsBonusLine: (b: ClassPerk, totalPower: number): string => {
+    const parts = [
+      b.pow ? `+${b.pow} Power` : '',
+      b.resistPenFlat ? `+${b.resistPenFlat} Flat magic penetration` : '',
+      b.haste ? `+${b.haste} Ability haste` : '',
+    ].filter(Boolean);
+    return parts.length ? `Active bonus: ${parts.join(', ')} (power ${totalPower}).` : '';
+  },
+  vesselRemoveAction: 'Remove',
+  vesselRemoveTitle: 'Remove Crimson Vessel?',
+  vesselRemoveConfirm: 'Remove vessel',
+  vesselRemoveBody: (name: string, rank: Rank, kind: VesselKind): string =>
+    `Remove ${name} (${rank}-rank${kind === 'normal' ? '' : ` ${kind}`}) from your Crimson Vessels? You cannot undo this.`,
+  vesselRemovedToast: (name: string): string => `Removed ${name} from Crimson Vessels.`,
 } as const;
 
 function freeWhyText(why: ClassCostPlan['freeWhy']): string {
@@ -314,6 +335,25 @@ export type TreeDepthGroup = {
   readonly nodes: readonly TreeNodeView[];
 };
 
+/** Presentation row for one stored Crimson Vessel on the player's Classes panel. */
+export type VesselItemView = {
+  readonly index: number;
+  readonly name: string;
+  readonly rank: Rank;
+  readonly kind: VesselKind;
+  readonly power: number;
+};
+
+/** Presentation block for the active class's Crimson Vessels section on the player's Classes panel. */
+export type VesselSectionView = {
+  readonly className: string;
+  readonly count: number;
+  readonly cap: number;
+  readonly totalPower: number;
+  readonly bonus: ClassPerk;
+  readonly items: readonly VesselItemView[];
+};
+
 /** Complete pure presentation model for the player's Classes panel. */
 export type LockerViewModel = {
   readonly active: ActiveClass;
@@ -325,6 +365,7 @@ export type LockerViewModel = {
   readonly swapPlan: ClassCostPlan;
   readonly swapLine: string;
   readonly entries: readonly LockerEntryView[];
+  readonly vessels: VesselSectionView | null;
   readonly tree: {
     readonly className: string;
     readonly rarity: ClassRarity;
@@ -346,6 +387,7 @@ export function lockerView(
     readonly R: Rules;
     readonly activeRegistryId: string | null;
     readonly trees?: ClassTreeMap;
+    readonly signatures?: ClassSignatureMap;
   },
 ): LockerViewModel {
   const trees = opts.trees ?? CLASS_TREES;
@@ -450,6 +492,29 @@ export function lockerView(
     }
   }
 
+  let vesselsView: VesselSectionView | null = null;
+  if (active.kind === 'earned') {
+    const ext = classExtractOf(h, opts.signatures);
+    const list = active.entry.vessels ?? [];
+    if (ext?.kind === 'blood' || list.length > 0) {
+      const cap = ext?.kind === 'blood' ? ext.cap : VESSEL_CAP;
+      vesselsView = {
+        className: active.name,
+        count: list.length,
+        cap,
+        totalPower: vesselTotalPower(list, cap),
+        bonus: vesselBonus(list, cap),
+        items: list.map((v, index) => ({
+          index,
+          name: v.name,
+          rank: v.rank,
+          kind: v.kind,
+          power: vesselPower(v.rank, v.kind),
+        })),
+      };
+    }
+  }
+
   return {
     active,
     activeRarity: activeDef?.rarity ?? null,
@@ -460,6 +525,7 @@ export function lockerView(
     swapPlan,
     swapLine: swapCostLine(swapPlan, h.gold),
     entries,
+    vessels: vesselsView,
     tree: treeView,
     treeMissing,
     held: opts.held,

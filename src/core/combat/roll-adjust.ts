@@ -21,7 +21,11 @@ export type ExtractRoll = {
   readonly dc: number;
 };
 
-/** Evaluated extraction check with the applied GM adjustment, final total, and outcome. */
+/** Extraction aspect kinds accepted by the fight's `extract` command and dice log labels. */
+export const EXTRACT_KINDS = ['shadow', 'blood'] as const;
+export type ExtractKind = (typeof EXTRACT_KINDS)[number];
+
+/** Evaluated shadow extraction check with the applied GM adjustment, final total, and outcome. */
 export type ExtractChecked = {
   readonly natural: number;
   readonly bonus: number;
@@ -29,6 +33,16 @@ export type ExtractChecked = {
   readonly total: number;
   readonly dc: number;
   readonly outcome: ExtractionOutcome;
+};
+
+/** Evaluated blood extraction check with the applied GM adjustment, final total, and pass/fail result. */
+export type BloodExtractChecked = {
+  readonly natural: number;
+  readonly bonus: number;
+  readonly adjust: number;
+  readonly total: number;
+  readonly dc: number;
+  readonly passed: boolean;
 };
 
 /** Whether `n` is a legal whole-number GM roll adjustment within `±max`. */
@@ -77,6 +91,16 @@ export function extractionCheck(roll: ExtractRoll, adjust = 0): ExtractChecked {
   return { natural: roll.natural, bonus: roll.bonus, adjust, total, dc: roll.dc, outcome };
 }
 
+/**
+ * Evaluates one blood extraction roll with `adjust` added to the total (never shifting the natural die face):
+ * natural 1 always fails (never crumbling the corpse for Necromancer), natural 20 or `natural + bonus + adjust >= dc` passes.
+ */
+export function bloodExtractionCheck(roll: ExtractRoll, adjust = 0): BloodExtractChecked {
+  const total = roll.natural + roll.bonus + adjust;
+  const passed = roll.natural === NAT_FAIL ? false : roll.natural === NAT_SUCCESS || total >= roll.dc;
+  return { natural: roll.natural, bonus: roll.bonus, adjust, total, dc: roll.dc, passed };
+}
+
 /** Breakdown text for Fight.log and extraction failure notices, e.g. `9 + 6 + 2 GM = 17 vs DC 15`. */
 export function rollCheckText(natural: number, bonus: number, adjust: number, dc: number): string {
   const b = bonus >= 0 ? ` + ${bonus}` : ` - ${-bonus}`;
@@ -93,7 +117,7 @@ export function extractDiceExpr(bonus: number, adjust: number): string {
 }
 
 /** Dice roll log label for an extraction roll, noting `(GM +n)` / `(GM -n)` only when non-zero. */
-export function extractDiceLabel(kind: 'shadow', name: string, adjust: number): string {
+export function extractDiceLabel(kind: ExtractKind, name: string, adjust: number): string {
   const tag = adjust === 0 ? '' : ` (GM ${adjust > 0 ? `+${adjust}` : `-${-adjust}`})`;
   return `Extract ${kind}: ${name}${tag}`;
 }

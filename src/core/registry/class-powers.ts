@@ -27,6 +27,21 @@ import { TANKER_SIGNATURE } from './class-tanker.ts';
 import { HEALER_SIGNATURE } from './class-healer.ts';
 import { RANGER_SIGNATURE } from './class-ranger.ts';
 import type { ClassLocker } from '../hunter/class-locker.ts';
+import { vesselBonus } from '../hunter/blood-vessels.ts';
+import type { StatKey } from '../stats.ts';
+
+/** Declarative predatory-mythic corpse extraction aspect hook carried on `ClassSignature.extract`. */
+export type ClassExtractSpec = {
+  readonly kind: 'blood';
+  /** Stat whose check bonus is rolled (`1d20 + checkBonus(h, stat, R) + adjust`). */
+  readonly stat: StatKey;
+  /** Maximum vessels stored on `ClassEntry.vessels`. */
+  readonly cap: number;
+  /** Fight phase required to extract (`'ended'` for post-fight-only blood extraction). */
+  readonly phase: 'ended';
+  /** Player-facing button label shown on defeated monster cards and the extraction modal confirm button. */
+  readonly label: string;
+};
 
 /** Rule slice accepted by `classPowers` (satisfied by `Rules`, `SheetRules`, and `RowRules`). */
 export type ClassPowersRules = Pick<Rules, 'fight' | 'dice'>;
@@ -48,6 +63,8 @@ export type ClassSignature = {
   readonly actives?: readonly Ability[];
   /** Extra class-defined statuses referenced by key (such as summon starting statuses) for `classStatusDef` and fight-doc lookup. */
   readonly statuses?: readonly ClassWorn[];
+  /** Optional declarative corpse extraction aspect for predatory Mythics (e.g. Blood Extraction into Crimson Vessels). */
+  readonly extract?: ClassExtractSpec;
 };
 
 /** Folded class powers for the hunter's active awakened class. */
@@ -116,6 +133,9 @@ export function classPowers(
   };
 
   addBonus(sig?.bonus);
+  if (sig?.extract?.kind === 'blood' && entry.vessels?.length) {
+    addBonus(vesselBonus(entry.vessels, sig.extract.cap));
+  }
   const scalers: Scaler[] = sig?.scalers ? [...sig.scalers] : [];
   let worn: ClassWorn | null = sig?.worn ?? null;
   const actives: Ability[] = sig?.actives ? sig.actives.slice(0, CLASS_ACTIVES_MAX) : [];
@@ -220,4 +240,26 @@ export function classStatusDef(
     return DEFAULT_CLASS_STATUS_DEFS.get(key) ?? null;
   }
   return buildClassStatusDefs(signatures, trees).get(key) ?? null;
+}
+
+/** Looks up a built-in class's declarative `ClassExtractSpec` by class name, or null when that class has none. */
+export function classExtractByName(
+  name: string | null | undefined,
+  signatures: ClassSignatureMap = CLASS_SIGNATURES,
+): ClassExtractSpec | null {
+  if (!name || !isClassName(name)) return null;
+  return signatures[name]?.extract ?? null;
+}
+
+/**
+ * Returns the declarative `ClassExtractSpec` of `h`'s active awakened class, or null when `h` has no active earned
+ * class or its active class defines no extraction aspect.
+ */
+export function classExtractOf(
+  h: ClassPowersHunter | null | undefined,
+  signatures: ClassSignatureMap = CLASS_SIGNATURES,
+): ClassExtractSpec | null {
+  if (!h || !h.job || h.jobDone !== h.job || !isClassName(h.job)) return null;
+  if (!Object.hasOwn(h.classes, h.job)) return null;
+  return signatures[h.job]?.extract ?? null;
 }

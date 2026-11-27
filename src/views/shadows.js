@@ -1,15 +1,22 @@
-// shadows.js (U10): shadow extraction and army. Publishes app.api.shadows {canExtract, extract}. A shadow's body is a
+// shadows.js (U10): shadow extraction, shadow army, and predatory-mythic blood extraction seam.
+// Publishes app.api.shadows {canExtract, canExtractBlood, extract, extractBlood}. A shadow's body is a
 // monster's of its rank, archetype and grade (`shadowSheet` in src/core/combat/rows.ts); the army's size is the hunter's
-// sheet's `shadows`, and the extraction roll is a Presence check.
+// sheet's `shadows`, and the extraction roll is a Presence check. Blood extraction rolls the class's declared check stat
+// after a fight ends into Crimson Vessels (`src/core/hunter/blood-vessels.ts`).
 import { canExtract as canExtractJob, RANKS } from '../edge/rules.ts';
 import { shadowSheet } from '../core/combat/rows.ts';
 import { extractAttemptsMax } from '../core/combat/extraction.ts';
-import { ADJUST_HINT, extractDiceExpr, extractDiceLabel, extractionCheck, rollCheckText } from '../core/combat/roll-adjust.ts';
+import { ADJUST_HINT, bloodExtractionCheck, extractDiceExpr, extractDiceLabel, extractionCheck, rollCheckText } from '../core/combat/roll-adjust.ts';
 import { ARCHETYPE_LIST, MONSTER_KINDS } from '../core/registry/monsters.ts';
 import { oneOf } from '../core/one-of.ts';
 import { armyCap, can, extractDc, healShadow, noteShadow, renameShadow, risesAs, shadowRises, shadowState, stepShadow } from '../core/hunter/shadows.ts';
+import { BLOOD_REFUSAL_WORDS, VESSEL_KINDS, bloodExtractDc, vesselPower, vesselUpgradePlan } from '../core/hunter/blood-vessels.ts';
+import { activeClass } from '../core/hunter/class-locker.ts';
+import { addBloodVessel } from '../core/hunter/classes.ts';
+import { classExtractOf } from '../core/registry/class-powers.ts';
+import { STAT_LABELS } from '../core/stats.ts';
 import { monsterId } from '../core/gates/gate.ts';
-import { atHunter } from '../core/save-step.ts';
+import { atHunter, isRefused } from '../core/save-step.ts';
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -17,10 +24,41 @@ export function register(app) {
   const int = (v, d = 0) => (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : d);
   const A = () => app.api;
   const canExtract = h => !!h && canExtractJob(rules(), h.job);
+  const canExtractBlood = h => !!h && classExtractOf(h)?.kind === 'blood';
   const cap = h => armyCap(h, rules());
   const summonCost = s => int(rules().shadow.summonMp[s.rank]);
   const dcFor = (h, c) => extractDc(h.rank, c.rank, c.kind, rules().shadow);
   const hpMaxOf = s => shadowSheet(s, rules()).hpMax;
+
+  /** Shared inline `Adjust roll` stepper block and DOM binder for Shadow and Blood Extraction modals. */
+  function adjustModal(name, initial, maxAdj) {
+    const picked = { adj: Math.max(-maxAdj, Math.min(maxAdj, int(initial))) };
+    if (maxAdj <= 0) return { picked, opts: {} };
+    const signed = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+    const html = `<div class="sh-adj" data-ext-adj>
+      <div class="sh-adj-row"><span class="lbl">Adjust roll</span>
+        <span class="sh-step"><button type="button" class="icon-btn" data-adj="-1" aria-label="Lower roll adjustment on ${esc(name)}"${picked.adj <= -maxAdj ? ' disabled' : ''}>−</button><b data-adj-val>${signed(picked.adj)}</b><button type="button" class="icon-btn" data-adj="1" aria-label="Raise roll adjustment on ${esc(name)}"${picked.adj >= maxAdj ? ' disabled' : ''}>+</button></span></div>
+      <p class="sh-adj-line" data-adj-line${picked.adj === 0 ? ' hidden' : ''}>${picked.adj === 0 ? '' : `GM adjustment: ${signed(picked.adj)}`}</p>
+      <p class="sh-adj-hint">${esc(ADJUST_HINT)}</p>
+    </div>`;
+    const drawn = win => {
+      const box = win.querySelector('[data-ext-adj]'); if (!box) return;
+      const val = box.querySelector('[data-adj-val]'), lineEl = box.querySelector('[data-adj-line]');
+      const down = box.querySelector('[data-adj="-1"]'), up = box.querySelector('[data-adj="1"]');
+      const sync = () => {
+        if (val) val.textContent = signed(picked.adj);
+        if (lineEl) { lineEl.hidden = picked.adj === 0; lineEl.textContent = picked.adj === 0 ? '' : `GM adjustment: ${signed(picked.adj)}`; }
+        if (down) down.disabled = picked.adj <= -maxAdj;
+        if (up) up.disabled = picked.adj >= maxAdj;
+      };
+      box.addEventListener('click', ev => {
+        const btn = ev.target.closest('button[data-adj]'); if (!btn) return;
+        const next = picked.adj + Number(btn.dataset.adj);
+        if (next >= -maxAdj && next <= maxAdj) { picked.adj = next; sync(); }
+      });
+    };
+    return { picked, opts: { html, drawn } };
+  }
 
   /** What a shadow of the monster `m` (an `ExtractTarget`'s body) is made from, under the monster's name. */
   const originOf = m => ({ rank: oneOf(m.rank, RANKS, 'E'), archetype: oneOf(m.archetype, ARCHETYPE_LIST, 'brute'), grade: risesAs(oneOf(m.kind, MONSTER_KINDS, 'normal')),
@@ -55,41 +93,13 @@ export function register(app) {
     if (left <= 0) { ui.toast('System', 'No attempts left on this corpse.', { kind: 'warning' }); return null; }
     if (h.shadows.length >= cap(h)) { ui.toast('System', `Army is full (${h.shadows.length} / ${cap(h)}). Release a shadow first.`, { kind: 'warning' }); return null; }
     const m = c, dc = dcFor(h, m), bonus = A().hunter.sheet(h).checks.bonus.pre;
-    const maxAdj = int(R.adjustMax);
-    const picked = { adj: Math.max(-maxAdj, Math.min(maxAdj, int(m.adjust))) };
-    const signed = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
-    const adjHtml = maxAdj > 0
-      ? `<div class="sh-adj" data-ext-adj>
-          <div class="sh-adj-row"><span class="lbl">Adjust roll</span>
-            <span class="sh-step"><button type="button" class="icon-btn" data-adj="-1" aria-label="Lower roll adjustment on ${esc(m.name)}"${picked.adj <= -maxAdj ? ' disabled' : ''}>−</button><b data-adj-val>${signed(picked.adj)}</b><button type="button" class="icon-btn" data-adj="1" aria-label="Raise roll adjustment on ${esc(m.name)}"${picked.adj >= maxAdj ? ' disabled' : ''}>+</button></span></div>
-          <p class="sh-adj-line" data-adj-line${picked.adj === 0 ? ' hidden' : ''}>${picked.adj === 0 ? '' : `GM adjustment: ${signed(picked.adj)}`}</p>
-          <p class="sh-adj-hint">${esc(ADJUST_HINT)}</p>
-        </div>`
-      : '';
+    const { picked, opts: adjOpts } = adjustModal(m.name, m.adjust, int(R.adjustMax));
     const go = await ui.system({
       tag: '! Extraction', title: 'Shadow Extraction', kind: 'arise',
       body: `Target: ${m.name} (${m.rank}-rank${m.kind === 'boss' ? ' boss' : ''}).`,
       lines: [`DC ${dc}`, `Roll: d20 ${bonus >= 0 ? '+' : '−'}${Math.abs(bonus)} (Presence check)`, `Attempt ${tried + 1} of ${max}`],
-      ...(adjHtml ? {
-        html: adjHtml,
-        drawn: win => {
-          const box = win.querySelector('[data-ext-adj]'); if (!box) return;
-          const val = box.querySelector('[data-adj-val]'), lineEl = box.querySelector('[data-adj-line]');
-          const down = box.querySelector('[data-adj="-1"]'), up = box.querySelector('[data-adj="1"]');
-          const sync = () => {
-            if (val) val.textContent = signed(picked.adj);
-            if (lineEl) { lineEl.hidden = picked.adj === 0; lineEl.textContent = picked.adj === 0 ? '' : `GM adjustment: ${signed(picked.adj)}`; }
-            if (down) down.disabled = picked.adj <= -maxAdj;
-            if (up) up.disabled = picked.adj >= maxAdj;
-          };
-          box.addEventListener('click', ev => {
-            const btn = ev.target.closest('button[data-adj]'); if (!btn) return;
-            const next = picked.adj + Number(btn.dataset.adj);
-            if (next >= -maxAdj && next <= maxAdj) { picked.adj = next; sync(); }
-          });
-        },
-      } : {}),
-      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Extract', value: true, primary: true }],
+      ...adjOpts,
+      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Extract shadow', value: true, primary: true }],
     });
     if (!go) return null;
     const adj = picked.adj;
@@ -103,7 +113,7 @@ export function register(app) {
     const event = origin && who.kind === 'remote' ? A().sync.event('shadow', { to: [who.remote], shadow: origin }) : null;
     if (origin && who.kind === 'remote' && !event) return null;
     const rose = !origin ? null : who.kind === 'local' ? { kind: /** @type {const} */ ('local'), step: joined(h.id, origin, id) } : { kind: /** @type {const} */ ('remote'), event };
-    if (!ui.wrote('! Extraction', A().combat.extracted(c.id, c.by, roll, adj, rose))) return null;
+    if (!ui.wrote('! Extraction', A().combat.extracted('shadow', c.id, c.by, roll, adj, rose))) return null;
     if (origin && who.kind === 'local') return arise(h, store.hunter(h.id).shadows.find(s => s.id === id));
     if (origin) { ui.toast('ARISE', `${origin.name} rises for ${h.name}. It joins their army on their phone.`, { kind: 'levelup' }); return origin; }
     const rolledLine = `Rolled ${rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc)}`;
@@ -113,6 +123,69 @@ export function register(app) {
     }
     const still = left - 1;
     await ui.warn({ tag: 'Shadow extraction', title: 'Extraction failed', body: still > 0 ? `${still} attempt${still === 1 ? '' : 's'} left.` : 'No attempts left.', lines: [rolledLine] });
+    return null;
+  }
+
+  async function extractBlood(who, c) {
+    const h = hunterOf(who); const R = rules();
+    if (!h || !c || !c.down) return null;
+    const spec = classExtractOf(h);
+    if (!spec || spec.kind !== 'blood') { ui.toast('Blood extraction', `${h.name} cannot extract blood.`, { kind: 'warning' }); return null; }
+    if (!c.ended) { ui.toast('Blood extraction', BLOOD_REFUSAL_WORDS.running, { kind: 'warning' }); return null; }
+    const kind = oneOf(c.kind, VESSEL_KINDS, null);
+    if (c.extractable === false || !kind) { ui.toast('Blood extraction', `${c.name} yields no blood.`, { kind: 'warning' }); return null; }
+    if (c.bled) { ui.toast('Blood extraction', BLOOD_REFUSAL_WORDS.bled, { kind: 'warning' }); return null; }
+    const active = activeClass(h);
+    if (active.kind !== 'earned') return null;
+    const rank = oneOf(c.rank, RANKS, 'E');
+    const plan = vesselUpgradePlan(active.entry.vessels, rank, kind, spec.cap);
+    if (isRefused(plan)) { ui.toast('Blood extraction', BLOOD_REFUSAL_WORDS['stronger-held'], { kind: 'warning' }); return null; }
+    const dc = bloodExtractDc(rank, kind, R);
+    const bonus = A().hunter.sheet(h).checks.bonus[spec.stat];
+    const statLabel = STAT_LABELS[spec.stat];
+    const kindWord = kind === 'normal' ? '' : ` ${kind}`;
+    const lines = [
+      `DC ${dc}`,
+      `Roll: d20 ${bonus >= 0 ? '+' : '−'}${Math.abs(bonus)} (${statLabel} check)`,
+      '1 attempt per corpse',
+      ...(plan.replaces
+        ? [`Replaces ${plan.replaces.name} (${plan.replaces.rank}-rank${plan.replaces.kind === 'normal' ? '' : ` ${plan.replaces.kind}`}, power ${vesselPower(plan.replaces.rank, plan.replaces.kind)}) if successful.`]
+        : []),
+    ];
+    const { picked, opts: adjOpts } = adjustModal(c.name, c.adjust, int(R.shadow.adjustMax));
+    const go = await ui.system({
+      tag: '! Extraction', title: 'Blood Extraction', kind: 'arise',
+      body: `Target: ${c.name} (${rank}-rank${kindWord}).`,
+      lines,
+      ...adjOpts,
+      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: spec.label, value: true, primary: true }],
+    });
+    if (!go) return null;
+    const adj = picked.adj;
+    const r = A().dice.roll(extractDiceExpr(bonus, adj), { label: extractDiceLabel('blood', c.name, adj), ...(who.kind === 'local' ? { hid: h.id } : {}) });
+    const roll = { natural: int(r.natural), bonus, dc };
+    const checked = bloodExtractionCheck(roll, adj);
+    const at = new Date().toISOString();
+    const vessel = checked.passed ? { name: String(c.name || ''), rank, kind, at } : null;
+    const event = vessel && who.kind === 'remote' ? A().sync.event('bloodExtract', { to: [who.remote], vessel }) : null;
+    if (vessel && who.kind === 'remote' && !event) return null;
+    const rose = !vessel ? null : who.kind === 'local'
+      ? { kind: /** @type {const} */ ('local'), step: s => { const res = addBloodVessel(s, h.id, vessel, { at, cap: R.logCap }, R, { className: active.name, cap: spec.cap }); return isRefused(res) ? res : res.save; } }
+      : { kind: /** @type {const} */ ('remote'), event };
+    if (!ui.wrote('! Extraction', A().combat.extracted('blood', c.id, c.by, roll, adj, rose))) return null;
+    if (vessel) {
+      const msg = who.kind === 'local'
+        ? (plan.replaces ? `${vessel.name} fills a Crimson Vessel for ${h.name}, replacing ${plan.replaces.name}.` : `${vessel.name} fills a Crimson Vessel for ${h.name}.`)
+        : `${vessel.name} fills a Crimson Vessel for ${h.name}. It joins their Crimson Vessels on their phone.`;
+      ui.toast('! Extraction', msg, { kind: 'levelup' });
+      return vessel;
+    }
+    const rolledLine = `Rolled ${rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc)}`;
+    await ui.warn({
+      tag: 'Blood extraction', title: 'Blood extraction failed',
+      body: checked.natural === 1 ? 'Natural 1. No blood was extracted from this corpse.' : 'No attempts left on this corpse.',
+      lines: [rolledLine],
+    });
     return null;
   }
 
@@ -135,7 +208,7 @@ export function register(app) {
     return ui.wrote('System', A().hunter.spendMana(hid, cost, x => stepShadow(x, sid, { kind: 'summon' })), { mana: `Not enough mana to summon ${s.name} (${cost} mana).` });
   }
 
-  A().shadows = { canExtract, extract };
+  A().shadows = { canExtract, canExtractBlood, extract, extractBlood };
 
   ui.css('shadows', `
 .sh-bar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:4px 0 12px}
@@ -171,7 +244,7 @@ export function register(app) {
       <div class="sh-row"><button type="button" class="danger grow" data-act="release">Release</button></div>
       <label class="field"><span class="lbl">Notes</span><textarea data-notes maxlength="500">${esc(s.notes)}</textarea></label></li>`).join('');
     return `<div class="sh-bar"><span class="sh-cap${used >= c ? ' full' : ''}" aria-label="Army capacity">${used} / ${c}</span><span>Summoned: ${summoned.length} · Mana spent to summon: ${total} · Current mana: ${int(A().hunter.sheet(h).mana)}</span></div>
-      ${used ? `<ul class="sh-grid" aria-label="Shadow army">${cards}</ul>` : '<p class="empty">No shadows yet. Defeat a monster in a fight, then tap Extract.</p>'}`;
+      ${used ? `<ul class="sh-grid" aria-label="Shadow army">${cards}</ul>` : '<p class="empty">No shadows yet. Defeat a monster in a fight, then tap Extract shadow.</p>'}`;
   }
 
   app.registerView({

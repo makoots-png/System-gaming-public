@@ -233,12 +233,12 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'shadowHp', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'bloodExtract', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'shadowHp', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'capSet', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'shadowHp', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
+    expect(gmOnly).toEqual(['award', 'bloodExtract', 'capSet', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'shadowHp', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
@@ -376,6 +376,31 @@ describe('a System window', () => {
     expect(payload('system', { ...valid('system'), to: ['no colon', 5, KEY] })!.to).toEqual([KEY]);
     expect(payload('system', { ...valid('system'), to: [] })).toBeNull();
     expect(payload('system', { ...valid('system'), to: KEY })).toBeNull();
+  });
+});
+
+describe('a bloodExtract message', () => {
+  const VESSEL = { name: 'Igris the Bloodred', rank: 'A', kind: 'boss', at: '2026-11-26T12:00:00.000Z' };
+
+  test('accepts one target and a valid BloodVessel, strips stray fields, and refuses mythic, bad rank, blank name, bad timestamp, or wrong target count', () => {
+    expect(payload('bloodExtract', { eid: EID, to: [KEY], vessel: { ...VESSEL, extra: 1 } })).toEqual({ eid: EID, to: [KEY], vessel: VESSEL });
+    expect(payload('bloodExtract', { eid: EID, to: [KEY], vessel: { ...VESSEL, kind: 'mythic' } })).toBeNull();
+    expect(payload('bloodExtract', { eid: EID, to: [KEY], vessel: { ...VESSEL, rank: 'SS' } })).toBeNull();
+    expect(payload('bloodExtract', { eid: EID, to: [KEY], vessel: { ...VESSEL, name: '   ' } })).toBeNull();
+    expect(payload('bloodExtract', { eid: EID, to: [KEY], vessel: { ...VESSEL, at: 'nope' } })).toBeNull();
+    expect(payload('bloodExtract', { eid: EID, to: [], vessel: VESSEL })).toBeNull();
+    expect(payload('bloodExtract', { eid: EID, to: [KEY, OTHER], vessel: VESSEL })).toBeNull();
+  });
+
+  test('is GM-only and sealed to the GM and the named recipient', () => {
+    expect(EVENTS.bloodExtract.gmOnly).toBe(true);
+    expect(EVENTS.bloodExtract.ownSheet).toBe(false);
+    const ev = parseEvent('bloodExtract', { eid: EID, to: [KEY], vessel: VESSEL })!;
+    expect(isSealed(ev)).toBe(true);
+    expect(servedTo(ev, { kind: 'gm' })).toBe(true);
+    expect(servedTo(ev, { kind: 'phone', device: parseDeviceId('d-player1')! })).toBe(true);
+    expect(servedTo(ev, { kind: 'phone', device: parseDeviceId('d-player2')! })).toBe(false);
+    expect(servedTo(ev, { kind: 'anyone' })).toBe(false);
   });
 });
 

@@ -40,7 +40,7 @@ import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseSte
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
-import { adjustRollStep, clampedAdjust, clearRollAdjust, extractionCheck, rollCheckText, validExtractRoll, validRollAdjust } from './roll-adjust.ts';
+import { adjustRollStep, bloodExtractionCheck, clampedAdjust, clearRollAdjust, extractionCheck, rollCheckText, validExtractRoll, validRollAdjust } from './roll-adjust.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
 import type { Command, CommandType, Ctx, DodgeWait, Effect, Fight, HeldUse, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
@@ -875,11 +875,11 @@ function resize<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
 
 // ── a fallen monster's extraction and GM roll adjustment ──
 /**
- * An attempt to extract a shadow from fallen monster `id` (extraction.ts, roll-adjust.ts): computes the outcome from
- * `cmd.roll` and `cmd.adjust` (or the corpse's standing `adjust`), records it on the row, clears `corpse.adjust`, and
- * logs the full roll breakdown so attempts outlive a reload. No time passes. It is made by a hunter row of the fight
- * (`by`); one that is not is refused (`notExtractor`), as a body that is not a monster or still up, an invalid roll
- * (`needsRoll`) or adjustment (`adjustValue`), and a corpse with no attempt left (`noAttempts`).
+ * An attempt to extract a shadow or blood from fallen monster `id` (extraction.ts, roll-adjust.ts): computes the
+ * outcome from `cmd.roll` and `cmd.adjust` (or the corpse's standing `adjust`), records it on the row (`extraction` for
+ * `'shadow'`, independent `bled: true` for `'blood'`), clears `corpse.adjust`, and logs the full roll breakdown so
+ * attempts outlive a reload. No time passes. Blood extraction is post-fight only (`f.phase === 'ended'`, refused
+ * `notNow` otherwise) and one attempt per corpse (never touching `extraction` or `rose`).
  */
 function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' }>, ctx: Ctx): Result {
   const u = rowOf(f, cmd.id), by = rowOf(f, cmd.by);
@@ -890,6 +890,17 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
   if (!validExtractRoll(cmd.roll)) return refused(f, 'needsRoll');
   if (cmd.adjust !== undefined && !validRollAdjust(cmd.adjust, ctx.rules.shadow.adjustMax)) return refused(f, 'adjustValue');
   const adj = cmd.adjust !== undefined ? cmd.adjust : clampedAdjust(u.adjust, ctx.rules.shadow.adjustMax);
+  if (cmd.what === 'blood') {
+    if (f.phase !== 'ended') return refused(f, 'notNow');
+    if (u.bled) return refused(f, 'noAttempts');
+    const checked = bloodExtractionCheck(cmd.roll, adj);
+    const checkText = rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc);
+    const said = checked.passed
+      ? `${by.name} drains blood from ${u.name} for a Crimson Vessel (rolled ${checkText}).`
+      : `${by.name}'s blood extraction fails on ${u.name} (rolled ${checkText}).`;
+    const nextRow: MonsterRow = { ...clearRollAdjust(u), bled: true };
+    return done(logged(withRow(f, nextRow), line(said, [u.id, by.id]), ctx.rules), []);
+  }
   const checked = extractionCheck(cmd.roll, adj);
   const max = extractAttemptsMax(ctx.rules.shadow, by);
   const e = extractionStep(u.extraction ?? UNTRIED, checked.outcome, max);

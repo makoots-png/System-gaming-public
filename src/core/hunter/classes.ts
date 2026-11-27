@@ -11,11 +11,15 @@ import { newEvent } from '../protocol.ts';
 import type { EventStamp } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { told } from '../session-log.ts';
-import type { Said } from '../session-log.ts';
+import type { Said, Stamp } from '../session-log.ts';
 import { sheetKeyOf } from '../ids.ts';
 import type { ClassNodeId, RoomCode, SheetKey } from '../ids.ts';
 import { canonicalUniqueClass, classDefOf, isClassName, isUniqueClass } from '../registry/jobs.ts';
 import type { ClassName } from '../registry/jobs.ts';
+import { classExtractByName } from '../registry/class-powers.ts';
+import type { ClassSignatureMap } from '../registry/class-powers.ts';
+import { BLOOD_REFUSAL_WORDS, VESSEL_CAP, addVesselToList } from './blood-vessels.ts';
+import type { BloodVessel } from './blood-vessels.ts';
 import {
   CLASS_LOCKER_CAP,
   CLASS_TREES,
@@ -518,6 +522,99 @@ export function backedRemoteHunter(
   return changed ? { ...h, classes: classes ?? h.classes, job, jobDone } : h;
 }
 
+/** Outcome of `addBloodVessel`. */
+export type AddedBloodVessel = {
+  readonly save: Save;
+  readonly className: string;
+  readonly vessel: BloodVessel;
+  readonly replaced: BloodVessel | null;
+};
+
+/**
+ * Stores an extracted Crimson Vessel on hunter `hid`'s blood-extracting class entry (or explicit `opts.className`),
+ * replacing the weakest held vessel when full at `cap` if strictly stronger, fitting vitals, and logging it.
+ * Refuses `'no-hunter'`, `'no-class'`, or `'stronger-held'`.
+ */
+export function addBloodVessel(
+  save: Save,
+  hid: string,
+  vessel: BloodVessel,
+  stamp: Stamp,
+  R: Rules,
+  opts?: { readonly className?: string; readonly cap?: number; readonly signatures?: ClassSignatureMap },
+): AddedBloodVessel | Refused<'no-hunter' | 'no-class' | 'stronger-held'> {
+  const at = save.hunters.findIndex(h => h.id === hid);
+  if (at < 0) return refuse('no-hunter');
+  const h = save.hunters[at]!;
+  const active = activeClass(h);
+  let targetClass: string | null = null;
+  if (opts?.className) {
+    targetClass = Object.hasOwn(h.classes, opts.className) ? opts.className : null;
+  } else if (active.kind === 'earned' && classExtractByName(active.name, opts?.signatures)?.kind === 'blood') {
+    targetClass = active.name;
+  } else {
+    targetClass = Object.keys(h.classes).find(c => classExtractByName(c, opts?.signatures)?.kind === 'blood')
+      ?? (active.kind === 'earned' ? active.name : null);
+  }
+  if (!targetClass || !Object.hasOwn(h.classes, targetClass)) return refuse('no-class');
+  const entry = h.classes[targetClass]!;
+  const cap = opts?.cap ?? classExtractByName(targetClass, opts?.signatures)?.cap ?? VESSEL_CAP;
+  const added = addVesselToList(entry.vessels, vessel, cap);
+  if (isRefused(added)) return added;
+
+  const nextEntry: ClassEntry = { ...entry, vessels: added.vessels };
+  const next = fitted({ ...h, classes: { ...h.classes, [targetClass]: nextEntry } }, R);
+  const kindWord = vessel.kind === 'normal' ? '' : ` ${vessel.kind}`;
+  const text = added.replaced
+    ? `${h.name} extracted blood from ${vessel.name} (${vessel.rank}-rank${kindWord}) into a Crimson Vessel, replacing ${added.replaced.name}.`
+    : `${h.name} extracted blood from ${vessel.name} (${vessel.rank}-rank${kindWord}) into a Crimson Vessel.`;
+  const s = told(
+    { ...save, hunters: save.hunters.map((x, i) => (i === at ? next : x)) },
+    stamp,
+    { kind: 'system', hunterId: h.id, title: 'Blood extraction', text },
+  );
+  return { save: s, className: targetClass, vessel, replaced: added.replaced };
+}
+
+/** Outcome of `removeBloodVessel`. */
+export type RemovedBloodVessel = {
+  readonly save: Save;
+  readonly className: string;
+  readonly removed: BloodVessel;
+};
+
+/**
+ * Removes the Crimson Vessel at `index` from hunter `hid`'s active awakened class entry in one atomic save step.
+ * Refuses `'no-hunter'`, `'dead'`, `'held'`, `'no-class'`, or `'no-vessel'`.
+ */
+export function removeBloodVessel(
+  save: Save,
+  hid: string,
+  index: number,
+  ctx: Pick<ClassStepCtx, 'held' | 'at' | 'R'>,
+): RemovedBloodVessel | Refused<'no-hunter' | 'dead' | 'held' | 'no-class' | 'no-vessel'> {
+  const at = save.hunters.findIndex(h => h.id === hid);
+  if (at < 0) return refuse('no-hunter');
+  const h = save.hunters[at]!;
+  if (h.life.at === 'dead') return refuse('dead');
+  if (ctx.held) return refuse('held');
+  const active = activeClass(h);
+  if (active.kind !== 'earned') return refuse('no-class');
+  const list = active.entry.vessels;
+  if (!list || !Number.isInteger(index) || index < 0 || index >= list.length) return refuse('no-vessel');
+  const removed = list[index]!;
+  const rest = list.filter((_, i) => i !== index);
+  const { vessels: _drop, ...entryBase } = active.entry;
+  const nextEntry: ClassEntry = rest.length > 0 ? { ...entryBase, vessels: rest } : entryBase;
+  const next = fitted({ ...h, classes: { ...h.classes, [active.name]: nextEntry } }, ctx.R);
+  const s = told(
+    { ...save, hunters: save.hunters.map((x, i) => (i === at ? next : x)) },
+    { at: ctx.at, cap: ctx.R.logCap },
+    { kind: 'system', hunterId: h.id, title: 'Crimson Vessel removed', text: `${h.name} removed ${removed.name} from Crimson Vessels.` },
+  );
+  return { save: s, className: active.name, removed };
+}
+
 /** Plain-English refusal messages shared by PR 3 UI and tests (voice.md compliant). */
 export const CLASS_REFUSAL_WORDS = {
   'no-hunter': 'Hunter not found.',
@@ -540,4 +637,6 @@ export const CLASS_REFUSAL_WORDS = {
   'unique-class': 'Only the GM can grant a unique class.',
   'locker-full': `Your class locker is full (${CLASS_LOCKER_CAP} classes).`,
   gold: 'You do not have enough carried gold.',
+  'no-vessel': 'That Crimson Vessel is no longer there.',
+  'stronger-held': BLOOD_REFUSAL_WORDS['stronger-held'],
 } as const;
