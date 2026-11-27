@@ -126,6 +126,9 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
       await tapCombat(gm, '[data-defeat]');
       await expect(row).toHaveClass(/\bdead\b/);
     }
+    const progress = (p: Page) => p.evaluate(() => { const h = hunterApp.store.active(); return `${h.level}:${h.xp}`; });
+    const before = new Map<Page, string>();
+    for (const p of [kai, mira]) before.set(p, await progress(p));
     await tapCombat(gm, '[data-end]');
     const win = gm.locator('.sys-overlay.show', { hasText: 'Fight over' });
     await expect(win).toBeVisible();
@@ -140,7 +143,10 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     while (wantXp >= wantNeed) { wantXp -= wantNeed; wantNeed += RULES.xpPerLevel; }
     await expect(gm.locator('#view-status [data-xpnums]')).toHaveText(`${wantXp} / ${wantNeed}`);
     for (const p of [kai, mira]) {
-      await dismissAll(p, 4);
+      // The award lands on each player's phone at its next poll, with its System windows: wait for it, then close them.
+      await expect.poll(() => progress(p), { timeout: 20_000 }).not.toBe(before.get(p));
+      await dismissAll(p, 8);
+      await expect(p.locator('.sys-overlay.show')).toHaveCount(0);
       await go(p, 'combat');
       await expect(combat(p).locator('[data-idle]')).toHaveText('The GM is not running a fight.');
       await expect(combat(p).locator('.tb-row')).toHaveCount(0);
