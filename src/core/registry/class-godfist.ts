@@ -186,9 +186,9 @@ function makeFightingSpirit(o: {
 const BASE_SPIRIT: ClassWorn = makeFightingSpirit({
   key: KEY_SPIRIT,
   label: 'Fighting Spirit',
-  desc: 'Adds 18 armor and 6% damage dealt. Taking HP damage past your shield builds 1 stack of Grit per 2.5% of max HP lost. At the start of each turn, heal 1% of max HP. Hitting with Worldsplitter shields you for 1.5% of max HP per stack of Grit and clears Grit.',
-  armorFlat: 18,
-  dealtPct: 6,
+  desc: 'Adds 22 armor and 4% damage dealt. Taking HP damage past your shield builds 1 stack of Grit per 2.5% of max HP lost. At the start of each turn, heal 1% of max HP. Hitting with Worldsplitter shields you for 1.5% of max HP per stack of Grit and clears Grit.',
+  armorFlat: 22,
+  dealtPct: 4,
   gritDivisor: '0.025 * hpmax',
   kiBreath: '0.01 * hpmax',
   haymakerShield: '0.015 * hpmax * stacks(god-grit)',
@@ -197,9 +197,9 @@ const BASE_SPIRIT: ClassWorn = makeFightingSpirit({
 const SHATTERING_FIST: ClassWorn = makeFightingSpirit({
   key: KEY_SHATTERING_FIST,
   label: 'Shattering Fist',
-  desc: 'Adds 26 armor and 12% damage dealt. Taking HP damage past your shield builds 1 stack of Grit per 2% of max HP lost. At the start of each turn, heal 1% of max HP. Hitting with Worldsplitter shields you for 2% of max HP per stack of Grit and clears Grit. Once a round when using Heavenly Suplex, gain a shield equal to 4% of max HP and refund 50% of its action time.',
-  armorFlat: 26,
-  dealtPct: 12,
+  desc: 'Adds 34 armor and 6% damage dealt. Taking HP damage past your shield builds 1 stack of Grit per 2% of max HP lost. At the start of each turn, heal 1% of max HP. Hitting with Worldsplitter shields you for 2% of max HP per stack of Grit and clears Grit. Once a round when using Heavenly Suplex, gain a shield equal to 4% of max HP and refund 50% of its action time.',
+  armorFlat: 34,
+  dealtPct: 6,
   gritDivisor: '0.02 * hpmax',
   kiBreath: '0.01 * hpmax',
   haymakerShield: '0.02 * hpmax * stacks(god-grit)',
@@ -216,7 +216,7 @@ function makeKnuckleRush(o: {
   readonly expose?: true;
 }): Ability {
   const ops: UseOp[] = [
-    { op: 'stagger', share: 0.20 },
+    { op: 'stagger', share: 0.05 },
     ...(o.expose ? [{ op: 'applyStatus' as const, key: KEY_FLURRY_EXPOSED, def: FLURRY_EXPOSED, duration: rounds(1) }] : []),
   ];
   const base = o.cleave
@@ -270,7 +270,7 @@ function makeHeavenlySuplex(o: {
     delivery: { kind: 'direct' },
     foesOnly: true,
     move: { kind: 'swap' },
-    effect: { type: 'physical', by: 'hand', formula: f('2d8 + 1.25 * phys + min(0.06 * target.hpmax, 1.7 * phys)') },
+    effect: { type: 'physical', by: 'hand', formula: f('2d8 + 0.85 * phys + min(0.04 * target.hpmax, 1.05 * phys)') },
     ops,
   }, R);
   return {
@@ -305,7 +305,7 @@ function makeQiGuard(o: {
   return {
     ...base,
     react: { when: 'before', reach: tiles(0) },
-    cost: { ...base.cost, mana: 0, fatigue: 3, time: cost(R.fight.cost.quick), cooldown: rounds(6) },
+    cost: { ...base.cost, mana: 0, fatigue: 3, time: cost(R.fight.cost.quick), cooldown: rounds(3) },
   };
 }
 
@@ -316,7 +316,7 @@ function makeWorldsplitter(o: {
   readonly expose?: true;
 }): Ability {
   const ops: UseOp[] = [
-    { op: 'stagger', share: 0.30 },
+    { op: 'stagger', share: 0.15 },
     { op: 'shove', dir: 'away', from: 'user', tiles: tiles(2) },
     ...(o.expose ? [{ op: 'applyStatus' as const, key: KEY_SHATTER_EXPOSED, def: SHATTER_EXPOSED, duration: rounds(2) }] : []),
   ];
@@ -340,18 +340,18 @@ function makeWorldsplitter(o: {
 
 const BASE_KNUCKLE = makeKnuckleRush({
   name: 'Knuckle Rush',
-  formula: '1d10 + 0.95 * phys',
+  formula: '1d10 + 0.80 * phys',
 });
 
 const UP_KNUCKLE_FLURRY = makeKnuckleRush({
   name: 'Knuckle Rush: Flurry Rush',
-  formula: '1d10 + 1.15 * phys',
+  formula: '1d10 + 0.95 * phys',
   expose: true,
 });
 
 const UP_KNUCKLE_THUNDER = makeKnuckleRush({
   name: 'Knuckle Rush: Thunder Clap',
-  formula: '1d10 + 0.95 * phys',
+  formula: '1d10 + 0.80 * phys',
   cleave: true,
 });
 
@@ -379,39 +379,39 @@ const UP_SUPLEX_PINNING = makeHeavenlySuplex({
 
 const BASE_QI_GUARD = makeQiGuard({
   name: 'Qi Guard',
-  guardShare: 0.12,
-  shieldFormula: '0.03 * hpmax',
+  guardShare: 0.25,
+  shieldFormula: '0.06 * hpmax',
 });
 
 const UP_QI_DIAMOND = makeQiGuard({
   name: 'Qi Guard: Diamond Guard',
-  guardShare: 0.15,
-  shieldFormula: '0.04 * hpmax',
+  guardShare: 0.35,
+  shieldFormula: '0.09 * hpmax',
 });
 
 const UP_QI_COUNTER = makeQiGuard({
   name: 'Qi Guard: Counter Palm',
-  guardShare: 0.12,
-  shieldFormula: '0.03 * hpmax',
+  guardShare: 0.25,
+  shieldFormula: '0.06 * hpmax',
   counterStance: true,
 });
 
 const BASE_WORLDSPLITTER = makeWorldsplitter({
   name: 'Worldsplitter',
-  formula: '2d10 + 1.5 * phys + 0.06 * hpmax * stacks(god-grit)',
+  formula: '2d10 + 0.95 * phys + 0.04 * hpmax * stacks(god-grit)',
   cooldownRounds: 3,
 });
 
 const UP_WORLDSPLITTER_SHATTER = makeWorldsplitter({
   name: 'Worldsplitter: Shatter Blow',
-  formula: '2d10 + 1.5 * phys + 0.075 * hpmax * stacks(god-grit)',
+  formula: '2d10 + 0.95 * phys + 0.05 * hpmax * stacks(god-grit)',
   cooldownRounds: 3,
   expose: true,
 });
 
 const UP_WORLDSPLITTER_HUNDRED = makeWorldsplitter({
   name: 'Worldsplitter: Hundred-Ton Fist',
-  formula: '2d10 + 1.5 * phys + 0.06 * hpmax * stacks(god-grit)',
+  formula: '2d10 + 0.95 * phys + 0.04 * hpmax * stacks(god-grit)',
   cooldownRounds: 2,
 });
 
@@ -510,14 +510,14 @@ export const GODFIST_TREE: ClassTree = {
     ]),
 
     // Depth 5: Exclusive Fork Pairs (6 nodes, 3 buyable)
-    node('god-a5-l', 5, 'Diamond Guard', 'Upgrade Qi Guard to cut incoming strikes by 15% and grant a shield equal to 4% of max HP.', ['god-a4x', 'god-a4y'], [
+    node('god-a5-l', 5, 'Diamond Guard', 'Upgrade Qi Guard to cut incoming strikes by 35% and grant a shield equal to 9% of max HP.', ['god-a4x', 'god-a4y'], [
       replaceActive(ID_QI_GUARD, UP_QI_DIAMOND),
     ], { forkGroup: 'god-a5' }),
     node('god-a5-r', 5, 'Counter Palm', 'Upgrade Qi Guard to grant 1 round of Counter Stance so being struck retaliates for 90% of physical power once a round.', ['god-a4x', 'god-a4y'], [
       replaceActive(ID_QI_GUARD, UP_QI_COUNTER),
     ], { forkGroup: 'god-a5' }),
 
-    node('god-b5-l', 5, 'Shatter Blow', 'Upgrade Worldsplitter to deal 7.5% of max HP per Grit stack and apply Shattered Defense (+2 exposed for 2 rounds).', ['god-b4x', 'god-b4y'], [
+    node('god-b5-l', 5, 'Shatter Blow', 'Upgrade Worldsplitter to deal 5% of max HP per Grit stack and apply Shattered Defense (+2 exposed for 2 rounds).', ['god-b4x', 'god-b4y'], [
       replaceActive(ID_WORLDSPLITTER, UP_WORLDSPLITTER_SHATTER),
     ], { forkGroup: 'god-b5' }),
     node('god-b5-r', 5, 'Hundred-Ton Fist', 'Upgrade Worldsplitter to a 2-round cooldown.', ['god-b4x', 'god-b4y'], [
@@ -559,7 +559,7 @@ export const GODFIST_TREE: ClassTree = {
       bonus({ hpMax: 25, will: 12, vit: 3 }),
     ], { forkGroup: 'god-a7' }),
 
-    node('god-b7-l', 7, 'Flurry Rush', 'Upgrade Knuckle Rush to add 20% more physical power scaling and apply Open Guard (+1 exposed for 1 round).', ['god-b6x', 'god-b6y'], [
+    node('god-b7-l', 7, 'Flurry Rush', 'Upgrade Knuckle Rush to add 15% more physical power scaling and apply Open Guard (+1 exposed for 1 round).', ['god-b6x', 'god-b6y'], [
       replaceActive(ID_KNUCKLE, UP_KNUCKLE_FLURRY),
     ], { forkGroup: 'god-b7' }),
     node('god-b7-r', 7, 'Thunder Clap', 'Upgrade Knuckle Rush into a radius-2 shockwave hitting all foes around you.', ['god-b6x', 'god-b6y'], [

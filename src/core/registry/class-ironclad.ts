@@ -137,6 +137,7 @@ function makeBastion(o: {
       limit: EACH,
       ops: [{ op: 'applyStatus', key: KEY_CHARGE, def: SIEGE_CHARGE, duration: null, stacks: o.chargePerHit }],
     },
+    ...(o.lowHpTrigger ? [o.lowHpTrigger] : []),
     {
       on: 'struck',
       tag: null,
@@ -144,7 +145,6 @@ function makeBastion(o: {
       limit: o.reflectLimit,
       ops: [{ op: 'damage', type: 'physical', when: 'use', amount: f(o.reflectFormula) }],
     },
-    ...(o.lowHpTrigger ? [o.lowHpTrigger] : []),
   ];
   return {
     key: o.key,

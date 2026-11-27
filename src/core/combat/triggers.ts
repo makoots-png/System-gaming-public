@@ -7,7 +7,7 @@
 
 import type { StatusKey, LandOp } from './effect-ops.ts';
 import type { Body, OpRules, Reach } from './effect-ops.ts';
-import { someFormula } from '../formula.ts';
+import { average, someFormula } from '../formula.ts';
 import type { Formula } from '../formula.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { isMinionOf, ownerOf } from './summons.ts';
@@ -18,7 +18,7 @@ import { counting, harmful } from './standing.ts';
 import { isDamage } from './damage-type.ts';
 import type { Ability, CombatantId, Outcome, Tag } from './ability-types.ts';
 import { tagsOf } from '../registry/ability-kinds.ts';
-import { alive, landedWords, landOps, landThreshold, reached } from './land.ts';
+import { alive, kitOf, landedWords, landOps, landThreshold, reached } from './land.ts';
 import type { Gained } from './land.ts';
 import { refunded, tick } from './timeline.ts';
 import { tallied } from './row-tally.ts';
@@ -299,6 +299,16 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           if (e.event === 'struck' || e.event === 'critTaken') {
             const reads = hitCountsRead(t.ops, s.source.tier);
             if ((reads.blocked || reads.lost) && (!reads.blocked || (e.blocked ?? 0) <= 0) && (!reads.lost || (e.lost ?? 0) <= 0)) return;
+          }
+          if (t.ops.length > 0 && t.ops.every(o => o.op === 'applyStatus' && o.stacksBy !== undefined)) {
+            const hit = e.event === 'struck' || e.event === 'critTaken' ? { blocked: e.blocked ?? 0, lost: e.lost ?? 0 } : undefined;
+            const anyPositive = to.some(id => {
+              const target = rows.get(id);
+              if (!target || !alive(target)) return false;
+              const scope = { user: { stats: cur.stats, sheet: cur.sheet }, target: { stats: target.stats, sheet: target.sheet }, charge: 0, kit: kitOf(cur, target, R, hit) };
+              return t.ops.some(o => o.op === 'applyStatus' && o.stacksBy !== undefined && Math.floor(average(o.stacksBy, scope)) > 0);
+            });
+            if (!anyPositive) return;
           }
           if (t.ops.some(o => o.op === 'reform')) {
             const reformMana = t.ops.reduce((n, o) => (o.op === 'reform' ? n + o.mana : n), 0);

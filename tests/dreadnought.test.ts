@@ -17,7 +17,7 @@ import type { Fight, Running } from '../src/core/combat/fight.ts';
 import { fightDoc, fightWire, shippedStatusDef } from '../src/core/combat/fight-doc.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import { place, tiles } from '../src/core/combat/space.ts';
-import { tick } from '../src/core/combat/timeline.ts';
+import { interval, tick } from '../src/core/combat/timeline.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { FORMULA_PARTS, partsOf } from '../src/core/formula.ts';
 import { abilityOf, formulaOf } from '../src/core/registry/ability-kinds.ts';
@@ -289,17 +289,76 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
     expect(ward).toBeDefined();
     expect(ward.until).toBe(tick(f.now + RULES.fight.kit.wardRounds * RULES.fight.round));
 
-    // Boss hits Dreadnought twice -> Hook H1 banks Wrath stacks via stacksBy
+    // Pin Hook H1 Wrath formula `(blocked + 0.5 * lost) / (0.025 | 0.02 * hpmax)` with exact true-damage hits
+    // landing on 0, 1, or 2 stacks (< kit.stackAdd = 3), differing between Dread Hull and Colossus Hull.
+    const measureWrath = (nodes: readonly ClassNodeId[], dmgShare: number, shieldAmt: number, label: string) => {
+      const row = hunterRow(makeDreadnought(nodes), combatantId('h1'), RULES);
+      const hpMax = modified(row.origin, row.statuses, RULES).sheet.hpMax;
+      const dmg = Math.ceil(hpMax * dmgShare);
+      const trueStrike = abilityOf('strike', {
+        id: abilityId(`dread-true-${label}`), name: `True ${label}`,
+        range: tiles(2), shape: { kind: 'touch', reach: tiles(2) },
+        effect: { type: 'true', by: 'hand', formula: { kind: 'number', value: dmg } },
+      }, RULES);
+      const [dummy, bystander] = monsterRows({
+        name: 'Calibrator', rank: 'S', archetype: 'brute', kind: 'boss', tweak: { hp: 5 },
+        abilities: [trueStrike], statuses: [],
+      }, [combatantId('m1'), combatantId('m2')], RULES);
+      let fx = reduce(null, {
+        type: 'add', fightId: fightId(`f-wrath-${label}`),
+        rows: [
+          { ...row, shield: shieldAmt > 0 ? { amount: shieldAmt, until: tick(5000) } : null, place: place(4, 4) },
+          { ...dummy!, place: place(5, 4) },
+          { ...bystander!, place: place(9, 9) },
+        ],
+        openings: [],
+      }, ctx).fight!;
+      fx = reduce(fx, {
+        type: 'start',
+        // m1 acts first, m2 acts second so h1's first turnStart (Sealed Hull) does not fire during m1's strike
+        openings: [{ id: combatantId('h1'), d20: 1, tie: 1 }, { id: combatantId('m2'), d20: 15, tie: 2 }, { id: combatantId('m1'), d20: 20, tie: 3 }],
+      }, ctx).fight! as Running;
+      const res = reduce(fx, {
+        type: 'act', by: combatantId('m1'), ability: trueStrike.id, aim: combatantId('h1'),
+        rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 10 } }, force: true,
+      }, ctx);
+      expect(res.effects.filter(e => e.type === 'refused')).toEqual([]);
+      const after = res.fight as Running;
+      return {
+        hpMax,
+        dmg,
+        stacks: after.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === KEY_DREAD_WRATH)?.stacks ?? 0,
+        log: after.log,
+      };
+    };
+
+    // Unshielded 8.2% true hit -> blocked = 0, 0.5 * lost = 4.1% hpMax -> floor(4.1/2.5)=1 (Base), floor(4.1/2.0)=2 (Colossus)
+    expect(measureWrath([], 0.082, 0, 'base-unsh-82').stacks).toBe(1);
+    expect(measureWrath(DREADNOUGHT_CANONICAL_NODES, 0.082, 0, 'cap-unsh-82').stacks).toBe(2);
+
+    // Shielded 4.1% true hit (fully absorbed) -> blocked = 4.1% hpMax, lost = 0 -> 1 (Base), 2 (Colossus)
+    const baseSh41 = measureWrath([], 0.041, 10_000, 'base-sh-41');
+    const capSh41 = measureWrath(DREADNOUGHT_CANONICAL_NODES, 0.041, 10_000, 'cap-sh-41');
+    expect(baseSh41.stacks).toBe(1);
+    expect(capSh41.stacks).toBe(2);
+
+    // Same 4.1% true hit UNSHIELDED -> 0.5 * lost = 2.05% hpMax -> 0 (Base, skipped) vs 1 (Colossus)
+    const baseUnsh41 = measureWrath([], 0.041, 0, 'base-unsh-41');
+    const capUnsh41 = measureWrath(DREADNOUGHT_CANONICAL_NODES, 0.041, 0, 'cap-unsh-41');
+    expect(baseUnsh41.stacks).toBe(0);
+    expect(baseUnsh41.log.some(l => l.text.includes("Dread Hull"))).toBe(false);
+    expect(capUnsh41.stacks).toBe(1);
+
+    // Boss hits Dreadnought twice in main loop to build Wrath before dispel/Broadside/All-Out checks
     const bossHit = foe.abilities[0]!;
     const hitRolls = { dice: { [combatantId('h1')]: [10] }, react: { [combatantId('h1')]: 10 } };
     const afterHit1 = reduce(afterBulk, { type: 'act', by: combatantId('m1'), ability: bossHit.id, aim: combatantId('h1'), rolls: hitRolls, force: true }, ctx).fight as Running;
     const wrath1 = afterHit1.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === KEY_DREAD_WRATH)?.stacks ?? 0;
-    expect(wrath1).toBeGreaterThan(0);
-    expect(wrath1).toBeLessThanOrEqual(RULES.fight.kit.stackAdd);
+    expect(wrath1).toBe(RULES.fight.kit.stackAdd);
 
     const afterHit2 = reduce(afterHit1, { type: 'act', by: combatantId('m1'), ability: bossHit.id, aim: combatantId('h1'), rolls: hitRolls, force: true }, ctx).fight as Running;
     const wrath2 = afterHit2.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === KEY_DREAD_WRATH)?.stacks ?? 0;
-    expect(wrath2).toBeGreaterThan(wrath1);
+    expect(wrath2).toBe(wrath1 + RULES.fight.kit.stackAdd);
 
     // Neither a harmful dispel nor a helpful dispel touches neutral Wrath
     const purgeBoth = abilityOf('curse', {
@@ -330,7 +389,7 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
     }, ctx).fight as Running;
     expect(afterPurge.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === KEY_DREAD_WRATH)?.stacks).toBe(wrath2);
 
-    // Broadside deals strictly more damage with Wrath stacks than at 0 Wrath, and cures 3 stacks on hit
+    // Broadside deals strictly more damage with Wrath stacks than at 0 Wrath, and cures 1 stack on hit
     const seedWrath = (baseFight: Running, stacks: number): Running => {
       const wrathDef = classStatusDef('dread-wrath')!;
       return {
@@ -341,7 +400,7 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
           const next = stacks > 0
             ? [...clean, statusOn(wrathDef, { key: KEY_DREAD_WRATH, source: { id: r.id, tier: r.tier }, until: null, since: baseFight.now, settledAt: baseFight.now }, stacks)]
             : clean;
-          return { ...r, statuses: next };
+          return { ...r, shield: null, statuses: next };
         }),
       };
     };
@@ -360,7 +419,33 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
     // Broadside hit cured 1 stack: 8 -> 7
     expect(afterB8.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === KEY_DREAD_WRATH)?.stacks).toBe(7);
 
-    // Open All-Out at 8 Wrath: spends all Wrath, cures Sealed Hull, grants shield = 0.014 * hpMax * 8, applies All-Out Drive
+    // All-Out gate boundary: 4 Wrath is refused ('gated'), 5 Wrath succeeds and spends all 5 stacks
+    const refAt4 = reduce(seedWrath(afterHit2, 4), {
+      type: 'act',
+      by: combatantId('h1'),
+      ability: DREADNOUGHT_ALL_OUT_ID,
+      aim: combatantId('h1'),
+      rolls: { dice: { [combatantId('h1')]: [] }, react: {} },
+      force: true,
+    }, ctx);
+    expect(refAt4.effects.some(e => e.type === 'refused' && e.reason === 'gated')).toBe(true);
+
+    const fAt5 = seedWrath(afterHit2, 5);
+    const meBeforeAt5 = fAt5.rows.find(r => r.id === combatantId('h1'))!;
+    const okAt5 = reduce(fAt5, {
+      type: 'act',
+      by: combatantId('h1'),
+      ability: DREADNOUGHT_ALL_OUT_ID,
+      aim: combatantId('h1'),
+      rolls: { dice: { [combatantId('h1')]: [] }, react: {} },
+      force: true,
+    }, ctx);
+    expect(okAt5.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const meAt5 = (okAt5.fight as Running).rows.find(r => r.id === combatantId('h1'))!;
+    expect(meAt5.statuses.some(s => s.key === KEY_DREAD_WRATH)).toBe(false);
+    expect(meAt5.shield?.amount).toBe(Math.round(0.014 * meBeforeAt5.sheet.hpMax * 5));
+
+    // Open All-Out at 8 Wrath: spends all Wrath, cures Sealed Hull, grants exact shield = 0.014 * hpMax * 8, applies All-Out Drive
     const fReadyAllOut = seedWrath(afterHit2, 8);
     const meBeforeAllOut = fReadyAllOut.rows.find(r => r.id === combatantId('h1'))!;
     expect(meBeforeAllOut.statuses.some(s => s.key === KEY_DREAD_SEALED)).toBe(true);
@@ -376,7 +461,7 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
     expect(meAllOut.statuses.some(s => s.key === KEY_DREAD_WRATH)).toBe(false);
     expect(meAllOut.statuses.some(s => s.key === KEY_DREAD_SEALED)).toBe(false);
     expect(meAllOut.statuses.some(s => s.key === statusKey('dread-all-out'))).toBe(true);
-    expect(meAllOut.shield?.amount ?? 0).toBeGreaterThanOrEqual(Math.round(0.014 * meBeforeAllOut.sheet.hpMax * 8));
+    expect(meAllOut.shield?.amount).toBe(Math.round(0.014 * meBeforeAllOut.sheet.hpMax * 8));
 
     // Path A (cleanse): helpful dispel removes All-Out Drive early and end.cleanse === 'land' restores Sealed Hull at once
     const fWithPurge: Running = {
@@ -428,7 +513,9 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
       f = reduce(f, {
         type: 'start',
         openings: [{ id: combatantId('h1'), d20: 20, tie: 2 }, { id: combatantId('m1'), d20: 1, tie: 1 }],
-      }, ctx).fight!;
+      }, ctx).fight! as Running;
+      const before = f.rows.find(r => r.id === combatantId('h1'))!;
+      const bulkheadAb = before.abilities.find(a => a.id === DREADNOUGHT_BULKHEAD_ID)!;
       const res = reduce(f, {
         type: 'act',
         by: combatantId('h1'),
@@ -437,15 +524,100 @@ describe('Dreadnought sheet, Hook H1 wire pin, Wrath loop, and All-Out Sealed Hu
         rolls: { dice: { [combatantId('h1')]: [] }, react: {} },
         force: true,
       }, ctx).fight as Running;
-      return res.rows.find(r => r.id === combatantId('h1'))!;
+      return { before, beforeNow: f.now, bulkheadAb, after: res.rows.find(r => r.id === combatantId('h1'))! };
     };
 
-    const afterBase = castBulkhead(baseRow, 'base');
-    const afterBastion = castBulkhead(bastionRow, 'bastion');
-    expect(afterBastion.statuses.some(s => s.key === statusKey('dread-bulkhead-rush'))).toBe(false);
-    // Bastion has higher speed from tree nodes AND 20% refund; verify wait ratio matches 0.80 of full quick interval
-    const quickNoRefund = Math.round(RULES.fight.round * (RULES.fight.cost.quick / (RULES.fight.cost.standard)) * (100 / afterBastion.speed));
-    expect(Number(afterBastion.at)).toBeLessThan(quickNoRefund);
-    expect(Number(afterBastion.at)).toBeLessThan(Number(afterBase.at));
+    const baseRes = castBulkhead(baseRow, 'base');
+    const bastionRes = castBulkhead(bastionRow, 'bastion');
+    expect(bastionRes.after.statuses.some(s => s.key === statusKey('dread-bulkhead-rush'))).toBe(false);
+    // Exact 20% refund pinned via interval()
+    const fullQuick = interval(bastionRes.before.speed, bastionRes.bulkheadAb.cost.time, RULES.fight);
+    const expectedAt = tick(bastionRes.beforeNow + fullQuick - Math.round(fullQuick * 20 / 100));
+    expect(bastionRes.after.at).toBe(expectedAt);
+    expect(Number(bastionRes.after.at)).toBeLessThan(Number(baseRes.after.at));
+  });
+
+  test('live pins for Emergency Bulkhead lowHp trigger (base 8% vs Colossus 10% + 2% heal, once per fight) and Colossus Hull Regen (1.5% on turnStart)', () => {
+    const ctx = { rules: RULES };
+    const dropTrue = abilityOf('strike', {
+      id: abilityId('dread-lowhp-drop'), name: 'Drop Hit',
+      range: tiles(2), shape: { kind: 'touch', reach: tiles(2) },
+      effect: { type: 'true', by: 'hand', formula: { kind: 'number', value: 40 } },
+    }, RULES);
+    const [foe, bystander] = monsterRows({
+      name: 'Breaker', rank: 'S', archetype: 'brute', kind: 'boss', tweak: { hp: 5 },
+      abilities: [dropTrue], statuses: [],
+    }, [combatantId('m1'), combatantId('m2')], RULES);
+
+    for (const [label, nodes, shieldShare] of [
+      ['base Dread Hull', [] as readonly ClassNodeId[], 0.08],
+      ['capstone Colossus Hull', DREADNOUGHT_CANONICAL_NODES, 0.10],
+    ] as const) {
+      const row = hunterRow(makeDreadnought(nodes), combatantId('h1'), RULES);
+      let f = reduce(null, {
+        type: 'add', fightId: fightId(`f-dread-lowhp-${label}`),
+        rows: [{ ...row, place: place(4, 4) }, { ...foe!, place: place(5, 4) }, { ...bystander!, place: place(9, 9) }],
+        openings: [],
+      }, ctx).fight!;
+      f = reduce(f, {
+        type: 'start',
+        // m1 acts first, m2 acts second so h1's turnStart (Sealed Hull & Hull Regen) does not fire during m1's strike
+        openings: [{ id: combatantId('h1'), d20: 1, tie: 1 }, { id: combatantId('m2'), d20: 15, tie: 2 }, { id: combatantId('m1'), d20: 20, tie: 3 }],
+      }, ctx).fight! as Running;
+      const before = f.rows.find(r => r.id === combatantId('h1'))!;
+      const lowThreshold = Math.ceil(before.sheet.hpMax * RULES.fight.kit.lowHpAt);
+      const startHp = lowThreshold + 5;
+      const poised: Running = {
+        ...f,
+        rows: f.rows.map(r => (r.id === combatantId('h1') ? { ...r, life: { at: 'up', hp: startHp }, shield: null } : r)),
+      };
+      const step1 = reduce(poised, {
+        type: 'act', by: combatantId('m1'), ability: dropTrue.id, aim: combatantId('h1'),
+        rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 10 } }, force: true,
+      }, ctx).fight as Running;
+      const after1 = step1.rows.find(r => r.id === combatantId('h1'))!;
+      const expectedShield = Math.round(shieldShare * before.sheet.hpMax * (1 + before.sheet.healPower));
+      const expectedHeal = Math.round(0.02 * before.sheet.hpMax * (1 + before.sheet.healPower));
+      expect(after1.shield?.amount, `${label} lowHp shield`).toBe(expectedShield);
+      expect(rowHp(after1), `${label} lowHp 2% heal`).toBe(startHp - 40 + expectedHeal);
+
+      // Once-per-fight pin: restoring HP above lowHpAt (without Sealed Hull) and dropping again does NOT refire lowHp
+      const rePoised: Running = {
+        ...step1,
+        rows: step1.rows.map(r => (r.id === combatantId('h1')
+          ? { ...r, life: { at: 'up', hp: startHp }, shield: null, statuses: r.statuses.filter(s => s.key !== KEY_DREAD_SEALED) }
+          : r)),
+      };
+      const step2 = reduce(rePoised, {
+        type: 'act', by: combatantId('m1'), ability: dropTrue.id, aim: combatantId('h1'),
+        rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 10 } }, force: true,
+      }, ctx).fight as Running;
+      const after2 = step2.rows.find(r => r.id === combatantId('h1'))!;
+      expect(after2.shield, `${label} lowHp must not refire`).toBeNull();
+      expect(rowHp(after2), `${label} second drop has no lowHp heal`).toBe(startHp - 40);
+    }
+
+    // Live Hull Regen pin: turnStart heals 0 on base Dread Hull, exact 1.5% * hpMax * (1 + healPower) on Colossus Hull
+    for (const [label, nodes, expectsRegen] of [
+      ['base Dread Hull', [] as readonly ClassNodeId[], false],
+      ['capstone Colossus Hull', DREADNOUGHT_CANONICAL_NODES, true],
+    ] as const) {
+      const row = hunterRow(makeDreadnought(nodes), combatantId('h1'), RULES);
+      const hpMax = modified(row.origin, row.statuses, RULES).sheet.hpMax;
+      const injuredHp = Math.floor(hpMax * 0.5);
+      let f = reduce(null, {
+        type: 'add', fightId: fightId(`f-dread-regen-${label}`),
+        rows: [{ ...row, life: { at: 'up', hp: injuredHp }, place: place(4, 4) }, { ...foe!, place: place(8, 4) }],
+        openings: [],
+      }, ctx).fight!;
+      f = reduce(f, {
+        type: 'start',
+        // h1 acts first -> turnStart fires on start
+        openings: [{ id: combatantId('h1'), d20: 20, tie: 2 }, { id: combatantId('m1'), d20: 1, tie: 1 }],
+      }, ctx).fight! as Running;
+      const afterStart = f.rows.find(r => r.id === combatantId('h1'))!;
+      const expectedGain = expectsRegen ? Math.round(0.015 * afterStart.sheet.hpMax * (1 + afterStart.sheet.healPower)) : 0;
+      expect(rowHp(afterStart) - injuredHp, `${label} turnStart Hull Regen`).toBe(expectedGain);
+    }
   });
 });

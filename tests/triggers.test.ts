@@ -833,12 +833,28 @@ describe('Hook H1: blocked/lost hit counts and stacksBy on struck/critTaken trig
     );
     expect([stacksOf(body(shielded, 'M'), 'grit'), body(shielded, 'M').mana, stacksOf(body(shielded, 'M'), 'pain')]).toEqual([0, 0, 0]);
 
-    // 2. Tiny hit below 0.05 * hpMax -> floor < 1 = 0 -> skipped, no statusGained
+    // 2. Tiny hit below 0.05 * hpMax -> floor < 1 = 0 -> trigger skipped (no stacks, no statusGained, no bare log line)
     const small = play(
       ...duel(row('A', 'party', [], { abilities: [tiny] }), row('M', 'foe', [on('spirit', spirit)], { origin: hiHpOrigin, mana: 0 })),
       use('A', 'M', tiny),
     );
     expect([stacksOf(body(small, 'M'), 'grit'), body(small, 'M').mana, stacksOf(body(small, 'M'), 'pain')]).toEqual([0, 0, 0]);
+    expect(small.log.some(l => l.text.includes("M's Spirit"))).toBe(false);
+
+    // 2b. A once-a-round stacksBy trigger whose floor is 0 skips without burning its round trip or logging a bare line,
+    // so a larger hit in the same round still fires and adds stacks.
+    const roundSpirit = worn('Round Spirit',
+      { on: 'struck', tag: null, to: 'self', limit: { kind: 'round' }, ops: [{ op: 'applyStatus', key: statusKey('grit'), def: grit, duration: null, stacksBy: f('lost / (0.05 * hpmax)') }] },
+    );
+    const afterTiny = play(
+      ...duel(row('A', 'party', [], { abilities: [tiny, oneStack] }), row('M', 'foe', [on('round-spirit', roundSpirit)], { origin: hiHpOrigin })),
+      use('A', 'M', tiny),
+    );
+    expect(stacksOf(body(afterTiny, 'M'), 'grit')).toBe(0);
+    expect(afterTiny.log.some(l => l.text.includes("M's Round Spirit"))).toBe(false);
+    const afterOne = reduce(afterTiny, use('A', 'M', oneStack), ctx).fight!;
+    expect(stacksOf(body(afterOne, 'M'), 'grit')).toBe(1);
+    expect(afterOne.log.some(l => l.text.includes("M's Round Spirit"))).toBe(true);
 
     // 3. One-stack hit -> adds 1 stack, raises statusGained (+1 mana), threshold (at 2) not crossed
     const one = play(

@@ -96,7 +96,7 @@ const SAFEGUARD_DEF: StatusDef = {
 // Self-curing ally-area pulse so Aegis Temper shields and wards nearby allies within 2 tiles while sparing foes.
 const AEGIS_PULSE_DEF: StatusDef = {
   label: 'Aegis Pulse',
-  desc: 'Shields nearby allies within 2 tiles for 12% of max HP and grants Tempered for 2 rounds and Aegis Ward for 1 round.',
+  desc: "Shields the bearer and allies within 2 tiles for 12% of the bearer's max HP, and grants Tempered for 2 rounds and Aegis Ward for 1 round.",
   ops: [],
   triggers: [
     {
@@ -475,7 +475,7 @@ export const SOULFORGER_TREE: ClassTree = {
       replaceActive(ID_HAMMERFALL, UP_HAMMERFALL_SHATTER),
     ], { forkGroup: 'soul-a5' }),
 
-    node('soul-b5-l', 5, 'Aegis Temper', 'Upgrade Temper to a 3-round cooldown, shielding nearby allies within 2 tiles for 12% of max HP and granting Tempered (2 rounds) plus Aegis Ward safeguard (1 round).', ['soul-b4x', 'soul-b4y'], [
+    node('soul-b5-l', 5, 'Aegis Temper', "Upgrade Temper to a 3-round cooldown. Allies within 2 tiles of the aimed ally gain a shield for 12% of the aimed ally's max HP, Tempered for 2 rounds, and Aegis Ward safeguard for 1 round.", ['soul-b4x', 'soul-b4y'], [
       replaceActive(ID_TEMPER, UP_TEMPER_AEGIS),
     ], { forkGroup: 'soul-b5' }),
     node('soul-b5-r', 5, 'Quench Temper', "Upgrade Temper to dispel the aimed ally's oldest harmful status and restore 8 mana to that ally.", ['soul-b4x', 'soul-b4y'], [

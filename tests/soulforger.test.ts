@@ -488,6 +488,41 @@ describe('Soulforger combat mechanics', () => {
       expect(holds(b, 'safeguard')).toBe(true);
       expect(b.statuses.some(s => s.key === statusKey('soul-aegis-pulse'))).toBe(false);
     }
+    // Pin Aegis Pulse shield amount: reads 0.12 * hpMax off the aimed ally (bearer of Aegis Pulse), not the Soulforger
+    const sfBeforeAegis = (f as Running).rows.find(x => x.id === combatantId('h1'))!;
+    const allyBeforeAegis = (f as Running).rows.find(x => x.id === combatantId('h2'))!;
+    const sfAfterAegis = afterAegis.rows.find(x => x.id === combatantId('h1'))!;
+    const allyAfterAegis = afterAegis.rows.find(x => x.id === combatantId('h2'))!;
+    const expectedPulseLow = Math.round(0.12 * allyBeforeAegis.sheet.hpMax * (1 + allyBeforeAegis.sheet.healPower));
+    const expectedDirectLow = Math.round(0.18 * sfBeforeAegis.sheet.hpMax * (1 + sfBeforeAegis.sheet.healPower));
+    const wrongCasterPulse = Math.round(0.12 * sfBeforeAegis.sheet.hpMax * (1 + sfBeforeAegis.sheet.healPower));
+    expect(allyBeforeAegis.sheet.hpMax).not.toBe(sfBeforeAegis.sheet.hpMax);
+    expect(expectedPulseLow).not.toBe(wrongCasterPulse);
+    expect(sfAfterAegis.shield?.amount).toBe(expectedPulseLow);
+    expect(allyAfterAegis.shield?.amount).toBe(Math.max(expectedDirectLow, expectedPulseLow));
+
+    // Confirm with a high-VIT aimed ally: nearby Soulforger's pulse shield scales up to 12% of that bearer's max HP
+    const tankBase = newHunter(RULES);
+    const tankAlly = hunterRow(
+      { ...tankBase, id: 'h-tank', name: 'Bram', rank: 'A', level: 50, stats: { ...tankBase.stats, vit: 140 } },
+      combatantId('h2'),
+      RULES,
+    );
+    let fTank: Fight = reduce(null, {
+      type: 'add',
+      fightId: fightId('f-soul-aegis-tank'),
+      rows: [{ ...sfAegis, place: place(2, 3) }, { ...tankAlly, place: place(4, 3) }, { ...foe0, place: place(5, 3) }],
+      openings: [],
+    }, ctx).fight!;
+    fTank = reduce(fTank, { openings: [{ id: combatantId('h1'), d20: 20, tie: 3 }, { id: combatantId('h2'), d20: 10, tie: 2 }, { id: combatantId('m1'), d20: 1, tie: 1 }], type: 'start' }, ctx).fight!;
+    const tankBefore = (fTank as Running).rows.find(x => x.id === combatantId('h2'))!;
+    expect(tankBefore.sheet.hpMax).toBeGreaterThan(sfBeforeAegis.sheet.hpMax);
+    const rTank = reduce(fTank as Running, { type: 'act', by: combatantId('h1'), ability: TEMPER_ID, aim: combatantId('h2'), rolls: { dice: {}, react: {} }, force: true }, ctx);
+    expect(rTank.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const afterTank = rTank.fight as Running;
+    const expectedPulseTank = Math.round(0.12 * tankBefore.sheet.hpMax * (1 + tankBefore.sheet.healPower));
+    expect(expectedPulseTank).toBeGreaterThan(expectedPulseLow);
+    expect(afterTank.rows.find(x => x.id === combatantId('h1'))!.shield?.amount).toBe(expectedPulseTank);
     // Foe within 1 tile of aimed ally is completely spared
     const foeAfter = afterAegis.rows.find(x => x.id === combatantId('m1'))!;
     expect(foeAfter.shield).toBeNull();

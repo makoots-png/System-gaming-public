@@ -201,8 +201,14 @@ describe('Wave 4 A5: Ironclad true reflect on blocked damage', () => {
     expect(baseReflect.limit).toEqual({ kind: 'round' });
     expect(baseReflect.ops).toEqual([{ op: 'damage', type: 'physical', when: 'use', amount: f('0.25 * blocked') }]);
 
-    // Capstone reflect: struck -> other, every time, 0.35 * blocked physical (instant, not DoT)
-    const capReflect = capWorn.def.triggers![1]!;
+    // Capstone lowHp stays at index 1 so saved trip keys (iron-bastion-living#1) stay stable
+    const capLowHp = capWorn.def.triggers![1]!;
+    expect(capLowHp.on).toBe('lowHp');
+    expect(capLowHp.to).toBe('self');
+    expect(capLowHp.limit).toEqual({ kind: 'fight', n: 1 });
+
+    // Capstone reflect: struck -> other, every time, 0.35 * blocked physical (instant, not DoT) at index 2
+    const capReflect = capWorn.def.triggers![2]!;
     expect(capReflect.on).toBe('struck');
     expect(capReflect.to).toBe('other');
     expect(capReflect.limit).toEqual({ kind: 'each' });
@@ -314,6 +320,58 @@ describe('Wave 4 A5: Ironclad true reflect on blocked damage', () => {
     expect(iron2.statuses.find(s => s.key === statusKey('iron-charge'))?.stacks).toBe(4);
   });
 
+  test('Living Fortress keeps lowHp at trigger index 1 so saved iron-bastion-living#1 trips stay valid', () => {
+    const livingKey = statusKey('iron-bastion-living');
+    const savedTripKey = tripKey(livingKey, 1);
+
+    const dropBelowLowHp = (
+      id: string,
+      opts: { savedSpent?: boolean; flipOrder?: boolean } = {},
+    ) => {
+      const f0 = startDuel(id, FULL_NODES);
+      const iron0 = rowOf(f0, H1);
+      const lowThreshold = Math.ceil(iron0.sheet.hpMax * RULES.fight.kit.lowHpAt);
+      const readyFight: Running = {
+        ...f0,
+        rows: f0.rows.map(r => {
+          if (r.id !== H1) return r;
+          const statuses = opts.flipOrder
+            ? r.statuses.map((s): Status => {
+              if (s.key !== livingKey || s.stacks !== undefined) return s;
+              const [charge, lowHp, reflect] = s.def.triggers ?? [];
+              return { ...s, def: { ...s.def, triggers: [charge!, reflect!, lowHp!] } };
+            })
+            : r.statuses;
+          return {
+            ...r,
+            life: { at: 'up', hp: lowThreshold + 10 },
+            statuses,
+            ...(opts.savedSpent ? { trips: { [savedTripKey]: { at: 'spent' as const } } } : {}),
+          };
+        }),
+      };
+      const step = strike(readyFight, M1, H1, TRUE_100);
+      return { iron0, after: rowOf(step.fight, H1) };
+    };
+
+    // 1. Fresh fight: dropping below lowHpAt fires lowHp once and records spent at index 1 (iron-bastion-living#1)
+    const fresh = dropBelowLowHp('f-iron-lowhp-fresh');
+    expect(fresh.after.statuses.some(s => s.key === statusKey('iron-safeguard'))).toBe(true);
+    expect(fresh.after.shield?.amount).toBe(Math.round(0.2 * fresh.iron0.sheet.hpMax * (1 + fresh.iron0.sheet.healPower)));
+    expect(fresh.after.trips?.[savedTripKey]).toEqual({ at: 'spent' });
+
+    // 2. Saved fight with iron-bastion-living#1 already spent suppresses lowHp on crossing lowHpAt
+    const resumed = dropBelowLowHp('f-iron-lowhp-resumed', { savedSpent: true });
+    expect(resumed.after.statuses.some(s => s.key === statusKey('iron-safeguard'))).toBe(false);
+    expect(resumed.after.shield).toBeNull();
+    expect(resumed.after.trips?.[savedTripKey]).toEqual({ at: 'spent' });
+
+    // 3. Negative proof: flipping trigger order to [charge, reflect, lowHp] breaks the saved #1 trip and refires lowHp at #2
+    const flipped = dropBelowLowHp('f-iron-lowhp-flipped', { savedSpent: true, flipOrder: true });
+    expect(flipped.after.statuses.some(s => s.key === statusKey('iron-safeguard'))).toBe(true);
+    expect(flipped.after.trips?.[tripKey(livingKey, 2)]).toEqual({ at: 'spent' });
+  });
+
   test('unshielded true damage reflects 0 without tripping Iron Bulwark, while shielded true damage reflects 0.25 * absorbed (0.35 * absorbed on Living Fortress)', () => {
     // 1. Unshielded true damage: blocked === 0 -> 0 reflect, no trip on reflect trigger (#1), later physical hit in same round still reflects
     const fUnshielded = startDuel('f-iron-true-unshielded');
@@ -326,8 +384,12 @@ describe('Wave 4 A5: Ironclad true reflect on blocked damage', () => {
     expect(rowHp(iron0) - rowHp(ironAfterTrue)).toBe(90); // 100 * 0.9 taken share, 0 blocked
     expect(foeHp0 - rowHp(rowOf(trueStep.fight, M1))).toBe(0);
     expect(ironAfterTrue.trips?.[tripKey(statusKey('iron-bastion'), 1)]).toBeUndefined();
-    // Only Siege Charge fired, no bare reflect entry without damage
-    expect(trueStep.fight.log.some(l => l.text.includes("Ironclad's Iron Bulwark (Colossus"))).toBe(false);
+    // Only Siege Charge fired (one bare Iron Bulwark phrase; a zero-blocked reflect would emit a second bare phrase)
+    const trueThen = trueStep.fight.log
+      .slice(0, trueStep.fight.log.length - fUnshielded.log.length)
+      .filter(l => l.text.includes('Then:'));
+    expect(trueThen).toHaveLength(1);
+    expect(trueThen[0]!.text).toBe("R1: Then: Ironclad's Iron Bulwark.");
 
     // Same round physical hit still reflects
     const calcPhys = expectedBlocked(200, 'physical', foe0, ironAfterTrue, 0.9, 0, 0);
@@ -335,6 +397,10 @@ describe('Wave 4 A5: Ironclad true reflect on blocked damage', () => {
     const expectedPhys = afterDefence(0.25 * calcPhys.blocked, 'physical', rowOf(physStep.fight, H1).sheet, foe0.sheet, RULES);
     expect(expectedPhys).toBeGreaterThan(0);
     expect(foeHp0 - rowHp(rowOf(physStep.fight, M1))).toBe(expectedPhys);
+    const physThen = physStep.fight.log
+      .slice(0, physStep.fight.log.length - trueStep.fight.log.length)
+      .filter(l => l.text.includes('Then:'));
+    expect(physThen[0]!.text).toBe(`R1: Then: Ironclad's Iron Bulwark, Ironclad's Iron Bulwark (Colossus ${expectedPhys}).`);
 
     // 2. Shielded true damage on Base Iron Bulwark: absorbed = 40 -> reflects 0.25 * 40
     const fShieldBase = startDuel('f-iron-true-shielded-base', [], { ironShield: 40 });
@@ -442,10 +508,13 @@ describe('Wave 4 A5: Ironclad true reflect on blocked damage', () => {
       // Fail-capable negative proof: mutating the reflect trigger def causes fightWire(doc).defs to emit the key
       const mutatedDef: StatusDef = {
         ...shipped,
-        triggers: (shipped.triggers ?? []).map((tr, idx) =>
-          idx === 1 ? { ...tr, ops: [{ op: 'damage' as const, type: 'physical' as const, when: 'use' as const, amount: f('0.3 * blocked') }] } : tr,
+        triggers: (shipped.triggers ?? []).map(tr =>
+          tr.on === 'struck' && tr.to === 'other'
+            ? { ...tr, ops: [{ op: 'damage' as const, type: 'physical' as const, when: 'use' as const, amount: f('0.3 * blocked') }] }
+            : tr,
         ),
       };
+      expect(mutatedDef, `${label} reflect trigger selector must match`).not.toEqual(shipped);
       const mutatedDoc = {
         ...doc,
         rows: doc.rows.map(r => (r.id === H1

@@ -8,9 +8,10 @@ import { lifeAfter } from '../src/core/hunter/vitals.ts';
 import { explain, hunterSheet } from '../src/core/hunter/sheet.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
-import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
+import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
-import { harmful, helpful } from '../src/core/combat/standing.ts';
+import { damageShare, harmful, helpful } from '../src/core/combat/standing.ts';
+import { afterDefence } from '../src/core/combat/land.ts';
 import { parseAbility, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight, Running } from '../src/core/combat/fight.ts';
@@ -226,82 +227,112 @@ describe('Godfist real wire pin (stacksBy), Grit + Hook H1, Heavenly Suplex thro
     expect(scalersOf(formulaOf(ws, KEYSTONES_ON)!, KEYSTONES_ON)?.scalers.length).toBe(1);
   });
 
-  test('Grit builds from lost HP past shield via Hook H1, skips when fully shielded, survives helpful and harmful dispels, and Worldsplitter converts it to shield and clears it', () => {
-    const hero = hunterRow(makeGodfist([]), combatantId('h1'), RULES);
-    const hpMax = modified(hero.origin, hero.statuses, RULES).sheet.hpMax;
-    // Direct true-damage hit so exact lost HP is predictable (8% of hpMax -> floor(0.08 / 0.025) = 3 stacks, clamped at stackAdd = 3)
-    const heavyHit = abilityOf('strike', {
-      id: abilityId('foe-heavy'), name: 'Heavy Hit',
-      range: tiles(2), shape: { kind: 'touch', reach: tiles(2) },
-      effect: { type: 'true', by: 'hand', formula: { kind: 'number', value: Math.ceil(hpMax * 0.08) } },
-    }, RULES);
-    const lightHit = abilityOf('strike', {
-      id: abilityId('foe-light'), name: 'Light Hit',
-      range: tiles(2), shape: { kind: 'touch', reach: tiles(2) },
-      effect: { type: 'true', by: 'hand', formula: { kind: 'number', value: 10 } },
-    }, RULES);
-    const purgeBoth = abilityOf('curse', {
-      id: abilityId('foe-purge'), name: 'Purge All',
-      aim: 'foe', range: tiles(4), shape: { kind: 'touch', reach: tiles(4) },
-      delivery: { kind: 'sure' }, effect: null,
-      ops: [{ op: 'dispel', which: 'all', kind: 'helpful' }, { op: 'dispel', which: 'all', kind: 'harmful' }],
-    }, RULES);
-    const foe = monsterRows({
-      name: 'Sparring Boss', rank: 'S', archetype: 'brute', kind: 'boss', tweak: { hp: 5 },
-      abilities: [heavyHit, lightHit, purgeBoth], statuses: [],
-    }, [combatantId('m1')], RULES)[0]!;
-
+  test('Grit builds from lost HP past shield via Hook H1 (6% -> 2 base, 3 capstone), skips when fully shielded, survives helpful and harmful dispels while strippable statuses go, and Worldsplitter converts it to shield and clears it', () => {
     const ctx = { rules: RULES };
-    const shieldedHero = { ...hero, shield: { amount: 50, until: tick(5000) } };
-    let f = reduce(null, {
-      type: 'add', fightId: fightId('f-grit'),
-      rows: [{ ...shieldedHero, place: place(4, 5) }, { ...foe, place: place(5, 5) }],
-      openings: [],
-    }, ctx).fight!;
-    f = reduce(f, {
-      type: 'start',
-      openings: [{ id: combatantId('h1'), d20: 10, tie: 1 }, { id: combatantId('m1'), d20: 20, tie: 2 }],
-    }, ctx).fight!;
-
-    // 1. Light 10 true hit fully absorbed by 50 shield -> lost === 0 -> 0 Grit added
-    const rShielded = reduce(f, {
-      type: 'act', by: combatantId('m1'), ability: lightHit.id, aim: combatantId('h1'),
-      rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
-    }, ctx);
-    const f1 = rShielded.fight as Running;
-    expect(f1.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === statusKey('god-grit'))).toBeUndefined();
-
-    // 2. Remove shield, take heavy true hit (8% hpMax) -> floor(0.08/0.025) = 3 stacks of Grit (matches kit.stackAdd)
-    const unshielded: Running = {
-      ...f1,
-      rows: f1.rows.map(r => (r.id === combatantId('h1') ? { ...r, shield: null } : r)),
-    };
-    const rHeavy = reduce(unshielded, {
-      type: 'act', by: combatantId('m1'), ability: heavyHit.id, aim: combatantId('h1'),
-      rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
-    }, ctx);
-    const f2 = rHeavy.fight as Running;
-    expect(f2.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === statusKey('god-grit'))?.stacks).toBe(3);
-
-    // 3. Both helpful and harmful dispels leave neutral god-grit untouched
-    const rPurge = reduce(f2, {
-      type: 'act', by: combatantId('m1'), ability: purgeBoth.id, aim: combatantId('h1'),
-      rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
-    }, ctx);
-    const f3 = rPurge.fight as Running;
-    expect(f3.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === statusKey('god-grit'))?.stacks).toBe(3);
-
-    // 4. Worldsplitter hits -> converts 3 Grit stacks into 0.015 * hpMax * 3 shield and clears god-grit
     const wsId = wornAbilityId(abilityId('god-worldsplitter'));
-    const f3Turn: Running = { ...f3, currentId: combatantId('h1') };
-    const rWs = reduce(f3Turn, {
-      type: 'act', by: combatantId('h1'), ability: wsId, aim: combatantId('m1'),
-      rolls: { dice: { [combatantId('m1')]: [10] }, react: { [combatantId('m1')]: 1 } }, force: true,
-    }, ctx);
-    expect(rWs.effects.some(e => e.type === 'refused')).toBe(false);
-    const heroAfterWs = (rWs.fight as Running).rows.find(r => r.id === combatantId('h1'))!;
-    expect(heroAfterWs.statuses.find(s => s.key === statusKey('god-grit'))).toBeUndefined();
-    expect(heroAfterWs.shield?.amount).toBe(Math.round(0.015 * hpMax * 3));
+    const helpfulDef: StatusDef = { label: 'Swiftness', desc: 'Speed +20%.', ops: [{ op: 'speed', pct: 20 }] };
+    const harmfulDef: StatusDef = { label: 'Bogged', desc: 'Speed -20%.', ops: [{ op: 'speed', pct: -20 }] };
+    expect(helpful(helpfulDef)).toBe(true);
+    expect(harmful(harmfulDef)).toBe(true);
+
+    for (const [label, nodes, expectedStacks, shieldPerStack] of [
+      ['base Fighting Spirit', [] as readonly ClassNodeId[], 2, 0.015],
+      ['capstone Shattering Fist', GODFIST_CANONICAL_NODES, 3, 0.02],
+    ] as const) {
+      const hero = hunterRow(makeGodfist(nodes), combatantId('h1'), RULES);
+      const hpMax = modified(hero.origin, hero.statuses, RULES).sheet.hpMax;
+      // Direct 6% true-damage hit: floor(0.06 / 0.025) = 2 at base, floor(0.06 / 0.02) = 3 at capstone (pins both divisors!)
+      const sixPctHit = abilityOf('strike', {
+        id: abilityId(`foe-six-${label}`), name: 'Six Percent Hit',
+        range: tiles(2), shape: { kind: 'touch', reach: tiles(2) },
+        effect: { type: 'true', by: 'hand', formula: { kind: 'number', value: Math.ceil(hpMax * 0.06) } },
+      }, RULES);
+      const lightHit = abilityOf('strike', {
+        id: abilityId(`foe-light-${label}`), name: 'Light Hit',
+        range: tiles(2), shape: { kind: 'touch', reach: tiles(2) },
+        effect: { type: 'true', by: 'hand', formula: { kind: 'number', value: 10 } },
+      }, RULES);
+      const purgeBoth = abilityOf('curse', {
+        id: abilityId(`foe-purge-${label}`), name: 'Purge All',
+        aim: 'foe', range: tiles(4), shape: { kind: 'touch', reach: tiles(4) },
+        delivery: { kind: 'sure' }, effect: null,
+        ops: [{ op: 'dispel', which: 'all', kind: 'helpful' }, { op: 'dispel', which: 'all', kind: 'harmful' }],
+      }, RULES);
+      const foe = monsterRows({
+        name: 'Sparring Boss', rank: 'S', archetype: 'brute', kind: 'boss', tweak: { hp: 5 },
+        abilities: [sixPctHit, lightHit, purgeBoth], statuses: [],
+      }, [combatantId('m1')], RULES)[0]!;
+
+      const shieldedHero = { ...hero, shield: { amount: 50, until: tick(5000) } };
+      let f = reduce(null, {
+        type: 'add', fightId: fightId(`f-grit-${label}`),
+        rows: [{ ...shieldedHero, place: place(4, 5) }, { ...foe, place: place(5, 5) }],
+        openings: [],
+      }, ctx).fight!;
+      f = reduce(f, {
+        type: 'start',
+        openings: [{ id: combatantId('h1'), d20: 10, tie: 1 }, { id: combatantId('m1'), d20: 20, tie: 2 }],
+      }, ctx).fight!;
+
+      // 1. Light 10 true hit fully absorbed by 50 shield -> lost === 0 -> 0 Grit added
+      const rShielded = reduce(f, {
+        type: 'act', by: combatantId('m1'), ability: lightHit.id, aim: combatantId('h1'),
+        rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
+      }, ctx);
+      const f1 = rShielded.fight as Running;
+      expect(f1.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === statusKey('god-grit'))).toBeUndefined();
+
+      // 2. Remove shield, take non-crit 6% true hit -> 2 stacks at base (floor(6/2.5)), 3 stacks at capstone (floor(6/2.0))
+      const unshielded: Running = {
+        ...f1,
+        rows: f1.rows.map(r => (r.id === combatantId('h1') ? { ...r, shield: null } : r)),
+      };
+      const rSix = reduce(unshielded, {
+        type: 'act', by: combatantId('m1'), ability: sixPctHit.id, aim: combatantId('h1'),
+        rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 10 } }, force: true,
+      }, ctx);
+      expect(rSix.effects.some(e => e.type === 'refused')).toBe(false);
+      const f2 = rSix.fight as Running;
+      expect(f2.rows.find(r => r.id === combatantId('h1'))!.statuses.find(s => s.key === statusKey('god-grit'))?.stacks, `${label} 6% hit stacks`).toBe(expectedStacks);
+
+      // 3. Seed one helpful and one harmful status -> both are stripped by purgeBoth while neutral god-grit stays intact
+      const keyGood = statusKey('test-good-buff');
+      const keyBad = statusKey('test-bad-debuff');
+      const withBoth: Running = {
+        ...f2,
+        rows: f2.rows.map(r => (r.id === combatantId('h1')
+          ? {
+            ...r,
+            statuses: [
+              ...r.statuses,
+              statusOn(helpfulDef, { key: keyGood, source: { id: combatantId('h1'), tier: 5 }, until: tick(5000), since: f2.now, settledAt: f2.now }),
+              statusOn(harmfulDef, { key: keyBad, source: { id: combatantId('m1'), tier: 5 }, until: tick(5000), since: f2.now, settledAt: f2.now }),
+            ],
+          }
+          : r)),
+      };
+      const rPurge = reduce(withBoth, {
+        type: 'act', by: combatantId('m1'), ability: purgeBoth.id, aim: combatantId('h1'),
+        rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
+      }, ctx);
+      expect(rPurge.effects.some(e => e.type === 'refused'), `${label} purge must not be refused`).toBe(false);
+      const f3 = rPurge.fight as Running;
+      const heroAfterPurge = f3.rows.find(r => r.id === combatantId('h1'))!;
+      expect(heroAfterPurge.statuses.some(s => s.key === keyGood), `${label} helpful status must be dispelled`).toBe(false);
+      expect(heroAfterPurge.statuses.some(s => s.key === keyBad), `${label} harmful status must be dispelled`).toBe(false);
+      expect(heroAfterPurge.statuses.find(s => s.key === statusKey('god-grit'))?.stacks, `${label} neutral Grit must survive`).toBe(expectedStacks);
+
+      // 4. Worldsplitter hits -> converts held Grit stacks into exact shield and clears god-grit
+      const f3Turn: Running = { ...f3, currentId: combatantId('h1') };
+      const rWs = reduce(f3Turn, {
+        type: 'act', by: combatantId('h1'), ability: wsId, aim: combatantId('m1'),
+        rolls: { dice: { [combatantId('m1')]: [10] }, react: { [combatantId('m1')]: 1 } }, force: true,
+      }, ctx);
+      expect(rWs.effects.some(e => e.type === 'refused')).toBe(false);
+      const heroAfterWs = (rWs.fight as Running).rows.find(r => r.id === combatantId('h1'))!;
+      expect(heroAfterWs.statuses.find(s => s.key === statusKey('god-grit'))).toBeUndefined();
+      expect(heroAfterWs.shield?.amount, `${label} Worldsplitter shield`).toBe(Math.round(shieldPerStack * hpMax * expectedStacks));
+    }
   });
 
   test('Heavenly Suplex (base, Mountain Drop, Pinning Suplex) moves target >= 2 tiles via swap + shove without rooting, and capstone Grandmaster Echo shields + refunds 50%', () => {
@@ -412,7 +443,8 @@ describe('Godfist real wire pin (stacksBy), Grit + Hook H1, Heavenly Suplex thro
     expect((allyRes.fight as Running).rows.find(r => r.id === combatantId('h1'))!.armed?.spent).toBe(false);
 
     // Attack on Godfist fires Counter Palm -> puts 1r Chi Brace + 1r Counter Stance on Godfist, then struck trigger deals physical counter to attacker
-    const foeHpBefore = rowHp(f.rows.find(r => r.id === combatantId('m1'))!);
+    const foeBefore = f.rows.find(r => r.id === combatantId('m1'))!;
+    const foeHpBefore = rowHp(foeBefore);
     const res = reduce(f, {
       type: 'act', by: combatantId('m1'), ability: foeSwing.id, aim: combatantId('h1'),
       rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
@@ -426,6 +458,24 @@ describe('Godfist real wire pin (stacksBy), Grit + Hook H1, Heavenly Suplex thro
     const counter = heroAfter.statuses.find(s => s.key === statusKey('god-counter-stance'));
     expect(brace?.until).toBe(tick(f.now + RULES.fight.round));
     expect(counter?.until).toBe(tick(f.now + RULES.fight.round));
-    expect(rowHp(foeAfter), 'Counter Stance must retaliate against attacker').toBeLessThan(foeHpBefore);
+    const expectedCounter = afterDefence(
+      0.9 * heroAfter.sheet.phys * damageShare(heroAfter, foeBefore, RULES),
+      'physical',
+      heroAfter.sheet,
+      foeBefore.sheet,
+      RULES,
+    );
+    expect(expectedCounter).toBeGreaterThan(0);
+    expect(foeHpBefore - rowHp(foeAfter), 'Counter Stance must retaliate for exact 0.9 * phys').toBe(expectedCounter);
+
+    // Second strike in the same round draws no second counter (limit: ROUND)
+    const foeHpAfter1 = rowHp(foeAfter);
+    const res2 = reduce(after, {
+      type: 'act', by: combatantId('m1'), ability: foeSwing.id, aim: combatantId('h1'),
+      rolls: { dice: { [combatantId('h1')]: [] }, react: { [combatantId('h1')]: 1 } }, force: true,
+    }, ctx);
+    expect(res2.effects.some(e => e.type === 'refused')).toBe(false);
+    const foeAfter2 = (res2.fight as Running).rows.find(r => r.id === combatantId('m1'))!;
+    expect(rowHp(foeAfter2), 'Counter Stance must not fire twice in the same round').toBe(foeHpAfter1);
   });
 });

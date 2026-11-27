@@ -17,13 +17,12 @@ import type { Body } from '../../src/core/combat/effect-ops.ts';
 import type { Running } from '../../src/core/combat/fight-types.ts';
 import { isUp, rowHp } from '../../src/core/combat/row-hp.ts';
 import { usable as canUse } from '../../src/core/combat/resolve.ts';
-import { harmful, warded } from '../../src/core/combat/standing.ts';
+import { harmful, holds, warded } from '../../src/core/combat/standing.ts';
 import { dist, reachable } from '../../src/core/combat/space.ts';
 import type { Place } from '../../src/core/combat/space.ts';
 import { spotOf, stepToward } from '../../src/core/combat/fight-view.ts';
 import { taunter } from '../../src/core/combat/threat.ts';
 import { zoneTiles } from '../../src/core/combat/zones.ts';
-import { scriptOf } from '../../src/core/combat/mythic.ts';
 import type { Policy } from '../models/fight-sim.ts';
 import type { MythicSoloSpec } from './mythic-hunters.ts';
 
@@ -90,9 +89,8 @@ export const godfistPolicy: Policy = (f, me, _plan, R) => {
   const forced = t ? foes.find(b => b.id === t.by) : undefined;
   const target: Body = forced ?? [...foes].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || rowHp(a) - rowHp(b))[0]!;
 
-  // During an invulnerable clock phase (e.g. Zaratan's The Dive), step off flooded/hazard tiles and keep clear of
-  // melee bite range so Zaratan cannot open the surface phase with an immediate melee hit.
-  if (target.mythic && scriptOf(target.mythic).phases[target.mythic.phase]?.ends === 'clock') {
+  // While a foe is invulnerable or submerged (visible row status, no boss script read), step off hazard tiles and wait.
+  if (holds(target, 'invulnerable') || target.statuses.some(s => s.key === statusKey('mythic-under-the-waves'))) {
     if (me.sheet.stride > 0) {
       const others = f.rows.filter(r => r.id !== me.id && (isUp(r) || r.kind === 'hunter')).map(r => r.place);
       if (isHazardTile(f, me, me.place, R) || dist(me.place, target.place) <= 2) {
@@ -114,24 +112,15 @@ export const godfistPolicy: Policy = (f, me, _plan, R) => {
 
   const grit = me.statuses.find(s => s.key === GODFIST_GRIT_KEY)?.stacks ?? 0;
 
-  // 1. If Pinning Suplex is equipped (holds `hold` op) and target stands in an interruptible omen, interrupt with Suplex if safe.
-  const suplex = find(GODFIST_SUPLEX_ID);
-  const suplexHolds = !!suplex?.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hold'));
-  const suplexSafe = me.sheet.stride > 0 && !isHazardTile(f, me, target.place, R);
-  if (suplexHolds && suplexSafe && target.mythic && target.mythic.at !== 'calm') {
-    const omen = scriptOf(target.mythic).omens[target.mythic.omen];
-    if (omen && omen.interrupt.by.includes('hold') && fits(suplex, target.id)) {
-      return { type: 'act', ability: suplex!, aim: target.id };
-    }
-  }
-
-  // 2. Spend Grit via Worldsplitter for burst + Grit-to-shield conversion when holding Grit.
+  // 1. Spend Grit via Worldsplitter for burst + Grit-to-shield conversion when holding Grit.
   const worldsplitter = find(GODFIST_WORLDSPLITTER_ID);
   if (grit > 0 && fits(worldsplitter, target.id)) {
     return { type: 'act', ability: worldsplitter!, aim: target.id };
   }
 
-  // 3. Heavenly Suplex when adjacent and target's tile is not a harmful boss hazard.
+  // 2. Heavenly Suplex when adjacent and target's tile is not a harmful boss hazard.
+  const suplex = find(GODFIST_SUPLEX_ID);
+  const suplexSafe = me.sheet.stride > 0 && !isHazardTile(f, me, target.place, R);
   if (suplexSafe && fits(suplex, target.id)) {
     return { type: 'act', ability: suplex!, aim: target.id };
   }
