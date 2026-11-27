@@ -659,7 +659,7 @@ test('an S-rank Necromancer summons an S-rank shadow with the new mana cost, GM 
     await expect.poll(() => player.evaluate(() => {
       const sh = hunterApp.store.active().shadows;
       return [sh.find((s: any) => s.name === 'Beru')?.hp, sh.find((s: any) => s.name === 'Tank')?.hp];
-    }), { timeout: 20_000 }).toEqual([109, 5]);
+    }), { timeout: 20_000 }).toEqual([82, 5]); // Beru heals to its rank-scaled max HP (RULES.shadow.rankHp)
     await dismissAll(player, 4);
     await expect(beru.locator('[data-act="summon"]')).toBeEnabled();
   });
