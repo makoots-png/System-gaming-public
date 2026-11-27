@@ -144,7 +144,7 @@ const BASE_FLOW: ClassWorn = makeBladeFlow({
 const SAINT_FLOW: ClassWorn = makeBladeFlow({
   key: KEY_FLOW_SAINT,
   label: 'Blade Flow: Sword Saint',
-  desc: 'Deepens counter-slashes, turn refund, and Tempest Flow on crits (lost when struck), and adds 4% damage dealt.',
+  desc: 'Increases counter-slash damage, turn refund, and Tempest Flow bonuses on crits (lost when struck), and adds 4% damage dealt.',
   counterFormula: '1d8 + 0.55 * phys',
   refundPct: 20,
   tempestKey: KEY_TEMPEST_UP,

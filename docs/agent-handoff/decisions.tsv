@@ -865,3 +865,4 @@ ts	phase	decision	why	evidence	result
 2026-11-27T11:56Z	classes	PR 168: class rarity wave 3 U1-U7 (hooks, Berserker, Cleric, Nightblade, Bastion, Chronokeeper, Voidstalker, Starforger, Nullweaver); U8 Roster Lock next
 2026-11-27T14:01Z	classes	PR 169: wave 3 U8 Roster Lock; wave 3 complete
 2026-11-27T17:00Z	combat	PR 170: gate fights scale with headcount (t205u); sized once at start; 1-6 table in PR
+2026-11-27T18:24Z	class-offer	PR 171: every wired Mythic goes into the class offer after the first dungeon, derived from the registry, with a pin test; Necromancer included (overrules wave 2)

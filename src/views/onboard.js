@@ -279,7 +279,7 @@ export function register(app) {
 
   function gm() {
     const w = step(`<div class="n-tag">! GM</div><h2 id="{id}">Run the game</h2>
-      <p>GM mode unlocks XP grants, free stat edits, and GM tools on this device. How do you want to start?</p>
+      <p>In GM mode, you can grant XP, edit stats freely, and use GM tools on this device. How do you want to start?</p>
       <div class="ob-opt">
         <label class="ob-check"><input type="checkbox" data-pregens checked aria-describedby="ob-pregens-help"><span>Include 4 sample hunters</span></label>
         <small class="ob-help" id="ob-pregens-help">Uncheck if players will make hunters on their phones.</small>

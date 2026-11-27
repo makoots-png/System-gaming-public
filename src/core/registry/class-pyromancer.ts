@@ -71,7 +71,7 @@ const PYRO_WILDFIRE: StatusDef = {
 // Shared Cinder stack def (used by Cinder Wake and Kindle Burst): light rank-tiered ember burn, flares off Pyromancer's `mag` at 2 stacks.
 const PYRO_CINDER: StackDef = {
   label: 'Cinder',
-  desc: 'Burns softly each round. At 2 stacks, spends all stacks to flare for arcane damage equal to 12% of the caster\'s magic power.',
+  desc: 'Takes light arcane fire damage each round. At 2 stacks, spends all stacks to deal arcane damage equal to 12% of the caster\'s magic power.',
   ops: [{ op: 'damage', type: 'arcane', when: 'turn', amount: tiered('1', '1', '1', '1d2', '1d4', '1d6') }],
   stack: {
     cap: 2,
@@ -89,7 +89,7 @@ const PYRO_CINDER: StackDef = {
 // Capstone Cinder II: at 2 stacks, detonates in a 2-tile radius around the victim (victim's side = foes of Pyromancer) for 45% of mag and ignites Wildfire.
 const PYRO_CINDER_UP: StackDef = {
   label: 'Cinder II',
-  desc: 'Burns each round. At 2 stacks, spends all stacks to blast foes within 2 tiles for 45% of the caster\'s magic power and ignite Wildfire.',
+  desc: 'Takes arcane fire damage each round. At 2 stacks, spends all stacks to blast foes within 2 tiles for 45% of the caster\'s magic power and ignite Wildfire.',
   ops: [{ op: 'damage', type: 'arcane', when: 'turn', amount: tiered('1d2', '1d3', '1d4', '1d6', '1d8', '2d6') }],
   stack: {
     cap: 2,
@@ -138,7 +138,7 @@ function makeCinderWake(o: {
 const BASE_WAKE: ClassWorn = makeCinderWake({
   key: KEY_WAKE,
   label: 'Cinder Wake',
-  desc: 'Your spell hits apply 1 stack of Cinder for 2 rounds. At 2 stacks, Cinder flares for arcane damage equal to 12% of your magic power.',
+  desc: 'Your spell hits apply 1 stack of Cinder for 2 rounds. At 2 stacks, Cinder deals arcane damage equal to 12% of your magic power.',
   cinderKey: KEY_CINDER,
   cinderDef: PYRO_CINDER,
 });
@@ -393,7 +393,7 @@ export const PYROMANCER_TREE: ClassTree = {
     node('pyro-b5-l', 5, 'Flash Detonation', 'Upgrade Ignition Lance to a 1-round cooldown, higher blast damage, and an Ember Mark that detonates if cured.', ['pyro-b4x', 'pyro-b4y'], [
       replaceActive(ID_LANCE, UP_LANCE_FLASH),
     ], { forkGroup: 'pyro-b5' }),
-    node('pyro-b5-r', 5, 'Kindle Burst', 'Upgrade Ignition Lance to trigger an immediate Cinder flare on hit and deal up to 15% more damage against foes above half HP.', ['pyro-b4x', 'pyro-b4y'], [
+    node('pyro-b5-r', 5, 'Kindle Burst', 'Upgrade Ignition Lance to trigger an immediate Cinder burst on hit and deal up to 15% more damage against foes above half HP.', ['pyro-b4x', 'pyro-b4y'], [
       replaceActive(ID_LANCE, UP_LANCE_KINDLE),
       scaler({ measure: 'target', dir: 'over', start: 0.5, scale: 0.15 }),
     ], { forkGroup: 'pyro-b5' }),

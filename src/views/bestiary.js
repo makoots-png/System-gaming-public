@@ -74,7 +74,7 @@ export function register(app) {
   };
   const statLines = i => [`HP ${i.hpMax} · Armor ${i.armor} · Resist ${i.resist} · Speed ${i.speed}`];
   // A17: a kill unlocks the Bestiary entry; that is news, not a question, so it is a toast (the entry holds the stats).
-  const unlock = (name, rank, info) => ui.toast('! System', `Monster info unlocked: ${name} (${rank}). ${statLines(info).join(' · ')}`);
+  const unlock = (name, rank, info) => ui.toast('! System', `Monster info recorded: ${name} (${rank}). ${statLines(info).join(' · ')}`);
 
   /**
    * A fight's monster row that went down: its entry's kills go up, and a monster the bestiary lacks is made from its row,
@@ -112,7 +112,7 @@ export function register(app) {
     if (laid.save === store.get()) return;
     if (!store.apply('codex-room', s => codexFromRoom(s, d).save).ok) return;
     const fresh = laid.fresh;
-    if (fresh.length > 3) ui.toast('! System', `Monster info unlocked: ${fresh.map(r => `${r.name} (${r.rank})`).slice(0, 8).join(', ')}.`);
+    if (fresh.length > 3) ui.toast('! System', `Monster info recorded: ${fresh.map(r => `${r.name} (${r.rank})`).slice(0, 8).join(', ')}.`);
     else for (const r of fresh) unlock(r.name, r.rank, r.info);
   });
 
@@ -507,7 +507,7 @@ export function register(app) {
       (!q || wordsOf(m).some(t => t.toLowerCase().includes(q))))
       .sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank) || ((a.kind === 'boss') === (b.kind === 'boss') ? a.name.localeCompare(b.name) : a.kind === 'boss' ? 1 : -1));
     el.querySelector('[data-count-line]').textContent = `${items.length} monster${items.length === 1 ? '' : 's'}${codexOnly && unknown ? ` · ${unknown} monster${unknown === 1 ? '' : 's'} still unknown` : ''}`;
-    const html = (items.length ? items.map(m => card(m, gm, runsFight(seat))).join('') : `<p class="empty">${codexOnly && !f.q && !f.rank && !f.type ? 'No monsters recorded yet. Defeat monsters to unlock their info.' : 'No monsters match this filter.'}</p>`) + (gm ? '|gm' : '');
+    const html = (items.length ? items.map(m => card(m, gm, runsFight(seat))).join('') : `<p class="empty">${codexOnly && !f.q && !f.rank && !f.type ? 'No monsters recorded yet. Defeat monsters to record their info.' : 'No monsters match this filter.'}</p>`) + (gm ? '|gm' : '');
     if (html !== lastHtml) { lastHtml = html; el.querySelector('[data-grid]').innerHTML = html.replace(/\|gm$/, ''); }
   }
 }

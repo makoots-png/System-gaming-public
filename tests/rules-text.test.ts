@@ -119,7 +119,7 @@ describe('the defence lines (rule 12)', () => {
     expect(lines[0]).toContain('Armor reduces physical damage and Resist reduces arcane damage.');
     expect(lines[0]).toContain('True damage ignores both Armor and Resist.');
     expect(lines[0]).toContain(`${armorCutPct(RULES, RULES.fight.kits.heavy.armor)}%`);
-    expect(lines[1]).toContain('Damaging status effects also meet your Armor or Resist each round (with no penetration), unless the status deals true damage.');
+    expect(lines[1]).toContain('Armor and Resist also reduce damage from status effects each round (with no penetration), unless the status deals true damage.');
     expect(afterDefence(100, 'true', { armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0 }, { armor: 100, resist: 100 }, RULES)).toBe(100);
   });
 
@@ -502,7 +502,7 @@ describe('keystones words and rules (unit K6)', () => {
 
     const nearConfRank = keystoneReach({ stats: built({ str: 40, dis: 35, agi: 25 }), rank: 'D', pair: null, awakened: false }, R.fight);
     expect(keystoneNextLine(nearestKeystone(nearConfRank, R.fight), R, nearConfRank.totalSpent))
-      .toBe('Rank C opens your Confluence of Strength and Discipline: Unyielding Vow.');
+      .toBe('Reach rank C to earn your Confluence of Strength and Discipline: Unyielding Vow.');
 
     const nearConfShare = keystoneReach({ stats: built({ str: 45, agi: 20, vit: 20, ins: 15 }), rank: 'C', pair: null, awakened: false }, R.fight);
     expect(keystoneNextLine(nearestKeystone(nearConfShare, R.fight), R, nearConfShare.totalSpent))

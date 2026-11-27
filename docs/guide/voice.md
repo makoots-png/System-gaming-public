@@ -83,7 +83,7 @@ Do not stack possessives like "the fight's weight's" or "the gate's Clear's pot"
 
 ### Filler and polite padding
 
-Cut "just", "simply", "successfully", "please", and "sorry".
+Cut "just", "simply", "successfully", "please", and "sorry". Also cut AI-ism and marketing filler: "seamlessly", "effortlessly", "dive in", "empower", "tapestry", and "streamline". Use a plain, literal verb or noun instead.
 
 - Bad (`src/core/dc-pick.ts`): "No DC (just roll)"
 - Good: "No DC (roll only)"
@@ -148,6 +148,6 @@ Give exact numbers instead of vague complaints.
 
 ## 8. How these rules are enforced
 
-Lint tests in `tests/lint.test.ts` enforce the mechanical rules, with one test named for each rule: em dashes, semicolons between clauses, the word "just", American spellings, and personified UI elements or objects.
+Lint tests in `tests/lint.test.ts` enforce the mechanical rules, with one test named for each rule: em dashes, semicolons between clauses, the word "just", AI-ism filler words ("seamlessly", "effortlessly", "dive in", "empower", "tapestry", "streamline"), American spellings, and personified UI elements or objects.
 
 Human review checks the rules that require judgment: subtle personification outside the lint pattern, cleverness and idioms, possessive chains, coined labels, and matching button names. Read this file before you write any player- or GM-facing string, and review new copy with `.claude/skills/humanizer/SKILL.md` and `.claude/skills/unslop/SKILL.md` before you commit.

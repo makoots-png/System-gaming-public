@@ -2457,6 +2457,27 @@ test('no "just" in a player- or GM-facing string (voice.md: filler)', async () =
   expect(said(hits), 'cut "just", or say the exact thing ("right before", "only")').toEqual([]);
 });
 
+const AI_FILLER = /\b(seamlessly|effortlessly|dive\s+in|empower(?:s|ed|ing)?|tapestry|streamlin(?:e|es|ed|ing))\b/i;
+test('no AI-ism filler words in a player- or GM-facing string (voice.md: plain, literal verbs)', async () => {
+  for (const bad of [
+    'Syncs seamlessly across phones.',
+    'Effortlessly manage your party.',
+    'Dive in and start the session.',
+    'Empowers Shield Slam on hit.',
+    'A rich tapestry of guilds.',
+    'Streamlines your party setup.',
+  ]) expect(AI_FILLER.test(bad), `the rule catches: ${bad}`).toBe(true);
+  for (const fine of [
+    'In GM mode, you can grant XP on this device.',
+    'Second chamber unlocks after the first boss falls.',
+    'A three-day journey through the gate.',
+    'Delve deeper to unleash the boss.',
+    'Monster info recorded: Goblin (E).',
+  ]) expect(AI_FILLER.test(fine), `the rule passes: ${fine}`).toBe(false);
+  const hits = (await proseLiterals()).filter(w => AI_FILLER.test(w.text));
+  expect(said(hits), 'replace AI-ism filler with a plain, literal verb or noun (docs/guide/voice.md)').toEqual([]);
+});
+
 const BRITISH = /\b(colou?r(?<=colour)\w*|centre\w*|defence\w*|armour\w*|harbour\w*|honour\w*|favour\w*|behaviour\w*|cancell(ed|ing)|travell(ed|ing)|levell(ed|ing)|labell(ed|ing)|modell(ed|ing)|realis(e|ed|es|ing)|recognis(e|ed|es|ing)|organis(e|ed|es|ing)|apologis(e|ed|es|ing)|analys(e|ed|es|ing)|grey\w*|catalogue\w*|licence|offence|metre\w*|theatre|labour\w*|rumour\w*|valour|splendour|armoury|judgement\w*|programme\w*|whilst|amongst|learnt|spelt|dreamt|fulfil|enrol|vigour|rigour|odour|saviour|neighbour\w*|flavour\w*|humour\w*|mould\w*|plough\w*|sceptic\w*|tyres?|jewellery|marvellous|practis(e|ed|es|ing))\b/i;
 test('a player- or GM-facing string uses American spelling (voice.md: color, center, defense, armor, canceled)', async () => {
   const hits = (await proseLiterals()).filter(w => BRITISH.test(w.text));

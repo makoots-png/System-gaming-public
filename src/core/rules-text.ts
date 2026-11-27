@@ -273,7 +273,7 @@ export function guildLines(R: Pick<Rules, 'crystal' | 'guilds'>): readonly strin
     `Guild hunters pay a cut of System clear gold on table world-gate clears (anchored at ${pct(R.guilds.baseGoldCut)} for an Ironwake E-rank Rookie) and earn a guild share of the gate's mana crystal pool. Higher standing (Rookie, Core, Ace) and higher rank reduce your gold cut, and higher standing raises your crystal share. Ninth Hour recruits Core and Ace hunters only (no Rookie standing).`,
     'Personal gates, solo runs, quests, feats, stories, manual GM awards, shop sales, and crystal sales take no guild gold cut.',
     'When you owe System debt on a world-gate clear, the System debt split applies to your clear gold first. Your guild gold cut then applies to the gold you keep, rounded down, so you always keep at least 1 gold.',
-    `Joining a guild unlocks Helix clerks (${pct(R.crystal.rates.helix)}) when you owe no System debt. The GM can set custom gold cut or crystal share rates per hunter. Monthly retainers, signing bonuses, and guild vault Resurrection Crystal cover are GM-run table perks and are not paid automatically by the app.`,
+    `In a guild, you can sell mana crystal to Helix clerks (${pct(R.crystal.rates.helix)}) when you owe no System debt. The GM can set custom gold cut or crystal share rates per hunter. Monthly retainers, signing bonuses, and guild vault Resurrection Crystal cover are GM-run table perks and are not paid automatically by the app.`,
   ];
 }
 
@@ -320,7 +320,7 @@ export function defenceLines(R: Pick<Rules, 'fight'>): readonly string[] {
   const F = R.fight, kit = F.kits;
   return [
     `Armor reduces physical damage and Resist reduces arcane damage. True damage ignores both Armor and Resist. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense). For example, ${kit.heavy.armor} armor cuts damage by ${armorCutPct(R, kit.heavy.armor)}%, and no amount grants full immunity.`,
-    `Damaging status effects also meet your Armor or Resist each round (with no penetration), unless the status deals true damage.`,
+    `Armor and Resist also reduce damage from status effects each round (with no penetration), unless the status deals true damage.`,
   ];
 }
 
@@ -522,14 +522,14 @@ export function keystoneNextLine(nearest: NearestKeystone | null, R: KeystoneReg
   if (!nearest) return '';
   if (nearest.kind === 'stat') {
     const { stat, current, next } = nearest, ks = keystoneOf(next.key, R);
-    if (next.shareMet && !next.rankMet) return `Rank ${next.rank} opens your ${keystoneTierLabel(next.key)}: ${ks.name}.`;
+    if (next.shareMet && !next.rankMet) return `Reach rank ${next.rank} to earn your ${keystoneTierLabel(next.key)}: ${ks.name}.`;
     const cur = Math.round(current * 100), need = pct(next.share), cmp = next.key.tier === 'apex' ? `Over ${need}` : `At ${need}`;
     return next.rankMet
       ? `You have ${cur}% of your ability points in ${STAT_LABELS[stat]}. ${cmp}, you earn ${ks.name}.`
       : `You have ${cur}% of your ability points in ${STAT_LABELS[stat]}. ${cmp} and at rank ${next.rank}, you earn ${ks.name}.`;
   }
   const { reach } = nearest, ks = keystoneOf(reach.key, R), [a, b] = reach.stats, [sa, sb] = reach.shares;
-  if (reach.shareMet && !reach.rankMet) return `Rank ${reach.rank} opens your ${keystoneTierLabel(reach.key)}: ${ks.name}.`;
+  if (reach.shareMet && !reach.rankMet) return `Reach rank ${reach.rank} to earn your ${keystoneTierLabel(reach.key)}: ${ks.name}.`;
   const need = pct(reach.share), curA = Math.round(sa * 100), curB = Math.round(sb * 100);
   if (reach.rankMet) {
     if (sa >= reach.share && sb < reach.share) return `You have ${curB}% of your ability points in ${STAT_LABELS[b]}. At ${need} alongside ${STAT_LABELS[a]}, you earn ${ks.name}.`;

@@ -154,7 +154,7 @@ function makeBastion(o: {
 const BASE_BASTION: ClassWorn = makeBastion({
   key: KEY_BASTION,
   label: 'Iron Bulwark',
-  desc: 'Adds 4 armor and 3 resist, and reduces damage taken by 10%. Taking a hit builds 1 Siege Charge (up to 5) that raises armor and empowers Shield Slam.',
+  desc: 'Adds 4 armor and 3 resist, and reduces damage taken by 10%. Taking a hit builds 1 Siege Charge (up to 5) that raises armor and adds damage to Shield Slam.',
   armor: '4',
   resist: '3',
   takenPct: -10,

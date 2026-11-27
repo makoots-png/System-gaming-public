@@ -229,14 +229,14 @@ export function register(app) {
         <label class="io-check"><input type="checkbox" data-export-key><span>Include GM key (anyone with this file can be GM of your room)</span></label>
         <div class="data-actions">${ui.field('Import (.json)', '<input type="file" accept="application/json,.json" data-import>')}</div>
         <div class="io-prog" data-io-prog hidden></div>
-        <p class="io-help">Importing shows a preview first and saves a backup of your current campaign. You can add a hunter file to your party instead of replacing your campaign.</p>
+        <p class="io-help">When you import a file, you see a preview first and your current campaign is backed up. You can add a hunter file to your party instead of replacing your campaign.</p>
       </section>
       <section class="win" data-io-share><span class="cb"></span><h2>Custom content</h2>
         <div class="data-actions"><button type="button" class="primary" data-share>Share custom content</button></div>
         <p class="io-help">Send your statuses, items, skills, monsters, NPCs, bundles, maps, feats, and stories to another device or campaign as a code or file. It never includes hunters or room keys.</p>
         ${ui.field('Paste a code', '<textarea data-paste rows="3" spellcheck="false" autocomplete="off" placeholder="HS1.…"></textarea>')}
         <div class="data-actions"><button type="button" data-read-code>Read code</button></div>
-        <p class="io-help">Use Import above for a shared file. Both show a preview before changing anything.</p>
+        <p class="io-help">Use Import above for a shared file. You see a preview before anything changes.</p>
       </section>
       <section class="win"><span class="cb"></span><h2>Backups</h2>
         <div class="data-actions"><button type="button" class="primary" data-backup-now>Back up now</button></div>

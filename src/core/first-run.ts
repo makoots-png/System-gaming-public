@@ -69,7 +69,7 @@ export const TIPS: Readonly<Record<Role, readonly string[]>> = {
     'Open GM -> Stories to start a story and release chapters one at a time after you review each GM note.',
     'Open Gates to spawn gates, start fights, open class offers, and clear finished gates.',
     'Use the Award form in the GM tab to send gold, XP, items, or titles to local and room hunters.',
-    'Tap the room button at the top to create a room and invite players. Backups live in Data. Tap ? any time to reopen this guide.',
+    'Tap the room button at the top to create a room and invite players. Backups are in Data. Tap ? any time to reopen this guide.',
   ],
   player: [
     'Use the Status tab to spend ability points, track HP and mana, and equip gear.',

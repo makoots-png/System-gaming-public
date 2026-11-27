@@ -147,7 +147,7 @@ const BASE_PACT: ClassWorn = makeCrimsonPact({
 const LORD_PACT: ClassWorn = makeCrimsonPact({
   key: KEY_PACT_LORD,
   label: 'Crimson Pact: Lord of Blood',
-  desc: `Deepens Crimson Pact conversions, boosts Transfusion healing, adds 3% damage dealt, and grants a blood shield below ${Math.round(R.fight.kit.lowHpAt * 100)}% HP once per fight.`,
+  desc: `Increases Crimson Pact conversions, raises Transfusion healing, adds 3% damage dealt, and grants a blood shield below ${Math.round(R.fight.kit.lowHpAt * 100)}% HP once per fight.`,
   hpToMag: '0.055 * hpmax',
   magToHp: '0.35 * mag',
   drainToMag: '0.5 * drain * mag',

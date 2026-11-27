@@ -262,7 +262,7 @@ $('mode-pill').addEventListener('click', async () => {
   if (at !== 'alone') { ui.system({ tag: '! System', title: at === 'gm' ? 'GM' : 'Player', body: ROLE_IN_ROOM[at], actions: [{ label: 'Understood', value: null, primary: true }] }); return; }
   const toGM = role() !== 'gm';
   const ok = await ui.confirm({ title: toGM ? 'Switch to GM mode?' : 'Switch to Player mode?',
-    body: toGM ? 'GM mode unlocks XP grants, free stat edits, and GM tools on this device.' : 'Player mode hides GM tools and direct XP grants.', confirmLabel: toGM ? 'Enter GM mode' : 'Enter Player mode' });
+    body: toGM ? 'In GM mode, you can grant XP, edit stats freely, and use GM tools on this device.' : 'In Player mode, GM tools and direct XP grants are hidden.', confirmLabel: toGM ? 'Enter GM mode' : 'Enter Player mode' });
   if (ok) ui.wrote('System', store.apply('mode', atSettings(x => chooseMode(x, toGM ? 'gm' : 'player')))); // alone, the phone chooses
 });
 

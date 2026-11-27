@@ -102,7 +102,7 @@ export const CLASS_UI_WORDS = {
   treeHeading: 'Skill tree',
   treeEmpty: 'No skill tree is available for this class yet.',
   treeNoActive: 'Activate an earned class from your locker to view its skill tree.',
-  capstoneReady: 'Capstone unlocked.',
+  capstoneReady: 'Capstone available.',
   forkPickOne: 'Pick one',
   needsAllPrefix: 'Needs: ',
   needsAnyPrefix: 'Needs any: ',
@@ -150,7 +150,7 @@ export const CLASS_UI_WORDS = {
   jobSetToast: (job: string | null): string => (job ? `Job set to ${job}.` : 'Job cleared.'),
   // GM Unique-Class Registry
   gmSummary: (held: number, total: number): string => `${held} of ${total} held`,
-  gmHint: 'Only one hunter or NPC can hold each Epic or Mythic class in a campaign. Death or leaving does not free a class. Release or Reassign frees it outside a fight.',
+  gmHint: 'Only one hunter or NPC can hold each Epic or Mythic class in a campaign. Death or leaving does not free a class. Tap Release or Reassign outside a fight to free it.',
   gmFilterAria: 'Filter unique classes',
   gmSearchLabel: 'Search classes',
   gmListAria: 'Unique classes',
