@@ -6,6 +6,7 @@ import { describe, expect } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import type { ClassNodeId } from '../src/core/ids.ts';
 import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
+import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { CLASS_ACTIVES_MAX, TREE_SHAPE, canBuyNode, classTreeOf, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
 import { classPowers } from '../src/core/registry/class-powers.ts';
 import { heldKeystones } from '../src/core/hunter/sheet.ts';
@@ -14,13 +15,33 @@ import { WEAR_LIMIT } from '../src/core/registry/items.ts';
 import { wornAbilityId } from '../src/core/registry/abilities.ts';
 import { runSoloMythic, scriptsOn } from './models/fight-sim.ts';
 import { simTest, workBudget } from './models/sim-budget.ts';
-import { HEMOMANCER_SOLO_SPEC, MYTHIC_SOLO_SPECS, SOLO_MYTHIC_RULES, buildMythicSoloHunter, buildMythicSoloRow } from './fixtures/mythic-hunters.ts';
+import {
+  HEMOMANCER_SOLO_SPEC,
+  HEMO_VESSELS_18,
+  HEMO_VESSELS_24,
+  MYTHIC_SOLO_SPECS,
+  SOLO_MYTHIC_RULES,
+  buildMythicSoloHunter,
+  buildMythicSoloRow,
+} from './fixtures/mythic-hunters.ts';
 
 const SOLO_RUNS = 200;
 const DIAG_RUNS = 100;
 const HARD_FLOOR = 0.75;
 const HIGH_DIAGNOSTIC = 0.98;
 const SOLO_BUDGET = workBudget(250);
+
+/**
+ * Recorded BEFORE baseline (branch extract-c at c65aef59, prior to wiring HEMOMANCER_SIGNATURE.extract) across all 4
+ * scripted Mythic bosses (200 runs each, 0 Crimson Vessels). PR C's 0-vessel before-rows assert exact reproduction
+ * (zero base drift).
+ */
+const HEMO_BEFORE_BASELINE: Readonly<Record<MythicScriptId, { readonly wins: number; readonly meanRounds: number }>> = {
+  plain: { wins: 187, meanRounds: 6.3 },
+  'angel-of-the-last-trumpet': { wins: 158, meanRounds: 11.2 },
+  'zaratan-the-island-that-wakes': { wins: 171, meanRounds: 15.9 },
+  'the-fourth-rider': { wins: 182, meanRounds: 9.0 },
+};
 
 describe('Mythic solo-sim hunter fixtures are 100% legal under shipped rules', () => {
   for (const spec of MYTHIC_SOLO_SPECS) {
@@ -71,17 +92,50 @@ describe('Mythic solo-sim hunter fixtures are 100% legal under shipped rules', (
   }
 });
 
-describe('Hemomancer solo vs Mythic bosses (200 runs each, target 75% to 98% aiming near 85%)', () => {
-  const hero = buildMythicSoloRow(HEMOMANCER_SOLO_SPEC, SOLO_MYTHIC_RULES);
+describe('Hemomancer solo vs Mythic bosses (200 runs each, before 0/24 baseline and after 18/24 & 24/24 Crimson Vessels)', () => {
+  const hero0 = buildMythicSoloRow(HEMOMANCER_SOLO_SPEC, SOLO_MYTHIC_RULES);
+  const hero18 = buildMythicSoloRow(HEMOMANCER_SOLO_SPEC, SOLO_MYTHIC_RULES, { vessels: HEMO_VESSELS_18 });
+  const hero24 = buildMythicSoloRow(HEMOMANCER_SOLO_SPEC, SOLO_MYTHIC_RULES, { vessels: HEMO_VESSELS_24 });
 
   for (const mythicId of MYTHIC_IDS) {
-    simTest(`Hemomancer solo vs ${mythicId}`, () => {
-      const res = runSoloMythic(hero, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
+    simTest(`Hemomancer solo (before / 0/24 vessels) vs ${mythicId}`, () => {
+      const res = runSoloMythic(hero0, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
       const pct = (res.winRate * 100).toFixed(1);
       const se = (res.se * 100).toFixed(1);
-      const diag = res.winRate > HIGH_DIAGNOSTIC ? ' [DIAGNOSTIC: >98% hot]' : '';
-      console.log(`[solo-mythic] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped)${diag}`);
-      expect(res.winRate, `Hemomancer vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
+      const base = HEMO_BEFORE_BASELINE[mythicId];
+      console.log(`[solo-mythic:before 0/24] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped) [baseline ${base.wins}/${SOLO_RUNS}]`);
+      expect(res.capped).toBe(0);
+      expect(res.wins, `Hemomancer 0/24 vs ${mythicId} drifted from baseline ${base.wins}/${SOLO_RUNS}`).toBe(base.wins);
+      expect(res.winRate, `Hemomancer 0/24 vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
+      expect(res.winRate, `Hemomancer 0/24 vs ${mythicId} win rate ${pct}% above 98% ceiling`).toBeLessThanOrEqual(HIGH_DIAGNOSTIC);
+    }, SOLO_BUDGET);
+  }
+
+  for (const mythicId of MYTHIC_IDS) {
+    simTest(`Hemomancer solo (after / 18/24 vessels, 3 S-normals) vs ${mythicId}`, () => {
+      const res = runSoloMythic(hero18, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
+      const pct = (res.winRate * 100).toFixed(1);
+      const se = (res.se * 100).toFixed(1);
+      const base = HEMO_BEFORE_BASELINE[mythicId];
+      const delta = ((res.wins - base.wins) / SOLO_RUNS * 100).toFixed(1);
+      console.log(`[solo-mythic:after 18/24] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped, delta ${Number(delta) >= 0 ? '+' : ''}${delta} pp vs before ${base.wins}/${SOLO_RUNS})`);
+      expect(res.capped).toBe(0);
+      expect(res.winRate, `Hemomancer 18/24 vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
+      expect(res.winRate, `Hemomancer 18/24 vs ${mythicId} win rate ${pct}% above 98% hard ceiling`).toBeLessThanOrEqual(HIGH_DIAGNOSTIC);
+    }, SOLO_BUDGET);
+  }
+
+  for (const mythicId of MYTHIC_IDS) {
+    simTest(`Hemomancer solo (after / 24/24 vessels, 3 S-bosses) vs ${mythicId}`, () => {
+      const res = runSoloMythic(hero24, mythicId, SOLO_RUNS, SOLO_MYTHIC_RULES);
+      const pct = (res.winRate * 100).toFixed(1);
+      const se = (res.se * 100).toFixed(1);
+      const base = HEMO_BEFORE_BASELINE[mythicId];
+      const delta = ((res.wins - base.wins) / SOLO_RUNS * 100).toFixed(1);
+      console.log(`[solo-mythic:after 24/24] Hemomancer vs ${mythicId}: ${pct}% (${res.wins}/${res.runs}, se ${se}%, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped, delta ${Number(delta) >= 0 ? '+' : ''}${delta} pp vs before ${base.wins}/${SOLO_RUNS})`);
+      expect(res.capped).toBe(0);
+      expect(res.winRate, `Hemomancer 24/24 vs ${mythicId} win rate ${pct}% below 75% floor`).toBeGreaterThanOrEqual(HARD_FLOOR);
+      expect(res.winRate, `Hemomancer 24/24 vs ${mythicId} win rate ${pct}% above 98% hard ceiling`).toBeLessThanOrEqual(HIGH_DIAGNOSTIC);
     }, SOLO_BUDGET);
   }
 

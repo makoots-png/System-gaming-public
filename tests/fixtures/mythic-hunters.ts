@@ -12,11 +12,13 @@ import type { StatKey } from '../../src/core/stats.ts';
 import { pointsAt, split } from '../../src/core/hunter/derive.ts';
 import type { Kit } from '../../src/core/hunter/derive.ts';
 import { earnClass } from '../../src/core/hunter/classes.ts';
+import type { BloodVessel } from '../../src/core/hunter/blood-vessels.ts';
 import { hunterSheet } from '../../src/core/hunter/sheet.ts';
 import { lifeAfter } from '../../src/core/hunter/vitals.ts';
 import { isRefused } from '../../src/core/save-step.ts';
-import { piece } from '../../src/core/registry/items.ts';
+import { piece, WEAR_LIMIT } from '../../src/core/registry/items.ts';
 import type { ArmorSlot, ItemBonus } from '../../src/core/registry/items.ts';
+import { middleBudget } from '../../src/core/registry/item-budget.ts';
 import type { ClassName } from '../../src/core/registry/jobs.ts';
 import type { HeldItem } from '../../src/core/registry/item-book.ts';
 import { ATTACK_ID, wornAbilityId } from '../../src/core/registry/abilities.ts';
@@ -77,8 +79,12 @@ function makeWeapon(id: string, name: string, dice: string, bonus: ItemBonus): I
   };
 }
 
-/** Builds a real S-rank level 70 Hunter from `spec` with full HP/mana and all 32 class nodes bought. */
-export function buildMythicSoloHunter(spec: MythicSoloSpec, R: Rules = SOLO_MYTHIC_RULES): Hunter {
+/** Builds a real S-rank level 70 Hunter from `spec` with full HP/mana, all 32 class nodes bought, and optional Crimson Vessels. */
+export function buildMythicSoloHunter(
+  spec: MythicSoloSpec,
+  R: Rules = SOLO_MYTHIC_RULES,
+  opts?: { readonly vessels?: readonly BloodVessel[] },
+): Hunter {
   const base = newHunter(R);
   const level = R.rankLevels.S;
   const stats = split(spec.main, spec.second, pointsAt(level, R), R);
@@ -105,7 +111,11 @@ export function buildMythicSoloHunter(spec: MythicSoloSpec, R: Rules = SOLO_MYTH
     ...earned,
     classes: {
       ...earned.classes,
-      [spec.className]: { ...earned.classes[spec.className]!, nodes: [...spec.nodes] },
+      [spec.className]: {
+        ...earned.classes[spec.className]!,
+        nodes: [...spec.nodes],
+        ...(opts?.vessels?.length ? { vessels: [...opts.vessels] } : {}),
+      },
     },
   };
   const { sheet } = hunterSheet(withNodes, R);
@@ -114,13 +124,82 @@ export function buildMythicSoloHunter(spec: MythicSoloSpec, R: Rules = SOLO_MYTH
 }
 
 /** Converts `spec` into a `SimRow` through the real `hunterRow` builder. */
-export function buildMythicSoloRow(spec: MythicSoloSpec, R: Rules = SOLO_MYTHIC_RULES): SimRow {
-  const h = buildMythicSoloHunter(spec, R);
+export function buildMythicSoloRow(
+  spec: MythicSoloSpec,
+  R: Rules = SOLO_MYTHIC_RULES,
+  opts?: { readonly vessels?: readonly BloodVessel[] },
+): SimRow {
+  const h = buildMythicSoloHunter(spec, R, opts);
   const baseRow = hunterRow(h, combatantId('hero'), R);
   const row = spec.armedReactionId
     ? { ...baseRow, armed: { ability: spec.armedReactionId, on: null, spent: false } }
     : baseRow;
   return { row, policy: spec.policy };
+}
+
+/** Canonical Crimson Vessel tiers for Hemomancer balance sims: 12/24 (3 C-elites), 18/24 (3 S-normals), 24/24 (3 S-bosses). */
+export const HEMO_VESSELS_12: readonly BloodVessel[] = [
+  { name: 'Orc Elite A', rank: 'C', kind: 'elite', at: AT },
+  { name: 'Orc Elite B', rank: 'C', kind: 'elite', at: AT },
+  { name: 'Orc Elite C', rank: 'C', kind: 'elite', at: AT },
+];
+export const HEMO_VESSELS_18: readonly BloodVessel[] = [
+  { name: 'Jeju Ant A', rank: 'S', kind: 'normal', at: AT },
+  { name: 'Jeju Ant B', rank: 'S', kind: 'normal', at: AT },
+  { name: 'Jeju Ant C', rank: 'S', kind: 'normal', at: AT },
+];
+export const HEMO_VESSELS_24: readonly BloodVessel[] = [
+  { name: 'Ant King', rank: 'S', kind: 'boss', at: AT },
+  { name: 'Ice Monarch', rank: 'S', kind: 'boss', at: AT },
+  { name: 'Beast Monarch', rank: 'S', kind: 'boss', at: AT },
+];
+
+/**
+ * Builds a C-rank geared Hemomancer (0 tree nodes, 6 C-rank middle-budget light pieces matching `geared`, optional
+ * Crimson Vessels) through the real `hunterRow` builder for C-rank party balance checks in `fight-sim.test.ts`.
+ */
+export function buildCRankHemomancerRow(
+  vessels: readonly BloodVessel[] = HEMO_VESSELS_12,
+  R: Rules = RULES,
+  id = 'hemomancer',
+): SimRow {
+  const base = newHunter(R);
+  const level = R.rankLevels.C;
+  const stats = split('pow', 'vit', pointsAt(level, R), R);
+  const total = WEAR_LIMIT * middleBudget(R, 'C');
+  const big = Math.round(total * R.fight.mainShare);
+  const small = Math.round(total - big);
+  const slots: readonly ArmorSlot[] = ['chest', 'legs', 'head', 'feet', 'offhand'];
+  const gear: Item[] = [
+    {
+      id: itemId('i31'), name: 'C-Rank Focus', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1, dice: '1d6',
+      attack: 'strike', bonus: { pow: big, vit: small }, desc: '', armor: 0, resist: 0,
+    },
+    ...slots.map((slot, idx): Item => {
+      const p = piece('light', slot, R);
+      return {
+        id: itemId(`i${32 + idx}`), name: `C-Rank ${slot}`, rar: 'rare', type: 'armor', slot, qty: 1, dice: '',
+        bonus: {}, desc: '', armor: p.armor, resist: p.resist, weight: p.weight,
+      };
+    }),
+  ];
+  const items = gear.map(({ id: gid, qty, ...item }): HeldItem => ({ kind: 'adhoc', id: gid, qty, item }));
+  const equipped: Record<string, ItemId | null> = { ...base.equipped };
+  for (const it of gear) if (it.slot) equipped[it.slot] = it.id;
+
+  const pre: Hunter = { ...base, name: 'Hemomancer', rank: 'C', level, stats, items, equipped };
+  const earned = earnClass(pre, 'Hemomancer', { at: AT, R });
+  if (isRefused(earned)) throw new Error(`earnClass(Hemomancer) refused: ${earned.why}`);
+  const withVessels: Hunter = {
+    ...earned,
+    classes: {
+      ...earned.classes,
+      Hemomancer: { ...earned.classes.Hemomancer!, ...(vessels.length ? { vessels: [...vessels] } : {}) },
+    },
+  };
+  const { sheet } = hunterSheet(withVessels, R);
+  const full = { ...withVessels, life: lifeAfter(withVessels.life, { type: 'heal', amount: 100_000 }, 100_000), mana: sheet.manaMax };
+  return { row: hunterRow(full, combatantId(id), R), policy: hemomancerPolicy };
 }
 
 // ── Hemomancer (Mythic, vit+pow) solo spec & policy ──

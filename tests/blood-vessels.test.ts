@@ -203,8 +203,12 @@ describe('ClassSignature.extract seam, lifecycle, and sheet folding', () => {
     const activeRes = classPowers(h, RULES, { signatures: TEST_SIGNATURES });
     expect(activeRes.bonus).toEqual({ drain: 10, pow: 4, resistPenFlat: 4, haste: 4 });
 
-    // Without extract spec (shipped PR B before PR C): vessels do not alter Hemomancer bonuses yet
-    expect(classExtractOf(h)).toBeNull();
+    // Shipped PR C wires HEMOMANCER_SIGNATURE.extract: live classExtractOf and classPowers fold vessels
+    expect(classExtractOf(h)).toEqual(BLOOD_SPEC);
+    const liveRes = classPowers(h, RULES);
+    expect(liveRes.bonus).toEqual({ drain: 10, shieldDrain: 4, pow: 4, resistPenFlat: 4, haste: 4 });
+
+    // Without extract spec on a signature: vessels do not alter that class's bonuses
     const unshippedRes = classPowers(h, RULES, { signatures: { Hemomancer: { className: 'Hemomancer', bonus: { drain: 10 } } } });
     expect(unshippedRes.bonus).toEqual({ drain: 10 });
 
@@ -348,10 +352,16 @@ describe('ClassSignature.extract seam, lifecycle, and sheet folding', () => {
     expect(toasts).toEqual([{ tag: 'Blood extraction', text: BLOOD_REFUSAL_WORDS['stronger-held'], kind: 'warning' }]);
   });
 
-  test('hunterSheet reflects zero change when no blood extract spec is wired yet (PR B isolation)', () => {
+  test('hunterSheet reflects shipped Hemomancer Crimson Vessels bonuses (+pow, +resistPenFlat, +haste) with zero added sustain', () => {
     const base = ok(earnClass(newHunter(RULES), 'Hemomancer', { at: AT, activate: true, awaken: true, R: RULES }));
     const withV = ok(addBloodVessel(saveWithHunter(() => base), base.id, mkVessel('Ant King', 'S', 'boss'), STAMP, RULES)).save.hunters[0]!;
-    // Since PR C has not wired HEMOMANCER_SIGNATURE.extract yet, live hunterSheet stats remain identical
-    expect(hunterSheet(withV, RULES)).toEqual(hunterSheet(base, RULES));
+    // One S-rank boss vessel (power 8) -> +2 pow, +2 resistPenFlat, +2 haste, zero drain or vit added
+    const s0 = hunterSheet(base, RULES);
+    const s1 = hunterSheet(withV, RULES);
+    expect(s1.stats.pow).toBe(s0.stats.pow + 2);
+    expect(s1.stats.vit).toBe(s0.stats.vit);
+    expect(s1.sheet.resistPenFlat).toBe(s0.sheet.resistPenFlat + 2);
+    expect(s1.sheet.haste).toBe(s0.sheet.haste + 2);
+    expect(s1.sheet.drain).toBeCloseTo(s0.sheet.drain, 6);
   });
 });

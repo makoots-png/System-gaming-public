@@ -854,3 +854,4 @@ ts	phase	decision	why	evidence	result
 2026-11-27T00:58Z	story	PR 157 San Francisco rename + primer GM unlock (t189u); unit 7541/0; browser 38+19; CI 45918623540 8/8
 2026-11-27T01:43Z	items	PR 158: item sync PRs 2-4 (items by reference, server catalogs, edge sync, built-in edits), wave 2 PR 3 Necromancer, PR 7 Commons
 2026-11-27T02:07Z	combat	PR 159: extract PR A (GM Adjust roll on extraction and Arise) and the PR 37 first-run clarity refresh (Rules page penetration and Shadows lines from the rules)
+2026-11-27T02:40Z	combat	PR 160: extract PR B, the extraction seam (Extract shadow / Extract blood, bled track, Crimson Vessels core, bloodExtract event)

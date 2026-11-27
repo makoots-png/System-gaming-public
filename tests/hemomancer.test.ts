@@ -31,8 +31,10 @@ import { choose, EVERYTHING, fightBodies, mapScene, NO_CHOICE } from '../src/cor
 import { wornAbilityId } from '../src/core/registry/abilities.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { CLASS_ACTIVES_MAX, CLASS_TREES, TREE_SHAPE, canBuyNode, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
-import { CLASS_SIGNATURES, classPowers, classStatusDef } from '../src/core/registry/class-powers.ts';
+import { CLASS_SIGNATURES, classExtractOf, classPowers, classStatusDef } from '../src/core/registry/class-powers.ts';
 import { HEMOMANCER_SIGNATURE, HEMOMANCER_TREE } from '../src/core/registry/class-hemomancer.ts';
+import { VESSEL_CAP, vesselBonus } from '../src/core/hunter/blood-vessels.ts';
+import { HEMO_VESSELS_18, HEMO_VESSELS_24 } from './fixtures/mythic-hunters.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev, skid } from './fixtures/ids.ts';
@@ -497,5 +499,81 @@ describe('Hemomancer combat mechanics', () => {
       expect(useFx.ability.id).toBe(tidesId);
       expect(useFx.aim).toEqual(h.place);
     }
+  });
+});
+
+describe('Hemomancer Crimson Vessels wiring (PR C)', () => {
+  test('HEMOMANCER_SIGNATURE.extract declares Vitality post-fight blood extraction with cap 3 while keeping Hemomancer out of RULES.extractJobs', () => {
+    expect(HEMOMANCER_SIGNATURE.extract).toEqual({
+      kind: 'blood',
+      stat: 'vit',
+      cap: VESSEL_CAP,
+      phase: 'ended',
+      label: 'Extract blood',
+    });
+    expect(RULES.extractJobs).not.toContain('Hemomancer');
+    expect(HEMOMANCER_SIGNATURE.actives?.length).toBe(CLASS_ACTIVES_MAX);
+    expect(HEMOMANCER_TREE.nodes.length).toBe(TREE_SHAPE.mythic.total);
+
+    const h = makeHemoHunter([]);
+    expect(classExtractOf(h)).toEqual(HEMOMANCER_SIGNATURE.extract);
+  });
+
+  test('18/24 and 24/24 Crimson Vessels fold +pow, +resistPenFlat, and +haste under Class with zero added sustain', () => {
+    const base = makeHemoHunter(FULL_HEMO_NODES);
+    const with18 = {
+      ...base,
+      classes: { ...base.classes, Hemomancer: { ...base.classes.Hemomancer!, vessels: [...HEMO_VESSELS_18] } },
+    };
+    const with24 = {
+      ...base,
+      classes: { ...base.classes, Hemomancer: { ...base.classes.Hemomancer!, vessels: [...HEMO_VESSELS_24] } },
+    };
+
+    const cp0 = classPowers(base, RULES);
+    const cp18 = classPowers(with18, RULES);
+    const cp24 = classPowers(with24, RULES);
+    expect(vesselBonus(HEMO_VESSELS_18)).toEqual({ pow: 5, resistPenFlat: 5, haste: 4 });
+    expect(vesselBonus(HEMO_VESSELS_24)).toEqual({ pow: 6, resistPenFlat: 6, haste: 6 });
+
+    expect((cp18.bonus.pow ?? 0) - (cp0.bonus.pow ?? 0)).toBe(5);
+    expect((cp18.bonus.resistPenFlat ?? 0) - (cp0.bonus.resistPenFlat ?? 0)).toBe(5);
+    expect((cp18.bonus.haste ?? 0) - (cp0.bonus.haste ?? 0)).toBe(4);
+    expect(cp18.bonus.drain).toBe(cp0.bonus.drain);
+    expect(cp18.bonus.shieldDrain).toBe(cp0.bonus.shieldDrain);
+    expect(cp18.bonus.vit).toBe(cp0.bonus.vit);
+    expect(cp18.bonus.hpMax).toBe(cp0.bonus.hpMax);
+
+    expect((cp24.bonus.pow ?? 0) - (cp0.bonus.pow ?? 0)).toBe(6);
+    expect((cp24.bonus.resistPenFlat ?? 0) - (cp0.bonus.resistPenFlat ?? 0)).toBe(6);
+    expect((cp24.bonus.haste ?? 0) - (cp0.bonus.haste ?? 0)).toBe(6);
+    expect(cp24.bonus.drain).toBe(cp0.bonus.drain);
+    expect(cp24.bonus.shieldDrain).toBe(cp0.bonus.shieldDrain);
+    expect(cp24.bonus.vit).toBe(cp0.bonus.vit);
+    expect(cp24.bonus.hpMax).toBe(cp0.bonus.hpMax);
+
+    // Sheet and explain report the added bonuses under `class`
+    const s0 = hunterSheet(base, RULES);
+    const s24 = hunterSheet(with24, RULES);
+    expect(s24.stats.pow).toBe(s0.stats.pow + 6);
+    expect(s24.stats.vit).toBe(s0.stats.vit);
+    expect(s24.sheet.resistPenFlat).toBe(s0.sheet.resistPenFlat + 6);
+    expect(s24.sheet.haste).toBe(s0.sheet.haste + 6);
+    expect(s24.sheet.drain).toBeCloseTo(s0.sheet.drain, 6);
+    const expPen0 = explain(base, 'resistPenFlat', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
+    const expPen24 = explain(with24, 'resistPenFlat', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
+    expect(expPen24 - expPen0).toBe(6);
+    const expHaste0 = explain(base, 'haste', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
+    const expHaste24 = explain(with24, 'haste', RULES).parts.find(p => p.from === 'class')?.amount ?? 0;
+    expect(expHaste24 - expHaste0).toBe(6);
+
+    // Combat row built through hunterRow carries the exact vessel bonuses
+    const r0 = hunterRow(base, combatantId('h0'), KEYSTONES_ON);
+    const r24 = hunterRow(with24, combatantId('h24'), KEYSTONES_ON);
+    const rs0 = modified(r0.origin, r0.statuses, KEYSTONES_ON).sheet;
+    const rs24 = modified(r24.origin, r24.statuses, KEYSTONES_ON).sheet;
+    expect(rs24.resistPenFlat - rs0.resistPenFlat).toBe(6);
+    expect(rs24.haste - rs0.haste).toBe(6);
+    expect(rs24.drain).toBeCloseTo(rs0.drain, 6);
   });
 });

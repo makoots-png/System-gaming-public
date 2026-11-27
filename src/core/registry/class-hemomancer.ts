@@ -18,6 +18,7 @@ import { abilityOf } from './ability-kinds.ts';
 import type { Scaler } from './scalers.ts';
 import type { ClassNodeDef, ClassTree, ClassWorn, NodeGift, TreeDepth } from './class-trees.ts';
 import type { ClassSignature } from './class-powers.ts';
+import { VESSEL_CAP } from '../hunter/blood-vessels.ts';
 
 const R = RULES;
 const nid = (s: string): ClassNodeId => {
@@ -374,6 +375,13 @@ export const HEMOMANCER_SIGNATURE: ClassSignature = {
   bonus: { drain: 10, shieldDrain: 4 },
   worn: BASE_PACT,
   actives: [BASE_TRANSFUSION, BASE_POOL, BASE_TIDES, BASE_PLAGUE],
+  extract: {
+    kind: 'blood',
+    stat: 'vit',
+    cap: VESSEL_CAP,
+    phase: 'ended',
+    label: 'Extract blood',
+  },
 };
 
 // ── 38-node / 32-buyable Mythic skill tree ──

@@ -108,7 +108,7 @@ import { isRefused } from '../src/core/save-step.ts';
 import { builtInItemId, saveId, seedId } from '../src/core/ids.ts';
 import type { NewRow } from '../src/core/combat/fight-types.ts';
 import type { Policy } from './models/fight-sim.ts';
-import { bladefiendPolicy, hemomancerPolicy, rifthunterPolicy } from './fixtures/mythic-hunters.ts';
+import { HEMO_VESSELS_12, bladefiendPolicy, buildCRankHemomancerRow, hemomancerPolicy, rifthunterPolicy } from './fixtures/mythic-hunters.ts';
 import { dev } from './fixtures/ids.ts';
 
 // ── the setups ──
@@ -760,6 +760,44 @@ const GRIEVOUS_ROWS: readonly Row[] = [
     low: 1.02, high: 1.25, lever: 'BUILT_IN_STATUSES.grievous and kit.shareCap' },
 ];
 
+// ── Hemomancer Crimson Vessels at C-rank (PR C, t186u) ──
+// A C-rank Mythic Hemomancer at 0/24 vessels already lifts a geared 3-hunter party to ~94.3% vs a classless-calibrated
+// diff-5 C boss (D1: 68–82%), so CV1 bounds both the 12/24 win-rate ceiling (<=98%) and the paired uplift of 12/24 over
+// 0/24 (-2 pp to +6 pp), confirming vessels add a modest, non-runaway bonus without nerfing base Hemomancer.
+const vsHemoPartyBossD5C = (withVessels: boolean) => {
+  const rows = once(() => {
+    const scale = difficultyFactor('boss', 'C', 5, RULES);
+    return [
+      geared('tank', 'C'),
+      geared('bruiser', 'C'),
+      buildCRankHemomancerRow(withVessels ? HEMO_VESSELS_12 : [], RULES),
+      monster('C', 'brute', 'boss', 'boss', RULES, [], scale),
+    ];
+  });
+  return (seed: number): FightRecord[] => [playFight({ rows: rows(), tallyDamage: false }, seed)];
+};
+const VESSEL_ROWS: readonly Row[] = [
+  {
+    name: 'CV1 a C-rank party with a 12/24 Crimson Vessels Hemomancer stays within +6 pp of 0/24 and under 98% against a difficulty 5 C boss',
+    setup: 'hemo-12 v hemo-0 party boss d5 C',
+    runs: 2 * RUNS.quarter,
+    measure: () => {
+      const before = wins('hemo-0 party v boss d5 C', vsHemoPartyBossD5C(false), RUNS.quarter);
+      const after = wins('hemo-12 party v boss d5 C', vsHemoPartyBossD5C(true), RUNS.quarter);
+      expect(after.value).toBeGreaterThanOrEqual(0.70);
+      expect(after.value).toBeLessThanOrEqual(0.98);
+      return {
+        value: after.value - before.value,
+        se: Math.sqrt(before.se ** 2 + after.se ** 2),
+        note: `before 0/24 ${fmt(before.value)} (${before.note}), after 12/24 ${fmt(after.value)} (${after.note})`,
+      };
+    },
+    low: -0.02,
+    high: 0.06,
+    lever: 'blood-vessels.ts vesselBonus',
+  },
+];
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -800,6 +838,7 @@ const ROWS: readonly Row[] = [
   ...GEARED_ROWS,
   ...WEAPON_DUTY_ROWS,
   ...GRIEVOUS_ROWS,
+  ...VESSEL_ROWS,
 ];
 
 /**
