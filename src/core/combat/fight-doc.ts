@@ -178,8 +178,8 @@ export type FightDocRow = DocRowBase & (
     /** Set when this dead monster corpse is currently eligible for Arise (`canRiseInFight`). */
     readonly canRise?: true;
   }
-  | (DocBody & { readonly kind: 'hunter'; readonly life: { readonly at: LifeState } })
-  | { readonly kind: 'hunter'; readonly life: { readonly at: LifeState }; readonly hp?: undefined; readonly hpMax?: undefined; readonly stride?: undefined; readonly move?: undefined }
+  | (DocBody & { readonly kind: 'hunter'; readonly life: { readonly at: LifeState }; readonly stagger?: undefined })
+  | { readonly kind: 'hunter'; readonly life: { readonly at: LifeState }; readonly stagger?: { readonly fill: number; readonly max: number; readonly staggered: number | null } | null; readonly hp?: undefined; readonly hpMax?: undefined; readonly stride?: undefined; readonly move?: undefined }
   | (DocBody & { readonly kind: 'shadow'; readonly life: { readonly at: FoeLifeState } })
   /**
    * A summon (kits design 1.9) as a shadow is shown, with the row that owns it (that hunter's phone commands it) and the
@@ -495,7 +495,7 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext, shownIds:
   };
   const body: DocBody = { hp: rowHp(b), hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
   if (b.kind === 'hunter') return b.side === 'foe'
-    ? { ...base, kind: 'hunter', life: { at: b.life.at } }
+    ? { ...base, kind: 'hunter', life: { at: b.life.at }, ...(k.stagger ? { stagger: k.stagger } : {}) }
     : { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
   const life = { at: b.life.at };
   if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner, left: b.until === null ? null : Math.max(0, roundsOf(b.until - now, R, 'up')) };
@@ -670,7 +670,10 @@ function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string
       ...(i ? { in: { n: i.name, t: typeof i.target === 'string' ? i.target : [i.target.x, i.target.y], ...(v ? { r: { l: v.lines, ...unlessNull('r', v.radius), ...unlessNull('o', v.outer) } } : {}) } } : {}),
     };
   }
-  if (r.kind === 'hunter' && r.hp === undefined) return base;
+  if (r.kind === 'hunter' && r.hp === undefined) {
+    const g = r.stagger;
+    return g ? { ...base, g: { f: g.fill, m: g.max, ...unlessNull('s', g.staggered) } } : base;
+  }
   const body = { ...base, h: r.hp, hm: r.hpMax, r: r.stride, m: r.move };
   return r.kind === 'summon' ? { ...body, o: r.owner, ...unlessNull('l', r.left) } : body;
 }

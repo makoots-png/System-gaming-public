@@ -1331,12 +1331,16 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
     shield: opt(own(o, 'sh'), num(0, MAX_TOTAL), null), shieldLeft: opt(own(o, 'sl'), num(0, MAX_TOTAL), null), channel: opt(own(o, 'c'), docChannel, null),
     taunt: opt(own(o, 't'), docTaunt, null), icon: opt(own(o, 'ic'), iconOrNull, null),
   };
+  const docStagger = () => {
+    const st = own(o, 'g');
+    return st === undefined ? null : {
+      fill: int(0, MAX_TOTAL)(own(obj(st), 'f')), max: int(0, MAX_TOTAL)(own(obj(st), 'm')), staggered: opt(own(obj(st), 's'), num(0, MAX_TOTAL), null),
+    };
+  };
   const kind = choiceOf(['monster', 'hunter', 'shadow', 'summon'] as const)(own(o, 'q'));
   if (kind === 'monster') {
     const life = wireLife(own(o, 'd'), FOE_LIFE_STATES);
-    const st = own(o, 'g'), stagger = st === undefined ? null : {
-      fill: int(0, MAX_TOTAL)(own(obj(st), 'f')), max: int(0, MAX_TOTAL)(own(obj(st), 'm')), staggered: opt(own(obj(st), 's'), num(0, MAX_TOTAL), null),
-    };
+    const stagger = docStagger();
     const standing = opt(own(o, 'my'), docStanding, null);
     return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null), ...(standing ? { standing } : {}), ...(own(o, 'cr') === 1 ? { canRise: true as const } : {}) };
   }
@@ -1345,7 +1349,8 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
     const hasBody = own(o, 'h') !== undefined || own(o, 'hm') !== undefined || own(o, 'r') !== undefined || own(o, 'm') !== undefined;
     if (!hasBody) {
       if (row.side !== 'foe') return refuse();
-      return { ...row, kind, life };
+      const stagger = docStagger();
+      return { ...row, kind, life, ...(stagger ? { stagger } : {}) };
     }
     if (row.side === 'foe') return refuse();
     const hpMax = int(1, MAX_TOTAL)(own(o, 'hm'));

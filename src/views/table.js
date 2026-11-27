@@ -510,7 +510,7 @@ export function register(app) {
     else if (!e.ended && (e.spent || []).includes(r.id)) out.push('<div class="tb-x react spent">Reacted</div>');
     if (r.kind === 'summon') out.push(`<div class="tb-x summon">Summoned by ${esc(ownerName(e, r))}${r.left !== null ? ` · ${r.left} round${r.left === 1 ? '' : 's'} left` : ''}</div>`);
     if (r.shield !== null) out.push(`<div class="tb-x shield">Shield ${r.shield}${r.shieldLeft !== null ? ` · ${r.shieldLeft} round${r.shieldLeft === 1 ? '' : 's'}` : ''}</div>`);
-    if (r.kind === 'monster' && r.stagger) {
+    if ((r.kind === 'monster' || (r.kind === 'hunter' && r.hp === undefined)) && r.stagger) {
       out.push(`<div class="tb-x stagger"><span>Stagger</span><span class="bar bar-stagger" role="img" aria-label="Stagger ${r.stagger.fill} of ${r.stagger.max}">${motion.fillMarkup(r.stagger.max ? r.stagger.fill / r.stagger.max : 0)}</span>${r.stagger.staggered !== null ? `<b>Staggered · loses ${r.stagger.staggered} round${r.stagger.staggered === 1 ? '' : 's'}</b>` : ''}</div>`);
     }
     if (r.channel) out.push(`<div class="tb-x chan">${r.channel.state === 'broken' ? 'Channel broken' : 'Channeling'} ${esc(r.channel.name)} · charge ${r.channel.charge} of ${r.channel.max} · Power ×${r.channel.factor}</div>`);

@@ -812,6 +812,19 @@ test('nothing a player\'s phone receives in a fight names an NPC\'s play skill o
   expect(report(lines.filter(line => !isComment(line.text) && names(line.text))), 'NPC play skill and GM-only NPC state stay on the GM\'s phone: never name or read NPC state in the fight doc, room protocol, sync, or player fight views').toEqual([]);
 });
 
+test('policy.ts never reads fudge and fudge.ts never reads row.npc', async () => {
+  // NPC skill modulation and hidden fight fudge stay strictly independent (npc-final.md section 3):
+  // policy.ts chooses moves without looking at f.fudge, and fudge.ts weighs dice without looking at row.npc.
+  const policyLines = (await Bun.file(`${ROOT}/src/core/combat/policy.ts`).text()).split('\n')
+    .map((text, i) => ({ file: 'src/core/combat/policy.ts', line: i + 1, text }))
+    .filter(l => !isComment(l.text) && /\bfudge\b/i.test(l.text));
+  const fudgeLines = (await Bun.file(`${ROOT}/src/core/combat/fudge.ts`).text()).split('\n')
+    .map((text, i) => ({ file: 'src/core/combat/fudge.ts', line: i + 1, text }))
+    .filter(l => !isComment(l.text) && /\.npc\b|\bnpcSkill\b/i.test(l.text));
+  expect(report(policyLines), 'policy.ts must never read f.fudge').toEqual([]);
+  expect(report(fudgeLines), 'fudge.ts must never read row.npc').toEqual([]);
+});
+
 test('nothing imports a module deleted with the old fight', async () => {
   // Milestone 2 deleted the old fight whole, so nothing was left beside the new one. Each entry says where its job went.
   const DELETED: Record<string, string> = {
@@ -2556,7 +2569,7 @@ test('every test in tests/fight-sim.test.ts uses simTest with deterministic work
   expect(modelSrc, 'report each playStep to sim-budget.ts from playFight').toContain('recordFightStep(');
 
   const soloSimFiles = (await readdir(`${ROOT}/tests`)).filter(n => /-(?:solo|smoke)-sim\.test\.ts$/.test(n)).sort().map(n => `tests/${n}`);
-  const simFiles = ['tests/fight-sim.test.ts', ...soloSimFiles];
+  const simFiles = ['tests/fight-sim.test.ts', 'tests/npc-sim.test.ts', ...soloSimFiles];
   for (const rel of simFiles) {
     const simSrc = await Bun.file(`${ROOT}/${rel}`).text();
     expect(simSrc, `import simTest from ./models/sim-budget.ts in ${rel}`).toMatch(/from\s+['"]\.\/models\/sim-budget\.ts['"]/);

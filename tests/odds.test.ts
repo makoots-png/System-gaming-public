@@ -14,7 +14,8 @@ import type { Play } from '../src/core/combat/play.ts';
 import { sensible } from '../src/core/combat/policy.ts';
 import { hunter, monster, scriptsOn } from './models/fight-sim.ts';
 import { omenMove } from '../src/core/combat/fight-turn.ts';
-import { monsterRows } from '../src/core/combat/rows.ts';
+import { monsterRows, npcRows } from '../src/core/combat/rows.ts';
+import { newNpc } from '../src/core/registry/npcs.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { GRID, ROSTER, ctx, randomCommand, rng } from './models/fight-play.ts';
@@ -107,6 +108,17 @@ describe('the odds of a fight', () => {
     expect(oddsStep(done, { type: 'changed', from: oddsKey(weighted) }, RULES)).toEqual({ state: 'stale', odds: done.odds });
     const back = reduce(weighted, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 0 } }, ctx).fight!;
     expect(oddsKey(back)).toBe(oddsKey(f));
+  });
+
+  test('changing an NPC skill via setNpcSkill changes oddsKey and marks a finished answer stale', () => {
+    const ally = npcRows(newNpc({ name: 'Mira', rank: 'C', archetype: 'caster', defaultSide: 'party', skill: 5 }), [combatantId('n1')], RULES)[0]!;
+    const f = setupOf([ally, monster('C', 'brute', 'normal', 'm1').row]);
+    const done = { state: 'done', from: oddsKey(f), odds: oddsOf(f, 3, 2) } as const;
+    const lowered = reduce(f, { type: 'setNpcSkill', id: combatantId('n1'), skill: 1 }, ctx).fight!;
+    expect(oddsKey(lowered)).not.toBe(oddsKey(f));
+    expect(oddsStep(done, { type: 'changed', from: oddsKey(lowered) }, RULES)).toEqual({ state: 'stale', odds: done.odds });
+    const restored = reduce(lowered, { type: 'setNpcSkill', id: combatantId('n1'), skill: 5 }, ctx).fight!;
+    expect(oddsKey(restored)).toBe(oddsKey(f));
   });
 
   test('the line says with your fudge only while one is on', () => {

@@ -193,19 +193,42 @@ export function readEditDifficultyEvents(form, current, R) {
 /**
  * Renders the GM-only "How well this NPC plays" 1 to 5 skill slider (Sloppy to Optimal, default 3 Steady)
  * with its end labels and live readout.
- * @param {{ id: string; name?: string; skill: number; label?: string; R: import('../core/rules.ts').Rules }} o
+ * @param {{ id: string; name?: string; skill: number; label?: string; R: import('../core/rules.ts').Rules; fk?: string; rowId?: string }} o
  */
-export function npcSkillSliderHtml({ id, name = 'skill', skill, label = 'How well this NPC plays', R }) {
+export function npcSkillSliderHtml({ id, name = 'skill', skill, label = 'How well this NPC plays', R, fk = '', rowId = '' }) {
   const step = clampNpcSkill(skill, clampNpcSkill(R.fight.npc.defaultSkill, 3));
-  const info = NPC_SKILL_INFO[step];
+  const stepName = NPC_SKILL_INFO[step].name;
   const readout = npcSkillReadout(step, R);
   const outId = `${id}-out`;
+  const extra = `${fk ? ` data-fk="${escHtml(fk)}"` : ''}${rowId ? ` data-npc-skill-row="${escHtml(rowId)}"` : ''}`;
   return `<div class="diff-ctl npc-skill-ctl" data-npc-skill-ctl>
-    <div class="diff-head"><label class="lbl" for="${escHtml(id)}">${escHtml(label)}</label><span class="npc-skill-step" data-npc-skill-name>${escHtml(info.name)} (${step} of 5)</span></div>
-    <input type="range" id="${escHtml(id)}" name="${escHtml(name)}" min="1" max="5" step="1" value="${step}" aria-describedby="${escHtml(outId)}" aria-valuetext="${escHtml(readout)}" data-npc-skill-range>
+    <div class="diff-head"><label class="lbl" for="${escHtml(id)}">${escHtml(label)}</label><span class="npc-skill-step" data-npc-skill-name>${escHtml(stepName)} (${step} of 5)</span></div>
+    <input type="range" id="${escHtml(id)}" name="${escHtml(name)}" min="1" max="5" step="1" value="${step}" aria-describedby="${escHtml(outId)}" aria-valuetext="${escHtml(readout)}" data-npc-skill-range${extra}>
     <div class="npc-skill-ends" aria-hidden="true"><span>${escHtml(NPC_SKILL_INFO[1].name)}</span><span>${escHtml(NPC_SKILL_INFO[5].name)}</span></div>
     <output class="diff-read" id="${escHtml(outId)}" for="${escHtml(id)}" data-npc-skill-out>${escHtml(readout)}</output>
   </div>`;
+}
+
+/**
+ * Updates an existing "How well this NPC plays" slider container in place to `skill` under rules `R`.
+ * @param {Element | null} ctl
+ * @param {number} skill
+ * @param {import('../core/rules.ts').Rules} R
+ */
+export function syncNpcSkillControl(ctl, skill, R) {
+  if (!ctl) return;
+  const step = clampNpcSkill(skill, clampNpcSkill(R.fight.npc.defaultSkill, 3));
+  const stepName = NPC_SKILL_INFO[step].name;
+  const readout = npcSkillReadout(step, R);
+  const input = ctl.querySelector('[data-npc-skill-range]');
+  const nameEl = ctl.querySelector('[data-npc-skill-name]');
+  const outEl = ctl.querySelector('[data-npc-skill-out]');
+  if (input instanceof HTMLInputElement) {
+    input.value = String(step);
+    input.setAttribute('aria-valuetext', readout);
+  }
+  if (nameEl) nameEl.textContent = `${stepName} (${step} of 5)`;
+  if (outEl) outEl.textContent = readout;
 }
 
 /**
@@ -220,13 +243,13 @@ export function wireNpcSkillLive(root, rulesOf, onStep) {
     const R = rulesOf();
     const fallback = clampNpcSkill(R.fight.npc.defaultSkill, 3);
     const step = clampNpcSkill(Number(input.value), fallback);
-    const info = NPC_SKILL_INFO[step];
+    const stepName = NPC_SKILL_INFO[step].name;
     const readout = npcSkillReadout(step, R);
     input.setAttribute('aria-valuetext', readout);
     const ctl = input.closest('[data-npc-skill-ctl]');
     const nameEl = ctl && ctl.querySelector('[data-npc-skill-name]');
     const outEl = ctl && ctl.querySelector('[data-npc-skill-out]');
-    if (nameEl) nameEl.textContent = `${info.name} (${step} of 5)`;
+    if (nameEl) nameEl.textContent = `${stepName} (${step} of 5)`;
     if (outEl) outEl.textContent = readout;
     if (onStep) onStep(step, input);
   };

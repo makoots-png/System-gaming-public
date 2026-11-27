@@ -241,3 +241,104 @@ test('GM Auto turn runs an active NPC turn in List view', async ({ device }) => 
   await autoBtn.tap();
   await expect.poll(async () => (await fightRow(gm, FOE_NAME)).hp).toBeLessThan(beforeHp);
 });
+
+test('two phones: GM moves the mid-fight NPC skill slider silently with no log line and nothing sent to or shown on the player phone', async ({ device }) => {
+  const gm = (await device('gm-skill', { viewport: SMALL_PHONE })).page;
+  const player = (await device('player-skill', { viewport: PHONE })).page;
+
+  await setupGoblinDenGM(gm);
+  await chooseList(gm);
+  await seedNpcs(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, HUNTER, code);
+  await chooseList(player);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+  await go(gm, 'gm');
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
+
+  await go(gm, 'combat');
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
+  await combat(gm).locator('[data-addh]').tap();
+
+  // Fight drawer syncs its per-fight skill slider to the selected NPC (ally skill 4 -> Sharp) and allows overriding it.
+  await combat(gm).locator('[data-nsel]').selectOption('npc_101');
+  const drawerSlider = combat(gm).locator('#cmb-add-npc-skill');
+  await expect(drawerSlider).toBeVisible();
+  await expect(drawerSlider).toHaveValue('4');
+  await combat(gm).locator('[data-addn]').tap();
+
+  await combat(gm).locator('[data-nsel]').selectOption('npc_102');
+  await expect(drawerSlider).toHaveValue('2');
+  await combat(gm).locator('[data-addn]').tap();
+
+  await combat(gm).locator('[data-start]').tap();
+  await expect(combat(gm).locator('.cmb-row.cur')).toHaveCount(1);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.doc('fight') !== null)).toBe(true);
+  await go(player, 'combat');
+  await expect(hudRow(player, ALLY_NAME)).toBeVisible();
+
+  // Track every outbound request body on both phones from this point on.
+  const sent: string[] = [];
+  for (const p of [gm, player]) p.on('request', r => { const b = r.postData(); if (b) sent.push(b); });
+
+  const docBefore = await player.evaluate(() => JSON.stringify(hunterApp.api.sync.doc('fight')));
+  const logBefore = await gm.evaluate(() => JSON.stringify(hunterApp.store.get().fight.log));
+
+  // Non-NPC hunter card shows no NPC skill slider.
+  await combat(gm).locator('.cmb-row', { hasText: HUNTER }).locator('.cmb-pick').tap();
+  await expect(combat(gm).locator('.cmb-card [data-npc-skill-row]')).toHaveCount(0);
+
+  // Ally NPC card shows the GM-only "How well this NPC plays" slider (>= 44 px, no horizontal overflow at 360 px).
+  await combat(gm).locator('.cmb-row', { hasText: ALLY_NAME }).locator('.cmb-pick').tap();
+  const card = combat(gm).locator('.cmb-card');
+  const slider = card.locator('[data-npc-skill-row]');
+  await expect(slider).toBeVisible();
+  await expect(card).toContainText('How well this NPC plays');
+  await expect(card.locator('[data-npc-skill-name]')).toHaveText('Sharp (4 of 5)');
+  expect((await slider.boundingBox())!.height, 'mid-fight skill slider >= 44 px').toBeGreaterThanOrEqual(44);
+  expect(await gm.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), 'no sideways scroll at 360 px').toBe(true);
+
+  // Pointer-drag the mid-fight skill slider continuously from 4 (Sharp) -> 1 (Sloppy) without replacing the input node.
+  await slider.evaluate(el => {
+    el.scrollIntoView({ block: 'center' });
+    (el as unknown as Record<string, string>).__dragKeep = 'same-input';
+  });
+  const box = (await slider.boundingBox())!;
+  const cy = box.y + box.height / 2;
+  const xStart = box.x + box.width * 0.75;
+  const xEnd = box.x + 4;
+  await gm.mouse.move(xStart, cy);
+  await gm.mouse.down();
+  await gm.mouse.move(xEnd, cy, { steps: 12 });
+
+  // Mid-drag (before mouse up): readout updated live in place on the exact same input element, without committing early.
+  await expect(card.locator('[data-npc-skill-name]')).toHaveText('Sloppy (1 of 5)');
+  await expect(card.locator('[data-npc-skill-out]')).toContainText('Sloppy:');
+  expect(await slider.evaluate(el => (el as unknown as Record<string, string>).__dragKeep), 'slider input survives drag intact').toBe('same-input');
+  expect(await gm.evaluate(([name]) => hunterApp.store.get().fight.rows.find((r: any) => r.name === name)?.npc?.skill, [ALLY_NAME] as const)).toBe(4);
+
+  // Release commits setNpcSkill once and still keeps the same input element alive.
+  await gm.mouse.up();
+  await expect(card.locator('[data-npc-skill-name]')).toHaveText('Sloppy (1 of 5)');
+  await expect(card.locator('[data-npc-skill-out]')).toContainText('Sloppy:');
+  expect(await slider.evaluate(el => (el as unknown as Record<string, string>).__dragKeep), 'slider input stays mounted after release').toBe('same-input');
+
+  // Fight state updated silently: skill is 1 and the GM's fight log did not add a line.
+  const gmAfter = await gm.evaluate(([name]) => {
+    const f = hunterApp.store.get().fight;
+    const row = f.rows.find((r: any) => r.name === name);
+    return { skill: row?.npc?.skill, log: JSON.stringify(f.log) };
+  }, [ALLY_NAME] as const);
+  expect(gmAfter.skill).toBe(1);
+  expect(gmAfter.log).toBe(logBefore);
+
+  // Wait for any sync cycle; player phone holds the exact same fight doc, shows nothing about skill, and saw no skill payload.
+  await player.waitForTimeout(1500);
+  expect(await player.evaluate(() => JSON.stringify(hunterApp.api.sync.doc('fight')))).toBe(docBefore);
+  const playerText = await player.evaluate(() => document.body.innerText);
+  expect(playerText).not.toContain('How well this NPC plays');
+  expect(playerText).not.toContain('Sloppy');
+  expect(playerText).not.toContain('Optimal');
+  expect(sent.filter(b => /setNpcSkill|npcSkill|How well this NPC plays|"npc":/i.test(b))).toEqual([]);
+});

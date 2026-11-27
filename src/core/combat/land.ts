@@ -119,7 +119,7 @@ export const barRate = (target: Body): number =>
  * elite or a boss keeps one, rows.ts `staggerOf`) and a fill of 0 leave it as it was.
  */
 export function barFilled(target: Body, fill: number, now: Tick, R: OpRules): { target: Body; staggered: boolean } {
-  if (target.kind !== 'monster' || !target.stagger || fill <= 0) return { target, staggered: false };
+  if ((target.kind !== 'monster' && target.kind !== 'hunter') || !target.stagger || fill <= 0) return { target, staggered: false };
   const bar = target.stagger;
   if (bar.fill + fill < bar.max) return { target: { ...target, stagger: { ...bar, fill: bar.fill + fill } }, staggered: false };
   const floor = notBefore(target, now, tick(R.fight.staggerCost * R.fight.round));
@@ -132,7 +132,7 @@ export function barFilled(target: Body, fill: number, now: Tick, R: OpRules): { 
  * too); then the bar fills as a hit's does (`barFilled`). A share is no hit, so a weak hit's weight does not reach it.
  */
 export function staggerOp(t: Body, share: number, now: Tick, R: OpRules): { target: Body; fill: number; staggered: boolean } {
-  if (t.kind !== 'monster' || !t.stagger) return { target: t, fill: 0, staggered: false };
+  if ((t.kind !== 'monster' && t.kind !== 'hunter') || !t.stagger) return { target: t, fill: 0, staggered: false };
   const fill = Math.min(R.fight.kit.staggerOpMax, share * barRate(t)) * t.stagger.max * (t.mythic ? R.fight.mythic.staggerTaken : 1);
   return { ...barFilled(t, fill, now, R), fill };
 }

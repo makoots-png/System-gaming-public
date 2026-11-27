@@ -229,7 +229,7 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
     const from = place(r.place.x, r.place.y);
     const extras: Extras = {
       shield: r.shield === null ? null : r.kind === 'monster' || r.hp === undefined ? 1 : Math.min(1, r.shield / Math.max(1, r.hpMax)),
-      stagger: r.kind === 'monster' && r.stagger ? { share: r.stagger.max > 0 ? Math.min(1, r.stagger.fill / r.stagger.max) : 0, staggered: r.stagger.staggered !== null } : null,
+      stagger: (r.kind === 'monster' || (r.kind === 'hunter' && r.hp === undefined)) && r.stagger ? { share: r.stagger.max > 0 ? Math.min(1, r.stagger.fill / r.stagger.max) : 0, staggered: r.stagger.staggered !== null } : null,
       channel: r.channel && { charge: r.channel.charge, max: r.channel.max, state: r.channel.state }, taunted: r.taunt !== null,
       reacted: spent.includes(r.id),
     };

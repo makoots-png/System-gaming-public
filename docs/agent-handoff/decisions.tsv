@@ -859,3 +859,4 @@ ts	phase	decision	why	evidence	result
 2026-11-27T04:01Z	combat	PR 162: Adjust roll uncapped, Force natural 20/1, hidden from players (t191u)
 2026-11-27T04:45Z	combat	PR 163: extraction by rank (rank-driven DCs, no auto-pass from C up; rank-scaled shadow/risen bodies and vessel power; sims >= 75%)
 2026-11-27T05:09Z	story	PR 164: the owner's primer + London history + required Beat 1 card; gates break at 7 days at every rank
+2026-11-27T08:10Z	npc	PR 165: NPC builder units 1-3 and 6 (template, maker, fight rows, gate roster) with Fable review fixes; unit 7779/0; full browser (landK) + touched set; CI 45961831164 8/8

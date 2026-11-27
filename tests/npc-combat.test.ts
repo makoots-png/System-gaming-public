@@ -127,13 +127,20 @@ describe('npcRows and rowIcon', () => {
     expect(flipped.npc).toEqual({ skill: 5 });
     expect(flipped.xp).toBe(xpOf(RULES, 'E', 'normal'));
 
-    // Normal, elite, boss XP scale 1x, 1.5x, 3x.
+    // Normal, elite, boss XP scale 1x, 1.5x, 3x; Elite and Boss foe NPCs carry stagger bars while normal and ally NPCs do not.
     const normalRow = npcRows(foeTpl('normal'), [id('n1')], RULES)[0]!;
     const bossRow = npcRows(foeTpl('boss'), [id('b1')], RULES)[0]!;
+    const eliteAlly = npcRows(foeTpl('elite'), [id('ea1')], RULES, { side: 'party' })[0]!;
     expect(normalRow.xp).toBe(xpOf(RULES, 'C', 'normal'));
     expect(bossRow.xp).toBe(xpOf(RULES, 'C', 'boss'));
     expect(bossRow.xp).toBeGreaterThan(squad[0]!.xp);
     expect(squad[0]!.xp).toBeGreaterThan(normalRow.xp);
+    expect(ally.stagger).toBeNull();
+    expect(eliteAlly.stagger).toBeNull();
+    expect(normalRow.stagger).toBeNull();
+    expect(squad[0]!.stagger).not.toBeNull();
+    expect(bossRow.stagger).not.toBeNull();
+    expect(bossRow.stagger!.max).toBeGreaterThan(squad[0]!.stagger!.max);
   });
 
   test('rowIcon falls back to archetype icon when NPC has no custom icon', () => {
@@ -154,6 +161,12 @@ describe('fight-parse OWN.hunter with npc and xp', () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.rows.find(r => r.id === id('a1'))?.npc).toEqual({ skill: 4 });
     expect(parsed!.rows.find(r => r.id === id('f1'))?.xp).toBe(foe.xp);
+    expect(parsed!.rows.find(r => r.id === id('f1'))?.stagger).toEqual(foe.stagger);
+
+    // Ally NPC carrying a stagger bar is refused.
+    const allyStagger = JSON.parse(JSON.stringify(fought));
+    allyStagger.rows[1].stagger = { fill: 0, max: 50, hit: 20 };
+    expect(parseFight(allyStagger, RULES)).toBeNull();
 
     // Non-null holder on an NPC row is refused.
     const badHolder = JSON.parse(JSON.stringify(fought));
@@ -562,12 +575,14 @@ describe('autoTurnOf admits monsters and NPCs, refuses player hunters', () => {
     expect(isAutoRow(onAlly.rows.find(r => r.id === id('f1'))!)).toBe(true);
     expect(isAutoRow(onAlly.rows.find(r => r.id === id('h1'))!)).toBe(false);
 
-    const allyPlan = autoTurnOf(onAlly, id('a1'), RULES, onAlly.now);
+    const allyPlan = autoTurnOf(onAlly, id('a1'), RULES, onAlly.now, () => 0.5);
     expect(allyPlan.kind).not.toBe('refused');
+    expect(autoTurnOf(onAlly, id('a1'), RULES, onAlly.now)).toEqual({ kind: 'refused', reason: 'needsRandom' });
 
     const onFoe = play(add(h, ally, foe), start([id('f1'), 20], [id('h1'), 10], [id('a1'), 5])) as Running;
-    const foePlan = autoTurnOf(onFoe, id('f1'), RULES, onFoe.now);
+    const foePlan = autoTurnOf(onFoe, id('f1'), RULES, onFoe.now, () => 0.5);
     expect(foePlan.kind).not.toBe('refused');
+    expect(autoTurnOf(onFoe, id('f1'), RULES, onFoe.now)).toEqual({ kind: 'refused', reason: 'needsRandom' });
 
     const onHunter = play(add(h, ally, foe), start([id('h1'), 20], [id('a1'), 10], [id('f1'), 5])) as Running;
     expect(autoTurnOf(onHunter, id('h1'), RULES, onHunter.now)).toEqual({ kind: 'refused', reason: 'notMonster' });

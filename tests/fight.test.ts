@@ -2628,14 +2628,48 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
     const o = { by: 'd-gm' as DeviceId, at: '2026-11-21T10:00:00.000Z', was: null, keyOf: (h: string) => h as unknown as SheetKey };
     expect(JSON.stringify(fightDoc(fudged, RULES, o))).toBe(JSON.stringify(fightDoc(plain, RULES, o)));
   });
+
+  test('setNpcSkill updates an NPC silently in setup and running with no log line and identical fightDoc', () => {
+    const npcRow: NewRow = { ...(row('N', 'party') as Extract<NewRow, { kind: 'hunter' }>), npc: { skill: 3 } };
+    const s0 = play(add(npcRow, row('A', 'party'), row('M', 'foe'))).fight!;
+    expect(s0.phase).toBe('setup');
+    const logLen0 = s0.log.length;
+
+    // Setup: valid change updates skill silently, same value is a no-op, invalid rows/values refused.
+    const s1 = reduce(s0, { type: 'setNpcSkill', id: id('N'), skill: 1 }, ctx);
+    expect(s1.effects).toEqual([]);
+    expect(body(s1.fight, 'N').npc).toEqual({ skill: 1 });
+    expect(s1.fight!.log.length).toBe(logLen0);
+    expect(reduce(s1.fight, { type: 'setNpcSkill', id: id('N'), skill: 1 }, ctx).fight).toBe(s1.fight);
+    refuses(s0, { type: 'setNpcSkill', id: id('ghost'), skill: 2 }, 'unknown');
+    refuses(s0, { type: 'setNpcSkill', id: id('A'), skill: 2 }, 'notNpc');
+    refuses(s0, { type: 'setNpcSkill', id: id('M'), skill: 2 }, 'notNpc');
+    refuses(s0, { type: 'setNpcSkill', id: id('N'), skill: 0 as never }, 'npcSkillValue');
+    refuses(s0, { type: 'setNpcSkill', id: id('N'), skill: 6 as never }, 'npcSkillValue');
+    refuses(s0, { type: 'setNpcSkill', id: id('N'), skill: 2.5 as never }, 'npcSkillValue');
+
+    // Running: updates skill silently, leaves fight log and player fightDoc byte-for-byte identical.
+    const r0 = running(reduce(s1.fight, start(['N', 20], ['A', 15], ['M', 10]), ctx));
+    const o = { by: 'd-gm' as DeviceId, at: '2026-11-27T01:00:00.000Z', was: null, keyOf: (h: string) => h as unknown as SheetKey };
+    const docBefore = JSON.stringify(fightDoc(r0, RULES, o));
+    const r1 = reduce(r0, { type: 'setNpcSkill', id: id('N'), skill: 5 }, ctx);
+    expect(r1.effects).toEqual([]);
+    expect(body(r1.fight, 'N').npc).toEqual({ skill: 5 });
+    expect(r1.fight!.log).toEqual(r0.log);
+    expect(JSON.stringify(fightDoc(r1.fight!, RULES, o))).toBe(docBefore);
+
+    // Ended: refused notNow.
+    const e0 = reduce(r1.fight, { type: 'end' }, ctx).fight!;
+    refuses(e0, { type: 'setNpcSkill', id: id('N'), skill: 2 }, 'notNow');
+  });
 });
 
 describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
   const ALL: Record<CommandType, true> = {
     add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
-    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, adjustRoll: true, fudge: true, mythic: true, dodge: true, end: true, clear: true,
+    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, adjustRoll: true, fudge: true, setNpcSkill: true, mythic: true, dodge: true, end: true, clear: true,
   };
-  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'adjustRoll', 'fudge', 'end', 'clear'];
+  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'adjustRoll', 'fudge', 'setNpcSkill', 'end', 'clear'];
   const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start' && t !== 'dodge');
   const CHARGE = ability('blast', 'charge', '10 * (1 + charge)', { channel: { growth: 'linear', max: 5 }, range: tiles(20) });
   const owing = play(add(row('A', 'party', { abilities: [HIT, CHARGE], statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]),

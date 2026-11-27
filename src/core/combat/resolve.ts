@@ -289,8 +289,7 @@ const threatOfHit = (struck: number, dealt: number, R: ResolveRules): number =>
 
 // Rule 16: a weak hit fills the bar 1.5 times its damage, at the bar's rate; the bar fills where every fill does (land.ts `barFilled`).
 function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { target: Body; fill: number; staggered: boolean } {
-  // only a monster keeps a bar (effect-ops.ts `Body`)
-  if (target.kind !== 'monster' || !target.stagger || damage <= 0) return { target, fill: 0, staggered: false };
+  if (!target.stagger || damage <= 0) return { target, fill: 0, staggered: false };
   const fill = damage * (damage < R.fight.staggerWeakBelow * target.stagger.hit ? R.fight.staggerWeak : 1) * barRate(target);
   return { ...barFilled(target, fill, now, R), fill };
 }

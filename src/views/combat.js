@@ -50,7 +50,8 @@ import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootMoreLine, lootOff
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
-import { NPC_BOUNDS, NPC_SIDES, npcXp } from '../core/registry/npcs.ts';
+import { NPC_BOUNDS, NPC_SIDES, clampNpcSkill, npcXp } from '../core/registry/npcs.ts';
+import { npcSkillSliderHtml, syncNpcSkillControl, wireNpcSkillLive } from './difficulty-control.js';
 import { itemAbilityId, itemOfAbility } from '../core/registry/abilities.ts';
 import { newRewards } from '../core/rewards.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -411,6 +412,8 @@ export function register(app) {
   }
   /** The dice `n` asks for a use by row `by` of fight `f`, drawn on this phone with the fight's weights (fudge.ts `weightsFor`). */
   const drawnFor = (f, by, n) => rollNeeds(n, cryptoRandom, weightsFor(f, by, n));
+  /** One automatic turn plan for monster or NPC `by`, passing this phone's `cryptoRandom` for NPC skill modulation. */
+  const plannedFor = (f, by, at) => autoTurnOf(f, by, rules(), at, cryptoRandom);
   /** `row` uses `a` at `aim` (a row id or a tile): the dice `needs` asks for and the fight's `act` (an item leaves the bag in its write). */
   function useAt(row, a, aim) {
     const g = fight(), u = rowOf(g, row.id); if (!running(g) || !u) return;
@@ -469,7 +472,7 @@ export function register(app) {
       if (!ok) return;
     }
     const g = fight();
-    const plan = autoTurnOf(g, by, rules(), at);
+    const plan = plannedFor(g, by, at);
     if (plan.kind === 'refused') { toast(REFUSAL_WORDS[plan.reason], 'warning'); return; }
     if (!running(g)) return;
     const cmd = plan.kind === 'ready' ? plan.command : plan.command(drawnFor(g, plan.by, plan.needs));
@@ -874,6 +877,7 @@ export function register(app) {
 .cmb-fudge{display:flex;flex-direction:column;gap:6px}.cmb-fudge[hidden]{display:none}.cmb-fudge .cmb-step{justify-content:space-between}.cmb-fudge .cmb-step .lbl{flex:1 1 auto;min-width:0}
 .cmb-fdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:6px;vertical-align:middle}
 .cmb-fz{display:flex;flex-direction:column;gap:6px}.cmb-fz .seg>button{min-width:0}
+.cmb-npcskill:empty{display:none}.cmb-nskill{flex:1 1 100%;min-width:0}.cmb-nskill[hidden]{display:none}
 .cmb-adj{display:flex;flex-direction:column;gap:4px}.cmb-adj-box{display:flex;flex-direction:column;gap:6px}.cmb-adj .cmb-step{flex-wrap:wrap;justify-content:space-between;width:100%}.cmb-adj .cmb-step .lbl{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.cmb-adj .cmb-step-btns{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}.cmb-adj-in{width:4.5em;min-height:var(--control-h);padding:4px 6px;text-align:center;font-family:var(--font-mono);color:var(--ice)}.cmb-adj .seg>button{min-width:0}.cmb-adj .cmb-hint{margin:0;font-size:12px;color:var(--muted)}
 .cmb-eyes{display:flex;flex-direction:column;gap:4px}.cmb-eyes .seg>button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win.cmb-mapmode .cmb-log{max-height:none}
@@ -1044,6 +1048,7 @@ export function register(app) {
       <div class="slot" data-part="actions"></div>
       <div class="lbl">Statuses</div><div class="cmb-conds" data-part="conds"></div><ul class="cmb-fx" data-part="fx" data-attr="hidden:noFx"></ul>
       <div class="cmb-line"><button type="button" data-fk="cforge" data-cforge title="Add status (S)" aria-keyshortcuts="s">+ Status</button></div>
+      <div class="slot cmb-npcskill" data-part="npcSkillBox"></div>
       <div class="slot cmb-fz" data-part="fudgeBox"></div>
       <div class="slot cmb-adj" data-part="adjustRollBox"></div>
       <div class="cmb-line"><span class="slot" data-part="lifeAct"></span>
@@ -1139,6 +1144,7 @@ export function register(app) {
         ...bloodExtractors.map(x => `<button type="button" data-fk="extract-blood-${esc(x.row.id)}" data-extract-blood="${esc(x.row.id)}">${bloodExtractors.length > 1 ? `${esc(x.label)} (${esc(x.h.name)})` : esc(x.label)}</button>`),
       ].join(''),
       removeLabel: `Remove ${r.name} from the fight`,
+      npcSkillBox: npcSkillCard(f, r, R),
       fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k), adjustRollBox: adjustRollCard(r, k),
     };
   }
@@ -1245,6 +1251,7 @@ export function register(app) {
           <label class="field grow"><span class="lbl">NPC</span><select data-nsel></select></label>
           <label class="field md"><span class="lbl">Fights for</span><select data-nside><option value="party">Hunters (ally)</option><option value="foe">Foes</option></select></label>
           <label class="field sm"><span class="lbl">Count</span><input type="number" min="1" max="${NPC_BOUNDS.copies}" value="1" inputmode="numeric" data-ncount></label>
+          <div class="cmb-nskill" data-nskillbox hidden>${npcSkillSliderHtml({ id: 'cmb-add-npc-skill', name: 'npc-skill', skill: rules().fight.npc.defaultSkill, R: rules() })}</div>
           <button type="button" data-addn>Add NPC to fight</button></div></fieldset>
         <fieldset><legend>Summoned shadows</legend><div class="add-row flush">
           <label class="field grow"><span class="lbl">Shadow</span><select data-ssel></select></label>
@@ -1275,10 +1282,22 @@ export function register(app) {
         }
       }
     });
+    wireNpcSkillLive(el, rules);
     el.addEventListener('change', ev => {
       const t = ev.target; if (!canRun()) return;
+      if (t.matches('[data-npc-skill-row]')) {
+        const id = t.dataset.npcSkillRow, target = id ? rowOf(fight(), id) : null;
+        const step = clampNpcSkill(Number(t.value), clampNpcSkill(rules().fight.npc.defaultSkill, 3));
+        if (target && target.kind === 'hunter' && target.npc && target.npc.skill !== step) {
+          send({ type: 'setNpcSkill', id: target.id, skill: step });
+        }
+      }
       if (t.matches('[data-target]')) { const r = focusRow(fight()); if (r) picks.set(r.id, t.value); render(); }
-      if (t.matches('[data-nsel]')) { const npc = A().npcs.get(t.value), nside = $q('[data-nside]'); if (npc && nside) nside.value = npc.defaultSide; }
+      if (t.matches('[data-nsel]')) {
+        const npc = A().npcs.get(t.value), nside = $q('[data-nside]'), nskillbox = $q('[data-nskillbox]');
+        if (npc && nside) nside.value = npc.defaultSide;
+        if (npc && nskillbox) syncNpcSkillControl(nskillbox, npc.skill, rules());
+      }
       if (t.matches('[data-garm-on]')) { const f = fight(), r = focusRow(f), target = rowOf(f, t.value); if (r && r.armed && target) armRow(r, r.armed.ability, target.id); }
       if (t.matches('[data-adjust-input]')) {
         const id = t.dataset.adjustInput, target = id ? rowOf(fight(), id) : null;
@@ -1400,9 +1419,10 @@ export function register(app) {
       if (b.hasAttribute('data-addn')) {
         const npc = A().npcs.get(val('[data-nsel]')); if (!npc) return;
         const side = oneOf(val('[data-nside]'), NPC_SIDES, npc.defaultSide);
+        const skill = clampNpcSkill(Number(val('#cmb-add-npc-skill')), npc.skill);
         const n = clamp(int(val('[data-ncount]'), 1), 1, NPC_BOUNDS.copies);
         const ids = Array.from({ length: n }, newId);
-        const joins = npcRows(npc, ids, rules(), { side }).map(row => ({ row, monsterId: null }));
+        const joins = npcRows(npc, ids, rules(), { side, skill }).map(row => ({ row, monsterId: null }));
         if (add(joins)) toast(`${n > 1 ? `${n} × ` : ''}${npc.name} added.`);
         return;
       }
@@ -1552,6 +1572,15 @@ export function register(app) {
     return `<div class="cmb-fgroup">${weightStepper(`Fudge on ${r.name}'s rolls`, k.fudgeOwn, `data-fudge-row="${esc(r.id)}"`, r.name)}</div>`
       + `<div class="cmb-x"><span>Force ${esc(r.name)}'s next d20</span><div class="seg" role="group" aria-label="Force ${esc(r.name)}'s next d20">${face.map(([v, l, fk]) =>
         `<button type="button" data-fk="fz-${fk}" data-fudge-force="${esc(r.id)}" data-face="${v ?? ''}" aria-pressed="${k.forced === v}">${l}</button>`).join('')}</div></div>`;
+  }
+  /**
+   * The NPC card's GM-only "How well this NPC plays" skill slider: hidden on non-NPCs and ended fights.
+   * Markup stays independent of `r.npc.skill` so `bind` never destroys the range input during a drag; `render` syncs the
+   * live value in place via `syncNpcSkillControl`.
+   */
+  function npcSkillCard(f, r, R) {
+    if (!f || f.phase === 'ended' || r.kind !== 'hunter' || !r.npc) return '';
+    return npcSkillSliderHtml({ id: 'cmb-card-npc-skill', name: 'card-npc-skill', skill: R.fight.npc.defaultSkill, R, fk: 'npc-skill', rowId: r.id });
   }
   /** The corpse card's GM-only roll adjustment and force controls: shown on fallen monsters in GM view. */
   function adjustRollCard(r, k) {
@@ -1715,9 +1744,12 @@ export function register(app) {
       if (nsel) {
         const prev = nsel.value;
         fillSelect(nsel, A().npcs.list().map(x => [x.id, `${x.name} (${x.rank}${x.tier === 'normal' ? '' : ` ${x.tier}`}, ${x.defaultSide === 'party' ? 'ally' : 'foe'})`]), 'No saved NPCs');
+        const nskillbox = $q('[data-nskillbox]');
+        if (nskillbox) nskillbox.hidden = !A().npcs.list().length;
         if (nsel.value && nsel.value !== prev) {
           const picked = A().npcs.get(nsel.value), nside = $q('[data-nside]');
           if (picked && nside) nside.value = picked.defaultSide;
+          if (picked && nskillbox) syncNpcSkillControl(nskillbox, picked.skill, rules());
         }
       }
       if (ssel) {
@@ -1783,6 +1815,10 @@ export function register(app) {
           if (amt) amt.value = amounts.get(fc.id) ?? '';
           const pipsWas = card.dataset.cid === fc.id ? Number(card.dataset.charge || -1) : -1;
           bind(card, cardDesc(f, fc, !gm));
+          if (gm && f.phase !== 'ended' && fc.kind === 'hunter' && fc.npc) {
+            const ctl = card.querySelector('[data-npc-skill-ctl]'), inp = ctl && ctl.querySelector('[data-npc-skill-row]');
+            if (ctl && inp && !inp.matches(':active')) syncNpcSkillControl(ctl, fc.npc.skill, rules());
+          }
           // a stacking status's count counts to its new value from the one shown last
           for (const n of card.querySelectorAll('[data-stacks]')) void motion.numberTo(n, Number(n.dataset.stacks), String, `stk:${n.dataset.sk}`);
           const pips = card.querySelector('.cmb-pips'), charge = pips ? Number(pips.dataset.charge) : -1;

@@ -941,6 +941,7 @@ const SPEC = {
     npc: {
       defaultSkill: whole(3, 1, 5, 'default NPC skill step, from 1 (Sloppy) to 5 (Optimal)'),
       abilities: whole(4, 0, 11, 'maximum custom abilities on one NPC template, from 0 to 11'),
+      offTargetPenalty: real(0.2, 0, 2, 'score penalty subtracted from off-target attacks in NPC skill selection, from 0 (none) to 2'),
       allyTweak: {
         hp: of(1.08, NPC_FACTOR),
         dealt: of(0.93, NPC_FACTOR),

@@ -13,7 +13,13 @@ import { weightsFor } from '../src/core/combat/fudge.ts';
 import { drawNeeds, seededSource } from '../src/core/draws.ts';
 import { mythicStepped } from '../src/core/combat/mythic.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
-import { autoMonsterTurn, sensible } from '../src/core/combat/policy.ts';
+import { autoMonsterTurn, autoTurnOf, sensible, skilled } from '../src/core/combat/policy.ts';
+import { playBegin, playStep, policySource } from '../src/core/combat/play.ts';
+import type { Play } from '../src/core/combat/play.ts';
+import { newNpc } from '../src/core/registry/npcs.ts';
+import type { NpcSkill } from '../src/core/registry/npcs.ts';
+import { npcRows } from '../src/core/combat/rows.ts';
+import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
 import { openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
 import type { Place, Terrain } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
@@ -447,5 +453,217 @@ describe('policy Wave 2 PR 2 updates (timed summon lane, corpse aim, and kitOf/s
     const f = begun('H', h, foe);
     const choice = sensible(f, body(f, 'H'), ON);
     expect(choice.type === 'act' && choice.ability.id).toBe(finisher.id);
+  });
+});
+
+describe('skilled NPC policy: determinism, fudge isolation, dice-stream isolation, and slider curve (NPC unit 4 Row 5)', () => {
+  const N = combatantId('N'), A = combatantId('A'), M1 = combatantId('M1'), M2 = combatantId('M2');
+  const pf = (src: string) => { const r = parseFormula(src, ON); if (!r.ok) throw new Error(r.error); return r.formula; };
+  const weakHit: Ability = {
+    ...abilityOf('strike', { id: abilityId('poke'), name: 'Poke', range: tiles(6), shape: { kind: 'touch', reach: tiles(6) } }, ON),
+    effect: { type: 'physical', by: 'hand', formula: pf('4') },
+  };
+  const strongHit: Ability = {
+    ...abilityOf('strike', { id: abilityId('smash'), name: 'Smash', range: tiles(6), shape: { kind: 'touch', reach: tiles(6) } }, ON),
+    effect: { type: 'physical', by: 'hand', formula: pf('24') },
+  };
+  const heal: Ability = {
+    ...abilityOf('support', { id: abilityId('mend'), name: 'Mend', range: tiles(6), shape: { kind: 'touch', reach: tiles(6) } }, ON),
+    effect: { type: 'heal', by: 'hand', formula: pf('20') },
+  };
+  const npcWith = (skill: NpcSkill, extra: readonly Ability[] = [strongHit, weakHit, heal]): NewRow => {
+    const base = npcRows(newNpc({ name: 'Mira', rank: 'C', archetype: 'caster', defaultSide: 'party', skill }), [N], ON)[0]!;
+    return { ...base, abilities: [...extra], place: place(5, 5) };
+  };
+  const brute = (id: ReturnType<typeof combatantId>, at: Place): NewRow => ({
+    ...monsterRows(statBlock(ON, 'C', { name: 'Goblin', archetype: 'brute', kind: 'normal' }), [id], ON)[0]!,
+    place: at,
+  });
+
+  test('same (fight, policySource) yields identical choices across repeated calls', () => {
+    const f = begun('N', npcWith(1), atHp(party('bruiser', 'A', place(5, 4)), 10), brute(M1, place(5, 6)), brute(M2, place(5, 7)));
+    const me = body(f, 'N');
+    const best = sensible(f, me, ON);
+    for (let step = 0; step < 30; step++) {
+      const c1 = skilled(f, me, ON, best, policySource(98765, step));
+      const c2 = skilled(f, me, ON, best, policySource(98765, step));
+      expect(c1).toEqual(c2);
+    }
+  });
+
+  test('extreme f.fudge yields 0 change in skilled choices', () => {
+    const base = begun('N', npcWith(1), atHp(party('bruiser', 'A', place(5, 4)), 10), brute(M1, place(5, 6)), brute(M2, place(5, 7)));
+    let fudged: Running = sent(base, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 19 } });
+    fudged = sent(fudged, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'foe' }, n: -19 } });
+    fudged = sent(fudged, { type: 'fudge', set: { kind: 'force', id: N, face: 20 } });
+    fudged = sent(fudged, { type: 'fudge', set: { kind: 'force', id: M1, face: 1 } });
+
+    const meBase = body(base, 'N'), meFudged = body(fudged, 'N');
+    const bestBase = sensible(base, meBase, ON), bestFudged = sensible(fudged, meFudged, ON);
+    expect(bestFudged).toEqual(bestBase);
+    for (let step = 0; step < 50; step++) {
+      expect(skilled(fudged, meFudged, ON, bestFudged, policySource(4242, step)))
+        .toEqual(skilled(base, meBase, ON, bestBase, policySource(4242, step)));
+    }
+  });
+
+  test('moving skill 5 -> 1 leaves weightsFor and Play.source untouched on identical dice needs', () => {
+    // Only damaging moves (no heal skip) so both skill 5 and skill 1 pick a damaging attack with identical dice needs (0 dice terms, 1 react d20).
+    const setup5 = reduce(null, {
+      type: 'add', fightId: fightId('f-iso-5'),
+      rows: [npcWith(5, [strongHit, weakHit]), brute(M1, place(5, 6)), brute(M2, place(5, 7))],
+      openings: [],
+    }, ctx).fight!;
+    const s5 = sent(setup5, { type: 'start', openings: [{ id: N, d20: 20, tie: 3 }, { id: M1, d20: 1, tie: 2 }, { id: M2, d20: 1, tie: 1 }] });
+    const s1 = sent(s5, { type: 'setNpcSkill', id: N, skill: 1 });
+
+    // weightsFor is identical between skill 5 and skill 1 (even under fudge).
+    const w5f = sent(s5, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'row', id: N }, n: 3 } });
+    const w1f = sent(s1, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'row', id: N }, n: 3 } });
+    const sampleNeeds = { dice: { [M1]: [] }, react: [M1], refund: false };
+    expect(weightsFor(w1f, N, sampleNeeds)).toEqual(weightsFor(w5f, N, sampleNeeds));
+
+    // Stepping playStep at skill 5 vs skill 1 leaves the dice stream state (Play.source) identical when both roll 1 reaction die,
+    // and leaves Play.source completely unchanged on a non-rolling move/pass.
+    const p5 = playBegin(s5, 777, ON).play as Play & { readonly fight: Running };
+    const p1 = playBegin(s1, 777, ON).play as Play & { readonly fight: Running };
+    expect(p1.source).toBe(p5.source);
+    const step5 = playStep(p5, () => sensible, { capRounds: 40, endAtRounds: null }, ON);
+    const step1 = playStep(p1, () => sensible, { capRounds: 40, endAtRounds: null }, ON);
+    expect(step1.play.source, 'skilled forked policySource never advances Play.source').toBe(step5.play.source);
+    // And verify Play.source is completely unchanged on a non-rolling move step.
+    const fMove = begun('N', npcWith(1, [strongHit]), brute(M1, place(5, 16)));
+    const pMove = playBegin(fMove, 777, ON).play as Play & { readonly fight: Running };
+    const stepMove = playStep(pMove, () => sensible, { capRounds: 40, endAtRounds: null }, ON);
+    expect(stepMove.choice?.type).toBe('move');
+    expect(stepMove.play.source, 'move step leaves Play.source untouched').toBe(pMove.source);
+    // And verify skill 1 actually differs from skill 5 across seeds on this choice.
+    const diffs = Array.from({ length: 40 }, (_, k) =>
+      JSON.stringify(skilled(s1, body(s1, 'N'), ON, sensible(s1, body(s1, 'N'), ON), policySource(k, k)))
+      !== JSON.stringify(skilled(s5, body(s5, 'N'), ON, sensible(s5, body(s5, 'N'), ON), policySource(k, k))),
+    ).filter(Boolean).length;
+    expect(diffs).toBeGreaterThan(0);
+  });
+
+  test('skill 5 returns best without drawing; Sharp (4) never skips heals or omen answers; Sloppy (1) skips ~65% and softens hits; non-act choices stay unchanged', () => {
+    let drawn = 0;
+    const counting = () => { drawn++; return 0.01; };
+    const f5 = begun('N', npcWith(5), atHp(party('bruiser', 'A', place(5, 4)), 10), brute(M1, place(5, 6)));
+    const b5 = sensible(f5, body(f5, 'N'), ON);
+    expect(b5.type === 'act' && b5.ability.id).toBe(heal.id);
+    expect(skilled(f5, body(f5, 'N'), ON, b5, counting)).toBe(b5);
+    expect(drawn, 'skill 5 never calls random').toBe(0);
+
+    // Sharp (skill 4) has skip = 0 -> never skips heal even at u = 0, and never skips stun omen answer.
+    const f4 = sent(f5, { type: 'setNpcSkill', id: N, skill: 4 });
+    expect(skilled(f4, body(f4, 'N'), ON, b5, () => 0)).toBe(b5);
+    const stun = SKILL_ABILITIES.Stun(ON)!;
+    const fOmen = omened(begun('N', npcWith(4, [strongHit, weakHit, stun]), mythic('the-fourth-rider', place(5, 6)), party('cannon', 'C', place(12, 5))), 'named', 'C');
+    const bOmen = sensible(fOmen, body(fOmen, 'N'), ON);
+    expect(bOmen.type === 'act' && bOmen.ability.id).toBe(stun.id);
+    expect(skilled(fOmen, body(fOmen, 'N'), ON, bOmen, () => 0)).toBe(bOmen);
+
+    // Sloppy (skill 1) has skip = 0.65 -> u < 0.65 skips heal and falls through to hits; u >= 0.65 keeps heal.
+    const f1 = sent(f5, { type: 'setNpcSkill', id: N, skill: 1 });
+    expect(skilled(f1, body(f1, 'N'), ON, b5, () => 0.70)).toBe(b5);
+    const skipped = skilled(f1, body(f1, 'N'), ON, b5, () => 0.10);
+    expect(skipped.type === 'act' && skipped.ability.id !== heal.id).toBe(true);
+
+    // Non-act choices (move, pass, release) are never altered even at skill 1.
+    const moveChoice = { type: 'move' as const, to: place(5, 4) };
+    expect(skilled(f1, body(f1, 'N'), ON, moveChoice, () => 0)).toBe(moveChoice);
+    expect(skilled(f1, body(f1, 'N'), ON, { type: 'pass' }, () => 0)).toEqual({ type: 'pass' });
+
+    // autoTurnOf passes random into skilled for NPCs and refuses when random is omitted.
+    expect(autoTurnOf(f1, N, ON, f1.now)).toEqual({ kind: 'refused', reason: 'needsRandom' });
+    const planSkipped = autoTurnOf(f1, N, ON, f1.now, () => 0.05);
+    expect(planSkipped.kind !== 'refused' && planSkipped.choice.type === 'act' && planSkipped.choice.ability.id !== heal.id).toBe(true);
+    const planKept = autoTurnOf(f1, N, ON, f1.now, () => 0.90);
+    expect(planKept.kind !== 'refused' && planKept.choice.type === 'act' && planKept.choice.ability.id === heal.id).toBe(true);
+  });
+
+  test('skilled anchors on best target with offTargetPenalty so Sharp rarely goes off-target and softmax weights rise with skill', () => {
+    const M3 = combatantId('M3');
+    // One ranged attack and three foes in range: M1 is nearest (`best`), M2 and M3 are off-target with identical damage.
+    const fBase = begun('N', npcWith(5, [strongHit]), brute(M1, place(5, 6)), brute(M2, place(5, 7)), brute(M3, place(5, 8)));
+    const rateOnTarget = (skill: NpcSkill, R = ON): number => {
+      const f = skill === 5 ? fBase : sent(fBase, { type: 'setNpcSkill', id: N, skill });
+      const me = body(f, 'N');
+      const best = sensible(f, me, R);
+      let onBest = 0;
+      for (let i = 0; i < 400; i++) {
+        const c = skilled(f, me, R, best, policySource(12345, i));
+        if (c.type === 'act' && c.aim === M1) onBest++;
+      }
+      return onBest / 400;
+    };
+    const r5 = rateOnTarget(5);
+    const r4 = rateOnTarget(4);
+    const r3 = rateOnTarget(3);
+    const r2 = rateOnTarget(2);
+    const r1 = rateOnTarget(1);
+    expect(r5).toBe(1);
+    expect(r4, 'Sharp stays on target > 80% (rarely off-target)').toBeGreaterThan(0.80);
+    expect(r3).toBeLessThan(r4);
+    expect(r2).toBeLessThan(r3);
+    expect(r1).toBeLessThan(r2);
+    // Setting offTargetPenalty = 0 collapses Sharp back toward uniform (~1/3) across equal-damage targets.
+    const noPenalty = { ...ON, fight: { ...ON.fight, npc: { ...ON.fight.npc, offTargetPenalty: 0 } } };
+    expect(rateOnTarget(4, noPenalty)).toBeLessThan(0.5);
+
+    // On a single target with strongHit (24) vs weakHit (4), softmax always favors strongHit and tightens with skill.
+    const fSingle = begun('N', npcWith(5, [strongHit, weakHit]), brute(M1, place(5, 6)));
+    const strongRate = (skill: NpcSkill): number => {
+      const f = skill === 5 ? fSingle : sent(fSingle, { type: 'setNpcSkill', id: N, skill });
+      const me = body(f, 'N'), best = sensible(f, me, ON);
+      let top = 0;
+      for (let i = 0; i < 400; i++) {
+        const c = skilled(f, me, ON, best, policySource(54321, i));
+        if (c.type === 'act' && c.ability.id === strongHit.id) top++;
+      }
+      return top / 400;
+    };
+    const s1 = strongRate(1), s2 = strongRate(2), s3 = strongRate(3), s4 = strongRate(4), s5 = strongRate(5);
+    expect(s1).toBeGreaterThan(0.5);
+    expect(s2).toBeGreaterThan(s1);
+    expect(s3).toBeGreaterThan(s2);
+    expect(s4).toBeGreaterThanOrEqual(s3);
+    expect(s5).toBe(1);
+  });
+
+  test('Sharp never abandons a damaging omen answer on a mythic when adds are on the map, while Sloppy skips it on skip', () => {
+    // Damaging stun strike cancels The Fourth Rider's Named in the Book (`interrupt` by `hold`), while adds stand closer.
+    const damagingStun: Ability = {
+      ...abilityOf('strike', { id: abilityId('concussive-shot'), name: 'Concussive Shot', range: tiles(8), shape: { kind: 'touch', reach: tiles(8) } }, ON),
+      effect: { type: 'physical', by: 'hand', formula: pf('12') },
+      ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: ON.conditions.stunned, duration: tick(ON.fight.round) }],
+    };
+    const f4 = omened(
+      begun(
+        'N',
+        npcWith(4, [strongHit, damagingStun]),
+        mythic('the-fourth-rider', place(5, 10)),
+        brute(M1, place(5, 6)),
+        brute(M2, place(5, 7)),
+        party('cannon', 'C', place(12, 5)),
+      ),
+      'named',
+      'C',
+    );
+    const me4 = body(f4, 'N');
+    const best = sensible(f4, me4, ON);
+    expect(best.type === 'act' && best.ability.id === damagingStun.id && best.aim === X).toBe(true);
+
+    // Sharp (skill 4, skip = 0) never abandons the damaging omen answer for an add, across every draw.
+    for (let i = 0; i < 100; i++) {
+      expect(skilled(f4, me4, ON, best, policySource(777, i))).toBe(best);
+    }
+
+    // Sloppy (skill 1, skip = 0.65) keeps it when u >= 0.65 and skips it to hit an add when u < 0.65.
+    const f1 = sent(f4, { type: 'setNpcSkill', id: N, skill: 1 });
+    const me1 = body(f1, 'N');
+    expect(skilled(f1, me1, ON, best, () => 0.80)).toBe(best);
+    const skipped = skilled(f1, me1, ON, best, () => 0.05);
+    expect(skipped.type === 'act' && skipped.aim !== X).toBe(true);
   });
 });

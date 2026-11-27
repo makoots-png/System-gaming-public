@@ -30,6 +30,8 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   ownerOut: 'Add the hunter first, then their shadows.',
   shadowsIn: 'Remove this hunter\'s shadows first.',
   shadowCap: 'This hunter already has the maximum shadows in the fight.',
+  notNpc: 'Only an NPC has a play skill.',
+  npcSkillValue: 'NPC play skill must be a whole number from 1 to 5.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */

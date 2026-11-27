@@ -22,7 +22,7 @@ import type { Random } from '../core/gates/spawn.ts';
 export type { Random };
 
 const buffer = new Uint32Array(1);
-/** The default source: 32 random bits from the browser's generator. */
+/** The default source: 32 random bits from the browser's generator (dice draws and NPC policy modulation). */
 export const cryptoRandom: Random = () => { crypto.getRandomValues(buffer); return buffer[0]! / 4294967296; };
 /** A seed for the odds engine (src/core/combat/odds.ts): 32 random bits. */
 export const oddsSeed = (random: Random = cryptoRandom): number => Math.floor(random() * 4294967296) >>> 0;

@@ -38,6 +38,7 @@ import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
 import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseStep } from './rise.ts';
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
+import { NPC_SKILLS } from '../registry/npcs.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
 import { adjustRollStep, bloodExtractionCheck, clearRollAdjust, extractionCheck, plainRollCheckText, rollCheckText, validExtractRoll, validForcedFace, validRollAdjust } from './roll-adjust.ts';
@@ -968,25 +969,39 @@ function adjustRoll<F extends Fight>(f: F, cmd: Extract<Command, { type: 'adjust
   return done(next === u ? f : withRow(f, next), []);
 }
 
+/**
+ * The GM's hidden play skill for NPC `id` (1 Sloppy to 5 Optimal): updates `row.npc.skill` silently with no time
+ * passed and no log line. Allowed in setup and running (outside dodging). Setting the same value leaves `f` as it was,
+ * unrefused, so a replay or repeat drag changes nothing.
+ */
+function setNpcSkill<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'setNpcSkill' }>, _ctx: Ctx): Result {
+  const u = rowOf(f, cmd.id);
+  if (!u) return refused(f, 'unknown');
+  if (u.kind !== 'hunter' || !u.npc) return refused(f, 'notNpc');
+  if (!Number.isInteger(cmd.skill) || !NPC_SKILLS.includes(cmd.skill)) return refused(f, 'npcSkillValue');
+  if (u.npc.skill === cmd.skill) return done(f, []);
+  return done(withRow(f, { ...u, npc: { ...u.npc, skill: cmd.skill } }), []);
+}
+
 // ── the table ──
 const ACTING: Row<'running'> = {
   add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, revive, status, settle: settleDue,
-  paint, zoneAdd, zoneRemove, resize, arm, extract, adjustRoll, fudge, mythic, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+  paint, zoneAdd, zoneRemove, resize, arm, extract, adjustRoll, fudge, setNpcSkill, mythic, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const DODGING: Row<'running'> = {
   add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-  revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, adjustRoll: null, fudge: null, mythic: null,
+  revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, adjustRoll: null, fudge: null, setNpcSkill: null, mythic: null,
   dodge: pickDodge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, adjustRoll: null, fudge: null, mythic: null, dodge: null, end: null, clear: null,
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, adjustRoll: null, fudge: null, setNpcSkill: null, mythic: null, dodge: null, end: null, clear: null,
   },
   setup: {
     add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, revive, status,
     // a mythic's script starts when the fight does, so the GM's hand on it waits for the start
-    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, adjustRoll, fudge, mythic: null, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, adjustRoll, fudge, setNpcSkill, mythic: null, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   // a running fight's four states (`runningState`): a hunter picks its dodge tile, its turn's actor acts, the fight owes dice first, or a mythic lands its omen
   running: {
@@ -1002,7 +1017,7 @@ const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { read
   // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, adjustRoll, fudge: null, mythic: null, dodge: null, end: null, clear: () => done(null, []),
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, adjustRoll, fudge: null, setNpcSkill: null, mythic: null, dodge: null, end: null, clear: () => done(null, []),
   },
 };
 

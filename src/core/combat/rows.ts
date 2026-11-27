@@ -370,8 +370,9 @@ export type NpcRowOptions = {
 /**
  * One hunter row (`kind: 'hunter'`, `holder: null`, `npc: { skill }`) of NPC `n` for each id: named `n.name` alone, or
  * with a letter each in a group ("Vex A", "Vex B"). Uses a monster-shaped `Origin` so it gets `ARCHETYPE_ATTACKS`,
- * `origin.icon`, and `tweak.dealt` scaling. Ally NPCs carry `xp: 0`; foe NPCs carry their tier's XP (`xpOf`: normal 1x,
- * elite 1.5x, boss 3x).
+ * `origin.icon`, and `tweak.dealt` scaling. Ally NPCs carry `xp: 0` and no stagger bar; foe NPCs carry their tier's XP
+ * (`xpOf`: normal 1x, elite 1.5x, boss 3x) and their tier's stagger bar (`staggerOf`: none for normal, 2.5 hits for
+ * elite, 4 hits for boss) so Elite and Boss foe NPCs match same-tier monsters.
  */
 export function npcRows(
   n: RowNpc,
@@ -390,6 +391,7 @@ export function npcRows(
   const tier = rankIdx(n.rank);
   const abilities = distinct([ARCHETYPE_ATTACKS[n.archetype](R), ...n.abilities], R);
   const xp = side === 'foe' ? xpOf(R, n.rank, n.tier, tweak.traits) : 0;
+  const stagger = side === 'foe' ? staggerOf({ rank: n.rank, archetype: n.archetype, kind: n.tier, tweak }, R) : null;
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
     const statuses = n.statuses.flatMap(s => {
@@ -399,7 +401,7 @@ export function npcRows(
     const { sheet } = modified(origin, statuses, R);
     return {
       id, name: n.name.slice(0, NAME_MAX - suffix.length) + suffix, side, kind: 'hunter', origin, tier, place: null,
-      life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+      life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger, channel: null, threat: null,
       statuses, readyAt: {}, abilities, intent: null, holder: null, xp, mythic: null, npc: { skill },
     };
   });

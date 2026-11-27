@@ -495,7 +495,7 @@ type BodyCommon = Clock & {
  * - `holder`: whose sheet the fight writes back to: a hunter's (on this phone or another) or a shadow's hunter; null for
  *   a monster and a summon, and for a hunter or shadow no sheet holds.
  * - `threat`: a monster's table, and a summon's on the foes' side, as a monster's (rows.ts `summonRow`); null for the rest.
- * - `stagger`: an elite's or a boss's bar; null for a monster without one and for every other kind.
+ * - `stagger`: an elite's or a boss's bar (monsters and elite/boss foe NPCs); null for rows without one.
  * - `intent`: a monster's announced next use (fight.ts `setIntent` refuses any other kind); null when none.
  * - `xp`: what the party earns when a foe (monster or foe NPC) goes down; 0 for every other row.
  * - `npc`: GM-only play skill on an NPC hunter row (`holder: null`); absent on every other row and never sent to player phones.
@@ -506,7 +506,7 @@ type BodyCommon = Clock & {
  */
 type HunterOwn = {
   readonly kind: 'hunter'; readonly life: Life; readonly holder: HunterRef | null;
-  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: number; readonly mythic: null;
+  readonly threat: null; readonly stagger: Stagger | null; readonly intent: null; readonly xp: number; readonly mythic: null;
   /** Movement tiles spent since this hunter's last turn started (walk, dash, dodge). Absent when 0. */
   readonly moved?: number;
   /** Extra panel shadow extraction attempts carried by this hunter's active awakened class (`RULES.shadow.classAttempts`). Absent when 0. */

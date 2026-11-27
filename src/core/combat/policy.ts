@@ -11,6 +11,7 @@
 // A new choice is a line of `sensible` with a case in tests/odds.test.ts or tests/policy.test.ts; the tests' archetype
 // policies (tests/models/fight-sim.ts) are policies too, passed to the same loop.
 import type { Rules } from '../rules.ts';
+import type { Random } from '../gates/spawn.ts';
 import { average } from '../formula.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import { isDamage } from './damage-type.ts';
@@ -331,8 +332,76 @@ export const sensible: Policy = (f, me, R) => {
   return me.threat ? monsterChoice(f, me, uses, foes, R) : answerChoice(f, me, R) ?? keptOut(f, me, R, partyChoice(f, me, uses, foes, R));
 };
 
+const sameAim = (x: Aim, y: Aim): boolean =>
+  typeof x === 'string' && typeof y === 'string' ? x === y
+    : typeof x !== 'string' && typeof y !== 'string' && x.x === y.x && x.y === y.y;
+
+/**
+ * Wraps unchanged `sensible` for an NPC row using `R.fight.npc.skill[skill]` (`{ skip, temp }`),
+ * `R.fight.npc.offTargetPenalty`, and an off-dice random source. Skill 5 (`skip <= 0 && temp <= 0`), non-NPC rows,
+ * mythic landings, held channels, and non-`act` choices return `best` untouched. Omen answers (`answerChoice`,
+ * including damaging stagger or burst hits) are gated on `skip` like support moves and returned untouched when kept.
+ * Damaging choices anchor on `best` in slot 0 and penalize off-target pairs by `offTargetPenalty`. Never reads `f.fudge`.
+ */
+export function skilled(f: Running, me: Body, R: Rules, best: TurnChoice, random: Random): TurnChoice {
+  if (me.mythic && me.mythic.at !== 'calm' && omenMove(me, R)) return best;
+  if (me.channel?.state === 'holding') return best;
+  if (!me.npc) return best;
+  const { skip, temp } = R.fight.npc.skill[me.npc.skill];
+  if (skip <= 0 && temp <= 0) return best;
+  if (best.type !== 'act') return best;
+  const foes = foesOf(f, me);
+  if (!foes.length) return best;
+  const uses = me.abilities.filter(playable);
+  type Hit = { readonly a: Ability; readonly t: Body; readonly aim: Aim; readonly d: number };
+  const hits: Hit[] = [];
+  for (const a of uses) for (const t of foes) {
+    const d = damageOf(f, me, a, t, R);
+    if (d <= 0) continue;
+    const aim = aimAt(a, me, t);
+    if (fits(f, me, a, aim, R)) hits.push({ a, t, aim, d });
+  }
+  if (!hits.length) return best;
+  const answer = answerChoice(f, me, R);
+  const isOmenAnswer = answer !== null && answer.type === 'act'
+    && answer.ability.id === best.ability.id && sameAim(answer.aim, best.aim);
+  const bestDamaging = !isOmenAnswer && best.ability.aim !== 'corpse'
+    && isDamage(best.ability.effect?.type) && formulaOf(best.ability, R) !== null;
+  if (!bestDamaging) {
+    if (skip <= 0 || random() >= skip) return best;
+  }
+  const idCmp = (x: Hit, y: Hit): number =>
+    (x.a.id < y.a.id ? -1 : x.a.id > y.a.id ? 1 : 0)
+    || (x.t.id < y.t.id ? -1 : x.t.id > y.t.id ? 1 : 0);
+  const byDmg = (x: Hit, y: Hit): number => y.d - x.d || idCmp(x, y);
+  let anchor: Hit | undefined;
+  if (bestDamaging) {
+    anchor = hits.find(h => h.a.id === best.ability.id && sameAim(h.aim, best.aim));
+    if (!anchor) return best;
+  } else {
+    const primary = forcedOf(me, foes) ?? nearest(me, foes);
+    const onPrimary = primary ? hits.filter(h => h.t.id === primary.id).sort(byDmg) : [];
+    anchor = onPrimary[0] ?? [...hits].sort(byDmg)[0]!;
+  }
+  if (temp <= 0 || hits.length === 1) return { type: 'act', ability: anchor.a, aim: anchor.aim };
+  const penalty = R.fight.npc.offTargetPenalty;
+  const denom = Math.max(1, anchor.d);
+  const gapOf = (h: Hit): number =>
+    h === anchor ? 0 : Math.min(0, (h.d - anchor.d) / denom) - (sameAim(h.aim, anchor.aim) ? 0 : penalty);
+  const ordered = [anchor, ...hits.filter(h => h !== anchor).sort((x, y) => gapOf(y) - gapOf(x) || idCmp(x, y))];
+  const weights = ordered.map(h => Math.exp(gapOf(h) / temp));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  let pick = random() * total;
+  for (let i = 0; i < ordered.length; i++) {
+    pick -= weights[i]!;
+    if (pick < 0) return { type: 'act', ability: ordered[i]!.a, aim: ordered[i]!.aim };
+  }
+  const last = ordered[ordered.length - 1]!;
+  return { type: 'act', ability: last.a, aim: last.aim };
+}
+
 /** Why `autoTurnOf` cannot build an automatic turn right now. */
-export type AutoTurnRefusal = 'notNow' | 'dodging' | 'notYourTurn' | 'unknown' | 'down' | 'notMonster';
+export type AutoTurnRefusal = 'notNow' | 'dodging' | 'notYourTurn' | 'unknown' | 'down' | 'notMonster' | 'needsRandom';
 
 /** Whether `b` is a row eligible for automatic GM turns: monsters and NPCs (`kind === 'hunter'` with `npc`). */
 export const isAutoRow = (b: Body): boolean => b.kind === 'monster' || (b.kind === 'hunter' && b.npc !== undefined);
@@ -349,10 +418,11 @@ export type AutoTurn =
   | { readonly kind: 'roll'; readonly by: CombatantId; readonly choice: TurnChoice; readonly needs: Needs; readonly command: (rolls: Rolls) => Command; readonly note: string };
 
 /**
- * Builds the legal command for monster or NPC `by`'s current turn using `sensible`, paired with the dice it asks the
+ * Builds the legal command for monster or NPC `by`'s current turn using `sensible` (wrapped in `skilled` for NPCs;
+ * `random` is required for NPC rows and refused with `needsRandom` when omitted), paired with the dice it asks the
  * edge to roll (if any). When `at` is provided, rejects stale taps whose turn time has already advanced.
  */
-export function autoTurnOf(f: Fight | null, by: CombatantId, R: Rules, at?: Tick): AutoTurn {
+export function autoTurnOf(f: Fight | null, by: CombatantId, R: Rules, at?: Tick, random?: Random): AutoTurn {
   if (!f || f.phase !== 'running') return { kind: 'refused', reason: 'notNow' };
   const state = runningState(f);
   if (state.at === 'dodging') return { kind: 'refused', reason: 'dodging' };
@@ -363,7 +433,9 @@ export function autoTurnOf(f: Fight | null, by: CombatantId, R: Rules, at?: Tick
   if (!me) return { kind: 'refused', reason: 'unknown' };
   if (!isUp(me)) return { kind: 'refused', reason: 'down' };
   if (!isAutoRow(me)) return { kind: 'refused', reason: 'notMonster' };
-  const choice = sensible(f, me, R);
+  if (me.npc && !random) return { kind: 'refused', reason: 'needsRandom' };
+  const best = sensible(f, me, R);
+  const choice = me.npc ? skilled(f, me, R, best, random!) : best;
   switch (choice.type) {
     case 'act': {
       if (state.at === 'landing' && state.id === me.id) {

@@ -837,11 +837,12 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
       npc = { skill: skill as NpcSkill };
     }
     const xp = npc ? whole(v.xp, 0, BIG) : (v.xp === 0 ? 0 : null);
-    if (holder === undefined || holder?.kind === 'shadow' || holder?.kind === 'remoteShadow' || !life || xp === null || moved === null || extractBonus === null) return null;
+    const stagger = npc && v.side === 'foe' ? staggerOf(v.stagger) : (v.stagger === null ? null : undefined);
+    if (holder === undefined || holder?.kind === 'shadow' || holder?.kind === 'remoteShadow' || !life || xp === null || stagger === undefined || moved === null || extractBonus === null) return null;
     if (npc && holder !== null) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction', 'rose', 'adjust', 'force', 'bled'])) return null;
+    if (!NULLS(v, ['threat', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction', 'rose', 'adjust', 'force', 'bled'])) return null;
     return {
-      kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp, mythic: null,
+      kind: 'hunter', life, holder, threat: null, stagger, intent: null, xp, mythic: null,
       ...(moved === undefined ? {} : { moved }), ...(extractBonus === undefined ? {} : { extractBonus }),
       ...(npc ? { npc } : {}),
     };

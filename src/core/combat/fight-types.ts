@@ -14,6 +14,7 @@ import type { Zone, ZoneId } from './zones.ts';
 import type { ExtractKind, ExtractRoll } from './roll-adjust.ts';
 import type { Answer, MythicRefusal } from './mythic.ts';
 import type { AnswerOutcome, OmenKey } from './mythic-types.ts';
+import type { NpcSkill } from '../registry/npcs.ts';
 
 // ── the fight ──
 /** The fight's own states. No fight is `null`. */
@@ -235,6 +236,11 @@ export type Command =
    */
   | { readonly type: 'fudge'; readonly set: FudgeSet }
   /**
+   * The GM sets NPC `id`'s hidden play skill (1 Sloppy to 5 Optimal). Allowed in setup and running (outside dodging).
+   * No time passes, nothing is logged, and nothing changes on the room's fight doc.
+   */
+  | { readonly type: 'setNpcSkill'; readonly id: CombatantId; readonly skill: NpcSkill }
+  /**
    * The GM's hand on mythic `by`'s script (notes-11-keystones.md, design B.4, "The GM's hand"): `drop`, the omen standing
    * is dropped and nothing lands; `next`, it enters its next phase now, its HP brought down to that phase's start. Both
    * are the events its turns raise (mythic.ts `MythicEvent`), logged; no time passes.
@@ -291,7 +297,11 @@ export type Refusal = UseRefusal
   /** Removing a hunter row while any of that hunter's shadows remain in the fight. */
   | 'shadowsIn'
   /** Adding a shadow when its owner already fields `min(sheet.shadows, MAX_FIELD_SHADOWS)` shadows in the fight. */
-  | 'shadowCap';
+  | 'shadowCap'
+  /** A `setNpcSkill` command on a row that is not an NPC. */
+  | 'notNpc'
+  /** A `setNpcSkill` command whose skill is not a whole number from 1 to 5. */
+  | 'npcSkillValue';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =

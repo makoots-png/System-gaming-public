@@ -19,6 +19,7 @@ import type { Aim, Needs, Rolls } from './resolve.ts';
 import { drawNeeds, drawOpenings, drawSettle, seededSource } from '../draws.ts';
 import { openingWeights, settleWeights, weightsFor } from './fudge.ts';
 import type { Random } from './../gates/spawn.ts';
+import { skilled } from './policy.ts';
 import type { TurnChoice, Policy } from './policy.ts';
 
 /** When a play stops besides a side having nobody up: the time cap (a stalemate) and the GM's end, both in rounds. */
@@ -114,8 +115,16 @@ export function playBegin(f: Setup | Running, seed: number, R: Rules): { readonl
 export const playOver = (p: Play): p is Play & { readonly fight: Ended } => p.fight.phase === 'ended';
 
 /**
+ * Forks a deterministic random source for NPC policy modulation (`skilled`) from the play's dice state and step count
+ * without advancing `p.source`, so different NPC skill levels compare on identical dice.
+ */
+export const policySource = (source: number, step: number): Random =>
+  seededSource(((source ^ 0x9e3779b9) + Math.imul(step + 1, 0x85ebca6b)) >>> 0).random;
+
+/**
  * One turn of a running play: the GM's end at `endAtRounds`, the cap's at `capRounds` (or past `PLAY_STEPS_MAX`
- * commands), else the current row's choice by `policyOf(row)`, its dice, the command, and the dice the fight then waits for.
+ * commands), else the current row's choice by `policyOf(row)` (wrapped in `skilled` for NPCs on a forked policy source
+ * that never advances `p.source`), its dice, the command, and the dice the fight then waits for.
  */
 export function playStep(p: Play & { readonly fight: Running }, policyOf: (me: Body) => Policy, limits: Limits, R: Rules): Played {
   const src = seededSource(p.source), f = p.fight, down = downOf(f, p.down);
@@ -126,7 +135,8 @@ export function playStep(p: Play & { readonly fight: Running }, policyOf: (me: B
     return { play: { fight: r.fight as Ended, source: src.state(), down, capped: ending === 'cap', steps: p.steps + 1, spent: p.spent }, before: f, me: null, choice: null, rolls: null, effects: r.effects };
   }
   const me = f.rows.find(r => r.id === f.currentId)!;
-  const choice = policyOf(me)(f, me, R);
+  const best = policyOf(me)(f, me, R);
+  const choice = me.npc ? skilled(f, me, R, best, policySource(p.source, p.steps)) : best;
   let cmd: Command, rolls: Rolls | null = null;
   switch (choice.type) {
     case 'act': rolls = rollsFor(f, me, choice.ability.id, choice.aim, R, src.random); cmd = { type: 'act', by: me.id, ability: choice.ability.id, aim: choice.aim, rolls }; break;
