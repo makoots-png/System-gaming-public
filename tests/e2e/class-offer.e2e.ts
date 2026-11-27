@@ -5,6 +5,7 @@ import { OFFER_WORDS, classTakenLine, pickRefusedLine } from '../../src/core/hun
 import { CLASS_UI_WORDS } from '../../src/core/hunter/class-view.ts';
 import { uniqueJobRefusalText } from '../../src/core/hunter/grant.ts';
 import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER } from '../../src/core/hunter/class-locker.ts';
+import { STARTER_GATE } from '../../src/core/starter.ts';
 import { test, expect, openApp, tapIfShown, onboardGM, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, SMALL_PHONE } from './helpers.ts';
 
 const modalWin = (page: Page, title: string) => page.locator('.sys-overlay.show', { hasText: title });
@@ -533,4 +534,61 @@ test('capDisplay chip stays hidden on blank saves, updates via GM picker and ran
     await go(gm, 'status');
     await expect(gm.locator('#view-status [data-cap-chip]')).toHaveText('Cap: none');
   });
+});
+
+test('starter Tidewall Cannery Gate gates the class offer on Head Usher falling, uses neutral offer copy, and recovers after Clear', async ({ device }) => {
+  const gm = (await device('gm-tidewall')).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+
+  await go(gm, 'gates');
+  const card = gm.locator('#view-gates .gate', { hasText: STARTER_GATE.name });
+  await expect(card).toBeVisible();
+  await expect(card.locator('[data-wave-head="1"]')).toHaveText('Wave 1');
+  await expect(card.locator('[data-wave-head="2"]')).toHaveText('Wave 2');
+  await expect(card.locator('[data-act="class-offer"]')).toHaveCount(0);
+
+  // Wave 1 (Goblins + Goblin Shaman + Goblin Chief): no Gate cleared? modal and no class offer button.
+  await card.locator('[data-act="encounter"]').tap();
+  await expect(gm.locator('[aria-modal="true"] [data-wave-pick] input[name="wave"][value="1"]')).toBeChecked();
+  await gm.locator('[aria-modal="true"] [data-apply]').tap();
+  await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+  await gm.evaluate(() => hunterApp.store.update((d: any) => {
+    for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' };
+  }, 'test-tidewall-w1'));
+  await gm.locator('#view-combat [data-end]').first().evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
+  await gm.locator('#view-combat [data-end]').first().tap();
+  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Award XP to party' }).first().tap();
+  await dismissAll(gm);
+  await expect(modalWin(gm, 'Gate cleared?')).toHaveCount(0);
+
+  // Wave 2 (Ushers + Head Usher): opens Gate cleared? with neutral offer copy (no carved altar).
+  await go(gm, 'gates');
+  await expect(card.locator('[data-act="class-offer"]')).toHaveCount(0);
+  await card.locator('[data-act="encounter"]').tap();
+  await expect(gm.locator('[aria-modal="true"] [data-wave-pick] input[name="wave"][value="2"]')).toBeChecked();
+  await gm.locator('[aria-modal="true"] [data-apply]').tap();
+  await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+  await gm.evaluate(() => hunterApp.store.update((d: any) => {
+    for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' };
+  }, 'test-tidewall-w2'));
+  await gm.locator('#view-combat [data-end]').first().evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
+  await gm.locator('#view-combat [data-end]').first().tap();
+  await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Award XP to party' }).first().tap();
+
+  const clearedDlg = modalWin(gm, 'Gate cleared?');
+  const otherPrimary = gm.locator('.sys-overlay.show', { hasNotText: 'Gate cleared?' }).locator('.sys-actions button.primary').first();
+  await expect.poll(async () => {
+    if (await clearedDlg.isVisible()) return true;
+    if (await otherPrimary.isVisible()) await otherPrimary.tap();
+    return false;
+  }, { timeout: 15_000 }).toBe(true);
+
+  await expect(clearedDlg).toContainText(OFFER_WORDS.gatePromptNote);
+  await expect(clearedDlg).not.toContainText(/carved altar/i);
+  await clearedDlg.locator('.sys-actions button', { hasText: OFFER_WORDS.gmLiftAndOfferButton }).tap();
+  const coModal = gm.locator('[data-co-modal]');
+  await expect(coModal).toBeVisible();
+  await expect(coModal).not.toContainText(/carved altar/i);
+  await coModal.locator('[data-co-close-offer]').tap();
 });

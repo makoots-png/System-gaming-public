@@ -118,7 +118,7 @@ describe('the starter campaign, one atomic step', () => {
     expect(activeGateWave(g)).toBe(1);
     expect(waveRoster(g, 1)).toEqual({
       monsters: [
-        { monsterId: seedId<'m'>('goblin'), count: 3, wave: 1 },
+        { monsterId: seedId<'m'>('goblin'), count: 1, wave: 1 },
         { monsterId: seedId<'m'>('goblin-shaman'), count: 1, wave: 1 },
         { monsterId: seedId<'m'>('goblin-chief'), count: 1, wave: 1 },
       ],

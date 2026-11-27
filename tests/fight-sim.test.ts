@@ -78,7 +78,7 @@ import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { ANSWERS, answerOutcome } from '../src/core/combat/mythic.ts';
 import type { Answer } from '../src/core/combat/mythic.ts';
-import { monsterRows } from '../src/core/combat/rows.ts';
+import { monsterRows, hunterRow } from '../src/core/combat/rows.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
@@ -87,6 +87,28 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import type { Archetype as MonsterArchetype } from '../src/core/hunter/derive.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
+import { freshSave, makeHunter } from '../src/core/save.ts';
+import type { Hunter } from '../src/core/save.ts';
+import { starterCampaign } from '../src/core/starter.ts';
+import { confirm, gainXp, raiseMany } from '../src/core/hunter/progress.ts';
+import type { StatPoints } from '../src/core/hunter/progress.ts';
+import { earnClass } from '../src/core/hunter/classes.ts';
+import { learnSkill } from '../src/core/hunter/skills-held.ts';
+import { equip, putItem } from '../src/core/hunter/inventory.ts';
+import { refill } from '../src/core/hunter/vitals.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { STARTER_SKILLS, skillOf } from '../src/core/registry/skills.ts';
+import { WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
+import type { UniqueClassName } from '../src/core/registry/jobs.ts';
+import { sensible } from '../src/core/combat/policy.ts';
+import { usable as canUse } from '../src/core/combat/resolve.ts';
+import { isRefused } from '../src/core/save-step.ts';
+import { builtInItemId, saveId, seedId } from '../src/core/ids.ts';
+import type { NewRow } from '../src/core/combat/fight-types.ts';
+import type { Policy } from './models/fight-sim.ts';
+import { bladefiendPolicy, hemomancerPolicy, rifthunterPolicy } from './fixtures/mythic-hunters.ts';
+import { dev } from './fixtures/ids.ts';
 
 // ── the setups ──
 const once = <T>(make: () => T): (() => T) => { let v: T | undefined; return () => (v ??= make()); };
@@ -872,4 +894,284 @@ describe('the GM\'s fudge on a party of 3 against a mythic', () => {
     expect(rates[0]!.m.value).toBeLessThanOrEqual(0.1);
     for (let i = 1; i < rates.length; i++) expect(rates[i]!.m.value, `+${rates[i]!.n} against +${rates[i - 1]!.n}`).toBeGreaterThanOrEqual(rates[i - 1]!.m.value);
   }, workBudget(FUDGE_STEPS.length * RUNS.mythic));
+});
+
+// ── Act 1 "The Empty Seat" balance simulation (U6): Wave 1 & Wave 2 across 1..6 players, plus Level 3 Mythic/Epic E-rank checks ──
+const ACT1_AT = '2026-11-26T12:00:00.000Z';
+const ACT1_RUNS = 100;
+const HEALTH_POTION_E = SHOP_ITEMS.find(i => i.defId === builtInItemId('health-potion-e'))!;
+const ACT1_MONSTERS = seedMonsters(RULES);
+const seedMonster = (slug: string) => {
+  const m = ACT1_MONSTERS.find(x => x.id === seedId<'m'>(slug));
+  if (!m) throw new Error(`missing seed monster ${slug}`);
+  return m;
+};
+const sensiblePolicy: Policy = (f, me, _plan, R) => sensible(f, me, R);
+
+/** Wraps `sensible` so a Healer holding Mending Aura activates its healing aura when any ally is injured. */
+const missionPolicy: Policy = (f, me, _plan, R) => {
+  const aura = me.abilities.find(a => a.id === 'mending-aura');
+  const hasOwnZone = f.zones.some(z => z.owner === me.id && (z.until === null || z.until > f.now));
+  const anyHurt = f.rows.some(r => r.side === me.side && rowHp(r) > 0 && rowHp(r) < 0.85 * r.sheet.hpMax);
+  if (aura && !hasOwnZone && anyHurt && canUse(aura, me, f.rows, me.id, f.grid, f.now, R, f.fog)) {
+    return { type: 'act', ability: aura, aim: me.id };
+  }
+  return sensible(f, me, R);
+};
+
+/** Attaches each bag consumable's exact `qty` as a per-fight uses gate so `playFight` never grants infinite potions. */
+function withBagUses(h: Hunter, row: NewRow): NewRow {
+  const qtyByItem = new Map(h.items.map(i => [i.id as string, i.qty]));
+  return {
+    ...row,
+    abilities: row.abilities.map(a => {
+      const qty = a.item ? qtyByItem.get(a.item as string) : undefined;
+      return qty !== undefined ? { ...a, gates: [...(a.gates ?? []), { kind: 'uses' as const, per: 'fight' as const, n: qty }] } : a;
+    }),
+  };
+}
+
+/** Levels `h` to `level` via `gainXp`, spends `extra` ability points, and refills vitals. */
+function advanceHunter(h: Hunter, level: number, extra: StatPoints): Hunter {
+  let cur = h;
+  while (cur.level < level) {
+    const step = gainXp(cur, 1000, RULES);
+    cur = { ...cur, ...step.progress };
+  }
+  if (Object.keys(extra).length > 0) {
+    const raised = raiseMany(cur, extra, RULES);
+    if (isRefused(raised)) throw new Error(`raiseMany refused for ${cur.name}: ${raised.why}`);
+    cur = confirm(raised);
+  }
+  return { ...cur, ...refill(cur, hunterSheet(cur, RULES).sheet) };
+}
+
+/** Gives `h` `qty` copies of Health Potion (E) in its bag. */
+function givePotions(h: Hunter, qty: number, idNum: number): Hunter {
+  const parsed = parseItem({ ...itemOf(RULES, HEALTH_POTION_E), qty });
+  if (!parsed) throw new Error('failed to parse Health Potion (E)');
+  return putItem(h, parsed, saveId('i', idNum));
+}
+
+/** Wave 1 (Cannery Tunnels) or Wave 2 (Stone Hall) monsters per the table-scaling rules for `players` hunters. */
+function act1WaveFoes(wave: 1 | 2, players: number): SimRow[] {
+  const specs: readonly (readonly [string, number])[] = wave === 1
+    ? players <= 2
+      ? [['goblin', 1], ['goblin-chief', 1]]
+      : players <= 4
+        ? [['goblin', 1], ['goblin-shaman', 1], ['goblin-chief', 1]]
+        : [['goblin', 2], ['goblin-shaman', 1], ['goblin-chief', 1]]
+    : players <= 2
+      ? [['head-usher', 1], ['usher', 1]]
+      : players <= 4
+        ? [['head-usher', 1], ['usher', 2]]
+        : [['head-usher', 1], ['usher', 3]];
+  const out: SimRow[] = [];
+  for (const [slug, count] of specs) {
+    const ids = Array.from({ length: count }, (_, i) => combatantId(`${slug}-${i + 1}`));
+    for (const row of monsterRows(seedMonster(slug), ids, RULES)) out.push({ row, policy: sensiblePolicy });
+  }
+  return out;
+}
+
+const SAMPLE_L2_POINTS: readonly StatPoints[] = [
+  { vit: 2, str: 1 }, // Dolan Kestrel
+  { agi: 2, ctl: 1 }, // Nadia Cho
+  { pre: 2, dis: 1 }, // Bram Halstead
+  { pow: 2, ctl: 1 }, // Tessa Corbin
+  { str: 2, vit: 1 }, // 5th sample hunter (Bruiser)
+  { agi: 2, str: 1 }, // 6th sample hunter (Ranger)
+];
+
+/** Builds 1..6 sample hunters from `starterCampaign` (with Tessa's 12 points spent and Chapter 1's 2 potions). */
+function act1SampleParty(players: number, level: 1 | 2): SimRow[] {
+  const env = { now: new Date(ACT1_AT), newDeviceId: () => dev('d-act1'), newDeviceToken: () => 'tok-act1-1234567890' };
+  const s = starterCampaign(freshSave(env, { onboarded: true }), { at: ACT1_AT, cap: RULES.logCap }, RULES);
+  if (isRefused(s)) throw new Error(`starterCampaign refused: ${s.why}`);
+  let seq = s.seq + 100;
+  const base: Hunter[] = s.hunters.map(h => {
+    let cur = h;
+    if (cur.name === 'Tessa Corbin') {
+      const raised = raiseMany(cur, { pow: 8, ctl: 4 }, RULES);
+      if (isRefused(raised)) throw new Error(`Tessa raiseMany refused: ${raised.why}`);
+      cur = confirm(raised);
+      cur = { ...cur, ...refill(cur, hunterSheet(cur, RULES).sheet) };
+    }
+    return givePotions(cur, 2, ++seq);
+  });
+
+  // 5th and 6th hunters for 5-6 player tables.
+  const extras: readonly { name: string; stats: StatPoints; skill: typeof STARTER_SKILLS.markedShot | null; bow: boolean }[] = [
+    { name: 'Kira Sol', stats: { str: 8, vit: 4 }, skill: null, bow: false },
+    { name: 'Orin Vale', stats: { agi: 8, str: 4 }, skill: STARTER_SKILLS.markedShot, bow: true },
+  ];
+  for (const ex of extras) {
+    const made = makeHunter({ seq: ++seq, settings: s.settings }, ex.name, RULES, new Date(ACT1_AT));
+    seq = made.seq;
+    const raised = raiseMany(made.hunter, ex.stats, RULES);
+    if (isRefused(raised)) throw new Error(`extra raiseMany refused: ${raised.why}`);
+    let h = confirm(raised);
+    if (ex.skill) h = learnSkill(h, { ...skillOf(ex.skill, RULES), label: 'Lv.1' }, saveId('s', ++seq));
+    if (ex.bow) {
+      const bow = parseItem(itemOf(RULES, STARTER_GEAR.huntingBow))!;
+      const bowId = saveId('i', ++seq);
+      h = putItem(h, bow, bowId);
+      const eq = equip(h, bowId, bowId);
+      if (!isRefused(eq)) h = eq;
+    }
+    h = givePotions(h, 3, ++seq);
+    h = { ...h, ...refill(h, hunterSheet(h, RULES).sheet) };
+    base.push(h);
+  }
+
+  // For 1p sample solo testing, pick Nadia (balanced starter damage); for 2..6p take in party order.
+  const picked = players === 1 ? [base[1]!] : base.slice(0, players);
+  return picked.map((h0, idx) => {
+    const l2Idx = players === 1 ? 1 : idx;
+    const h = level === 2 ? advanceHunter(h0, 2, SAMPLE_L2_POINTS[l2Idx]!) : h0;
+    return { row: withBagUses(h, hunterRow(h, combatantId(`sample-${idx + 1}`), RULES)), policy: missionPolicy };
+  });
+}
+
+const BARE_BUILDS: readonly { readonly l1: StatPoints; readonly l2: StatPoints }[] = [
+  { l1: { str: 8, vit: 4 }, l2: { str: 2, vit: 1 } },
+  { l1: { vit: 8, str: 4 }, l2: { vit: 2, str: 1 } },
+  { l1: { str: 6, vit: 6 }, l2: { str: 2, vit: 1 } },
+  { l1: { str: 8, agi: 4 }, l2: { str: 2, agi: 1 } },
+  { l1: { vit: 6, str: 6 }, l2: { str: 2, vit: 1 } },
+  { l1: { str: 8, dis: 4 }, l2: { str: 2, dis: 1 } },
+];
+
+/** Builds 1..6 bare player-made hunters (no gear, no skills) with creation points spent and Chapter 1's 2 Health Potions (E). */
+function act1BareParty(players: number, level: 1 | 2): SimRow[] {
+  const env = { now: new Date(ACT1_AT), newDeviceId: () => dev('d-bare'), newDeviceToken: () => 'tok-bare-1234567890' };
+  const s = freshSave(env, { onboarded: true });
+  let seq = s.seq + 200;
+  return Array.from({ length: players }, (_, i) => {
+    const spec = BARE_BUILDS[i]!;
+    const made = makeHunter({ seq: ++seq, settings: s.settings }, `Player ${i + 1}`, RULES, new Date(ACT1_AT));
+    seq = made.seq;
+    const raised = raiseMany(made.hunter, spec.l1, RULES);
+    if (isRefused(raised)) throw new Error(`bare raiseMany refused: ${raised.why}`);
+    let h = confirm(raised);
+    h = givePotions(h, 2, ++seq);
+    h = { ...h, ...refill(h, hunterSheet(h, RULES).sheet) };
+    if (level === 2) h = advanceHunter(h, 2, spec.l2);
+    return { row: withBagUses(h, hunterRow(h, combatantId(`bare-${i + 1}`), RULES)), policy: missionPolicy };
+  });
+}
+
+type Act1Summary = { readonly winRate: number; readonly deathRate: number; readonly meanRounds: number; readonly capped: number };
+function runAct1Setup(key: string, makeRows: () => SimRow[], runs: number): Act1Summary {
+  const rows = once(makeRows);
+  const rs = runsOf(key, (seed: number) => [playFight({ rows: rows(), tallyDamage: false }, seed)], runs).map(r => r[0]!);
+  return {
+    winRate: rs.filter(r => r.winner === 'party').length / runs,
+    deathRate: rs.filter(r => r.dead.length > 0).length / runs,
+    meanRounds: mean(rs.map(r => r.rounds)),
+    capped: rs.filter(r => r.capped).length,
+  };
+}
+
+/** Builds a real Level 3 E-rank hunter holding 0-node Wave 1 unique class `cls` through `earnClass` + `hunterRow`. */
+function buildLevel3ClassRow(cls: UniqueClassName, id: string): SimRow {
+  const env = { now: new Date(ACT1_AT), newDeviceId: () => dev('d-l3'), newDeviceToken: () => 'tok-l3-1234567890' };
+  const s = freshSave(env, { onboarded: true });
+  const made = makeHunter({ seq: 500, settings: s.settings }, cls, RULES, new Date(ACT1_AT));
+  const statsByClass: Readonly<Record<UniqueClassName, StatPoints>> = {
+    Hemomancer: { pow: 10, vit: 8 },
+    Bladefiend: { str: 10, agi: 8 },
+    Rifthunter: { ins: 10, ctl: 8 },
+    Seraph: { pre: 10, dis: 8 },
+    Ironclad: { vit: 10, dis: 8 },
+    Stormcaller: { pow: 10, agi: 8 },
+  } as Record<UniqueClassName, StatPoints>;
+  const level3 = advanceHunter(made.hunter, 3, statsByClass[cls] ?? { str: 10, vit: 8 });
+  const earned = earnClass(level3, cls, { at: ACT1_AT, R: RULES });
+  if (isRefused(earned)) throw new Error(`earnClass(${cls}) refused: ${earned.why}`);
+  const filled = { ...earned, ...refill(earned, hunterSheet(earned, RULES).sheet) };
+  const policyByClass: Partial<Record<UniqueClassName, Policy>> = {
+    Hemomancer: hemomancerPolicy,
+    Bladefiend: bladefiendPolicy,
+    Rifthunter: rifthunterPolicy,
+  };
+  return { row: hunterRow(filled, combatantId(id), RULES), policy: policyByClass[cls] ?? missionPolicy };
+}
+
+const ACT1_STEP_BUDGET = workBudget(ACT1_RUNS, ACT1_RUNS * 250);
+
+// Act 1 "The Empty Seat" Wave 1 & Wave 2 balance bounds (Neon, U6):
+// Wave 1 (Cannery Tunnels, Lv.1; Goblin Chief tuned to normal, Wave 1 trimmed to 1 Goblin + 1 Shaman + 1 Chief at 3-4p)
+// clears without a death in most runs for 4p (sample ~4% deaths, bare+2 potions ~15% deaths) and >=95% win across 2-6p.
+// Wave 2 (Stone Hall, Lv.2; Head Usher + Ushers) clears >=90% across 2-6p with <=25% deaths at 4p.
+describe('Act 1 "The Empty Seat" Wave 1 and Wave 2 balance (1 to 6 players, sample and bare + 2 potions)', () => {
+  for (const kind of ['sample', 'bare'] as const) {
+    for (const wave of [1, 2] as const) {
+      const level = wave;
+      for (const players of [1, 2, 3, 4, 5, 6] as const) {
+        simTest(`Act 1 Wave ${wave} (${kind}, ${players}p, Lv.${level}) runs cleanly`, () => {
+          const partyRows = () => (kind === 'sample' ? act1SampleParty(players, level) : act1BareParty(players, level));
+          const res = runAct1Setup(`act1-w${wave}-${kind}-${players}p`, () => [...partyRows(), ...act1WaveFoes(wave, players)], ACT1_RUNS);
+          console.log(`  [Act 1 W${wave} ${kind.padEnd(6)} ${players}p Lv.${level}] win=${(res.winRate * 100).toFixed(1)}%, deaths=${(res.deathRate * 100).toFixed(1)}%, rounds=${res.meanRounds.toFixed(1)}, capped=${res.capped}`);
+          expect(res.capped).toBe(0);
+          expect(res.meanRounds).toBeGreaterThanOrEqual(1);
+          expect(res.meanRounds).toBeLessThanOrEqual(25);
+          if (wave === 1 && players >= 2) {
+            expect(res.winRate).toBeGreaterThanOrEqual(0.95);
+            expect(res.deathRate).toBeLessThanOrEqual(0.45);
+          }
+          if (wave === 1 && players === 4) {
+            expect(res.deathRate).toBeLessThanOrEqual(kind === 'sample' ? 0.20 : 0.30);
+          }
+          if (wave === 1 && kind === 'sample' && players === 1) {
+            expect(res.winRate).toBeGreaterThanOrEqual(0.70);
+          }
+          if (wave === 2 && players >= 2) {
+            expect(res.winRate).toBeGreaterThanOrEqual(0.90);
+            if (players === 4) expect(res.deathRate).toBeLessThanOrEqual(0.25);
+          }
+        }, ACT1_STEP_BUDGET);
+      }
+    }
+  }
+});
+
+describe('Act 1 Level 3 Mythic and Epic E-rank checks (0 tree nodes)', () => {
+  for (const cls of WAVE1_OFFER_POOL) {
+    simTest(`Level 3 ${cls} (0 nodes) with E-rank allies clears an E-rank pack cleanly`, () => {
+      const makeRows = () => [
+        buildLevel3ClassRow(cls, cls.toLowerCase()),
+        ...act1SampleParty(2, 2).map((s, i) => ({ ...s, row: { ...s.row, id: combatantId(`ally-${i + 1}`) } })),
+        ...pack('E'),
+      ];
+      const res = runAct1Setup(`act1-l3-${cls}-pack`, makeRows, ACT1_RUNS);
+      console.log(`  [Act 1 Lv.3 ${cls.padEnd(11)} + 2 allies vs E pack] win=${(res.winRate * 100).toFixed(1)}%, deaths=${(res.deathRate * 100).toFixed(1)}%, rounds=${res.meanRounds.toFixed(1)}, capped=${res.capped}`);
+      expect(res.capped).toBe(0);
+      expect(res.winRate).toBeGreaterThanOrEqual(0.95);
+      expect(res.meanRounds).toBeGreaterThanOrEqual(1);
+      expect(res.meanRounds).toBeLessThanOrEqual(15);
+    }, ACT1_STEP_BUDGET);
+  }
+
+  simTest('Level 3 party (3 Mythics + 1 Epic, 0 nodes) clears an E-rank pack and difficulty-5 E-rank boss cleanly', () => {
+    const party4 = () => [
+      buildLevel3ClassRow('Hemomancer', 'hemo'),
+      buildLevel3ClassRow('Bladefiend', 'blade'),
+      buildLevel3ClassRow('Rifthunter', 'rift'),
+      buildLevel3ClassRow('Seraph', 'seraph'),
+    ];
+    const packRes = runAct1Setup('act1-l3-party4-epack', () => [...party4(), ...pack('E')], ACT1_RUNS);
+    const bossD5Scale = difficultyFactor('boss', 'E', 5, RULES);
+    const bossD5Res = runAct1Setup('act1-l3-party4-eboss-d5', () => [...party4(), monster('E', 'brute', 'boss', 'boss-d5', RULES, [], bossD5Scale)], ACT1_RUNS);
+    const bossD10Scale = difficultyFactor('boss', 'E', 10, RULES);
+    const bossD10Res = runAct1Setup('act1-l3-party4-eboss-d10', () => [...party4(), monster('E', 'brute', 'boss', 'boss-d10', RULES, [], bossD10Scale)], ACT1_RUNS);
+    console.log(`  [Act 1 Lv.3 3M+1E vs E pack]      win=${(packRes.winRate * 100).toFixed(1)}%, deaths=${(packRes.deathRate * 100).toFixed(1)}%, rounds=${packRes.meanRounds.toFixed(1)}, capped=${packRes.capped}`);
+    console.log(`  [Act 1 Lv.3 3M+1E vs E boss d5]   win=${(bossD5Res.winRate * 100).toFixed(1)}%, deaths=${(bossD5Res.deathRate * 100).toFixed(1)}%, rounds=${bossD5Res.meanRounds.toFixed(1)}, capped=${bossD5Res.capped}`);
+    console.log(`  [Act 1 Lv.3 3M+1E vs E boss d10]  win=${(bossD10Res.winRate * 100).toFixed(1)}%, deaths=${(bossD10Res.deathRate * 100).toFixed(1)}%, rounds=${bossD10Res.meanRounds.toFixed(1)}, capped=${bossD10Res.capped}`);
+    expect(packRes.capped).toBe(0);
+    expect(bossD5Res.capped).toBe(0);
+    expect(bossD10Res.capped).toBe(0);
+    expect(packRes.winRate).toBeGreaterThanOrEqual(0.95);
+    expect(bossD5Res.winRate).toBeGreaterThanOrEqual(0.9);
+  }, workBudget(3 * ACT1_RUNS, 3 * ACT1_RUNS * 250));
 });

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, noonDate, ROOM_CODE } from './helpers.ts';
 import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER } from '../../src/core/first-run.ts';
-import { PREGENS, STARTER_GATE, STARTER_STORY_NAME } from '../../src/core/starter.ts';
+import { PREGENS, STARTER_GATE, STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER } from '../../src/core/starter.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
@@ -277,6 +277,10 @@ test('a new GM sees Campaign ready, taps Create room and lands on the room\'s in
 
   const win = await windowTitled(gm, 'Campaign ready');
   await expect(win).toContainText(LOADED.starter.split('\n')[0]!);
+  await expect(win).toContainText(STARTER_STORY_NAME);
+  await expect(win).toContainText(STARTER_UNSPENT_HUNTER);
+  await expect(win).toContainText('Read aloud: Carrow primer');
+  await expect(win).toContainText('Start a story');
   await expect(win).toContainText(ROOM_IS);
   expect(await nextOf(gm)).toEqual([
     { text: 'Create a room.', done: false },
@@ -472,7 +476,7 @@ test('GM setup includes 4 sample hunters by default and lets a live table unchec
   });
   expect(state.mode).toBe('gm');
   expect(state.activeValid).toBe(true);
-  expect(state.hunters).toHaveLength(1);
+  expect(state.hunters).toEqual(['Hunter']);
   for (const p of PREGENS) expect(state.hunters).not.toContain(p.name);
   expect(state.gates).toEqual([STARTER_GATE.name]);
   expect(state.stories).toContain(STARTER_STORY_NAME);
@@ -493,8 +497,7 @@ test('Read aloud: Carrow primer is collapsible inside Campaign ready and the ? Q
     expect(box && box.height >= 44).toBe(true);
     await summary.tap();
     await expect(drawer).toHaveAttribute('open', '');
-    await expect(drawer).toContainText(WORLD_PRIMER[0]!);
-    await expect(drawer).toContainText(WORLD_PRIMER[WORLD_PRIMER.length - 1]!);
+    for (const para of WORLD_PRIMER) await expect(drawer).toContainText(para);
     await ready.locator('[data-oblater]').tap();
     await expect(gm.locator(OB)).toHaveCount(0);
   });
@@ -508,8 +511,7 @@ test('Read aloud: Carrow primer is collapsible inside Campaign ready and the ? Q
     await expect(drawer).not.toHaveAttribute('open', '');
     await summary.tap();
     await expect(drawer).toHaveAttribute('open', '');
-    await expect(drawer).toContainText(WORLD_PRIMER[0]!);
-    await expect(drawer).toContainText(WORLD_PRIMER[WORLD_PRIMER.length - 1]!);
+    for (const para of WORLD_PRIMER) await expect(drawer).toContainText(para);
     await guide.locator('[data-ok]').tap();
     await expect(gm.locator(OB)).toHaveCount(0);
   });

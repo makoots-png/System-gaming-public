@@ -196,7 +196,7 @@ group('the seeds as plan section 3.2 restates them', () => {
 
   test('the Act 1 scripted E-rank monsters carry scripted: true and their intended archetypes, kinds and abilities', () => {
     const chief = seed('goblin-chief'), usher = seed('usher'), head = seed('head-usher');
-    expect([chief.rank, chief.type, chief.archetype, chief.kind, chief.scripted, chief.extractable]).toEqual(['E', 'Humanoid', 'brute', 'elite', true, true]);
+    expect([chief.rank, chief.type, chief.archetype, chief.kind, chief.scripted, chief.extractable]).toEqual(['E', 'Humanoid', 'brute', 'normal', true, true]);
     expect([named(chief, 'Cleaver Swing').kind, named(chief, 'Cleaver Swing').cost.time]).toEqual(['strike', RULES.fight.cost.heavy]);
 
     expect([usher.rank, usher.type, usher.archetype, usher.kind, usher.scripted, usher.extractable]).toEqual(['E', 'Humanoid', 'brute', 'normal', true, true]);

@@ -1,8 +1,9 @@
 // A GM alone with hunters on one phone runs a story (notes-1-stories.md sections 5 and 9, unit 3): turned on from the GM
 // view's Stories section, a chapter opened at a time, ended under Undo, and the taps of section 5.2 counted.
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, setupGoblinDenGM, go, answerWindow } from './helpers.ts';
+import { test, expect, onboardGM, setupGoblinDenGM, go, answerWindow } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
+import { PREGENS, STARTER_STORY_NAME } from '../../src/core/starter.ts';
 import { RUN_REFUSAL_WORDS, STORY_WORDS } from '../../src/core/story/run.ts';
 
 /** Taps through the UI and counts them: what the GM's thumb does. Typing is not a tap. */
@@ -225,5 +226,51 @@ test('from the Workshop, Turn on… opens the story at its own step: on for one 
     await page.locator('.sys-overlay.show .sys-actions button', { hasText: 'Delete' }).tap();
     await expect(page.locator('#toasts .toast', { hasText: 'End The wager in the GM view before you delete it.' })).toBeVisible();
     expect(await page.evaluate(() => hunterApp.store.get().library.stories.length)).toBe(1);
+  });
+});
+
+test('starter campaign preloads The Empty Seat (not running at load) and steps all 4 sample hunters cleanly through all 5 chapters', async ({ device }) => {
+  const page = (await device('gm-empty-seat')).page;
+  await onboardGM(page);
+  await go(page, 'gm');
+  const tog = page.locator('[data-tog="stories"]');
+  if ((await tog.getAttribute('aria-expanded')) !== 'true') await tog.tap();
+
+  await expect(section(page)).toContainText('No story is running.');
+  expect(await runs(page)).toEqual([]);
+
+  const win = storyWin(page);
+  await test.step('starting The Empty Seat preselects Whole party and delivers Chapter 1 (2 Health Potions + Thursday\'s Gate) to all 4 sample hunters', async () => {
+    await section(page).locator('[data-st-turnon]').tap();
+    await win.locator('[data-st-story]', { hasText: STARTER_STORY_NAME }).tap();
+    await expect(win.locator('[data-st-for="table"]')).toHaveAttribute('aria-pressed', 'true');
+    await win.locator('[data-st-go]').tap();
+    await answerEach(page, 'SEAT ASSIGNED', PREGENS.length);
+    await expect(card(page).locator('.st-at')).toContainText('Chapter 1 of 5: Seat Assigned.');
+    await expect(card(page).locator('.st-note')).toContainText('Halfway House');
+    const afterCh1 = await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => ({
+      potions: h.items.filter((i: any) => i.name === 'Health Potion (E)').reduce((n: number, i: any) => n + i.qty, 0),
+      quests: h.quests.filter((q: any) => q.kind !== 'daily').map((q: any) => q.title),
+    })));
+    expect(afterCh1.every((x: any) => x.potions >= 3 && x.quests.includes("Thursday's Gate"))).toBe(true);
+  });
+
+  await test.step('opening Chapters 2 through 5 delivers each window, issues Tidewall Cannery Gate quest, grants Guest (+1 dis), and ends in 1 tap', async () => {
+    for (const [title, label] of [
+      ['GATE ENTERED', 'Chapter 2 of 5: Gate Entered.'],
+      ['TRIAL ISSUED', 'Chapter 3 of 5: The Stone Hall.'],
+      ['FINAL OBJECTIVE', 'Chapter 4 of 5: Final Objective.'],
+      ['TRIAL COMPLETE', 'Chapter 5 of 5: Trial Complete.'],
+    ] as const) {
+      await card(page).locator('[data-st-open]').tap();
+      await win.locator('[data-st-go]').tap();
+      await answerEach(page, title, PREGENS.length);
+      await expect(card(page).locator('.st-at')).toContainText(label);
+    }
+    await expect(card(page).locator('.st-next')).toHaveText('Chapter 5 is the last.');
+    const guests = await page.evaluate(() => hunterApp.store.get().hunters.every((h: any) => h.titles.some((t: any) => t.name === 'Guest' && t.bonus.dis === 1)));
+    expect(guests).toBe(true);
+    await card(page).locator('[data-st-end]').tap();
+    await expect(card(page)).toHaveCount(0);
   });
 });

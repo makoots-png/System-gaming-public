@@ -114,7 +114,7 @@ export const SEEDS: readonly MonsterSeed[] = [
     [{ kind: 'curse', name: 'Venom Bite', feet: 5, applies: status('poisoned') }],
     ['Swarm: appears in groups of 6+', 'Lives in the Penalty Zone'],
     'A large centipede. Many of them live in the Penalty Zone.'],
-  ['goblin-chief', 'Goblin Chief', 'E', 'Humanoid', 'brute', 'elite', { hp: 0.8, scripted: true },
+  ['goblin-chief', 'Goblin Chief', 'E', 'Humanoid', 'brute', 'normal', { scripted: true },
     [{ kind: 'strike', name: 'Cleaver Swing', heavy: true }],
     ['Pack Leader: rallies nearby goblins and backs away from one empty tile beside the party',
       'Counting Fingers: as it dies, it points at each hunter and then at an empty space beside them'],

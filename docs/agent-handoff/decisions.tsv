@@ -848,3 +848,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T21:10Z	act1	PR 151 Act 1 U0 (legacy e2e fixture) + flake-timeouts (5s unit flake); unit 7428/0; browser 42/42; CI 45894725251 8/8
 2026-11-26T22:24Z	act1	PR 152 Act 1 U4: The Empty Seat starter (Tidewall Cannery Gate, 5-chapter story, 4 optional samples) and first-run rewrite; unit 7439/0; browser 58/58; CI 45903276294 8/8
 2026-11-26T22:42Z	act1	PR 153 Act 1 U5 (Day Zero welcome, sample-hunters box, Carrow primer) + U7 (docs); unit 7442/0; browser 58/58; CI 45905053981 8/8
+2026-11-26T23:28Z	classes	PR 154 wave 2 PR 2 (Arise engine) + PR 5 (Grimreaper); unit 7468/0; browser 87/87; CI 45909691065 8/8

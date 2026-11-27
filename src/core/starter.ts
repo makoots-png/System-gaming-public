@@ -110,7 +110,7 @@ export const STARTER_GATE: {
   classOffer: true,
   bossId: seedId<'m'>('head-usher'),
   monsters: [
-    { monsterId: seedId<'m'>('goblin'), count: 3, wave: 1 },
+    { monsterId: seedId<'m'>('goblin'), count: 1, wave: 1 },
     { monsterId: seedId<'m'>('goblin-shaman'), count: 1, wave: 1 },
     { monsterId: seedId<'m'>('goblin-chief'), count: 1, wave: 1 },
     { monsterId: seedId<'m'>('usher'), count: 2, wave: 2 },
