@@ -23,8 +23,11 @@ import type { ClassName } from '../../src/core/registry/jobs.ts';
 import type { HeldItem } from '../../src/core/registry/item-book.ts';
 import { ATTACK_ID, wornAbilityId } from '../../src/core/registry/abilities.ts';
 import { HEMOMANCER_TREE } from '../../src/core/registry/class-hemomancer.ts';
+import { NECROMANCER_TREE } from '../../src/core/registry/class-necromancer.ts';
 import { BLADEFIEND_TREE } from '../../src/core/registry/class-bladefiend.ts';
 import { RIFTHUNTER_TREE } from '../../src/core/registry/class-rifthunter.ts';
+import { STARFORGER_SOLO_SPEC } from './starforger-solo.ts';
+import { NULLWEAVER_SOLO_SPEC } from './nullweaver-solo.ts';
 import { hunterRow } from '../../src/core/combat/rows.ts';
 import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { AbilityId } from '../../src/core/combat/ability-types.ts';
@@ -497,9 +500,45 @@ export const RIFTHUNTER_SOLO_SPEC: MythicSoloSpec = {
   policy: rifthunterPolicy,
 };
 
+// ── Necromancer (Mythic, pre+pow) solo spec (solo-army combat policy lives in tests/necromancer-solo-sim.test.ts) ──
+
+/** Canonical 32 buyable nodes for Necromancer (Greater Arise, Imperial Domain, Phantom Exchange, Endless Arise, Walking Domain, Abyssal Thrift, Shadow Monarch). */
+export const NECRO_CANONICAL_FORKS = ['necro-a5-l', 'necro-b5-l', 'necro-c5-l', 'necro-a7-l', 'necro-b7-l', 'necro-c7-l'] as const;
+export const NECRO_CANONICAL_NODES: readonly ClassNodeId[] = NECROMANCER_TREE.nodes
+  .filter(n => !n.forkGroup || (NECRO_CANONICAL_FORKS as readonly string[]).includes(n.id))
+  .map(n => nid(n.id));
+
+export const NECROMANCER_SOLO_SPEC: MythicSoloSpec = {
+  className: 'Necromancer',
+  main: 'pre',
+  second: 'pow',
+  kit: 'light',
+  nodes: NECRO_CANONICAL_NODES,
+  title: {
+    id: titleId('t4'),
+    name: 'King of Shadows',
+    desc: 'Leads a shadow army.',
+    bonus: { pow: 5 },
+  },
+  gear: R => [
+    makeWeapon('i31', 'Monarch Scepter', '1d6', { pre: 14, pow: 4 }),
+    makeArmor('i32', 'Shadow Mantle', 'chest', 'light', { pre: 12, pow: 6 }, R),
+    makeArmor('i33', 'Umbral Trousers', 'legs', 'light', { pre: 10, pow: 8 }, R),
+    makeArmor('i34', 'Crown of Ash', 'head', 'light', { pre: 12, pow: 6 }, R),
+    makeArmor('i35', 'Nightstep Boots', 'feet', 'light', { pre: 10, pow: 8 }, R),
+    makeArmor('i36', 'Obsidian Signet', 'offhand', 'light', { pre: 12, pow: 6 }, R),
+  ],
+  policy: () => ({ type: 'pass' }),
+};
+
+export { STARFORGER_SOLO_SPEC, NULLWEAVER_SOLO_SPEC };
+
 /** All shipped Mythic-class solo specs verified by `tests/mythic-solo-sim.test.ts`. */
 export const MYTHIC_SOLO_SPECS: readonly MythicSoloSpec[] = [
   HEMOMANCER_SOLO_SPEC,
+  NECROMANCER_SOLO_SPEC,
+  STARFORGER_SOLO_SPEC,
   BLADEFIEND_SOLO_SPEC,
   RIFTHUNTER_SOLO_SPEC,
+  NULLWEAVER_SOLO_SPEC,
 ];

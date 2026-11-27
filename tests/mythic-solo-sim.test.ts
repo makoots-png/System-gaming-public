@@ -9,6 +9,8 @@ import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import { CLASS_ACTIVES_MAX, TREE_SHAPE, canBuyNode, classTreeOf, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
 import { classPowers } from '../src/core/registry/class-powers.ts';
+import { classDefOf } from '../src/core/registry/jobs.ts';
+import { keystoneOf } from '../src/core/registry/keystones.ts';
 import { heldKeystones } from '../src/core/hunter/sheet.ts';
 import { gradeOfSpend, itemSpend, titleSpend } from '../src/core/registry/item-budget.ts';
 import { WEAR_LIMIT } from '../src/core/registry/items.ts';
@@ -85,7 +87,10 @@ describe('Mythic solo-sim hunter fixtures are 100% legal under shipped rules', (
       expect(h.jobDone).toBe(spec.className);
       expect(cp.worn).not.toBeNull();
       expect(sim.row.statuses.some(s => s.worn && s.key === cp.worn!.key)).toBe(true);
-      expect(ks.some(k => k.awakened !== null)).toBe(true);
+      const pair = classDefOf(spec.className)!.pair;
+      const confluence = keystoneOf({ tier: 'confluence', pair }, SOLO_MYTHIC_RULES);
+      expect(ks.some(k => k.keystone.name === confluence.name)).toBe(true);
+      if (confluence.awakened !== null) expect(ks.some(k => k.awakened !== null)).toBe(true);
       expect(ks.length).toBeGreaterThanOrEqual(4);
       expect(cp.actives.length).toBe(CLASS_ACTIVES_MAX);
       for (const a of cp.actives) {
