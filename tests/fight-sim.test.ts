@@ -93,7 +93,8 @@ import type { StatPoints } from '../src/core/hunter/progress.ts';
 import { earnClass } from '../src/core/hunter/classes.ts';
 import { refill } from '../src/core/hunter/vitals.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import { WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
+import { DEFAULT_OFFER_POOL } from '../src/core/hunter/class-offer.ts';
+import { jobFocus } from '../src/core/registry/jobs.ts';
 import type { UniqueClassName } from '../src/core/registry/jobs.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Policy } from './models/fight-sim.ts';
@@ -942,20 +943,24 @@ function runAct1Setup(key: string, makeRows: () => SimRow[], runs: number): Act1
   };
 }
 
-/** Builds a real Level 3 E-rank hunter holding 0-node Wave 1 unique class `cls` through `earnClass` + `hunterRow`. */
+/** Builds a real Level 3 E-rank hunter holding 0-node offered unique class `cls` through `earnClass` + `hunterRow`. */
 function buildLevel3ClassRow(cls: UniqueClassName, id: string): SimRow {
   const env = { now: new Date(ACT1_AT), newDeviceId: () => dev('d-l3'), newDeviceToken: () => 'tok-l3-1234567890' };
   const s = freshSave(env, { onboarded: true });
   const made = makeHunter({ seq: 500, settings: s.settings }, cls, RULES, new Date(ACT1_AT));
-  const statsByClass: Readonly<Record<UniqueClassName, StatPoints>> = {
+  const statsByClass: Partial<Record<UniqueClassName, StatPoints>> = {
     Hemomancer: { pow: 10, vit: 8 },
     Bladefiend: { str: 10, agi: 8 },
     Rifthunter: { ins: 10, ctl: 8 },
     Seraph: { pre: 10, dis: 8 },
     Ironclad: { vit: 10, dis: 8 },
     Stormcaller: { pow: 10, agi: 8 },
-  } as Record<UniqueClassName, StatPoints>;
-  const level3 = advanceHunter(made.hunter, 3, statsByClass[cls] ?? { str: 10, vit: 8 });
+  };
+  const focus = jobFocus(cls);
+  const derivedStats: StatPoints = focus
+    ? { [focus.main]: 10, ...(focus.second ? { [focus.second]: 8 } : {}) }
+    : { str: 10, vit: 8 };
+  const level3 = advanceHunter(made.hunter, 3, statsByClass[cls] ?? derivedStats);
   const earned = earnClass(level3, cls, { at: ACT1_AT, R: RULES });
   if (isRefused(earned)) throw new Error(`earnClass(${cls}) refused: ${earned.why}`);
   const filled = { ...earned, ...refill(earned, hunterSheet(earned, RULES).sheet) };
@@ -1006,7 +1011,7 @@ describe('Act 1 "The Empty Seat" Wave 1 and Wave 2 balance (1 to 6 players, samp
 });
 
 describe('Act 1 Level 3 Mythic and Epic E-rank checks (0 tree nodes)', () => {
-  for (const cls of WAVE1_OFFER_POOL) {
+  for (const cls of DEFAULT_OFFER_POOL) {
     simTest(`Level 3 ${cls} (0 nodes) with E-rank allies clears an E-rank pack cleanly`, () => {
       const makeRows = () => [
         buildLevel3ClassRow(cls, cls.toLowerCase()),

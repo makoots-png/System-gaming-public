@@ -14,9 +14,13 @@ import { combatantId } from '../src/core/combat/ability-types.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { newRewards } from '../src/core/rewards.ts';
-import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER, WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
+import { CLASS_OFFER_MAX_POOL } from '../src/core/hunter/class-locker.ts';
 import { claimUniqueClass, holderOf } from '../src/core/hunter/class-holders.ts';
 import {
+  DEFAULT_OFFER_POOL,
+  EPIC_OFFER_POOL,
+  MYTHIC_OFFER_POOL,
+  OFFER_REFUSAL_WORDS,
   OFFER_WORDS,
   bestFitClasses,
   classOfferDocOf,
@@ -52,6 +56,9 @@ const D4_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p4')!, 'h1' as HunterId);
 const D5_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p5')!, 'h1' as HunterId);
 const D6_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p6')!, 'h1' as HunterId);
 const D7_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p7')!, 'h1' as HunterId);
+const D8_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p8')!, 'h1' as HunterId);
+const D9_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p9')!, 'h1' as HunterId);
+const D10_KEY: SheetKey = sheetKeyOf(parseDeviceId('d-p10')!, 'h1' as HunterId);
 
 function gmSave(): Save {
   const base = freshSave(ENV, { onboarded: true });
@@ -179,19 +186,20 @@ describe('starter Tidewall Cannery Gate classOffer gate field & boss-fall trigge
 
     // Shared OFFER_WORDS stays neutral (no carved altar prop) and names the real buttons.
     expect(OFFER_WORDS.gatePromptNote.toLowerCase()).not.toContain('altar');
-    expect(OFFER_WORDS.openBody).toContain('Six classes are open.');
+    expect(OFFER_WORDS.openBody).toContain('Pick one open class.');
     expect(OFFER_WORDS.gmOfferRoomHint).toContain('Close offer');
     expect(OFFER_WORDS.gmOfferRoomHint).toContain('Clear gate');
   });
 });
 
 describe('openClassOffer, closeClassOffer, save repair & export', () => {
-  test('opens Wave 1 pool (3 Mythics + 3 Epics), repairs cleanly on GM, clears on player, and strips on export', () => {
+  test('opens derived Mythic + Epic pool within CLASS_OFFER_MAX_POOL, repairs cleanly on GM, clears on player, and strips on export', () => {
     const s0 = gmSave();
     const { save: s1, offer } = openClassOffer(s0, { at: AT, room: ROOM, R: RULES });
-    expect(offer.pool).toEqual(WAVE1_OFFER_POOL);
-    expect(offer.pool.slice(0, 3)).toEqual(WAVE1_MYTHIC_OFFER);
-    expect(offer.pool.slice(3)).toEqual(WAVE1_EPIC_OFFER);
+    expect(offer.pool).toEqual(DEFAULT_OFFER_POOL);
+    expect(offer.pool.length).toBeLessThanOrEqual(CLASS_OFFER_MAX_POOL);
+    expect(offer.pool.slice(0, MYTHIC_OFFER_POOL.length)).toEqual(MYTHIC_OFFER_POOL);
+    expect(offer.pool.slice(MYTHIC_OFFER_POOL.length)).toEqual(EPIC_OFFER_POOL);
     expect(s1.classOffer).toEqual(offer);
 
     // Repair preserves valid offer on GM and floors save.seq above co<seq>.
@@ -225,7 +233,7 @@ describe('classOfferDocOf, DOCS.classOffer, classOfferFor & wire redaction', () 
     if (isRefused(c1)) return;
     s = c1.save;
 
-    const c2 = claimUniqueClass(s, 'Necromancer', { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, holderCtx());
+    const c2 = claimUniqueClass(s, 'Dreadnought', { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, holderCtx());
     expect(isRefused(c2)).toBe(false);
     if (isRefused(c2)) return;
     s = c2.save;
@@ -240,11 +248,11 @@ describe('classOfferDocOf, DOCS.classOffer, classOfferFor & wire redaction', () 
     expect(doc.active).toBe(true);
     if (!doc.active) return;
 
-    // Canonical pool order, no Necromancer leak, NPC name redacted to ''.
+    // Canonical pool order, no outside-pool Dreadnought leak, NPC name redacted to ''.
     expect(Object.keys(doc.taken)).toEqual(['Bladefiend', 'Seraph']);
     expect(doc.taken.Bladefiend).toEqual({ who: 'gm', name: '' });
     expect(doc.taken.Seraph).toEqual({ who: KAEL_KEY, name: 'Kael Fresh' });
-    expect('Necromancer' in doc.taken).toBe(false);
+    expect('Dreadnought' in doc.taken).toBe(false);
 
     // Protocol validation + classOfferFor scoping.
     const parsed = DOCS.classOffer(JSON.parse(JSON.stringify(doc)))!;
@@ -319,38 +327,52 @@ describe('pickClassFromOffer: races, 4+ Epics, 7th all-taken, stat fit, and copy
     if (isRefused(p2Alt)) return;
     expect(holderOf(p2Alt.save, 'Bladefiend')?.name).toBe('Kael');
 
-    // Wrong offer id, non-pool class, and mid-fight hunter are refused.
+    // Wrong offer id, non-pool class, and mid-fight hunter are refused; wired Mythics like Necromancer are pickable.
     expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Rifthunter', 'co999-0', holderCtx())).toEqual({ ok: false, why: 'wrong-offer' });
-    expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Necromancer', offer.id, holderCtx())).toEqual({ ok: false, why: 'not-in-pool' });
+    expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Dreadnought', offer.id, holderCtx())).toEqual({ ok: false, why: 'not-in-pool' });
     expect(pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Rifthunter', offer.id, holderCtx(ROOM, () => false, k => k === D3_KEY))).toEqual({ ok: false, why: 'held' });
+    const p3Necro = pickClassFromOffer(p2Alt.save, { kind: 'remote', sheetKey: D3_KEY, name: 'P3' }, 'Necromancer', offer.id, holderCtx());
+    expect(isRefused(p3Necro)).toBe(false);
+    if (!isRefused(p3Necro)) expect(holderOf(p3Necro.save, 'Necromancer')?.name).toBe('P3');
   });
 
-  test('party of 4+ picks Epics, keeps Epic if later granted a Mythic, and 7th player sees allTaken plain notice', () => {
+  test('full 6-Mythic + 3-Epic pool stays fair (no duplicates, Mythics before Epics, wire under limit), keeps Epic on Mythic grant, and next player sees allTaken notice', () => {
     let { save: s, offer } = openClassOffer(gmSave(), { at: AT, room: ROOM, R: RULES });
-    const picks: [SheetKey, string, (typeof WAVE1_OFFER_POOL)[number]][] = [
-      [MIRA_KEY, 'Mira', 'Hemomancer'],
-      [KAEL_KEY, 'Kael', 'Bladefiend'],
-      [D3_KEY, 'Sora', 'Rifthunter'],
-      [D4_KEY, 'Bram', 'Seraph'],
-      [D5_KEY, 'Tali', 'Ironclad'],
-      [D6_KEY, 'Vex', 'Stormcaller'],
+    const playerKeys: readonly [SheetKey, string][] = [
+      [MIRA_KEY, 'Mira'],
+      [KAEL_KEY, 'Kael'],
+      [D3_KEY, 'Sora'],
+      [D4_KEY, 'Bram'],
+      [D5_KEY, 'Tali'],
+      [D6_KEY, 'Vex'],
+      [D7_KEY, 'Nori'],
+      [D8_KEY, 'Jace'],
+      [D9_KEY, 'Lina'],
     ];
-    for (const [key, name, cls] of picks) {
+    expect(DEFAULT_OFFER_POOL).toHaveLength(playerKeys.length);
+    for (let i = 0; i < DEFAULT_OFFER_POOL.length; i++) {
+      const [key, name] = playerKeys[i]!;
+      const cls = DEFAULT_OFFER_POOL[i]!;
       const r = pickClassFromOffer(s, { kind: 'remote', sheetKey: key, name }, cls, offer.id, holderCtx());
       expect(isRefused(r)).toBe(false);
       if (isRefused(r)) return;
       s = r.save;
+      // Duplicate claim on the just-claimed class is refused cleanly.
+      expect(pickClassFromOffer(s, { kind: 'remote', sheetKey: D10_KEY, name: 'Late' }, cls, offer.id, holderCtx())).toEqual({ ok: false, why: 'class-taken' });
     }
 
-    // 7th player sees allTaken with 0 open and plain notice.
+    // 10th player sees allTaken with 0 open, Mythics before Epics, and wire doc well under 64 KiB.
     const doc = classOfferDocOf(s, AT);
     expect(doc.active).toBe(true);
     if (!doc.active) return;
-    const vm = classOfferView(doc, { hunter: newHunter(RULES), myWho: D7_KEY });
+    expect(DOCS.classOffer(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+    expect(new TextEncoder().encode(JSON.stringify(doc)).byteLength).toBeLessThan(8192);
+    const vm = classOfferView(doc, { hunter: newHunter(RULES), myWho: D10_KEY });
     expect(vm.allTaken).toBe(true);
     expect(vm.openCount).toBe(0);
-    expect(vm.mythics.map(c => c.className)).toEqual([...WAVE1_MYTHIC_OFFER]);
-    expect(vm.epics.map(c => c.className)).toEqual([...WAVE1_EPIC_OFFER]);
+    expect(vm.totalCount).toBe(DEFAULT_OFFER_POOL.length);
+    expect(vm.mythics.map(c => c.className)).toEqual([...MYTHIC_OFFER_POOL]);
+    expect(vm.epics.map(c => c.className)).toEqual([...EPIC_OFFER_POOL]);
     expect(OFFER_WORDS.allTakenNotice).toContain('GM');
 
     // Local hunter who picked an Epic keeps it when later granted a Mythic.
@@ -368,11 +390,11 @@ describe('pickClassFromOffer: races, 4+ Epics, 7th all-taken, stat fit, and copy
 
   test('bestFitClasses tags best stat pair and returns empty set for flat stats', () => {
     const flat = newHunter(RULES);
-    expect(bestFitClasses(flat, WAVE1_OFFER_POOL, {}).size).toBe(0);
+    expect(bestFitClasses(flat, DEFAULT_OFFER_POOL, {}).size).toBe(0);
 
     const vitPow = { ...flat, stats: { ...flat.stats, vit: 18, pow: 18 } };
-    expect([...bestFitClasses(vitPow, WAVE1_OFFER_POOL, {})]).toEqual(['Hemomancer']);
-    expect(bestFitClasses(vitPow, WAVE1_OFFER_POOL, { Hemomancer: { who: 'gm', name: 'Mira' } }).has('Hemomancer')).toBe(false);
+    expect([...bestFitClasses(vitPow, DEFAULT_OFFER_POOL, {})]).toEqual(['Hemomancer']);
+    expect(bestFitClasses(vitPow, DEFAULT_OFFER_POOL, { Hemomancer: { who: 'gm', name: 'Mira' } }).has('Hemomancer')).toBe(false);
   });
 });
 
@@ -671,7 +693,7 @@ describe('a downed hunter takes no unique class (statechart rule 2)', () => {
 
 describe('the offer view reads the offer doc, never the locker (statechart rule 7)', () => {
   const doc = (taken: Partial<Record<'Hemomancer' | 'Seraph', { who: SheetKey | 'gm'; name: string }>>) => ({
-    active: true as const, id: 'co1-abc', at: AT, pool: [...WAVE1_OFFER_POOL], hunters: [], taken,
+    active: true as const, id: 'co1-abc', at: AT, pool: [...DEFAULT_OFFER_POOL], hunters: [], taken,
   });
   const withHemo = (registryId: string) => {
     const h = newHunter(RULES);
@@ -723,6 +745,17 @@ describe('the GM answers a pick it refuses (statechart rule 5)', () => {
     const alone = pickAnswered(save, { sheetKey: MIRA_KEY, name: 'Mira' }, 'Hemomancer', 'co9-old', PICK, holderCtx(null));
     expect(alone.why).toBe('wrong-offer');
     expect(alone.save).toBe(save);
+  });
+
+  test('hunter who already holds an offered unique class from a GM grant or story gets a true refusal line in a new offer', () => {
+    const granted = claimUniqueClass(gmSave(), 'Necromancer', { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, holderCtx());
+    expect(isRefused(granted)).toBe(false);
+    if (isRefused(granted)) return;
+    const { save, offer } = openClassOffer(granted.save, { at: AT, room: ROOM, R: RULES });
+    const res = pickClassFromOffer(save, { kind: 'remote', sheetKey: MIRA_KEY, name: 'Mira' }, 'Hemomancer', offer.id, holderCtx());
+    expect(res).toEqual({ ok: false, why: 'already-picked' });
+    expect(OFFER_REFUSAL_WORDS['already-picked']).toBe('You already hold a class from this offer.');
+    expect(pickRefusedLine('already-picked', 'Hemomancer')).toBe('You already hold a class from this offer.');
   });
 
   test('every refusal has words for the player', () => {

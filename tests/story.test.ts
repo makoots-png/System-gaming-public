@@ -10,8 +10,7 @@ import { storyMove, storyRefusalWords } from '../src/core/story/run.ts';
 import type { MoveCtx } from '../src/core/story/run.ts';
 import { claimUniqueClass, holderOf, uniqueJobBlock } from '../src/core/hunter/class-holders.ts';
 import { uniqueJobRefusalText } from '../src/core/hunter/grant.ts';
-import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER, WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
-import { openClassOffer } from '../src/core/hunter/class-offer.ts';
+import { DEFAULT_OFFER_POOL, EPIC_OFFER_POOL, MYTHIC_OFFER_POOL, openClassOffer, pickClassFromOffer } from '../src/core/hunter/class-offer.ts';
 import { chooseMode } from '../src/core/role.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
@@ -380,11 +379,84 @@ describe('The Empty Throne and unique-class story pre-check (Wave 2 PR 4)', () =
     expect(remReopen.save.classHolders).toEqual(remFirst.save.classHolders);
   });
 
-  test('no offer pool: Necromancer is never in any default offer pool', () => {
-    expect((WAVE1_OFFER_POOL as readonly string[]).includes('Necromancer')).toBe(false);
-    expect((WAVE1_MYTHIC_OFFER as readonly string[]).includes('Necromancer')).toBe(false);
-    expect((WAVE1_EPIC_OFFER as readonly string[]).includes('Necromancer')).toBe(false);
+  test('offer pool (t207u): Necromancer is in the derived Mythic offer pool and default offer', () => {
+    expect(MYTHIC_OFFER_POOL).toContain('Necromancer');
+    expect(DEFAULT_OFFER_POOL).toContain('Necromancer');
+    expect((EPIC_OFFER_POOL as readonly string[]).includes('Necromancer')).toBe(false);
     const opened = openClassOffer(gmWithThrone(), { at: AT, room: null, R: RULES });
-    expect((opened.offer.pool as readonly string[]).includes('Necromancer')).toBe(false);
+    expect(opened.offer.pool).toContain('Necromancer');
+  });
+
+  test('offer then The Empty Throne: claiming Necromancer from the offer refuses turnOn up front for another hunter, still refuses chapter 2 if claimed mid-trial, and lets the same holder run cleanly', () => {
+    const holderCtx = { at: AT, room: null, stamp: null, R: RULES, heldLocal: () => false, heldRemote: () => false };
+
+    // 1a. Teo claims Necromancer first; turning on The Empty Throne for Mira is refused up front with class-taken words and delivers nothing.
+    const opened = openClassOffer(gmWithThrone(), { at: AT, room: null, R: RULES });
+    const teoPicked = ok(pickClassFromOffer(opened.save, { kind: 'local', hunterId: H2 }, 'Necromancer', opened.offer.id, holderCtx));
+    const refusedTurnOn = storyMove(
+      teoPicked.save,
+      R1,
+      { type: 'turnOn', id: R1, story: THRONE.id, who: { at: 'hunters', refs: [MIRA] }, to: [MIRA], at: AT, session: 1 },
+      baseCtx(),
+    );
+    expect(refusedTurnOn).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Necromancer', why: 'class-taken', holderName: 'Teo' },
+      targetName: 'Mira',
+    });
+    if (isRefused(refusedTurnOn)) {
+      expect(storyRefusalWords(refusedTurnOn, 1)).toBe('Necromancer was not granted to Mira. Teo holds it. Release or reassign it first.');
+    }
+    expect(teoPicked.save.storyRuns).toEqual([]);
+    expect(teoPicked.save.hunters.find(h => h.id === H1)!.quests.some(q => q.title === 'Win the trial alone')).toBe(false);
+
+    // 1b. If The Empty Throne starts while Necromancer is open and Teo claims it mid-trial, chapter 2 is still refused cleanly.
+    const startedOpen = startThrone(gmWithThrone(), MIRA).save;
+    const openedMid = openClassOffer(startedOpen, { at: AT, room: null, R: RULES });
+    const teoMid = ok(pickClassFromOffer(openedMid.save, { kind: 'local', hunterId: H2 }, 'Necromancer', openedMid.offer.id, holderCtx));
+    const refusedCh2 = storyMove(teoMid.save, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA], at: AT, session: 1 }, baseCtx());
+    expect(refusedCh2).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Necromancer', why: 'class-taken', holderName: 'Teo' },
+      targetName: 'Mira',
+    });
+    expect(holderOf(teoMid.save, 'Necromancer')).toEqual(teoMid.holder);
+    expect(Object.hasOwn(teoMid.save.hunters.find(h => h.id === H1)!.classes, 'Necromancer')).toBe(false);
+
+    // 2. Mira claims Necromancer from the offer, then starts and opens chapter 2 for herself: skips re-claiming, keeps grantId, delivers King of Shadows, no duplicate holder.
+    const openedSame = openClassOffer(gmWithThrone(), { at: AT, room: null, R: RULES });
+    const miraPicked = ok(pickClassFromOffer(openedSame.save, { kind: 'local', hunterId: H1 }, 'Necromancer', openedSame.offer.id, holderCtx));
+    const sSame = startThrone(miraPicked.save, MIRA).save;
+    const delivered = ok(storyMove(sSame, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA], at: AT, session: 1 }, baseCtx()));
+    expect(delivered.granted[0]!.g.jobRefused).toBeNull();
+    expect(delivered.save.classHolders).toEqual(miraPicked.save.classHolders);
+    expect(holderOf(delivered.save, 'Necromancer')).toEqual(miraPicked.holder);
+    const miraAfter = delivered.save.hunters.find(h => h.id === H1)!;
+    expect(miraAfter.classes.Necromancer?.grantId).toBe(miraPicked.holder.grantId);
+    expect(miraAfter.titles.filter(t => t.name === 'King of Shadows')).toHaveLength(1);
+    expect(delivered.save.hunters.filter(h => Object.hasOwn(h.classes, 'Necromancer')).map(h => h.id)).toEqual([H1]);
+
+    // 3. Remote player Kai claims Necromancer from the offer, then opens chapter 2 for Kai: skips re-claiming with zero class-taken refusal.
+    const roomCode = room('ABC234');
+    const roomCtx = (rand: number): MoveCtx => baseCtx({
+      room: { code: roomCode, sheets: [{ key: KAI_KEY, data: { name: 'Kai', rank: 'B' } }], onRow: () => false, stamp: { device: dev('d-gm'), now: Date.parse(AT), rand } },
+    });
+    const openedRem = openClassOffer(gmWithThrone(), { at: AT, room: roomCode, R: RULES });
+    const kaiPicked = ok(pickClassFromOffer(
+      openedRem.save,
+      { kind: 'remote', sheetKey: KAI_KEY, name: 'Kai' },
+      'Necromancer',
+      openedRem.offer.id,
+      { at: AT, room: roomCode, stamp: { device: dev('d-gm'), now: Date.parse(AT), rand: 0.2 }, R: RULES, heldLocal: () => false, heldRemote: () => false },
+    ));
+    const sRem = startThrone(kaiPicked.save, KAI, roomCtx(0.3)).save;
+    const remDelivered = ok(storyMove(sRem, R1, { type: 'open', chapter: 1, seen: 1, to: [KAI], at: AT, session: 1 }, roomCtx(0.4)));
+    expect(remDelivered.remoteClaimed).toEqual([]);
+    expect(remDelivered.remoteJobRefused).toEqual([]);
+    expect(remDelivered.posted).toEqual([KAI_KEY]);
+    expect(remDelivered.save.classHolders).toEqual(kaiPicked.save.classHolders);
+    expect(holderOf(remDelivered.save, 'Necromancer')).toEqual(kaiPicked.holder);
   });
 });

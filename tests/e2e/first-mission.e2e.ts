@@ -3,7 +3,7 @@
 // 2. Solo GM run testing Tessa Corbin's 12 unspent creation points, 2-wave Tidewall Cannery Gate, 3 Mythics + 1 Epic, and Guest title.
 // 3. Clear-before-offer recovery: clearing Tidewall Cannery Gate before offering classes keeps the card offer button active.
 import type { Page } from '@playwright/test';
-import { OFFER_WORDS, WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER } from '../../src/core/hunter/class-offer.ts';
+import { EPIC_OFFER_POOL, MYTHIC_OFFER_POOL, OFFER_WORDS } from '../../src/core/hunter/class-offer.ts';
 import { PREGENS, STARTER_GATE, STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER } from '../../src/core/starter.ts';
 import { STORY_WORDS } from '../../src/core/story/run.ts';
 import {
@@ -204,8 +204,8 @@ test('full GM + remote player room run of The Empty Seat reaches unique-class pi
   await test.step('Beat 5: Kira Sol picks Hemomancer, cap lifts to Cap: none on both phones, gate clears, and Chapter 5 grants Guest (+1 dis)', async () => {
     const gmOffer = gm.locator('[data-co-modal]');
     await expect(gmOffer).toBeVisible();
-    await expect(gmOffer.locator('[data-co-mythics] [data-co-card]')).toHaveCount(WAVE1_MYTHIC_OFFER.length);
-    await expect(gmOffer.locator('[data-co-epics] [data-co-card]')).toHaveCount(WAVE1_EPIC_OFFER.length);
+    await expect(gmOffer.locator('[data-co-mythics] [data-co-card]')).toHaveCount(MYTHIC_OFFER_POOL.length);
+    await expect(gmOffer.locator('[data-co-epics] [data-co-card]')).toHaveCount(EPIC_OFFER_POOL.length);
 
     // Remote player sees offer modal and picks Hemomancer.
     await dismissAll(p1);

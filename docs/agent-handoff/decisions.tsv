@@ -864,3 +864,4 @@ ts	phase	decision	why	evidence	result
 2026-11-27T09:42Z	npc	PR 167: NPC unit 5 (no-tap NPC turns, GM device switch, Step once) with Fable fixes; unit 7797/0; full browser 681 + 5 load reruns 10/10; CI 45973583774 8/8
 2026-11-27T11:56Z	classes	PR 168: class rarity wave 3 U1-U7 (hooks, Berserker, Cleric, Nightblade, Bastion, Chronokeeper, Voidstalker, Starforger, Nullweaver); U8 Roster Lock next
 2026-11-27T14:01Z	classes	PR 169: wave 3 U8 Roster Lock; wave 3 complete
+2026-11-27T17:00Z	combat	PR 170: gate fights scale with headcount (t205u); sized once at start; 1-6 table in PR

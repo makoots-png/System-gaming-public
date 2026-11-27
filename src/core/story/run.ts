@@ -216,6 +216,8 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
   const skipped = 'to' in e ? e.to.filter(r => !present(r)) : [];
   const ev: RunEvent = 'to' in e ? { ...e, to: e.to.filter(present) } : e;
   // Pre-check unique-class chapters before `runStep` so refused claims deliver no window, title, quest, or run advance.
+  // Also pre-check at `turnOn` when every later unique-class chapter in the story is already held by someone else,
+  // so a trial like The Empty Throne refuses up front instead of letting a hunter win chapter 1 for a taken class.
   const preChapter = (() => {
     if (!story || !('to' in ev) || !ev.to.length) return null;
     if (ev.type === 'turnOn') return !run && story.id === ev.story ? story.chapters[0] ?? null : null;
@@ -243,6 +245,32 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
       if (block === 'already') alreadyHeldUniqueJob = true;
       else if (block !== null) {
         const denied: UniqueJobStoryRefusal = { ok: false, why: 'unique-job', refusal: block, targetName };
+        return denied;
+      }
+    }
+  } else if (!uniqueCls && ev.type === 'turnOn' && !run && story && story.id === ev.story && ev.to.length > 0) {
+    const laterUniques = [...new Set(
+      story.chapters.slice(1).flatMap(c => {
+        const u = c.rewards.job ? canonicalUniqueClass(c.rewards.job) : null;
+        return u ? [u] : [];
+      }),
+    )];
+    if (laterUniques.length > 0) {
+      const targetFor = (ref: HunterRef): HolderTarget => (ref.kind === 'local'
+        ? { kind: 'local', hunterId: ref.hunterId }
+        : { kind: 'remote', sheetKey: ref.remote, name: nameOf(save, sheets, ref) });
+      const noFightCheck = { heldLocal: () => false, heldRemote: () => false };
+      const takenBlocks: UniqueJobRefusal[] = [];
+      for (const cls of laterUniques) {
+        const blocks = ev.to.map(ref => uniqueJobBlock(save, cls, targetFor(ref), noFightCheck));
+        const taken = blocks.find((b): b is UniqueJobRefusal => b !== null && b !== 'already' && b.why === 'class-taken');
+        if (taken && blocks.every(b => b !== null && b !== 'already' && b.why === 'class-taken')) {
+          takenBlocks.push(taken);
+        }
+      }
+      if (takenBlocks.length === laterUniques.length) {
+        const targetName = ev.to.length === 1 ? nameOf(save, sheets, ev.to[0]!) : '';
+        const denied: UniqueJobStoryRefusal = { ok: false, why: 'unique-job', refusal: takenBlocks[0]!, targetName };
         return denied;
       }
     }

@@ -156,8 +156,9 @@ gold, and the party still has E-rank HP, E-rank gear, and an E-rank Bureau licen
   - **Beat 5 (The empty seat and outside):** when the Head Usher falls, the extra chair stands pushed back and the
     trial resolves literally (*"The seat holder left. One seat is empty. Remain seated: failed (no penalty stated). Cost
     paid by seat holder. Your cap is removed (Cap: none)."*). Each hunter suffers a brief second fever (`power.md`,
-    section 5), claims one unique class from the Wave 1 offer pool (three Mythics: `Hemomancer`, `Bladefiend`,
-    `Rifthunter`, and three Epics: `Seraph`, `Ironclad`, `Stormcaller`), receives the **Guest** title (`+1 Discipline`),
+    section 5), claims one unique class from the Mission 1 offer pool (every wired Mythic, currently six: `Hemomancer`,
+    `Necromancer`, `Starforger`, `Bladefiend`, `Rifthunter`, `Nullweaver`, and three Epics: `Seraph`, `Ironclad`,
+    `Stormcaller`), receives the **Guest** title (`+1 Discipline`),
     and clears the gate to reach Level 3. No sponsor, viewer, camera, or broadcast is named in Session 1. Back in the
     boss room, a Reclaimers' Local 7 crew is cutting crystal where solid brick now stands. Outside, Pim says they were
     inside twelve minutes and his license has one line fewer. On each hunter's window, below `Cap: none`, sits a single

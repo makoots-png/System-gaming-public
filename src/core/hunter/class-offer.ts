@@ -15,7 +15,7 @@ import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import type { StatKey } from '../stats.ts';
 import { BUILT_IN_CLASSES, classDefOf, isUniqueClass } from '../registry/jobs.ts';
-import type { UniqueClassName } from '../registry/jobs.ts';
+import type { ClassDef, UniqueClassName } from '../registry/jobs.ts';
 import { CLASS_SIGNATURES } from '../registry/class-powers.ts';
 import type { ClassSignatureMap } from '../registry/class-powers.ts';
 import { CLASS_LOCKER_CAP, CLASS_TREES } from '../registry/class-trees.ts';
@@ -23,17 +23,46 @@ import type { ClassTreeMap } from '../registry/class-trees.ts';
 import {
   CLASS_OFFER_MAX_HUNTERS,
   CLASS_OFFER_MAX_POOL,
-  WAVE1_EPIC_OFFER,
-  WAVE1_MYTHIC_OFFER,
-  WAVE1_OFFER_POOL,
 } from './class-locker.ts';
 import type { ClassHolder, ClassOffer } from './class-locker.ts';
 import { HOLDER_REFUSAL_WORDS, claimUniqueClass, classesHeldBy } from './class-holders.ts';
 import type { HolderStepCtx, HolderTarget } from './class-holders.ts';
 import { CLASS_RARITY_LABEL, pairShortLabel } from './class-view.ts';
 
-export { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER, WAVE1_OFFER_POOL };
 export type { ClassOffer };
+
+/**
+ * Derives the Mythic offer pool from the class registry: every built-in class with `rarity === 'mythic'`
+ * wired in both `CLASS_SIGNATURES` and `CLASS_TREES`, in registry order. A new Mythic joins automatically
+ * once it is registered and wired, with no pool edit.
+ */
+export function mythicOfferPool(
+  classes: Readonly<Record<string, Pick<ClassDef, 'rarity' | 'unique'>>> = BUILT_IN_CLASSES,
+  signatures: Readonly<Record<string, unknown>> = CLASS_SIGNATURES,
+  trees: Readonly<Record<string, unknown>> = CLASS_TREES,
+): readonly UniqueClassName[] {
+  const out: UniqueClassName[] = [];
+  for (const [name, def] of Object.entries(classes)) {
+    if (
+      def.rarity === 'mythic'
+      && def.unique
+      && Object.hasOwn(signatures, name)
+      && Object.hasOwn(trees, name)
+      && Boolean(signatures[name])
+      && Boolean(trees[name])
+    ) {
+      out.push(name as UniqueClassName);
+    }
+  }
+  return out;
+}
+
+/** Every wired Mythic class, listed at the top of the first-mission class offer (derived from the registry). */
+export const MYTHIC_OFFER_POOL: readonly UniqueClassName[] = mythicOfferPool();
+/** Epic classes listed below the Mythics for leftover players or role picks. */
+export const EPIC_OFFER_POOL = ['Seraph', 'Ironclad', 'Stormcaller'] as const satisfies readonly UniqueClassName[];
+/** Default first-mission offer pool: every wired Mythic first, then the Epics. */
+export const DEFAULT_OFFER_POOL: readonly UniqueClassName[] = [...MYTHIC_OFFER_POOL, ...EPIC_OFFER_POOL];
 
 const stamp36 = (at: string): string => {
   const t = Date.parse(at);
@@ -62,13 +91,13 @@ export function openClassOffer(
   },
 ): { readonly save: Save; readonly offer: ClassOffer; readonly capPosted: boolean } {
   const nextSeq = save.seq + 1;
-  const rawPool = opts.pool && opts.pool.length ? opts.pool : WAVE1_OFFER_POOL;
+  const rawPool = opts.pool && opts.pool.length ? opts.pool : DEFAULT_OFFER_POOL;
   const pool: UniqueClassName[] = [];
   for (const cls of rawPool) {
     if (pool.length >= CLASS_OFFER_MAX_POOL) break;
     if (isUniqueClass(cls) && !pool.includes(cls)) pool.push(cls);
   }
-  const finalPool: readonly UniqueClassName[] = pool.length ? pool : WAVE1_OFFER_POOL;
+  const finalPool: readonly UniqueClassName[] = pool.length ? pool : DEFAULT_OFFER_POOL;
   const hunters: string[] = [];
   for (const raw of opts.hunters ?? []) {
     if (hunters.length >= CLASS_OFFER_MAX_HUNTERS) break;
@@ -329,7 +358,7 @@ export function classTakenLine(cls: string, holderName: string | null | undefine
 export const OFFER_WORDS = {
   tag: '! Class offer',
   title: 'Pick a class',
-  openBody: 'Six classes are open. Pick one class. Only one hunter can hold each class.',
+  openBody: 'Pick one open class. Only one hunter can hold each class.',
   fitsBadge: 'Fits your stats',
   epicHeading: 'Epic classes',
   mythicHeading: 'Mythic classes',
@@ -382,5 +411,5 @@ export const OFFER_REFUSAL_WORDS: Readonly<Record<OfferPickRefusal, string>> = {
   'wrong-offer': 'That class offer has closed. Check the current offer.',
   'not-in-pool': 'That class is not part of the current offer.',
   'not-eligible': 'Your hunter is not part of this class offer.',
-  'already-picked': 'You already picked a class from this offer.',
+  'already-picked': 'You already hold a class from this offer.',
 };

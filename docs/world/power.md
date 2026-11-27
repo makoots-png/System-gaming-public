@@ -202,13 +202,14 @@ one hunter in eight is a Healer. Every party wants one, so guilds pay a healer o
 About one hunter in three hundred is a Necromancer.
 
 **Unique classes (Epic and Mythic).** Beyond the seven standard jobs sit unique classes held by only one hunter at a
-time. In Mission 1 (`The Empty Seat`, `story.md`, Act 1), the buyer prepays a Wave 1 seed package from the Hosts'
-vault: three Mythic classes (`Hemomancer`, `Bladefiend`, `Rifthunter`) and three Epic classes (`Seraph`, `Ironclad`,
-`Stormcaller`). High-depth nodes on Mythic and Epic trees cost heavy gold (`src/core/hunter/classes.ts`), so level-3
-E-ranks holding unique classes still have E-rank HP, E-rank gear, and an E-rank Bureau license. *GM lore notes
-(proposed, needs the owner):* player screens stay literal (`"Six classes are open"`, never `"vacant"`), preserving
-Act 4's reveal. The owner still needs to rule on (1) whether unique classes are windows vacated by earlier seasons'
-hunters, and (2) what a Bureau crystal reading shows for a hunter holding a Mythic or Epic class.
+time. In Mission 1 (`The Empty Seat`, `story.md`, Act 1), the buyer prepays an offer pool from the Hosts' vault: every
+wired Mythic class (currently six: `Hemomancer`, `Necromancer`, `Starforger`, `Bladefiend`, `Rifthunter`, `Nullweaver`)
+and three Epic classes (`Seraph`, `Ironclad`, `Stormcaller`). High-depth nodes on Mythic and Epic trees cost heavy gold
+(`src/core/hunter/classes.ts`), so level-3 E-ranks holding unique classes still have E-rank HP, E-rank gear, and an
+E-rank Bureau license. *GM lore notes (proposed, needs the owner):* player screens stay literal (`"Pick one open class."`,
+never `"vacant"`), preserving Act 4's reveal. The owner still needs to rule on (1) whether unique classes are windows
+vacated by earlier seasons' hunters, and (2) what a Bureau crystal reading shows for a hunter holding a Mythic or Epic
+class.
 
 **Shadows.** A Necromancer can extract a shadow from a monster they have killed. The shadow then fights for them.
 A Necromancer gets three attempts on each corpse. Extraction is harder when the monster outranks the Necromancer,

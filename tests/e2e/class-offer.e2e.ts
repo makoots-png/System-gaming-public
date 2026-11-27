@@ -1,10 +1,9 @@
 // First-mission & GM unique-class offer, deterministic two-phone race, 4+ Epic / 7th all-taken notice,
 // GM award unique-job refusal notice, and 360px phone layout (PR 6).
 import type { Page } from '@playwright/test';
-import { OFFER_WORDS, classTakenLine, pickRefusedLine } from '../../src/core/hunter/class-offer.ts';
+import { DEFAULT_OFFER_POOL, EPIC_OFFER_POOL, MYTHIC_OFFER_POOL, OFFER_WORDS, classTakenLine, pickRefusedLine } from '../../src/core/hunter/class-offer.ts';
 import { CLASS_UI_WORDS } from '../../src/core/hunter/class-view.ts';
 import { uniqueJobRefusalText } from '../../src/core/hunter/grant.ts';
-import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER } from '../../src/core/hunter/class-locker.ts';
 import { STARTER_GATE } from '../../src/core/starter.ts';
 import { test, expect, openApp, tapIfShown, onboardGM, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, SMALL_PHONE } from './helpers.ts';
 
@@ -64,15 +63,15 @@ test('starter Goblin Den first fight prompts Offer classes, local hunters claim 
     await expect(clearedDlg).toHaveCount(0);
   });
 
-  await test.step('live GM offer modal lists 3 Mythics above 3 Epics and claims locally without repeating gate prompt', async () => {
+  await test.step('live GM offer modal lists every wired Mythic above 3 Epics and claims locally without repeating gate prompt', async () => {
     const coModal = gm.locator('[data-co-modal]');
     await expect(coModal).toBeVisible();
-    await expect(coModal.locator('[data-co-mythics] [data-co-card]')).toHaveCount(3);
-    await expect(coModal.locator('[data-co-epics] [data-co-card]')).toHaveCount(3);
-    for (const cls of WAVE1_MYTHIC_OFFER) await expect(coModal.locator(`[data-co-mythics] [data-co-card="${cls}"]`)).toBeVisible();
-    for (const cls of WAVE1_EPIC_OFFER) await expect(coModal.locator(`[data-co-epics] [data-co-card="${cls}"]`)).toBeVisible();
+    await expect(coModal.locator('[data-co-mythics] [data-co-card]')).toHaveCount(MYTHIC_OFFER_POOL.length);
+    await expect(coModal.locator('[data-co-epics] [data-co-card]')).toHaveCount(EPIC_OFFER_POOL.length);
+    for (const cls of MYTHIC_OFFER_POOL) await expect(coModal.locator(`[data-co-mythics] [data-co-card="${cls}"]`)).toBeVisible();
+    for (const cls of EPIC_OFFER_POOL) await expect(coModal.locator(`[data-co-epics] [data-co-card="${cls}"]`)).toBeVisible();
     await expect(coModal.locator('[data-co-epic-note]')).toHaveText(OFFER_WORDS.epicKeepNote);
-    // every Wave 1 offer class has its kit (kits PRs 4, 5 and 7), so no card says it has none
+    // every offered class has its kit, so no card says it has none
     await expect(coModal.locator('[data-co-nokit]')).toHaveCount(0);
 
     // Pick Hemomancer for the first starter hunter and Seraph (Epic) for the second.
@@ -121,7 +120,7 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
     { timeout: 20_000 },
   ).toEqual(['Kael', 'Mira']);
 
-  await test.step('GM opens class offer on GM panel (blank campaign); both phones auto-open modal with 3 Mythics + 3 Epics and fit 360px', async () => {
+  await test.step('GM opens class offer on GM panel (blank campaign); both phones auto-open modal with every wired Mythic + 3 Epics and fit 360px', async () => {
     await go(gm, 'gm');
     await openGmSection(gm, 'classes');
     const regBox = gm.locator('#gm-classes');
@@ -132,14 +131,17 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
       const m = page.locator('[data-co-modal]');
       await expect(m).toBeVisible({ timeout: 20_000 });
       await expect(m).toContainText(OFFER_WORDS.openBody);
-      await expect(m.locator('[data-co-mythics] [data-co-card]')).toHaveCount(3);
-      await expect(m.locator('[data-co-epics] [data-co-card]')).toHaveCount(3);
+      await expect(m.locator('[data-co-mythics] [data-co-card]')).toHaveCount(MYTHIC_OFFER_POOL.length);
+      await expect(m.locator('[data-co-epics] [data-co-card]')).toHaveCount(EPIC_OFFER_POOL.length);
       await expect(m.locator('[data-co-epic-note]')).toHaveText(OFFER_WORDS.epicKeepNote);
     }
 
-    // Verify 360px phone layout has zero horizontal overflow.
+    // Verify 360px phone layout has zero horizontal overflow and the last Epic card is reachable inside the scrollable body.
     const overflow = await p1.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
+    const lastEpic = p1.locator(`[data-co-modal] [data-co-card="${EPIC_OFFER_POOL[EPIC_OFFER_POOL.length - 1]}"]`);
+    await lastEpic.scrollIntoViewIfNeeded();
+    await expect(lastEpic).toBeVisible();
   });
 
   await test.step('deterministic two-phone race: Mira and Kael both tap Hemomancer before GM polls; Mira wins and Kael sees exact taken line then picks Seraph', async () => {
@@ -180,7 +182,7 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
     await p2.locator('[data-co-modal] [data-co-dismiss]').tap();
   });
 
-  await test.step('when Kael is later granted a Mythic, he keeps his Epic Seraph; and when all 6 are taken, an unpicked player sees the plain notice', async () => {
+  await test.step('when Kael is later granted a Mythic, he keeps his Epic Seraph; and when all offered classes are taken, an unpicked player sees the plain notice', async () => {
     await gm.locator('[data-co-modal] [data-co-dismiss]').tap();
     await go(gm, 'gm');
     await openGmSection(gm, 'classes');
@@ -198,8 +200,11 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
       { timeout: 20_000 },
     ).toEqual(['Bladefiend', 'Seraph']);
 
-    // Claim the remaining 3 offered classes for NPCs so all 6 offered classes are taken.
-    for (const [cls, npc] of [['Rifthunter', 'Rift Warden'], ['Ironclad', 'Iron Captain'], ['Stormcaller', 'Sky Mage']] as const) {
+    // Claim every remaining offered class for NPCs so all offered classes are taken.
+    const alreadyHeld = new Set(['Hemomancer', 'Seraph', 'Bladefiend']);
+    const remaining = DEFAULT_OFFER_POOL.filter(c => !alreadyHeld.has(c));
+    for (const cls of remaining) {
+      const npc = cls === 'Rifthunter' ? 'Rift Warden' : `Secret ${cls} Warden`;
       await regBox.locator(`[data-cg-grant="${cls}"]`).tap();
       const d = modalWin(gm, `Grant ${cls}`);
       await d.locator('[data-cg-kind] button[data-kind="npc"]').tap();
@@ -208,7 +213,7 @@ test('two-phone race on Hemomancer gives winner the class, shows exact taken cop
       await expect(d).toHaveCount(0);
     }
 
-    // A 3rd player joining now sees the plain all-6-taken notice and never learns NPC names.
+    // A 3rd player joining now sees the plain all-taken notice and never learns NPC names.
     const p3 = (await device('seventh-player')).page;
     await onboardPlayer(p3, 'Sora', code);
     await dismissAll(p3);

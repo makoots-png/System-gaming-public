@@ -328,7 +328,7 @@ access to the Mythic/Epic unique class offer and the lifted level cap (`Cap: non
 4. **Act 2 Network Audit side-door penalty (`story.md` Act 2):** taking the side door at Level 20 must carry a real
    cost, never a free pass off camera (proposed: restores a cap at the top of the current rank with a later re-offer,
    or exacts collateral or sponsor debt).
-5. **Unique classes GM lore (`power.md` section 7):** player screens stay literal (`"Six classes are open"`). Open for
+5. **Unique classes GM lore (`power.md` section 7):** player screens stay literal (`"Pick one open class."`). Open for
    the owner: (a) whether unique classes are windows vacated by earlier seasons' hunters, and (b) what a Bureau crystal
    reading shows for a hunter holding a Mythic or Epic class.
 

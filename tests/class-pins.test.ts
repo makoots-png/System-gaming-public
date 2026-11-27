@@ -7,7 +7,7 @@ import { fightId, grantRefusalIdOf, parseSheetKey, sheetKeyOf } from '../src/cor
 import { STAT_KEYS } from '../src/core/stats.ts';
 import { STAT_PAIRS } from '../src/core/hunter/keystones.ts';
 import { MYTHIC_IDS } from '../src/core/registry/mythics.ts';
-import { BUILT_IN_CLASSES, isClassName } from '../src/core/registry/jobs.ts';
+import { BUILT_IN_CLASSES, CLASS_NAMES, isClassName } from '../src/core/registry/jobs.ts';
 import type { ClassName } from '../src/core/registry/jobs.ts';
 import { CLASS_SIGNATURES, classPowers, classStatusDef } from '../src/core/registry/class-powers.ts';
 import { CLASS_ACTIVES_MAX, CLASS_TREES, TREE_SHAPE, canBuyNode, repairNodes, validateTree } from '../src/core/registry/class-trees.ts';
@@ -28,7 +28,7 @@ import { place } from '../src/core/combat/space.ts';
 import { landAll } from '../src/edge/room-events.ts';
 import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { reconcileLocalUniqueClasses } from '../src/core/hunter/class-holders.ts';
-import { WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
+import { DEFAULT_OFFER_POOL, EPIC_OFFER_POOL, MYTHIC_OFFER_POOL, mythicOfferPool, openClassOffer } from '../src/core/hunter/class-offer.ts';
 import { earnClass } from '../src/core/hunter/classes.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { releaseNoticeStep } from '../src/core/hunter/noticed.ts';
@@ -291,8 +291,13 @@ describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys,
     // Every wired Mythic is registered in MYTHIC_SOLO_SPECS for the legality loop in mythic-solo-sim.test.ts
     expect(MYTHIC_SOLO_SPECS.map(s => s.className).sort()).toEqual(byRarity.mythic);
 
-    // Fork 2 pin: Wave 1 Act 1 offer pool remains its 6 Wave 1 classes (no Wave 2/3 pool edits)
-    expect([...WAVE1_OFFER_POOL]).toEqual(['Hemomancer', 'Bladefiend', 'Rifthunter', 'Seraph', 'Ironclad', 'Stormcaller']);
+    // t207u pin: Mythic offer pool matches every wired Mythic in registry order, followed by the Epics
+    const registryMythics = CLASS_NAMES.filter(
+      c => BUILT_IN_CLASSES[c].rarity === 'mythic' && Object.hasOwn(CLASS_SIGNATURES, c) && Object.hasOwn(CLASS_TREES, c),
+    );
+    expect([...MYTHIC_OFFER_POOL]).toEqual(registryMythics);
+    expect([...MYTHIC_OFFER_POOL].sort()).toEqual(byRarity.mythic);
+    expect([...DEFAULT_OFFER_POOL]).toEqual([...MYTHIC_OFFER_POOL, ...EPIC_OFFER_POOL]);
 
     const foe = monsterRows({ name: 'Dummy', rank: 'S', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], statuses: [] }, [combatantId('m1')], KEYSTONES_ON)[0]!;
 
@@ -532,5 +537,80 @@ describe('Wave 3 U8: Roster Lock — wired class signatures, trees, status keys,
         }
       }
     }
+  });
+
+  test('t207u Mythic offer pool pin: every registered, wired Mythic is in the offer pool and a fake extra Mythic fails the set check', () => {
+    const wiredMythicsOf = (
+      classes: Readonly<Record<string, { readonly rarity: string; readonly unique: boolean }>>,
+      sigs: Readonly<Record<string, unknown>>,
+      trees: Readonly<Record<string, unknown>>,
+    ): string[] =>
+      Object.entries(classes)
+        .filter(([name, def]) => def.rarity === 'mythic' && def.unique && Boolean(sigs[name]) && Boolean(trees[name]))
+        .map(([name]) => name)
+        .sort();
+
+    const poolMythicDiff = (
+      pool: readonly string[],
+      classes: Readonly<Record<string, { readonly rarity: string; readonly unique: boolean }>>,
+      sigs: Readonly<Record<string, unknown>>,
+      trees: Readonly<Record<string, unknown>>,
+    ): { readonly missing: string[]; readonly extra: string[] } => {
+      const expected = wiredMythicsOf(classes, sigs, trees);
+      const expectedSet = new Set(expected);
+      const actual = pool.filter(name => classes[name]?.rarity === 'mythic').sort();
+      const actualSet = new Set(actual);
+      return {
+        missing: expected.filter(c => !actualSet.has(c)),
+        extra: actual.filter(c => !expectedSet.has(c)),
+      };
+    };
+
+    // Real registry: set equality between wired Mythics and MYTHIC_OFFER_POOL / DEFAULT_OFFER_POOL / openClassOffer
+    const realWired = CLASS_NAMES
+      .filter(c => BUILT_IN_CLASSES[c].rarity === 'mythic' && Boolean(CLASS_SIGNATURES[c]) && Boolean(CLASS_TREES[c]))
+      .sort();
+    expect(realWired).toEqual(['Bladefiend', 'Hemomancer', 'Necromancer', 'Nullweaver', 'Rifthunter', 'Starforger']);
+    expect([...MYTHIC_OFFER_POOL].sort()).toEqual(realWired);
+    expect(poolMythicDiff(MYTHIC_OFFER_POOL, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });
+    expect(poolMythicDiff(DEFAULT_OFFER_POOL, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });
+
+    const env = { now: new Date(AT), newDeviceId: () => dev('d-gm'), newDeviceToken: () => 'tok-pin-1234567890' };
+    const opened = openClassOffer(freshSave(env, { onboarded: true }), { at: AT, room: null, R: RULES });
+    expect(poolMythicDiff(opened.offer.pool, BUILT_IN_CLASSES, CLASS_SIGNATURES, CLASS_TREES)).toEqual({ missing: [], extra: [] });
+
+    // Proof that the pin fails on a fake extra registered, wired Mythic missing from the pool
+    const fakeClasses = {
+      ...BUILT_IN_CLASSES,
+      FakeMythic: { rarity: 'mythic' as const, unique: true },
+      UnwiredMythic: { rarity: 'mythic' as const, unique: true },
+      HalfWiredMythic: { rarity: 'mythic' as const, unique: true },
+    };
+    const fakeSigs = {
+      ...CLASS_SIGNATURES,
+      FakeMythic: CLASS_SIGNATURES.Hemomancer,
+      HalfWiredMythic: CLASS_SIGNATURES.Hemomancer,
+    };
+    const fakeTrees = {
+      ...CLASS_TREES,
+      FakeMythic: CLASS_TREES.Hemomancer,
+    };
+
+    // Derivation picks up FakeMythic automatically and ignores unwired / half-wired Mythics
+    const derived = mythicOfferPool(fakeClasses, fakeSigs, fakeTrees);
+    expect([...derived].sort()).toEqual([...realWired, 'FakeMythic'].sort());
+    expect(derived).not.toContain('UnwiredMythic');
+    expect(derived).not.toContain('HalfWiredMythic');
+
+    // Pin catches FakeMythic as missing when compared against a pool that omits it
+    expect(poolMythicDiff(DEFAULT_OFFER_POOL, fakeClasses, fakeSigs, fakeTrees)).toEqual({
+      missing: ['FakeMythic'],
+      extra: [],
+    });
+    // Pin also catches an extra Mythic in a pool whose kit was unwired
+    expect(poolMythicDiff([...DEFAULT_OFFER_POOL, 'UnwiredMythic'], fakeClasses, fakeSigs, fakeTrees)).toEqual({
+      missing: ['FakeMythic'],
+      extra: ['UnwiredMythic'],
+    });
   });
 });

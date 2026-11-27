@@ -206,14 +206,7 @@ export function gmBackedClasses(
   return changed ? { classes: next, job, jobDone, changed: true } : { classes: h.classes, job, jobDone, changed: false };
 }
 
-// ── first-mission & GM unique-class offer (leaf types & parser) ──
-
-/** Wave 1 Mythic classes listed at the top of the first-mission class offer. */
-export const WAVE1_MYTHIC_OFFER = ['Hemomancer', 'Bladefiend', 'Rifthunter'] as const satisfies readonly UniqueClassName[];
-/** Wave 1 Epic classes listed below the Mythics for leftover players (4th to 6th) or role picks. */
-export const WAVE1_EPIC_OFFER = ['Seraph', 'Ironclad', 'Stormcaller'] as const satisfies readonly UniqueClassName[];
-/** Default 6-class Wave 1 offer pool: 3 Mythics first, then 3 Epics. */
-export const WAVE1_OFFER_POOL: readonly UniqueClassName[] = [...WAVE1_MYTHIC_OFFER, ...WAVE1_EPIC_OFFER];
+// ── first-mission & GM unique-class offer (leaf types & parser; default pools live in class-offer.ts) ──
 
 export const CLASS_OFFER_MAX_POOL = 18;
 export const CLASS_OFFER_MAX_HUNTERS = 24;
