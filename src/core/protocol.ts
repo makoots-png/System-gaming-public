@@ -40,10 +40,9 @@ import type { ChainJobName, ClassName, ClassRarity, UniqueClassName } from './re
 import { parseDamageTypes } from './combat/damage-type.ts';
 import type { DamageTypeMap } from './combat/damage-type.ts';
 import { GRIEVOUS_LEGACY_MAX, GRIEVOUS_MAX, grievousCutOf, hasTieredGrievousCut, isGrievousKey, readLegacyGrievousCut, withGrievousCut } from './combat/grievous.ts';
-import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { abilityId, combatantId } from './combat/ability-types.ts';
 import type { AbilityId, CombatantId } from './combat/ability-types.ts';
-import { statusKey } from './combat/effect-ops.ts';
+import { STATUS_KEY_RE, statusKey } from './combat/effect-ops.ts';
 import type { SheetStatus, StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseSheetStatus, parseStatusDef } from './combat/fight-parse.ts';
 import { FORCED_FACES, LOG_LINE_MAX, MAX_STATUSES, NAME_MAX } from './combat/fight-types.ts';
@@ -57,25 +56,27 @@ import { TERRAIN, TERRAINS } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
 import { isMythicScriptId, mythicScriptOf, omensOf } from './registry/mythics.ts';
 import { MAX_ZONES, ZONE_NAME_MAX, zoneId } from './combat/zones.ts';
-import { deviceOf, fightId, hunterIdOf, parseClassNodeId, parseDeviceId, parseEventId, parseGateId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
+import { catalogOfItemDefId, deviceOf, fightId, hunterIdOf, isBuiltInItemId, isCustomItemDefId, parseCatalogId, parseCatalogKey, parseClassNodeId, parseDeviceId, parseEventId, parseGateId, parseItemDefId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
-import type { ClassNodeId, DeviceId, EventId, FightId, ItemId, RoomCode, ShadowId, SheetKey } from './ids.ts';
+import type { CatalogId, CatalogKey, ClassNodeId, DeviceId, EventId, FightId, ItemDefId, ItemId, RoomCode, ShadowId, SheetKey } from './ids.ts';
 import { OFFER_ID_MAX, approvalIdOf, endIdOf, grantRefusalIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
 import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods, parseStashAsk } from './trade/goods.ts';
 import type { BagPick, Goods, StashAsk } from './trade/goods.ts';
 import type { Seat } from './role.ts';
-import { ITEM_BOUNDS, RARITIES, parseItem } from './registry/items.ts';
-import type { Item, Rarity } from './registry/items.ts';
+import { ITEM_BOUNDS, RARITIES } from './registry/items.ts';
+import type { Rarity } from './registry/items.ts';
+import { builtInDefData, parseHeldItem, parseItemBook, parseItemDef, withGrantDefs } from './registry/item-book.ts';
+import type { HeldItem, ItemDefData, ItemResolveRules } from './registry/item-book.ts';
 import { parseLevel } from './hunter/level.ts';
 import type { ChapterBody } from './story/story.ts';
 import { WEIGHT_MAX } from './table-weight.ts';
 import type { HunterWeight } from './table-weight.ts';
 
 // The ids (src/core/ids.ts) are made only by their parsers, so ids of different things do not mix.
-export { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parseSheetKey };
-export type { DeviceId, EventId, RoomCode, SheetKey };
+export { deviceOf, hunterIdOf, parseCatalogId, parseCatalogKey, parseDeviceId, parseEventId, parseRoomCode, parseSheetKey };
+export type { CatalogId, CatalogKey, DeviceId, EventId, RoomCode, SheetKey };
 const WORD_RE = /^[\w-]{1,40}$/;
 
 // ── bounds. For junk and hostile input; every real sender stays well inside them. ──
@@ -168,6 +169,8 @@ const apiErr = <C extends string, L extends string>(code: C, legacy: L, text: st
  * Distinct from /api/health diagnostic codes (`dbHealth` in src/core/room-server.ts and Postgres codes in server.ts).
  */
 export const API_ERRORS = {
+  badCatalog: apiErr('BAD_CATALOG', 'bad catalog'),
+  badCatalogKey: apiErr('BAD_CATALOG_KEY', 'bad catalog key'),
   badDevice: apiErr('BAD_DEVICE', 'bad device'),
   badDoc: apiErr('BAD_DOC', 'bad doc'),
   badEvent: apiErr('BAD_EVENT', 'bad event'),
@@ -180,10 +183,12 @@ export const API_ERRORS = {
   idTaken: apiErr('ID_TAKEN', 'id taken'),
   method: apiErr('METHOD', 'method'),
   noDatabase: apiErr('NO_DATABASE', 'no database'),
+  noSuchCatalog: apiErr('NO_SUCH_CATALOG', 'no such catalog'),
   noSuchRoom: apiErr('NO_SUCH_ROOM', 'no such room'),
   notFound: apiErr('NOT_FOUND', 'not found'),
   notYourSheet: apiErr('NOT_YOUR_SHEET', 'not your sheet'),
   removed: apiErr('REMOVED', 'removed'),
+  revConflict: apiErr('REV_CONFLICT', 'rev conflict'),
   roomFull: apiErr('ROOM_FULL', 'room full'),
   serverDoc: apiErr('SERVER_DOC', 'server doc'),
   serverError: apiErr('SERVER_ERROR', 'server error'),
@@ -940,9 +945,10 @@ export function newEventId(stamp: EventStamp): EventId | null {
  * at most `OFFER_ID_MAX` characters, so an offer's end id fits, and ending in four random characters, never an end id.
  * An offer's end is made by `endEvent`.
  */
-export function newEvent<K extends EventType>(type: K, body: EventBody<K>, stamp: EventStamp): RoomEvent | null {
+export function newEvent<K extends EventType>(type: K, body: EventBody<K>, stamp: EventStamp, R?: ItemResolveRules): RoomEvent | null {
   const eid = newEventId(stamp);
-  return eid && parseEvent(type, { ...body, eid });
+  // a grant of a custom item carries its def, so the phone it goes to can read it (item-book.ts `withGrantDefs`)
+  return eid && parseEvent(type, { ...(R ? withGrantDefs(body, R) : body), eid });
 }
 /**
  * The time of a page's next event id: its clock's now, or one millisecond after the page's last when the clock has not
@@ -1104,8 +1110,6 @@ export type RoomRules = {
   damageTypes: DamageTypeMap;
   /** The GM's share cap (`RULES.fight.kit.shareCap`): absent reads as the shipped default so card text matches combat. */
   shareCap: number;
-  /** The GM's overridden built-in status defs (`library.statuses` entries matching `BUILT_IN_STATUSES`, at most 16): absent reads as empty. */
-  statuses: Record<string, StatusDef>;
   /** The GM's shadow summon mana costs (`RULES.shadow.summonMp`): a doc without it reads as the shipped table. */
   shadow: { summonMp: Rules['shadow']['summonMp'] };
   /** The rank whose base price prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
@@ -1182,8 +1186,8 @@ export const FEATS_DOC_MAX = 100;
  * check what a GM's own large items can fill.
  */
 export const STASH_LINES = 40;
-/** The party stash as the GM's phone publishes it (trade/stash.ts `stashDoc`): its gold and its lines, each item whole with its id. */
-export type StashDoc = { gold: number; items: Item[] };
+/** The party stash as the GM's phone publishes it (trade/stash.ts `stashDoc`): its gold, its lines with their ids, and the custom defs they read. */
+export type StashDoc = { gold: number; items: HeldItem[]; defs: Record<ItemDefId, ItemDefData> };
 /**
  * One entry in the GM's `holders` room document (`DOCS.holders`). `wait`: the GM's fight holds its player hunter, so
  * that phone leaves the hunter's classes as they are until a doc without it (statechart rule 6). The grant and the hold
@@ -1459,10 +1463,13 @@ function codexEntry(v: unknown): CodexDocEntry {
     ...(icon ? { icon } : {}),
   };
 }
-/** A line of the stash doc: an item as `parseItem` reads it, with its id in the stash. */
-function stashLine(v: unknown): Item {
-  const o = obj(v), id = need(parseSaveId<'i'>(own(o, 'id')));
-  return { ...need(parseItem(o)), id };
+/** A line of the stash doc: a bag line as `parseHeldItem` reads it. */
+const stashLine = (v: unknown): HeldItem => need(parseHeldItem(v));
+/** The custom defs a doc or a sheet carries for its lines: each that reads, only for a custom id one of `items` names. */
+function linesDefs(v: unknown, items: readonly HeldItem[]): Record<ItemDefId, ItemDefData> {
+  const named = new Set(items.flatMap(i => (i.kind === 'ref' && isCustomItemDefId(i.defId) ? [i.defId] : [])));
+  const book = parseItemBook(v, named.size);
+  return Object.fromEntries(Object.entries(book).filter(([k]) => named.has(k as ItemDefId))) as Record<ItemDefId, ItemDefData>;
 }
 function worldGate(v: unknown): WorldGate {
   const o = obj(v);
@@ -1591,19 +1598,6 @@ function roomDamageTypes(v: unknown): DamageTypeMap {
   const parsed = parseDamageTypes(v, () => refuse());
   return parsed ?? refuse();
 }
-/** The room's overridden built-in status defs (at most 16 built-in keys, bounded by `DOC_DEFS_MAX`). */
-function roomStatuses(v: unknown): Record<string, StatusDef> {
-  const o = obj(v);
-  if (JSON.stringify(o).length > DOC_DEFS_MAX) return refuse();
-  const out: Record<string, StatusDef> = {};
-  for (const [k, x] of Object.entries(o)) {
-    if (!Object.hasOwn(BUILT_IN_STATUSES, k)) return refuse();
-    const def = parseStatusDef(x, RULES, k);
-    if (!def) return refuse();
-    out[k] = def;
-  }
-  return out;
-}
 /** The room's class-tree rarity multipliers (`RULES.classTreeRarityMult`). */
 function roomClassRarityMult(v: unknown): Rules['classTreeRarityMult'] {
   const o = obj(v);
@@ -1682,7 +1676,6 @@ function roomRulesDoc(o: Rec): RoomRules {
     keystone: roomKeystone(own(o, 'keystone')),
     damageTypes: roomDamageTypes(own(o, 'damageTypes')),
     shareCap: ruleNumber('fight.kit.shareCap')(own(o, 'shareCap')),
-    statuses: roomStatuses(own(o, 'statuses')),
     shadow: roomShadow(own(o, 'shadow')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
     priceBase: eachRank(r => ruleNumber(`priceBase.${r}`)(own(pb, r))),
@@ -1720,7 +1713,8 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
   stash: data => attempt(() => {
     if (JSON.stringify(data).length > DOC_MAX) return refuse();
     const o = obj(data);
-    return { gold: int(0, GOODS_GOLD_MAX)(own(o, 'gold')), items: listOf(own(o, 'items'), STASH_LINES, stashLine) };
+    const items = listOf(own(o, 'items'), STASH_LINES, stashLine);
+    return { gold: int(0, GOODS_GOLD_MAX)(own(o, 'gold')), items, defs: linesDefs(own(o, 'defs'), items) };
   }),
   holders: data => attempt(() => holdersDocOf(obj(data))),
   classOffer: data => attempt(() => classOfferDocOf(obj(data))),
@@ -1783,8 +1777,12 @@ export const parseDocName = (v: unknown): DocName | null => (typeof v === 'strin
 // ── hunter sheets ──
 /** What a phone leaves for a hunter it deleted, so the GM's board drops the hunter. */
 export type Tombstone = { deleted: true };
-/** What a player's phone pushes for its hunter: the hunter as it is now. */
-export type PushedSheet = { hunter: Hunter };
+/**
+ * What a player's phone pushes for its hunter: the hunter as it is now, and the custom defs its bag reads
+ * (item-book.ts `bagDefs`), so the GM's phone reads an item of another catalog, or one deleted from the library, as the
+ * player's phone does, and the server can name a custom item on a face.
+ */
+export type PushedSheet = { hunter: Hunter; defs: Record<ItemDefId, ItemDefData> };
 export type RoomSheet = PushedSheet | Tombstone;
 const SHEET_LISTS = ['conditions', 'titles', 'quests', 'skills', 'items', 'shadows', 'loadouts', 'boons'] as const;
 const SHEET_LIST_MAX = 100;
@@ -1805,14 +1803,18 @@ export function parseSheet(key: SheetKey, data: unknown): RoomSheet | null {
   if (!isObj(copy)) return null;
   for (const k of SHEET_LISTS) { const list = copy[k]; if (Array.isArray(list)) copy[k] = list.slice(0, SHEET_LIST_MAX); }
   const h = parseSheetHunter(copy);
-  return h && h.id === hunterIdOf(key) ? { hunter: h } : null;
+  return h && h.id === hunterIdOf(key) ? { hunter: h, defs: linesDefs(plainCopy(own(data, 'defs')), h.items) } : null;
 }
 
 // ── what each phone gets of the room (notes-5-trade.md 4.1, rulings 1 and 4) ──
 /** The most bag lines a face carries. */
 export const FACE_LINES = 40;
-/** One unworn line of a hunter's bag as the other players see it: what an offer may ask for. */
-export type FaceLine = { id: ItemId; name: string; qty: number; rar: Rarity };
+/**
+ * One unworn line of a hunter's bag as the other players see it: what an offer may ask for. A reference names its def
+ * (`defId`); an ad hoc line and a custom item carry its `name` and `rar` from the sheet, a built-in leaves them to the
+ * phone, which reads the shipped def.
+ */
+export type FaceLine = { id: ItemId; qty: number; defId?: ItemDefId; name?: string; rar?: Rarity };
 /**
  * A hunter as the other players in the room see it: who it is, and its unworn bag lines in bag order, or `null` when the
  * table shows no bags (the caller of `hunterFace` decides; an empty bag is `[]`). It holds no quest, title or status.
@@ -1823,15 +1825,20 @@ export type ServedSheet = RoomSheet | HunterFace;
 /** Who asks for the room: the GM (its key), a phone proven by its device token (server.ts `proven`), or anyone who knows the code. */
 export type RoomViewer = { readonly kind: 'gm' } | { readonly kind: 'phone'; readonly device: DeviceId } | { readonly kind: 'anyone' };
 /** `h` as the other players see it; its bag lines only when `bags`. */
-export function hunterFace(h: Hunter, o: { readonly bags: boolean }): HunterFace {
+export function hunterFace(h: Hunter, o: { readonly bags: boolean }, defs: Readonly<Record<ItemDefId, ItemDefData>> = {}): HunterFace {
   const worn = new Set(Object.values(h.equipped));
-  const bag = o.bags ? h.items.filter(i => !worn.has(i.id)).slice(0, FACE_LINES).map(i => ({ id: i.id, name: i.name, qty: i.qty, rar: i.rar })) : null;
+  const line = (i: HeldItem): FaceLine => {
+    if (i.kind === 'adhoc') return { id: i.id, qty: i.qty, name: i.item.name, rar: i.item.rar };
+    const d = isCustomItemDefId(i.defId) && Object.hasOwn(defs, i.defId) ? defs[i.defId] : undefined;
+    return d ? { id: i.id, qty: i.qty, defId: i.defId, name: d.name, rar: d.rar } : { id: i.id, qty: i.qty, defId: i.defId };
+  };
+  const bag = o.bags ? h.items.filter(i => !worn.has(i.id)).slice(0, FACE_LINES).map(line) : null;
   return { face: { name: h.name, level: h.level, job: h.job, bag } };
 }
 /** The sheet under `key` as `v` gets it: whole to the GM and to the phone the key belongs to, a face to anyone else. */
 export function sheetFor(key: SheetKey, sheet: RoomSheet, v: RoomViewer, o: { readonly bags: boolean }): ServedSheet {
   if ('deleted' in sheet || v.kind === 'gm' || (v.kind === 'phone' && deviceOf(key) === v.device)) return sheet;
-  return hunterFace(sheet.hunter, o);
+  return hunterFace(sheet.hunter, o, sheet.defs);
 }
 /** The hunters a stored event names: its `by` and every key of its `to`. */
 function named(ev: RoomEvent): readonly SheetKey[] {
@@ -1858,8 +1865,13 @@ export function servedPage<E extends RoomEvent & { readonly seq: number }>(page:
   return { events: before.filter(e => servedTo(e, v)), next: page.events[held]!.seq - 1, more: false };
 }
 const faceLine = (v: unknown): FaceLine => {
-  const o = obj(v);
-  return { id: need(parseSaveId<'i'>(own(o, 'id'))), name: text(ITEM_BOUNDS.name)(own(o, 'name')), qty: int(1, ITEM_BOUNDS.qty)(own(o, 'qty')), rar: choiceOf(RARITIES)(own(o, 'rar')) };
+  const o = obj(v), defId = own(o, 'defId'), name = own(o, 'name'), rar = own(o, 'rar');
+  return {
+    id: need(parseSaveId<'i'>(own(o, 'id'))), qty: int(1, ITEM_BOUNDS.qty)(own(o, 'qty')),
+    ...(defId === undefined ? {} : { defId: need(parseItemDefId(defId)) }),
+    ...(name === undefined ? {} : { name: text(ITEM_BOUNDS.name)(name) }),
+    ...(rar === undefined ? {} : { rar: choiceOf(RARITIES)(rar) }),
+  };
 };
 /** A sheet in a poll answer: a face (each bag line that reads, at most `FACE_LINES`), else what `parseSheet` reads. */
 export function parseServedSheet(key: SheetKey, data: unknown): ServedSheet | null {
@@ -1871,6 +1883,210 @@ export function parseServedSheet(key: SheetKey, data: unknown): ServedSheet | nu
   });
 }
 
+// ── the GM's item catalog (item sync PR 3) ──
+/** The largest catalog doc JSON the server takes, in UTF-8 bytes (256 KiB). Catalog routes have their own body cap for it. */
+export const CATALOG_MAX = 256 * 1024;
+/** The most item def ids one `POST /api/rooms/:code/catalog/read` request may ask for. */
+export const CATALOG_READ_MAX = 400;
+/** Entry bounds for a catalog doc besides `CATALOG_MAX`. */
+export const CATALOG_ITEMS_MAX = 400, CATALOG_STATUSES_MAX = 200, CATALOG_SHOP_MAX = 200;
+const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
+
+/**
+ * The GM's synced catalog: custom items (`c:<catalogId>:*`) and built-in item overrides (`b:*`), custom and overridden
+ * statuses, and the GM's shop (or `null` for the shipped built-in shop). Built by `catalogDoc`, validated by
+ * `parseCatalogDoc`, stored per GM catalog on the server and linked by one or more rooms.
+ */
+export type CatalogDoc = {
+  items: Record<ItemDefId, ItemDefData>;
+  statuses: Record<string, StatusDef>;
+  shop: ItemDefId[] | null;
+};
+/** The compact pointer a room poll carries when the room is linked to a GM catalog; never loads the catalog blob. */
+export type CatalogPointer = { id: CatalogId; rev: number };
+/**
+ * What `POST /api/rooms/:code/catalog/read` answers: the catalog's id and rev, its statuses and shop, the defs the
+ * caller may see (every `b:*` override, every shop id in the catalog, and each asked `c:<this catalog>:*` that exists),
+ * and the asked ids the catalog lacks (`gone`). Nothing else leaves the GM's library.
+ */
+export type CatalogRead = {
+  id: CatalogId;
+  rev: number;
+  statuses: Record<string, StatusDef>;
+  shop: ItemDefId[] | null;
+  defs: Record<ItemDefId, ItemDefData>;
+  gone: ItemDefId[];
+};
+
+/**
+ * Builds the GM's catalog doc from `save` within `max` UTF-8 bytes (`CATALOG_MAX`): whole entries added in deterministic
+ * order (statuses first, then built-in item overrides, then shop custom items, then other custom items), and any entry
+ * that does not fit named in `left` (the `featsDoc` pattern), which the Workshop shows.
+ */
+export function catalogDoc(
+  save: {
+    readonly library: { readonly items: Readonly<Record<ItemDefId, ItemDefData>>; readonly statuses: Readonly<Record<string, StatusDef>> };
+    readonly shop: readonly ItemDefId[] | null;
+  },
+  max = CATALOG_MAX,
+): { readonly doc: CatalogDoc; readonly left: string[] } {
+  const items: Record<ItemDefId, ItemDefData> = {}, statuses: Record<string, StatusDef> = {}, left: string[] = [];
+  let shop: ItemDefId[] | null = save.shop === null
+    ? null
+    : [...new Set(save.shop.flatMap(id => parseItemDefId(id) ?? []))].slice(0, CATALOG_SHOP_MAX);
+  let size = utf8Bytes(JSON.stringify({ items, statuses, shop }));
+  while (shop !== null && shop.length > 0 && size > max) {
+    shop = shop.slice(0, -1);
+    size = utf8Bytes(JSON.stringify({ items, statuses, shop }));
+  }
+  let statusCount = 0;
+  for (const k of Object.keys(save.library.statuses).sort()) {
+    if (!STATUS_KEY_RE.test(k) || isStateChip(k)) continue;
+    if (statusCount >= CATALOG_STATUSES_MAX) { left.push(k); continue; }
+    const def = save.library.statuses[k]!;
+    const add = utf8Bytes(JSON.stringify(k)) + 1 + utf8Bytes(JSON.stringify(def)) + (statusCount > 0 ? 1 : 0);
+    if (size + add > max) { left.push(k); continue; }
+    statuses[k] = def; size += add; statusCount++;
+  }
+  const shopSet = new Set(shop ?? []);
+  const allItemIds = (Object.keys(save.library.items) as ItemDefId[]).filter(k => parseItemDefId(k) !== null);
+  const builtInIds = allItemIds.filter(isBuiltInItemId).sort();
+  const shopCustomIds = allItemIds.filter(k => isCustomItemDefId(k) && shopSet.has(k)).sort();
+  const otherCustomIds = allItemIds.filter(k => isCustomItemDefId(k) && !shopSet.has(k)).sort();
+  let itemCount = 0;
+  for (const id of [...builtInIds, ...shopCustomIds, ...otherCustomIds]) {
+    if (itemCount >= CATALOG_ITEMS_MAX) { left.push(id); continue; }
+    const def = save.library.items[id]!;
+    const add = utf8Bytes(JSON.stringify(id)) + 1 + utf8Bytes(JSON.stringify(def)) + (itemCount > 0 ? 1 : 0);
+    if (size + add > max) { left.push(id); continue; }
+    items[id] = def; size += add; itemCount++;
+  }
+  return { doc: { items, statuses, shop }, left };
+}
+
+/** Reads a catalog's status table: valid keys (never state chips), each read by `parseStatusDef`, capped at `CATALOG_STATUSES_MAX`. */
+function catalogStatuses(v: unknown): Record<string, StatusDef> {
+  const o = obj(v), out: Record<string, StatusDef> = {};
+  let n = 0;
+  for (const [k, raw] of Object.entries(o)) {
+    if (n >= CATALOG_STATUSES_MAX) break;
+    if (!STATUS_KEY_RE.test(k) || isStateChip(k)) continue;
+    const def = parseStatusDef(raw, RULES, k);
+    if (def) { out[k] = def; n++; }
+  }
+  return out;
+}
+
+/** Reads a catalog's shop list: `null` for the shipped shop, or deduplicated valid item def ids up to `CATALOG_SHOP_MAX`. */
+function catalogShop(v: unknown): ItemDefId[] | null {
+  if (v === null) return null;
+  if (!Array.isArray(v)) return refuse();
+  const seen = new Set<ItemDefId>(), out: ItemDefId[] = [];
+  for (const raw of v) {
+    if (out.length >= CATALOG_SHOP_MAX) break;
+    const id = parseItemDefId(raw);
+    if (id && !seen.has(id)) { seen.add(id); out.push(id); }
+  }
+  return out;
+}
+
+/**
+ * Parses a `CatalogDoc` from wire or database data, bounded by `CATALOG_MAX` UTF-8 bytes. When `owner` is given, any
+ * custom item def id belonging to another catalog (`catalogOfItemDefId(id) !== owner`) refuses the whole doc so a GM
+ * cannot publish another GM's keys under its own catalog.
+ */
+export function parseCatalogDoc(v: unknown, owner?: CatalogId): CatalogDoc | null {
+  return attempt(() => {
+    const o = obj(v);
+    if (utf8Bytes(JSON.stringify(o)) > CATALOG_MAX) return refuse();
+    const rawItems = obj(own(o, 'items'));
+    const items: Record<ItemDefId, ItemDefData> = {};
+    let n = 0;
+    for (const [k, raw] of Object.entries(rawItems)) {
+      const id = parseItemDefId(k);
+      if (!id) continue;
+      if (owner && isCustomItemDefId(id) && catalogOfItemDefId(id) !== owner) return refuse();
+      if (n >= CATALOG_ITEMS_MAX) break;
+      const def = parseItemDef(raw);
+      if (def) { items[id] = def; n++; }
+    }
+    return { items, statuses: catalogStatuses(own(o, 'statuses')), shop: catalogShop(own(o, 'shop')) };
+  });
+}
+
+/** A catalog revision number: a positive safe integer, never clamped (0 or a fraction is refused). */
+const catalogRev = (v: unknown): number =>
+  (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= Number.MAX_SAFE_INTEGER ? v : refuse());
+
+/** Parses a `CatalogPointer` (`{ id, rev }`), or null when malformed. */
+export function parseCatalogPointer(v: unknown): CatalogPointer | null {
+  return attempt(() => {
+    const o = obj(v);
+    return { id: need(parseCatalogId(own(o, 'id'))), rev: catalogRev(own(o, 'rev')) };
+  });
+}
+
+/**
+ * Parses the `ids` array of a `POST /api/rooms/:code/catalog/read` body: at most `CATALOG_READ_MAX` valid item def ids,
+ * deduplicated. Any non-array, over-cap array, or malformed id returns null.
+ */
+export function parseCatalogReadIds(v: unknown): ItemDefId[] | null {
+  if (!Array.isArray(v) || v.length > CATALOG_READ_MAX) return null;
+  const seen = new Set<ItemDefId>(), out: ItemDefId[] = [];
+  for (const raw of v) {
+    const id = parseItemDefId(raw);
+    if (!id) return null;
+    if (!seen.has(id)) { seen.add(id); out.push(id); }
+  }
+  return out;
+}
+
+/**
+ * Projects a stored catalog for `POST /api/rooms/:code/catalog/read`: returns every `b:*` override, every shop item
+ * owned by this catalog (or built-in override), and each asked `c:<id>:*` that exists. Every other asked id not covered
+ * by `defs` or `BUILT_IN_ITEMS` is listed in `gone`. Unasked, non-shop custom items never leave the library.
+ */
+export function catalogReadOf(id: CatalogId, rev: number, doc: CatalogDoc, askedIds: readonly ItemDefId[]): CatalogRead {
+  const defs: Record<ItemDefId, ItemDefData> = {}, gone: ItemDefId[] = [];
+  for (const [k, def] of Object.entries(doc.items) as [ItemDefId, ItemDefData][]) {
+    if (isBuiltInItemId(k)) defs[k] = def;
+  }
+  if (doc.shop) {
+    for (const sid of doc.shop) {
+      if ((isBuiltInItemId(sid) || catalogOfItemDefId(sid) === id) && Object.hasOwn(doc.items, sid)) defs[sid] = doc.items[sid]!;
+    }
+  }
+  const seen = new Set<ItemDefId>();
+  for (const asked of askedIds) {
+    if (seen.has(asked)) continue;
+    seen.add(asked);
+    if (Object.hasOwn(defs, asked)) continue;
+    if (isCustomItemDefId(asked) && catalogOfItemDefId(asked) === id && Object.hasOwn(doc.items, asked)) {
+      defs[asked] = doc.items[asked]!;
+    } else if (!isBuiltInItemId(asked) || builtInDefData(asked, RULES) === null) {
+      gone.push(asked);
+    }
+  }
+  return { id, rev, statuses: { ...doc.statuses }, shop: doc.shop === null ? null : [...doc.shop], defs, gone };
+}
+
+/** Parses a `POST /api/rooms/:code/catalog/read` response on the client, or null when malformed. */
+export function parseCatalogRead(v: unknown): CatalogRead | null {
+  return attempt(() => {
+    const o = obj(v), id = need(parseCatalogId(own(o, 'id'))), rev = catalogRev(own(o, 'rev'));
+    const defs = parseItemBook(obj(own(o, 'defs')), CATALOG_ITEMS_MAX);
+    const rawGone = own(o, 'gone');
+    if (!Array.isArray(rawGone)) return refuse();
+    const seen = new Set<ItemDefId>(), gone: ItemDefId[] = [];
+    for (const raw of rawGone) {
+      if (gone.length >= CATALOG_READ_MAX) break;
+      const g = parseItemDefId(raw);
+      if (g && !seen.has(g)) { seen.add(g); gone.push(g); }
+    }
+    return { id, rev, statuses: catalogStatuses(own(o, 'statuses')), shop: catalogShop(own(o, 'shop')), defs, gone };
+  });
+}
+
 // ── the poll answer ──
 /** A sheet or doc as the server keeps it: when it was written, by which phone. */
 export type Stored<T> = { at: string; from: DeviceId; data: T };
@@ -1879,11 +2095,11 @@ export type StoredEvent = RoomEvent & { seq: number; at: string; from: DeviceId 
 export type RoomDocs = { [K in DocName]?: Stored<Docs[K]> };
 /**
  * What `GET /api/rooms/:code` answers. `next` is the cursor to ask from next; `more` says the page was full. Only the
- * GM is sent `presence`: each phone's last poll.
+ * GM is sent `presence`: each phone's last poll. `catalog`, when present, is the room's linked GM catalog pointer.
  */
 export type RoomState = {
   gm: boolean; now: string; presence?: Record<DeviceId, string>; events: StoredEvent[]; next: number; more: boolean;
-  sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs;
+  sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs; catalog?: CatalogPointer;
 };
 
 function stored<T>(v: unknown, read: (data: unknown) => T | null): Stored<T> {
@@ -1922,6 +2138,11 @@ export function parseRoomState(v: unknown): RoomState | null {
       const seen: Record<DeviceId, string> = {};
       for (const [k, t] of Object.entries(obj(presence)).slice(0, 200)) { const d = parseDeviceId(k); if (d && typeof t === 'string') seen[d] = t.slice(0, 40); }
       state.presence = seen;
+    }
+    const catalog = own(o, 'catalog');
+    if (catalog !== undefined) {
+      const ptr = parseCatalogPointer(catalog);
+      if (ptr) state.catalog = ptr;
     }
     return state;
   });

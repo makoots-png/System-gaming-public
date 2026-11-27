@@ -23,7 +23,8 @@ import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, SEEDS, c
 import { mythicScriptOf, scriptFits } from '../src/core/registry/mythics.ts';
 import type { Monster, MonsterTemplate } from '../src/core/registry/monsters.ts';
 import type { MonsterTrait, StatusMod } from '../src/core/hunter/derive.ts';
-import { parseItem } from '../src/core/registry/items.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
+import { DAGGER_DEF_ID, customId, grantAdhoc, grantRef } from './fixtures/items.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const MONSTERS = seedMonsters(RULES);
@@ -376,11 +377,14 @@ group('parseMonster: a monster from a save, a pack or the bestiary editor', () =
       { key: 'vision', rounds: 1 }, { key: 'mark', rounds: 1, stacks: 2 }]);
   });
 
-  test('loot is gold from 0 to 1e9 and at most 20 items read by parseItem', () => {
-    const m = parseMonster({ name: 'Wolf', loot: { gold: 12.7, items: [{ name: 'Fang', rar: 'rare', qty: 2, glow: 1 }, { qty: 3 }, ...Array(30).fill({ name: 'Pelt' })] } })!;
+  test('loot is gold from 0 to 1e9 and at most 20 items read as item grants (a by-value item is refused)', () => {
+    const fang = { kind: 'adhoc', qty: 2, item: { name: 'Fang', rar: 'rare', glow: 1 } };
+    const pelt = { kind: 'ref', defId: 'b:iron-dagger', qty: 1 };
+    const m = parseMonster({ name: 'Wolf', loot: { gold: 12.7, items: [fang, { qty: 3 }, { name: 'Pelt', qty: 1 }, ...Array(30).fill(pelt)] } })!;
     expect(m.loot.gold).toBe(12);
     expect(m.loot.items).toHaveLength(20);
-    expect(m.loot.items[0]).toEqual(parseItem({ name: 'Fang', rar: 'rare', qty: 2 })!);
+    expect(m.loot.items[0]).toEqual(grantAdhoc(parseItemDef({ name: 'Fang', rar: 'rare' })!, 2));
+    expect(m.loot.items[1]).toEqual(grantRef(DAGGER_DEF_ID));
     expect(parseMonster({ name: 'Wolf', loot: { gold: -5 } })!.loot).toEqual({ gold: 0, items: [] });
     expect(parseMonster({ name: 'Wolf', loot: { gold: 5e12, items: 'all' } })!.loot).toEqual({ gold: 1e9, items: [] });
     expect(parseMonster({ name: 'Wolf', loot: 'gold' })!.loot).toEqual({ gold: 0, items: [] });
@@ -388,17 +392,18 @@ group('parseMonster: a monster from a save, a pack or the bestiary editor', () =
 });
 
 group('what a fight\'s defeated monsters dropped', () => {
-  const shard = parseItem({ name: 'Frost Shard', rar: 'rare', type: 'material', qty: 1 })!;
-  const potion = parseItem({ name: 'Potion', type: 'consumable', effects: [{ op: 'heal', amount: { kind: 'number', value: 10 }, when: 'use' }], qty: 2 })!;
+  const shard = grantRef(customId('frostshard'));
+  const potion = grantAdhoc(parseItemDef({ name: 'Potion', type: 'consumable', effects: [{ op: 'heal', amount: { kind: 'number', value: 10 }, when: 'use' }] })!, 2);
 
   test('gold is summed and the same item is one stack of the counts together', () => {
     expect(lootOf([{ gold: 50, items: [shard] }, { gold: 50, items: [shard, potion] }, { gold: 0, items: [] }]))
       .toEqual({ gold: 100, items: [{ ...shard, qty: 2 }, potion] });
   });
 
-  test('items that differ in anything but their count stay apart', () => {
-    const epic = { ...shard, rar: 'epic' as const };
+  test('items of two different ids stay apart, and a player\'s own item never stacks, even with its twin', () => {
+    const epic = grantRef(customId('epicshard'));
     expect(lootOf([{ gold: 0, items: [shard] }, { gold: 0, items: [epic] }]).items).toEqual([shard, epic]);
+    expect(lootOf([{ gold: 0, items: [potion] }, { gold: 0, items: [potion] }]).items).toEqual([potion, potion]);
   });
 
   test('a stack stops at 9999 and gold at a billion, the bounds a monster\'s loot has', () => {
@@ -429,7 +434,8 @@ group('a monster\'s icon', () => {
     for (const icon of ['nope', '', 'RAT', 7, null, {}]) expect(parseMonster({ name: 'Rat King', icon })!, String(icon)).not.toHaveProperty('icon');
   });
   test('a loot item keeps its icon through the monster\'s reader', () => {
-    expect(parseMonster({ name: 'Rat King', loot: { gold: 1, items: [{ name: 'Tail', icon: 'ore' }] } })!.loot.items[0]!.icon).toBe('ore');
+    const tail = parseMonster({ name: 'Rat King', loot: { gold: 1, items: [{ kind: 'adhoc', qty: 1, item: { name: 'Tail', icon: 'ore' } }] } })!.loot.items[0];
+    expect(tail?.kind === 'adhoc' ? tail.item.icon : null).toBe('ore');
   });
 });
 

@@ -13,6 +13,8 @@
 // holds them, a step never writes them on the sheet (the fight's next totals would write over it); `grant` hands those
 // parts back in `fight` for the caller to send to the fight's row or to refuse. Ids come from the save's `seq`, as
 // `told` takes them (src/core/session-log.ts), so a step needs no id reserved outside it.
+import { grantDefs } from '../registry/item-book.ts';
+import { heardStep } from '../item-refs.ts';
 import { gmSource } from '../effects.ts';
 import type { LevelUp } from '../events.ts';
 import type { RewardFrom } from '../protocol.ts';
@@ -315,7 +317,7 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   const debtPaid: DebtPaid | null = pay.paid > 0 || pay.burn > 0
     ? { total: r.gold, paid: pay.paid, burn: pay.burn, kept: pay.kept, left: pay.debt }
     : null;
-  for (const it of r.items) h = putItem(h, it, stackOf(h, it)?.id ?? ids.next('i'));
+  for (const it of r.items) h = putItem(h, it, stackOf(h, it, R)?.id ?? ids.next('i'), R);
   h = fitted(h, R);
 
   // Gold clears debt first; if debt remains above 0, positive XP from every source is scaled by reviveDebtXpRate.
@@ -359,7 +361,12 @@ export function grant(save: Save, hid: string, r: Rewards, o: Day & { vitals: Vi
   );
   if (r.job && jobWhy) lines.push(jobWhy === 'held' ? `Job not taken: ${r.job} (you are in a fight)` : `Job not taken: ${r.job} (you are down)`);
   const hunters = baseSave.hunters.map((x, i) => (i === at ? h : x));
-  const next = told({ ...baseSave, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
+  // a custom item given whole (its def on the grant) is read on this phone from then on (item-refs.ts `heardStep`);
+  // while a fight holds the hunter, a letter's def fills a missing heard entry and never replaces one (Fable fight safety)
+  const kept = r.items.length
+    ? heardStep({ ...baseSave, seq: ids.seq(), hunters }, grantDefs(r.items), { fillOnly: o.vitals === 'fight' })
+    : { ...baseSave, seq: ids.seq(), hunters };
+  const next = told(kept, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
   return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid, guildCut, debtXp, job: jobGranted, jobWhy, jobRefused };
 }
 

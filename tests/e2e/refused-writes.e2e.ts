@@ -10,7 +10,7 @@ import { test, expect, openApp, onboardPlayer, dismissAll, go, save, noonDate, t
 const V4 = 'hunter-system-v5';
 const seedEnv = () => ({ now: noonDate(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' });
 
-function newerSave(o: { gm?: boolean; calls?: unknown[]; items?: unknown[]; personal?: boolean; edit?: (s: any) => void } = {}): string {
+function newerSave(o: { gm?: boolean; calls?: unknown[]; items?: Record<string, unknown>; personal?: boolean; edit?: (s: any) => void } = {}): string {
   const s: any = freshSave(seedEnv(), { onboarded: true });
   s.rulesOverrides = { solo: { personal: !!o.personal }, feats: { on: false } };
   if (o.gm) s.settings.mode = 'gm';

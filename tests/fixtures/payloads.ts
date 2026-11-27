@@ -1,7 +1,7 @@
 // payloads.ts: one valid payload per room event type, as the senders write it today, and what the parser makes of it
 // (src/core/protocol.ts). tests/protocol.test.ts reads each through the parser; tests/run.test.ts lands each on a save
 // that holds a running story, to show no message moves it.
-import { SHOP_ITEMS, parseItem } from '../../src/core/registry/items.ts';
+import { SHOP_ITEMS } from '../../src/core/registry/items.ts';
 import type { EventType } from '../../src/core/protocol.ts';
 
 type Raw = Record<string, any>;
@@ -12,8 +12,8 @@ export const EID = 'd-gm1-mabc12xyz';
 /** An offer's id, and the one id every end of it carries. */
 export const OFFER = 'd-player1-mabc12xyz', END = `${OFFER}-e`;
 
-/** A potion as gm.js sends it from the item library (without its id): the shop's, as parseItem reads it, two of them. */
-export const POTION = { ...copy(parseItem(SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!)!), qty: 2 };
+/** A potion as a grant names it (item sync PR 2): the shop's Health Potion (E) by its id, two of them. */
+export const POTION = { kind: 'ref', defId: SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!.defId, qty: 2 };
 /** A burning status as the fight's def holds it: 2 arcane damage at each turn start. */
 export const BURNING = { label: 'Burning', desc: 'On fire.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 2 }, when: 'turn' }] };
 /** A title as the GM's award carries it: its bonus travels with it. */

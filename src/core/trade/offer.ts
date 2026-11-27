@@ -13,6 +13,9 @@
 // `TAKER`, `WATCH`: every cell), stepped by its taps, by what the outbox heard of its letter (`tried`, `taken`, `unsent`),
 // by the end read from a page (`offersSeen`), and by the room gone. An ended record leaves the save in the write that moves
 // its goods, so a second read of the same end finds nothing to move.
+import { grantDefs } from '../registry/item-book.ts';
+import { heardStep } from '../item-refs.ts';
+import type { BagRules } from '../hunter/inventory.ts';
 import { endEvent, newEvent, parseEvent } from '../protocol.ts';
 import type { EventStamp, OfferPayload, RoomEvent, StoredEvent } from '../protocol.ts';
 import { deviceOf, endIdOf, hunterIdOf, parseOfferId, parseRoomCode, parseSaveId, saveId, sheetKeyOf } from '../ids.ts';
@@ -227,12 +230,12 @@ export type Closed = { readonly record: OfferRecord; readonly close: OfferClose;
 type Written = { readonly save: Save; readonly closed: Closed | null };
 
 /** Goods given to hunter `hid` of the save (none to a hunter no longer there), each new item id from the save's seq. */
-function giveTo(save: Save, hid: HunterId, goods: Goods): Save {
+function giveTo(save: Save, hid: HunterId, goods: Goods, R: BagRules, fillOnly = false): Save {
   if (noGoods(goods) || !save.hunters.some(h => h.id === hid)) return save;
   let seq = save.seq;
   const ids = (): ItemId => saveId('i', ++seq);
-  const hunters = save.hunters.map(h => (h.id === hid ? received(h, goods, ids) : h));
-  return { ...save, seq, hunters };
+  const hunters = save.hunters.map(h => (h.id === hid ? received(h, goods, ids, R) : h));
+  return heardStep({ ...save, seq, hunters }, grantDefs(goods.items.map(l => l.item)), { fillOnly });
 }
 /** The record's letters still queued in the box dropped: an ended record has nothing left to say. One on its way is left to the room. */
 function lettersDropped(save: Save, id: OfferId): Save {
@@ -249,25 +252,26 @@ function posted(save: Save, room: RoomCode, ev: RoomEvent): Save {
   return atOutbox(box => post(box.find(e => e.id === id)?.at === 'refused' ? boxStep(box, id, { type: 'drop' }) : box, room, { kind: 'event', event: ev }).box)(save);
 }
 /** What `stepped` does to the save for record `r`: the record replaced or taken out, its goods moved, an ended record's letters dropped. */
-function written(save: Save, r: OfferRecord, stepped: RecordStepped): Written {
+function written(save: Save, r: OfferRecord, stepped: RecordStepped, R: BagRules, held?: (hid: HunterId) => boolean): Written {
   if (stepped.kind === 'same') return { save, closed: null };
   const hid = r.side === 'gm' ? null : r.hid;
+  const fillOnly = hid !== null && held?.(hid) === true;
   if (stepped.kind === 'next') {
     const s = withOffers(save, offersOf(save).map(x => (sameRecord(x, r) ? stepped.record : x)));
-    return { save: hid === null ? s : giveTo(s, hid, stepped.back), closed: null };
+    return { save: hid === null ? s : giveTo(s, hid, stepped.back, R, fillOnly), closed: null };
   }
   let s = withOffers(save, offersOf(save).filter(x => !sameRecord(x, r)));
-  if (hid !== null) s = giveTo(giveTo(s, hid, stepped.gain), hid, stepped.back);
-  return { save: lettersDropped(s, r.offer.id), closed: { record: r, close: stepped.close, gain: stepped.gain, back: stepped.back } };
+  if (hid !== null) s = giveTo(giveTo(s, hid, stepped.gain, R, fillOnly), hid, stepped.back, R, fillOnly);
+  return { save: lettersDropped(heardStep(s), r.offer.id), closed: { record: r, close: stepped.close, gain: stepped.gain, back: stepped.back } };
 }
 /** Record `r` of the save after `e`, written. */
-const stepIn = (save: Save, r: OfferRecord, e: RecordEvent): Written => written(save, r, recordStep(r, e));
+const stepIn = (save: Save, r: OfferRecord, e: RecordEvent, R: BagRules, held?: (hid: HunterId) => boolean): Written => written(save, r, recordStep(r, e), R, held);
 
 // ── the taps: each one write of the hunter, the record and the letter (notes-5-trade.md 1.7) ──
 /** A refused tap: its kind, and how short it fell where it names a thing (goods.ts `refusalWords`). */
 export type TapRefused = Refused<OfferRefusal> & { readonly short?: Shortfall };
 /** What the caller knows that the save does not: the table's trading switch (`RULES.trade`, unit 4), and whether a fight holds the hunter (`fightHold`). */
-export type TapGate = { readonly on: boolean; readonly held: boolean };
+export type TapGate = { readonly on: boolean; readonly held: boolean; readonly R: BagRules };
 
 /**
  * Hunter `hid` offers the room's hunter `to` (named `toName` on this phone) the goods `gives`, asking `asks` back: the goods
@@ -288,7 +292,7 @@ export function offerPosted(save: Save, a: {
   const by = sheetKeyOf(save.settings.deviceId, a.hid);
   if (a.to === by) return refuse('same-hunter');
   if (offersOf(save).filter(r => r.side === 'giver' && r.hid === a.hid).length >= OFFERS_OPEN) return refuse('too-many');
-  const aside = setAside(h, a.gives);
+  const aside = setAside(h, a.gives, a.R);
   if ('ok' in aside) return aside;
   const ev = newEvent('offer', { by, to: [a.to], names: { by: h.name, to: a.toName }, gives: aside.goods, asks: a.asks }, a.stamp);
   const offer = ev?.type === 'offer' ? offerOf(ev.payload, room, a.at) : null;
@@ -314,7 +318,7 @@ export function offerAnswered(save: Save, id: OfferId, how: 'accept' | 'refuse',
     if (!gate.on) return refuse('off');
     if (gate.held) return refuse('fight');
     if (r.offer.asks.items.length || r.offer.asks.gold) {
-      const aside = setAside(h, r.offer.asks);
+      const aside = setAside(h, r.offer.asks, gate.R);
       if ('ok' in aside) return aside;
       s = { ...s, hunters: s.hunters.map(x => (x.id === h.id ? aside.hunter : x)) };
       gives = aside.goods;
@@ -323,7 +327,7 @@ export function offerAnswered(save: Save, id: OfferId, how: 'accept' | 'refuse',
   const ev = endEvent('offerEnd', { by: r.offer.to, to: [r.offer.by], offer: id, how, gives });
   if (!ev || ev.type !== 'offerEnd') return refuse('too-large');
   const stepped = recordStep(r, how === 'accept' ? { type: 'accept', aside: ev.payload.gives } : { type: 'refuse' });
-  const next = written(s, r, stepped).save;
+  const next = written(s, r, stepped, gate.R).save;
   return posted(next, r.offer.room, ev);
 }
 
@@ -333,39 +337,39 @@ export function offerAnswered(save: Save, id: OfferId, how: 'accept' | 'refuse',
  * for the one end. Stranded (the room gone): the goods back, after the window that says what the app cannot know. Refused
  * where Take back does not apply (`not-open`).
  */
-export function offerTakenBack(save: Save, id: OfferId): Save | TapRefused {
+export function offerTakenBack(save: Save, id: OfferId, R: BagRules): Save | TapRefused {
   const r = recordOf(save, id, 'giver') ?? recordOf(save, id, 'taker');
   const stepped = r ? recordStep(r, { type: 'takeBack' }) : SAME;
   if (!r || stepped.kind === 'same') return refuse('not-open');
-  const next = written(save, r, stepped).save;
+  const next = written(save, r, stepped, R).save;
   if (stepped.kind !== 'next') return next;
   const ev = endEvent('offerEnd', { by: r.offer.by, to: [r.offer.to], offer: id, how: 'withdraw', gives: NO_GOODS });
   return ev ? posted(next, r.offer.room, ev) : refuse('too-large');
 }
 
 /** The GM's phone stops offer `id`: its record to stopping and the `offerStop` letter under the end id, to the offer's two hunters. Refused (`not-open`) where Stop does not apply. */
-export function offerStopped(save: Save, id: OfferId): Save | TapRefused {
+export function offerStopped(save: Save, id: OfferId, R: BagRules): Save | TapRefused {
   const r = recordOf(save, id, 'gm');
   const stepped = r ? recordStep(r, { type: 'stop' }) : SAME;
   if (!r || stepped.kind === 'same') return refuse('not-open');
   const ev = endEvent('offerStop', { to: [r.offer.by, r.offer.to], offer: id });
   if (!ev) return refuse('too-large');
-  const next = written(save, r, stepped).save;
+  const next = written(save, r, stepped, R).save;
   return posted(next, r.offer.room, ev);
 }
 
 // ── what the box and the link hear ──
 /** The room took letter `letter` (sync.ts `answered`, in the write that takes it out of the box): the record whose current letter it is steps `taken`. */
-export function letterTaken(save: Save, letter: string): Save {
+export function letterTaken(save: Save, letter: string, R: BagRules): Save {
   const r = offersOf(save).find(x => letterIdOf(x) === letter);
-  return r ? stepIn(save, r, { type: 'taken' }).save : save;
+  return r ? stepIn(save, r, { type: 'taken' }, R).save : save;
 }
 /** Room `room` is gone: each of its records steps `roomGone` (a never-sent one gives its goods back; one the room may hold is stranded). */
-export function offersGone(save: Save, room: RoomCode): { readonly save: Save; readonly closed: readonly Closed[] } {
+export function offersGone(save: Save, room: RoomCode, R: BagRules): { readonly save: Save; readonly closed: readonly Closed[] } {
   let s = save;
   const out: Closed[] = [];
   for (const r of offersOf(save).filter(x => x.offer.room === room)) {
-    const w = stepIn(s, r, { type: 'roomGone' });
+    const w = stepIn(s, r, { type: 'roomGone' }, R);
     s = w.save;
     if (w.closed) out.push(w.closed);
   }
@@ -378,15 +382,15 @@ export function offersGone(save: Save, room: RoomCode): { readonly save: Save; r
  * let it go, a never-sent offer's goods come back in that same write. `taken` is not read here (a letter the room took
  * leaves the box as one let go does): sync.ts hears it in the write that takes it out. A second run changes nothing.
  */
-export function lettersKept(save: Save): Save {
+export function lettersKept(save: Save, R: BagRules): Save {
   const box = boxOf(save);
   let s = save;
   for (const r of offersOf(save)) {
     const l = letterOf(r), id = letterIdOf(r);
     if (l === null || id === null || l.heard === 'taken') continue;
     const e = box.find(x => x.id === id);
-    if (e?.at === 'sending') { if (l.heard === 'queued') s = stepIn(s, r, { type: 'tried' }).save; }
-    else if (e?.at !== 'queued') s = stepIn(s, r, { type: 'unsent' }).save;
+    if (e?.at === 'sending') { if (l.heard === 'queued') s = stepIn(s, r, { type: 'tried' }, R).save; }
+    else if (e?.at !== 'queued') s = stepIn(s, r, { type: 'unsent' }, R).save;
   }
   return s;
 }
@@ -417,7 +421,7 @@ function kept(save: Save, r: OfferRecord): Save {
  * one page create nothing (nothing of the taker moved); the GM's phone logs it. Keyed by ids, so a page read twice ends
  * each record once; it never throws on a parsed event.
  */
-export function offersSeen(save: Save, events: readonly StoredEvent[], me: { readonly room: RoomCode; readonly seat: 'gm' | 'player' }): Seen {
+export function offersSeen(save: Save, events: readonly StoredEvent[], me: { readonly room: RoomCode; readonly seat: 'gm' | 'player' }, R: BagRules, held?: (hid: HunterId) => boolean): Seen {
   const offers = new Map<OfferId, Offer>(), ends = new Map<OfferId, OfferEnd>();
   for (const ev of events) {
     const end = endOf(ev);
@@ -430,11 +434,11 @@ export function offersSeen(save: Save, events: readonly StoredEvent[], me: { rea
   for (const r of offersOf(save)) {
     const end = r.offer.room === me.room ? ends.get(r.offer.id) : undefined;
     if (!end) continue;
-    const w = stepIn(s, r, { type: 'end', end });
+    const w = stepIn(s, r, { type: 'end', end }, R, held);
     s = w.save;
     if (w.closed) { done.push(w.closed); const n = closeNews(w.closed); if (n) news.push(n); }
   }
-  for (const r of offersOf(s)) if (r.side === 'giver' && r.offer.room === me.room && offers.has(r.offer.id)) s = stepIn(s, r, { type: 'taken' }).save;
+  for (const r of offersOf(s)) if (r.side === 'giver' && r.offer.room === me.room && offers.has(r.offer.id)) s = stepIn(s, r, { type: 'taken' }, R, held).save;
   const device = s.settings.deviceId;
   for (const [id, o] of offers) {
     const end = ends.get(id);

@@ -3,16 +3,20 @@ import { BONUS_KEYS, BONUS_LABELS, RANKS, TIERS, rules } from '../edge/rules.ts'
 import { ITEM_TYPES, SLOTS } from '../core/save.ts';
 import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
-import { builtInItems, defaultShop, lootPool, parseItem, SLOT_LABELS, valueOf, WEAR_LIMIT, weightOf } from '../core/registry/items.ts';
+import { builtInItems, DEFAULT_SHOP_IDS, lootPool, parseItem, SLOT_LABELS, valueOf, WEAR_LIMIT, weightOf } from '../core/registry/items.ts';
+import { adhocGrant, grantDefs, itemDefDataOf, refGrant, resolveDef, resolveGrant } from '../core/registry/item-book.ts';
+import { heardStep } from '../core/item-refs.ts';
+import { isCustomItemDefId, parseItemDefId } from '../core/ids.ts';
 import { itemAbilityId } from '../core/registry/abilities.ts';
 import { itemIcon } from '../core/registry/icon-defaults.ts';
 import { icon, sprite } from './icons.ts';
-import { BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, handLockedBy, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, wearPlan, withShop, wornCount, writeShopItem } from '../core/hunter/inventory.ts';
+import { BAG_EDIT_WORDS, BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, bagEdit, bagOf, borrowConfirm, buy, buyPlan, buyWords, detachItem, editItem, equip, handLockedBy, heldItem, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, wearPlan, withShop, wornCount, wornOf, writeShopItem } from '../core/hunter/inventory.ts';
 import { CRYSTAL_BUYERS, CRYSTAL_WORDS, addCrystal, buyerRate, buyerStatus, defaultBuyer, sellCrystalStep, sellPlan } from '../core/hunter/crystal.ts';
 import { stepTime } from '../core/day.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { debtLine } from '../core/hunter/revive-standing.ts';
 import { USE_WORDS, spendItem, tooLowOf, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
+import { itemNamedLike, saveItemDef, savedWords } from '../core/library.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
@@ -39,21 +43,32 @@ export function register(app) {
    * before it opens a confirm or the item maker, so a worn item in a fight is refused at the tap.
    */
   const wearRefused = (h, itemId, event) => {
-    const to = wearMove(h, itemId, event, inFight(h.id));
+    const to = wearMove(h, itemId, event, inFight(h.id), rules());
     if (!isRefused(to)) return false;
     ui.wrote('System', to, GEAR_WORDS);
     return true;
   };
 
   // ── the rules are src/core/hunter/inventory.ts; each write is store.apply of one of them ──
-  const shopList = () => store.get().shop ?? defaultShop(rules());
+  const shopList = () => (app.seat() === 'player' ? app.api.sync.catalogShop() : store.get().shop) ?? [...DEFAULT_SHOP_IDS];
+  /** The shop's items as they read now, each with its id. */
+  const shopItems = () => shopList().map(defId => ({ ...resolveGrant(refGrant(defId), rules()), defId }));
   /** The GM's shop after `f` changes the list shown: it becomes the GM's own at its first edit. */
   const shopEdit = f => store.apply('shop-edit', s => withShop(s, f(shopList())));
   /**
    * A change to one hunter's bag. What is worn is on the sheet, and taking a worn thing away (selling it, removing it,
-   * using up the last) lowers its maxima as unequipping does, so HP, mana and fatigue are fitted after every change.
+   * using up the last) lowers its maxima as unequipping does, so HP, mana and fatigue are fitted after every change,
+   * and `heardStep` prunes any heard custom def no longer named by the save.
    */
-  const onBag = (hid, why, step) => store.apply(why, atHunter(hid, both(step, x => fitted(x, rules()))));
+  const onBag = (hid, why, step) => store.apply(why, s => {
+    const at = atHunter(hid, both(step, x => fitted(x, rules())))(s);
+    return isRefused(at) ? at : heardStep(at);
+  });
+  /** A grant put in hunter `hid`'s bag, the def it carries heard (item-refs.ts `heardStep`), in one write. */
+  const putGrant = (hid, why, g, id) => store.apply(why, s => {
+    const at = atHunter(hid, both(x => putItem(x, g, id, rules()), x => fitted(x, rules())))(s);
+    return isRefused(at) ? at : heardStep(at, grantDefs([g]));
+  });
 
   /**
    * A consumable used by a hunter whose HP, mana and fatigue a fight holds (`hunter.fightOf`) is the item's ability
@@ -103,27 +118,33 @@ export function register(app) {
   }
 
   const api = app.api.inventory = {
-    itemTemplates: () => builtInItems(rules()),
-    shop: () => shopList().map(t => ({ ...t, bonus: { ...t.bonus } })),
-    addItem(hid, item) {
-      const h = store.hunter(hid), it = parseItem(item); if (!h || !it) return null;
-      const into = stackOf(h, it), id = into ? into.id : store.id('i');
-      if (!ui.wrote('System', onBag(hid, 'item-add', x => putItem(x, it, id)))) return null;
-      const added = store.hunter(hid).items.find(i => i.id === id);
-      return added ? { ...added } : null;
+    shop: () => shopItems(),
+    bag: h => bagOf(h, rules()),
+    worn: h => wornOf(h, rules()),
+    grant: g => resolveGrant(g, rules()),
+    choices: () => ({
+      builtIn: builtInItems(rules()).map(i => ({ defId: i.defId, name: i.name })),
+      library: Object.keys(store.get().library.items).flatMap(k => { const id = parseItemDefId(k); return id && isCustomItemDefId(id) ? [{ defId: id, name: store.get().library.items[id].name }] : []; }),
+    }),
+    addItem(hid, g) {
+      const h = store.hunter(hid); if (!h || !g) return null;
+      const into = stackOf(h, g, rules()), id = into ? into.id : store.id('i');
+      if (!ui.wrote('System', putGrant(hid, 'item-add', g, id))) return null;
+      return heldItem(store.hunter(hid), id, rules());
     },
     addGold(hid, n) { ui.wrote('System', onBag(hid, 'gold', x => addGold(x, n))); },
     addCrystal(hid, n) { ui.wrote('System', onBag(hid, 'crystal', x => addCrystal(x, n))); },
-    rollLoot: (rank, { boss = false, share = 1 } = {}) => rollLoot(rules(), rank, { boss, share }, lootPool(rules()), cryptoRandom),
+    rollLoot: (rank, { boss = false, share = 1 } = {}) => rollLoot(rules(), rank, { boss, share }, lootPool(rules()), cryptoRandom)
+      .map(d => (d.kind === 'item' ? { kind: 'item', item: refGrant(d.item.defId) } : d)),
     equip(hid, itemId) {
-      const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
+      const h = store.hunter(hid), it = h ? heldItem(h, itemId, rules()) : null;
       if (!it || !it.slot) return false;
       const splitId = it.qty > 1 ? store.id('i') : it.id;
-      return ui.wrote('System', onBag(hid, 'equip', x => equip(x, itemId, splitId, inFight(hid))), GEAR_WORDS);
+      return ui.wrote('System', onBag(hid, 'equip', x => equip(x, itemId, splitId, inFight(hid), rules())), GEAR_WORDS);
     },
-    unequip(hid, slot) { ui.wrote('System', onBag(hid, 'unequip', x => unequip(x, slot, inFight(hid))), GEAR_WORDS); },
+    unequip(hid, slot) { ui.wrote('System', onBag(hid, 'unequip', x => unequip(x, slot, inFight(hid), rules())), GEAR_WORDS); },
     use(hid, itemId) {
-      const h = store.hunter(hid), it = h ? usable(h, itemId) : null;
+      const h = store.hunter(hid), it = h ? usable(h, itemId, rules()) : null;
       if (!it) return false;
       // an item that revives is never the fight's: a dead hunter's row stays in the fight until it ends (use.ts)
       if (it.revive && app.api.hunter.fightOf({ hid })) { ui.toast('System', USE_WORDS.fight(it.name), { kind: 'warning' }); return false; }
@@ -133,16 +154,20 @@ export function register(app) {
       if (it.target === 'other' && ops.length) return useOnOther(h, it, ops);
       return useOnSelf(h, it, ops);
     },
-    buy(hid, tpl) {
-      const h = store.hunter(hid), c = parseItem(tpl);
+    buy(hid, defId) {
+      const h = store.hunter(hid);
       if (!h) return refuse('no-hunter');
-      if (!c) return refuse('no-item');
-      const into = stackOf(h, c);
-      const id = into ? into.id : store.id('i');
-      return onBag(hid, 'buy', x => buy(x, c, id, rules()));
+      if (!shopList().includes(defId)) return refuse('no-item');
+      const R = rules(), def = isCustomItemDefId(defId) ? resolveDef(defId, R) : null;
+      const g = def ? { ...refGrant(defId), def } : refGrant(defId);
+      const into = stackOf(h, g, R), id = into ? into.id : store.id('i');
+      return store.apply('buy', s => {
+        const at = atHunter(hid, both(x => buy(x, g, id, R), x => fitted(x, R)))(s);
+        return isRefused(at) ? at : heardStep(at, grantDefs([g]));
+      });
     },
     sell(hid, itemId, n = 1) {
-      const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
+      const h = store.hunter(hid), it = h ? heldItem(h, itemId, rules()) : null;
       if (!it) return 0;
       const got = sellTotal(it, n, rules());
       return ui.wrote('System', onBag(hid, 'sell', x => sell(x, itemId, n, rules(), inFight(hid))), GEAR_WORDS) ? got : 0;
@@ -211,12 +236,12 @@ export function register(app) {
       });
     },
     update(el) {
-      const h = store.active(), count = wornCount(h), full = count >= WEAR_LIMIT, blocker = handLockedBy(h);
+      const h = store.active(), R = rules(), count = wornCount(h, R), full = count >= WEAR_LIMIT, blocker = handLockedBy(h, R), bag = bagOf(h, R), worn = wornOf(h, R);
       const capEl = el.querySelector('[data-eqcap]');
       capEl.textContent = `Equipped: ${count} of ${WEAR_LIMIT}`;
       capEl.classList.toggle('full', full);
       el.querySelector('[data-slots]').innerHTML = SLOTS.map(s => {
-        const it = h.items.find(i => i.id === h.equipped[s]);
+        const it = bag.find(i => i.id === worn[s]);
         if (!it && s === 'offhand' && blocker) {
           return `<div class="eq-slot locked" data-slot="offhand"><span class="sl">${esc(SLOT_LABELS[s])}</span>
             <span class="nm none">Held by ${esc(blocker.name)} (2H)</span>
@@ -268,14 +293,41 @@ export function register(app) {
         </div>
         <div class="inv-bar"><button type="button" data-additem>New item…</button></div>`;
       const $q = s => el.querySelector(s);
-      /** The item maker for a held item (`inv`) or a shop item; Save writes it where it came from. */
-      const openForm = async (target, item) => {
-        const editId = item ? item.id || item.name : null;
-        const it = await app.api.loot.item({ initial: item || undefined, library: false });
-        if (!it) return;
-        if (target === 'shop') ui.wrote('System', shopEdit(shown => writeShopItem(shown, editId, it)));
-        else if (editId) { const hid = store.active().id; ui.wrote('System', onBag(hid, 'item-edit', x => editItem(x, editId, it, inFight(hid))), GEAR_WORDS); }
-        else api.addItem(store.active().id, it);
+      /** Where this phone stands for the Bag's Edit (inventory.ts `bagEdit`). */
+      const seat = () => app.seat();
+      /**
+       * A new item for the active hunter's bag: a player in a room makes its own (ad hoc, kept with the line); alone or
+       * the GM, a custom item of this campaign's catalog, so every copy follows its edits.
+       */
+      const newBagItem = async () => {
+        const hid = store.active().id;
+        if (seat() === 'player') { const it = await app.api.loot.item({ library: false }); if (it) api.addItem(hid, adhocGrant(itemDefDataOf(it), it.qty)); return; }
+        const g = await app.api.loot.ref({}); if (g) api.addItem(hid, g);
+      };
+      /** The Bag's Edit of line `i` (resolved) of hunter `h`, by `bagEdit`: the def for every copy, or the player's own item. */
+      const editLine = async (h, i) => {
+        const line = h.items.find(x => x.id === i.id); if (!line) return;
+        const how = bagEdit(line, seat(), store.get().library.catalogId);
+        if (how === 'none') return;
+        if (how === 'adhoc') {
+          const it = await app.api.loot.item({ initial: i, library: false });
+          if (it) ui.wrote('System', onBag(h.id, 'item-edit', x => editItem(x, i.id, itemDefDataOf(it), inFight(h.id), rules())), GEAR_WORDS);
+          return;
+        }
+        const W = BAG_EDIT_WORDS;
+        const pick = await ui.system({ tag: '! Item', title: W.title, body: W.body(i.name), actions: [{ label: W.every, value: 'every', primary: true }, { label: W.separate, value: 'separate' }, { label: W.cancel, value: false, cancel: true }] });
+        if (pick === 'every') await app.api.loot.edit(line.defId, i, line);
+        else if (pick === 'separate') {
+          const g = await app.api.loot.ref({ initial: { ...i, name: i.name } });
+          if (g && g.kind === 'ref') ui.wrote('System', onBag(h.id, 'item-edit', x => detachItem(x, i.id, g.defId, inFight(h.id), rules(), seat(), store.get().library.catalogId)), GEAR_WORDS);
+        }
+      };
+      /** The GM's shop item: its own custom item edited for every copy; a built-in or another table's item made into one of this campaign's in its place. */
+      const editShop = async t => {
+        const own = store.get().library.catalogId;
+        if (t && own && t.defId.startsWith(`c:${own}:`)) { await app.api.loot.edit(t.defId, t); return; }
+        const g = await app.api.loot.ref(t ? { initial: t } : {});
+        if (g && g.kind === 'ref') ui.wrote('System', shopEdit(shown => writeShopItem(shown, t ? t.defId : null, g.defId)));
       };
 
       const setTab = t => {
@@ -292,7 +344,15 @@ export function register(app) {
       $q('[data-form]').addEventListener('submit', e => {
         e.preventDefault();
         const f = e.target, name = f.name.value.trim(); if (!name) return;
-        api.addItem(store.active().id, { name: name.slice(0, 60), rar: f.rar.value });
+        const def = itemDefDataOf(parseItem({ name: name.slice(0, 60), rar: f.rar.value }));
+        const hid = store.active().id;
+        if (seat() === 'player') api.addItem(hid, adhocGrant(def));
+        else {
+          // alone or the GM: the library's custom item of that name, else a new one (library.ts `saveItemDef`)
+          const had = itemNamedLike(store.get().library, def.name, null), id = had || store.itemDefId();
+          if (!id || (!had && !ui.wrote('Workshop', store.apply('library-save', s => saveItemDef(s, id, def, rules())), savedWords('item', def.name)))) return;
+          api.addItem(hid, refGrant(id));
+        }
         f.name.value = '';
       });
 
@@ -382,21 +442,21 @@ export function register(app) {
         else if (d.give) void app.api.trade.give(id, d.give);
         else if (d.use) api.use(id, d.use);
         else if (d.equip) api.equip(id, d.equip);
-        else if (d.unequipItem) { const s = SLOTS.find(k => h.equipped[k] === d.unequipItem); if (s) api.unequip(id, s); }
+        else if (d.unequipItem) { const worn = wornOf(h, rules()), s = SLOTS.find(k => worn[k] === d.unequipItem); if (s) api.unequip(id, s); }
         else if (d.sell) {
-          const it = h.items.find(x => x.id === d.sell); if (!it || wearRefused(h, it.id, 'remove')) return;
+          const it = heldItem(h, d.sell, rules()); if (!it || wearRefused(h, it.id, 'remove')) return;
           let n = 1;
           if (it.qty > 1) { n = await ui.promptNum({ title: `Sell ${it.name}`, label: `Quantity to sell (${fmt(sellPrice(it))} gold each)`, value: 1, min: 1, max: it.qty }); if (!n) return; }
           else if (!(await ui.confirm({ title: 'Sell item?', body: `${it.name} for ${fmt(sellPrice(it))} gold`, confirmLabel: 'Sell item' }))) return;
           const got = api.sell(id, it.id, n);
           if (got) ui.toast('System', `Sold ${it.name} for ${fmt(got)} gold.`);
         } else if (d.del) {
-          const it = h.items.find(x => x.id === d.del);
+          const it = heldItem(h, d.del, rules());
           if (!it || wearRefused(h, it.id, 'remove')) return;
-          if (await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove item' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id, inFight(h.id))), GEAR_WORDS);
-        } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it && !wearRefused(h, it.id, 'edit')) openForm('inv', it); }
+          if (await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove item' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id, inFight(h.id), rules())), GEAR_WORDS);
+        } else if (d.editItem) { const it = heldItem(h, d.editItem, rules()); if (it && !wearRefused(h, it.id, 'edit')) await editLine(h, it); }
         else if (d.buy !== undefined) {
-          const tpl = shopList()[Number(d.buy)]; if (!tpl) return;
+          const tpl = shopItems()[Number(d.buy)]; if (!tpl) return;
           const R = rules(), plan = buyPlan(h, tpl, R);
           if (!isRefused(plan) && plan.borrow > 0) {
             const c = borrowConfirm(tpl.name, plan, R);
@@ -408,15 +468,15 @@ export function register(app) {
           }
           const latest = store.hunter(id); if (!latest) return;
           const R2 = rules(), plan2 = buyPlan(latest, tpl, R2);
-          if (ui.wrote('System', api.buy(id, tpl), buyWords(latest, tpl, R2))) {
+          if (ui.wrote('System', api.buy(id, tpl.defId), buyWords(latest, tpl, R2))) {
             ui.toast('System', !isRefused(plan2) && plan2.borrow > 0 ? BORROW_WORDS.bought(tpl.name, plan2) : `Purchased ${tpl.name}.`);
           }
-        } else if (d.shopEdit !== undefined) { const tpl = shopList()[Number(d.shopEdit)]; if (tpl) openForm('shop', tpl); }
+        } else if (d.shopEdit !== undefined) { const tpl = shopItems()[Number(d.shopEdit)]; if (tpl) await editShop(tpl); }
         else if (d.shopDel !== undefined) {
-          const tpl = shopList()[Number(d.shopDel)];
+          const tpl = shopItems()[Number(d.shopDel)];
           if (tpl && await ui.confirm({ title: 'Remove from shop?', body: tpl.name, danger: true, confirmLabel: 'Remove from shop' })) ui.wrote('System', shopEdit(shown => removeShopItem(shown, Number(d.shopDel))));
-        } else if (b.hasAttribute('data-shop-add')) openForm('shop', null);
-        else if (b.hasAttribute('data-additem')) openForm('inv', null);
+        } else if (b.hasAttribute('data-shop-add')) await editShop(null);
+        else if (b.hasAttribute('data-additem')) await newBagItem();
         else if (b.hasAttribute('data-shop-reset')) {
           if (await ui.confirm({ title: 'Reset shop?', body: 'Restore the default shop list.', danger: true, confirmLabel: 'Reset shop' })) ui.wrote('System', store.apply('shop-edit', s => withShop(s, null)));
         }
@@ -436,13 +496,14 @@ export function register(app) {
       const waiting = app.api.trade.waiting(h.id);
       el.querySelector('[data-tab="offers"]').textContent = waiting ? `Offers (${waiting})` : 'Offers';
       el.querySelectorAll('.gm-only').forEach(b => { b.hidden = !gm || (b.hasAttribute('data-shop-add') || b.hasAttribute('data-shop-reset') ? tab !== 'shop' : false); });
-      const equippedIds = new Set(Object.values(h.equipped).filter(Boolean));
+      const R = rules(), bag = bagOf(h, R), equippedIds = new Set(Object.values(wornOf(h, R)).filter(Boolean)), own = store.get().library.catalogId;
       const filter = el.querySelector('[name=filter]').value;
       if (tab === 'items') {
-        const list = h.items.filter(i => filter === 'all' || i.type === filter);
+        const list = bag.filter(i => filter === 'all' || i.type === filter);
         el.querySelector('[data-list]').innerHTML = list.length ? list.map(i => {
-          const eq = equippedIds.has(i.id);
-          const plan = i.slot && !eq ? wearPlan(h, i.id, false) : null;
+          const eq = equippedIds.has(i.id), line = h.items.find(x => x.id === i.id);
+          const edits = !!line && bagEdit(line, app.seat(), own) !== 'none';
+          const plan = i.slot && !eq ? wearPlan(h, i.id, false, R) : null;
           const swap = !!(plan && !isRefused(plan) && plan.replaces.length > 0);
           const blocked = !!(plan && isRefused(plan));
           return `<li class="inv-card${eq ? ' eq' : ''}" data-item="${esc(i.id)}"><div class="top">${pic(i)}${nameBtn('inv-items', i.id, i)}${i.twoHanded ? '<span class="inv-qty">2H</span>' : ''}${chip(i.rar)}${i.qty > 1 ? `<span class="inv-qty">×${esc(i.qty)}</span>` : ''}${eq ? '<span class="inv-qty">equipped</span>' : ''}</div>
@@ -450,22 +511,22 @@ export function register(app) {
             <div class="acts">
               ${i.type === 'consumable' ? `<button type="button" data-use="${esc(i.id)}" aria-label="Use ${esc(i.name)}">Use</button>` : ''}
               ${i.slot ? (eq ? `<button type="button" data-unequip-item="${esc(i.id)}" aria-label="Unequip ${esc(i.name)}">Unequip</button>` : `<button type="button"${blocked ? ' class="eq-blocked"' : ''} data-equip="${esc(i.id)}" aria-label="${swap ? 'Swap' : 'Equip'} ${esc(i.name)}">${swap ? 'Swap' : 'Equip'}</button>`) : ''}
-              <button type="button" data-edit-item="${esc(i.id)}" aria-label="Edit ${esc(i.name)}">Edit</button>
+              ${edits ? `<button type="button" data-edit-item="${esc(i.id)}" aria-label="Edit ${esc(i.name)}">Edit</button>` : ''}
               ${sellable(i) && open ? `<button type="button" data-sell="${esc(i.id)}" aria-label="Sell ${esc(i.name)}">Sell ${fmt(sellPrice(i))}g</button>` : ''}
               ${eq ? '' : `<button type="button" data-give="${esc(i.id)}" aria-label="Give ${esc(i.name)}">Give</button>`}
               <button type="button" class="icon-btn danger" data-del="${esc(i.id)}" aria-label="Remove item ${esc(i.name)}">&times;</button>
             </div></li>`;
-        }).join('') : `<li class="empty">${h.items.length ? 'No items of that type.' : 'Your bag is empty.'}</li>`;
+        }).join('') : `<li class="empty">${bag.length ? 'No items of that type.' : 'Your bag is empty.'}</li>`;
       } else if (tab === 'offers') app.api.trade.offers(el.querySelector('[data-offers]'), h.id);
       else if (tab === 'stash') app.api.trade.stash(el.querySelector('[data-stash]'), h.id);
       else {
-        const R = rules(), closed = el.querySelector('[data-shop-closed]'), credit = el.querySelector('[data-shop-credit]');
+        const closed = el.querySelector('[data-shop-closed]'), credit = el.querySelector('[data-shop-credit]');
         closed.hidden = open;
         closed.textContent = open ? '' : SHOP_CLOSED;
         const creditText = shopCreditLine(h, R);
         credit.hidden = !creditText;
         credit.textContent = creditText ?? '';
-        const shopAll = shopList(), rankFilter = el.querySelector('[name=shop-rank]').value;
+        const shopAll = shopItems(), rankFilter = el.querySelector('[name=shop-rank]').value;
         const shown = shopAll.map((t, n) => ({ t, n })).filter(({ t }) => rankFilter === 'all' || (R.rarities[t.rar] && R.rarities[t.rar].rank === rankFilter));
         el.querySelector('[data-shoplist]').innerHTML = shown.map(({ t, n }) => {
           const price = valueOf(t, R), plan = buyPlan(h, t, R);

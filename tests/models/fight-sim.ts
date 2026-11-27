@@ -370,7 +370,7 @@ const statusPolicy: Policy = (f, me, _plan, R) => {
 const clearLine = (f: Running, me: Body, a: Ability, target: Body): boolean =>
   a.shape.kind !== 'line' || a.shape.pierce || inShape(a.shape, me.place, target.place, f.grid, f.rows.filter(r => r.id !== me.id && (up(r) || r.kind === 'hunter'))).hit[0]?.id === target.id;
 /** A monster: its one attack on its suggested target, walking toward it when out of range or when a fallen hunter stands in its line. */
-const monsterPolicy: Policy = (f, me) => {
+export const monsterPolicy: Policy = (f, me) => {
   const a = me.abilities[0]!, target = suggested(f, me);
   if (!target) return { type: 'pass' };
   return clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target);
@@ -825,7 +825,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   }
   const ended = p as Play & { readonly fight: Ended }, f = ended.fight;
   for (const r of f.rows) {
-    const t = tally[r.id]!;
+    const t = tally[r.id] ??= emptyTally(r);
     t.fatigue = Math.max(t.fatigue, r.fatigue + (f.summary.rested?.[r.id] ?? 0));
     t.mana = r.mana;
   }
@@ -884,6 +884,41 @@ export function runSoloMythic(hero: SimRow, mythicId: MythicScriptId, runs: numb
   for (let i = 0; i < runs; i++) {
     const rec = playFight({ rows: [player, boss], rules: R, tallyDamage: false }, 1 + i);
     if (rec.winner === 'party') wins++;
+    roundSum += rec.rounds;
+    if (rec.capped) cappedCount++;
+  }
+  const winRate = wins / runs;
+  return {
+    mythicId,
+    runs,
+    wins,
+    winRate,
+    se: Math.sqrt(winRate * (1 - winRate) / runs),
+    meanRounds: roundSum / runs,
+    capped: cappedCount,
+  };
+}
+
+/**
+ * Plays `runs` seeded fights of `hero` (wrapped in `answering`) alongside `allies` (e.g. a Necromancer's fielded
+ * shadows running `monsterPolicy`) against scripted mythic `mythicId` (plus optional `extraFoes` such as adds to
+ * exercise Arise and Reform) under `R`. Counts a win only when the party wins and `hero` finishes up (`hp > 0`).
+ */
+export function runSoloMythicArmy(
+  hero: SimRow,
+  allies: readonly SimRow[],
+  mythicId: MythicScriptId,
+  runs: number,
+  R: Rules = scriptsOn(),
+  extraFoes: readonly SimRow[] = [],
+): SoloMythicResult {
+  const player = answering(hero);
+  const boss = scripted(mythicId, R);
+  const heroId = player.row.id as string;
+  let wins = 0, roundSum = 0, cappedCount = 0;
+  for (let i = 0; i < runs; i++) {
+    const rec = playFight({ rows: [player, ...allies, boss, ...extraFoes], rules: R, tallyDamage: false }, 1 + i);
+    if (rec.winner === 'party' && (rec.end[heroId]?.hp ?? 0) > 0) wins++;
     roundSum += rec.rounds;
     if (rec.capped) cappedCount++;
   }

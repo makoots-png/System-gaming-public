@@ -17,8 +17,8 @@ import { REVIVE_TEXT } from '../../src/core/effects.ts';
 const holding = (page: Page, life: object, n: number, gold = 0, rank = 'E') => page.evaluate(([life, n, gold, rank]) => hunterApp.store.update((d: any) => {
   d.rulesOverrides.solo = { personal: false };
   const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
-  const crystal = hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === `Resurrection Crystal (${rank})`);
-  if (n > 0) h.items.push({ ...crystal, id: hunterApp.store.id('i'), qty: n });
+  const crystal = hunterApp.api.inventory.choices().builtIn.find((i: any) => i.name === `Resurrection Crystal (${rank})`);
+  if (n > 0) h.items.push({ kind: 'ref', id: hunterApp.store.id('i'), defId: crystal.defId, qty: n });
   h.life = life; h.gold = gold; h.reviveLeft = 'none';
 }, 'test-setup'), [life, n, gold, rank] as const);
 /** The active hunter at `level` (the peak with it) and of `rank`, as the GM's edits would leave it. */
@@ -27,7 +27,8 @@ const standing = (page: Page, level: number, rank: string) => page.evaluate(([le
   h.level = level; h.peakLevel = level; h.xp = 0; h.rank = rank; h.rankBy = 'gm';
 }, 'test-setup'), [level, rank] as const);
 const crystalCard = (page: Page) => page.locator('#view-status [data-item]').filter({ hasText: 'Resurrection Crystal' });
-const crystals = (h: any): number => h.items.filter((i: any) => i.revive).reduce((n: number, i: any) => n + i.qty, 0);
+/** How many items that revive the hunter `activeHunter` read holds, by its bag as the app reads it. */
+const crystals = (h: any): number => h.bag.filter((i: any) => i.revive).reduce((n: number, i: any) => n + i.qty, 0);
 
 test('a dead hunter alone reads the way back on the sheet, uses a Resurrection Crystal from the bag and stands at 1 HP, the crystal gone and the use logged', async ({ device }) => {
   const { page } = await device('dead');
@@ -139,7 +140,7 @@ test('a dead hunter opens the shop and reads that it is closed, with the ways ba
   await holding(page, { at: 'dead' }, 0, 100000);
   await page.evaluate(() => hunterApp.store.update((d: any) => {
     const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
-    h.items.push({ ...hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === 'Health Potion (E)'), id: hunterApp.store.id('i'), qty: 1 });
+    h.items.push({ kind: 'ref', id: hunterApp.store.id('i'), defId: hunterApp.api.inventory.choices().builtIn.find((i: any) => i.name === 'Health Potion (E)').defId, qty: 1 });
   }, 'test-setup'));
   await go(page, 'status');
   await expect(page.locator('#view-status [data-item]').filter({ hasText: 'Health Potion (E)' }), 'a potion, which a living hunter can sell').toBeVisible();
@@ -177,7 +178,7 @@ test('a GM gives a player a title with a Resurrection Crystal in one award, and 
   await expect(win).toContainText('Item acquired: Resurrection Crystal (S)');
   await expect(win).toContainText('Title acquired: Twice Born');
   const h = await activeHunter(player);
-  expect([crystals(h), h.items.find((i: any) => i.revive)?.tell, h.titles.map((t: any) => t.name)]).toEqual([1, true, ['Twice Born']]);
+  expect([crystals(h), h.bag.find((i: any) => i.revive)?.tell, h.titles.map((t: any) => t.name)]).toEqual([1, true, ['Twice Born']]);
 });
 
 test('a GM who edits the shop\'s S Resurrection Crystal to another price keeps it a crystal, and a GM can make an item that revives', async ({ device }) => {
@@ -195,7 +196,7 @@ test('a GM who edits the shop\'s S Resurrection Crystal to another price keeps i
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
   await expect(item.locator('.inv-qty')).toHaveText('50,000 g');
-  const shop = await page.evaluate(() => hunterApp.store.get().shop.find((i: any) => i.name === 'Resurrection Crystal (S)'));
+  const shop = await page.evaluate(() => hunterApp.api.inventory.shop().find((i: any) => i.name === 'Resurrection Crystal (S)'));
   expect([shop.value, shop.revive]).toEqual([50000, true]);
 
   await page.locator('#view-status [data-shop-add]').tap();
@@ -204,6 +205,6 @@ test('a GM who edits the shop\'s S Resurrection Crystal to another price keeps i
   await d.locator('#lf-revive').check();
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
-  const feather = await page.evaluate(() => hunterApp.store.get().shop.find((i: any) => i.name === 'Phoenix Feather'));
+  const feather = await page.evaluate(() => hunterApp.api.inventory.shop().find((i: any) => i.name === 'Phoenix Feather'));
   expect([feather.type, feather.revive]).toEqual(['consumable', true]);
 });

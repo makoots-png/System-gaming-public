@@ -1,6 +1,5 @@
 // class-view.ts: pure view-models and voice.md-compliant copy builders for the player class locker, skill tree buyer,
 // fork flip modal, and GM unique-class registry (PR 3). Pure: no DOM, no storage, no network.
-import { BONUS_KEYS, BONUS_LABELS } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import type { Role } from '../role.ts';
 import type { Hunter, Save } from '../save.ts';
@@ -20,6 +19,8 @@ import {
 } from '../registry/jobs.ts';
 import type { ClassRarity, UniqueClassName } from '../registry/jobs.ts';
 import {
+  CLASS_BONUS_KEYS,
+  CLASS_BONUS_LABELS,
   CLASS_TREES,
   TREE_SHAPE,
   canBuyNode,
@@ -246,8 +247,8 @@ export function nodeGiftLines(gifts: readonly NodeGift[]): string[] {
   const out: string[] = [];
   for (const g of gifts) {
     if (g.kind === 'bonus') {
-      const parts = BONUS_KEYS.filter(k => typeof g.bonus[k] === 'number' && g.bonus[k] !== 0)
-        .map(k => `${sgn(g.bonus[k]!)} ${BONUS_LABELS[k]}`);
+      const parts = CLASS_BONUS_KEYS.filter(k => typeof g.bonus[k] === 'number' && g.bonus[k] !== 0)
+        .map(k => `${sgn(g.bonus[k]!)} ${CLASS_BONUS_LABELS[k]}`);
       if (parts.length) out.push(parts.join(', '));
     } else if (g.kind === 'scaler') {
       const label = FAMILY[scalerNameOf(g.scaler)].label;

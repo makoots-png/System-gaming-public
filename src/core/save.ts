@@ -22,7 +22,10 @@ import type { BindJoin } from './sync/bind.ts';
 import type { RoomPlaces } from './sync/seen.ts';
 import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
-import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, SLOT_LABELS, WEAR_LIMIT, itemOf, parseItem } from './registry/items.ts';
+import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, SLOT_LABELS, WEAR_LIMIT } from './registry/items.ts';
+import { HEARD_MAX, bagDefs, parseItemBook, parseItemGrant } from './registry/item-book.ts';
+import type { HeldItem, ItemDefData, ItemGrant, ItemResolveRules } from './registry/item-book.ts';
+import { catalogIdOf } from './catalog-id.ts';
 import { parseMonster } from './registry/monsters.ts';
 import { isIconKey } from './registry/icons.ts';
 import type { IconKey } from './registry/icons.ts';
@@ -71,8 +74,8 @@ import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
 import type { JobChain } from './hunter/job-chain.ts';
 import type { Life, Vitals } from './hunter/vitals.ts';
-import { fightId, parseCombatantId, parseDeviceId, parseGateId, parseGmKey, parseRoomCode, parseSaveId, saveId } from './ids.ts';
-import type { CombatantId, DeviceId, EventId, FightId, GateId, GmKey, HunterId, IdOf, LogId, MonsterId, QuestId, RollEntryId } from './ids.ts';
+import { fightId, parseCatalogId, parseCatalogKey, parseCombatantId, parseDeviceId, parseGateId, parseGmKey, parseItemDefId, parseRoomCode, parseSaveId, saveId } from './ids.ts';
+import type { CatalogId, CatalogKey, ItemDefId, CombatantId, DeviceId, EventId, FightId, GateId, GmKey, HunterId, IdOf, LogId, MonsterId, QuestId, RollEntryId } from './ids.ts';
 import type { RoomCode } from './ids.ts';
 import { RULES as BASE_RULES, rulesOf } from './rules.ts';
 import { parseOverrides } from './overrides.ts';
@@ -155,6 +158,8 @@ export type RollEntry = {
 export type LastRoom = { code: RoomCode; why: LastWhy };
 export const LAST_WHY = ['left', 'gone', 'removed'] as const;
 export type LastWhy = (typeof LAST_WHY)[number];
+/** The last catalog revision and canonical doc hash this phone published to the server (sync/catalog-publish.ts). */
+export type CatalogSent = { readonly id: CatalogId; readonly rev: number; readonly hash: string };
 export type SyncSettings = {
   room: RoomCode | null; cursor: number; serverOk: boolean;
   /** The GM key of `room`, and this phone's GM keys by room code. */
@@ -183,6 +188,14 @@ export type SyncSettings = {
   words?: Word[];
   /** On the GM's phone, the rewards the app would have paid by itself, waiting for the GM's approval (src/core/hunter/pending.ts). */
   pending?: PendingReward[];
+  /**
+   * This phone's catalog keys by catalog id: the secret that owns a GM's item catalog (`library.catalogId` is
+   * `catalogIdOf` its key). The edge mints one at the first custom item or first publish; a campaign file whose catalog
+   * has no key here is rekeyed at import (item-refs.ts `rekeyCatalog`).
+   */
+  catalogKeys?: Record<CatalogId, CatalogKey>;
+  /** The last catalog id, rev and canonical doc hash this phone published (sync/catalog-publish.ts). */
+  catalogSent?: CatalogSent;
 };
 /**
  * Whose each field of the sync settings is (docs/agent-handoff/audit/notes-sync-3.md). `campaign`: the room the campaign
@@ -193,9 +206,9 @@ export type SyncSettings = {
  */
 export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'phone' | 'key' } = {
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
-  gmKey: 'key', gmKeys: 'key',
+  gmKey: 'key', gmKeys: 'key', catalogKeys: 'key',
   deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', heard: 'phone', asked: 'phone', offers: 'phone', seen: 'phone',
-  weights: 'phone', words: 'phone', pending: 'phone',
+  weights: 'phone', words: 'phone', pending: 'phone', catalogSent: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
 const ownedBy = (sync: SyncSettings, owner: (typeof SYNC_OWNER)[keyof SyncSettings]): Partial<SyncSettings> =>
@@ -214,12 +227,23 @@ export type World = { day: number; lastDailyKey: DayKey | null; session: number 
  * key (hunter/feats.ts, laid over the built-ins by `featsFor`). `stories`: the GM's stories, each a list of chapters the
  * GM opens one at a time (story/story.ts).
  */
-export type Library = { items: Item[]; statuses: Record<string, StatusDef>; skills: Skill[]; rewards: RewardBundle[]; maps: BattleMap[]; feats: Record<string, FeatDef>; stories: Story[] };
+export type Library = {
+  /** The GM's item definitions by id: a `c:<catalogId>:*` of the GM's own, or a `b:*` override of a built-in. Written only by library.ts `saveItemDef` and `removeItemDef`, and the rekeys of item-refs.ts. */
+  items: Record<ItemDefId, ItemDefData>;
+  /** The catalog this campaign's custom items belong to (`catalogIdOf` its key in `settings.sync.catalogKeys`); null until the first custom item. */
+  catalogId: CatalogId | null;
+  statuses: Record<string, StatusDef>; skills: Skill[]; rewards: RewardBundle[]; maps: BattleMap[]; feats: Record<string, FeatDef>; stories: Story[] };
 export type Save = {
   schema: number; savedAt: string; seq: number; settings: Settings; rulesOverrides: Record<string, unknown>; world: World;
   hunters: Hunter[]; gates: Gate[]; monsters: Monster[]; library: Library;
-  /** The GM's own shop, made from the built-in one at its first edit; null shows the built-in shop. */
-  shop: ItemTemplate[] | null;
+  /** The GM's own shop by item id, made from the built-in one at its first edit; null shows the built-in shop. */
+  shop: ItemDefId[] | null;
+  /**
+   * Item defs this phone heard and does not hold in its library: a custom item of another catalog, or one the GM deleted,
+   * held by a hunter, the stash, an offer or a reward of this save. Laid under `library.items` in `R.items`
+   * (edge/rules.ts). Written only by item-refs.ts `heardStep`, which drops a def nothing names.
+   */
+  heardItems: Record<ItemDefId, ItemDefData>;
   fight: Fight | null; log: LogEntry[]; rolls: RollEntry[];
   /**
    * What fights' defeated monsters dropped and the GM has not given or set aside yet, oldest first (pay.ts: `settleEncounter`
@@ -254,10 +278,10 @@ export type CodexInfo = { hpMax: number; armor: number; resist: number; speed: n
 export const CODEX_SEEN_MAX = 400;
 
 // ── defaults. Each factory is typed by its entity, so a field added to a type without a default does not compile. ──
-/** 5: current save shape. Saves of an older schema are not read. */
-export const SCHEMA = 5;
+/** 6: current save shape (items by reference: item sync PR 2). Saves of an older schema are not read. */
+export const SCHEMA = 6;
 /** A fight's drop: the fight it came from, its gold and its items, as a monster's loot holds them (registry/monsters.ts `Loot`). */
-export type Dropped = { readonly fight: FightId; readonly gold: number; readonly items: ItemTemplate[] };
+export type Dropped = { readonly fight: FightId; readonly gold: number; readonly items: ItemGrant[] };
 /** The loot waiting for the GM (pay.ts `lootStep`): none, or the drops of one or more fights, oldest first, one per fight. */
 export type FightLoot = { readonly at: 'none' } | { readonly at: 'waiting'; readonly drops: readonly [Dropped, ...Dropped[]] };
 /** Bounds for junk or hostile saves only: src/core/repair.ts. */
@@ -278,7 +302,7 @@ export const newRollEntry = (): RollEntry => ({
 /** An empty save, the example a stored one is filled from: no hunters. Read through the repair, every save holds one. */
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
-  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
+  monsters: [], library: { items: {}, catalogId: null, statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, heardItems: {}, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
   tableWeight: NO_TABLE_WEIGHT, stash: NO_STASH, classHolders: newClassHolders(deviceId), classOffer: null,
 });
 
@@ -342,8 +366,22 @@ const stories = (run: RepairRun, value: unknown): Story[] =>
 /** The stories on the table, each read by `parseStoryRun` (one naming no story or no state is dropped), then `keptRuns`. */
 const storyRuns = (run: RepairRun, value: unknown): StoryRun[] =>
   keptRuns((Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStoryRun(raw); return t ? [refill<StoryRun>(run, raw, t, 'sr0', 'sr')] : []; }));
-/** Items without ids (the shop): each read by `parseItem`, one it refuses dropped. */
-const templates = (value: unknown): ItemTemplate[] => (Array.isArray(value) ? value : []).flatMap(raw => parseItem(raw) ?? []);
+/** Item grants (a drop's): each read by `parseItemGrant`, one it refuses dropped, at most `cap`. */
+const grants = (value: unknown, cap: number): ItemGrant[] => (Array.isArray(value) ? value : []).flatMap(raw => parseItemGrant(raw) ?? []).slice(0, cap);
+/** The GM's shop: each id `parseItemDefId` reads, once, at most `SHOP_MAX`. */
+const shopIds = (value: unknown): ItemDefId[] => [...new Set((Array.isArray(value) ? value : []).flatMap(v => parseItemDefId(v) ?? []))].slice(0, SHOP_MAX);
+/**
+ * The item defs a save holds, for `R.items`: what this phone heard (`heardItems`) under the library's own, so a GM's
+ * edit wins over a def heard earlier. Built-in ids heard from elsewhere are never laid over the shipped ones.
+ */
+export function savedItemBook(save: { readonly library: Pick<Library, 'items'>; readonly heardItems: Readonly<Record<ItemDefId, ItemDefData>> }): Record<ItemDefId, ItemDefData> {
+  const heard = Object.entries(save.heardItems).filter(([id]) => id.startsWith('c:'));
+  return heard.length ? { ...Object.fromEntries(heard), ...save.library.items } : save.library.items;
+}
+/** The most ids the GM's shop lists. */
+export const SHOP_MAX = 200;
+/** The most item lines one fight's drop holds: a monster's loot bound (registry/monsters.ts `lootItems`) times the eight monsters of a fight. */
+const LOOT_GRANTS_MAX = 160;
 /** The longest id of a fight a drop names: what the fight's parser reads as one (fight-parse.ts `idText`). */
 const FIGHT_ID_MAX = 80;
 /**
@@ -352,7 +390,7 @@ const FIGHT_ID_MAX = 80;
  */
 function dropOf(v: unknown): Dropped | null {
   if (!isObj(v) || typeof v.fight !== 'string' || !v.fight || v.fight.length > FIGHT_ID_MAX || !Array.isArray(v.items)) return null;
-  const gold = v.gold, items = templates(v.items);
+  const gold = v.gold, items = grants(v.items, LOOT_GRANTS_MAX);
   if (typeof gold !== 'number' || !Number.isInteger(gold) || gold < 0) return null;
   return gold || items.length ? { fight: fightId(v.fight), gold, items } : null;
 }
@@ -388,6 +426,19 @@ function fixSync(sync: SyncSettings, now: number): void {
     if (!isObj(keys)) delete sync.gmKeys;
     else for (const code of Object.keys(keys)) if (!parseRoomCode(code) || !parseGmKey(keys[code])) delete keys[code];
   }
+  if ('catalogKeys' in sync) {
+    const keys: unknown = sync.catalogKeys;
+    if (!isObj(keys)) delete sync.catalogKeys;
+    else for (const id of Object.keys(keys)) { const key = parseCatalogKey(keys[id]); if (!key || catalogIdOf(key) !== id) delete keys[id]; }
+  }
+  if ('catalogSent' in sync) {
+    const raw: unknown = sync.catalogSent;
+    const id = isObj(raw) ? parseCatalogId(raw.id) : null;
+    const rev = isObj(raw) && typeof raw.rev === 'number' && Number.isInteger(raw.rev) && raw.rev >= 1 && raw.rev <= Number.MAX_SAFE_INTEGER ? raw.rev : null;
+    const hash = isObj(raw) && typeof raw.hash === 'string' && /^[0-9a-f]{64}$/.test(raw.hash) ? raw.hash : null;
+    if (id && rev !== null && hash) sync.catalogSent = { id, rev, hash };
+    else delete sync.catalogSent;
+  }
   if ('lastRoom' in sync) {
     const last: unknown = sync.lastRoom;
     const code = isObj(last) ? parseRoomCode(last.code) : null;
@@ -420,7 +471,11 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.library.statuses = statusLibrary(save.library.statuses);
   // An override the rules do not have, or of the wrong type, is dropped here, so it never reaches `rulesOf`.
   save.rulesOverrides = parseOverrides(save.rulesOverrides).overrides;
-  const R = rulesOf(save.rulesOverrides, save.library.statuses);
+  save.library.items = parseItemBook(save.library.items, LIMITS.libraryItems);
+  save.library.catalogId = parseCatalogId(save.library.catalogId);
+  save.heardItems = parseItemBook(save.heardItems, HEARD_MAX);
+  // a hunter's sheet reads its worn items by id, so the repair reads them under the save's own defs
+  const R = rulesOf(save.rulesOverrides, save.library.statuses, savedItemBook(save));
   const run: RepairRun = { R, env, ids: new Set(), bad: [], owner: null };
   const st = save.settings;
   st.mode = oneOf(st.mode, MODES, 'player');
@@ -433,7 +488,6 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.savedAt = str(save.savedAt, '', 40);
 
   save.hunters = list(run, save.hunters, 'h', () => hunterExample(R), h => fixHunter(run, h));
-  save.library.items = items(run, save.library.items.slice(0, LIMITS.libraryItems));
   save.library.skills = skills(run, save.library.skills.slice(0, LIMITS.librarySkills));
   save.library.rewards = bundles(run, save.library.rewards.slice(0, LIMITS.libraryRewards));
   save.library.maps = maps(run, save.library.maps.slice(0, LIMITS.libraryMaps));
@@ -441,7 +495,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.library.stories = stories(run, save.library.stories.slice(0, LIMITS.libraryStories));
   save.storyRuns = storyRuns(run, save.storyRuns);
   save.gates = gates(run, save.gates);
-  save.shop = Array.isArray(save.shop) ? templates(save.shop) : null;
+  save.shop = Array.isArray(save.shop) ? shopIds(save.shop) : null;
   save.loot = lootOf(save.loot);
   save.codex = codexOf(save.codex);
   save.codexSeen = save.codexSeen.flatMap(v => parseCombatantId(v) ?? []).slice(-CODEX_SEEN_MAX);
@@ -541,6 +595,13 @@ export function parseSaveValue(value: unknown, env: ParseEnv): Parsed {
 export const fileKind = (save: Save): 'hunter' | 'campaign' => ((save as Save & { kind?: unknown }).kind === 'hunter' ? 'hunter' : 'campaign');
 
 /**
+ * One hunter as a file that leaves this phone (the Data view's "Export active hunter", `fileKind` `hunter`): the hunter,
+ * and the custom defs its bag reads (item-book.ts `bagDefs`) as the file's `heardItems`, so another campaign reads them.
+ */
+export const hunterFile = (h: Hunter, R: ItemResolveRules, savedAt: string): object =>
+  ({ schema: SCHEMA, kind: 'hunter', savedAt, hunters: [h], heardItems: bagDefs(h.items, R) });
+
+/**
  * A campaign as a file that leaves this phone (the Data view's Export): the save without this phone's identity (its
  * device id) and without any sync field that is the phone's (`SYNC_OWNER`), and without its GM keys unless `withKeys`.
  * Whoever opens the file is a phone of its own to the room (implicit audit 3, IO1: the file carried the token, so its
@@ -564,7 +625,8 @@ export function keepPhone(save: Save, mine: Pick<Save, 'settings'>): Save {
   const gmKey = theirs.room ? ownKeys[theirs.room] ?? theirKeys[theirs.room] ?? null : null;
   const next: Save = { ...save, settings: { ...save.settings, deviceId: mine.settings.deviceId } };
   // every field of SyncSettings is in one of the two parts (SYNC_OWNER), and the keys are written after them
-  return atSync(() => ({ ...ownedBy(theirs, 'campaign'), ...ownedBy(own, 'phone'), gmKey, gmKeys: ringMerged(ownKeys, theirKeys) }) as SyncSettings)(next);
+  const catalogKeys = { ...theirs.catalogKeys, ...own.catalogKeys };
+  return atSync(() => ({ ...ownedBy(theirs, 'campaign'), ...ownedBy(own, 'phone'), gmKey, gmKeys: ringMerged(ownKeys, theirKeys), ...(Object.keys(catalogKeys).length ? { catalogKeys } : {}) }) as SyncSettings)(next);
 }
 
 /** What the app starts with. The edge acts on it: it owns storage, the backups and the words of the notice. */
@@ -656,7 +718,7 @@ export function starterHunter(save: Save, env: ParseEnv): Hunter {
     { ...newQuest(), id: next('q'), title: 'Clear the E-rank gate outside the city', rewards: { ...newRewards(), xp: 150 }, issuedAt: nowIso },
   ];
   h.skills = SKILL_SEEDS.filter(d => STARTER_SKILL_NAMES.includes(d.name)).map((d): Skill => ({ ...skillOf(d, R), id: next('s') }));
-  h.items = [...LOOT_ITEMS, ...SHOP_ITEMS].filter(d => STARTER_ITEM_NAMES.includes(d.name)).map((d): Item => ({ ...itemOf(R, d), id: next('i') }));
+  h.items = [...LOOT_ITEMS, ...SHOP_ITEMS].filter(d => STARTER_ITEM_NAMES.includes(d.name)).map((d): HeldItem => ({ kind: 'ref', id: next('i'), defId: d.defId, qty: 1 }));
   h.daily.lastCheckedKey = dayKey(env.now, save.settings.dailyResetHour);
   return h;
 }

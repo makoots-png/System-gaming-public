@@ -1,53 +1,121 @@
 import { describe, expect, test } from 'bun:test';
-import { copyName, duplicateEntry, duplicateFeat, featOff, featOn, removeEntry, removeFeat, removeStatus, saveById, saveEntry, saveFeat, saveStatus } from '../src/core/library.ts';
+import { copyName, duplicateEntry, duplicateFeat, featOff, featOn, removeEntry, removeFeat, removeItemDef, removeStatus, saveById, saveEntry, saveFeat, saveItemDef, saveStatus } from '../src/core/library.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 import { FEAT_BOUNDS, parseFeat } from '../src/core/hunter/feats.ts';
 import { parseFeatKey } from '../src/core/ids.ts';
 import type { FeatDef } from '../src/core/hunter/feats.ts';
-import { LIMITS, newSave } from '../src/core/save.ts';
-import type { Item, Library, StatusDef } from '../src/core/save.ts';
+import { LIMITS, newHunter, newSave } from '../src/core/save.ts';
+import type { Library, Save, StatusDef } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
-import { parseItem } from '../src/core/registry/items.ts';
+import { builtInDefData, parseItemDef } from '../src/core/registry/item-book.ts';
+import type { ItemDefData } from '../src/core/registry/item-book.ts';
+import { parseSkill } from '../src/core/registry/skills.ts';
+import type { Skill } from '../src/core/registry/skills.ts';
+import type { ItemDefId } from '../src/core/ids.ts';
 import { mapId, openArena } from '../src/core/registry/maps.ts';
 import { RULES } from '../src/core/rules.ts';
 import { parseStory } from '../src/core/story/story.ts';
 import type { Story } from '../src/core/story/story.ts';
 import type { StoryId } from '../src/core/ids.ts';
 import { dev } from './fixtures/ids.ts';
+import { DAGGER_DEF_ID, customId, heldRef } from './fixtures/items.ts';
 
-const item = (id: string, name: string): Item => ({ ...parseItem({ name, type: 'misc' })!, id } as Item);
-const lib = (items: Item[] = []): Library => ({ ...newSave(dev('d')).library, items });
+const skill = (id: string, name: string): Skill => ({ ...parseSkill({ name, type: 'passive', desc: '' })!, id } as Skill);
+const lib = (skills: Skill[] = []): Library => ({ ...newSave(dev('d')).library, skills });
 const frost: StatusDef = { label: 'Frostbite', desc: 'Cold.', ops: [] };
 const ok = (r: Library | Refused): Library => {
   if (isRefused(r)) throw new Error(`refused: ${r.why}`);
   return r;
 };
+const okSave = (r: Save | Refused): Save => {
+  if (isRefused(r)) throw new Error(`refused: ${r.why}`);
+  return r;
+};
+const misc = (name: string, more: Partial<ItemDefData> = {}): ItemDefData => ({ ...parseItemDef({ name, type: 'misc' })!, ...more });
+/** A save whose library holds `defs` (custom item defs by id, as `saveItemDef` writes them). */
+const withDefs = (defs: Record<ItemDefId, ItemDefData> = {}): Save => { const s = newSave(dev('d')); return { ...s, library: { ...s.library, items: defs } }; };
+const ROPE = customId('rope'), TORCH = customId('torch');
+const names = (s: Save): [string, string][] => Object.entries(s.library.items).map(([k, d]) => [k, d.name]);
 
 describe('a named entry saved to the library, by its id', () => {
   test('a new id is added', () => {
-    const r = ok(saveEntry(lib([item('i1', 'Rope')]), 'items', item('i9', 'Torch')));
-    expect(r.items.map(i => [i.id, i.name])).toEqual([['i1', 'Rope'], ['i9', 'Torch']]);
+    const r = ok(saveEntry(lib([skill('s1', 'Rope Trick')]), 'skills', skill('s9', 'Torch Toss')));
+    expect(r.skills.map(i => [i.id, i.name])).toEqual([['s1', 'Rope Trick'], ['s9', 'Torch Toss']]);
   });
   test('a name another entry holds, in any case, is refused and nothing is replaced: the maker asks', () => {
-    const start = lib([item('i1', 'Rope')]);
-    expect(saveEntry(start, 'items', { ...item('i9', 'ROPE'), value: 7 })).toEqual({ ok: false, why: 'taken' });
+    const start = lib([skill('s1', 'Rope Trick')]);
+    expect(saveEntry(start, 'skills', { ...skill('s9', 'ROPE TRICK'), desc: 'Other words.' })).toEqual({ ok: false, why: 'taken' });
   });
   test('an edit keeps its entry under a new name, and may keep its own name', () => {
-    const start = lib([item('i1', 'Rope'), item('i2', 'Torch')]);
-    expect(ok(saveEntry(start, 'items', item('i1', 'Long rope'))).items.map(i => [i.id, i.name])).toEqual([['i1', 'Long rope'], ['i2', 'Torch']]);
-    expect(ok(saveEntry(start, 'items', { ...item('i1', 'rope'), value: 3 })).items[0]).toMatchObject({ id: 'i1', name: 'rope', value: 3 });
-    expect(saveEntry(start, 'items', item('i1', 'torch')), 'a rename onto another entry\'s name').toEqual({ ok: false, why: 'taken' });
+    const start = lib([skill('s1', 'Rope Trick'), skill('s2', 'Torch Toss')]);
+    expect(ok(saveEntry(start, 'skills', skill('s1', 'Long rope'))).skills.map(i => [i.id, i.name])).toEqual([['s1', 'Long rope'], ['s2', 'Torch Toss']]);
+    expect(ok(saveEntry(start, 'skills', { ...skill('s1', 'rope trick'), desc: 'Edited.' })).skills[0]).toMatchObject({ id: 's1', name: 'rope trick', desc: 'Edited.' });
+    expect(saveEntry(start, 'skills', skill('s1', 'torch toss')), 'a rename onto another entry\'s name').toEqual({ ok: false, why: 'taken' });
   });
   test('a new entry in a full list is refused and the list is unchanged', () => {
-    const full = lib(Array.from({ length: LIMITS.libraryItems }, (_, i) => item(`i${i}`, `Thing ${i}`)));
-    expect(saveEntry(full, 'items', item('i999', 'One more'))).toEqual({ ok: false, why: 'full' });
-    expect(ok(saveEntry(full, 'items', item('i3', 'Thing three'))).items).toHaveLength(LIMITS.libraryItems);
+    const full = lib(Array.from({ length: LIMITS.librarySkills }, (_, i) => skill(`s${i}`, `Thing ${i}`)));
+    expect(saveEntry(full, 'skills', skill('s999', 'One more'))).toEqual({ ok: false, why: 'full' });
+    expect(ok(saveEntry(full, 'skills', skill('s3', 'Thing three'))).skills).toHaveLength(LIMITS.librarySkills);
   });
   test('the library given is not changed', () => {
-    const before = lib([item('i1', 'Rope')]), text = JSON.stringify(before);
-    saveEntry(before, 'items', item('i9', 'Torch'));
+    const before = lib([skill('s1', 'Rope Trick')]), text = JSON.stringify(before);
+    saveEntry(before, 'skills', skill('s9', 'Torch Toss'));
     expect(JSON.stringify(before)).toBe(text);
+  });
+});
+
+describe('an item def saved to the library, by its id (item sync PR 2)', () => {
+  test('a new custom id is added', () => {
+    const r = okSave(saveItemDef(withDefs({ [ROPE]: misc('Rope') }), TORCH, misc('Torch'), RULES));
+    expect(names(r)).toEqual([[ROPE, 'Rope'], [TORCH, 'Torch']]);
+  });
+  test('a name another custom item holds, in any case, is refused and nothing is replaced: the maker asks', () => {
+    expect(saveItemDef(withDefs({ [ROPE]: misc('Rope') }), TORCH, misc('ROPE', { value: 7 }), RULES)).toEqual({ ok: false, why: 'taken' });
+  });
+  test('an edit keeps its id under a new name, and may keep its own name', () => {
+    const start = withDefs({ [ROPE]: misc('Rope'), [TORCH]: misc('Torch') });
+    expect(names(okSave(saveItemDef(start, ROPE, misc('Long rope'), RULES)))).toEqual([[ROPE, 'Long rope'], [TORCH, 'Torch']]);
+    expect(okSave(saveItemDef(start, ROPE, misc('rope', { value: 3 }), RULES)).library.items[ROPE]).toMatchObject({ name: 'rope', value: 3 });
+    expect(saveItemDef(start, ROPE, misc('torch'), RULES), 'a rename onto another item\'s name').toEqual({ ok: false, why: 'taken' });
+  });
+  test(`a new def past ${LIMITS.libraryItems} is refused and the library is unchanged; an edit of one held still saves`, () => {
+    const full = withDefs(Object.fromEntries(Array.from({ length: LIMITS.libraryItems }, (_, i) => [customId(`thing${String(i).padStart(3, '0')}`), misc(`Thing ${i}`)])));
+    expect(saveItemDef(full, customId('onemore'), misc('One more'), RULES)).toEqual({ ok: false, why: 'full' });
+    expect(Object.keys(okSave(saveItemDef(full, customId('thing003'), misc('Thing three'), RULES)).library.items)).toHaveLength(LIMITS.libraryItems);
+  });
+  test('the save given is not changed', () => {
+    const before = withDefs({ [ROPE]: misc('Rope') }), text = JSON.stringify(before);
+    saveItemDef(before, TORCH, misc('Torch'), RULES);
+    expect(JSON.stringify(before)).toBe(text);
+  });
+  test('a built-in saved as it shipped leaves no entry; an edit of it is held under its id until it is reset', () => {
+    const shipped = builtInDefData(DAGGER_DEF_ID, RULES)!;
+    expect(okSave(saveItemDef(withDefs(), DAGGER_DEF_ID, shipped, RULES)).library.items).toEqual({});
+    const edited = okSave(saveItemDef(withDefs(), DAGGER_DEF_ID, { ...shipped, name: 'Old Dagger' }, RULES));
+    expect(names(edited)).toEqual([[DAGGER_DEF_ID, 'Old Dagger']]);
+    expect(okSave(saveItemDef(edited, DAGGER_DEF_ID, shipped, RULES)).library.items, 'saved back as shipped').toEqual({});
+    expect(okSave(removeItemDef(edited, DAGGER_DEF_ID)).library.items, 'reset').toEqual({});
+  });
+  test('a built-in edit named like a custom item is not refused: only custom items share the name space', () => {
+    const shipped = builtInDefData(DAGGER_DEF_ID, RULES)!;
+    expect(isRefused(saveItemDef(withDefs({ [ROPE]: misc('Rope') }), DAGGER_DEF_ID, { ...shipped, name: 'Rope' }, RULES))).toBe(false);
+  });
+});
+
+describe('an item def taken out of the library (item sync PR 2)', () => {
+  test('deleting an id the library lacks is refused', () => {
+    expect(removeItemDef(withDefs(), ROPE)).toEqual({ ok: false, why: 'missing' });
+  });
+  test('a deleted custom item a hunter still holds keeps its def in heardItems, and its id leaves the shop', () => {
+    const s0 = withDefs({ [ROPE]: misc('Rope'), [TORCH]: misc('Torch') });
+    const s = { ...s0, shop: [ROPE, DAGGER_DEF_ID], hunters: [{ ...newHunter(RULES), items: [heldRef(1, ROPE)] }] };
+    const r = okSave(removeItemDef(s, ROPE));
+    expect(Object.hasOwn(r.library.items, ROPE)).toBe(false);
+    expect(r.heardItems).toEqual({ [ROPE]: misc('Rope') });
+    expect(r.shop).toEqual([DAGGER_DEF_ID]);
+    const t = okSave(removeItemDef(s, TORCH));
+    expect(t.heardItems, 'a deleted item nothing names is not kept').toEqual({});
   });
 });
 
@@ -102,20 +170,26 @@ describe('a library status', () => {
 
 describe('the Workshop: duplicate and delete', () => {
   test('a duplicate then its delete leaves the library as it was', () => {
-    const start = lib([item('i1', 'Rope'), item('i2', 'Torch')]);
-    const dup = ok(duplicateEntry(start, 'items', 'i1', { newId: 'i7', name: copyName('Rope', ['Rope', 'Torch'], 60) }));
-    expect(dup.items.map(i => [i.id, i.name])).toEqual([['i1', 'Rope'], ['i2', 'Torch'], ['i7', 'Rope (copy)']]);
-    expect(ok(removeEntry(dup, 'items', 'i7'))).toEqual(start);
+    const start = lib([skill('s1', 'Rope Trick'), skill('s2', 'Torch Toss')]);
+    const dup = ok(duplicateEntry(start, 'skills', 's1', { newId: 's7', name: copyName('Rope Trick', ['Rope Trick', 'Torch Toss'], 60) }));
+    expect(dup.skills.map(i => [i.id, i.name])).toEqual([['s1', 'Rope Trick'], ['s2', 'Torch Toss'], ['s7', 'Rope Trick (copy)']]);
+    expect(ok(removeEntry(dup, 'skills', 's7'))).toEqual(start);
+  });
+  test('an item duplicated (a copy under a new id) then deleted leaves the save as it was', () => {
+    const start = withDefs({ [ROPE]: misc('Rope'), [TORCH]: misc('Torch') }), copy = customId('ropecopy');
+    const dup = okSave(saveItemDef(start, copy, misc(copyName('Rope', ['Rope', 'Torch'], 60)), RULES));
+    expect(names(dup)).toEqual([[ROPE, 'Rope'], [TORCH, 'Torch'], [copy, 'Rope (copy)']]);
+    expect(okSave(removeItemDef(dup, copy))).toEqual(start);
   });
   test('a saved new entry then its delete leaves the library as it was', () => {
-    const start = lib([item('i1', 'Rope')]);
-    const saved = ok(saveEntry(start, 'items', item('i9', 'Torch')));
-    expect(ok(removeEntry(saved, 'items', 'i9'))).toEqual(start);
+    const start = lib([skill('s1', 'Rope Trick')]);
+    const saved = ok(saveEntry(start, 'skills', skill('s9', 'Torch Toss')));
+    expect(ok(removeEntry(saved, 'skills', 's9'))).toEqual(start);
   });
   test('a duplicate in a full list is refused, and of a missing id too', () => {
-    const full = lib(Array.from({ length: LIMITS.libraryItems }, (_, i) => item(`i${i}`, `Thing ${i}`)));
-    expect(duplicateEntry(full, 'items', 'i0', { newId: 'z', name: 'z' })).toEqual({ ok: false, why: 'full' });
-    expect(duplicateEntry(lib(), 'items', 'i0', { newId: 'z', name: 'z' })).toEqual({ ok: false, why: 'missing' });
+    const full = lib(Array.from({ length: LIMITS.librarySkills }, (_, i) => skill(`s${i}`, `Thing ${i}`)));
+    expect(duplicateEntry(full, 'skills', 's0', { newId: 'z', name: 'z' })).toEqual({ ok: false, why: 'full' });
+    expect(duplicateEntry(lib(), 'skills', 's0', { newId: 'z', name: 'z' })).toEqual({ ok: false, why: 'missing' });
   });
   test('a copy name is "(copy)" after the name, then "(copy 2)" and on past any name taken in any case, within its bound', () => {
     expect(copyName('Rope', ['Rope'], 60)).toBe('Rope (copy)');

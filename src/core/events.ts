@@ -57,5 +57,7 @@ export type AppEvents = {
   'sync:status': { status: 'off' | 'offline' | 'connected'; room: RoomCode | null; conn: Connection; serverBack: boolean };
   /** sync.ts when the room this phone is in changes: joined, left, removed, the room gone, or another tab's save. The Room view drops its old errors. */
   'sync:room': { from: RoomCode | null; to: RoomCode | null };
+  /** sync.ts when the player's active room catalog updates (rev, defs, statuses, shop) or the GM's catalog conflict state changes. */
+  'sync:catalog': undefined;
 };
 export type EventName = keyof AppEvents;

@@ -5,13 +5,15 @@ import { parseClassNodeId } from '../ids.ts';
 import type { ClassNodeId } from '../ids.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
-import type { Perk } from '../rules.ts';
+import { BONUS_KEYS, BONUS_LABELS } from '../rules.ts';
+import type { BonusKey } from '../rules.ts';
 import type { Scaler } from './scalers.ts';
 import type { StatusDef, StatusKey } from '../combat/effect-ops.ts';
 import type { Ability, AbilityId } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName, ClassRarity } from './jobs.ts';
 import { HEMOMANCER_TREE } from './class-hemomancer.ts';
+import { NECROMANCER_TREE } from './class-necromancer.ts';
 import { BLADEFIEND_TREE } from './class-bladefiend.ts';
 import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
 import { IRONCLAD_TREE } from './class-ironclad.ts';
@@ -22,6 +24,23 @@ import { GRIMREAPER_TREE } from './class-grimreaper.ts';
 import { BRAMBLEGUARD_TREE } from './class-brambleguard.ts';
 import { PYROMANCER_TREE } from './class-pyromancer.ts';
 import { SNIPER_TREE } from './class-sniper.ts';
+import { FIGHTER_TREE } from './class-fighter.ts';
+import { ASSASSIN_TREE } from './class-assassin.ts';
+import { MAGE_TREE } from './class-mage.ts';
+import { TANKER_TREE } from './class-tanker.ts';
+import { HEALER_TREE } from './class-healer.ts';
+import { RANGER_TREE } from './class-ranger.ts';
+
+/** Bonus keys a class signature or skill-tree node may grant: every standard `BonusKey` plus `shadows` capacity. */
+export const CLASS_BONUS_KEYS = [...BONUS_KEYS, 'shadows'] as const;
+export type ClassBonusKey = (typeof CLASS_BONUS_KEYS)[number];
+/** Sheet and stat bonuses a class signature or skill-tree node grants (wider than `Perk` to include `shadows`). */
+export type ClassPerk = Partial<Record<ClassBonusKey, number>>;
+/** Display labels for class bonus keys (standard `BONUS_LABELS` plus `shadows`). */
+export const CLASS_BONUS_LABELS: Readonly<Record<ClassBonusKey, string>> = {
+  ...BONUS_LABELS,
+  shadows: 'Shadow capacity',
+};
 
 /** A class worn passive stored with its registry status key for fight-doc references. */
 export type ClassWorn = { readonly key: StatusKey; readonly def: StatusDef };
@@ -62,7 +81,7 @@ export const TREE_SHAPE: Readonly<Record<ClassRarity, TreeShape>> = {
  * Nodes never add a fifth active.
  */
 export type NodeGift =
-  | { readonly kind: 'bonus'; readonly bonus: Perk }
+  | { readonly kind: 'bonus'; readonly bonus: ClassPerk }
   | { readonly kind: 'scaler'; readonly scaler: Scaler }
   | { readonly kind: 'replace-worn'; readonly targetKey: StatusKey; readonly worn: ClassWorn }
   | { readonly kind: 'replace-active'; readonly targetId: AbilityId; readonly active: Ability }
@@ -99,6 +118,7 @@ export type ClassTree = {
 export type ClassTreeMap = Readonly<Partial<Record<ClassName, ClassTree>>>;
 export const CLASS_TREES: ClassTreeMap = {
   Hemomancer: HEMOMANCER_TREE,
+  Necromancer: NECROMANCER_TREE,
   Bladefiend: BLADEFIEND_TREE,
   Rifthunter: RIFTHUNTER_TREE,
   Seraph: SERAPH_TREE,
@@ -109,6 +129,12 @@ export const CLASS_TREES: ClassTreeMap = {
   Brambleguard: BRAMBLEGUARD_TREE,
   Pyromancer: PYROMANCER_TREE,
   Sniper: SNIPER_TREE,
+  Fighter: FIGHTER_TREE,
+  Assassin: ASSASSIN_TREE,
+  Mage: MAGE_TREE,
+  Tanker: TANKER_TREE,
+  Healer: HEALER_TREE,
+  Ranger: RANGER_TREE,
 };
 
 /** Returns the skill tree for `name`, or null for custom GM jobs and classes without a tree yet. */

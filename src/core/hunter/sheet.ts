@@ -15,6 +15,10 @@ import type { Source, Status, StatusDef, StatusKey } from '../combat/effect-ops.
 import { tick } from '../combat/timeline.ts';
 import { checkPenalty } from './penalty.ts';
 import { weightOf } from '../registry/items.ts';
+import type { Slot } from '../registry/items.ts';
+import type { HeldItem, ResolvedItem } from '../registry/item-book.ts';
+import type { ItemId } from '../ids.ts';
+import { bagOf, wornOf } from './inventory.ts';
 import type { StatWeights } from '../registry/jobs.ts';
 import { keystoneOf } from '../registry/keystones.ts';
 import type { Keystone } from '../registry/keystones.ts';
@@ -28,20 +32,8 @@ import { fatiguePast, vitalStep } from './vitals.ts';
 import type { Vitals } from './vitals.ts';
 import type { Progress } from './progress.ts';
 
-/** The rules this file reads. */
-export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck' | 'dice'>;
-
-/** An item as the sheet reads it. Only a worn one counts; a field it lacks adds nothing. */
-export type SheetItem = {
-  readonly id: string;
-  readonly weight?: number;
-  /** A weapon's weight is its dice's when it has none of its own (`weightOf`). */
-  readonly type?: string;
-  readonly dice?: string;
-  readonly armor?: number;
-  readonly resist?: number;
-  readonly bonus?: Bonus;
-};
+/** The rules this file reads: a worn item is read from its def (`R.items`, inventory.ts `bagOf`). */
+export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck' | 'dice' | 'items' | 'conditions'>;
 /** A skill as the sheet reads it: only a passive one carries a bonus. */
 export type SheetSkill = { readonly type: 'active' } | { readonly type: 'passive'; readonly bonus: Bonus };
 /** A status on a hunter outside a fight. It has no fight time; what it does to the sheet is its def at its source's tier. */
@@ -60,8 +52,8 @@ export type SheetHunter = {
   readonly manaAdj: number;
   readonly titleId: string | null;
   readonly titles: readonly { readonly id: string; readonly bonus: Bonus }[];
-  readonly items: readonly SheetItem[];
-  readonly equipped: Readonly<Record<string, string | null>>;
+  readonly items: readonly HeldItem[];
+  readonly equipped: Readonly<Record<Slot, ItemId | null>>;
   readonly skills: readonly SheetSkill[];
   readonly conditions: readonly SheetCondition[];
   /**
@@ -97,10 +89,13 @@ function sum(bonuses: readonly Bonus[]): Bonus {
   return out;
 }
 
-const worn = (h: SheetHunter): SheetItem[] =>
-  Object.values(h.equipped).flatMap(id => h.items.find(i => i.id === id) ?? []);
+/** What `h` wears, resolved under `R`: only a worn item adds to the sheet. */
+const worn = (h: SheetHunter, R: SheetRules): ResolvedItem[] => {
+  const bag = bagOf(h, R), slots = wornOf(h, R);
+  return Object.values(slots).flatMap(id => bag.find(i => i.id === id) ?? []);
+};
 
-const gearOf = (i: SheetItem): GearPiece =>
+const gearOf = (i: ResolvedItem): GearPiece =>
   ({ weight: weightOf(i), armor: i.armor ?? 0, resist: i.resist ?? 0 });
 
 const classBonus = (h: SheetHunter, R: SheetRules): Bonus =>
@@ -116,7 +111,7 @@ const classWorn = (h: SheetHunter, R: SheetRules): Status[] => {
 
 /** What `derive` builds the hunter's sheet from: its spent stats, its level, its worn gear and every bonus it holds. */
 export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
-  const gear = worn(h);
+  const gear = worn(h, R);
   return {
     stats: allocated(h),
     level: h.level,
@@ -155,7 +150,7 @@ export type Part = { readonly from: SheetSource; readonly amount: number };
  * adds after the ones before it: the parts always sum to the number, and a source that changes nothing is a part of 0.
  */
 export function explain(h: SheetHunter, key: SheetNumber, R: SheetRules): { total: number; parts: Part[] } {
-  const full = buildOf(h, R), gear = worn(h);
+  const full = buildOf(h, R), gear = worn(h, R);
   const add = (b: SheetBasis, perks: Bonus): SheetBasis => ({ ...b, perks: sum([b.perks, perks]) });
   const base: SheetBasis = { stats: baseStats(R.fight), level: 1, gear: [], perks: {} };
   const level: SheetBasis = { ...base, level: h.level };

@@ -4,21 +4,25 @@
 
 import { writeShopItem } from '../../../src/core/hunter/inventory.ts';
 import { giveSkill } from '../../../src/core/hunter/skills-held.ts';
-import { parseItem } from '../../../src/core/registry/items.ts';
+import { customItemDefId, parseCatalogKey } from '../../../src/core/ids.ts';
+import { catalogIdOf } from '../../../src/core/catalog-id.ts';
 import { parseSkill } from '../../../src/core/registry/skills.ts';
 import type { Skill } from '../../../src/core/registry/skills.ts';
 import { newHunter } from '../../../src/core/hunter/hunter.ts';
 import { giveTitle } from '../../../src/core/hunter/record.ts';
 import { RULES } from '../../../src/core/rules.ts';
 
+const DEMO_CATALOG = catalogIdOf(parseCatalogKey('ck_demo_by_name_key_0123456789ab')!);
+
 // 1. The GM's shop holds two items named "Ration" (one common, one rare). The GM taps Edit on the second (the rare one)
-// and sets its value to 999. inventory.js:218 passes the item's name as its id; writeShopItem finds the first.
-const common = parseItem({ name: 'Ration', rar: 'common', type: 'consumable', value: 10, desc: 'A plain ration.' })!;
-const rare = parseItem({ name: 'Ration', rar: 'rare', type: 'consumable', value: 200, desc: 'A feast in a tin.' })!;
-const edited = { ...rare, value: 999 };
-const shop = writeShopItem([common, rare], rare.name, edited);
-console.log('shop after editing the 2nd Ration:', shop.map(t => `${t.rar} ${t.value}`).join(', '));
-console.log(shop[0]!.rar === 'rare' && shop[1]!.value === 200 ? 'FAULT: the common row was overwritten, the rare row tapped is unchanged' : 'ok');
+// and sets its value to 999. Before item sync PR 2 the shop held items by value and inventory.js passed the item's name
+// as its id, so writeShopItem found the first. Now the shop holds item ids, and the edit saves a new def under its own id.
+const common = customItemDefId(DEMO_CATALOG, 'rationcommon0000');
+const rare = customItemDefId(DEMO_CATALOG, 'rationrare000000');
+const edited = customItemDefId(DEMO_CATALOG, 'rationrare999000');
+const shop = writeShopItem([common, rare], rare, edited);
+console.log('shop after editing the 2nd Ration:', shop.join(', '));
+console.log(shop[0] !== common || shop[1] !== edited ? 'FAULT: the common row was overwritten, the rare row tapped is unchanged' : 'ok');
 
 // 2. A hunter holds "Iron Will", raised to Lv 5 and given the badge "Unbroken". The GM's reward gives "Iron Will" from
 // the library (Lv 1). grant.ts:160 calls giveSkill, which replaces the held skill by name with the template.

@@ -1,5 +1,7 @@
 // bestiary.js (U07): the bestiary screen, the codex and the enemy maker. Seeds, a monster's body from its rank, archetype
 // and kind, and the one monster parser: src/core/registry/monsters.ts; custom and edited monsters live in state.monsters.
+import { refGrant } from '../core/registry/item-book.ts';
+import { parseItemDefId } from '../core/ids.ts';
 import { isRefused } from '../core/save-step.ts';
 import { RANKS, rankIdx } from '../edge/rules.ts';
 import {
@@ -228,7 +230,7 @@ export function register(app) {
       `${m.rank}-rank ${KIND_LABEL[m.kind].toLowerCase()} ${ARCH_LABEL[m.archetype].toLowerCase()}${traitWords(m) ? ` (${traitWords(m).toLowerCase()})` : ''} · HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed} · XP ${ui.fmt(monsterXp(m, app.rules()))}`,
       ...attacksOf(m).map(a => `${a.name}: ${abilityLines(a, m.rank).join(', ')}`),
       m.statuses.length ? `Starts with: ${m.statuses.map(st => `${st.stacks ? `${st.stacks} ` : ''}${statusLabel(st.key)} (${st.rounds === null ? 'until removed' : `${st.rounds} round${st.rounds === 1 ? '' : 's'}`})`).join(', ')}` : '',
-      m.loot.gold || m.loot.items.length ? `Drops: ${[m.loot.gold ? `${ui.fmt(m.loot.gold)} gold` : '', ...m.loot.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ')}` : '',
+      m.loot.gold || m.loot.items.length ? `Drops: ${[m.loot.gold ? `${ui.fmt(m.loot.gold)} gold` : '', ...m.loot.items.map(g => app.api.inventory.grant(g)).map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ')}` : '',
     ].filter(Boolean);
   }
 
@@ -273,12 +275,17 @@ export function register(app) {
         const int = (v, lo, hi, d) => { const t = String(v).trim(), n = Math.trunc(Number(t)); return t === '' || !Number.isFinite(n) ? d : Math.max(lo, Math.min(hi, n)); };
         const row = (label, i, kind, extra = '') => `<li><span class="nm">${esc(label)}</span>${extra}<button type="button" class="icon-btn" data-rm="${kind}" data-i="${i}" aria-label="Remove ${esc(label)}">&times;</button></li>`;
         const opt = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
+        /** The item picker's groups by def id: the library's custom items, then the built-ins. */
+        const itemGroups = () => {
+          const c = app.api.inventory.choices(), group = (label, l) => (l.length ? `<optgroup label="${label}">${l.map(x => opt(`def:${x.defId}`, x.name)).join('')}</optgroup>` : '');
+          return group('Library', c.library) + group('Built-in', c.builtIn);
+        };
         function lists() {
           $('[data-abilities]').innerHTML = abilities.map((a, i) => row(a.name, i, 'ability', `<span class="meta">${esc(abilityLines(a, rank).join(', '))}</span><button type="button" class="quiet" data-edit-ability="${i}" aria-label="Edit ${esc(a.name)}">Edit</button>`)).join('');
           $('[data-statuses]').innerHTML = statuses.map((st, i) => row(statusLabel(st.key), i, 'status',
             `<span class="enm-rounds"><input type="number" min="1" max="999" inputmode="numeric" data-rounds="${i}" aria-label="Rounds of ${esc(statusLabel(st.key))}" placeholder="Until removed" value="${st.rounds ?? ''}"><span class="unit">rounds</span>${stackCap(st.key) > 1
               ? `<input type="number" min="1" max="${stackCap(st.key)}" inputmode="numeric" data-stacks="${i}" aria-label="Stacks of ${esc(statusLabel(st.key))}" placeholder="1" value="${st.stacks ?? ''}"><span class="unit">stacks</span>` : ''}</span>`)).join('');
-          $('[data-items]').innerHTML = items.map((it, i) => row(`${it.name}${it.qty > 1 ? ` ×${it.qty}` : ''}`, i, 'item')).join('');
+          $('[data-items]').innerHTML = items.map(g => app.api.inventory.grant(g)).map((it, i) => row(`${it.name}${it.qty > 1 ? ` ×${it.qty}` : ''}`, i, 'item')).join('');
           const lib = store.get().library, have = new Set(abilities.map(a => a.name.toLowerCase()));
           const fullA = abilities.length >= B.abilities, fullT = statuses.length >= B.statuses, fullI = items.length >= B.lootItems;
           const fights = k => k.type === 'active' && !have.has(k.name.toLowerCase());
@@ -289,7 +296,7 @@ export function register(app) {
           const conds = Object.keys(app.rules().conditions).filter(k => !isStateChip(k) && !statuses.some(st => st.key === k));
           $('[data-status-add]').innerHTML = `<select data-add="status" data-pick aria-label="Add a starting status"${fullT ? ' disabled' : ''}><option value="">${fullT ? `Add a status (max ${B.statuses})` : 'Add a status…'}</option>${conds.map(k => opt(k, statusLabel(k))).join('')}</select>`;
           $('[data-item-add]').innerHTML = `<select data-add="item" aria-label="Add a loot item"${fullI ? ' disabled' : ''}><option value="">${fullI ? `Add an item (max ${B.lootItems})` : 'Add an item…'}</option>
-            ${lib.items.length ? `<optgroup label="Library">${lib.items.map(it => opt(`lib:${it.id}`, it.name)).join('')}</optgroup>` : ''}<option value="new">New item…</option></select>`;
+            ${itemGroups()}<option value="new">New item…</option></select>`;
         }
         /** The tweak the form holds: its HP factor when one is typed (above 0, at most 10), the stat points it was made with, and the traits ticked. */
         const tweakOf = () => {
@@ -355,7 +362,8 @@ export function register(app) {
           } else if (t.dataset.add === 'status') {
             if (statuses.length < B.statuses) statuses.push({ key: v, rounds: 3 });
           } else {
-            const it = v === 'new' ? await app.api.loot.item({}) : parseItem(lib.items.find(x => `lib:${x.id}` === v));
+            const id = v.startsWith('def:') ? parseItemDefId(v.slice(4)) : null;
+            const it = v === 'new' ? await app.api.loot.ref({}) : id ? refGrant(id) : null;
             if (it && items.length < B.lootItems) items.push(it);
           }
           lists(); shell.changed();

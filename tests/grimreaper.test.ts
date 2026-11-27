@@ -31,6 +31,7 @@ import { CLASS_ACTIVES_MAX, CLASS_TREES, TREE_SHAPE, canBuyNode, canFlipFork, ca
 import { CLASS_SIGNATURES, classPowers, classStatusDef } from '../src/core/registry/class-powers.ts';
 import { GRIMREAPER_SIGNATURE, GRIMREAPER_TREE } from '../src/core/registry/class-grimreaper.ts';
 import { isRefused } from '../src/core/save-step.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
 
@@ -149,7 +150,7 @@ describe('Wave 2 PR 5: Grimreaper metadata, tree, pricing, and round-trip integr
       resist: 0,
       target: 'other' as const,
       effects: [{ op: 'damage' as const, type: 'arcane' as const, amount: { kind: 'number' as const, value: 10 } }],
-    }));
+    })).map(({ id, qty, ...item }): HeldItem => ({ kind: 'adhoc', id, qty, item }));
 
     const builds = allForkBuilds();
     expect(builds.length).toBe(8);

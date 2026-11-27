@@ -77,10 +77,12 @@ describe('an override of a list rule', () => {
   });
 
   test('the daily reward\'s items, skills and title are read as a reward\'s are', () => {
-    const { overrides, refused } = parseOverrides({ dailyTemplate: { rewards: { items: [{ name: 'Ration' }, 7], skills: [{ name: 'Second Wind' }], title: { name: 'Early Riser' }, job: 'Monk' } } });
-    expect(refused).toEqual([{ path: 'dailyTemplate.rewards.items.1', reason: 'entry' }]);
+    const items = [{ kind: 'adhoc', qty: 1, item: { name: 'Ration' } }, 7, { kind: 'ref', defId: 'b:health-potion-e', qty: 2 }, { name: 'By value' }];
+    const { overrides, refused } = parseOverrides({ dailyTemplate: { rewards: { items, skills: [{ name: 'Second Wind' }], title: { name: 'Early Riser' }, job: 'Monk' } } });
+    expect(refused).toEqual([{ path: 'dailyTemplate.rewards.items.1', reason: 'entry' }, { path: 'dailyTemplate.rewards.items.3', reason: 'entry' }]);
     const r = rulesOf(overrides).dailyTemplate.rewards;
-    expect([r.items.map(i => i.name), r.skills.map(k => k.name), r.title?.name, r.job]).toEqual([['Ration'], ['Second Wind'], 'Early Riser', 'Monk']);
+    const named = r.items.map(g => (g.kind === 'adhoc' ? `${g.item.name} x${g.qty}` : `${g.defId} x${g.qty}`));
+    expect([named, r.skills.map(k => k.name), r.title?.name, r.job]).toEqual([['Ration x1', 'b:health-potion-e x2'], ['Second Wind'], 'Early Riser', 'Monk']);
     expect(parseOverrides({ dailyTemplate: { rewards: { title: 5, job: null } } }).refused).toEqual([{ path: 'dailyTemplate.rewards.title', reason: 'entry' }]);
   });
 

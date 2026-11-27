@@ -26,6 +26,7 @@ import { saveId, seedId } from '../src/core/ids.ts';
 import type { HunterId, MonsterId } from '../src/core/ids.ts';
 import { SHEET_MAX } from '../src/core/protocol.ts';
 import { dev, hid, iid, qid } from './fixtures/ids.ts';
+import { refGrant } from '../src/core/registry/item-book.ts';
 
 const AT = '2026-11-18T10:00:00.000Z', TODAY = dayKey(new Date(AT), 0);
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-me') };
@@ -172,8 +173,8 @@ describe('each fact is recorded by its one writer, in that thing\'s write', () =
   });
 
   test('a consumable used up, a check\'s natural 20, a shadow risen', () => {
-    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
-    const hurt = putItem(mira({ life: { at: 'up', hp: 1 } }), potion, iid('i5'));
+    const seed = SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!, potion = itemOf(RULES, seed);
+    const hurt = putItem(mira({ life: { at: 'up', hp: 1 } }), refGrant(seed.defId), iid('i5'), RULES);
     expect(inbox(ok(useItem(hurt, 'i5', [], RULES)).hunter)).toEqual([{ kind: 'used', item: 'Health Potion (E)', rar: potion.rar }]);
     const check = { ...newRollEntry(), hid: H1, kind: 'check' as const, natural: 20 };
     expect(inbox(ok(rolled(check, RULES)(saveOf(mira()))).hunters[0]!)).toEqual([{ kind: 'roll', natural: 20 }]);

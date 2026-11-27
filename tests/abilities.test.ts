@@ -21,7 +21,7 @@ import { isDamage } from '../src/core/combat/damage-type.ts';
 import { diceFor, resolve } from '../src/core/combat/resolve.ts';
 import { formulaOf, abilityOf, kindDefaults } from '../src/core/registry/ability-kinds.ts';
 import { LOOT_ITEMS, SHOP_ITEMS, STARTER_GEAR } from '../src/core/registry/items.ts';
-import type { ItemDef } from '../src/core/registry/items.ts';
+import type { ItemSeed } from '../src/core/registry/items.ts';
 import { SKILL_SEEDS } from '../src/core/registry/skills.ts';
 import { iid } from './fixtures/ids.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, itemAbility, itemAbilityId, itemOfAbility, weaponAttack } from '../src/core/registry/abilities.ts';
@@ -42,7 +42,7 @@ const CONDITIONS: SkillRules['conditions'] = {
 };
 const R = { ...RULES, conditions: CONDITIONS };
 
-const WEAPONS: Weapon[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR) as ItemDef[]]
+const WEAPONS: Weapon[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR) as ItemSeed[]]
   .flatMap(i => i.type === 'weapon' ? [{ name: i.name, dice: i.dice, attack: i.attack, ...(i.finesse ? { finesse: true as const } : {}) }] : []);
 const SKILLS = Object.keys(SKILL_ABILITIES) as BuiltInSkill[];
 const ARCHETYPE_LIST = Object.keys(ARCHETYPES) as Archetype[];
@@ -282,7 +282,7 @@ describe('each entry as plan section 3.5 and 3.3 restate it', () => {
 describe('a consumable used in a fight', () => {
   const num = (value: number) => ({ kind: 'number', value }) as const;
   const FROSTBITE: StatusDef = { label: 'Frostbite', desc: '', ops: [{ op: 'damage', type: 'arcane', amount: num(3) }] };
-  const item = (name: string): ItemDef => [...SHOP_ITEMS, ...LOOT_ITEMS].find(i => i.name === name)!;
+  const item = (name: string): ItemSeed => [...SHOP_ITEMS, ...LOOT_ITEMS].find(i => i.name === name)!;
   const NOW = tick(5000);
   /** A level 1 hunter at (5, 5) with `hp`, `mana` and `fatigue`. */
   const hunterBody = (hp: number, mana: number, fatigue: number): Body => {

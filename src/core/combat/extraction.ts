@@ -24,8 +24,43 @@ const TABLE: { readonly [S in Extraction['at']]: { readonly [O in ExtractionOutc
   gone: { failed: null, crumbled: null, risen: null },
 };
 
-/** The attempts left on a corpse when each may make `max` (the rules' `shadow.maxAttempts`). */
+/** The attempts left on a corpse when each may make `max` (the rules' `shadow.maxAttempts` plus any class bonus). */
 export const attemptsLeft = (e: Extraction, max: number): number => (e.at === 'open' ? Math.max(0, max - e.tried) : 0);
+
+/** Hunter slice read for extra panel extraction attempts. */
+export type ExtractClassHunter = {
+  readonly job?: string | null;
+  readonly jobDone?: string | null;
+  readonly classes?: Readonly<Record<string, unknown>>;
+};
+
+/** Whether `h` currently has the awakened Necromancer class active in its locker. */
+export function hasAwakenedNecromancer(h: ExtractClassHunter | null | undefined): boolean {
+  return !!h && h.job === 'Necromancer' && h.jobDone === 'Necromancer' && !!h.classes && Object.hasOwn(h.classes, 'Necromancer');
+}
+
+/** Extra panel extraction attempts granted by `h`'s active awakened class (`RULES.shadow.classAttempts` for Necromancer, else 0). */
+export function extractBonusOf(
+  h: ExtractClassHunter | null | undefined,
+  shadow: { readonly classAttempts: number },
+): number {
+  return hasAwakenedNecromancer(h) ? Math.max(0, Math.trunc(shadow.classAttempts)) : 0;
+}
+
+/** Maximum panel extraction attempts per corpse for a hunter, hunter row carrying `extractBonus`, or numeric bonus. */
+export function extractAttemptsMax(
+  shadow: { readonly maxAttempts: number; readonly classAttempts: number },
+  who?: number | { readonly extractBonus?: number } | ExtractClassHunter | null,
+): number {
+  const bonus = typeof who === 'number'
+    ? Math.max(0, Math.trunc(who))
+    : who && 'extractBonus' in who && typeof who.extractBonus === 'number'
+      ? Math.max(0, Math.trunc(who.extractBonus))
+      : who && 'job' in who
+        ? extractBonusOf(who, shadow)
+        : 0;
+  return Math.max(1, Math.trunc(shadow.maxAttempts) + bonus);
+}
 
 /** The extraction after an attempt's `outcome`, or null when the corpse takes no attempt (gone, or none left). */
 export function extractionStep(e: Extraction, outcome: ExtractionOutcome, max: number): Extraction | null {

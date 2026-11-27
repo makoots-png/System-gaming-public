@@ -14,6 +14,7 @@ import { abilityId } from '../src/core/combat/ability-types.ts';
 import { parseRewards } from '../src/core/rewards.ts';
 import { freshSave, parseSave } from '../src/core/save.ts';
 import { dev } from './fixtures/ids.ts';
+import { customId } from './fixtures/items.ts';
 
 const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
 describe('one item, one status and one ability have a size (notes-5-trade.md 13, ruling 2)', () => {
@@ -84,10 +85,10 @@ describe('one item, one status and one ability have a size (notes-5-trade.md 13,
 
   test('a save whose library holds an item over the size opens without it, and keeps its other items and its hunters', () => {
     const fresh = freshSave({ now: new Date(0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm1') }, { onboarded: true });
-    const heavy = { id: 'i900', name: 'Heavy Tome', desc: 'ࠀ'.repeat(500), effects: Array(12).fill({ op: 'note', text: 'ࠀ'.repeat(200) }), worn: { label: 'w', desc: 'ࠀ'.repeat(500), ops: Array(8).fill(note(200)) } };
+    const heavy = { name: 'Heavy Tome', desc: 'ࠀ'.repeat(500), effects: Array(12).fill({ op: 'note', text: 'ࠀ'.repeat(200) }), worn: { label: 'w', desc: 'ࠀ'.repeat(500), ops: Array(8).fill(note(200)) } };
     expect(bytesOf(heavy)).toBeGreaterThan(THING_MAX.item);
-    const raw = JSON.parse(JSON.stringify({ ...fresh, library: { ...fresh.library, items: [heavy, { id: 'i901', name: 'Light Tome' }] } }));
+    const raw = JSON.parse(JSON.stringify({ ...fresh, library: { ...fresh.library, items: { [customId('heavytome')]: heavy, [customId('lighttome')]: { name: 'Light Tome' } } } }));
     const read = parseSave(JSON.stringify(raw), { now: new Date(0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm1') });
-    expect(read.kind === 'save' ? [read.save.library.items.map(i => i.name), read.save.hunters.length] : read.kind).toEqual([['Light Tome'], fresh.hunters.length]);
+    expect(read.kind === 'save' ? [Object.values(read.save.library.items).map(i => i.name), read.save.hunters.length] : read.kind).toEqual([['Light Tome'], fresh.hunters.length]);
   });
 });

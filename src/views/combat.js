@@ -14,7 +14,7 @@ import { can, owed, reduce, reduceAll, shadowFieldCap } from '../core/combat/fig
 import { fightGateName, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
 import { gateFought } from '../core/gates/world.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
-import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
+import { attemptsLeft, extractAttemptsMax, UNTRIED } from '../core/combat/extraction.ts';
 import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/rise.ts';
 import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
@@ -643,7 +643,7 @@ export function register(app) {
     }
   }
   /** What a fight dropped, in one line: "50 gold, Frost Shard ×2"; '' for nothing. */
-  const lootText = l => dropLine(l, ui.fmt);
+  const lootText = l => dropLine(l, ui.fmt, rules());
 
   /**
    * ONE party summary window (B1) for rewards already given in one step: each hunter's lines (hunter.js `granted`, its
@@ -957,7 +957,7 @@ export function register(app) {
       return {
         list: shownAbilities(c).map(x => x.a), readyAt: c.readyAt, now: f.now, costCut: c.sheet.costCut, pinKey: pinKeyOf(c), channel: ch && ch.state === 'holding' ? ch : null,
         armed: c.armed ? { ability: c.armed.ability, spent: c.armed.spent } : null, left: usesLeft(c, c.abilities.length),
-        itemOf: id => (holderHunter(c)?.items ?? []).find(i => i.id === id) ?? null,
+        itemOf: id => { const h = holderHunter(c); return h ? A().inventory.bag(h).find(i => i.id === id) ?? null : null; },
         answers: answersOn(f, shownAbilities(c).map(x => x.a)),
       };
     },
@@ -1083,8 +1083,13 @@ export function register(app) {
     const monsterId = refs().monsters[r.id], entry = monsterId ? A().bestiary.get(monsterId) : null;
     // who may extract: each hunter the fight holds whose job may (rules' extractJobs), this phone's or a player's (its
     // sheet as the room holds it), not the active hunter
-    const extractors = k.down && entry && entry.extractable !== false && attemptsLeft(r.extraction ?? UNTRIED, R.shadow.maxAttempts) > 0
-      ? f.rows.flatMap(x => { const h = holderHunter(x); return h && A().shadows.canExtract(h) ? [{ row: x, h }] : []; }) : [];
+    const extractors = k.down && entry && entry.extractable !== false
+      ? f.rows.flatMap(x => {
+        const h = holderHunter(x);
+        if (!h || !A().shadows.canExtract(h)) return [];
+        const max = extractAttemptsMax(R.shadow, x.kind === 'hunter' && x.extractBonus ? x : h);
+        return attemptsLeft(r.extraction ?? UNTRIED, max) > 0 ? [{ row: x, h }] : [];
+      }) : [];
     const waitDodge = running(f) && !!f.dodge;
     const turnAct = now && !k.down && r.kind === 'monster' && running(f)
       ? `<div class="cmb-auto"><button type="button" class="primary" data-fk="auto" data-auto="${esc(r.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button></div>`
@@ -1379,9 +1384,11 @@ export function register(app) {
         const o = r.origin.kind === 'monster' ? r.origin : null;
         const exId = b.getAttribute('data-extract'), byRow = exId ? rowOf(f, exId) : null;
         if (!byRow || !byRow.holder || (byRow.holder.kind !== 'local' && byRow.holder.kind !== 'remote')) return;
+        const byHunter = holderHunter(byRow);
+        const max = extractAttemptsMax(rules().shadow, byRow.kind === 'hunter' && byRow.extractBonus ? byRow : byHunter);
         /** @type {import('../core/api.ts').ExtractTarget} */
         const corpse = { id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
-          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, rules().shadow.maxAttempts) };
+          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, max) };
         const made = await A().shadows.extract(byRow.holder, corpse);
         if (made) { const c = el.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
         if (rowOf(fight(), r.id)) toast(made ? `${r.name} rises as a shadow.` : `Extraction of ${r.name} failed.`);

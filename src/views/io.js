@@ -1,7 +1,8 @@
 // io.js (U12): Data view. Settings, export/import with preview (the file read as the store reads a save), the backups ring
 // (the day's backup is the store's, at load), danger zone, storage meter,
 // and sharing the GM's custom content as a pack (src/core/pack.ts), in a code (src/edge/pack-code.ts) or a file (app.api.share).
-import { SCHEMA, exportedSave } from '../core/save.ts';
+import { SCHEMA, exportedSave, hunterFile, savedItemBook } from '../core/save.ts';
+import { heardStep } from '../core/item-refs.ts';
 import { atHunter, atSettings } from '../core/save-step.ts';
 import { withResetHour, withSound } from '../core/settings.ts';
 import { rename } from '../core/hunter/record.ts';
@@ -109,7 +110,9 @@ export function register(app) {
     const backedUp = store.backupNow('pre-import');
     if (!backedUp && !(await goOnUnbacked('Import'))) return false;
     let report = null;
-    if (!ui.wrote('System', store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return m.save; }))) return false;
+    // a custom item in the pack becomes one of this campaign's catalog (pack.ts `mergeItems`), minted here if it has none
+    if (Object.keys(r.pack.items).some(k => k.startsWith('c:')) && !store.catalog()) return false;
+    if (!ui.wrote('System', store.apply('import-library', s => { const m = mergePack(s, r.pack, mode, store.stamp); report = m.report; return m.save; }))) return false;
     const sum = f => PACK_KINDS.reduce((x, k) => x + report[k][f], 0);
     const added = sum('added'), replaced = sum('replaced');
     ui.toast('System', `Custom content imported: ${added} added${replaced ? `, ${replaced} replaced` : ''}.${backedUp ? ' Previous save kept in backups.' : ''}`);
@@ -199,7 +202,8 @@ export function register(app) {
       if (await replaceAsking(anyway => store.importSave(got, anyway), 'Replace') === 'replaced') ui.toast('System', 'Import complete. Previous save kept in backups.');
     } else if (choice === 'add') {
       if (!store.backupNow('pre-import') && !(await goOnUnbacked('Add'))) return;
-      if (!ui.wrote('System', store.apply('import-hunter', sv => withImportedHunters(sv, got.hunters)))) return;
+      // the file's custom items its hunters hold are read on this phone as heard defs (item-refs.ts `heardStep`)
+      if (!ui.wrote('System', store.apply('import-hunter', sv => heardStep(withImportedHunters(sv, got.hunters), savedItemBook(got))))) return;
       ui.toast('System', `${names.length} hunter${names.length === 1 ? '' : 's'} added to the party.`);
       if (extraCount) await importPack(extra, { title: 'Bring its custom content too?', body: 'This file also contains custom content.', skip: 'Skip' });
     }
@@ -255,7 +259,8 @@ export function register(app) {
       });
       $('[data-export-hunter]').addEventListener('click', () => {
         const h = store.active();
-        const doc = { schema: SCHEMA, kind: 'hunter', savedAt: new Date().toISOString(), hunters: [h] };
+        // the custom items it holds travel with it, so another campaign reads them (save.ts `hunterFile`)
+        const doc = hunterFile(h, app.rules(), new Date().toISOString());
         download(`hunter-${slug(h.name)}-${localDate(new Date())}.json`, JSON.stringify(doc, null, 2));
       });
       $('[data-share]').addEventListener('click', () => { void shareOpen(); });

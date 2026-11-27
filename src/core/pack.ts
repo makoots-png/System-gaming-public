@@ -17,8 +17,12 @@ import { battleMap, bundle, feat, item, monster, namedIn, rekeyed, skill, status
 import type { Walk } from './status-refs.ts';
 import { parseStatusDef } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
-import { parseItem } from './registry/items.ts';
-import type { ItemTemplate } from './registry/items.ts';
+import { parseItemDef } from './registry/item-book.ts';
+import type { ItemDefData } from './registry/item-book.ts';
+import { ITEM_BOUNDS } from './registry/items.ts';
+import { catalogOfItemDefId, customItemDefId, isBuiltInItemId, isCustomItemDefId, parseItemDefId } from './ids.ts';
+import type { ItemDefId } from './ids.ts';
+import * as ITEM_REFS from './item-refs.ts';
 import { parseMonster } from './registry/monsters.ts';
 import type { MonsterTemplate } from './registry/monsters.ts';
 import { parseSkill } from './registry/skills.ts';
@@ -30,7 +34,7 @@ import { parseBundle } from './rewards.ts';
 import type { RewardBundle } from './rewards.ts';
 import { RULES } from './rules.ts';
 import { LIMITS, SCHEMA } from './save.ts';
-import type { Item, Library, Monster, Save, Skill } from './save.ts';
+import type { Library, Monster, Save, Skill } from './save.ts';
 import { STORY_BOUNDS, parseStory } from './story/story.ts';
 import type { Story, StoryTemplate } from './story/story.ts';
 
@@ -47,7 +51,8 @@ export type BundleTemplate = Omit<RewardBundle, 'id'>;
 export type MapTemplate = Omit<BattleMap, 'id'>;
 /** The content of a pack, each entry as its kind's parser gave it back, without ids. Statuses keep their keys. */
 export type Pack = {
-  statuses: Record<string, StatusDef>; items: ItemTemplate[]; skills: SkillTemplate[]; rewards: BundleTemplate[]; monsters: MonsterTemplate[];
+  /** Item defs by id: a built-in's edit (`b:*`), or a custom item (`c:*`) under the catalog it was made in, rekeyed at merge. */
+  statuses: Record<string, StatusDef>; items: Record<ItemDefId, ItemDefData>; skills: SkillTemplate[]; rewards: BundleTemplate[]; monsters: MonsterTemplate[];
   maps: MapTemplate[];
   /** The GM's feats by key (hunter/feats.ts); a key travels, so a hunter keeps its progress on a feat two tables share. */
   feats: Record<string, FeatDef>;
@@ -57,7 +62,7 @@ export type Pack = {
 export type PackDoc = {
   schema: typeof SCHEMA; kind: 'library'; savedAt: string;
   library: {
-    statuses?: Record<string, StatusDef>; items?: ItemTemplate[]; skills?: SkillTemplate[]; rewards?: BundleTemplate[]; maps?: MapTemplate[]; feats?: Record<string, FeatDef>;
+    statuses?: Record<string, StatusDef>; items?: Record<ItemDefId, ItemDefData>; skills?: SkillTemplate[]; rewards?: BundleTemplate[]; maps?: MapTemplate[]; feats?: Record<string, FeatDef>;
     stories?: StoryTemplate[];
   };
   monsters?: MonsterTemplate[];
@@ -75,11 +80,11 @@ export const PACK_CAP: Readonly<Record<PackKind, number>> = {
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-const newPack = (): Pack => ({ statuses: {}, items: [], skills: [], rewards: [], monsters: [], maps: [], feats: {}, stories: [] });
+const newPack = (): Pack => ({ statuses: {}, items: {}, skills: [], rewards: [], monsters: [], maps: [], feats: {}, stories: [] });
 const each = <T>(f: (k: PackKind) => T): Record<PackKind, T> => Object.fromEntries(PACK_KINDS.map(k => [k, f(k)])) as Record<PackKind, T>;
 
 /** How many of a pack's entries are in it. */
-export const packCounts = (p: Pack): Record<PackKind, number> => each(k => (k === 'statuses' || k === 'feats' ? Object.keys(p[k]).length : p[k].length));
+export const packCounts = (p: Pack): Record<PackKind, number> => each(k => (k === 'statuses' || k === 'feats' || k === 'items' ? Object.keys(p[k]).length : p[k].length));
 
 // ── statuses named by an entry ──
 /** One entry of a kind, as a pack carries it. */
@@ -100,12 +105,19 @@ const noId = <T extends { id: string }>({ id: _id, ...rest }: T): Omit<T, 'id'> 
 export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string, kind: PackKind | 'all' = 'all', id: string | null = null): PackDoc {
   const L = save.library, wants = (k: PackKind): boolean => kind === 'all' || kind === k;
   const pick = <T extends { id: string }>(k: PackKind, list: readonly T[]): T[] => (!wants(k) ? [] : id === null ? [...list] : list.filter(x => x.id === id));
-  const items = pick('items', L.items), skills = pick('skills', L.skills), rewards = pick('rewards', L.rewards), monsters = pick('monsters', save.monsters);
+  const itemIds = new Set<ItemDefId>(!wants('items') ? [] : id === null ? Object.keys(L.items) as ItemDefId[] : Object.hasOwn(L.items, id) ? [id as ItemDefId] : []);
+  const skills = pick('skills', L.skills), rewards = pick('rewards', L.rewards), monsters = pick('monsters', save.monsters);
   const maps = pick('maps', L.maps), stories = pick('stories', L.stories);
   const statusKeys = new Set<string>(!wants('statuses') ? [] : id === null ? Object.keys(L.statuses) : Object.hasOwn(L.statuses, id) ? [id] : []);
   const featKeys = !wants('feats') ? [] : id === null ? Object.keys(L.feats) : Object.hasOwn(L.feats, id) ? [id] : [];
   const named = new Set<StatusKey>(), R = STATUS_REFS;
   for (const k of featKeys) namedIn(R.feats, L.feats[k]!, named);
+  // a custom item an entry gives travels with it, so the pack stands alone (item-refs.ts names where an id sits)
+  const givenIds = new Set<ItemDefId>(), I = ITEM_REFS;
+  for (const k of featKeys) I.namedIn(I.feat, L.feats[k]!, givenIds);
+  rewards.forEach(b => I.namedIn(I.bundle, b, givenIds)); monsters.forEach(m => I.namedIn(I.monster, m, givenIds)); stories.forEach(st => I.namedIn(I.story, st, givenIds));
+  for (const g of givenIds) if (isCustomItemDefId(g) && Object.hasOwn(L.items, g)) itemIds.add(g);
+  const items = [...itemIds].map(k => L.items[k]!);
   items.forEach(i => namedIn(R.items, i, named)); skills.forEach(k => namedIn(R.skills, k, named));
   rewards.forEach(b => namedIn(R.rewards, b, named)); monsters.forEach(m => namedIn(R.monsters, m, named)); maps.forEach(m => namedIn(R.maps, m, named));
   stories.forEach(s => namedIn(R.stories, s, named));
@@ -120,7 +132,7 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   }
   const library: PackDoc['library'] = {};
   if (statusKeys.size) library.statuses = Object.fromEntries(Object.keys(L.statuses).filter(k => statusKeys.has(k)).map(k => [k, copy(L.statuses[k]!)]));
-  if (items.length) library.items = items.map(noId);
+  if (itemIds.size) library.items = Object.fromEntries([...itemIds].map(k => [k, copy(L.items[k]!)]));
   // A skill is a template and an id (skills.ts), so without its id it is its template; `Omit` of a union loses that.
   if (skills.length) library.skills = skills.map(k => noId(k) as SkillTemplate);
   if (rewards.length) library.rewards = rewards.map(noId);
@@ -153,7 +165,7 @@ function readList<T>(v: unknown, cap: number, read: (x: unknown) => T | null, co
  * A pack read from outside data. Not a pack: anything but an object whose `kind` is 'library' and whose `schema` is a
  * positive integer. Newer: its schema is above this app's. Older: its schema is below this app's. Each entry is read by
  * its kind's parser (`parseStatusDef` with the shipped rules' dice limits, under a key `STATUS_KEY_RE` accepts that is
- * not a hunter's state chip, `parseItem`, `parseSkill`, `parseBundle`, `parseMonster`, `parseBattleMap`, `parseFeat`,
+ * not a hunter's state chip, `parseItemDef` under a key `parseItemDefId` reads, `parseSkill`, `parseBundle`, `parseMonster`, `parseBattleMap`, `parseFeat`,
  * `parseStory`); one it refuses is counted unreadable, and entries past `PACK_CAP` are counted over. A missing or
  * wrongly typed part holds nothing.
  */
@@ -171,7 +183,12 @@ export function parsePack(v: unknown): PackRead {
     const def = isStatusKey(key) && !isStateChip(key) ? parseStatusDef(raw, RULES, key) : null;
     if (def) { pack.statuses[key] = def; c.kept++; } else c.unreadable++;
   }
-  pack.items = readList(lib.items, PACK_CAP.items, parseItem, counts.items);
+  for (const [key, raw] of Object.entries(isObj(lib.items) ? lib.items : {})) {
+    const c = counts.items;
+    if (c.kept >= PACK_CAP.items) { c.over++; continue; }
+    const k = parseItemDefId(key), def = k ? parseItemDef(raw) : null;
+    if (k && def) { pack.items[k] = def; c.kept++; } else c.unreadable++;
+  }
   pack.skills = readList(lib.skills, PACK_CAP.skills, parseSkill, counts.skills);
   pack.rewards = readList(lib.rewards, PACK_CAP.rewards, parseBundle, counts.rewards);
   pack.monsters = readList(v.monsters, PACK_CAP.monsters, parseMonster, counts.monsters);
@@ -191,6 +208,8 @@ export type MergeMode = 'add' | 'replace';
 /** What a merge did with each kind: entries added (`renamed` of them under a number suffix), replaced, and left out because the list was full. */
 export type KindMerge = { added: number; renamed: number; replaced: number; full: number };
 export type MergeTarget = Pick<Save, 'library' | 'monsters' | 'seq'>;
+/** What a merge mints: the stamp of a custom item's new id (16 random characters at the edge, ids.ts `ITEM_STAMP_LEN`). */
+export type MintStamp = () => string;
 export type Merged<S extends MergeTarget = Save> = { save: S; report: Record<PackKind, KindMerge> };
 
 /** `name` with the first number suffix from 2 that `taken` does not hold, cut to `max` characters: "Frostbite 2". */
@@ -271,22 +290,58 @@ function mergeFeats(have: Library, incoming: Record<string, FeatDef>, map: Reado
 }
 
 /**
+ * The library's item defs after a merge, and the new id of each pack item that moved. A built-in's edit is laid over the
+ * library's (Add and Replace alike: there is one built-in). A custom item becomes one of `catalog`'s: Replace overwrites
+ * the library's custom item of the same name and takes its id; Add, or no such item, gives it a new id under `catalog`
+ * (`mint`), its name suffixed when the library holds it ("Rift Fang 2"). A pack item of this catalog that the library
+ * does not hold keeps its id. With no catalog (`null`), custom items cannot be minted and are counted full.
+ */
+function mergeItems(have: Record<ItemDefId, ItemDefData>, incoming: Record<ItemDefId, ItemDefData>, catalog: Library['catalogId'], mode: MergeMode, mint: MintStamp, count: KindMerge) {
+  const out: Record<ItemDefId, ItemDefData> = { ...have }, map = new Map<ItemDefId, ItemDefId>();
+  const customNames = (): Map<string, ItemDefId> => new Map(Object.entries(out).filter(([k]) => isCustomItemDefId(k as ItemDefId)).map(([k, d]) => [d.name.toLowerCase(), k as ItemDefId]));
+  for (const [key, def] of Object.entries(incoming) as [ItemDefId, ItemDefData][]) {
+    if (isBuiltInItemId(key)) {
+      const exists = Object.hasOwn(out, key);
+      if (!exists && Object.keys(out).length >= PACK_CAP.items) { count.full++; continue; }
+      out[key] = def; if (exists) count.replaced++; else count.added++;
+      continue;
+    }
+    if (catalog === null) { count.full++; continue; }
+    const names = customNames(), same = names.get(def.name.toLowerCase());
+    if (mode === 'replace' && same) { out[same] = def; map.set(key, same); count.replaced++; continue; }
+    if (Object.keys(out).length >= PACK_CAP.items) { count.full++; continue; }
+    const keep = catalogOfItemDefId(key) === catalog && !Object.hasOwn(out, key);
+    const nid = keep ? key : customItemDefId(catalog, mint());
+    const name = names.has(def.name.toLowerCase()) ? suffixed(def.name, ITEM_BOUNDS.name, n => names.has(n.toLowerCase())) : def.name;
+    if (name !== def.name) count.renamed++;
+    out[nid] = { ...def, name }; map.set(key, nid); count.added++;
+  }
+  return { items: out, map };
+}
+
+/**
  * `target`'s library and monsters with `pack` merged in, and what was done with each kind. Statuses go first, so an
  * item, skill, bundle or monster that names a pack status Add renamed names it under its new key; one that names a status
- * the pack does not hold is kept as it is (its op may carry its own def). New ids continue `target.seq`. The caps of
+ * the pack does not hold is kept as it is (its op may carry its own def). Items go next (`mergeItems`), so a bundle, a
+ * monster's loot, a feat or a story that gives a pack item gives it under its new id. New ids continue `target.seq`. The caps of
  * `PACK_CAP` hold: what does not fit is counted in `full`. Replace run twice with the same pack changes nothing the
  * second time. `target` is not changed.
  */
-export function mergePack<S extends MergeTarget>(target: S, pack: Pack, mode: MergeMode): Merged<S> {
+export function mergePack<S extends MergeTarget>(target: S, pack: Pack, mode: MergeMode, mint: MintStamp): Merged<S> {
   const report = each((): KindMerge => ({ added: 0, renamed: 0, replaced: 0, full: 0 }));
   let seq = target.seq;
   const id = (prefix: string) => () => `${prefix}${++seq}`;
   const p = copy(pack), L = copy(target.library);
   const { statuses, map } = mergeStatuses(L.statuses, p.statuses, mode, report.statuses);
   const R = STATUS_REFS;
+  const merged = mergeItems(L.items, Object.fromEntries(Object.entries(p.items).map(([k, d]) => [k, rekeyed(R.items, d, map)])), L.catalogId, mode, mint, report.items);
+  const moved = (x: ItemDefId): ItemDefId => merged.map.get(x) ?? x, I = ITEM_REFS;
+  p.rewards = p.rewards.map(b => I.bundle(b, moved)); p.monsters = p.monsters.map(m => I.monster(m, moved)); p.stories = p.stories.map(st => I.story(st, moved));
+  p.feats = Object.fromEntries(Object.entries(p.feats).map(([k, d]) => [k, I.feat(d, moved)]));
   const library: Library = {
     statuses,
-    items: mergeNamed<Item>(L.items, p.items.map(i => rekeyed(R.items, i, map)), mode, PACK_CAP.items, 60, id('i'), report.items),
+    items: merged.items,
+    catalogId: L.catalogId,
     skills: mergeNamed<Skill>(L.skills, p.skills.map(k => rekeyed(R.skills, k, map)), mode, PACK_CAP.skills, 60, id('s'), report.skills),
     rewards: mergeNamed<RewardBundle>(L.rewards, p.rewards.map(b => rekeyed(R.rewards, b, map)), mode, PACK_CAP.rewards, 60, id('rb'), report.rewards),
     maps: mergeNamed<BattleMap>(L.maps, p.maps.map(m => rekeyed(R.maps, m, map)), mode, PACK_CAP.maps, 40, () => mapId(id('mp')()), report.maps),
@@ -294,5 +349,7 @@ export function mergePack<S extends MergeTarget>(target: S, pack: Pack, mode: Me
     stories: mergeNamed<Story>(L.stories, p.stories.map(s => rekeyed(R.stories, s, map)), mode, PACK_CAP.stories, STORY_BOUNDS.name, id('st'), report.stories),
   };
   const monsters = mergeNamed<Monster>(copy(target.monsters), p.monsters.map(m => rekeyed(R.monsters, m, map)), mode, PACK_CAP.monsters, 60, id('m'), report.monsters);
-  return { save: { ...target, library, monsters, seq }, report };
+  const out = { ...target, library, monsters, seq };
+  const isFullSave = (s: MergeTarget): s is Save => 'heardItems' in s && 'hunters' in s && 'settings' in s;
+  return { save: (isFullSave(out) ? I.heardStep(out) : out) as S, report };
 }

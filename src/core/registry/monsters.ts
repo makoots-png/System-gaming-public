@@ -17,8 +17,9 @@ import { isStatusKey } from '../combat/effect-ops.ts';
 import { parseAbility } from '../combat/fight-parse.ts';
 import { MAX_ABILITIES } from '../combat/fight-types.ts';
 import { isStateChip } from '../hunter/chips.ts';
-import { ITEM_BOUNDS, parseItem } from './items.ts';
-import type { ItemTemplate } from './items.ts';
+import { ITEM_BOUNDS } from './items.ts';
+import { parseItemGrant } from './item-book.ts';
+import type { ItemGrant } from './item-book.ts';
 import { monsterAbility } from './abilities.ts';
 import type { MonsterSpec } from './abilities.ts';
 import type { BuiltInStatus } from './statuses.ts';
@@ -35,7 +36,7 @@ import type { MythicScriptId } from './mythics.ts';
  */
 export type StartStatus = { key: string; rounds: number | null; stacks?: number };
 /** What a monster drops. Kept and read only: the end of a fight does not offer it yet. */
-export type Loot = { gold: number; items: ItemTemplate[] };
+export type Loot = { gold: number; items: ItemGrant[] };
 /**
  * How a monster differs from its rank, archetype and kind: `hp` multiplies its max HP, `stats` adds points to named stats,
  * and each of `traits` changes its body by its rule (`RULES.fight.traits`; absent, none). A seed row names a trait where
@@ -300,7 +301,7 @@ function tweakOf(v: unknown): MonsterTweak {
  * not 0, and the traits it names that `RULES.fight.traits` holds, each once, in `MONSTER_TRAITS`' order. Each ability
  * is read by the fight's ability reader with the shipped rules' limits, one it refuses dropped (at most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
  * state chip, each key once) with whole rounds 1 to 999 or null and a count of 1 to `kit.stackCap` (kept when above 1),
- * at most 8. Loot is gold and items read by `parseItem`
+ * at most 8. Loot is gold and items read by `parseItemGrant`
  * (at most 20). `icon` is kept only when it is a key of the icon registry (an unknown one is dropped, the default shows). `auto` (added on its first defeat), `placeholder` (made by a gate's spawn) and `scripted` (excluded from random gate spawns) are kept only when true.
  * Every other key is dropped.
  */
@@ -317,7 +318,7 @@ export function parseMonster(v: unknown): MonsterTemplate | null {
     ...(typeof v.xp === 'number' && Number.isFinite(v.xp) ? { xp: whole(v.xp, 0, B.xp, 0) } : {}),
     extractable: extractableOf(kind, text(v.type, B.type), typeof v.extractable === 'boolean' ? v.extractable : null), desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
     statuses: startStatuses(v.statuses),
-    loot: { gold: whole(loot.gold, 0, B.gold, 0), items: (Array.isArray(loot.items) ? loot.items : []).flatMap(i => parseItem(i) ?? []).slice(0, B.lootItems) },
+    loot: { gold: whole(loot.gold, 0, B.gold, 0), items: (Array.isArray(loot.items) ? loot.items : []).flatMap(i => parseItemGrant(i) ?? []).slice(0, B.lootItems) },
   };
   if (isIconKey(v.icon)) out.icon = v.icon;
   if (kind === 'mythic') out.script = isMythicScriptId(v.script) ? v.script : PLAIN;
@@ -338,15 +339,16 @@ function startStatuses(v: unknown): StartStatus[] {
 }
 
 /**
- * What the defeated monsters of a fight dropped, together: their gold summed, and their items, the same item (every field
- * but its count) stacked, at most `ITEM_BOUNDS.qty` a stack. Nothing is given here: the GM picks who gets it.
+ * What the defeated monsters of a fight dropped, together: their gold summed, and their items, references to one def
+ * stacked by `defId` (at most `ITEM_BOUNDS.qty` a stack); an ad hoc item stays its own line. Nothing is given here: the
+ * GM picks who gets it.
  */
 export function lootOf(drops: readonly Loot[]): Loot {
   const items: Loot['items'] = [];
-  const same = (a: Loot['items'][number], b: Loot['items'][number]): boolean => JSON.stringify({ ...a, qty: 0 }) === JSON.stringify({ ...b, qty: 0 });
   for (const it of drops.flatMap(d => d.items)) {
-    const have = items.find(x => same(x, it));
-    if (have) have.qty = Math.min(ITEM_BOUNDS.qty, have.qty + it.qty); else items.push({ ...it });
+    const at = it.kind === 'ref' ? items.findIndex(x => x.kind === 'ref' && x.defId === it.defId) : -1;
+    const have = at >= 0 ? items[at]! : null;
+    if (have) items[at] = { ...have, qty: Math.min(ITEM_BOUNDS.qty, have.qty + it.qty) }; else items.push(it);
   }
   return { gold: drops.reduce((n, d) => Math.min(MONSTER_BOUNDS.gold, n + d.gold), 0), items };
 }

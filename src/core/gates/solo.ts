@@ -10,6 +10,8 @@
 // A personal gate is the System's, on its hunter (`Hunter.solo`): a clock (off, or on with the next spawn's time) and
 // the gates it opened, each with built-in monsters and a closing time. `soloTick` opens and closes them for the time
 // that passed; `soloWake` is its term of the one timer (quests.ts `nextWake`).
+import { bagOf, wornOf } from '../hunter/inventory.ts';
+import type { BagRules } from '../hunter/inventory.ts';
 import { killFacts } from '../combat/fight-facts.ts';
 import { RANKS, rankIdx, withStatuses } from '../rules.ts';
 import { record } from '../hunter/chronicle.ts';
@@ -33,7 +35,8 @@ import type { LifeState, Maxima, Vitals } from '../hunter/vitals.ts';
 import { isEmptyReward, newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { clearCrystalEach, personalCrystal } from '../hunter/crystal.ts';
-import type { ItemTemplate } from '../registry/items.ts';
+import { resolveGrant } from '../registry/item-book.ts';
+import type { ItemGrant } from '../registry/item-book.ts';
 import { monsterXp, parseMonster, seedMonsters, tweakOfMonster } from '../registry/monsters.ts';
 import type { Monster, MonsterTemplate } from '../registry/monsters.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
@@ -250,8 +253,12 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
   return monsters.length ? { h, target: { gate, name: g.name, rank: g.rank, boss: g.bossId !== null, monsters, statuses: {} } } : refuse('empty');
 }
 
-/** The parts of a hunter a row is built from, as one string: another string means the hunter changed since a run began. */
-export const soloKey = (h: Hunter): string => JSON.stringify([h.life, h.mana, h.fatigue, h.collapsed, h.used, h.conditions, h.items, h.equipped, h.skills, h.stats, h.pending, h.level, h.rank, h.shadows, h.titleId]);
+/**
+ * The parts of a hunter a row is built from, as one string: another string means the hunter changed since a run began.
+ * Its bag and gear are read as they resolve under `R` (inventory.ts `bagOf`, `wornOf`), so an edit of an item's def
+ * while a run plays is a change too.
+ */
+export const soloKey = (h: Hunter, R: BagRules): string => JSON.stringify([h.life, h.mana, h.fatigue, h.collapsed, h.used, h.conditions, bagOf(h, R), wornOf(h, R), h.skills, h.stats, h.pending, h.level, h.rank, h.shadows, h.titleId]);
 
 /** The fight a run plays with the rules it plays by (`Weighed`: the card's odds take this value too), and how its rows map back to the sheet. */
 export type SoloFight = Weighed & { readonly fight: Setup; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>> };
@@ -290,7 +297,7 @@ export type SoloRun = {
   readonly end: RunEnd; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>>; readonly from: string; readonly route: SoloRoute;
 };
 /** The loot the view rolled before the write (`rollLoot`), paid only when the run cleared. */
-export type SoloLoot = { readonly gold: number; readonly items: readonly ItemTemplate[] };
+export type SoloLoot = { readonly gold: number; readonly items: readonly ItemGrant[] };
 
 /**
  * Hunter `h` as the run left it, through the writer each part has: the row's totals (`sheetEdit`: the row's life,
@@ -350,7 +357,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
   const R = c.day.R, ready = soloReady(save, hid, gate, c.ready);
   if (isRefused(ready)) return ready;
   const { h, target } = ready;
-  if (soloKey(h) !== run.from) return refuse('changed');
+  if (soloKey(h, R) !== run.from) return refuse('changed');
   const outcome = run.end.outcome, stamp: Stamp = { at: c.day.at, cap: R.logCap };
   // a win or a loss ends the gate for the hunter so its rests start again (rests.ts `gateLeft`); a retreat leaves the gate open, so its rests stay spent
   const ended = ranOn(h, run, R), left = outcome === 'stalled' ? ended : sheetEdit(ended, { type: 'gateLeft' }, R), ran = isRefused(left) ? ended : left;
@@ -385,12 +392,12 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
         const preset = g.preset, soloPayee = { kind: 'local' as const, hid: h.id }, part = partitionPresetItems(preset, [soloPayee]);
         xp = preset.xp;
         const rw: Rewards = { ...newRewards(), xp, gold: preset.gold, crystal: preset.crystal, items: [...(part.byPayee.get(h.id) ?? [])] };
-        const pay = { due, xp, gold: preset.gold, crystal: preset.crystal, items: preset.items.filter(i => i.checked).map(i => i.item.name), payees: [h.name] };
+        const pay = { due, xp, gold: preset.gold, crystal: preset.crystal, items: preset.items.filter(i => i.checked).map(i => resolveGrant(i.item, R).name), payees: [h.name] };
         const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rw }], null, c.day, 'solo');
         if (isRefused(settled)) return settled;
         const paid = payGatePreset(settled.save, g.id, c.day.at, [soloPayee]);
         if (isRefused(paid)) return refuse('unchanged');
-        const stashed = stashDeposit(paid, part.stash, stamp, `${g.name} clear`);
+        const stashed = stashDeposit(paid, part.stash, stamp, `${g.name} clear`, R);
         if (isRefused(stashed)) return refuse('stash-full');
         s = stashed; granted = settled.granted[0]?.g ?? null;
       } else if (g.preset.at === 'paid') {
@@ -402,7 +409,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
         const gold = shareEach(loot.gold, 1, R.gateParty);
         const crystal = clearCrystalEach(g, 1, R);
         xp = shareEach(due, 1, R.gateParty);
-        const pay = { due, xp, gold, crystal, items: loot.items.map(i => i.name), payees: [h.name] };
+        const pay = { due, xp, gold, crystal, items: loot.items.map(i => resolveGrant(i, R).name), payees: [h.name] };
         const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp, gold, crystal) }], null, c.day, 'solo');
         if (isRefused(settled)) return settled;
         s = settled.save; granted = settled.granted[0]?.g ?? null;
@@ -524,7 +531,7 @@ const gateFound = (g: Gate | undefined, stashFull: boolean): SoloGateFound =>
 /** The plan for run `p` on the GM's save as it stands (`PLAN_TABLE`): the one rule, asked again inside the write (`soloTaken`). */
 export function soloPlan(save: Pick<Save, 'gates' | 'monsters'> & Partial<Pick<Save, 'stash' | 'seq'>>, p: SoloRunPayload, R: Rules): SoloPlan {
   const g = save.gates.find(x => x.id === p.gate);
-  const stashFull = !!(g && isActivePreset(g.preset) && save.stash && !stashCanHold(save.stash, (save.seq ?? 0) + 2, partitionPresetItems(g.preset, [{ kind: 'remote', key: p.by }]).stash));
+  const stashFull = !!(g && isActivePreset(g.preset) && save.stash && !stashCanHold(save.stash, (save.seq ?? 0) + 2, partitionPresetItems(g.preset, [{ kind: 'remote', key: p.by }]).stash, R));
   const cell = PLAN_TABLE[gateFound(g, stashFull)][p.outcome];
   if (cell === 'report') return { kind: 'report' };
   if (cell !== 'pay') return { kind: 'refused', why: cell };
@@ -569,12 +576,12 @@ export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer:
   if (isActivePreset(g.preset)) {
     const preset = g.preset, soloPayee = { kind: 'remote' as const, key: p.by }, part = partitionPresetItems(preset, [soloPayee]);
     const owed: Rewards = { ...newRewards(), xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: [...(part.byPayee.get(p.by) ?? [])] };
-    const pay = { due: plan.due, xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: preset.items.filter(i => i.checked).map(i => i.item.name), payees: [p.name || 'A hunter'] };
+    const pay = { due: plan.due, xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: preset.items.filter(i => i.checked).map(i => resolveGrant(i.item, R).name), payees: [p.name || 'A hunter'] };
     const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
     if (isRefused(settled)) return settled;
     const paid = payGatePreset(settled.save, g.id, c.day.at, [soloPayee]);
     if (isRefused(paid)) return refuse('unchanged');
-    const stashed = stashDeposit(paid, part.stash, stamp, `${g.name} clear`);
+    const stashed = stashDeposit(paid, part.stash, stamp, `${g.name} clear`, R);
     if (isRefused(stashed)) {
       const refPlan: SoloPlan = { kind: 'refused', why: 'stash-full' };
       const refBody = soloAnswerBody(save, p.eid, p, refPlan);
@@ -590,7 +597,7 @@ export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer:
     if (isRefused(settled)) return settled;
     return settled.save;
   }
-  const pay = { due: plan.due, xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), crystal: plan.crystal, items: loot.items.map(i => i.name), payees: [p.name || 'A hunter'] };
+  const pay = { due: plan.due, xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), crystal: plan.crystal, items: loot.items.map(i => resolveGrant(i, R).name), payees: [p.name || 'A hunter'] };
   const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
   if (isRefused(settled)) return settled;
   const owed = soloOwed(plan, loot);

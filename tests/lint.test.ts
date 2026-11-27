@@ -207,9 +207,17 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts srvSkew': 'the server clock\'s distance from this one', 'sync.ts lastOk': 'when a request last came back',
     'sync.ts sheetText': 'the bound sheet as the push last sent it', 'sync.ts invited': 'the invite this tab holds', 'sync.ts boundSeen': 'the bound hunter as the push was last told of it', 'sync.ts removal': 'the REMOVED FROM ROOM notice (src/core/sync/bind.ts)',
     'sync.ts running': 'whether the outbox\'s flush is running', 'sync.ts stamped': 'the time in the id of the last event this page made',
+    'sync.ts catPub': 'the GM\'s catalog publish machine\'s state (src/core/sync/catalog-publish.ts)',
+    'sync.ts catReq': 'the GM\'s open catalog PUT or GET request controller',
+    'sync.ts catLinkGen': 'the link gen in which a room-catalog link PUT is in flight',
+    'sync.ts catActive': 'the player phone\'s active synced catalog for the current link gen',
+    'sync.ts catStaged': 'the player phone\'s staged synced catalog held back during a fight, promoted in release()',
     'upgrade.ts update': 'the update machine\'s state (src/core/upgrade.ts)', 'upgrade.ts quiet': 'the timer of the quiet reload',
     'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches and the economy\'s rules), bound by sync.ts (`bindRoom`)',
-    'rules.ts made': 'the rules in force and the overrides, statuses and room rules they were made from',
+    'rules.ts made': 'the rules in force and the overrides, statuses, item defs, heard defs, sheets\' defs, synced catalog and room rules they were made from',
+    'rules.ts sheetDefsOf': 'the custom item defs of the room\'s pushed sheets on the GM\'s phone, bound by sync.ts (`bindSheetDefs`)',
+    'rules.ts catalogOf': 'the room\'s active synced catalog on a player\'s phone, bound by sync.ts (`bindCatalog`)',
+    'sync.ts sheetDefs': 'the custom item defs of the room\'s pushed sheets, and the sheets object they were read from',
     'store.ts prefs': 'this phone\'s prefs as read and written', 'store.ts device': 'whether this phone\'s memory is kept or failing',
     'store.ts state': 'the save', 'store.ts flushTimer': 'the one wait for the save\'s next write: none, the next frame with a second\'s fallback, or the task after that frame (FlushTimer)', 'store.ts life': 'the store\'s life machine\'s state (src/core/store-life.ts)', 'store.ts unsavedBackup': 'this tab\'s unsaved save snapshot kept for Export backup while read-only (cleared when ready)',
     'sync.ts FIGHT_MOVES': 'a constant: the room messages that are a player\'s own moves in the GM\'s fight',
@@ -1250,7 +1258,8 @@ test('a view reads the answer of every write to the save: a refused write never 
     "src/views/bestiary.js: store.apply('codex-room', s => codexFromRoom(s, ": ROOM,
     "src/views/bestiary.js: store.apply('codex-record', s => recordDefeatSte": 'a defeat counted on the fight\'s events, which follow only a fight write the store took (combat.js `command`, `combat-ended`), so a read-only tab never gets here; its one refusal, `counted`, is a row counted already (the end counts every row down), which needs no word',
     "src/edge/sync.ts: store.apply('sync-status', atSync(serverSeen))": 'the mark that a server answered, for the next boot\'s probe: refused, the next boot probes from the page as before',
-    "src/edge/sync.ts: store.apply('noticed', s => releaseStep(s, holde": 'facts and class holder reconciliation waiting on the room\'s fight doc: refused, they wait for the next release',
+    "src/edge/sync.ts: store.apply('noticed', s => { const base = promo": 'facts, class holder reconciliation, and staged catalog release waiting on the room\'s fight doc: refused, they wait for the next release',
+    "src/edge/sync.ts: store.apply('catalog-sent', catalogSentStep(sent": 'the GM\'s last published catalog rev/hash bookmark after a server reply: read-only tabs never publish, and if refused the next publish retries cleanly',
     "src/edge/sync.ts: boxDo('outbox-gone', b => roomGone(b, code), s =": OUTBOX,
     'src/edge/sync.ts: flush()': OUTBOX,
     "src/edge/sync.ts: boxDo('outbox-failed', b => outStep(b, e.id, ev)": OUTBOX,
@@ -2186,6 +2195,33 @@ test('a view adds no new question of whether a fight holds a hunter: the step in
   const over = Object.entries(counts).filter(([file, n]) => n > (FIGHT_ASKS[file] ?? 0))
     .map(([file, n]) => `${file}: ${n} calls of fightOf/heldIn/isHeld/holderInFight, ${FIGHT_ASKS[file] ?? 0} listed. If the new call allows or refuses a write, put the refusal in the core step it guards (as grant.ts systemRaise refuses 'held', tested in tests/revive-standing.test.ts) and then raise this file's number in FIGHT_ASKS.`);
   expect(over).toEqual([]);
+});
+
+// Item sync PR 2 (Fable's final verdict, section 3, step 8): an item is read by its def id through item-book.ts, so a
+// second reader of the item book or of the built-in seeds would read a def without its kit's numbers, its live statuses
+// or its fallback order. Each file's count of `R.items` reads is listed (rules.ts builds the book, stash.ts lays a
+// goods' defs under it, pack.ts's `R` is the status walks' table); a new reader fails here until it goes through
+// item-book.ts `resolveDef`/`resolveItem`/`resolveGrant` or inventory.ts `bagOf`.
+const ITEM_BOOK_READS: Readonly<Record<string, number>> = { 'src/core/rules.ts': 1, 'src/core/trade/stash.ts': 1, 'src/core/pack.ts': 2 };
+test('only item-book.ts reads R.items and BUILT_IN_ITEMS: every other reader resolves an item through it', async () => {
+  const counts: Record<string, number> = {}, seeds: Line[] = [];
+  for (const line of [...await sourceLines('src'), ...(await Bun.file(`${ROOT}/server.ts`).text()).split('\n').map((text, i) => ({ file: 'server.ts', line: i + 1, text }))]) {
+    if (isComment(line.text) || line.file === 'src/core/registry/item-book.ts') continue;
+    const n = (line.text.match(/\bR\.items\b|\brules\(\)\.items\b/g) ?? []).length;
+    if (n) counts[line.file] = (counts[line.file] ?? 0) + n;
+    if (line.file !== 'src/core/registry/items.ts' && /\bBUILT_IN_ITEMS\b/.test(line.text)) seeds.push(line);
+  }
+  const over = Object.entries(counts).filter(([file, n]) => n > (ITEM_BOOK_READS[file] ?? 0)).map(([file, n]) => `${file}: ${n} reads of R.items, ${ITEM_BOOK_READS[file] ?? 0} listed`);
+  expect(over, 'read an item through item-book.ts resolveDef/resolveItem/resolveGrant or inventory.ts bagOf, never R.items').toEqual([]);
+  expect(report(seeds), 'read a built-in item through item-book.ts (builtInDefData, resolveDef), never BUILT_IN_ITEMS').toEqual([]);
+});
+test('library.items and heardItems each have one writer: library.ts saveItemDef/removeItemDef and item-refs.ts heardStep', async () => {
+  const lib = /\blibrary\.items\s*=(?!=)|library:\s*\{\s*\.\.\.[\w.]*library,\s*items\b/, heard = /\bheardItems\s*(?:=(?!=)|:(?!\s*Record))/;
+  expect(lib.test('{ ...save, library: { ...save.library, items: rest } }') && heard.test('{ ...save, heardItems: next }') && !heard.test('heardItems: Record<ItemDefId, ItemDefData>;'), 'the rule sees a spread write and not a type').toBe(true);
+  const libOwners = ['src/core/library.ts', 'src/core/item-refs.ts', 'src/core/save.ts', 'src/core/pack.ts'], heardOwners = ['src/core/item-refs.ts', 'src/core/save.ts'];
+  const lines = (await sourceLines('src')).filter(l => !isComment(l.text));
+  expect(report(lines.filter(l => !libOwners.includes(l.file) && lib.test(l.text))), 'write library.items only through library.ts saveItemDef or removeItemDef (save.ts repairs it, pack.ts merges into it, item-refs.ts rekeys it)').toEqual([]);
+  expect(report(lines.filter(l => !heardOwners.includes(l.file) && heard.test(l.text))), 'write heardItems only through item-refs.ts heardStep').toEqual([]);
 });
 
 // The voice rules a machine can check (docs/guide/voice.md, the owner, Nov 22: "I shouldn't have to guess", "Don't be clever").

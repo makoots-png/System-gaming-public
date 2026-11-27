@@ -635,14 +635,16 @@ test('a player uses a Health Potion from the More drawer on the map: one leaves 
   // the shop's Health Potion (E) (items.ts SHOP_ITEMS), two of them in the player's bag
   await player.evaluate(() => {
     const potion = hunterApp.api.inventory.shop().find((i: any) => i.name === 'Health Potion (E)');
-    hunterApp.api.inventory.addItem(hunterApp.store.active().id, { ...potion, qty: 2 });
+    hunterApp.api.inventory.addItem(hunterApp.store.active().id, { kind: 'ref', defId: potion.defId, qty: 2 });
   });
-  await expect.poll(() => gm.evaluate(name => (hunterApp.api.sync.remoteSheets().find((r: any) => r.data && r.data.name === name)?.data.items ?? [])
-    .some((i: any) => i.name === 'Health Potion (E)'), HUNTER)).toBe(true);
+  await expect.poll(() => gm.evaluate(name => {
+    const r = hunterApp.api.sync.remoteSheets().find((x: any) => x.data && x.data.name === name);
+    return !!r && hunterApp.api.inventory.bag(r.data).some((i: any) => i.name === 'Health Potion (E)');
+  }, HUNTER)).toBe(true);
   await fight(gm, player, [{ x: 10, y: 10 }]);
   await gm.evaluate(name => hunterApp.store.update((d: any) => { const r = d.fight.rows.find((x: any) => x.name === name); r.life = { at: 'up', hp: r.life.hp - 25 }; }, 'test-setup'), HUNTER);
   const hp = (await fightRow(gm, HUNTER)).hp;
-  const potions = () => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Health Potion (E)')?.qty ?? 0);
+  const potions = () => player.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.active()).find((i: any) => i.name === 'Health Potion (E)')?.qty ?? 0);
   const had = await potions();
   expect(had).toBeGreaterThan(0);
   await map(player).locator('[data-more]').tap();

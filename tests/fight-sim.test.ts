@@ -97,7 +97,8 @@ import { learnSkill } from '../src/core/hunter/skills-held.ts';
 import { equip, putItem } from '../src/core/hunter/inventory.ts';
 import { refill } from '../src/core/hunter/vitals.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { SHOP_ITEMS, STARTER_GEAR } from '../src/core/registry/items.ts';
+import { refGrant } from '../src/core/registry/item-book.ts';
 import { STARTER_SKILLS, skillOf } from '../src/core/registry/skills.ts';
 import { WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
 import type { UniqueClassName } from '../src/core/registry/jobs.ts';
@@ -948,9 +949,7 @@ function advanceHunter(h: Hunter, level: number, extra: StatPoints): Hunter {
 
 /** Gives `h` `qty` copies of Health Potion (E) in its bag. */
 function givePotions(h: Hunter, qty: number, idNum: number): Hunter {
-  const parsed = parseItem({ ...itemOf(RULES, HEALTH_POTION_E), qty });
-  if (!parsed) throw new Error('failed to parse Health Potion (E)');
-  return putItem(h, parsed, saveId('i', idNum));
+  return putItem(h, refGrant(HEALTH_POTION_E.defId, qty), saveId('i', idNum), RULES);
 }
 
 /** Wave 1 (Cannery Tunnels) or Wave 2 (Stone Hall) monsters per the table-scaling rules for `players` hunters. */
@@ -1013,10 +1012,9 @@ function act1SampleParty(players: number, level: 1 | 2): SimRow[] {
     let h = confirm(raised);
     if (ex.skill) h = learnSkill(h, { ...skillOf(ex.skill, RULES), label: 'Lv.1' }, saveId('s', ++seq));
     if (ex.bow) {
-      const bow = parseItem(itemOf(RULES, STARTER_GEAR.huntingBow))!;
       const bowId = saveId('i', ++seq);
-      h = putItem(h, bow, bowId);
-      const eq = equip(h, bowId, bowId);
+      h = putItem(h, refGrant(STARTER_GEAR.huntingBow.defId), bowId, RULES);
+      const eq = equip(h, bowId, bowId, false, RULES);
       if (!isRefused(eq)) h = eq;
     }
     h = givePotions(h, 3, ++seq);

@@ -9,8 +9,9 @@
 
 import { SAVE_ID_RE } from './ids.ts';
 import type { DeviceId } from './ids.ts';
-import { parseItem } from './registry/items.ts';
-import type { Item } from './registry/items.ts';
+import { parseHeldItem } from './registry/item-book.ts';
+import { ITEM_BOUNDS } from './registry/items.ts';
+import type { HeldItem } from './registry/item-book.ts';
 import { parseSkill } from './registry/skills.ts';
 import type { Skill } from './registry/skills.ts';
 import { MAX_MAPS } from './registry/maps.ts';
@@ -101,9 +102,16 @@ export function refill<T extends { id: string }>(run: RepairRun, raw: Rec, t: Om
   claimId(run, o, prefix);
   return o;
 }
-/** Saved items, each read by `parseItem`; one it refuses (no name) is dropped, one without an id takes the default's. */
-export const items = (run: RepairRun, value: unknown): Item[] =>
-  (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseItem(raw); return t ? [refill<Item>(run, raw, t, 'i0', 'i')] : []; });
+/** A hunter's bag lines, each read by `parseHeldItem` whatever its id; one it refuses is dropped, one without a good id gets a new one. */
+export const items = (run: RepairRun, value: unknown): HeldItem[] =>
+  (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => {
+    // a count out of its bound is clamped (as the by-value reader did), so a line is dropped only for what it names
+    const qty = typeof raw.qty === 'number' && Number.isFinite(raw.qty) ? Math.max(1, Math.min(ITEM_BOUNDS.qty, Math.trunc(raw.qty))) : 1;
+    const t = parseHeldItem({ ...raw, id: 'i0', qty });
+    if (!t) return [];
+    const { id: _id, ...rest } = t;
+    return [refill<HeldItem>(run, raw, rest, 'i0', 'i')];
+  });
 /** Saved skills, each read by `parseSkill`; one it refuses (no name) is dropped, one without an id takes the default's. */
 export const skills = (run: RepairRun, value: unknown): Skill[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseSkill(raw); return t ? [refill<Skill>(run, raw, t, 's0', 's')] : []; });

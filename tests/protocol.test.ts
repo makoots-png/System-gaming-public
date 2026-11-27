@@ -1,17 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
-import { API_ERRORS, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, grantRefusalEvent, newEvent, newEventId, onDodge, onTurn, parseApiError, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
+import { API_ERRORS, CATALOG_MAX, CATALOG_READ_MAX, CATALOG_SHOP_MAX, DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, apiError, catalogDoc, catalogReadOf, grantRefusalEvent, newEvent, newEventId, onDodge, onTurn, parseApiError, parseCatalogDoc, parseCatalogPointer, parseCatalogRead, parseCatalogReadIds, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, WORD_MAX, holdersFor, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor, wireDocs } from '../src/core/protocol.ts';
 import type { EventAudience, PayloadOf, RoomEvent, RoomViewer } from '../src/core/protocol.ts';
 import { GOODS_GOLD_MAX, GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
 import { stashDoc, stashFits } from '../src/core/trade/stash.ts';
-import type { Item } from '../src/core/registry/items.ts';
+import { itemDefDataOf } from '../src/core/registry/item-book.ts';
+import type { HeldItem, ItemDefData } from '../src/core/registry/item-book.ts';
+import type { CatalogId, ItemDefId } from '../src/core/ids.ts';
+import { GM_CATALOG_ID, customId, rulesWith } from './fixtures/items.ts';
+import { builtInItemId, customItemDefId } from '../src/core/ids.ts';
 import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { BONUS_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { grantRefusalIdOf } from '../src/core/ids.ts';
-import { newHunter } from '../src/core/save.ts';
+import { SHOP_MAX, newHunter } from '../src/core/save.ts';
 import { RULES, domainOf } from '../src/core/rules.ts';
 import { MYTHIC_IDS, mythicScriptOf, omensOf } from '../src/core/registry/mythics.ts';
 import { roomRulesOf, withRoomRules } from '../src/core/hunter/build.ts';
@@ -45,7 +49,7 @@ import { REWARD_BOUNDS } from '../src/core/rewards.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
 import { NAME_MAX } from '../src/core/combat/fight-types.ts';
-import { BURN, BURNING, EID, END, KEY, OFFER, OTHER, POTION, SOURCE, VALID, WOLF } from './fixtures/payloads.ts';
+import { BURN, BURNING, EID, END, KEY, OFFER, OTHER, SOURCE, VALID, WOLF } from './fixtures/payloads.ts';
 import { worstBody, worstChapter } from './fixtures/worst-chapter.ts';
 import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
 import { WEIGHT_MAX } from '../src/core/table-weight.ts';
@@ -61,10 +65,18 @@ const payload = (type: string, p: unknown): Raw | null => (parseEvent(type, p)?.
 const sk = (s: string): SheetKey => s as SheetKey;
 
 const valid = (type: EventType): Raw => copy(VALID[type][0]);
+/** Two Health Potions (E) as a grant: a reference to the shipped def. */
+const GRANT = { kind: 'ref', defId: SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!.defId, qty: 2 };
+/** A goods line of `GRANT`, from bag line i3, with the name the giver read. */
+const GOODS_LINE = { from: 'i3', item: GRANT };
+/** The longest custom item id: the GM's catalog and a stamp of 20, the most a custom id takes, distinct by `i`. */
+const longId = (i: number): ItemDefId => customItemDefId(GM_CATALOG_ID, String(i).padStart(20, 'z'));
+/** The Health Potion (E)'s def by value, as an ad hoc item carries one. */
+const POTION_DEF = copy(itemDefDataOf(parseItem(SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!)!));
 /** A sheet as a player's phone pushes it (sync.ts `sendSheet`), and what the parser makes of it. */
 const VALID_SHEET: [Raw, Raw] = [
-  { hunter: { ...copy(newHunter()), id: 'h1', name: 'Kai' } },
-  { hunter: { ...copy(newHunter()), id: 'h1', name: 'Kai' } },
+  { hunter: { ...copy(newHunter()), id: 'h1', name: 'Kai' }, defs: {} },
+  { hunter: { ...copy(newHunter()), id: 'h1', name: 'Kai' }, defs: {} },
 ];
 
 describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
@@ -179,11 +191,13 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     }
   });
 
-  const items = Array.from({ length: FACE_LINES + 2 }, (_, i) => ({ ...itemOf(RULES, SHOP_ITEMS[0]!), id: `i${i + 1}` as never, name: `Thing ${i + 1}`, qty: i + 1 }));
+  /** Mira's bag: ad hoc lines `Thing 1` on, then a built-in and a custom reference; `i1` worn. */
+  const THING_ID = customId('thing'), THING_DEF: ItemDefData = { ...itemDefDataOf(parseItem({ name: 'Custom Thing', rar: 'epic' })!) };
+  const items: HeldItem[] = Array.from({ length: FACE_LINES + 2 }, (_, i) => ({ kind: 'adhoc', id: `i${i + 1}` as never, qty: i + 1, item: { ...itemDefDataOf(parseItem({ name: `Thing ${i + 1}`, rar: 'rare' })!) } }));
   const mira = { ...newHunter(), id: 'h3' as never, name: 'Mira', level: 4, job: 'Healer', items, equipped: { ...newHunter().equipped, weapon: 'i1' as never } };
 
   test('a sheet goes whole to the GM and to its own phone, as a face to any other, and a tombstone stays a tombstone', () => {
-    const sheet = { hunter: mira }, face = hunterFace(mira, { bags: true });
+    const sheet = { hunter: mira, defs: {} }, face = hunterFace(mira, { bags: true });
     expect([GM, phone('d-mira'), phone('d-kai'), ANYONE].map(v => sheetFor(MIRA, sheet, v, { bags: true }))).toEqual([sheet, sheet, face, face]);
     expect(sheetFor(MIRA, { deleted: true }, ANYONE, { bags: true })).toEqual({ deleted: true });
   });
@@ -192,10 +206,18 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     const face = hunterFace(mira, { bags: true }).face;
     expect([face.name, face.level, face.job]).toEqual(['Mira', 4, 'Healer']);
     expect(face.bag).toHaveLength(FACE_LINES);
-    expect(face.bag![0]).toEqual({ id: 'i2', name: 'Thing 2', qty: 2, rar: items[1]!.rar });
+    expect(face.bag![0]).toEqual({ id: 'i2', name: 'Thing 2', qty: 2, rar: 'rare' });
     expect(String(face.bag!.at(-1)!.id)).toBe(`i${FACE_LINES + 1}`);
     expect(hunterFace(mira, { bags: false })).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: null } });
     expect(hunterFace({ ...mira, items: [] }, { bags: true }).face.bag).toEqual([]);
+  });
+
+  test('a face line of a reference names its def: a custom one carries the name and rarity from the sheet\'s defs, a built-in leaves them to the phone', () => {
+    const potion = GRANT.defId as ItemDefId, bag: HeldItem[] = [{ kind: 'ref', id: 'i1' as never, defId: potion, qty: 2 }, { kind: 'ref', id: 'i2' as never, defId: THING_ID, qty: 1 }];
+    const h = { ...mira, items: bag, equipped: newHunter().equipped };
+    expect(hunterFace(h, { bags: true }, { [THING_ID]: THING_DEF }).face.bag).toEqual([{ id: 'i1', qty: 2, defId: potion }, { id: 'i2', qty: 1, defId: THING_ID, name: 'Custom Thing', rar: 'epic' }]);
+    expect(hunterFace(h, { bags: true }).face.bag![1], 'a custom line whose def the sheet lacks names only its def').toEqual({ id: 'i2', qty: 1, defId: THING_ID });
+    expect(sheetFor(MIRA, { hunter: h, defs: { [THING_ID]: THING_DEF } }, ANYONE, { bags: true }), 'a face is made with the pushed sheet\'s defs').toEqual(hunterFace(h, { bags: true }, { [THING_ID]: THING_DEF }));
   });
 
   test('a phone reads a face of the poll answer: a line that does not read is dropped, more than 40 are cut, and a bag of null stays null', () => {
@@ -407,10 +429,16 @@ describe('an award', () => {
     expect(award({})!.rewards).toEqual({ xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
   });
 
-  test('at most 20 items; an item is read by parseItem: a wrong field takes its default, and one without a name is dropped', () => {
-    expect(award({ items: many(10_000, () => POTION) })!.rewards.items).toHaveLength(20);
-    expect(award({ items: [{ ...POTION, rar: 5 }, { ...POTION, qty: 'two' }, { name: '' }, POTION] })!.rewards.items)
-      .toEqual([{ ...POTION, rar: 'common' }, { ...POTION, qty: 1 }, POTION]);
+  test('at most 20 items; each is a grant read strictly, and an ad hoc item inside one by parseItem: a wrong field takes its default, one without a name is dropped', () => {
+    expect(award({ items: many(10_000, () => GRANT) })!.rewards.items).toHaveLength(20);
+    const adhoc = { kind: 'adhoc', qty: 1, item: copy(POTION_DEF) };
+    expect(award({ items: [{ ...adhoc, item: { ...POTION_DEF, rar: 5 } }, { ...GRANT, qty: 'two' }, { ...GRANT, defId: 'no id' }, { ...adhoc, item: { name: '' } }, { ...GRANT, kind: undefined }, { ...POTION_DEF, qty: 2 }, GRANT] })!.rewards.items)
+      .toEqual([{ ...adhoc, item: { ...POTION_DEF, rar: 'common' } }, GRANT]);
+  });
+
+  test('a reference grant to a custom item keeps the def it carries; a def that does not read refuses the grant', () => {
+    const id = customId('shard'), def = itemDefDataOf(parseItem({ name: 'Moon Shard', rar: 'rare' })!);
+    expect(award({ items: [{ kind: 'ref', defId: id, qty: 2, def }, { kind: 'ref', defId: id, qty: 1, def: { name: '' } }] })!.rewards.items).toEqual([{ kind: 'ref', defId: id, qty: 2, def }]);
   });
 
   test('a skill it gives keeps an ability typed with advantage dice and a floor', () => {
@@ -420,14 +448,14 @@ describe('an award', () => {
     expect(award({ skills: [{ name: 'Lucky Swing', type: 'active', ability: copy(ability) }] })!.rewards.skills[0].ability).toEqual(ability);
   });
 
-  test('an item sent with only a name gets an item\'s defaults, and a huge name is cut to 60', () => {
-    const plain = parseItem({ name: 'x' })!;
-    expect(award({ items: [{ name: BIG }] })!.rewards.items).toEqual([{ ...plain, name: 'x'.repeat(60) }]);
+  test('an ad hoc item sent with only a name gets an item\'s defaults, and a huge name is cut to 60', () => {
+    const plain = itemDefDataOf(parseItem({ name: 'x' })!);
+    expect(award({ items: [{ kind: 'adhoc', qty: 1, item: { name: BIG } }] })!.rewards.items).toEqual([{ kind: 'adhoc', qty: 1, item: { ...plain, name: 'x'.repeat(60) } }]);
   });
 
   test('an item bonus keeps the eight stats, max HP and max mana with numbers, clamped to 999, and drops an old key and a __proto__ key', () => {
     const bonus = JSON.parse('{"__proto__": 5, "str": 2, "vit": 5000, "agi": "3", "ac": 4, "dex": 1, "bad key": 1}');
-    expect(award({ items: [{ ...POTION, bonus }] })!.rewards.items[0].bonus).toEqual({ str: 2, vit: 999 });
+    expect(award({ items: [{ kind: 'adhoc', qty: 1, item: { ...POTION_DEF, bonus } }] })!.rewards.items[0].item.bonus).toEqual({ str: 2, vit: 999 });
   });
 
   test('an award carrying unknown fields drops them cleanly and preserves sibling rewards', () => {
@@ -1395,8 +1423,8 @@ describe('the other room docs', () => {
     const { trade: _no, ...noTrade } = { ...rules, trade: { on: false } };
     expect(DOCS.rules(copy({ ...rules, trade: { on: false } }))!.trade, 'the trading switch comes through').toEqual({ on: false });
     expect(DOCS.rules(noTrade), 'a doc without the trading switch is refused').toBeNull();
-    const { statuses: _noSt, ...noStatuses } = rules;
-    expect(DOCS.rules(copy(noStatuses)), 'a doc missing only statuses is refused cleanly without throwing').toBeNull();
+    expect('statuses' in rules, 'RoomRules no longer carries statuses (moved to CatalogDoc)').toBe(false);
+    expect(DOCS.rules(copy({ ...rules, statuses: { grievous: { label: 'Grievous Wounds', desc: '', ops: [] } } })), 'legacy statuses field on RoomRules is ignored cleanly').toEqual(rules);
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, personal: 'yes' } })).toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 0 } })!.solo.hours).toBe(1);
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 1e6 } })!.solo.hours).toBe(168);
@@ -1481,7 +1509,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'classSwapPrices', 'classTreeDepthMult', 'classTreeRarityMult', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'primer', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'statuses', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'classSwapPrices', 'classTreeDepthMult', 'classTreeRarityMult', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'primer', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
@@ -1644,7 +1672,7 @@ describe('a hunter sheet', () => {
   });
 
   test('each list on a sheet keeps at most 100 entries', () => {
-    const items = many(10_000, i => ({ ...parseItem({ name: 'Pebble' })!, id: `i${i + 1}` }));
+    const items = many(10_000, i => ({ kind: 'adhoc', id: `i${i + 1}`, qty: 1, item: itemDefDataOf(parseItem({ name: 'Pebble' })!) }));
     expect(hunterOf(parseSheet(sk(KEY), sheet({ items }))).items).toHaveLength(100);
   });
 
@@ -1725,6 +1753,13 @@ describe('the poll answer', () => {
     expect(parse({ next: undefined })).toBeNull();
     expect(parseRoomState('{"gm":true}')).toBeNull();
   });
+
+  test('catalog pointer comes through when valid and is dropped when malformed', () => {
+    expect(parse()!.catalog).toBeUndefined();
+    expect(parse({ catalog: { id: GM_CATALOG_ID, rev: 3 } })!.catalog).toEqual({ id: GM_CATALOG_ID, rev: 3 });
+    expect(parse({ catalog: { id: 'not-a-cat', rev: 3 } })!.catalog).toBeUndefined();
+    expect(parse({ catalog: { id: GM_CATALOG_ID, rev: 0 } })!.catalog).toBeUndefined();
+  });
 });
 
 describe('an armed reaction (kits design 8.4.2)', () => {
@@ -1759,7 +1794,7 @@ describe('a dodge event and onDodge', () => {
 describe('an offer between two hunters, and its one end', () => {
   const offer = (p: Raw = {}): Raw => ({ ...valid('offer'), ...p });
   const end = (p: Raw = {}): Raw => ({ ...valid('offerEnd'), ...p });
-  const ITEM_LINE = { from: 'i3', item: POTION };
+  const ITEM_LINE = GOODS_LINE;
 
   test('an offer is for exactly one other hunter, and gives something', () => {
     expect(payload('offer', offer({ to: [KEY] }))).toBeNull();
@@ -1771,7 +1806,8 @@ describe('an offer between two hunters, and its one end', () => {
 
   test('an offer\'s names are cut to 60 characters; its goods and asks are read strictly, a bad line refusing the offer', () => {
     expect(payload('offer', offer({ names: { by: 'B'.repeat(80), to: 'Mira' } }))!.names.by).toBe('B'.repeat(60));
-    expect(payload('offer', offer({ gives: { gold: 0, items: [ITEM_LINE, { from: 'bad id', item: POTION }] } }))).toBeNull();
+    expect(payload('offer', offer({ gives: { gold: 0, items: [ITEM_LINE, { ...ITEM_LINE, from: 'bad id' }] } }))).toBeNull();
+    expect(payload('offer', offer({ gives: { gold: 0, items: [{ ...ITEM_LINE, item: { ...GRANT, kind: 'gift' } }] } })), 'a line whose grant does not read').toBeNull();
     expect(payload('offer', offer({ asks: { gold: 0, items: [{ id: 'i7', qty: 0, name: 'Iron Shield' }] } }))).toBeNull();
     expect(payload('offer', offer({ gives: { gold: 1.5, items: [] } }))).toBeNull();
   });
@@ -1820,7 +1856,7 @@ describe('an offer between two hunters, and its one end', () => {
    * The measurement of notes-5-trade.md 12.9: an item has a size (size.ts `THING_MAX.item`), so an offer's cap follows from
    * it: eight items at the size, with the worst rest of an offer, fit `OFFER_MAX`, and that fits the server's body.
    */
-  test('the worst offer by part: eight items at an item\'s size, with full names and eight full asks, fit the offer\'s cap, and the reader takes it', () => {
+  test('the worst offer by part: eight custom items at an item\'s size, each with its def and full names, and eight full asks, fit the offer\'s cap, and the reader takes it', () => {
     const bytes = (v: unknown) => goodsSize(v);
     const wide = (n: number) => 'ࠀ'.repeat(n);
     const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
@@ -1830,14 +1866,14 @@ describe('an offer between two hunters, and its one end', () => {
     expect(bytes(atCap), 'an item of exactly the cap reads').toBe(THING_MAX.item);
     const offerOf = (item: unknown, lines: number) => ({
       eid: 'o'.repeat(38), by: 'd-'.padEnd(29, 'p') + ':h99999', to: ['d-'.padEnd(29, 'q') + ':h99999'], names: { by: wide(60), to: wide(60) },
-      gives: { gold: 1e9, items: Array.from({ length: lines }, (_, i) => ({ from: `i${900000 + i}`, item })) },
+      gives: { gold: 1e9, items: Array.from({ length: lines }, (_, i) => ({ from: `i${900000 + i}`, item: { kind: 'ref', defId: longId(i), qty: ITEM_BOUNDS.qty, def: item } })) },
       asks: { gold: 1e9, items: Array.from({ length: GOODS_LINES }, (_, i) => ({ id: `i${800000 + i}`, qty: ITEM_BOUNDS.qty, name: wide(60) })) },
     });
     const wrapper = bytes({ from: 'd'.repeat(40), type: 'offerEnd', payload: {} }) - 2, worst = bytes(offerOf(atCap, GOODS_LINES)), rest = bytes(offerOf(atCap, 0));
     console.info([
       `an item's size: ${THING_MAX.item} bytes; a line's wrapper around it: ${(worst - rest) / GOODS_LINES - THING_MAX.item}`,
       `the rest of the worst offer (ids, names, gold, ${GOODS_LINES} asks of 60 three-byte characters): ${rest} bytes`,
-      `the worst offer, ${GOODS_LINES} items at the size: ${worst} bytes, under OFFER_MAX ${OFFER_MAX}; with the request's wrapper (${wrapper}): ${OFFER_MAX + wrapper}, under the server's 65,536`,
+      `the worst offer, ${GOODS_LINES} custom items at the size, each line with its def, a 20-character stamp and a full name: ${worst} bytes; OFFER_MAX ${OFFER_MAX}; with the request's wrapper (${wrapper}): ${OFFER_MAX + wrapper}, of the server's 65,536`,
     ].join('\n'));
     expect(worst).toBeLessThanOrEqual(OFFER_MAX);
     expect(OFFER_MAX - worst, 'the cap is the worst offer rounded up to a KiB').toBeLessThan(1024);
@@ -1862,7 +1898,7 @@ describe('an offer between two hunters, and its one end', () => {
     expect(parseItem({ name: 'Big', type: 'accessory', worn: def([leaf]) }), 'an item whose worn status is too large is refused whole, never kept without it').toBeNull();
     expect(parseAbility({ ...abilityOf('strike', { id: abilityId('big'), name: 'Big' }, RULES), ops: [{ op: 'applyStatus', key: 'big', def: def([leaf]), duration: null }] }, RULES), 'an ability that applies it').toBeNull();
     // what the caps then bound, by arithmetic from the counts each holder reads
-    const sheetRest = JSON.stringify({ hunter: pushedSheet(newHunter(RULES)) }).length;
+    const sheetRest = JSON.stringify({ hunter: pushedSheet(newHunter(RULES)), defs: {} }).length;
     console.info([
       `the sizes: a status ${THING_MAX.status}, an item ${THING_MAX.item}, an ability ${THING_MAX.ability} bytes (before: one op of six tiers of the largest formula alone was ${bytes(leaf)})`,
       `a new hunter's pushed sheet: ${sheetRest} characters of SHEET_MAX ${SHEET_MAX}; items at the size it then holds: ${Math.floor((SHEET_MAX - sheetRest) / (THING_MAX.item + 20))}`,
@@ -1873,16 +1909,32 @@ describe('an offer between two hunters, and its one end', () => {
     expect(THING_MAX.status).toBeLessThanOrEqual(DOC_DEFS_MAX);
   });
 
-  test('a hunter\'s sheet holds four items at an item\'s size and reads back whole; a fifth is over what the room takes', () => {
+  test('a hunter\'s sheet holds four custom items at an item\'s size, each def in its defs, and reads back whole; a fifth is over what the room takes', () => {
     const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
-    const big = (i: number) => ({ ...Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, type: 'accessory', desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!, id: `i${i}` });
-    const withItems = (n: number) => ({ hunter: { ...pushedSheet(newHunter(RULES)), id: 'h1', items: Array.from({ length: n }, (_, i) => big(i + 1)) } });
+    const big = (i: number) => itemDefDataOf(Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, type: 'accessory', desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!);
+    const id = longId;
+    const withItems = (n: number) => ({
+      hunter: { ...pushedSheet(newHunter(RULES)), id: 'h1', items: many(n, (i): HeldItem => ({ kind: 'ref', id: `i${i + 1}` as never, defId: id(i + 1), qty: 1 })) },
+      defs: Object.fromEntries(many(n, i => [id(i + 1), big(i + 1)])),
+    });
+    const withAdhoc = (n: number) => ({ hunter: { ...pushedSheet(newHunter(RULES)), id: 'h1', items: many(n, (i): HeldItem => ({ kind: 'adhoc', id: `i${i + 1}` as never, qty: 1, item: big(i + 1) })) }, defs: {} });
     const four = withItems(4), five = withItems(5);
-    expect(goodsSize(four.hunter.items[0])).toBeGreaterThan(THING_MAX.item - 3);
+    expect(goodsSize({ ...big(1), qty: 1 })).toBeGreaterThan(THING_MAX.item - 3);
+    console.info(`a sheet of 4 custom items at the size with their defs: ${JSON.stringify(four).length} characters; of 5: ${JSON.stringify(five).length}; of 4 ad hoc: ${JSON.stringify(withAdhoc(4)).length}; SHEET_MAX ${SHEET_MAX}`);
     expect(JSON.stringify(four).length).toBeLessThanOrEqual(SHEET_MAX);
     expect(JSON.stringify(five).length).toBeGreaterThan(SHEET_MAX);
+    expect(JSON.stringify(withAdhoc(4)).length, 'four ad hoc items of that size fit too').toBeLessThanOrEqual(SHEET_MAX);
+    expect(JSON.stringify(withAdhoc(5)).length, 'and five do not').toBeGreaterThan(SHEET_MAX);
     const read = parseSheet(sk(KEY), copy(four));
     expect(read && 'hunter' in read ? read.hunter.items : null, 'the four items read back as they were').toEqual(four.hunter.items as never);
+    expect(read && 'hunter' in read ? read.defs : null, 'and their defs').toEqual(four.defs as never);
+  });
+
+  test('a pushed sheet keeps only the defs of custom items its bag names', () => {
+    const named = customId('named'), stray = customId('stray'), def = itemDefDataOf(parseItem({ name: 'Named' })!);
+    const hunter = { ...copy(newHunter()), id: 'h1', items: [{ kind: 'ref', id: 'i1', defId: named, qty: 1 }] };
+    const read = parseSheet(sk(KEY), { hunter, defs: { [named]: def, [stray]: def, 'not an id': def } });
+    expect(read && 'hunter' in read ? read.defs : null).toEqual({ [named]: def });
   });
 });
 
@@ -1898,7 +1950,7 @@ describe('the party stash on the wire (notes-5-trade.md 3.2)', () => {
 
   test('a stash answer is kept, given goods, or refused with why; a given answer with no goods is refused', () => {
     expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'kept' })).toEqual({ eid: EID, to: [KEY], ask: ASK, verdict: 'kept' });
-    const goods = { gold: 0, items: [{ from: 'i3', item: POTION }] };
+    const goods = { gold: 0, items: [GOODS_LINE] };
     expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'given', goods })).toEqual({ eid: EID, to: [KEY], ask: ASK, verdict: 'given', goods });
     expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'given', goods: { gold: 0, items: [] } })).toBeNull();
     expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'refused', why: 'lost' })).toBeNull();
@@ -1906,33 +1958,44 @@ describe('the party stash on the wire (notes-5-trade.md 3.2)', () => {
   });
 
   /**
-   * The measurement of notes-5-trade.md 3.2, before the cap is trusted: `STASH_LINES` lines of the largest item the readers
-   * take do not fit `DOC_MAX`, so the count alone cannot bound the doc. A put is refused `full` when the doc would pass
-   * `DOC_MAX` (stash.ts `stashFits`), so the worst doc is `DOC_MAX` by construction; the count bounds a stash of ordinary items.
+   * The measurement of notes-5-trade.md 3.2, before the cap is trusted: a stash line is a reference (or an ad hoc item), and
+   * the doc carries the def of each custom line (`defs`), so `STASH_LINES` lines of distinct custom items at the largest
+   * size the readers take do not fit `DOC_MAX`, and the count alone cannot bound the doc. A put is refused `full` when the
+   * doc would pass `DOC_MAX` (stash.ts `stashFits`), so the worst doc is `DOC_MAX` by construction; the count bounds a
+   * stash of built-in items.
    */
-  test('the worst-case stash doc on the wire: forty lines of a large item are far over DOC_MAX, so a put is refused by the doc\'s size; forty of the largest shop or loot item fit', () => {
+  test('the worst-case stash doc on the wire: forty custom lines of a large item, each with its def, are far over DOC_MAX, so a put is refused by the doc\'s size; forty of the largest built-in fit', () => {
     const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
     /** A large item the reader takes: full names, twelve effects and ten worn ops of full notes, every character one byte. At most `THING_MAX.item` bytes, so no item has more characters. */
-    const atCap = parseItem({ name: 'n'.repeat(ITEM_BOUNDS.name), desc: 'd'.repeat(ITEM_BOUNDS.desc), rar: 'mythic', type: 'accessory', effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(10).fill(note(200)) } })!;
-    expect(JSON.stringify(atCap).length, 'it reads, within an item\'s size').toBeLessThanOrEqual(THING_MAX.item);
-    const doc = (item: object, lines: number) => stashDoc({ gold: GOODS_GOLD_MAX, items: Array.from({ length: lines }, (_, i) => ({ ...item, id: `i${900000 + i}` }) as Item) });
+    const atCap = itemDefDataOf(parseItem({ name: 'n'.repeat(ITEM_BOUNDS.name), desc: 'd'.repeat(ITEM_BOUNDS.desc), rar: 'mythic', type: 'accessory', effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(10).fill(note(200)) } })!);
+    expect(JSON.stringify({ ...atCap, qty: 1 }).length, 'it reads, within an item\'s size').toBeLessThanOrEqual(THING_MAX.item);
+    /** `n` distinct custom items of the GM's catalog, each `atCap`, under the rules that read them. */
+    const ids = many(STASH_LINES + 1, longId);
+    const R = rulesWith(Object.fromEntries(ids.map(id => [id, atCap])));
+    const refs = (lines: number): HeldItem[] => many(lines, i => ({ kind: 'ref', id: `i${900000 + i}` as never, defId: ids[i]!, qty: ITEM_BOUNDS.qty }));
+    const adhocs = (lines: number): HeldItem[] => many(lines, i => ({ kind: 'adhoc', id: `i${900000 + i}` as never, qty: ITEM_BOUNDS.qty, item: atCap }));
+    const doc = (items: HeldItem[]) => stashDoc({ gold: GOODS_GOLD_MAX, items }, R);
     const size = (d: unknown) => JSON.stringify(d).length;
-    const rest = size(doc(atCap, 0)), line = (size(doc(atCap, 2)) - size(doc(atCap, 1)));
-    const fit = Math.floor((DOC_MAX - rest + 1) / line);
-    const ordinary = [...SHOP_ITEMS, ...LOOT_ITEMS.map(d => itemOf(RULES, d))].map(t => parseItem(t)!).sort((a, b) => size(b) - size(a))[0]!;
-    const forty = size(doc(ordinary, STASH_LINES));
+    const fit = many(STASH_LINES + 1, n => n).findLast(n => size(doc(refs(n))) <= DOC_MAX)!;
+    const rest = size(doc([])), line = size(doc(refs(2))) - size(doc(refs(1))), adhocLine = size(doc(adhocs(2))) - size(doc(adhocs(1)));
+    const builtIns = [...SHOP_ITEMS, ...LOOT_ITEMS].map(d => d.defId).sort((a, b) => b.length - a.length);
+    const builtInDoc = doc(many(STASH_LINES, i => ({ kind: 'ref', id: `i${900000 + i}` as never, defId: builtIns[i]!, qty: ITEM_BOUNDS.qty })));
+    const forty = size(builtInDoc);
     console.info([
-      `the stash doc's rest (gold ${GOODS_GOLD_MAX}, the list): ${rest} characters; a line of the large item (${JSON.stringify(atCap).length} characters; an item's size is ${THING_MAX.item} bytes) with its id: ${line}`,
-      `${STASH_LINES} lines of it: ${size(doc(atCap, STASH_LINES))} characters, ${(size(doc(atCap, STASH_LINES)) / DOC_MAX).toFixed(1)} times DOC_MAX ${DOC_MAX}; lines of it that fit: ${fit}`,
-      `the largest shop or loot item (${ordinary.name}): ${size(ordinary)} characters; ${STASH_LINES} lines of it: ${forty}, ${Math.round((100 * forty) / DOC_MAX)}% of DOC_MAX`,
+      `the stash doc's rest (gold ${GOODS_GOLD_MAX}, the list, the defs): ${rest} characters; a custom line of the large item (${size(atCap)} characters; an item's size is ${THING_MAX.item} bytes) with its id and its def: ${line}; an ad hoc line of it: ${adhocLine}`,
+      `${STASH_LINES} custom lines of it: ${size(doc(refs(STASH_LINES)))} characters, ${(size(doc(refs(STASH_LINES))) / DOC_MAX).toFixed(1)} times DOC_MAX ${DOC_MAX}; lines of it that fit: ${fit}`,
+      `${STASH_LINES} lines of the built-ins with the longest ids: ${forty} characters, ${Math.round((100 * forty) / DOC_MAX)}% of DOC_MAX (a built-in carries no def)`,
     ].join('\n'));
-    expect(size(doc(atCap, STASH_LINES)), 'the count alone does not bound the doc').toBeGreaterThan(DOC_MAX);
-    expect(stashFits({ gold: GOODS_GOLD_MAX, items: doc(atCap, fit).items }), 'the most lines of it fit').toBe(true);
-    expect(stashFits({ gold: GOODS_GOLD_MAX, items: doc(atCap, fit + 1).items }), 'one more does not: the put is refused full').toBe(false);
-    expect(DOCS.stash(doc(atCap, fit)), 'the reader takes the worst doc a put allows').not.toBeNull();
-    expect(DOCS.stash(doc(atCap, fit + 1)), 'and refuses a longer one').toBeNull();
-    expect(forty, 'forty lines of the largest item the game ships fit').toBeLessThanOrEqual(DOC_MAX);
-    expect(stashFits({ gold: 0, items: doc(ordinary, STASH_LINES + 1).items }), 'past STASH_LINES lines the stash is full').toBe(false);
+    expect(adhocLine, 'an ad hoc line is no larger than a custom line with its def: the custom line is the worst').toBeLessThanOrEqual(line);
+    expect(size(doc(refs(STASH_LINES))), 'the count alone does not bound the doc').toBeGreaterThan(DOC_MAX);
+    expect(Object.keys(doc(refs(fit)).defs), 'each custom line carries its def').toHaveLength(fit);
+    expect(stashFits({ gold: GOODS_GOLD_MAX, items: refs(fit) }, R), 'the most lines of it fit').toBe(true);
+    expect(stashFits({ gold: GOODS_GOLD_MAX, items: refs(fit + 1) }, R), 'one more does not: the put is refused full').toBe(false);
+    expect(DOCS.stash(copy(doc(refs(fit)))), 'the reader takes the worst doc a put allows, its defs whole').toEqual(doc(refs(fit)));
+    expect(DOCS.stash(copy(doc(refs(fit + 1)))), 'and refuses a longer one').toBeNull();
+    expect(builtInDoc.defs, 'a built-in line carries no def').toEqual({});
+    expect(forty, 'forty lines of built-ins fit').toBeLessThanOrEqual(DOC_MAX);
+    expect(stashFits({ gold: 0, items: refs(STASH_LINES + 1).map((l, i) => ({ ...l, defId: builtIns[i]! })) }, R), 'past STASH_LINES lines the stash is full').toBe(false);
   });
 
   test('award.earned accepts from: clear and newEventId mints a valid event id', () => {
@@ -1997,6 +2060,122 @@ describe('wire error codes (API_ERRORS, apiError, parseApiError)', () => {
     for (const healthCode of ['opening', 'closed', 'unreachable', 'ERR_POSTGRES_CONNECTION_REFUSED', 'ECONNREFUSED']) {
       expect(parseApiError({ ok: false, db: 'postgres', error: healthCode })).toEqual({ code: null, text: healthCode });
     }
+  });
+});
+
+describe('the GM item catalog (catalogDoc, parseCatalogDoc, catalogReadOf, parseCatalogRead)', () => {
+  const utf8 = (v: unknown) => new TextEncoder().encode(JSON.stringify(v)).length;
+  const OTHER_CAT = 'cat-other000000000000000' as CatalogId;
+  const builtInPotion = builtInItemId('health-potion');
+  const builtInSword = SHOP_ITEMS[0]!.defId === builtInPotion ? SHOP_ITEMS[1]!.defId : SHOP_ITEMS[0]!.defId;
+  const shopCustom = customId('shopblade0000001');
+  const heldCustom = customId('heldrelic0000002');
+  const secretCustom = customId('secretboss000003');
+  const foreignCustom = customItemDefId(OTHER_CAT, 'foreignitem00004');
+  const defOf = (name: string, rar: 'common' | 'rare' | 'epic' = 'rare', desc = ''): ItemDefData =>
+    itemDefDataOf(parseItem({ name, rar, type: 'misc', slot: null, qty: 1, dice: '', bonus: {}, desc })!);
+  const gwStatus: StatusDef = { label: 'Grievous Wounds', desc: 'Receives less healing.', ops: [{ op: 'share', on: 'healed', pct: -70 }] };
+  const customStatus: StatusDef = { label: 'Frostburn', desc: 'Chills.', ops: [{ op: 'speed', pct: -25 }] };
+
+  test('catalogDoc builds and parseCatalogDoc round-trips items, statuses, and shop (including null shop)', () => {
+    expect(CATALOG_SHOP_MAX).toBe(SHOP_MAX);
+    const items: Record<ItemDefId, ItemDefData> = {
+      [builtInPotion]: defOf('Stronger Potion', 'uncommon' as never, 'Heals more.'),
+      [shopCustom]: defOf('Shop Blade', 'rare'),
+      [secretCustom]: defOf('Secret Boss Relic', 'epic'),
+    };
+    const built = catalogDoc({ library: { items, statuses: { grievous: gwStatus, frostburn: customStatus } }, shop: [builtInPotion, shopCustom, shopCustom] });
+    expect(built.left).toEqual([]);
+    expect(built.doc.shop).toEqual([builtInPotion, shopCustom]);
+    expect(parseCatalogDoc(copy(built.doc), GM_CATALOG_ID)).toEqual(built.doc);
+
+    const nullShop = catalogDoc({ library: { items: {}, statuses: {} }, shop: null });
+    expect(nullShop.doc).toEqual({ items: {}, statuses: {}, shop: null });
+    expect(parseCatalogDoc(copy(nullShop.doc), GM_CATALOG_ID)).toEqual(nullShop.doc);
+  });
+
+  test('catalogDoc stays within its byte budget, prioritizes statuses then built-ins then shop custom items, and names omitted entries in left', () => {
+    const bigDesc = 'x'.repeat(260);
+    const items: Record<ItemDefId, ItemDefData> = {
+      [builtInPotion]: defOf('Potion Edit', 'common', bigDesc),
+      [shopCustom]: defOf('Shop Item', 'rare', bigDesc),
+      [secretCustom]: defOf('Secret One', 'epic', bigDesc),
+      [heldCustom]: defOf('Held One', 'rare', bigDesc),
+    };
+    const statuses = { grievous: gwStatus };
+    const full = catalogDoc({ library: { items, statuses }, shop: [shopCustom] }, CATALOG_MAX);
+    const tightMax = utf8(full.doc) - 500;
+    const partial = catalogDoc({ library: { items, statuses }, shop: [shopCustom] }, tightMax);
+    expect(utf8(partial.doc)).toBeLessThanOrEqual(tightMax);
+    expect(partial.doc.statuses.grievous).toBeDefined();
+    expect(partial.doc.items[builtInPotion]).toBeDefined();
+    expect(partial.doc.items[shopCustom]).toBeDefined();
+    expect(partial.left.length).toBeGreaterThan(0);
+    for (const omitted of partial.left) expect(Object.hasOwn(partial.doc.items, omitted)).toBe(false);
+    expect(parseCatalogDoc(copy(partial.doc), GM_CATALOG_ID)).toEqual(partial.doc);
+  });
+
+  test('parseCatalogDoc refuses over-cap payloads, bad shapes, and foreign custom ids when owner is specified', () => {
+    expect(parseCatalogDoc(null)).toBeNull();
+    expect(parseCatalogDoc({ items: {}, statuses: {} })).toBeNull();
+    expect(parseCatalogDoc({ items: [], statuses: {}, shop: null })).toBeNull();
+    expect(parseCatalogDoc({ items: {}, statuses: 'no', shop: null })).toBeNull();
+    expect(parseCatalogDoc({ items: {}, statuses: {}, shop: 'no' })).toBeNull();
+    // Foreign custom key refused when owner is checked
+    const withForeign = { items: { [foreignCustom]: defOf('Stolen') }, statuses: {}, shop: null };
+    expect(parseCatalogDoc(copy(withForeign), GM_CATALOG_ID)).toBeNull();
+    expect(parseCatalogDoc(copy(withForeign), OTHER_CAT)).not.toBeNull();
+    // State chip statuses are dropped
+    const withChip = parseCatalogDoc({ items: {}, statuses: { dead: { label: 'Dead', desc: '', ops: [] }, grievous: gwStatus }, shop: null }, GM_CATALOG_ID)!;
+    expect(Object.keys(withChip.statuses)).toEqual(['grievous']);
+    // Over CATALOG_MAX UTF-8 bytes is refused
+    const huge = { items: {}, statuses: {}, shop: null, pad: 'a'.repeat(CATALOG_MAX + 1) };
+    expect(parseCatalogDoc(huge, GM_CATALOG_ID)).toBeNull();
+  });
+
+  test('parseCatalogPointer and parseCatalogReadIds enforce their shapes and the 400-id cap', () => {
+    expect(parseCatalogPointer({ id: GM_CATALOG_ID, rev: 1 })).toEqual({ id: GM_CATALOG_ID, rev: 1 });
+    expect(parseCatalogPointer({ id: GM_CATALOG_ID, rev: 0 })).toBeNull();
+    expect(parseCatalogPointer({ id: 'bad', rev: 1 })).toBeNull();
+
+    expect(parseCatalogReadIds([])).toEqual([]);
+    expect(parseCatalogReadIds([heldCustom, heldCustom, builtInPotion])).toEqual([heldCustom, builtInPotion]);
+    expect(parseCatalogReadIds('nope')).toBeNull();
+    expect(parseCatalogReadIds(['not-an-id'])).toBeNull();
+    const maxIds = Array.from({ length: CATALOG_READ_MAX }, (_, i) => customId(`item${String(i).padStart(12, '0')}`));
+    expect(parseCatalogReadIds(maxIds)).toHaveLength(CATALOG_READ_MAX);
+    expect(parseCatalogReadIds([...maxIds, customId('itemovercap00001')])).toBeNull();
+  });
+
+  test('catalogReadOf returns built-in overrides, shop items, and asked own custom ids only, reporting missing and foreign ids in gone', () => {
+    const doc = catalogDoc({
+      library: {
+        items: {
+          [builtInPotion]: defOf('GM Potion', 'common'),
+          [shopCustom]: defOf('Shop Blade', 'rare'),
+          [heldCustom]: defOf('Held Relic', 'epic'),
+          [secretCustom]: defOf('Unrevealed Secret', 'epic'),
+        },
+        statuses: { grievous: gwStatus },
+      },
+      shop: [builtInSword, shopCustom],
+    }).doc;
+    const missingId = customId('deleteditem00099');
+    const read = catalogReadOf(GM_CATALOG_ID, 4, doc, [heldCustom, missingId, foreignCustom, builtInSword, shopCustom]);
+    expect(read.id).toBe(GM_CATALOG_ID);
+    expect(read.rev).toBe(4);
+    expect(read.statuses).toEqual({ grievous: gwStatus });
+    expect(read.shop).toEqual([builtInSword, shopCustom]);
+    expect(Object.keys(read.defs).sort()).toEqual([builtInPotion, heldCustom, shopCustom].sort());
+    expect(read.defs[secretCustom]).toBeUndefined();
+    expect(read.gone).toEqual([missingId, foreignCustom]);
+    expect(parseCatalogRead(copy(read))).toEqual(read);
+  });
+
+  test('hunterFace never lets sheet defs spoof a built-in item\'s name or rarity', () => {
+    const h = { ...newHunter(), items: [{ kind: 'ref' as const, id: 'i1' as never, defId: builtInPotion, qty: 2 }] };
+    const spoofed = hunterFace(h, { bags: true }, { [builtInPotion]: defOf('Spoofed', 'epic') }).face.bag!;
+    expect(spoofed).toEqual([{ id: 'i1', qty: 2, defId: builtInPotion }]);
   });
 });
 

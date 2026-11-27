@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
 import { handler } from '../server.ts';
+import { catalogIdOf } from '../src/core/catalog-id.ts';
+import type { CatalogKey } from '../src/core/ids.ts';
 
 type Reply = { status: number; body: Record<string, any> };
 
@@ -60,6 +62,15 @@ describe('build handshake', () => {
     const { code, gm } = await newRoom();
     expect(await call('GET', `/api/rooms/${code}?after=0&d=${PLAYER}`, { headers: OLD })).toEqual(REFUSED);
     expect((await call('GET', `/api/rooms/${code}?after=0`, { headers: gm })).body.presence).toEqual({});
+  });
+
+  test('a catalog request without the current build header is refused with 426 and leaves the catalog unchanged', async () => {
+    const key = 'handshake_cat_key_123456' as CatalogKey, id = catalogIdOf(key);
+    const body = { ifRev: 0, data: { items: {}, statuses: {}, shop: null } };
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: { 'x-catalog-key': key }, body })).toEqual(REFUSED);
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: { ...OLD, 'x-catalog-key': key }, body })).toEqual(REFUSED);
+    expect(await call('GET', `/api/catalogs/${id}`, { headers: { ...OLD, 'x-catalog-key': key } })).toEqual(REFUSED);
+    expect((await call('GET', `/api/catalogs/${id}`, { headers: { ...CURRENT, 'x-catalog-key': key } })).status).toBe(404);
   });
 
   test('health answers without the build header', async () => {

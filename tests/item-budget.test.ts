@@ -20,17 +20,17 @@ import { defenceLeft, throughDefence } from '../src/core/combat/land.ts';
 import { cost, tick } from '../src/core/combat/timeline.ts';
 import { tiles } from '../src/core/combat/space.ts';
 import { LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
-import type { BuiltInItemDef, Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
+import type { ItemSeed, Grade, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { builtInItemId } from '../src/core/ids.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { BUDGET_WORDS, gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan, titleFit, titleLine, titleSpend } from '../src/core/registry/item-budget.ts';
 import type { TitleSpendable } from '../src/core/registry/item-budget.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 
-const ALL: readonly BuiltInItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR)];
+const ALL: readonly ItemSeed[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR)];
 /** The recipe items hold their own spends and grades (tests/items.test.ts, "the recipe items"); the figures below are the older built-ins'. */
-const OLDER: readonly BuiltInItemDef[] = ALL.filter(d => !RECIPE_ITEMS.includes(d));
-const def = (name: string): BuiltInItemDef => ALL.find(d => d.name === name)!;
+const OLDER: readonly ItemSeed[] = ALL.filter(d => !RECIPE_ITEMS.includes(d));
+const def = (name: string): ItemSeed => ALL.find(d => d.name === name)!;
 const spendOf = (name: string): number => itemSpend(itemOf(RULES, def(name)), RULES)!.points;
 /** A worn item of `rar` with nothing on it but what `rest` sets. */
 const gear = (rar: Rarity, rest: Partial<ItemTemplate>): ItemTemplate =>
@@ -326,7 +326,7 @@ const KEPT: readonly string[] = ["Kamish's Wrath", 'Orb of Avarice', "Monarch's 
  * What breaks the budget among `defs`: an item spending past its grade's top that is not one of the four of ruling 6 (or
  * is one of them but not graded plus), and one claiming a grade above its spend with no block the budget cannot weigh.
  */
-function breaches(defs: readonly ItemDef[], R: Rules): string[] {
+function breaches(defs: readonly ItemSeed[], R: Rules): string[] {
   return defs.flatMap(d => {
     const s = itemSpend(itemOf(R, d), R);
     if (!s) return [];
@@ -344,9 +344,9 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
   });
 
   test('the check fails a fifth item past its tier\'s top, even graded plus, and an item graded above its spend with nothing unweighed', () => {
-    const fifth: ItemDef = { defId: builtInItemId('fifth-ring'), name: 'Fifth Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { manaMax: 4 }, grade: 1, desc: 'Past its top.' };
+    const fifth: ItemSeed = { defId: builtInItemId('fifth-ring'), name: 'Fifth Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { manaMax: 4 }, grade: 1, desc: 'Past its top.' };
     expect(breaches([...ALL, fifth], RULES)).toEqual(['Fifth Ring spends 8.0, past its tier\'s top']);
-    const dagger = { ...def('Iron Dagger'), grade: 1 } as ItemDef;
+    const dagger = { ...def('Iron Dagger'), grade: 1 } as ItemSeed;
     expect(breaches([dagger], RULES)).toEqual(['Iron Dagger claims a grade above its spend 0.0 with nothing the budget cannot weigh']);
   });
 

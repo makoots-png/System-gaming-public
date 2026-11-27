@@ -8,7 +8,10 @@ import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { monsterSheetOf } from '../core/registry/monsters.ts';
 import { LIMITS } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
-import { copyName, duplicateEntry, namedLike, removeEntry, removeStatus, removeStory, saveEntry, saveStatus, savedWords } from '../core/library.ts';
+import { ITEM_DEL_WORDS, copyName, duplicateEntry, namedLike, removeEntry, removeItemDef, removeStatus, removeStory, saveEntry, saveItemDef, saveStatus, savedWords } from '../core/library.ts';
+import { builtInItems } from '../core/registry/items.ts';
+import { refGrant } from '../core/registry/item-book.ts';
+import { isBuiltInItemId, isCustomItemDefId, parseItemDefId } from '../core/ids.ts';
 import { exampleSkills, exampleStatuses } from '../core/registry/kit-examples.ts';
 import { BUILT_IN_BUNDLES, MOMENT_WORDS } from '../core/registry/bundles.ts';
 import { rewardLines } from '../core/rewards.ts';
@@ -17,7 +20,8 @@ import { featMaker } from './feat-maker.js';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { featsDoc, ruleLine } from '../core/hunter/feats.ts';
 import { FEATS_SWITCH_WORDS } from '../core/hunter/chronicle-view.ts';
-import { DOC_MAX } from '../core/protocol.ts';
+import { CATALOG_MAX, DOC_MAX, catalogDoc } from '../core/protocol.ts';
+import { CATALOG_CONFLICT_WORDS } from '../core/sync/catalog-publish.ts';
 import { duplicateFeat, featOff, featOn, removeFeat } from '../core/library.ts';
 import { storyMaker } from './story-maker.js';
 import { EXAMPLE_STORIES } from '../core/registry/stories.ts';
@@ -64,18 +68,30 @@ export function register(app) {
 .ws-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ws-top h2{flex:1 1 auto;margin:0}.ws-top button{min-height:44px}
 .ws-fold summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--cyan)}
 .ws-acts button{white-space:nowrap}
+.ws-warn{border:1px solid var(--gold,#f5c24b);background:rgba(245,194,75,.09);padding:12px;display:flex;flex-direction:column;gap:8px}
+.ws-warn h3{margin:0;color:var(--gold,#f5c24b);font-size:15px}.ws-warn p{margin:0;font-size:14px}
+.ws-warn-acts{display:flex;gap:8px;flex-wrap:wrap}.ws-warn-acts button{min-height:44px}
 `);
 
   // ── each kind's rows: [id, name, tag, meta, actions] ──
   const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', turnOn: 'Start story…', share: 'Share', off: 'Turn off', on: 'Turn on' };
-  function rowsOf(kind) {
+  function rowsOf(kind, catLeft) {
     const L = lib();
     if (kind === 'status') {
       const conds = app.rules().conditions;
-      return Object.keys(L.statuses).filter(k => conds[k]).map(k => [k, String(conds[k].label || k), isBuiltIn(k) ? 'changed built-in' : '',
+      return Object.keys(L.statuses).filter(k => conds[k]).map(k => [k, String(conds[k].label || k),
+        [isBuiltIn(k) ? 'changed built-in' : '', catLeft.includes(k) ? 'too large to send to players' : ''].filter(Boolean).join(', '),
         A().effects.describe(conds[k], null, k).join(' · ') || conds[k].desc || '', ['edit', 'dup', isBuiltIn(k) ? 'reset' : 'del', 'share']]);
     }
-    if (kind === 'item') return L.items.map(it => [it.id, it.name, it.rar, [it.type, ...A().effects.describeItem(it)].filter(Boolean).join(' · '), ['edit', 'dup', 'del', 'share']]);
+    if (kind === 'item') {
+      const ids = Object.keys(L.items).flatMap(k => { const id = parseItemDefId(k); return id ? [id] : []; });
+      return [...ids.filter(isCustomItemDefId), ...ids.filter(isBuiltInItemId)].map(id => {
+        const it = A().inventory.grant(refGrant(id)), builtIn = isBuiltInItemId(id);
+        return [id, it.name, [builtIn ? 'changed built-in' : '', it.rar, catLeft.includes(id) ? 'too large to send to players' : ''].filter(Boolean).join(', '),
+          [it.type, ...A().effects.describeItem(it)].filter(Boolean).join(' · '),
+          builtIn ? ['edit', 'reset'] : ['edit', 'dup', 'del', 'share']];
+      });
+    }
     if (kind === 'skill') return L.skills.map(k => [k.id, k.name, k.type, A().skills.lines(k).join(' · '), ['edit', 'dup', 'del', 'give', 'share']]);
     if (kind === 'map') return L.maps.map(m => [m.id, m.name, `${m.w} by ${m.h}`, [m.zones.length ? m.zones.map(z => z.name).join(', ') : '', m.fog ? `fog, sight ${m.sight}` : ''].filter(Boolean).join(' · '), ['edit', 'dup', 'del', 'share']]);
     if (kind === 'feat') {
@@ -155,15 +171,18 @@ export function register(app) {
       actions: [...acts.map(x => ({ label: ACTS[x], value: x, danger: x === 'del' || x === 'reset' })), { label: 'Cancel', value: null, cancel: true }] });
     if (a) await act(kind, a, li.dataset.id);
   }
-  function sectionHtml([kind, title, empty, newLabel]) {
-    const rows = rowsOf(kind);
+  function sectionHtml(spec, catLeft) {
+    const [kind, title, empty, newLabel] = spec;
+    const rows = rowsOf(kind, catLeft);
     const built = kind === 'status' ? Object.keys(BUILT_IN_STATUSES).filter(k => !Object.hasOwn(lib().statuses, k)) : [];
+    const builtItems = kind === 'item' ? builtInItems(app.rules()).filter(i => !Object.hasOwn(lib().items, i.defId)) : [];
     const builtFeats = kind === 'feat' ? BUILT_IN_FEATS.filter(([k]) => !Object.hasOwn(lib().feats, k)) : [];
     return `<section class="win ws-sec" data-ws="${kind}" aria-label="${esc(title)}"><span class="cb"></span>
       <div class="ws-head"><h2>${esc(title)}</h2><button type="button" class="primary" data-new>${esc(newLabel)}</button></div>
       ${kind === 'feat' && !app.rules().feats.on ? `<p class="ws-empty" data-ws-featsoff>${esc(FEATS_SWITCH_WORDS.workshopOff)}</p>` : ''}
       ${rows.length ? `<ul class="ws-list">${rows.map(rowHtml).join('')}</ul>` : `<p class="ws-empty">${esc(empty)}</p>`}
       ${built.length ? `<details class="ws-fold ws-built"><summary>Built-in statuses (${built.length})</summary><ul class="ws-list">${built.map(k => rowHtml([k, String(BUILT_IN_STATUSES[k].label), '', '', ['edit']])).join('')}</ul></details>` : ''}
+      ${builtItems.length ? `<details class="ws-fold ws-built"><summary>Built-in items (${builtItems.length})</summary><ul class="ws-list">${builtItems.map(i => rowHtml([i.defId, i.name, i.rar, [i.type, ...A().effects.describeItem(i)].filter(Boolean).join(' · '), ['edit']])).join('')}</ul></details>` : ''}
       ${builtFeats.length ? `<details class="ws-fold ws-built"><summary>Built-in feats (${builtFeats.length})</summary><ul class="ws-list">${builtFeats.map(([k, d]) => rowHtml([k, d.name, '', d.desc, ['edit', 'off']])).join('')}</ul></details>` : ''}
       ${examplesHtml(kind)}
       ${kind === 'monster' ? '<button type="button" class="ws-more" data-bestiary>Open Bestiary</button>' : ''}</section>`;
@@ -204,12 +223,19 @@ export function register(app) {
       return;
     }
     if (kind === 'item') {
-      const it = L.items.find(x => x.id === id);
-      if (a === 'new') return void await A().loot.item({});
-      if (!it) return;
-      if (a === 'edit') return void await A().loot.item({ initial: it });
-      if (a === 'dup') return void dup('items', it, 'i', 60, LIMITS.libraryItems);
-      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: it.name, danger: true, confirmLabel: 'Delete item' })) ui.wrote('Workshop', store.apply('library-del', atLibrary(l => removeEntry(l, 'items', id))));
+      const defId = parseItemDefId(id), def = defId && Object.hasOwn(L.items, defId) ? L.items[defId] : null;
+      if (a === 'new') return void await A().loot.ref({});
+      if (!defId) return;
+      const it = A().inventory.grant(refGrant(defId));
+      if (a === 'edit' && (def || isBuiltInItemId(defId))) return void await A().loot.edit(defId, it);
+      if (!def) return;
+      if (a === 'dup') {
+        const nid = store.itemDefId(), names = Object.values(L.items).map(d => d.name);
+        if (nid) ui.wrote('Workshop', store.apply('library-items-dup', s => saveItemDef(s, nid, { ...def, name: copyName(def.name, names, 60) }, app.rules())), savedWords('item', def.name));
+        return;
+      }
+      if (a === 'reset' && await ui.confirm({ title: `Reset ${it.name}?`, body: ITEM_DEL_WORDS.reset, danger: true, confirmLabel: 'Reset item' })) ui.wrote('Workshop', store.apply('library-del', s => removeItemDef(s, defId, app.rules())));
+      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: `${it.name}. ${ITEM_DEL_WORDS.del}`, danger: true, confirmLabel: 'Delete item' })) ui.wrote('Workshop', store.apply('library-del', s => removeItemDef(s, defId, app.rules())));
       return;
     }
     if (kind === 'skill') {
@@ -276,6 +302,7 @@ export function register(app) {
         const b = e.target.closest('button'); if (!b) return;
         if (b.hasAttribute('data-bestiary')) { app.go('bestiary'); return; }
         if (b.hasAttribute('data-share-all')) { void A().share.open(); return; }
+        if (b.dataset.catResolve) { A().sync.resolveCatalog(b.dataset.catResolve === 'theirs' ? 'theirs' : 'mine'); return; }
         const kind = b.closest('[data-ws]') && b.closest('[data-ws]').dataset.ws; if (!kind) return;
         const li = b.closest('li'), id = li ? li.dataset.id : null;
         if (b.dataset.act === 'more' && li) { void more(kind, li); return; }
@@ -284,7 +311,14 @@ export function register(app) {
       });
     },
     update(el) {
-      const html = '<div class="ws-top"><h2>Workshop</h2><button type="button" data-share-all>Share custom content</button></div>' + KINDS.map(sectionHtml).join('');
+      const catLeft = catalogDoc(store.get(), CATALOG_MAX).left;
+      const conflictHtml = A().sync.catalogConflict()
+        ? `<section class="win ws-warn" role="alert" data-ws-cat-conflict><span class="cb"></span><h3>${esc(CATALOG_CONFLICT_WORDS.title)}</h3><p>${esc(CATALOG_CONFLICT_WORDS.body)}</p><div class="ws-warn-acts"><button type="button" class="primary" data-cat-resolve="mine">${esc(CATALOG_CONFLICT_WORDS.keepMine)}</button><button type="button" data-cat-resolve="theirs">${esc(CATALOG_CONFLICT_WORDS.useTheirs)}</button></div></section>`
+        : '';
+      const leftHtml = catLeft.length
+        ? `<div class="win ws-warn" role="alert" data-ws-cat-left><span class="cb"></span><p>${esc(CATALOG_CONFLICT_WORDS.leftWarning(catLeft.length))}</p></div>`
+        : '';
+      const html = '<div class="ws-top"><h2>Workshop</h2><button type="button" data-share-all>Share custom content</button></div>' + conflictHtml + leftHtml + KINDS.map(k => sectionHtml(k, catLeft)).join('');
       if (el.dataset.sig === html) return;
       // keep the built-in and example folds open across a redraw
       const open = [...el.querySelectorAll('.ws-fold')].map(f => f.hasAttribute('open'));

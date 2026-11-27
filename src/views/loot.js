@@ -7,8 +7,9 @@
 // of its tier's budget against the grade picked (item-budget.ts `spendLine`): a warning when the grade is under it, never a refusal.
 import { BONUS_LABELS, TIERS, rules } from '../edge/rules.ts';
 import { ITEM_TYPES } from '../core/save.ts';
-import { atLibrary } from '../core/save-step.ts';
-import { saveEntry, savedWords } from '../core/library.ts';
+import { editHeldDef, saveItemDef, savedWords } from '../core/library.ts';
+import { GEAR_WORDS } from '../core/hunter/inventory.ts';
+import { itemDefDataOf } from '../core/registry/item-book.ts';
 import { oneOf } from '../core/one-of.ts';
 import { REVIVE_TEXT, effectsOf, gradeLabel } from '../core/effects.ts';
 import { weaponLines } from '../core/detail.ts';
@@ -69,8 +70,13 @@ export function register(app) {
   const bonusText = b => Object.entries(b || {}).map(([k, n]) => `${n > 0 ? '+' : ''}${n} ${BONUS_LABEL[k] || k}`).join(', ');
 
   // ── the item maker ──
-  /** @type {import('../core/api.ts').LootApi['item']} */
-  function item({ initial, library = true } = {}) {
+  /**
+   * The maker, answering the item and the id it was saved under: `defId` when it edits a def of the library (a custom
+   * item, or a built-in's edit), else a new custom id when it is saved to the library (`keep`, or "Save to library").
+   * @param {{ initial?: any; defId?: import('../core/ids.ts').ItemDefId | null; library?: boolean; keep?: boolean; held?: import('../core/registry/item-book.ts').HeldItem | null }} [o]
+   * @returns {Promise<{ item: import('../core/registry/items.ts').ItemTemplate; defId: import('../core/ids.ts').ItemDefId | null } | null>}
+   */
+  function open({ initial, defId = null, library = true, keep = false, held = null } = {}) {
     const ini = initial && typeof initial === 'object' ? parseItem({ name: 'x', ...initial }) : null;
     const was = ini ? { ...ini, name: initial.name || '' } : null;
     const M = app.api.maker, gm = app.isGM(), B = ITEM_BOUNDS;
@@ -133,13 +139,16 @@ export function register(app) {
           ${gm ? `<label class="lf-chk"><input type="checkbox" id="lf-tell"${was && was.tell ? ' checked' : ''}><span>Notify GM when used</span></label>` : ''}
           ${gm ? `<label class="lf-chk" data-revive-w><input type="checkbox" id="lf-revive"${was && was.revive ? ' checked' : ''}><span>${esc(REVIVE_TEXT)}</span></label>` : ''}
           ${gm ? `<label class="lf-chk" data-rank-cap-w><input type="checkbox" id="lf-rank-cap"${was && was.rankCap ? ' checked' : ''}><span>Limit to hunters of this rarity's rank or lower</span></label>` : ''}
-          ${library ? '<label class="lf-chk"><input type="checkbox" id="lf-save" checked><span>Save to library</span></label>' : ''}
+          ${library && !keep && !defId ? '<label class="lf-chk"><input type="checkbox" id="lf-save" checked><span>Save to library</span></label>' : ''}
           </div></div>`;
         const $ = s => el.querySelector(s), slotSel = $('#lf-slot');
         const gearInput = k => /** @type {HTMLInputElement} */ ($(`[data-gear="${k}"]`));
         const rarity = () => oneOf($('#lf-rar').value, RARITIES, 'common');
         const grade = () => oneOf(Number(M.picked(el, 'grade')), GRADES, 0);
         slotSel.value = was && was.slot ? was.slot : '';
+        /** The kit a piece of armor follows (Fable C4): set by a kit chip, cleared by a number typed by hand. */
+        let kitPick = was && was.kit ? was.kit : null;
+        for (const [k] of GEAR) gearInput(k).addEventListener('input', () => { kitPick = null; });
         const fx = M.effects($('[data-fx]'), { ops: was ? was.effects || [] : [], kind: 'item', newStatus: () => app.api.forge.status({ mode: 'library' }) });
         // the worth line of the status the item wears in a fight (worth.ts `wornWorth`, a kit with no ability)
         const drawWorth = M.worth($('[data-worth-box]'));
@@ -211,6 +220,7 @@ export function register(app) {
           const effects = fx.ops(); if (effects.length) out.effects = effects;
           if (effectsOf(out).length && M.picked(el, 'target') === 'other') out.target = 'other';
           if (gm ? $('#lf-tell').checked : was && was.tell) out.tell = true;
+          if (kitPick && type === 'armor' && out.slot && Object.hasOwn(KIT_SHARE, out.slot)) out.kit = kitPick;
           // only a GM makes an item revive or rank-capped; a player's edit of one keeps it
           if (type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive)) out.revive = true;
           if (type === 'consumable' && (gm ? $('#lf-rank-cap').checked : was && was.rankCap)) out.rankCap = true;
@@ -272,7 +282,8 @@ export function register(app) {
           if (e.target.closest('[data-chips="grade"],[data-chips="attack"]')) sync();
           const kit = e.target.closest('[data-kit]');
           if (kit && Object.hasOwn(KIT_SHARE, slotSel.value)) {
-            const p = piece(oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light'), slotSel.value, rules());
+            kitPick = oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light');
+            const p = piece(kitPick, slotSel.value, rules());
             for (const [k] of GEAR) gearInput(k).value = String(p[k]);
             shell.changed();
           }
@@ -301,8 +312,11 @@ export function register(app) {
             if (big) { shell.error(big); return undefined; }
             const out = parseItem(form);
             if (canon(out) !== canon(form)) console.error('The item maker wrote an item its parser reads differently', form, out);
-            if (library && $('#lf-save').checked && !ui.wrote('Workshop', saveToLibrary(out, initial && initial.id), savedWords('item', out.name))) return undefined;
-            return out;
+            if (!(keep || defId || (library && $('#lf-save').checked))) return { item: out, defId: null };
+            const id = defId || store.itemDefId();
+            if (!id) { shell.error('This phone cannot save items right now.'); return undefined; }
+            if (!ui.wrote('Workshop', saveToLibrary(id, out, held), { ...savedWords('item', out.name), ...GEAR_WORDS })) return undefined;
+            return { item: out, defId: id };
           },
         };
       },
@@ -311,12 +325,16 @@ export function register(app) {
 
   // ── library ──
   /**
-   * Saves `it` to the library by its id (library.ts `saveEntry`: an edit keeps its entry); answers the write's Applied
-   * whole: refused when the library is full, or another item has that name (the maker says so; it never replaces it).
+   * Saves `it` as item def `id` (library.ts `saveItemDef`: every copy held reads the edit); answers the write's Applied
+   * whole: refused when the library is full, or another custom item has that name (the maker says so; it never replaces it).
    */
-  const saveToLibrary = (it, editId) => store.apply('library-save', atLibrary(l => saveEntry(l, 'items', { ...it, id: editId || store.id('i') })));
+  const saveToLibrary = (id, it, held) => store.apply('library-save', s => (held ? editHeldDef(s, held, itemDefDataOf(it), app.seat(), rules()) : saveItemDef(s, id, itemDefDataOf(it), rules())));
 
-  app.api.loot = { item };
+  app.api.loot = {
+    item: async o => { const r = await open(o); return r ? r.item : null; },
+    async ref(o) { const r = await open({ ...o, keep: true }); return r && r.defId ? { kind: 'ref', defId: r.defId, qty: r.item.qty } : null; },
+    async edit(defId, initial, held) { const r = await open({ initial, defId, held: held ?? null }); return !!r; },
+  };
 
   const lines = it => E().describeItem(it);
 }

@@ -21,6 +21,7 @@ import type { IconKey } from './icons.ts';
 import { builtInItemId } from '../ids.ts';
 import type { ItemDefId, ItemId } from '../ids.ts';
 import { liveAbility, liveOps, liveStatusDef } from '../combat/live-status.ts';
+import type { ConditionMap } from '../combat/live-status.ts';
 import { DAMAGE_TYPES, defenceOf } from '../combat/damage-type.ts';
 import type { DamageType } from '../combat/damage-type.ts';
 import { abilityId, tag } from '../combat/ability-types.ts';
@@ -79,6 +80,12 @@ export type Item = {
   icon?: IconKey;
   /** Its weight as typed; absent, the rule's (`weightOf`: a weapon's by its dice), so a change of the dice reaches it. */
   weight?: number;
+  /**
+   * The kit a piece of armor is part of: its weight, armor and resist are then its kit's piece for its slot (`piece`),
+   * read again under the rules in force (item-book.ts `resolveDef`), so a change of a kit's numbers reaches it. Absent,
+   * the numbers are as typed. Kept only on armor in an armor slot.
+   */
+  kit?: Kit;
   desc: string; armor: number; resist: number;
   attack?: Attack;
   /** What kind of damage this weapon deals (`physical`, `arcane`, or `true`). Absent means physical. */
@@ -115,21 +122,19 @@ export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 15, feet: 15 
 export type ArmorSlot = keyof typeof KIT_SHARE;
 const ARMOR_SLOTS = Object.keys(KIT_SHARE) as ArmorSlot[];
 
-/** Every built-in item has a name, rarity and description; shipped seeds also carry an immutable `defId` (`BuiltInItemDef`). Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand (including 0). Without `grade`, the middle. */
-type Common = { readonly defId?: ItemDefId; name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
+/** Every built-in item has its immutable `defId` (`b:<slug>`), a name, rarity and description. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand (including 0). Without `grade`, the middle. */
+type Common = { readonly defId: ItemDefId; name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
 /**
  * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks (and may be two-handed);
  * armor has a slot and the kit it is a piece of (`piece` works out its weight, armor and resist); an accessory a neck,
  * orb or ring slot and a bonus; a consumable the ops it does when used. The rest is a thing to carry and sell.
  */
-export type ItemDef =
+export type ItemSeed =
   | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; damageType?: DamageType; finesse?: true; twoHanded?: true; bonus?: ItemBonus }
   | Common & Powers & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
   | Common & Powers & { type: 'accessory'; slot: 'neck' | 'orb' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; rankCap?: true; tell?: true }
   | Common & { type: 'material' | 'key' | 'misc' };
-/** A shipped built-in item seed, guaranteed to carry an immutable `b:*` `defId`. */
-export type BuiltInItemDef = ItemDef & { readonly defId: ItemDefId };
 
 // What a consumable does when used: a Health Potion heals 50% of max HP (`HALF_HP`), Mana Potion restores 4 mana,
 // Stamina Tonic removes 25 fatigue, and Elixir of Life heals fully (`FULL_HEAL`).
@@ -138,11 +143,11 @@ const HALF_HP: Formula = { kind: 'binary', op: '*', left: num(0.5), right: { kin
 const heal = (amount: number | Formula): Op => ({ op: 'heal', amount: typeof amount === 'number' ? num(amount) : amount, when: 'use' });
 const mana = (n: number): Op => ({ op: 'mana', amount: num(n), when: 'use' });
 const rest = (fatigue: number): Op => ({ op: 'fatigue', amount: num(-fatigue), when: 'use' });
-const rankedConsumables = (make: (rar: Rarity, rank: string) => BuiltInItemDef): BuiltInItemDef[] =>
+const rankedConsumables = (make: (rar: Rarity, rank: string) => ItemSeed): ItemSeed[] =>
   RARITIES.map(rar => make(rar, RULES.rarities[rar].rank));
 
 /** The shop's stock until the GM edits the shop. Each is priced by the rule (`valueOf`). */
-export const SHOP_ITEMS: readonly BuiltInItemDef[] = [
+export const SHOP_ITEMS: readonly ItemSeed[] = [
   ...rankedConsumables((rar, rank) => ({
     defId: builtInItemId(`health-potion-${rank.toLowerCase()}`),
     name: `Health Potion (${rank})`, rar, type: 'consumable', rankCap: true, effects: [heal(HALF_HP)],
@@ -204,7 +209,7 @@ const BULWARK: Ability = abilityOf('support', {
 }, RULES);
 
 /** The recipe items: the library holds them with the other loot, and a gate may drop them by rarity. */
-export const RECIPE_ITEMS: readonly BuiltInItemDef[] = [
+export const RECIPE_ITEMS: readonly ItemSeed[] = [
   // Thornmail, Epic+: a struck trigger reflects `0.03 * armor` arcane damage (6.72, read on the build with the most
   // armor, one strike a round) and applies Grievous Wounds (-40% healing, 2 rounds so it covers the attacker's next
   // turn and regen tick: 3.83), spending 10.54 inside Epic+'s 9.76..11.22. `follow: true` tracks GM Grievous Wounds edits.
@@ -280,7 +285,7 @@ export const RECIPE_ITEMS: readonly BuiltInItemDef[] = [
 // A piece of armour's kit is the old AC it gave: 0 or 1 light, 2 medium, 3 or more heavy (plan section 3.3). Old stats
 // map as dex Agility, con Vitality, int Power, wis Instinct, cha Presence; old max MP is a fifth as max mana.
 /** The items a gate's loot roll picks from by rarity (with the shop's stock). Priced by the rule unless they say otherwise. */
-export const LOOT_ITEMS: readonly BuiltInItemDef[] = [
+export const LOOT_ITEMS: readonly ItemSeed[] = [
   { defId: builtInItemId('goblin-shortbow'), name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'Dropped by a gate goblin.' },
   { defId: builtInItemId('padded-cap'), name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
   { defId: builtInItemId('mana-crystal-shard'), name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
@@ -315,7 +320,7 @@ export const STARTER_GEAR = {
   towerShield: { defId: builtInItemId('dented-tower-shield'), name: 'Dented Tower Shield', rar: 'common', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', desc: 'A dented, heavy tower shield.' },
   huntingBow: { defId: builtInItemId('hunting-bow'), name: 'Hunting Bow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', twoHanded: true, desc: 'A worn hunting bow.' },
   manaPotion: { defId: builtInItemId('starter-mana-potion'), name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(2)], desc: 'Restores 2 mana.' },
-} as const satisfies Record<string, BuiltInItemDef>;
+} as const satisfies Record<string, ItemSeed>;
 
 /** Built-in items awarded by roleplay bundles (src/core/registry/bundles.ts), kept in the one built-in registry so GM edits reach them too. */
 export const BUNDLE_ITEMS = {
@@ -332,11 +337,11 @@ export const BUNDLE_ITEMS = {
     name: 'Keepsake', rar: 'common', type: 'material', value: 0,
     desc: 'Something given at a goodbye. Name it and write what it is.',
   },
-} as const satisfies Record<string, BuiltInItemDef>;
+} as const satisfies Record<string, ItemSeed>;
 
 /** Every built-in item seed indexed by its immutable `ItemDefId` (`SHOP_ITEMS`, `LOOT_ITEMS`, `STARTER_GEAR`, `BUNDLE_ITEMS`). */
-export const BUILT_IN_ITEMS: ReadonlyMap<ItemDefId, BuiltInItemDef> = (() => {
-  const map = new Map<ItemDefId, BuiltInItemDef>();
+export const BUILT_IN_ITEMS: ReadonlyMap<ItemDefId, ItemSeed> = (() => {
+  const map = new Map<ItemDefId, ItemSeed>();
   for (const d of [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR), ...Object.values(BUNDLE_ITEMS)]) {
     if (map.has(d.defId)) throw new Error(`duplicate built-in item defId: ${d.defId}`);
     map.set(d.defId, d);
@@ -392,13 +397,17 @@ export const priceOf = (R: Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep'>, 
  * GM's price rule reaches the default shop and the loot at once (implicit audit 3, I1: they were priced once at load).
  */
 export const defaultShop = (R: Rules): ItemTemplate[] => SHOP_ITEMS.map(d => itemOf(R, d));
-export const builtInItems = (R: Rules): ItemTemplate[] => [...SHOP_ITEMS, ...LOOT_ITEMS].map(d => itemOf(R, d));
+/** The built-in shop by id: what `save.shop` null shows (inventory.ts `withShop`). */
+export const DEFAULT_SHOP_IDS: readonly ItemDefId[] = Object.freeze(SHOP_ITEMS.map(d => d.defId));
+/** A built-in item as the rules make it, with its id: what a loot roll draws and a picker lists. */
+export type BuiltInItem = ItemTemplate & { readonly defId: ItemDefId };
+export const builtInItems = (R: Rules): BuiltInItem[] => [...SHOP_ITEMS, ...LOOT_ITEMS].map(d => ({ ...itemOf(R, d), defId: d.defId }));
 /**
  * What a loot roll draws from (a gate's Clear, a solo run, the GM's roll table): the built-in items without reviving
  * items (the owner, Nov 18: "GM determines resurrection") and without rank-capped shop consumables, so higher-rank gates
  * never flood loot drops with unusable lower-rank bottles (the GM can still give any built-in item through Award).
  */
-export const lootPool = (R: Rules): ItemTemplate[] => builtInItems(R).filter(i => !i.revive && !i.rankCap);
+export const lootPool = (R: Rules): BuiltInItem[] => builtInItems(R).filter(i => !i.revive && !i.rankCap);
 
 /**
  * One number of a kit split over its six pieces by their shares (`KIT_SHARE`) so the six add up to it exactly: each piece
@@ -446,7 +455,7 @@ export function weaponWeight(dice: string): number {
 }
 
 /** The powers a built-in def holds, with any `follow: true` status ops resolved against `conditions`. */
-const powersOf = (def: Powers, conditions: Pick<Rules, 'conditions'>['conditions']): Powers => ({
+const powersOf = (def: Powers, conditions: ConditionMap): Powers => ({
   ...(def.worn ? { worn: liveStatusDef(def.worn, conditions) } : {}),
   ...(def.active ? { active: liveAbility(def.active, conditions) } : {}),
 });
@@ -456,13 +465,13 @@ const powersOf = (def: Powers, conditions: Pick<Rules, 'conditions'>['conditions
  * `valueOf`), a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it), and every
  * `applyStatus` op marked `follow: true` resolved against `R.conditions`.
  */
-export function itemOf(R: Pick<Rules, 'conditions' | 'fight'>, def: ItemDef): ItemTemplate {
+export function itemOf(R: Pick<Rules, 'fight'> & { readonly conditions: ConditionMap }, def: ItemSeed): ItemTemplate {
   const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value !== undefined ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), ...(def.icon ? { icon: def.icon } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
       return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, ...(def.damageType && defenceOf(def.damageType) !== 'armor' ? { damageType: def.damageType } : {}), ...(def.finesse ? { finesse: true as const } : {}), ...(def.twoHanded ? { twoHanded: true as const } : {}), bonus: { ...def.bonus }, ...powersOf(def, R.conditions) };
-    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def, R.conditions) };
+    case 'armor': return { ...base, slot: def.slot, kit: def.kit, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def, R.conditions) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def, R.conditions) };
     case 'consumable': {
       const effects = def.effects.length ? [...liveOps(def.effects, R.conditions)] : [];
@@ -528,6 +537,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (v.tell === true) out.tell = true;
   if (v.revive === true && out.type === 'consumable') out.revive = true;
   if (v.rankCap === true && out.type === 'consumable') out.rankCap = true;
+  if (out.type === 'armor' && out.slot !== null && Object.hasOwn(KIT_SHARE, out.slot) && typeof v.kit === 'string' && Object.hasOwn(RULES.fight.kits, v.kit)) out.kit = v.kit as Kit;
   const powers = WORN_TYPES.includes(out.type) ? parsePowers(v) : {};
   // refused whole for its size, never cut: an item without the power or the effect it was made with is another item
   if (powers === null) return null;

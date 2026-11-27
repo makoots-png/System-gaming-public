@@ -10,7 +10,8 @@
 // - Stair fence (70%): off-the-record buyer, open to any living hunter outside a fight, even while in System debt.
 import type { GateType } from '../gates/gate.ts';
 import type { HunterId, ItemId } from '../ids.ts';
-import type { Item, Slot } from '../registry/items.ts';
+import type { Slot } from '../registry/items.ts';
+import type { HeldItem } from '../registry/item-book.ts';
 import { RULES, priceBaseOf } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -169,7 +170,7 @@ type ExchangeHunter = {
   readonly debt: number;
   readonly life: Pick<Life, 'at'>;
   readonly guild?: GuildMembership | null;
-  items: Item[];
+  items: HeldItem[];
   equipped: Record<Slot, ItemId | null>;
 };
 

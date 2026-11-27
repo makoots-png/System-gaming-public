@@ -16,6 +16,9 @@ import { GIVE_HOLD_MS } from '../core/registry/bundles.ts';
 import { tradeRuleSet } from '../core/rules.ts';
 import { deviceOf, parseEventId, parseOfferId, parseSaveId } from '../core/ids.ts';
 import { oneOf } from '../core/one-of.ts';
+import { bagOf, heldItem } from '../core/hunter/inventory.ts';
+import { refGrant } from '../core/registry/item-book.ts';
+import { heardStep } from '../core/item-refs.ts';
 
 const W = TRADE_WORDS, SW = STASH_WORDS;
 /** A stash line's name with its count: "Healing Potion × 3". */
@@ -60,7 +63,9 @@ export function register(app) {
   /** What a refused tap says, by its kind (goods.ts `refusalWords`); none for a read-only tab's refusal, which `ui.wrote` tells. */
   const wordsOf = w => ('why' in w && Object.hasOwn(OFFER_REFUSAL_WORDS, w.why) ? { [w.why]: refusalWords(w) } : {});
   /** What the tap steps take from the screen: the table's switch as this phone last read it, and whether a fight holds hunter `hid`. */
-  const gateOf = hid => ({ on: app.rules().trade.on, held: A().hunter.fightOf({ hid }) !== null });
+  const gateOf = hid => ({ on: app.rules().trade.on, held: A().hunter.fightOf({ hid }) !== null, R: app.rules() });
+  /** A face's bag line's name: the one the room sent, else the built-in's it names. */
+  const faceName = l => l.name ?? (l.defId ? A().inventory.grant(refGrant(l.defId)).name : '');
   /** What a refused stash tap says, for the thing named `name` (stash.ts `stashTapWords`); none for a read-only tab's refusal. */
   const stashWordsOf = (w, name) => { const why = 'why' in w ? oneOf(w.why, STASH_TAP_WHYS, null) : null; return why ? { [why]: stashTapWords(w, name) } : {}; };
   /** When a stash write's log line is written, and how many lines the log keeps. */
@@ -73,7 +78,7 @@ export function register(app) {
    */
   function targetsOf(hid) {
     const me = store.get().settings.deviceId, room = app.seat() === 'player' && app.rules().trade.on ? A().sync.faces().filter(f => deviceOf(f.key) !== me) : [];
-    return [...room.map(f => ({ kind: 'room', key: f.key, name: f.name, bag: f.bag ?? [] })),
+    return [...room.map(f => ({ kind: 'room', key: f.key, name: f.name, bag: (f.bag ?? []).map(l => ({ id: l.id, qty: l.qty, name: faceName(l) })) })),
       ...store.get().hunters.filter(x => x.id !== hid).map(x => ({ kind: 'phone', hid: x.id, name: x.name })), { kind: 'stash', name: SW.chip }];
   }
   function giveHtml(h, it, targets) {
@@ -141,13 +146,13 @@ export function register(app) {
   /** Hunter `hid` hands what `pick` takes to hunter `t` of this phone: one write, no message (goods.ts `handOver`). */
   function handTo(hid, t, pick) {
     const from = store.hunter(hid), ids = pick.items.map(() => store.id('i'));
-    const w = store.apply('trade-hand', s => handOver(s, hid, t.hid, pick, { held: gateOf(hid).held }, () => ids.shift()));
+    const w = store.apply('trade-hand', s => { const out = handOver(s, hid, t.hid, pick, { held: gateOf(hid).held }, () => ids.shift(), app.rules()); return 'ok' in out ? out : heardStep(out); });
     if (!ui.wrote(W.tag, w, wordsOf(w))) return;
     ui.toast(W.tag, W.handed(from ? from.name : '', t.name, pick));
   }
 
   async function give(hid, itemId) {
-    const h = store.hunter(hid), it = itemId === null ? null : h && h.items.find(i => i.id === itemId);
+    const h = store.hunter(hid), it = itemId === null ? null : h && (heldItem(h, itemId, app.rules()) ?? undefined);
     if (!h || it === undefined) return;
     const targets = targetsOf(hid), held = { win: null };
     const v = await ui.system({ tag: W.tag, title: it ? W.title(it.name) : W.titleGold, html: giveHtml(h, it, targets),
@@ -167,11 +172,13 @@ export function register(app) {
   const here = () => stashRoute(app.seat()) === 'here';
   /** The stash as this phone reads it: its own on the save, else the room's `stash` doc (null until the GM's phone publishes it). */
   const stashNow = () => (here() ? store.get().stash : A().sync.doc('stash'));
+  /** The stash's lines as items (inventory.ts `bagOf`): a player's read with the defs the room's doc carries. */
+  const stashLines = st => (!st ? [] : bagOf(st, app.rules(), 'defs' in st ? st.defs : undefined));
   /** Hunter `hid` puts what `pick` takes into the stash: one write here, or an ask of the GM's phone. */
   function put(hid, pick) {
     const name = pick.items[0] ? pick.items[0].name : 'gold';
     if (here()) {
-      const w = store.apply('stash-put', s => stashPut(s, hid, pick, gateOf(hid), logAt()));
+      const w = store.apply('stash-put', s => stashPut(s, hid, pick, gateOf(hid), logAt(), app.rules()));
       if (ui.wrote(W.tag, w, stashWordsOf(w, name))) ui.toast(W.tag, `Added to stash: ${pickWords(pick)}.`);
       return;
     }
@@ -183,7 +190,7 @@ export function register(app) {
   }
   /** Hunter `hid` takes `qty` of stash line `item` (named `name`), or `gold`: one write here, or an ask of the GM's phone. */
   function takeOut(hid, ask, name) {
-    if (here()) { const w = store.apply('stash-take', s => stashTake(s, hid, ask, gateOf(hid), logAt())); ui.wrote(W.tag, w, stashWordsOf(w, name)); return; }
+    if (here()) { const w = store.apply('stash-take', s => stashTake(s, hid, ask, gateOf(hid), logAt(), app.rules())); ui.wrote(W.tag, w, stashWordsOf(w, name)); return; }
     const at = new Date().toISOString(), stamp = A().sync.stamp();
     const w = store.apply('stash-ask', s => stashAsked(s, { hid, want: ask, at, stamp, ...gateOf(hid) }));
     if (!ui.wrote(W.tag, w, stashWordsOf(w, name))) return;
@@ -201,7 +208,7 @@ export function register(app) {
       if (n) takeOut(hid, { kind: 'gold', gold: n }, 'gold');
       return;
     }
-    const it = st.items.find(i => i.id === itemId); if (!it) return;
+    const it = stashLines(st).find(i => i.id === itemId); if (!it) return;
     const n = it.qty > 1 ? await howMany(SW.takeTitle(it.name), SW.howMany(it.qty), 1, it.qty) : 1;
     if (n) takeOut(hid, { kind: 'take', item: it.id, qty: n, name: it.name }, it.name);
   }
@@ -212,7 +219,7 @@ export function register(app) {
       const yes = await ui.warn({ tag: 'Possible duplicate', title: W.strandedTitle, body: SW.stranded, actions: [{ label: W.returnToBag, value: true, danger: true }, { label: W.cancel, value: false, cancel: true }] });
       if (yes !== true) return;
     }
-    ui.wrote(W.tag, store.apply('stash-dismiss', s => stashDismissed(s, id)));
+    ui.wrote(W.tag, store.apply('stash-dismiss', s => stashDismissed(s, id, app.rules())));
   }
   /** One waiting ask of this hunter: what it asks and where it stands, with Take back or Put away once the room did not take it. */
   function askHtml(w) {
@@ -228,7 +235,7 @@ export function register(app) {
   function stashHtml(hid) {
     const st = stashNow(), mine = askedOf(store.get()).filter(w => w.kind === 'stash' && w.hid === hid);
     const at = here() ? '' : clock(A().sync.docAt('stash') ?? '');
-    const lines = st ? st.items.map(i => `<li class="tr-offer tr-line" data-stash-line="${esc(i.id)}"><span>${esc(lineName(i))}</span><button type="button" data-tr-take="${esc(i.id)}" aria-label="${esc(`${SW.take}: ${i.name}`)}">${esc(SW.take)}</button></li>`).join('') : '';
+    const lines = st ? stashLines(st).map(i => `<li class="tr-offer tr-line" data-stash-line="${esc(i.id)}"><span>${esc(lineName(i))}</span><button type="button" data-tr-take="${esc(i.id)}" aria-label="${esc(`${SW.take}: ${i.name}`)}">${esc(SW.take)}</button></li>`).join('') : '';
     const gold = st ? st.gold : 0;
     return `<div class="tr-offers"><h3>${esc(SW.title)}</h3>${at ? `<p class="tr-hint" data-tr-asof>${esc(SW.asOf(at))}</p>` : ''}${here() ? '' : `<p class="tr-hint">${esc(SW.order)}</p>`}
       <div class="tr-gold"><span>${esc(SW.gold(gold))}</span>${gold > 0 ? `<button type="button" data-tr-takegold>${esc(SW.takeGold)}</button>` : ''}</div>
@@ -275,7 +282,7 @@ export function register(app) {
       const yes = await ui.warn({ tag: 'Possible duplicate', title: W.strandedTitle, body, actions: [{ label: W.returnToBag, value: true, danger: true }, { label: W.cancel, value: false, cancel: true }] });
       if (yes !== true) return;
     }
-    const w = store.apply('trade-take-back', s => offerTakenBack(s, id));
+    const w = store.apply('trade-take-back', s => offerTakenBack(s, id, app.rules()));
     if (!ui.wrote(W.tag, w, wordsOf(w))) return;
     A().sync.flush();
   }
@@ -304,21 +311,21 @@ export function register(app) {
   /** The GM's party stash: its gold and lines, each with Remove (the GM's hand edit). */
   function gmStashHtml() {
     const st = store.get().stash;
-    const lines = st.items.map(i => `<li class="tr-offer" data-stash-line="${esc(i.id)}"><span>${esc(lineName(i))}</span><button type="button" class="danger" data-tr-remove="${esc(i.id)}" aria-label="${esc(`${SW.remove}: ${lineName(i)}`)}">${esc(SW.remove)}</button></li>`).join('');
+    const lines = stashLines(st).map(i => `<li class="tr-offer" data-stash-line="${esc(i.id)}"><span>${esc(lineName(i))}</span><button type="button" class="danger" data-tr-remove="${esc(i.id)}" aria-label="${esc(`${SW.remove}: ${lineName(i)}`)}">${esc(SW.remove)}</button></li>`).join('');
     return `<div class="lbl">${esc(SW.title)}</div><p class="tr-hint" data-tr-stashgold>${esc(SW.gold(st.gold))}</p><ul class="plain tr-offers" data-tr-list="gm-stash">${lines || `<li class="empty">${esc(SW.empty)}</li>`}</ul>`;
   }
   /** Remove of stash line `id`, held under Undo, then the line leaves the stash with a log line. */
   function removeLine(id) {
-    const it = store.get().stash.items.find(i => i.id === id); if (!it) return;
+    const it = stashLines(store.get().stash).find(i => i.id === id); if (!it) return;
     ui.toast(W.tag, SW.removed(it), { hold: { what: { kind: 'stashRemove', line: id }, ms: GIVE_HOLD_MS, undo: SW.undo, act: () => {
-      ui.wrote(W.tag, store.apply('stash-remove', s => stashRemove(s, id, logAt())), { gone: SW.removedGone });
+      ui.wrote(W.tag, store.apply('stash-remove', s => stashRemove(s, id, logAt(), app.rules())), { gone: SW.removedGone });
     } } });
   }
   /** Stop of offer `id`, held under Undo, then the GM's stop posted. */
   function stop(id) {
     const r = recordOf(store.get(), id, 'gm'); if (!r) return;
     ui.toast(W.tag, W.stopped(r.offer), { hold: { what: { kind: 'stop', offer: id }, ms: GIVE_HOLD_MS, undo: W.undo, act: () => {
-      const w = store.apply('trade-stop', s => offerStopped(s, id));
+      const w = store.apply('trade-stop', s => offerStopped(s, id, app.rules()));
       if (!ui.wrote(W.tag, w, wordsOf(w))) return;
       A().sync.flush();
     } } });
@@ -339,11 +346,11 @@ export function register(app) {
   }
 
   // the GM's phone keeps the room's stash doc, and answers each player's stash ask once, in the order the pages bring them
-  app.on('ready', () => { A().sync.publish('stash', () => stashDoc(store.get().stash)); }); // sync.ts registers after this module
+  app.on('ready', () => { A().sync.publish('stash', () => stashDoc(store.get().stash, app.rules())); }); // sync.ts registers after this module
   app.on('sync:event', ({ event: ev }) => {
     const code = A().sync.room();
     if (app.seat() !== 'gm' || ev.type !== 'stashAsk' || !code) return;
-    const p = ev.payload, ctx = { on: app.rules().trade.on, room: code, stamp: A().sync.stamp(), log: logAt() };
+    const p = ev.payload, ctx = { on: app.rules().trade.on, room: code, stamp: A().sync.stamp(), log: logAt(), R: app.rules() };
     if (!A().sync.once(p.eid, s => stashTaken(s, p, ctx))) return;
     A().sync.flush();
   });

@@ -8,7 +8,7 @@ import type { Goods } from '../../src/core/trade/goods.ts';
 import { dev, hid, iid, room } from '../fixtures/ids.ts';
 
 const BY = sheetKeyOf(dev('d-brakk'), hid('h1')), TO = sheetKeyOf(dev('d-mira'), hid('h1')), THIRD = sheetKeyOf(dev('d-third'), hid('h1'));
-const POTION: Goods = { gold: 0, items: [{ from: iid('i2'), item: { name: 'Healing Potion', rar: 'common', type: 'consumable', slot: null, qty: 1, dice: '', bonus: {}, desc: '', armor: 0, resist: 0 } }] };
+const POTION: Goods = { gold: 0, items: [{ from: iid('i2'), item: { kind: 'adhoc', qty: 1, item: { name: 'Healing Potion', rar: 'common', type: 'consumable', slot: null, dice: '', bonus: {}, desc: '', armor: 0, resist: 0 } } }] };
 const PAID: Goods = { gold: 20, items: [] };
 /** Brakk offers Mira a Healing Potion for 20 gold. */
 export const OFFER: Offer = { id: parseOfferId('d-brakk-mo1')!, room: room('TRADE2'), at: '2026-11-19T12:00:00.000Z', by: BY, to: TO, names: { by: 'Brakk', to: 'Mira' }, gives: POTION, asks: { gold: 20, items: [] } };

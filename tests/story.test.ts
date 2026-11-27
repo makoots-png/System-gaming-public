@@ -115,7 +115,7 @@ describe('the bounds', () => {
   });
 
   test('a chapter\'s reward and its quest\'s reward keep the bounds of every reward', () => {
-    const c = chapter({ rewards: { xp: -1e12, items: many(30, i => ({ name: `P${i}`, type: 'misc' })) }, quest: { ...copy(ASK.quest), rewards: { points: 5000 } } });
+    const c = chapter({ rewards: { xp: -1e12, items: many(30, i => ({ kind: 'adhoc', qty: 1, item: { name: `P${i}`, type: 'misc' } })) }, quest: { ...copy(ASK.quest), rewards: { points: 5000 } } });
     expect([c.rewards.xp, c.rewards.items.length, c.quest!.rewards.points]).toEqual([-1e9, 20, 999]);
   });
 });

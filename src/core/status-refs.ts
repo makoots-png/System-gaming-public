@@ -16,7 +16,7 @@ import type { MapZone, BattleMap } from './registry/maps.ts';
 import type { ZoneSpec } from './combat/zones.ts';
 import type { Formula } from './formula.ts';
 import type { FeatDef } from './hunter/feats.ts';
-import type { ItemTemplate } from './registry/items.ts';
+import type { ItemDefData, ItemGrant } from './registry/item-book.ts';
 import type { Loot, MonsterTemplate, StartStatus } from './registry/monsters.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import type { RewardBundle, RewardStatus, RewardTitle, Rewards } from './rewards.ts';
@@ -164,11 +164,19 @@ const ability = fields<Ability>({
 // ── the GM's things ──
 /** The powers of an item or a title (registry/powers.ts): its worn status and its active's ability. */
 const POWERS = { worn: statusDef, active: ability } as const;
-/** An item: what its use does and its powers while worn. */
-export const item: Walk<ItemTemplate> = fields<ItemTemplate>({
-  name: none, rar: none, grade: none, type: none, slot: none, qty: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
-  resist: none, attack: none, damageType: none, finesse: none, twoHanded: none, icon: none, effects: ops, target: none, tell: none, revive: none, rankCap: none, ...POWERS,
+/** An item def: what its use does and its powers while worn. */
+export const item: Walk<ItemDefData> = fields<ItemDefData>({
+  name: none, rar: none, grade: none, type: none, slot: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
+  resist: none, kit: none, attack: none, damageType: none, finesse: none, twoHanded: none, icon: none, effects: ops, target: none, tell: none, revive: none, rankCap: none, ...POWERS,
 });
+/** A grant: a reference's def when it carries one (a custom item's), an ad hoc item's own. A reference without one names its def by id (item-refs.ts). */
+export function grant(g: ItemGrant, f: KeyFn): ItemGrant {
+  switch (g.kind) {
+    case 'ref': return g.def ? { ...g, def: item(g.def, f) } : g;
+    case 'adhoc': return { ...g, item: item(g.item, f) };
+    default: return g satisfies never;
+  }
+}
 const SKILL_PARTS = { name: none, level: none, label: none, desc: none, type: none } as const;
 const activeSkill = fields<Extract<SkillTemplate, { type: 'active' }>>({ ...SKILL_PARTS, ability });
 const passiveSkill = fields<Extract<SkillTemplate, { type: 'passive' }>>({ ...SKILL_PARTS, bonus: none, worn: statusDef });
@@ -183,13 +191,13 @@ export function skill(k: SkillTemplate, f: KeyFn): SkillTemplate {
 const rewardStatus = fields<RewardStatus>({ key, rounds: none, def: statusDef });
 const rewardTitle = fields<RewardTitle>({ name: none, desc: none, bonus: none, key: none, replaces: none, band: none, ...POWERS });
 const rewards = fields<Rewards>({
-  xp: none, points: none, gold: none, crystal: none, items: list(item), title: rewardTitle, job: none, skills: list(skill), statuses: list(rewardStatus), boons: none,
+  xp: none, points: none, gold: none, crystal: none, items: list(grant), title: rewardTitle, job: none, skills: list(skill), statuses: list(rewardStatus), boons: none,
 });
 /** A reward bundle without its id. */
 export const bundle: Walk<Omit<RewardBundle, 'id'>> = fields<Omit<RewardBundle, 'id'>>({ name: none, rewards, window: none });
 /** A monster's starting status. Its key is typed as text (registry/monsters.ts); its parser keeps only a status key there. */
 const startStatus = fields<StartStatus>({ key: (k, f) => f(statusKey(k)), rounds: none, stacks: none });
-const loot = fields<Loot>({ gold: none, items: list(item) });
+const loot = fields<Loot>({ gold: none, items: list(grant) });
 /** A monster: its abilities, its starting statuses and its loot. */
 export const monster: Walk<MonsterTemplate> = fields<MonsterTemplate>({
   name: none, rank: none, type: none, archetype: none, kind: none, tweak: none, abilities: list(ability), notes: none, xp: none, icon: none,

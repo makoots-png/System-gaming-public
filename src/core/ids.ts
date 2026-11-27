@@ -45,7 +45,11 @@ const CATALOG_ID_RE = /^cat-[a-z0-9]{6,24}$/;
 const CATALOG_KEY_RE = /^[\w-]{16,80}$/;
 const BUILT_IN_ITEM_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const BUILT_IN_ITEM_ID_RE = /^b:[a-z0-9][a-z0-9-]{0,39}$/;
-const CUSTOM_ITEM_ID_RE = /^c:(cat-[a-z0-9]{6,24}):[a-z0-9]{4,20}$/;
+const CUSTOM_ITEM_ID_RE = /^c:(cat-[a-z0-9]{6,24}):([a-z0-9]{16,20})$/;
+/** How long a custom item's stamp is when this app mints one (ids.ts `customItemDefId`): random, so knowing an id is the right to read its def. */
+export const ITEM_STAMP_LEN = 16;
+/** The characters of a custom item's stamp. */
+export const ITEM_STAMP_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 export const parseRoomCode = (v: unknown): RoomCode | null => (typeof v === 'string' && CODE_RE.test(v) ? (v as RoomCode) : null);
 export const parseCatalogId = (v: unknown): CatalogId | null => (typeof v === 'string' && CATALOG_ID_RE.test(v) ? (v as CatalogId) : null);
 export const parseCatalogKey = (v: unknown): CatalogKey | null => (typeof v === 'string' && CATALOG_KEY_RE.test(v) ? (v as CatalogKey) : null);
@@ -56,7 +60,7 @@ export function builtInItemId(slug: string): ItemDefId {
   if (!BUILT_IN_ITEM_SLUG_RE.test(slug)) throw new Error(`invalid built-in item slug: "${slug}"`);
   return `b:${slug}` as ItemDefId;
 }
-/** A custom item definition id under `catalogId` with collision-free `stamp` (`c:<catalogId>:<stamp>`). */
+/** A custom item definition id under `catalogId` with a random `stamp` of 16 to 20 of `ITEM_STAMP_CHARS` (`c:<catalogId>:<stamp>`). */
 export function customItemDefId(catalogId: CatalogId, stamp: string): ItemDefId {
   const id = `c:${catalogId}:${stamp}`;
   if (!CUSTOM_ITEM_ID_RE.test(id) || id.length > ITEM_DEF_ID_MAX) throw new Error(`invalid custom item def id: "${id}"`);
@@ -70,6 +74,11 @@ export const isCustomItemDefId = (id: ItemDefId): boolean => id.startsWith('c:')
 export function catalogOfItemDefId(id: ItemDefId): CatalogId | null {
   const m = CUSTOM_ITEM_ID_RE.exec(id);
   return m ? (m[1] as CatalogId) : null;
+}
+/** The stamp of custom item `id` (what a rekey keeps), or null for a built-in item. */
+export function stampOfItemDefId(id: ItemDefId): string | null {
+  const m = CUSTOM_ITEM_ID_RE.exec(id);
+  return m ? m[2]! : null;
 }
 export const parseDeviceId = (v: unknown): DeviceId | null => (typeof v === 'string' && WORD_RE.test(v) ? (v as DeviceId) : null);
 export const parseGmKey = (v: unknown): GmKey | null => (typeof v === 'string' && GM_KEY_RE.test(v) ? (v as GmKey) : null);

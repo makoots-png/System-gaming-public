@@ -426,15 +426,19 @@ const bagCounts = (items: any[]): Record<string, number> => {
   for (const i of items) out[i.name] = (out[i.name] ?? 0) + (i.qty ?? 1);
   return out;
 };
+/** The active hunter's bag as the app reads it (`inventory.bag`), each line with its name and count. */
+const bagOf = (page: Page): Promise<any[]> => page.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.active()));
+/** Reward grants as the items they give (`inventory.grant`), each with its name and count. */
+const granted = (page: Page, grants: any[]): Promise<any[]> => page.evaluate(gs => gs.map((g: any) => hunterApp.api.inventory.grant(g)), grants);
 
 test('in a room, a player\'s personal-gate clear waits for the GM, and approving it pays exactly what the run earned', async ({ device }) => {
   const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai']);
-  const before = hunterOf(await save(kai!.page)), xp0 = lifetime(before), gold0 = before.gold, bag0 = bagCounts(before.items);
+  const before = hunterOf(await save(kai!.page)), xp0 = lifetime(before), gold0 = before.gold, bagBefore = await bagOf(kai!.page), bag0 = bagCounts(bagBefore);
   const gateName = await clearPersonalInRoom(kai!.page);
 
   const mid = hunterOf(await save(kai!.page));
   expect(mid.solo.gates, 'the cleared personal gate leaves the list').toHaveLength(0);
-  expect([lifetime(mid), mid.gold, bagCounts(mid.items)], 'nothing paid before the GM approves').toEqual([xp0, gold0, bag0]);
+  expect([lifetime(mid), mid.gold, bagCounts(await bagOf(kai!.page))], 'nothing paid before the GM approves').toEqual([xp0, gold0, bag0]);
 
   const row = await waitingRow(gm.page, gateName);
   await expect(row).toContainText('Kai');
@@ -456,12 +460,12 @@ test('in a room, a player\'s personal-gate clear waits for the GM, and approving
   const after = hunterOf(await save(kai!.page));
   expect(lifetime(after)).toBe(xp0 + rec.rewards.xp);
   expect(after.gold).toBe(gold0 + rec.rewards.gold);
-  expect(bagCounts(after.items)).toEqual(bagCounts([...before.items, ...rec.rewards.items]));
+  expect(bagCounts(await bagOf(kai!.page))).toEqual(bagCounts([...bagBefore, ...await granted(gm.page, rec.rewards.items)]));
 });
 
 test('in a room, refusing a player\'s personal-gate clear tells the player and pays nothing', async ({ device }) => {
   const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai']);
-  const before = hunterOf(await save(kai!.page)), xp0 = lifetime(before), gold0 = before.gold, bag0 = bagCounts(before.items);
+  const before = hunterOf(await save(kai!.page)), xp0 = lifetime(before), gold0 = before.gold, bag0 = bagCounts(await bagOf(kai!.page));
   const gateName = await clearPersonalInRoom(kai!.page);
 
   const row = await waitingRow(gm.page, gateName);
@@ -475,5 +479,5 @@ test('in a room, refusing a player\'s personal-gate clear tells the player and p
   await dismissAll(kai!.page);
 
   const after = hunterOf(await save(kai!.page));
-  expect([lifetime(after), after.gold, bagCounts(after.items)]).toEqual([xp0, gold0, bag0]);
+  expect([lifetime(after), after.gold, bagCounts(await bagOf(kai!.page))]).toEqual([xp0, gold0, bag0]);
 });

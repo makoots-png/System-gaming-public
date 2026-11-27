@@ -10,7 +10,7 @@ import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { RANK_CAP_TEXT, describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SHOP_ITEMS, SLOTS, STARTER_GEAR, isFullHealItem, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
-import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
+import type { Grade, ItemSeed, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
 import { tiles } from '../src/core/combat/space.ts';
@@ -18,8 +18,8 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { gradeBand, gradeOfSpend, itemSpend } from '../src/core/registry/item-budget.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
-const LISTS: [string, readonly ItemDef[]][] = [['shop', SHOP_ITEMS], ['loot', LOOT_ITEMS], ['starter', Object.values(STARTER_GEAR)]];
-const ALL: ItemDef[] = LISTS.flatMap(([, defs]) => defs);
+const LISTS: [string, readonly ItemSeed[]][] = [['shop', SHOP_ITEMS], ['loot', LOOT_ITEMS], ['starter', Object.values(STARTER_GEAR)]];
+const ALL: ItemSeed[] = LISTS.flatMap(([, defs]) => defs);
 const of = (name: string): ItemTemplate => itemOf(RULES, ALL.find(d => d.name === name)!);
 const number = (value: number) => ({ kind: 'number', value }) as const;
 /** The rank whose base price prices each rarity: common is E, uncommon D, rare C, epic B, legendary A, mythic S. */
@@ -273,7 +273,7 @@ test('no two shop or loot items share a name: the shop and the loot roll find an
 
 test('every rarity a rank\'s loot roll can land on has an item in the pool the roll draws from, so the roll drops something', () => {
   const have = new Set(lootPool(RULES).map(d => d.rar));
-  for (const rank of RANKS) for (const rar of Object.keys(RULES.loot[rank].weights)) expect([rank, have.has(rar as ItemDef['rar'])]).toEqual([rank, true]);
+  for (const rank of RANKS) for (const rar of Object.keys(RULES.loot[rank].weights)) expect([rank, have.has(rar as ItemSeed['rar'])]).toEqual([rank, true]);
 });
 
 test('the five armor slots\' shares sum to the whole kit, so a full set of one kit is that kit', () => {

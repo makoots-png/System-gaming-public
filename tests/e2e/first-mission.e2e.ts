@@ -113,7 +113,7 @@ test('full GM + remote player room run of The Empty Seat reaches unique-class pi
     await answerWindow(p1, 'SEAT ASSIGNED');
     await expect.poll(() => p1.evaluate(() => {
       const h = hunterApp.store.active();
-      const pot = h.items.find((i: any) => i.name === 'Health Potion (E)');
+      const pot = hunterApp.api.inventory.bag(h).find((i: any) => i.name === 'Health Potion (E)');
       return {
         potions: pot ? pot.qty : 0,
         quests: h.quests.filter((q: any) => q.kind !== 'daily').map((q: any) => q.title),

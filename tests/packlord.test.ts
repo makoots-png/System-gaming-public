@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BONUS_HUNDREDTHS, BONUS_KEYS, RULES } from '../src/core/rules.ts';
+import { BONUS_HUNDREDTHS, BONUS_KEYS, RULES, withStatuses } from '../src/core/rules.ts';
 import type { BonusKey, Rank } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import { FORMULA_PARTS, partsOf } from '../src/core/formula.ts';
@@ -42,6 +42,7 @@ import {
 import { CLASS_SIGNATURES, classPowers, classStatusDef } from '../src/core/registry/class-powers.ts';
 import { PACKLORD_SIGNATURE, PACKLORD_TREE } from '../src/core/registry/class-packlord.ts';
 import { isRefused } from '../src/core/save-step.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
 
@@ -142,7 +143,7 @@ describe('Packlord metadata, tree structure, pricing, and integrity', () => {
       resist: 0,
       target: 'other' as const,
       effects: [{ op: 'damage' as const, type: 'arcane' as const, amount: { kind: 'number' as const, value: 10 } }],
-    }));
+    })).map(({ id, qty, ...item }): HeldItem => ({ kind: 'adhoc', id, qty, item }));
 
     const builds = allForkBuilds();
     expect(builds.length).toBe(8);
@@ -291,7 +292,7 @@ describe('Packlord metadata, tree structure, pricing, and integrity', () => {
 
     // Explicit R.conditions entry takes precedence over classStatusDef
     const overrideDef = { label: 'Custom Fang', desc: 'Override.', ops: [{ op: 'speed' as const, pct: 5 }] };
-    const overridden = summonRow({ id: combatantId('h1'), side: 'party', tier: 4 }, spec, combatantId('s2'), tick(1000), { ...RULES, conditions: { 'pack-fang': overrideDef } });
+    const overridden = summonRow({ id: combatantId('h1'), side: 'party', tier: 4 }, spec, combatantId('s2'), tick(1000), withStatuses(RULES, { 'pack-fang': overrideDef }));
     expect(overridden.statuses[0]!.def).toEqual(overrideDef);
   });
 });

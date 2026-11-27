@@ -4,7 +4,7 @@
 // is the reward it was.
 import type { Ability } from './combat/ability-types.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
-import type { ItemTemplate } from './registry/items.ts';
+import type { ItemGrant } from './registry/item-book.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import { REWARD_BOUNDS, titleReward } from './rewards.ts';
 import type { RewardRules, RewardTitle, Rewards } from './rewards.ts';
@@ -16,7 +16,7 @@ import type { Rank, Rules } from './rules.ts';
  * it fits (null: none written, which reads as E) and `active` the ability its holder may use in a fight, or null.
  */
 export type RewardRow =
-  | { kind: 'item'; item: ItemTemplate | null }
+  | { kind: 'item'; item: ItemGrant | null }
   | { kind: 'title'; pick: string; name: string; desc: string; replaces: string; bonus: Record<string, number>; worn: StatusDef | null; band: Rank | null; active: Ability | null }
   | { kind: 'skill'; skill: SkillTemplate | null }
   | { kind: 'status'; key: string; rounds: string; def: StatusDef | null }
@@ -78,7 +78,7 @@ const whole = (v: string): number => { const n = Math.trunc(Number(v)); return N
 export function rewardOfForm(f: RewardForm, R: RewardRules, floor = false) {
   const n = (x: number) => (floor ? Math.max(0, x) : x);
   const title = f.rows.find((r): r is TitleRow => r.kind === 'title'), job = f.rows.find(r => r.kind === 'job');
-  const items: ItemTemplate[] = [], skills: SkillTemplate[] = [], statuses: { key: string; rounds: number | null; def: StatusDef | undefined }[] = [], boons: { name: string; text: string }[] = [];
+  const items: ItemGrant[] = [], skills: SkillTemplate[] = [], statuses: { key: string; rounds: number | null; def: StatusDef | undefined }[] = [], boons: { name: string; text: string }[] = [];
   for (const r of f.rows) {
     if (r.kind === 'item' && r.item) items.push(r.item);
     else if (r.kind === 'skill' && r.skill) skills.push(r.skill);

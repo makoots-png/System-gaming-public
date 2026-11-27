@@ -5,7 +5,7 @@ import { restRefusalWords } from '../../src/core/hunter/rests.ts';
 import { RAISE_TITLE } from '../../src/core/hunter/revive-standing.ts';
 import { DIED_WORDS } from '../../src/core/hunter/vitals.ts';
 import { deathLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
-import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList, adhoc, addLibraryItem } from './helpers.ts';
 
 const lifeWord = (p: Page) => p.locator('#view-status [data-death] [data-life]');
 
@@ -515,8 +515,9 @@ test('An item of a higher rarity applies a stronger status than a common one', a
   await dismissAll(p);
   await p.evaluate(() => {
     const id = hunterApp.store.active().id, burn = [{ op: 'applyStatus', key: 'burning', def: hunterApp.rules().conditions.burning, duration: 3000 }];
-    hunterApp.api.inventory.addItem(id, { name: 'Ember Flask', rar: 'common', type: 'consumable', qty: 1, effects: burn });
-    hunterApp.api.inventory.addItem(id, { name: 'Inferno Flask', rar: 'epic', type: 'consumable', qty: 1, effects: burn });
+    const flask = (name: string, rar: string) => ({ kind: 'adhoc', qty: 1, item: { name, rar, type: 'consumable', slot: null, dice: '', bonus: {}, desc: '', armor: 0, resist: 0, effects: burn } });
+    hunterApp.api.inventory.addItem(id, flask('Ember Flask', 'common'));
+    hunterApp.api.inventory.addItem(id, flask('Inferno Flask', 'epic'));
   });
   const card = (name: string) => p.locator('#view-status [data-panel="inventory"] .inv-card', { hasText: name });
 
@@ -546,12 +547,15 @@ test('Worn and used items do what their effects say: a rare potion heals its rar
   const p = (await device('tiers')).page;
   await onboardPlayer(p, 'Kai Test');
   await dismissAll(p);
-  await p.evaluate(() => {
-    const id = hunterApp.store.active().id, n = (value: number) => ({ kind: 'number', value });
-    hunterApp.api.inventory.addItem(id, { name: 'Rank Draught', rar: 'rare', type: 'consumable', effects: [{ op: 'heal', amount: [1, 2, 3, 4, 5, 6].map(n), when: 'use' }] });
-    hunterApp.api.inventory.addItem(id, { name: 'Quarter Tonic', rar: 'common', type: 'consumable', effects: [{ op: 'heal', amount: { kind: 'binary', op: '*', left: n(0.25), right: { kind: 'sheet', whose: 'user', key: 'hpMax' } }, when: 'use' }] });
-    hunterApp.api.inventory.addItem(id, { name: 'Rank Ring', rar: 'epic', type: 'accessory', slot: 'ring1', bonus: { str: 2 } });
-  });
+  const n = (value: number) => ({ kind: 'number', value });
+  await p.evaluate(gs => {
+    const id = hunterApp.store.active().id;
+    for (const g of gs) hunterApp.api.inventory.addItem(id, g);
+  }, [
+    adhoc({ name: 'Rank Draught', rar: 'rare', type: 'consumable', effects: [{ op: 'heal', amount: [1, 2, 3, 4, 5, 6].map(n), when: 'use' }] }),
+    adhoc({ name: 'Quarter Tonic', rar: 'common', type: 'consumable', effects: [{ op: 'heal', amount: { kind: 'binary', op: '*', left: n(0.25), right: { kind: 'sheet', whose: 'user', key: 'hpMax' } }, when: 'use' }] }),
+    adhoc({ name: 'Rank Ring', rar: 'epic', type: 'accessory', slot: 'ring1', bonus: { str: 2 } }),
+  ]);
   const card = (name: string) => p.locator('#view-status [data-panel="inventory"] .inv-card', { hasText: name });
   const now = () => p.evaluate(() => { const x = hunterApp.api.hunter.sheet(hunterApp.store.active()); return { hp: x.hp as number, hpMax: x.sheet.hpMax as number, str: x.stats.str as number }; });
   await go(p, 'status');
@@ -583,15 +587,13 @@ test('Editing a library item in the item maker shows a row for each of its six e
     { op: 'heal', amount: [1, 2, 3, 4, 5, 6].map(c => dice(c, 4)), when: 'use' }, { op: 'damage', type: 'arcane', amount: n(10), when: 'use' },
     { op: 'mana', amount: n(5), when: 'use' }, { op: 'fatigue', amount: n(-10), when: 'use' }, { op: 'cureStatus', key: 'poisoned' }, { op: 'note', text: 'Smells of ash' },
   ];
-  await p.evaluate(fx => hunterApp.store.update((d: any) => {
-    d.library.items.push({ id: 'i900', name: 'Ash Vial', rar: 'rare', type: 'consumable', slot: null, qty: 1, dice: '', bonus: {}, value: 70, desc: '', weight: 0, armor: 0, resist: 0, effects: fx });
-  }), effects);
-  const stored = () => p.evaluate(() => hunterApp.store.get().library.items.find((i: any) => i.id === 'i900'));
+  const vial = await addLibraryItem(p, { name: 'Ash Vial', rar: 'rare', type: 'consumable', slot: null, dice: '', bonus: {}, value: 70, desc: '', weight: 0, armor: 0, resist: 0, effects });
+  const stored = () => p.evaluate(id => hunterApp.store.get().library.items[id], vial);
   const before = await stored();
   expect(before.effects).toHaveLength(6);
 
   await go(p, 'workshop');
-  await p.locator('#view-workshop [data-ws="item"] li[data-id="i900"] [data-act="edit"]').tap();
+  await p.locator(`#view-workshop [data-ws="item"] li[data-id="${vial}"] [data-act="edit"]`).tap();
   const win = p.locator('[aria-modal="true"]', { hasText: 'Edit item' });
   await expect(win).toBeVisible();
   await expect(win.locator('.mk-fx')).toHaveCount(6);
@@ -768,7 +770,7 @@ test('each control on the sheet and the one that undoes it leave the hunter as i
       const p = (await device(`${who}-roundtrip`)).page;
       if (who === 'gm') await setupGoblinDenGM(p); else await onboardPlayer(p, 'Mira');
       await go(p, 'status');
-      await p.evaluate(() => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Test Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { str: 1 } }));
+      await p.evaluate(g => hunterApp.api.inventory.addItem(hunterApp.store.active().id, g), adhoc({ name: 'Test Ring', rar: 'rare', type: 'accessory', slot: 'ring1', bonus: { str: 1 } }));
       const before = await hunter(p);
 
       await p.locator('#view-status [aria-label="Equip Test Ring"]').tap();
@@ -799,12 +801,12 @@ test('removing a worn amulet that raised max HP brings HP down to the new maximu
   const p = (await device('gm-amulet')).page;
   await setupGoblinDenGM(p);
   await go(p, 'status');
-  const id = await p.evaluate(() => {
+  const id = await p.evaluate(g => {
     const A = hunterApp.api, hid = hunterApp.store.active().id;
-    const it = A.inventory.addItem(hid, { name: 'Vital Amulet', rar: 'rare', type: 'accessory', slot: 'neck', bonus: { hpMax: 20 } });
+    const it = A.inventory.addItem(hid, g);
     A.inventory.equip(hid, it.id); A.hunter.heal(hid, 999);
     return it.id as string;
-  });
+  }, adhoc({ name: 'Vital Amulet', rar: 'rare', type: 'accessory', slot: 'neck', bonus: { hpMax: 20 } }));
   const hp = () => p.evaluate(() => { const h = hunterApp.store.active(); return { stored: h.life.hp, max: hunterApp.api.hunter.sheet(h).sheet.hpMax }; });
   const worn = await hp();
   await p.locator(`#view-status [data-del="${id}"]`).tap();

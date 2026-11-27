@@ -392,7 +392,7 @@ test('a GM makes an item that wears a status in a fight and a monster that start
     await expect(d.locator('.mk-preview')).toContainText('In a fight: When its bearer is struck: Deals 1d6 physical damage on the other, every time.');
     await d.locator('[data-apply]').tap();
     await expect(d).toHaveCount(0);
-    const it = await page.evaluate(() => hunterApp.store.get().library.items.find((i: any) => i.name === 'Thorn Ring'));
+    const it = await page.evaluate(() => (Object.values(hunterApp.store.get().library.items) as any[]).find(i => i.name === 'Thorn Ring'));
     expect(it.worn).toEqual({ label: 'Thorn Ring', desc: '', ops: [], triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' },
       ops: [{ op: 'damage', type: 'physical', amount: { kind: 'dice', count: 1, sides: 6 }, when: 'use' }] }] });
   });

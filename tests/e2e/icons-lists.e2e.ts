@@ -1,4 +1,4 @@
-import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, go, dismissAll, startGoblinDenFight, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, go, dismissAll, startGoblinDenFight, chooseList, PHONE, SMALL_PHONE, adhoc } from './helpers.ts';
 import type { Locator, Page } from '@playwright/test';
 
 /** A picture drawn by the one drawer: its reference, its side in px, and whether it hides from a screen reader. */
@@ -19,7 +19,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
       ['Tonic', { type: 'consumable', rar: 'legendary' }, 'potion'],
       ['Spirit Crystal', { type: 'consumable', revive: true, rar: 'mythic' }, 'crystal'],
     ];
-    await p.evaluate(items => { const h = hunterApp.store.active(); for (const [name, rest] of items) hunterApp.api.inventory.addItem(h.id, { name, qty: 1, desc: '', ...rest }); }, six.map(([n, r]) => [n, r] as const));
+    await p.evaluate(grants => { const h = hunterApp.store.active(); for (const g of grants) hunterApp.api.inventory.addItem(h.id, g); }, six.map(([name, rest]) => adhoc({ name, desc: '', ...rest })));
     await go(p, 'status');
     for (const [name, rest, key] of six) {
       const card = p.locator('#view-status [data-panel="inventory"] [data-list] .inv-card', { hasText: name });
@@ -89,7 +89,8 @@ test('a hunter\'s potion, in the hotbar\'s drawer on the map, shows the picture 
   await setupGoblinDenGM(gm);
   const item = await gm.evaluate(() => {
     const brakk = hunterApp.store.get().hunters.find((h: any) => h.name === 'Brakk Ironhide');
-    return hunterApp.api.inventory.addItem(brakk.id, hunterApp.api.inventory.itemTemplates().find((t: any) => t.name === 'Health Potion (E)')).id;
+    const potion = hunterApp.api.inventory.choices().builtIn.find((t: any) => t.name === 'Health Potion (E)');
+    return hunterApp.api.inventory.addItem(brakk.id, { kind: 'ref', defId: potion.defId, qty: 1 }).id;
   });
   await chooseList(gm);
   await startGoblinDenFight(gm);

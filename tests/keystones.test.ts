@@ -18,6 +18,7 @@ import { hunterRow } from '../src/core/combat/rows.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { fightId } from '../src/core/ids.ts';
+import type { ItemId } from '../src/core/ids.ts';
 import { keystoneAwakenedLine } from '../src/core/rules-text.ts';
 import { printFormula } from '../src/core/formula.ts';
 import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
@@ -28,11 +29,14 @@ import type { Keystone } from '../src/core/registry/keystones.ts';
 import { parsePowers } from '../src/core/registry/powers.ts';
 import type { Powers } from '../src/core/registry/powers.ts';
 import { itemSpend } from '../src/core/registry/item-budget.ts';
-import type { Rarity } from '../src/core/registry/items.ts';
+import { SLOTS } from '../src/core/registry/items.ts';
+import type { Rarity, Slot } from '../src/core/registry/items.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 import type { Bonus } from '../src/core/hunter/derive.ts';
 import { STAT_KEYS, statsBy } from '../src/core/stats.ts';
 import type { StatKey, Stats } from '../src/core/stats.ts';
-import { dev, jcid, qid } from './fixtures/ids.ts';
+import { dev, iid, jcid, qid } from './fixtures/ids.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 
 const F = KEYSTONES_ON.fight;
@@ -202,18 +206,20 @@ describe('the pairs of stats', () => {
 
 // ── a hunter's basis: its points, rank and job, never its gear, titles or statuses ──
 const AT = '2026-11-22T12:00:00.000Z';
+const NOTHING_WORN = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
 type Hunter = SheetHunter & KeystoneHunter;
 const hunter = (o: Partial<Hunter> = {}): Hunter => ({
   stats: built({}), level: 10, rank: 'D', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, skills: [], conditions: [], job: null, jobDone: null, ...o,
+  items: [], equipped: NOTHING_WORN, skills: [], conditions: [], job: null, jobDone: null, ...o,
 });
 const keys = (h: Hunter): readonly KeystoneKey[] => keystonesOf(keystoneBasis(h), F);
 
 test('gear and titles never earn a keystone', () => {
   const short = hunter({ stats: built({ str: 29, agi: 25, vit: 25, ins: 21 }) });
-  const geared = {
+  const geared: Hunter = {
     ...short, titleId: 'wolf', titles: [{ id: 'wolf', bonus: { str: 10 } }],
-    items: [{ id: 'knife', weight: 1, bonus: { str: 10 } }], equipped: { weapon: 'knife' },
+    items: [{ kind: 'adhoc', id: iid('i1'), qty: 1, item: parseItemDef({ name: 'Knife', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', weight: 1, bonus: { str: 10 } })! }],
+    equipped: { ...NOTHING_WORN, weapon: iid('i1') },
   };
   expect(hunterSheet(geared, RULES).stats.str).toBe(hunterSheet(short, RULES).stats.str + 20);
   expect(keys(geared)).toEqual([]);

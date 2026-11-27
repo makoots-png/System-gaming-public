@@ -18,6 +18,7 @@ import { isRefused } from '../../src/core/save-step.ts';
 import { piece } from '../../src/core/registry/items.ts';
 import type { ArmorSlot, ItemBonus } from '../../src/core/registry/items.ts';
 import type { ClassName } from '../../src/core/registry/jobs.ts';
+import type { HeldItem } from '../../src/core/registry/item-book.ts';
 import { ATTACK_ID, wornAbilityId } from '../../src/core/registry/abilities.ts';
 import { HEMOMANCER_TREE } from '../../src/core/registry/class-hemomancer.ts';
 import { BLADEFIEND_TREE } from '../../src/core/registry/class-bladefiend.ts';
@@ -81,9 +82,10 @@ export function buildMythicSoloHunter(spec: MythicSoloSpec, R: Rules = SOLO_MYTH
   const base = newHunter(R);
   const level = R.rankLevels.S;
   const stats = split(spec.main, spec.second, pointsAt(level, R), R);
-  const items = [...spec.gear(R)];
+  const gear = [...spec.gear(R)];
+  const items = gear.map(({ id, qty, ...item }): HeldItem => ({ kind: 'adhoc', id, qty, item }));
   const equipped: Record<string, ItemId | null> = { ...base.equipped };
-  for (const it of items) if (it.slot) equipped[it.slot] = it.id;
+  for (const it of gear) if (it.slot) equipped[it.slot] = it.id;
 
   const pre: Hunter = {
     ...base,

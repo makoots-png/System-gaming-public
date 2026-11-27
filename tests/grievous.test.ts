@@ -18,16 +18,19 @@ import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { place } from '../src/core/combat/space.ts';
-import { fightId } from '../src/core/ids.ts';
+import { fightId, parseCatalogKey } from '../src/core/ids.ts';
+import { catalogIdOf } from '../src/core/catalog-id.ts';
 import { DOC_DEFS_MAX, fightWire } from '../src/core/combat/fight-doc.ts';
 import type { DocStatus, FightDoc } from '../src/core/combat/fight-doc.ts';
-import { DOCS, DOC_MAX, parseDeviceId, parseEvent } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, catalogDoc, catalogReadOf, parseDeviceId, parseEvent } from '../src/core/protocol.ts';
 import { roomRulesOf, withRoomRules } from '../src/core/hunter/build.ts';
 import { rewardForm, rewardOfForm } from '../src/core/reward-rows.ts';
 import { newRewards } from '../src/core/rewards.ts';
 import { abilityWorth, defWorth } from '../src/core/registry/worth.ts';
 import { itemSpend } from '../src/core/registry/item-budget.ts';
 import { detailOf, statusGlance } from '../src/core/detail.ts';
+import { itemDefDataOf } from '../src/core/registry/item-book.ts';
+import { customId, grantRef } from './fixtures/items.ts';
 import {
   DEFAULT_GRIEVOUS_PCT,
   GRIEVOUS_LEGACY_MAX,
@@ -298,14 +301,18 @@ describe('room sync, wire letter h, and DOC_MAX', () => {
     }
   });
 
-  test('RoomRules.statuses carries GM Grievous Wounds edits to players and new Thornmails follow it', () => {
+  test('CatalogDoc carries GM Grievous Wounds edits to players and owned Thornmails follow it (RoomRules carries no statuses)', () => {
     const gmRules = rulesOf({}, { grievous: gwDef(25) });
     const wire = JSON.parse(JSON.stringify(roomRulesOf(gmRules)));
+    expect('statuses' in wire).toBe(false);
     const parsed = DOCS.rules(wire)!;
     expect(parsed).not.toBeNull();
-    expect(grievousCutOf(parsed.statuses.grievous)).toBe(25);
 
-    const playerRules = withRoomRules(RULES, parsed);
+    const { doc } = catalogDoc({ library: { items: {}, statuses: { grievous: gwDef(25) } }, shop: null });
+    const read = catalogReadOf(catalogIdOf(parseCatalogKey('ck_test_grievous_catalog_key_12345')!), 1, doc, []);
+    expect(grievousCutOf(read.statuses.grievous)).toBe(25);
+
+    const playerRules = withRoomRules(rulesOf({}, read.statuses, read.defs), parsed);
     expect(grievousCutOf(playerRules.conditions.grievous)).toBe(25);
     const playerThorn = itemOf(playerRules, thornDef);
     const trigOp = playerThorn.worn?.triggers?.[0]?.ops[1];
@@ -314,8 +321,9 @@ describe('room sync, wire letter h, and DOC_MAX', () => {
     // Status and award room events carry variable-cut grievous defs intact
     const stEv = parseEvent('status', { eid: 'd-gm-s1', to: ['d-p1:h1'], add: [{ key: 'grievous', def: gwDef(35), source: { id: null, tier: 1 }, rounds: 2 }] });
     expect(stEv?.type === 'status' && stEv.payload.add ? grievousCutOf(stEv.payload.add[0]?.def) : null).toBe(35);
-    const awEv = parseEvent('award', { eid: 'd-gm-a1', to: ['d-p1:h1'], rewards: { items: [playerThorn] } });
-    const awOp = awEv?.type === 'award' ? awEv.payload.rewards.items[0]?.worn?.triggers?.[0]?.ops[1] : null;
+    const awEv = parseEvent('award', { eid: 'd-gm-a1', to: ['d-p1:h1'], rewards: { items: [grantRef(customId('thorn25'), 1, itemDefDataOf(playerThorn))] } });
+    const awGrant = awEv?.type === 'award' ? awEv.payload.rewards.items[0] : undefined;
+    const awOp = awGrant?.kind === 'ref' ? awGrant.def?.worn?.triggers?.[0]?.ops[1] : null;
     expect(awOp?.op === 'applyStatus' ? grievousCutOf(awOp.def) : null).toBe(25);
   });
 

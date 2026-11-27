@@ -9,6 +9,7 @@ import type { Rules } from './rules.ts';
 import { atSync, refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 import { rebindTo } from './sync/bind.ts';
+import { heardStep } from './item-refs.ts';
 
 /**
  * A hunter a picker offers: this phone's or a player's (by its sheet key), the id its control carries (a hunter id or a
@@ -47,7 +48,7 @@ export function removeHunter(save: Save, hid: string, fresh: Hunter | null): Sav
   const hunters = left.length ? left : [fresh!];
   const active = hunters.some(h => h.id === save.settings.activeHunterId) ? save.settings.activeHunterId : hunters[0]!.id;
   const next: Save = { ...save, hunters, settings: { ...save.settings, activeHunterId: active } };
-  return save.settings.sync.boundHunterId === hid ? atSync(sy => rebindTo(sy, active))(next) : next;
+  return heardStep(save.settings.sync.boundHunterId === hid ? atSync(sy => rebindTo(sy, active))(next) : next);
 }
 
 /** Two plain values (what a save holds: numbers, strings, lists and objects) are the same, whatever the key order. */

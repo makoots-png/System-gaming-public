@@ -5,9 +5,11 @@ import { NO_PRESET, PRESET_EVENTS, PRESET_ITEMS_MAX, PRESET_STATES, gatePreset, 
 import type { ClearPreset, PresetEvent, PresetItem, PresetState } from '../src/core/gates/preset.ts';
 import { parseGate, shownOf } from '../src/core/gates/gate.ts';
 import { recommendPreset, shareEach } from '../src/core/gates/spawn.ts';
-import { parseSheetKey, presetLineId } from '../src/core/ids.ts';
+import { builtInItemId, parseSheetKey, presetLineId } from '../src/core/ids.ts';
 import type { HunterRef } from '../src/core/ids.ts';
-import { lootPool, parseItem } from '../src/core/registry/items.ts';
+import { lootPool } from '../src/core/registry/items.ts';
+import { refGrant, resolveGrant } from '../src/core/registry/item-book.ts';
+import type { ItemGrant } from '../src/core/registry/item-book.ts';
 import { REWARD_BOUNDS } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave } from '../src/core/save.ts';
@@ -19,8 +21,10 @@ import { dev, gid, hid } from './fixtures/ids.ts';
 
 const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 const AT = '2026-11-22T20:00:00.000Z';
-const POTION = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
-const SWORD = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
+const POTION = refGrant(builtInItemId('health-potion-e'));
+const SWORD = refGrant(builtInItemId('iron-dagger'));
+/** The name a grant reads under the shipped rules. */
+const nameOf = (g: ItemGrant): string => resolveGrant(g, RULES).name;
 const LOCAL_REF: HunterRef = { kind: 'local', hunterId: hid('h1') };
 const REMOTE_KEY = parseSheetKey('d-p1:h1')!;
 const REMOTE_REF: HunterRef = { kind: 'remote', remote: REMOTE_KEY };
@@ -124,7 +128,7 @@ describe('recommendPreset and item partitioning', () => {
       [presetLineId(1), true, null],
       [presetLineId(2), true, null],
     ]);
-    expect(rec.items.every(i => !i.item.revive)).toBe(true);
+    expect(rec.items.every(i => i.item.kind === 'ref' && !resolveGrant(i.item, RULES).revive)).toBe(true);
   });
 
   test('partitionPresetItems skips unchecked lines and sends unpicked or absent-hunter items to the party stash', () => {
@@ -141,12 +145,12 @@ describe('recommendPreset and item partitioning', () => {
       ],
     };
     const part = partitionPresetItems(preset, [{ kind: 'local', hid: hid('h1') }]);
-    expect(part.byPayee.get(hid('h1'))?.map(i => i.name)).toEqual(['Iron Blade']);
-    expect(part.stash.map(i => i.name)).toEqual(['Health Potion', 'Iron Blade']);
+    expect(part.byPayee.get(hid('h1'))?.map(nameOf)).toEqual(['Iron Dagger']);
+    expect(part.stash.map(nameOf)).toEqual(['Health Potion (E)', 'Iron Dagger']);
 
     const both = partitionPresetItems(preset, [{ kind: 'local', hid: hid('h1') }, { kind: 'remote', key: REMOTE_KEY }]);
-    expect(both.byPayee.get(REMOTE_KEY)?.map(i => i.name)).toEqual(['Iron Blade']);
-    expect(both.stash.map(i => i.name)).toEqual(['Health Potion']);
+    expect(both.byPayee.get(REMOTE_KEY)?.map(nameOf)).toEqual(['Iron Dagger']);
+    expect(both.stash.map(nameOf)).toEqual(['Health Potion (E)']);
   });
 });
 

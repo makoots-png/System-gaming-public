@@ -14,6 +14,7 @@
 //   srvSkew         server clock minus this clock, from the last answer that carried the server's time
 //   lastOk          when the server last answered (the Room view's "Last sync")
 //   sheetText       the bound sheet as the push last sent it, to tell a sheet change from any other change
+//   sheetDefs       on the GM's phone, the custom item defs the room's pushed sheets carry, read again when the sheets change
 //   boundSeen       the bound hunter as the push was last told of it, so another hunter bound by any write (a join,
 //                   "Play as", a delete of the bound one, a save swapped in) wakes the push as `rebound` (`bindHeard`)
 //   removal         the REMOVED FROM ROOM notice (src/core/sync/bind.ts `RemovedNotice`): told, or its Rejoin on its
@@ -23,6 +24,11 @@
 //   running         effects are being carried out (events raised meanwhile wait in `queue`)
 //   stamped         the time in the id of the last event this page made (`stampTime` in src/core/protocol.ts), so the
 //                   next id is later and two ids of this page never meet
+//   catPub          the GM's catalog publish machine (src/core/sync/catalog-publish.ts): clean, due, sending, conflict
+//   catReq          open catalog PUT/GET AbortController, aborted on reset or save replacement
+//   catLinkGen      link gen in which a room-catalog link PUT is in flight (null when idle)
+//   catActive       the player phone's active synced catalog for the current link gen (`bindCatalog`)
+//   catStaged       the player phone's staged synced catalog held back while a fight holds a hunter, promoted in `release()`
 // and these containers, each named where it is made: `queue` (events raised while effects run), `inflight` (open
 // requests by gen: the link's, each doc's put and each outbox send), `timers` (one per name), `peeked` (the Room view's
 // 30 s code check cache), `publishers`, `publishing` (each room doc's publish machine on the GM's phone,
@@ -36,13 +42,22 @@ import { setActive } from '../core/party.ts';
 import { stepTime } from '../core/day.ts';
 import { BUILD } from './build.ts';
 import { reported } from './report.ts';
-import { bindRoom } from './rules.ts';
+import { bindCatalog, bindRoom, bindSheetDefs, rules } from './rules.ts';
+import { bagDefs } from '../core/registry/item-book.ts';
+import type { ItemDefData } from '../core/registry/item-book.ts';
+import { adoptCatalogDoc } from '../core/library.ts';
+import {
+  CATALOG_CONFLICT_WORDS, CATALOG_PUBLISH_CLEAN, catalogDocHash, catalogPublishStep, catalogReleaseStep,
+  catalogSentStep, hasCatalogContent, mergeCatalogRead, wantedCatalogIds,
+} from '../core/sync/catalog-publish.ts';
+import type { CatalogPublish, CatalogPublishEvent } from '../core/sync/catalog-publish.ts';
 import { awayDeps, landAll } from './room-events.ts';
 import type { ApplyDeps, PageLanded } from './room-events.ts';
 import { upgradeRefused } from './upgrade.ts';
 import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
 import { backedRemoteHunter, pushedClasses } from '../core/hunter/classes.ts';
+import { fitted } from '../core/hunter/sheet.ts';
 import { grantNotTakenLine, holdersDocOf } from '../core/hunter/class-holders.ts';
 import type { GrantNotTaken, ReconcileResult } from '../core/hunter/class-holders.ts';
 import { releaseNoticeStep } from '../core/hunter/noticed.ts';
@@ -54,11 +69,17 @@ import type { Bus } from './bus.ts';
 import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
 import type { AppApi, RemoteSheet, RoomFace, SyncApi } from '../core/api.ts';
-import { API_ERRORS, DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseApiError, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
-import type { DeviceId, DocName, DocOf, EventBody, EventStamp, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent, SystemKind } from '../core/protocol.ts';
+import {
+  API_ERRORS, CATALOG_MAX, DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, catalogDoc, newEvent, parseApiError, parseCatalogDoc,
+  parseCatalogPointer, parseCatalogRead, parseRoomCode, parseRoomState, stampTime,
+} from '../core/protocol.ts';
+import type {
+  CatalogDoc, CatalogPointer, CatalogRead, DeviceId, DocName, DocOf, EventBody, EventStamp, EventType, RoomCode,
+  RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent, SystemKind,
+} from '../core/protocol.ts';
 import type { SystemAction, ToastKind, WarningInput } from '../core/warning.ts';
 import { deviceOf, endIdOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
-import type { HunterId } from '../core/ids.ts';
+import type { CatalogId, CatalogKey, HunterId, ItemDefId } from '../core/ids.ts';
 import { appliedOnce } from '../core/applied.ts';
 import { seenFrom } from '../core/sync/seen.ts';
 import { boot, hiddenWait, paceOf, reduce as linkReduce } from '../core/sync/link.ts';
@@ -88,7 +109,7 @@ import { told } from '../core/session-log.ts';
 import { OUTBOX_WORDS, atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
 import type { Call, Entry, EntryEvent, Letter, Outbox } from '../core/sync/outbox.ts';
 import { createHunter } from '../core/save.ts';
-import type { Hunter, LastRoom, Save, SyncSettings } from '../core/save.ts';
+import type { CatalogSent, Hunter, LastRoom, Save, SyncSettings } from '../core/save.ts';
 
 /** The body of the one window that tells a player what the room held for its hunters while its phone was out of the room. */
 const AWAY_BODY = 'These were sent while this phone was out of the room.';
@@ -105,6 +126,10 @@ const ONLINE_MS = 15000;
  * the GM's phone writes after taking it.
  */
 const FIGHT_MOVES: ReadonlySet<string> = new Set(['step', 'cast', 'pass', 'dodge']);
+/** The custom defs of the room's sheets, and the sheets object they were read from (so they are read again only when it changes). */
+type SheetDefs = { readonly sheets: unknown; readonly defs: Readonly<Record<ItemDefId, ItemDefData>> };
+/** No custom defs heard from the room's sheets (edge/rules.ts `bindSheetDefs`): one object, so the rules stay memoized. */
+const NO_DEFS: Readonly<Record<ItemDefId, ItemDefData>> = Object.freeze({});
 /** The docs a GM phone writes (the server writes `kicked`). */
 type PublishedDoc = Exclude<DocName, 'kicked'>;
 /**
@@ -152,10 +177,14 @@ const tapped = <A extends unknown[], T>(f: (...a: A) => Promise<T>) => (...a: A)
 /** How the tap machine answers a tap's promise. */
 type Reply = { resolve(v: string): void; reject(e: TapError): void };
 /** The room data of one poll answer, for the link gen it was applied in. */
-type Shown = { gen: Gen | null; sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs; presence: Record<string, string>; presenceOk: boolean };
-const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {}, presence: {}, presenceOk: false };
+type Shown = { gen: Gen | null; sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs; presence: Record<string, string>; presenceOk: boolean; catalog: CatalogPointer | null };
+const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {}, presence: {}, presenceOk: false, catalog: null };
+/** A catalog read fetched during a player poll before docs and events are applied. */
+type CatFetched = { readonly read: CatalogRead; readonly asked: readonly ItemDefId[] };
 /** A reply and the room data that came with it, for the `apply` effect. */
-type Data = { kind: 'poll'; r: RoomState; after: number } | { kind: 'head'; now: string } | null;
+type Data = { kind: 'poll'; r: RoomState; after: number; catFetched: CatFetched | null } | { kind: 'head'; now: string } | null;
+/** Active or staged player catalog tied to the link gen it was fetched in. */
+type HeldCatalog = { readonly gen: Gen; readonly read: CatalogRead; readonly asked: ReadonlySet<ItemDefId> };
 
 /** A System window this file opens: its words, and the actions a player picks from (it answers the value tapped). */
 type SyncWindow = {
@@ -194,13 +223,14 @@ export function register(app: SyncHost): void {
    * this phone's own sheets whole and the messages sealed to its hunters (protocol.ts `servedTo`). A write always carries
    * it; the GM's key stands in for it.
    */
-  async function fetchApi(method: string, path: string, o: { body?: unknown; key?: string | null; prove?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Answer> {
-    const rooms = path.startsWith('/rooms');
+  async function fetchApi(method: string, path: string, o: { body?: unknown; key?: string | null; catalogKey?: CatalogKey | null; prove?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Answer> {
+    const apiRoute = path.startsWith('/rooms') || path.startsWith('/catalogs');
     const hd: Record<string, string> = {};
-    if (rooms) hd['X-Hunter-Build'] = BUILD;
+    if (apiRoute) hd['X-Hunter-Build'] = BUILD;
     if (o.body !== undefined) hd['Content-Type'] = 'application/json';
     if (o.key) hd['X-GM-Key'] = o.key;
-    if ((o.body !== undefined || o.prove) && !o.key) hd['X-Device-Token'] = sy().deviceToken; // made at load (save.ts), read only here
+    if (o.catalogKey) hd['X-Catalog-Key'] = o.catalogKey;
+    if ((o.body !== undefined || o.prove) && !o.key && !o.catalogKey) hd['X-Device-Token'] = sy().deviceToken; // made at load (save.ts), read only here
     const ac = new AbortController(), timer = setTimeout(() => ac.abort(), o.timeoutMs ?? REQ_MS);
     const outer = o.signal, stop = () => ac.abort();
     outer?.addEventListener('abort', stop);
@@ -213,7 +243,7 @@ export function register(app: SyncHost): void {
       try { data = await res.json(); } catch { if (ac.signal.aborted) throw new NoAnswer(outer?.aborted ? 'net' : 'timeout'); } // a body that is not JSON (a proxy's page): the status decides
       if (isObj(data) && data.offline) throw new NoAnswer('net'); // sw.js answers 200 {offline:true} when the network is down
       lastOk = Date.now();
-      if (rooms && res.status === 426 && parseApiError(data).code === API_ERRORS.upgrade.code && isObj(data)) upgrade(String(data.build));
+      if (apiRoute && res.status === 426 && parseApiError(data).code === API_ERRORS.upgrade.code && isObj(data)) upgrade(String(data.build));
       return { status: res.status, data };
     } finally { clearTimeout(timer); outer?.removeEventListener('abort', stop); }
   }
@@ -264,6 +294,11 @@ export function register(app: SyncHost): void {
   let sheetText = '';
   let boundSeen: HunterId | null = bound()?.id ?? null;
   let removal: RemovedNotice = NO_REMOVAL;
+  let catPub: CatalogPublish = CATALOG_PUBLISH_CLEAN;
+  let catReq: AbortController | null = null;
+  let catLinkGen: Gen | null = null;
+  let catActive: HeldCatalog | null = null;
+  let catStaged: HeldCatalog | null = null;
   /**
    * The invite survives a reload of the tab (iOS drops background tabs) in this tab's memory (`store.device('invite',
    * 'tab')`), never in the save or a backup; a write storage refuses is the store's banner, as any device memory's.
@@ -293,7 +328,7 @@ export function register(app: SyncHost): void {
    * One timer per name. A poll timer due while the page is hidden waits for the page to show (`visible`), except on a GM's
    * phone that may notify, which polls every 30 s while hidden (`hiddenWait` in src/core/sync/link.ts).
    */
-  const timers = new Map<'poll' | 'push', ReturnType<typeof setTimeout>>();
+  const timers = new Map<'poll' | 'push' | 'catalog', ReturnType<typeof setTimeout>>();
 
   function linkDo(e: LinkEvent, data: Data = null): void { queue.push({ to: 'link', e, data }); drain(); }
   function pushDo(e: PushEvent): void { queue.push({ to: 'push', e }); drain(); }
@@ -387,7 +422,7 @@ export function register(app: SyncHost): void {
       // else: the page is hidden. `visible` polls when it shows.
     }, wait));
   }
-  function clearTimer(name: 'poll' | 'push'): void {
+  function clearTimer(name: 'poll' | 'push' | 'catalog'): void {
     const t = timers.get(name);
     if (t !== undefined) { clearTimeout(t); timers.delete(name); }
   }
@@ -446,6 +481,22 @@ export function register(app: SyncHost): void {
           const a = await fetchApi('GET', `/rooms/${call.code}?after=${after}&d=${encodeURIComponent(deviceId())}`, { signal, timeoutMs, key: call.key, prove: true });
           if (a.status !== 200) return one(failedOf(a, gen));
           const r = parseRoomState(a.data); if (!r) return one(failedServer);
+          // Fight safety: on a player phone, read a new catalog rev or newly wanted c: id BEFORE applying docs and hold.
+          let catFetched: CatFetched | null = null;
+          if (call.key === null && r.catalog) {
+            const cur = latestCat(gen);
+            const want = wantedCatalogIds(r.catalog.id, store.get(), r.docs, r.sheets, r.events);
+            const revChanged = !cur || cur.read.id !== r.catalog.id || cur.read.rev !== r.catalog.rev;
+            if (revChanged || want.some(id => !cur.asked.has(id))) {
+              try {
+                const cr = await fetchApi('POST', `/rooms/${encodeURIComponent(call.code)}/catalog/read`, { body: { ids: want }, signal, timeoutMs, prove: true });
+                if (cr.status === 200) {
+                  const parsed = parseCatalogRead(cr.data);
+                  if (parsed) catFetched = { read: parsed, asked: want };
+                }
+              } catch (e) { failKind(e); } // failed catalog read must not block the room poll
+            }
+          }
           const fight = r.docs.fight?.data ?? null;
           const offerActive = r.docs.classOffer?.data.active === true;
           const events: LinkEvent[] = [{
@@ -454,7 +505,7 @@ export function register(app: SyncHost): void {
           }];
           if (call.key && !r.gm) events.push({ type: 'keyLost', gen });
           if (!call.key && removedSinceJoin(r, call.code)) events.push({ type: 'removed', gen });
-          return { events, data: { kind: 'poll', r, after } };
+          return { events, data: { kind: 'poll', r, after, catFetched } };
         }
       }
     } catch (e) { return one({ type: 'failed', gen, kind: failKind(e) }); }
@@ -489,7 +540,7 @@ export function register(app: SyncHost): void {
         peeked.delete(code);
         // the room's offers step `roomGone` in the write that refuses its letters: a never-sent one gives its goods back
         const ended: { news: OfferNews[] } = { news: [] };
-        boxDo('outbox-gone', b => roomGone(b, code), s => { const g = offersGone(askedGone(s, code), code); ended.news = g.closed.flatMap(c => closeNews(c) ?? []); return g.save; });
+        boxDo('outbox-gone', b => roomGone(b, code), s => { const g = offersGone(askedGone(s, code), code, app.rules()); ended.news = g.closed.flatMap(c => closeNews(c) ?? []); return g.save; });
         for (const n of ended.news) if (n.kind === 'toast') ui.toast('Trade', n.text);
         return;
       }
@@ -509,11 +560,29 @@ export function register(app: SyncHost): void {
   function apply(data: Data, cursor: SaveFields | null, before: Link): void {
     if (!data) return;
     if (data.kind === 'head') { skewFrom(data.now); if (link.at === 'live' && link.key === null) bindJoin(link.code); return; }
-    const { r, after } = data;
+    const { r, after, catFetched } = data;
     skewFrom(r.now);
-    const presenceOk = !!(r.gm && r.presence);
-    shown = { gen: link.gen, sheets: r.sheets, docs: r.docs, presence: presenceOk ? r.presence ?? {} : {}, presenceOk };
     const player = link.at === 'live' && link.key === null, dev = deviceId();
+    // Order: catalog, docs, hold (Fable fight safety). Check fight hold against the state BEFORE installing incoming docs
+    // so an edit paired with a new fight activates before the fight starts, while a mid-fight edit stages until release().
+    let catActivated: CatalogRead | null = null;
+    if (player && catFetched) {
+      const cur = latestCat(link.gen);
+      const sameRev = cur !== null && cur.read.id === catFetched.read.id && cur.read.rev === catFetched.read.rev;
+      const merged = mergeCatalogRead(sameRev ? cur.read : null, catFetched.read);
+      const asked = new Set<ItemDefId>([...(sameRev ? cur.asked : []), ...catFetched.asked]);
+      const entry: HeldCatalog = { gen: link.gen, read: merged, asked };
+      const curSave = store.get();
+      if (curSave.hunters.some(h => noticeHeld(curSave, h.id))) {
+        catStaged = entry;
+      } else {
+        catActive = entry;
+        catStaged = null;
+        catActivated = merged;
+      }
+    }
+    const presenceOk = !!(r.gm && r.presence);
+    shown = { gen: link.gen, sheets: r.sheets, docs: r.docs, presence: presenceOk ? r.presence ?? {} : {}, presenceOk, catalog: r.catalog ?? null };
     // a message the room took before this phone's join came while the phone was out of the room: it is told in one window
     const joined = link.at === 'live' && link.key === null ? joinedAt(sy(), link.code) : null;
     const page = r.events.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq);
@@ -525,12 +594,14 @@ export function register(app: SyncHost): void {
       fresh.push(e);
       if (joined !== null && Date.parse(ev.at) < joined) away.add(e);
     }
-    landPage(player ? fresh : null, page, away, joined, cursor, before);
+    landPage(player ? fresh : null, page, away, joined, cursor, before, catActivated);
     if (player) release();
+    if (catActivated) { bindHeard(); app.emit('sync:catalog'); }
     heard();
     app.emit('sync:sheets', { sheets: shown.sheets });
     app.emit('sync:docs', { docs: shown.docs });
     republish();
+    if (!player) void maybeLinkCatalog();
     flush();
   }
   /**
@@ -538,12 +609,22 @@ export function register(app: SyncHost): void {
    * held from earlier pages, then this page's) and the events held now (`settings.sync.held`); and on every phone in the
    * room what the page says of offers (src/core/trade/offer.ts `offersSeen`, over the page whole, this phone's own echoes
    * included: a phone learns that its own accept or take back won only by reading it as the end), with the GM's log lines of
-   * trades. Then the player is told, in the room's order; the messages of `away` (sent while this phone was out of the
-   * room, `joined`) as lines of one window.
+   * trades. When a new catalog activated on this poll, persists its heard custom defs and fits wearers in the same write.
+   * Then the player is told, in the room's order; the messages of `away` (sent while this phone was out of the room,
+   * `joined`) as lines of one window.
    */
-  function landPage(events: RoomEvent[] | null, page: readonly StoredEvent[], away: ReadonlySet<RoomEvent>, joined: number | null, cursor: SaveFields | null, before: Link): void {
+  function landPage(
+    events: RoomEvent[] | null,
+    page: readonly StoredEvent[],
+    away: ReadonlySet<RoomEvent>,
+    joined: number | null,
+    cursor: SaveFields | null,
+    before: Link,
+    catActivated: CatalogRead | null,
+  ): void {
     const me = link.at === 'live' ? { room: link.code, seat: link.key === null ? 'player' as const : 'gm' as const } : null;
-    if (!cursor && !(events && (events.length || sy().held?.length)) && !(me && page.length)) return; // nothing to write
+    const catWrite = catActivated !== null && catalogReleaseStep(store.get(), catActivated, app.rules(), noticeHeld, fitted) !== store.get();
+    if (!cursor && !(events && (events.length || sy().held?.length)) && !(me && page.length) && !catWrite) return; // nothing to write
     const lines: string[] = [], awayApp = awayDeps(deps, lines), did: { page: PageLanded | null; news: readonly OfferNews[] } = { page: null, news: [] };
     const wrote = store.apply('sync-page', s => {
       const at = cursor ? linkWritten(s, cursor, before) : s;
@@ -551,11 +632,14 @@ export function register(app: SyncHost): void {
       // the GM's fight's last message to this phone's hunter, kept in the write that lands it (fight-heard.ts): it holds the hunter before the fight's doc does
       const heard = landed && me ? fightHeard(landed.save.settings.sync.heard ?? null, me.room, page, deviceId()) : null;
       const next = landed ? atSync(sy => ({ ...sy, held: landed.held, ...(heard ? { heard } : {}) }))(landed.save) : at;
-      if (!me) return next;
-      const seen = offersSeen(next, page, me);
-      did.news = seen.news;
-      const logs = seen.news.flatMap(n => (n.kind === 'log' ? [{ kind: 'trade' as const, hunterId: null, title: 'Trade', text: n.text }] : []));
-      return told(seen.save, { at: new Date().toISOString(), cap: app.rules().logCap }, ...logs);
+      let out = next;
+      if (me) {
+        const seen = offersSeen(next, page, me, app.rules(), hid => noticeHeld(next, hid));
+        did.news = seen.news;
+        const logs = seen.news.flatMap(n => (n.kind === 'log' ? [{ kind: 'trade' as const, hunterId: null, title: 'Trade', text: n.text }] : []));
+        out = told(seen.save, { at: new Date().toISOString(), cap: app.rules().logCap }, ...logs);
+      }
+      return catActivated ? catalogReleaseStep(out, catActivated, app.rules(), noticeHeld, fitted) : out;
     });
     if (!wrote.ok) return;
     const landed = did.page;
@@ -598,21 +682,23 @@ export function register(app: SyncHost): void {
   }
   /** Trims chronicle inbox and inactive class entries before sending a sheet on the wire. */
   const wireSheet = (h: Hunter): Hunter => pushedClasses(pushedSheet(h));
+  /** The sheet as it goes on the wire: the hunter, and the custom defs its bag reads (protocol.ts `PushedSheet`), as one text. */
+  const sheetWire = (h: Hunter): string => { const w = wireSheet(h); return JSON.stringify({ hunter: w, defs: bagDefs(w.items, rules()) }); };
   /**
    * PUT the bound sheet as it is now. A 403 removed and a 426 are the link's to hear.
    */
   function sendSheet(gen: Gen, timeoutMs: number): void {
     const b = bound();
     if (link.at !== 'live' || link.gen !== gen || !b) { queueMicrotask(() => pushDo({ type: 'sent', gen })); return; } // nothing to send
-    const h = wireSheet(b), text = JSON.stringify(h), code = link.code;
+    const h = wireSheet(b), text = sheetWire(b), code = link.code;
     // the room's own bound, counted before the request: a sheet past it is refused as too large, as the server would
-    if (JSON.stringify({ hunter: h }).length > SHEET_MAX) { queueMicrotask(() => pushDo({ type: 'refused', gen, why: 'too-large' })); return; }
+    if (text.length > SHEET_MAX) { queueMicrotask(() => pushDo({ type: 'refused', gen, why: 'too-large' })); return; }
     const ac = track(gen);
     sheetText = text;
     void (async (): Promise<void> => {
       let e: PushEvent | LinkEvent;
       try {
-        const a = await fetchApi('PUT', `/rooms/${code}/sheets/${encodeURIComponent(myKey(h.id))}`, { body: { from: deviceId(), data: { hunter: JSON.parse(text) } }, signal: ac.signal, timeoutMs });
+        const a = await fetchApi('PUT', `/rooms/${code}/sheets/${encodeURIComponent(myKey(h.id))}`, { body: { from: deviceId(), data: JSON.parse(text) }, signal: ac.signal, timeoutMs });
         const { code: errCode } = parseApiError(a.data);
         e = a.status >= 200 && a.status < 300 ? { type: 'sent', gen }
           : a.status === 403 && errCode === API_ERRORS.notYourSheet.code ? { type: 'notYours', gen }
@@ -766,7 +852,7 @@ export function register(app: SyncHost): void {
     // a solo run's message, an offer's letter or a word to the GM the room took is heard taken in the same write as its
     // letter leaves the box (sync/asked.ts `askTaken`, trade/offer.ts `letterTaken`, sync/word.ts `wordTaken`); one on its
     // way was heard tried or sent in the write that sent it (the store's `lettersKept` and `asksKept`)
-    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => wordTaken(letterTaken(askTaken(s, e.id), e.id), e.id) : null);
+    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => wordTaken(letterTaken(askTaken(s, e.id), e.id, app.rules()), e.id) : null);
     // a player's own fight move or class pick: the link polls quickly until the doc it was sent from changes
     if (c.ok && e.letter.kind === 'event' && FIGHT_MOVES.has(e.letter.event.type)) linkDo({ type: 'sent', from: view().docs.fight?.data.at ?? null });
     else if (c.ok && e.letter.kind === 'event' && e.letter.event.type === 'classPick') linkDo({ type: 'sent', kind: 'offer', from: offerStamp(view().docs) });
@@ -851,6 +937,23 @@ export function register(app: SyncHost): void {
   const docAt = (name: DocName): string | null => view().docs[name]?.at ?? null;
   // a player's phone plays by the room's build switches while in it (src/edge/rules.ts); the GM's phone by its own
   bindRoom(() => (playerRoom() ? doc('rules') : null));
+  // a player's phone reads the room's active synced catalog (`bindCatalog`); staged mid-fight edits stay out until `release()`
+  bindCatalog(() => (playerRoom() && catActive && catActive.gen === link.gen ? catActive.read : null));
+  /** The newest catalog read (staged over active) held for stretch `gen`, or null. */
+  const latestCat = (gen: Gen): HeldCatalog | null =>
+    (catStaged && catStaged.gen === gen ? catStaged : catActive && catActive.gen === gen ? catActive : null);
+  // on the GM's phone, the custom defs the players' sheets carry, so a player's item of another table reads (edge/rules.ts)
+  let sheetDefs: SheetDefs = { sheets: null, defs: NO_DEFS };
+  bindSheetDefs(() => {
+    if (!gmRoom()) return NO_DEFS;
+    const sheets = view().sheets;
+    if (sheetDefs.sheets !== sheets) {
+      const defs: Record<ItemDefId, ItemDefData> = {};
+      for (const s of Object.values(sheets)) if ('hunter' in s.data) for (const [k, d] of Object.entries(s.data.defs)) if (!Object.hasOwn(defs, k)) defs[k as ItemDefId] = d;
+      sheetDefs = { sheets, defs };
+    }
+    return sheetDefs.defs;
+  });
   /** What this phone knows of the GM's fight, with the fight's last message as `s` keeps it (fight-heard.ts `gmHolds` reads both). */
   const table = (s: Save): TableSeen => ({ code: room(), doc: doc('fight'), docAt: docAt('fight'), heard: s.settings.sync.heard ?? null });
   /** Whether the GM's fight holds a hunter of this player's phone (`fightHold`), for the notice step. */
@@ -870,24 +973,42 @@ export function register(app: SyncHost): void {
     return out.save;
   };
   /**
-   * The release write: once the room's fight doc lets a hunter go, flush waiting facts, reconcile unique classes and
-   * report each grant this phone could not take, in one write. A grant not taken is told once, when it is reported.
+   * The release write: once the room's fight doc lets a hunter go, promote any staged catalog, flush waiting facts,
+   * reconcile unique classes, and report each grant this phone could not take, in one write. A grant not taken is told once.
    */
   const release = (): void => {
     const cur = store.get(), holders = doc('holders');
     const hasInbox = cur.hunters.some(h => h.chronicle.inbox.length);
+    const staged = catStaged && catStaged.gen === link.gen ? catStaged : null;
+    const anyHeld = cur.hunters.some(h => noticeHeld(cur, h.id));
+    let promoted: CatalogRead | null = null;
+    if (staged && !anyHeld) {
+      catActive = staged;
+      catStaged = null;
+      promoted = staged.read;
+    }
     const preview = releaseNoticeStep(cur, holders, hasInbox, noticeHeld, app.rules(), playerRoom());
-    if (isRefused(preview)) return;
-    const did: { diff: ReconcileResult | null; reported: readonly GrantNotTaken[] } = { diff: null, reported: [] };
-    store.apply('noticed', s => releaseStep(s, holders, hasInbox, (d, reported) => { did.diff = d; did.reported = reported; }));
-    for (const g of did.reported) ui.toast('Class', grantNotTakenLine(g.className, g.why), { kind: 'warning' });
-    const d = did.diff;
-    if (!d) return;
-    for (const cls of d.granted) ui.toast('! Class', `You received the unique class ${cls}.`, { kind: 'levelup' });
-    for (const cls of d.reset) ui.toast('! Class', `You received a fresh ${cls} class.`, { kind: 'levelup' });
-    for (const cls of d.restored) ui.toast('! Class', `${cls} is active again.`, { kind: 'info' });
-    for (const cls of d.revoked) ui.toast('! Class', `The GM released ${cls}.`, { kind: 'info' });
-    for (const cls of d.parked) ui.toast('! Class', `${cls} is parked while you play in this room. Its tree progress stays saved.`, { kind: 'info' });
+    const catChanged = promoted !== null && catalogReleaseStep(cur, promoted, app.rules(), noticeHeld, fitted) !== cur;
+    if (!isRefused(preview) || catChanged) {
+      const did: { diff: ReconcileResult | null; reported: readonly GrantNotTaken[] } = { diff: null, reported: [] };
+      const wrote = store.apply('noticed', s => {
+        const base = promoted ? catalogReleaseStep(s, promoted, app.rules(), noticeHeld, fitted) : s;
+        const out = releaseStep(base, holders, hasInbox, (d, reported) => { did.diff = d; did.reported = reported; });
+        return isRefused(out) ? (base === s ? out : base) : out;
+      });
+      if (wrote.ok) {
+        for (const g of did.reported) ui.toast('Class', grantNotTakenLine(g.className, g.why), { kind: 'warning' });
+        const d = did.diff;
+        if (d) {
+          for (const cls of d.granted) ui.toast('! Class', `You received the unique class ${cls}.`, { kind: 'levelup' });
+          for (const cls of d.reset) ui.toast('! Class', `You received a fresh ${cls} class.`, { kind: 'levelup' });
+          for (const cls of d.restored) ui.toast('! Class', `${cls} is active again.`, { kind: 'info' });
+          for (const cls of d.revoked) ui.toast('! Class', `The GM released ${cls}.`, { kind: 'info' });
+          for (const cls of d.parked) ui.toast('! Class', `${cls} is parked while you play in this room. Its tree progress stays saved.`, { kind: 'info' });
+        }
+      }
+    }
+    if (promoted) { bindHeard(); app.emit('sync:catalog'); }
   };
   /**
    * The players' sheets with their device, hunter and when the device last polled, on the room's GM phone; none on any
@@ -920,8 +1041,8 @@ export function register(app: SyncHost): void {
     stamped = stampTime(stamped, Date.now());
     return { device: deviceId(), now: stamped, rand: Math.random() };
   };
-  /** A room event with its id, for `post`. */
-  const event = <K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null => newEvent(type, body, stamp());
+  /** A room event with its id, for `post`: a grant of a custom item in it carries its def (protocol.ts `newEvent`). */
+  const event = <K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null => newEvent(type, body, stamp(), rules());
   /**
    * Puts a room doc in the room of stretch `gen`, and nowhere once the link has left it. The GM's phone then shows the doc
    * as `DOCS` reads it, as every other phone will. `tooBig`: longer than `DOC_MAX`, counted here before it is sent or by
@@ -1040,6 +1161,165 @@ export function register(app: SyncHost): void {
     store.apply('gmkeys-forget', atSync(s => ringGone(s, code)));
   }
 
+  // ── the GM's synced catalog (PUT /api/catalogs/:id, GET on 409, PUT /api/rooms/:code/catalog) ──
+  /** Whether this phone may publish its catalog now: online web server, writable tab, not a player in a room. */
+  const canPublishCatalog = (): boolean =>
+    web && !store.readOnly && !playerRoom() && ((link.at === 'live' && link.key !== null) || (link.at === 'idle' && link.server === 'ok'));
+  /** Ensures this campaign has a catalog id + key (minted at first custom item or first publish) and returns both. */
+  function ownCatalog(): { readonly id: CatalogId; readonly key: CatalogKey } | null {
+    const id = store.catalog();
+    const key = id ? (sy().catalogKeys ?? {})[id] ?? null : null;
+    return id && key ? { id, key } : null;
+  }
+  /** The local catalog doc, its canonical hash, the `ifRev` to send, and whether it differs from `catalogSent`. */
+  function localCatalog(): { readonly doc: CatalogDoc; readonly hash: string; readonly ifRev: number; readonly dirty: boolean } {
+    const s = store.get(), { doc } = catalogDoc(s, CATALOG_MAX), hash = catalogDocHash(doc);
+    const sent = sy().catalogSent, sameId = !!sent && sent.id === s.library.catalogId;
+    return { doc, hash, ifRev: sameId ? sent.rev : 0, dirty: !sameId || sent.hash !== hash };
+  }
+  /** Records or clears the GM's last published catalog rev/hash bookmark (background sync write; read-only tabs never publish). */
+  const markCatalogSent = (sent: CatalogSent | null): boolean => store.apply('catalog-sent', catalogSentStep(sent)).ok;
+  /** Steps the GM's catalog publish machine and carries out its effects. */
+  function catPubDo(e: CatalogPublishEvent): void {
+    const r = catalogPublishStep(catPub, e);
+    catPub = r.state;
+    for (const fx of r.effects) {
+      switch (fx.type) {
+        case 'setTimer':
+          clearTimer('catalog');
+          timers.set('catalog', setTimeout(() => { timers.delete('catalog'); catTimerFired(); }, fx.ms));
+          break;
+        case 'clearTimer': clearTimer('catalog'); break;
+        case 'abort': catReq?.abort(); catReq = null; break;
+        case 'put': void putCatalogNow(fx.ifRev); break;
+        case 'saveSent': {
+          const id = store.get().library.catalogId;
+          if (id && markCatalogSent({ id, rev: fx.rev, hash: fx.hash })) void maybeLinkCatalog();
+          break;
+        }
+        case 'adoptTheirs': {
+          const done = store.apply('catalog-adopt', s => {
+            const adopted = adoptCatalogDoc(s, fx.serverDoc);
+            const id = adopted.library.catalogId;
+            if (!id) return adopted;
+            const hash = catalogDocHash(catalogDoc(adopted, CATALOG_MAX).doc);
+            return catalogSentStep({ id, rev: fx.serverRev, hash })(adopted);
+          });
+          if (ui.wrote('Workshop', done)) {
+            void maybeLinkCatalog();
+            ui.toast('Workshop', CATALOG_CONFLICT_WORDS.adoptedToast, { kind: 'info' });
+          }
+          break;
+        }
+        case 'status': app.emit('sync:catalog'); break;
+      }
+    }
+  }
+  /** The debounce or retry timer fired: send the current local catalog if still dirty, else return to clean. */
+  function catTimerFired(): void {
+    if (!canPublishCatalog()) { catPubDo({ type: 'matched' }); return; }
+    if (!gmRoom() && !hasCatalogContent(store.get())) { catPubDo({ type: 'matched' }); return; }
+    if (!ownCatalog()) { catPubDo({ type: 'matched' }); return; }
+    const { hash, ifRev, dirty } = localCatalog();
+    if (dirty) catPubDo({ type: 'due', hash, ifRev });
+    else { catPubDo({ type: 'matched' }); void maybeLinkCatalog(); }
+  }
+  /** Sends `PUT /api/catalogs/:id`, resolving 409 via `GET /api/catalogs/:id` (adopt rev if equal, else conflict). */
+  async function putCatalogNow(ifRev: number, retriedMissing = false): Promise<void> {
+    const own = canPublishCatalog() ? ownCatalog() : null;
+    if (!own) { catPubDo({ type: 'failed', retry: false }); return; }
+    const { doc, hash } = localCatalog();
+    const ac = new AbortController();
+    catReq?.abort();
+    catReq = ac;
+    try {
+      const a = await fetchApi('PUT', `/catalogs/${encodeURIComponent(own.id)}`, { body: { ifRev, data: doc }, catalogKey: own.key, signal: ac.signal, timeoutMs: REQ_MS });
+      if (ac.signal.aborted) return;
+      if (a.status === 200 && isObj(a.data) && typeof a.data.rev === 'number' && Number.isInteger(a.data.rev) && a.data.rev >= 1) {
+        catReq = null;
+        catPubDo({ type: 'stored', rev: a.data.rev });
+        return;
+      }
+      if (a.status === 409) {
+        const srvRev = isObj(a.data) && typeof a.data.rev === 'number' && Number.isInteger(a.data.rev) ? a.data.rev : -1;
+        // The catalog was swept or the server restarted: recreate from rev 0 once.
+        if (srvRev === 0 && !retriedMissing) {
+          if (markCatalogSent(null)) await putCatalogNow(0, true);
+          return;
+        }
+        const g = await fetchApi('GET', `/catalogs/${encodeURIComponent(own.id)}`, { catalogKey: own.key, signal: ac.signal, timeoutMs: REQ_MS });
+        if (ac.signal.aborted) return;
+        const gRev = g.status === 200 && isObj(g.data) && typeof g.data.rev === 'number' && Number.isInteger(g.data.rev) && g.data.rev >= 1 ? g.data.rev : null;
+        const gDoc = g.status === 200 && isObj(g.data) ? parseCatalogDoc(g.data.data, own.id) : null;
+        catReq = null;
+        if (gRev === null || !gDoc) { catPubDo({ type: 'failed', retry: true }); return; }
+        if (catalogDocHash(gDoc) === hash) catPubDo({ type: 'conflictSame', serverRev: gRev });
+        else catPubDo({ type: 'conflictDiff', serverRev: gRev, serverDoc: gDoc });
+        return;
+      }
+      catReq = null;
+      const nonRetry = a.status === 400 || a.status === 403 || a.status === 413;
+      catPubDo({ type: 'failed', retry: !nonRetry });
+    } catch (e) {
+      if (ac.signal.aborted) return;
+      failKind(e);
+      catReq = null;
+      catPubDo({ type: 'failed', retry: true });
+    }
+  }
+  /** Checks whether the GM's catalog needs publishing (at boot, on library/status/shop change, alone too, or on room open). */
+  function syncCatalog(immediate = false): void {
+    if (!canPublishCatalog() || catPub.at === 'conflict') return;
+    if (!gmRoom() && !hasCatalogContent(store.get())) return;
+    if (!ownCatalog()) return;
+    const { hash, ifRev, dirty } = localCatalog();
+    if (!dirty) {
+      catPubDo({ type: 'matched' });
+      void maybeLinkCatalog();
+      return;
+    }
+    if (immediate) catPubDo({ type: 'now', hash, ifRev });
+    else catPubDo({ type: 'changed' });
+  }
+  /** Links the current live GM room to this phone's published catalog (`PUT /api/rooms/:code/catalog`). */
+  async function maybeLinkCatalog(): Promise<void> {
+    const gm = gmRoom();
+    if (!gm || store.readOnly) return;
+    const catId = store.get().library.catalogId, sent = sy().catalogSent;
+    if (!catId || !sent || sent.id !== catId || sent.rev < 1) return;
+    const gen = link.gen;
+    if (shown.gen !== gen || shown.catalog?.id === catId) return;
+    if (catLinkGen === gen) return;
+    const catKey = (sy().catalogKeys ?? {})[catId] ?? null;
+    if (!catKey) return;
+    catLinkGen = gen;
+    try {
+      const a = await inStretch(gen, signal => fetchApi('PUT', `/rooms/${encodeURIComponent(gm.code)}/catalog`, { body: { id: catId }, key: gm.key, catalogKey: catKey, signal }));
+      if (link.gen !== gen) return;
+      if (a.status === 200) {
+        const ptr = parseCatalogPointer(a.data);
+        if (ptr && shown.gen === gen) shown = { ...shown, catalog: ptr };
+      } else if (a.status === 404 && parseApiError(a.data).code === API_ERRORS.noSuchCatalog.code) {
+        if (markCatalogSent(null)) syncCatalog(true);
+      }
+    } catch (e) { failKind(e); } finally {
+      if (catLinkGen === gen) catLinkGen = null;
+    }
+  }
+  /** Resolves a Workshop 409 catalog conflict: keep this phone's items or adopt the server's. */
+  function resolveCatalog(choice: 'mine' | 'theirs'): void {
+    if (catPub.at !== 'conflict') return;
+    if (choice === 'mine') {
+      catPubDo({ type: 'keepMine', hash: localCatalog().hash });
+      ui.toast('Workshop', CATALOG_CONFLICT_WORDS.keptToast, { kind: 'info' });
+    } else {
+      catPubDo({ type: 'useTheirs' });
+    }
+  }
+  const catalogShop = (): readonly ItemDefId[] | null =>
+    (playerRoom() && catActive && catActive.gen === link.gen ? catActive.read.shop : null);
+  const catalogConflict = (): boolean => catPub.at === 'conflict';
+
   // ── the Room view's live code check ──
   /** code -> what the server said and when. Reused for 30 s, a "no such room" too. */
   const peeked = new Map<RoomCode, { at: number; exists: boolean }>();
@@ -1066,7 +1346,11 @@ export function register(app: SyncHost): void {
     return c === 'off' ? 'off' : c === 'unreachable' || c === 'reconnecting' || c === 'connecting' || c === 'upgrading' || (link.at === 'idle' && link.server === 'unknown') ? 'offline' : 'connected';
   };
   /** Tells the views the link, the push or the outbox changed; `serverBack` when the server answers again after failing. */
-  function emitStatus(serverBack = false): void { republish(); app.emit('sync:status', { status: status(), room: room(), conn: conn(), serverBack }); }
+  function emitStatus(serverBack = false): void {
+    republish();
+    syncCatalog(gmRoom() !== null || serverBack);
+    app.emit('sync:status', { status: status(), room: room(), conn: conn(), serverBack });
+  }
   /** The last room, for a one-tap return. A room the GM removed this phone from offers none. */
   function lastRoom(): { code: RoomCode; gone: boolean; gm: boolean } | null {
     const l: Link = link.at === 'creating' || link.at === 'joining' ? link.back : link;
@@ -1107,15 +1391,17 @@ export function register(app: SyncHost): void {
     retry: async (): Promise<void> => linkDo({ type: 'retry' }),
     gmRooms: () => Object.keys(sy().gmKeys || {}).reverse().map(code => ({ code, current: code === room() })), // newest first
     kick: kickSheet, allowBack, recentKicks, release: releaseSheet, forget,
+    catalogShop, catalogConflict, resolveCatalog,
   };
 
   // ── the page and the network ──
   app.on('change', change => {
-    if (store.readOnly) linkDo({ type: 'readOnly' });
+    if (store.readOnly) { linkDo({ type: 'readOnly' }); catPubDo({ type: 'reset' }); }
     else if (change.replaced || (change.reason === 'storage' && otherRoom())) linkDo({ type: 'replaced', room: storedRoom(), last: storedLast(sy().lastRoom) });
-    if (change.replaced) removalDo({ type: 'replaced' });
+    if (change.replaced) { removalDo({ type: 'replaced' }); catPubDo({ type: 'reset' }); }
     bindHeard();
     republish();
+    syncCatalog(false);
   });
   /**
    * Tells the push what a change did to the bound sheet: another hunter bound, by whichever write (a join, "Play as", a
@@ -1125,10 +1411,10 @@ export function register(app: SyncHost): void {
   function bindHeard(): void {
     const h = bound(), id = h?.id ?? null;
     if (id !== boundSeen) { boundSeen = id; if (push.at !== 'off' && h) pushDo({ type: 'rebound' }); return; }
-    if (push.at !== 'off' && h && JSON.stringify(wireSheet(h)) !== sheetText) pushDo({ type: 'changed' });
+    if (push.at !== 'off' && h && sheetWire(h) !== sheetText) pushDo({ type: 'changed' });
   }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') linkDo({ type: 'visible' }); });
-  addEventListener('online', () => linkDo({ type: 'online' })); // the link polls at once, and a good poll sends what waits
+  addEventListener('online', () => { linkDo({ type: 'online' }); syncCatalog(true); }); // the link polls at once, and a good poll sends what waits
   addEventListener('offline', () => linkDo({ type: 'offline' }));
   addEventListener('pageshow', e => { if (e.persisted) linkDo({ type: 'visible' }); });
 
@@ -1147,6 +1433,7 @@ export function register(app: SyncHost): void {
   // ── boot ──
   unheard();
   runLink(started.effects, started.state, null);
+  syncCatalog(false);
   if (web && 'serviceWorker' in navigator) {
     // a worker that does not register leaves the app working online and not offline: logged, as the player cannot act on it
     const register = (): void => { navigator.serviceWorker.register('sw.js').catch(e => reported('sync:worker', e)); };

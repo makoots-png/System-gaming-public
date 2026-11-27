@@ -528,7 +528,7 @@ async function seedBusy(gm: Page, player: Page): Promise<void> {
         { id: `${prefix}2`, name: 'Aurelian Vanguard Runeforged Adamantine Breastplate', rar: 'legendary', type: 'armor', slot: 'chest', qty: 1, dice: '', bonus: { vit: 10, dis: 6 }, armor: 48, resist: 32, desc: 'Etched with guild resonance wards.' },
         { id: `${prefix}3`, name: 'Distilled Phoenix-Ash & S-Rank Essence Restoration Elixir', rar: 'epic', type: 'consumable', slot: null, qty: 12, dice: '', bonus: {}, armor: 0, resist: 0, desc: 'Restores 80 HP and clears burning on use.', effects: [{ op: 'heal', amount: 80 }] },
         { id: `${prefix}4`, name: "Crystallized Monarch's Dimensional Relic-Key of Ash", rar: 'rare', type: 'key', slot: null, qty: 3, dice: '', bonus: {}, armor: 0, resist: 0, desc: 'Unlocks sealed red double-dungeon sanctums.' },
-      ];
+      ].map(({ id, qty, ...item }) => ({ kind: 'adhoc', id, qty, item }));
 
       const makeConditions = () => [
         { key: 'abyssal-corrosion-mark', def: corrosion, rounds: 5, stacks: 3, source: { id: null, tier: 4 } },

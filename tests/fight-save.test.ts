@@ -35,6 +35,7 @@ import { RULES } from '../src/core/rules.ts';
 import { den } from './models/gate-events.ts';
 import { cid, day, dev, gid, iid, mid, shid } from './fixtures/ids.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
+import { adhocOf } from './fixtures/items.ts';
 
 const AT = '2026-11-15T10:00:00.000Z', STAMP = { at: AT, cap: RULES.logCap };
 const ROOM = 'ABCD23' as RoomCode, KAI = parseSheetKey('d-p1:h1')!;
@@ -54,7 +55,7 @@ function gmSave(): Save {
 function goblin(): NewRow {
   const g = hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, id('c3'), RULES);
   if (g.kind !== 'hunter') throw new Error('a hunter\'s row');
-  const { moved: _m, ...base } = g;
+  const { moved: _m, extractBonus: _eb, ...base } = g;
   return { ...base, kind: 'monster', life: { at: 'up', hp: rowHp(g) }, side: 'foe', holder: null, name: 'Goblin', threat: {}, xp: 60 };
 }
 function rowsOf(s: Save): NewRow[] {
@@ -228,8 +229,8 @@ describe('an item used in the fight leaves its bag in the write that takes the u
   const POTION = { ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!), name: 'Red Draught' };
   /** This phone's hunter (c1) and Kai (c2), each with two Red Draughts (i5, a Health Potion of its own name) and 10 HP down, and a goblin (c3); c1 goes first, then Kai. */
   function potionFight(): Phone {
-    const s0 = gmSave(), h = putItem({ ...s0.hunters[0]!, life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
-    const kaiH = putItem({ ...newHunter(RULES), id: 'h1', name: 'Kai', life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
+    const s0 = gmSave(), h = putItem({ ...s0.hunters[0]!, life: { at: 'up' as const, hp: 1 } }, adhocOf({ ...POTION, qty: 2 }), iid('i5'), RULES);
+    const kaiH = putItem({ ...newHunter(RULES), id: 'h1', name: 'Kai', life: { at: 'up' as const, hp: 1 } }, adhocOf({ ...POTION, qty: 2 }), iid('i5'), RULES);
     const p: Phone = { save: { ...s0, hunters: [h] }, room: [], events: 0 };
     write(p, { type: 'add', fightId: fightId('f1'), rows: [hunterRow(h, id('c1'), RULES), remoteRow(kaiH, KAI, id('c2'), RULES), goblin()], openings: [] });
     write(p, { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('c2'), d20: 15, tie: 0 }, { id: id('c3'), d20: 10, tie: 0 }] });
@@ -268,7 +269,7 @@ describe('an item used in the fight leaves its bag in the write that takes the u
     expect(spentPosts(p.save)).toEqual([]);
 
     // Rank B hunter drinking a rank-E capped bottle is refused tooLow in core, spending no bottle
-    const s0 = gmSave(), high = putItem({ ...s0.hunters[0]!, rank: 'B' as const, life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
+    const s0 = gmSave(), high = putItem({ ...s0.hunters[0]!, rank: 'B' as const, life: { at: 'up' as const, hp: 1 } }, adhocOf({ ...POTION, qty: 2 }), iid('i5'), RULES);
     const hp2: Phone = { save: { ...s0, hunters: [high] }, room: [], events: 0 };
     write(hp2, { type: 'add', fightId: fightId('f2'), rows: [hunterRow(high, id('c1'), RULES), goblin()], openings: [] });
     write(hp2, { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('c3'), d20: 10, tie: 0 }] });

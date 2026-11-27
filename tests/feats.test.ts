@@ -22,6 +22,8 @@ import { newRewards } from '../src/core/rewards.ts';
 import { waitingIn } from '../src/core/hunter/pending.ts';
 import { FEAT_WALK } from './models/feat-events.ts';
 import { dev, hid } from './fixtures/ids.ts';
+import { grantAdhoc } from './fixtures/items.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
 
 const AT = '2026-11-18T10:00:00.000Z', TODAY = dayKey(new Date(AT), 0), NOW = { at: AT, day: TODAY };
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-me') };
@@ -317,7 +319,7 @@ describe('the System notices, in the write of the fact', () => {
 
 describe('the GM\'s feats on the players\' phones (the room\'s feats doc)', () => {
   test('a library of 100 feats, each with a reward of 20 items, fills the doc within DOC_MAX and names the ones left out; the doc reads back whole', () => {
-    const items = Array.from({ length: 20 }, (_, i) => ({ name: `Potion ${i}`, rar: 'common', type: 'consumable', qty: 1, desc: 'x'.repeat(200) }));
+    const items = Array.from({ length: 20 }, (_, i) => grantAdhoc(parseItemDef({ name: `Potion ${i}`, rar: 'common', type: 'consumable', desc: 'x'.repeat(200) })!));
     const big: FeatDef = parseFeat({ ...BUILT_IN_FEATS[0]![1], rewards: { ...newRewards(), items } })!;
     const lib = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`gm-${String(i).padStart(3, '0')}`, { ...big, name: `Feat ${i}` }]));
     const { doc, left } = featsDoc(lib, DOC_MAX);

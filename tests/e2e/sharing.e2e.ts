@@ -1,11 +1,11 @@
 // Sharing custom content (src/core/pack.ts, src/edge/pack-code.ts, the Data view and the Workshop): a code or a file
 // made on one phone, read on another, merged with Add or Replace.
-import { test, expect, setupGoblinDenGM, go, answerWindow, save, type Page } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, answerWindow, save, addLibraryItem, type Page } from './helpers.ts';
 
 const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] };
 /** Frostbite for 2 rounds: a round is 1000 ticks of fight time (RULES.fight.round). */
 const FROST_BOMB = {
-  name: 'Frost Bomb', type: 'consumable', rar: 'rare', slot: null, qty: 2, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
+  name: 'Frost Bomb', type: 'consumable', rar: 'rare', slot: null, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
   effects: [{ op: 'applyStatus', key: 'frostbite', def: FROSTBITE, duration: 2000 }],
 };
 const ICE_SPIKE = { name: 'Ice Spike', type: 'active', level: 1, label: null, desc: 'A shard of ice.', ability: null };
@@ -22,7 +22,7 @@ const content = (page: Page) => page.evaluate(() => {
   const s = hunterApp.store.get();
   return {
     statuses: Object.keys(s.library.statuses), labels: Object.values(s.library.statuses).map((d: any) => d.label),
-    items: s.library.items.map((i: any) => i.name), skills: s.library.skills.map((k: any) => k.name),
+    items: Object.values(s.library.items).map((i: any) => i.name), skills: s.library.skills.map((k: any) => k.name),
     rewards: s.library.rewards.map((b: any) => b.name), monsters: s.monsters.map((m: any) => m.name),
   };
 });
@@ -36,11 +36,12 @@ const ALL_FIVE = { statuses: ['frostbite'], labels: ['Frostbite'], items: ['Fros
 async function gmWithContent(device: (label: string) => Promise<{ page: Page }>, label = 'gm'): Promise<Page> {
   const { page } = await device(label);
   await setupGoblinDenGM(page);
-  await page.evaluate(([st, it, sk, mo, rb]) => hunterApp.store.update((d: any) => {
+  await page.evaluate(([st, sk, mo, rb]) => hunterApp.store.update((d: any) => {
     d.library.statuses.frostbite = st;
-    d.library.items.push({ ...it, id: 'i900' }); d.library.skills.push({ ...sk, id: 's900' });
+    d.library.skills.push({ ...sk, id: 's900' });
     d.gates = []; d.monsters = [{ ...mo, id: 'm900' }]; d.library.rewards.push({ ...rb, id: 'rb900' });
-  }, 'test-setup'), [FROSTBITE, FROST_BOMB, ICE_SPIKE, ICE_WARDEN, WOLF_HUNT] as const);
+  }, 'test-setup'), [FROSTBITE, ICE_SPIKE, ICE_WARDEN, WOLF_HUNT] as const);
+  await addLibraryItem(page, FROST_BOMB);
   return page;
 }
 /** A second phone: a GM with the starter campaign and no custom content. */
@@ -132,7 +133,7 @@ test('pasting the same code again with Add makes "… 2" copies, and with Replac
       rewards: ['Wolf hunt', 'Wolf hunt 2'], monsters: ['Ice Warden', 'Ice Warden 2'],
     });
     const s = await save(gm);
-    expect(s.library.items[1].effects).toMatchObject([{ op: 'applyStatus', key: 'frostbite-2', duration: 2000 }]);
+    expect((Object.values(s.library.items)[1] as any).effects).toMatchObject([{ op: 'applyStatus', key: 'frostbite-2', duration: 2000 }]);
     expect(s.monsters[1].statuses).toEqual([{ key: 'frostbite-2', rounds: null }]);
   });
   await test.step('Replace: nothing new arrives', async () => {

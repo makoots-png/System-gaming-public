@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { keystoneSwitched, withRoomRules, roomRulesOf } from '../src/core/hunter/build.ts';
 import { fits, loadoutCap, overwriteLoadout, removeLoadout, renameLoadout, saveLoadout, swapLoadout } from '../src/core/hunter/loadouts.ts';
 import { LIMITS, newHunter, newSave } from '../src/core/save.ts';
-import type { Hunter, Item, Save } from '../src/core/save.ts';
+import type { Hunter, Save } from '../src/core/save.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 import { RULES, primerRuleSet, rulesOf } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
-import { parseItem, priceOf, valueOf, RARITIES } from '../src/core/registry/items.ts';
+import { priceOf, valueOf, RARITIES } from '../src/core/registry/items.ts';
 import { FULL_HEAL } from '../src/core/combat/effect-ops.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { DOCS, WIRES } from '../src/core/protocol.ts';
@@ -129,8 +131,9 @@ describe('the room carries the economy', () => {
 });
 
 describe('loadouts', () => {
-  const sword = (id: string, qty = 1): Item => ({ ...parseItem({ name: 'Sword', type: 'weapon', slot: 'weapon' })!, id, qty } as Item);
-  const ring = (id: string): Item => ({ ...parseItem({ name: 'Ring', type: 'accessory', slot: 'ring1' })!, id, qty: 1 } as Item);
+  const SWORD = parseItemDef({ name: 'Sword', type: 'weapon', slot: 'weapon' })!, RING = parseItemDef({ name: 'Ring', type: 'accessory', slot: 'ring1' })!;
+  const sword = (id: string, qty = 1): HeldItem => ({ kind: 'adhoc', id: iid(id), qty, item: SWORD });
+  const ring = (id: string): HeldItem => ({ kind: 'adhoc', id: iid(id), qty: 1, item: RING });
   const armed = (): Hunter => { const h = hunter({ items: [sword('i1'), ring('i2')] }); return { ...h, equipped: { ...h.equipped, weapon: iid('i1'), ring2: iid('i2') } }; };
   test('the cap is the rules\', 0 or more, never past the save\'s limit', () => {
     expect(loadoutCap(R)).toBe(R.loadoutCap);
@@ -153,8 +156,8 @@ describe('loadouts', () => {
     expect(ok(overwriteLoadout(bare, 'lo1', R)).loadouts[0]!.slots).toEqual({ ring2: 'i2' });
   });
   test('a ring fits either ring slot', () => {
-    expect(fits(ring('x'), 'ring2')).toBe(true);
-    expect(fits(sword('x'), 'head')).toBe(false);
+    expect(fits(RING, 'ring2')).toBe(true);
+    expect(fits(SWORD, 'head')).toBe(false);
   });
   test('a swap puts the set back on; take off, swap, and the gear is as it was', () => {
     const saved = ok(saveLoadout(armed(), loid('lo1'), 'Day', R));
@@ -164,8 +167,7 @@ describe('loadouts', () => {
     expect(r.save.hunters[0]!.equipped).toEqual(saved.equipped);
   });
   test('a stack is split: one copy worn under a new id from seq, the set names it from then on', () => {
-    const h0 = hunter({ items: [sword('i1', 3)] }), h1 = { ...h0, equipped: { ...h0.equipped, weapon: iid('i1') } };
-    const saved = ok(saveLoadout(h1, loid('lo1'), 'Day', R)), bare = { ...saved, equipped: { ...saved.equipped, weapon: null } };
+    const bare: Hunter = { ...hunter({ items: [sword('i1', 3)] }), loadouts: [{ id: loid('lo1'), name: 'Day', slots: { weapon: iid('i1') } }] };
     const r = ok(swapLoadout<Save>({ ...newSave(dev('d')), seq: 40, hunters: [bare] }, bare.id, 'lo1', R, false)), h = r.save.hunters[0]!;
     expect(h.items.map(i => [i.id, i.qty])).toEqual([['i1', 2], ['i41', 1]]);
     expect(h.equipped.weapon).toBe(iid('i41'));

@@ -30,11 +30,12 @@ import type { Rules } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { MYTHICS } from '../src/core/registry/mythics.ts';
+import { refGrant } from '../src/core/registry/item-book.ts';
 
 const BASE = Object.fromEntries(STAT_KEYS.map(k => [k, 10])) as Stats;
 const striker = (R: Rules, str: number): SheetHunter => ({
   stats: { ...BASE, str }, level: 1, rank: 'E', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, skills: [], conditions: [],
+  items: [], equipped: newHunter(RULES).equipped, skills: [], conditions: [],
 });
 const curved = (fight: Partial<Rules['fight']>): Rules => ({ ...RULES, fight: { ...RULES.fight, ...fight } });
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
@@ -136,11 +137,11 @@ describe('the death line', () => {
   });
 
   test('the Resurrection Crystal the line names raises the dead at the HP it states, as the GM\'s Revive does', () => {
-    const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (E)')!);
+    const seed = SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (E)')!, crystal = itemOf(RULES, seed);
     expect(crystal.name.startsWith('Resurrection Crystal'), 'the shop\'s crystals carry the name the line says, and their rank').toBe(true);
     expect(WAYS_BACK).toContain('Resurrection Crystal');
     expect(line).toContain('Use a Resurrection Crystal from your bag outside a fight.');
-    const h = { ...putItem(newHunter(RULES), crystal, 'i1' as never), life: { at: 'dead' as const } }, u = useItem(h, 'i1', [], RULES);
+    const h = { ...putItem(newHunter(RULES), refGrant(seed.defId), 'i1' as never, RULES), life: { at: 'dead' as const } }, u = useItem(h, 'i1', [], RULES);
     expect(refused(u) ? u : u.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
@@ -169,8 +170,8 @@ describe('the death line', () => {
 
   test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a living one\'s are not', () => {
     expect(line).toContain('A dead hunter cannot buy or sell in the shop. The GM or another hunter can still give a dead hunter a Resurrection Crystal.');
-    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
-    const rich = { ...putItem(newHunter(RULES), potion, 'i1' as never), gold: 1000 };
+    const potion = refGrant(SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!.defId);
+    const rich = { ...putItem(newHunter(RULES), potion, 'i1' as never, RULES), gold: 1000 };
     expect(buy({ ...rich, life: { at: 'dead' } }, potion, 'i2' as never, RULES)).toEqual({ ok: false, why: 'dead' });
     expect(sell({ ...rich, life: { at: 'dead' } }, 'i1', 1, RULES)).toEqual({ ok: false, why: 'dead' });
     expect(refused(buy({ ...rich, life: { at: 'up', hp: 1 } }, potion, 'i2' as never, RULES))).toBe(false);

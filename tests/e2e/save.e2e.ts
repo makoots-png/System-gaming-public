@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { SCHEMA, createHunter, freshSave } from '../../src/core/save.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { parseItem } from '../../src/core/registry/items.ts';
+import { itemDefDataOf } from '../../src/core/registry/item-book.ts';
 import { parseDeviceId, saveId } from '../../src/core/ids.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { test, expect, openApp, onboardPlayer, dismissAll, editIdentity, go, save, answerWindow, noonDate, type Page } from './helpers.ts';
@@ -22,7 +23,7 @@ function playerSaveText(): string {
   h.name = 'Mira Fixture';
   h.gold = 0;
   h.skills = [];
-  h.items = [{ ...parseItem({ name: 'Player Charm', rar: 'common', type: 'misc', qty: 2 })!, id: saveId('i', 10) }];
+  h.items = [{ kind: 'adhoc', id: saveId('i', 10), qty: 2, item: itemDefDataOf(parseItem({ name: 'Player Charm', rar: 'common', type: 'misc' })!) }];
   return JSON.stringify(s);
 }
 /** A current-schema campaign save with two hunters for export/import round-trip tests. */
@@ -40,10 +41,14 @@ const backedUp = (page: Page, reason: string): Promise<string[]> => page.evaluat
   return ring.filter(b => b.reason === wanted).map(b => b.data);
 }, [BACKUPS, reason]);
 
+/** A save's bag line by what it is: an ad hoc item by its own name, a reference by its def id. */
+const heldKey = (i: any): string => (i.kind === 'adhoc' ? i.item.name : i.defId);
+/** A bag line of save `s` by name: an ad hoc item's own, a reference's from the save's library. */
+const heldName = (s: any, i: any): string => (i.kind === 'adhoc' ? i.item.name : s.library.items[i.defId]?.name ?? i.defId);
 /** The part of a hunter a player would miss if it changed. */
 const whatPlayersKeep = (h: any) => ({
   name: h.name, level: h.level, xp: h.xp, job: h.job, rank: h.rank, stats: h.stats, gold: h.gold,
-  items: h.items.map((i: any) => [i.name, i.qty]),
+  items: h.items.map((i: any) => [heldKey(i), i.qty]),
   skills: h.skills.map((k: any) => k.name),
   quests: h.quests.map((q: any) => [q.title, q.status]),
 });
@@ -181,7 +186,8 @@ test('a campaign exported from the Data panel and imported on another phone brin
     expect(await identity(), 'the second phone is still itself to the room').toEqual(mine);
     expect(await ownRooms(), 'the second phone keeps its GM keys and what landed on it').toEqual(rooms);
     const active = hunters.find((h: any) => h.id === fixture.settings.activeHunterId);
-    await expectSheetShows(second, { ...active, items: active.items.map((i: any) => [i.name, i.qty]), skills: active.skills.map((k: any) => k.name) });
+    const bag = await first.evaluate(id => hunterApp.api.inventory.bag(hunterApp.store.hunter(id)).map((i: any) => [i.name, i.qty]), active.id as string);
+    await expectSheetShows(second, { ...active, items: bag, skills: active.skills.map((k: any) => k.name) });
   });
 });
 
@@ -316,7 +322,8 @@ test('storage full on a write: the player is told, the change stays on screen, a
     await editIdentity(page, 'name', 'Mira Saved');
     await expect(banner(page, SAVE_FAILED)).toHaveCount(0);
     await expect.poll(() => storedName(page)).toBe('Mira Saved');
-    expect(JSON.parse((await stored(page, V5))!).hunters[0].items.map((i: any) => i.name)).toEqual(['Player Charm', 'Full Storage Charm']);
+    const kept = JSON.parse((await stored(page, V5))!);
+    expect(kept.hunters[0].items.map((i: any) => heldName(kept, i))).toEqual(['Player Charm', 'Full Storage Charm']);
   });
 });
 

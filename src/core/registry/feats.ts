@@ -13,7 +13,8 @@ import { newRewards } from '../rewards.ts';
 import type { RewardTitle, Rewards } from '../rewards.ts';
 import { RULES } from '../rules.ts';
 import type { Perk, Rank } from '../rules.ts';
-import { SHOP_ITEMS, itemOf } from './items.ts';
+import { SHOP_ITEMS } from './items.ts';
+import type { ItemGrant } from './item-book.ts';
 import type { FeatBook, FeatDef, Show } from '../hunter/feats.ts';
 import type { FactCount, Test } from '../hunter/counts.ts';
 import type { FactKind } from '../hunter/facts.ts';
@@ -21,7 +22,7 @@ import type { FeatKey } from '../ids.ts';
 
 const title = (name: string, band: Rank, desc: string, bonus: Perk, extra: Partial<Rewards> = {}): Rewards => ({ ...newRewards(), ...extra, title: { name, desc, bonus, band } });
 const points = (n: number): Rewards => ({ ...newRewards(), points: n });
-const item = (name: string, qty = 1) => ({ ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === name)!), qty });
+const item = (name: string, qty = 1): ItemGrant => ({ kind: 'ref', defId: SHOP_ITEMS.find(d => d.name === name)!.defId, qty });
 const is = (field: string, value: number | string | boolean): Test => ({ field, op: '=', value });
 const atLeast = (field: string, value: number): Test => ({ field, op: '>=', value });
 const atMost = (field: string, value: number): Test => ({ field, op: '<=', value });

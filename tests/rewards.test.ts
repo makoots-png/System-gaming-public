@@ -4,7 +4,9 @@ import { bandOf, grantLines, newRewards, parseRewards, rewardLines, saveBundle, 
 import type { Rewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
 import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
-import type { ItemTemplate } from '../src/core/registry/items.ts';
+import { adhocGrant, itemDefDataOf, refGrant } from '../src/core/registry/item-book.ts';
+import type { ItemGrant } from '../src/core/registry/item-book.ts';
+import { bagOf } from '../src/core/hunter/inventory.ts';
 import { SKILL_SEEDS, skillOf } from '../src/core/registry/skills.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -24,7 +26,9 @@ import { day, dev } from './fixtures/ids.ts';
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
 const BIG = 'x'.repeat(100_000);
-const POTION: ItemTemplate = { ...itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!), qty: 2 };
+const POTION_SEED = SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!;
+const POTION: ItemGrant = refGrant(POTION_SEED.defId, 2);
+const POTION_DEF = itemDefDataOf(itemOf(RULES, POTION_SEED));
 const SLASH = { ...skillOf(SKILL_SEEDS.find(k => k.name === 'Mutilation')!, RULES), name: 'Slash' };
 /** A reward that uses every field, as a GM would build one. */
 const FULL: Rewards = {
@@ -73,7 +77,7 @@ describe('hostile input', () => {
   });
 
   test('an entry its kind refuses is dropped: an item or skill or boon without a name, a status with a bad key', () => {
-    const r = read({ items: [{ name: '' }, 4, POTION], skills: [{ name: '   ' }, SLASH], boons: [{ text: 'no name' }, null], statuses: [{ key: 'Bad Key' }, { key: 'hasted', rounds: 3 }] });
+    const r = read({ items: [{ kind: 'adhoc', qty: 1, item: { name: '' } }, { name: 'By value' }, 4, POTION], skills: [{ name: '   ' }, SLASH], boons: [{ text: 'no name' }, null], statuses: [{ key: 'Bad Key' }, { key: 'hasted', rounds: 3 }] });
     expect([r.items, r.skills, r.boons, r.statuses]).toEqual([[POTION], [SLASH], [], [{ key: 'hasted', rounds: 3 }]]);
   });
 
@@ -118,10 +122,11 @@ describe('the bounds', () => {
   });
 
   test('at most 20 items, 8 skills, 8 statuses and 8 boons: the first ones are kept', () => {
-    const r = read({ items: many(10_000, i => ({ ...POTION, name: `P${i}` })), skills: many(50, i => ({ name: `S${i}` })),
+    const r = read({ items: many(10_000, i => adhocGrant({ ...POTION_DEF, name: `P${i}` })), skills: many(50, i => ({ name: `S${i}` })),
       statuses: many(50, i => ({ key: `s${i}`, rounds: 1 })), boons: many(50, i => ({ name: `B${i}` })) });
     expect([r.items.length, r.skills.length, r.statuses.length, r.boons.length]).toEqual([20, 8, 8, 8]);
-    expect([r.items[0]!.name, r.skills[7]!.name, r.statuses[7]!.key, r.boons[7]!.name]).toEqual(['P0', 'S7', 's7', 'B7']);
+    const first = r.items[0]!;
+    expect([first.kind === 'adhoc' ? first.item.name : first.defId, r.skills[7]!.name, r.statuses[7]!.key, r.boons[7]!.name]).toEqual(['P0', 'S7', 's7', 'B7']);
   });
 
   test('a title\'s name is 60, its description 200, its bonus 999 either way', () => {
@@ -220,7 +225,7 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
     return g;
   };
   const hunter = (s: Save): Hunter => s.hunters[0]!;
-  const potions = (h: Hunter): number => h.items.filter(i => i.name === 'Health Potion (E)').reduce((n, i) => n + i.qty, 0);
+  const potions = (h: Hunter): number => bagOf(h, RULES).filter(i => i.name === 'Health Potion (E)').reduce((n, i) => n + i.qty, 0);
 
   test('every part of a reward is on the hunter in the one save it answers, and the save it was given is unchanged', () => {
     const save = fresh(), before = JSON.stringify(save), h = hunter(save);
@@ -399,16 +404,16 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
   // Each way a GM gives an item is read through its own step, then the hunter it was given is killed and uses it from
   // the bag: the crystal arrived whole, its revive with it.
   const AT = '2026-11-18T12:00:00.000Z', DAY = { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' as const };
-  const CRYSTAL: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Resurrection Crystal (S)')!);
+  const CRYSTAL: ItemGrant = refGrant(SHOP_ITEMS.find(i => i.name === 'Resurrection Crystal (S)')!.defId);
   const WITH: Rewards = { ...newRewards(), items: [CRYSTAL] };
   const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
   /** Hunter h1 of `s` dies, then uses the crystal it holds: up at 1 HP with none left. */
   const raised = (s: Save): void => {
-    const h = { ...s.hunters[0]!, life: { at: 'dead' as const } }, it = h.items.find(i => i.revive)!;
+    const h = { ...s.hunters[0]!, life: { at: 'dead' as const } }, it = bagOf(h, RULES).find(i => i.revive)!;
     expect(it).toMatchObject({ name: 'Resurrection Crystal (S)', revive: true });
     const u = useItem(h, it.id, [], RULES);
     if (isRefused(u)) throw new Error(u.why);
-    expect([u.hunter.life, u.hunter.items.some(i => i.revive)]).toEqual([{ at: 'up', hp: 1 }, false]);
+    expect([u.hunter.life, bagOf(u.hunter, RULES).some(i => i.revive)]).toEqual([{ at: 'up', hp: 1 }, false]);
   };
   const granted = (s: Save, r: Rewards): Save => { const g = grant(s, 'h1', r, DAY); if (isRefused(g)) throw new Error(g.why); return g.save; };
 

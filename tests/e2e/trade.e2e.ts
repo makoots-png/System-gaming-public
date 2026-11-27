@@ -2,7 +2,7 @@
 // offers from the Bag's Give window, the other accepts or refuses on the Bag's Offers tab, the giver can take it back, the
 // GM can stop an offer and turn trading off. Driven through the UI; the store sets up and reads.
 import type { Page } from '@playwright/test';
-import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, gmRoomHeaders } from './helpers.ts';
+import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, gmRoomHeaders, adhoc } from './helpers.ts';
 import { STATE_WORDS } from '../../src/core/trade/offer.ts';
 import { TRADE_WORDS } from '../../src/core/trade/words.ts';
 
@@ -29,16 +29,17 @@ async function table(device: (label: string, o?: DeviceOptions) => Promise<{ pag
   }
   return { gm, brakk, mira, code };
 }
-/** Puts `lines` in the active hunter's bag and sets its gold, as setup. */
+/** Puts `lines`, the hunter's own items, in the active hunter's bag and sets its gold, as setup. */
 async function stock(page: Page, lines: Line[], gold: number): Promise<void> {
-  await page.evaluate(({ lines, gold }) => {
+  const grants = lines.map(l => adhoc({ name: l.name, rar: 'common', type: l.slot ? 'armor' : 'consumable', ...(l.slot ? { slot: l.slot } : {}) }, l.qty ?? 1));
+  await page.evaluate(({ grants, gold }) => {
     const hid = hunterApp.store.active().id;
-    for (const l of lines) hunterApp.api.inventory.addItem(hid, { name: l.name, rar: 'common', type: l.slot ? 'armor' : 'consumable', qty: l.qty ?? 1, ...(l.slot ? { slot: l.slot } : {}) });
+    for (const g of grants) hunterApp.api.inventory.addItem(hid, g);
     hunterApp.api.inventory.addGold(hid, gold - hunterApp.store.active().gold);
-  }, { lines, gold });
+  }, { grants, gold });
 }
 /** How many of item `name` the active hunter holds. */
-const has = (page: Page, name: string): Promise<number> => page.evaluate(n => hunterApp.store.active().items.filter((i: any) => i.name === n).reduce((a: number, i: any) => a + i.qty, 0), name);
+const has = (page: Page, name: string): Promise<number> => page.evaluate(n => hunterApp.api.inventory.bag(hunterApp.store.active()).filter((i: any) => i.name === n).reduce((a: number, i: any) => a + i.qty, 0), name);
 const goldOf = (page: Page): Promise<number> => page.evaluate(() => hunterApp.store.active().gold);
 const records = (page: Page): Promise<string[]> => page.evaluate(() => (hunterApp.store.get().settings.sync.offers ?? []).map((r: any) => `${r.side} ${r.state}`));
 const tradeLog = (gm: Page): Promise<string[]> => gm.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.kind === 'trade').map((l: any) => l.text));
@@ -250,7 +251,7 @@ test('Brakk gives Eldrin a potion on the same phone in one tap more', async ({ d
 
   expect(taps).toBe(3);
   expect(await has(brakk, 'Healing Potion')).toBe(2);
-  const eldrin = await brakk.evaluate(() => hunterApp.store.get().hunters.find((h: any) => h.name === 'Eldrin').items.map((i: any) => [i.name, i.qty]));
+  const eldrin = await brakk.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.get().hunters.find((h: any) => h.name === 'Eldrin')).map((i: any) => [i.name, i.qty]));
   expect(eldrin).toEqual([['Healing Potion', 1]]);
   await expect(brakk.locator('#toasts .toast', { hasText: 'Brakk gave Eldrin 1 Healing Potion.' })).toBeVisible();
 });

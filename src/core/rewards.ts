@@ -11,10 +11,10 @@ import { debtXpClearedLine, debtXpLine } from './hunter/revive-standing.ts';
 import type { DebtPaid, DebtXpCut } from './hunter/revive-standing.ts';
 import { clearGoldLine } from './hunter/guild.ts';
 import type { GuildGoldCut } from './hunter/guild.ts';
-import { parseItem } from './registry/items.ts';
+import { parseItemGrant, resolveGrant } from './registry/item-book.ts';
 import { parsePowers } from './registry/powers.ts';
 import type { Powers } from './registry/powers.ts';
-import type { ItemTemplate } from './registry/items.ts';
+import type { ItemGrant } from './registry/item-book.ts';
 import { parseSkill } from './registry/skills.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import { BONUS_KEYS, RANKS, RULES } from './rules.ts';
@@ -42,7 +42,7 @@ export const bandOf = (t: { readonly band?: Rank }): Rank => t.band ?? 'E';
  */
 export type RewardStatus = { key: StatusKey; rounds: number | null; def?: StatusDef };
 /** What a reward's words read: the statuses a key names. */
-export type RewardRules = { readonly conditions: Readonly<Record<string, StatusDef>> };
+export type RewardRules = { readonly conditions: Readonly<Record<string, StatusDef>> } & Pick<Rules, 'items' | 'fight'>;
 /** A text reward the GM honours at the table. The hunter keeps it until the player redeems it. */
 export type BoonGrant = { name: string; text: string };
 /**
@@ -50,7 +50,7 @@ export type BoonGrant = { name: string; text: string };
  * or skill has no id until the hunter holds it.
  */
 export type Rewards = {
-  xp: number; points: number; gold: number; crystal: number; items: ItemTemplate[]; title: RewardTitle | null; job: string | null;
+  xp: number; points: number; gold: number; crystal: number; items: ItemGrant[]; title: RewardTitle | null; job: string | null;
   skills: SkillTemplate[]; statuses: RewardStatus[]; boons: BoonGrant[];
 };
 
@@ -115,12 +115,12 @@ function boon(v: unknown): BoonGrant | null {
 }
 
 /** The reader of one entry of each part of a reward, an entry it refuses null: also the rule overrides' (overrides.ts). */
-export const REWARD_ENTRY = { items: parseItem, skills: parseSkill, statuses: status, boons: boon, title } as const;
+export const REWARD_ENTRY = { items: parseItemGrant, skills: parseSkill, statuses: status, boons: boon, title } as const;
 
 /**
  * A reward read from outside data, or null when it is not an object. Each field of the wrong type takes the default an
  * empty reward has; a number is cut to a whole one inside `REWARD_BOUNDS`; each list keeps its first entries up to its
- * bound, each read by its kind's parser (`parseItem`, `parseSkill`), an entry it refuses dropped. A title or boon needs a
+ * bound, each read by its kind's parser (`parseItemGrant`, `parseSkill`), an entry it refuses dropped. A title or boon needs a
  * name. Every other key is dropped.
  */
 export function parseRewards(v: unknown): Rewards | null {
@@ -129,7 +129,7 @@ export function parseRewards(v: unknown): Rewards | null {
   return {
     xp: whole(v.xp, -B.xp, B.xp, 0), points: whole(v.points, -B.points, B.points, 0), gold: whole(v.gold, -B.gold, B.gold, 0),
     crystal: whole(v.crystal, -B.crystal, B.crystal, 0),
-    items: listOf(v.items, B.items, parseItem), title: title(v.title), job: line(v.job, B.job) || null,
+    items: listOf(v.items, B.items, parseItemGrant), title: title(v.title), job: line(v.job, B.job) || null,
     skills: listOf(v.skills, B.skills, parseSkill), statuses: listOf(v.statuses, B.statuses, status), boons: listOf(v.boons, B.boons, boon),
   };
 }
@@ -240,7 +240,7 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
   if (r.points) out.push(amount(r.points, points(r.points)));
   if (r.gold) out.push(amount(r.gold, 'gold'));
   if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));
-  for (const i of r.items) out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
+  for (const g of r.items) { const i = resolveGrant(g, R); out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`); }
   if (r.title) out.push(`Title: ${titleWords(r.title)}`);
   if (r.job) out.push(jobLine(r.job));
   for (const s of r.skills) out.push(`Skill: ${s.name}`);
@@ -277,7 +277,7 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   else if (r.gold) out.push(amount(r.gold, 'gold'));
   if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));
   if (r.points) out.push(amount(r.points, points(r.points)));
-  for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
+  for (const g of r.items) { const i = resolveGrant(g, R); out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`); }
   if (r.title) out.push(`Title acquired: ${titleWords(r.title)}`);
   if (r.job) out.push(jobLine(r.job));
   for (const s of r.skills) out.push(`Skill acquired: ${s.name}`);

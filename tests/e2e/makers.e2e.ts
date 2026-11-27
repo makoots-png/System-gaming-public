@@ -3,7 +3,7 @@
 // (combat.js); they need W5's merge to run.
 import { fightId } from '../../src/core/ids.ts';
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList, libraryItem, addLibraryItem } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { itemSpend, spendLine } from '../../src/core/registry/item-budget.ts';
 import type { ItemTemplate } from '../../src/core/registry/items.ts';
@@ -35,7 +35,6 @@ const statusMaker = (page: Page) => page.locator('.fg-overlay [role=dialog]');
 const itemMaker = (page: Page) => page.locator('.lf-overlay [role=dialog]');
 const skillMaker = (page: Page) => page.locator('.skm-overlay [role=dialog]');
 const monsterMaker = (page: Page) => page.locator('.enm-overlay [role=dialog]');
-const libraryItem = (page: Page, name: string) => page.evaluate(n => hunterApp.store.get().library.items.find((i: any) => i.name === n), name);
 
 /** A section of the Workshop: `status`, `item`, `skill` or `monster`. */
 const workshop = (page: Page, kind: string) => page.locator(`#view-workshop [data-ws="${kind}"]`);
@@ -255,7 +254,7 @@ test('a GM makes the consumable Bottled Storm in 7 taps from the home screen, an
 
   await test.step('Edit shows every field and effect, and Save leaves it equal', async () => {
     await go(page, 'workshop');
-    await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
+    await workshop(page, 'item').locator(`li[data-id="${saved.defId}"] [data-act="edit"]`).tap();
     await expect(d.locator('#lf-name')).toHaveValue('Bottled Storm');
     await expect(d.locator('[data-chips="type"] [data-chip="consumable"]')).toHaveAttribute('aria-pressed', 'true');
     await expect(d.locator('[data-chips="target"] [data-chip="other"]')).toHaveAttribute('aria-pressed', 'true');
@@ -298,7 +297,7 @@ test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wea
   expect(helm).toMatchObject({ type: 'armor', rar: 'epic', slot: 'head', weight: 5, armor: 9, resist: 9, bonus: { str: 2 } });
 
   const sheet = () => page.evaluate(() => { const x = hunterApp.api.hunter.sheet(hunterApp.store.active()); return { armor: x.sheet.armor as number, str: x.stats.str as number }; });
-  await page.evaluate(it => hunterApp.api.inventory.addItem(hunterApp.store.active().id, it), helm);
+  await page.evaluate(defId => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { kind: 'ref', defId, qty: 1 }), helm.defId);
   const before = await sheet();
   await go(page, 'status');
   const equip = page.locator('[data-panel="inventory"] [aria-label="Equip Rime Helm"]');
@@ -385,7 +384,7 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
     expect(saved).toMatchObject({ rar: 'epic', type: 'material', grade: 1 });
     expect(saved.value).toBeUndefined();
     await go(page, 'workshop');
-    await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
+    await workshop(page, 'item').locator(`li[data-id="${saved.defId}"] [data-act="edit"]`).tap();
     await expect(grades.locator('[data-chip="1"]')).toHaveAttribute('aria-pressed', 'true');
     await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(baseB * RULES.gradeStep)}`);
   });
@@ -630,12 +629,13 @@ const FROST_LANCE = {
     ops: [{ op: 'applyStatus', key: 'slowed', def: SLOWED, duration: 2000, follow: true }], channel: null,
   },
 };
-const FROST_SHARD = { id: 'i900', name: 'Frost Shard', rar: 'rare', type: 'material', slot: null, qty: 1, dice: '', bonus: {}, value: 40, desc: 'Cold to the touch.', weight: 0, armor: 0, resist: 0 };
+const FROST_SHARD = { name: 'Frost Shard', rar: 'rare', type: 'material', slot: null, dice: '', bonus: {}, value: 40, desc: 'Cold to the touch.', weight: 0, armor: 0, resist: 0 };
 
 test('a GM makes the monster Ice Warden in at most 9 taps from the home screen: it holds Frost Lance, starts Hasted and drops its loot, and in a fight it starts Hasted', async ({ device }) => {
   const page = (await device('gm')).page;
   await setupGoblinDenGM(page);
-  await page.evaluate(([k, i]) => hunterApp.store.update((d: any) => { d.library.skills.push(k); d.library.items.push(i); }, 'test-setup'), [FROST_LANCE, FROST_SHARD] as const);
+  await page.evaluate(k => hunterApp.store.update((d: any) => { d.library.skills.push(k); }, 'test-setup'), FROST_LANCE);
+  const shard = await addLibraryItem(page, FROST_SHARD);
   const t = tapCounter(), d = monsterMaker(page);
 
   await test.step('the GM makes it: rank C, a caster, Frost Lance, Hasted at the start, 50 gold and a Frost Shard', async () => {
@@ -648,7 +648,7 @@ test('a GM makes the monster Ice Warden in at most 9 taps from the home screen: 
     await d.locator('[data-add="status"]').selectOption('hasted'); t.selected();
     await t.tap(d.locator('#enm-gold'));
     await d.locator('#enm-gold').fill('50');
-    await d.locator('[data-add="item"]').selectOption('lib:i900'); t.selected();
+    await d.locator('[data-add="item"]').selectOption(`def:${shard}`); t.selected();
     const preview = d.locator('.mk-preview');
     await expect(preview).toContainText('C-rank normal caster');
     await expect(preview).toContainText('Curse: Curse (spell), standard · On a foe, 8 tiles');
@@ -666,7 +666,7 @@ test('a GM makes the monster Ice Warden in at most 9 taps from the home screen: 
   await test.step('the bestiary holds it as made', async () => {
     // its XP is left blank, so it is the XP table's (250 for a normal C monster), read and not stored (V9 B1)
     expect(warden.xp).toBeUndefined();
-    expect(warden).toMatchObject({ rank: 'C', archetype: 'caster', kind: 'normal', statuses: [{ key: 'hasted', rounds: 3 }], loot: { gold: 50, items: [{ name: 'Frost Shard', qty: 1 }] } });
+    expect(warden).toMatchObject({ rank: 'C', archetype: 'caster', kind: 'normal', statuses: [{ key: 'hasted', rounds: 3 }], loot: { gold: 50, items: [{ kind: 'ref', defId: shard, qty: 1 }] } });
     expect(warden.abilities).toEqual([FROST_LANCE.ability]);
   });
 
@@ -825,11 +825,12 @@ test('the Workshop says what an empty kind is, lists the GM\'s status, item, ski
     await expect(workshop(page, 'skill').locator('[data-new]')).toHaveText('New skill');
   });
 
-  await page.evaluate(([k, i]) => hunterApp.store.update((d: any) => {
-    d.library.skills.push(k); d.library.items.push(i);
+  await addLibraryItem(page, FROST_SHARD);
+  await page.evaluate(k => hunterApp.store.update((d: any) => {
+    d.library.skills.push(k);
     d.library.statuses.frostbite = { label: 'Frostbite', desc: 'Cold bites.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'dice', count: 1, sides: 6 } }] };
     d.monsters.push({ id: 'm900', name: 'Ice Warden', rank: 'C', type: '', archetype: 'caster', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 250, extractable: true, desc: '', statuses: [], loot: { gold: 0, items: [] } });
-  }, 'test-setup'), [FROST_LANCE, FROST_SHARD] as const);
+  }, 'test-setup'), FROST_LANCE);
 
   await test.step('each section lists the GM\'s own', async () => {
     await expect(workshop(page, 'status').locator('.ws-list li', { hasText: 'Frostbite' })).toContainText('1d6 arcane damage a round');
@@ -1963,7 +1964,7 @@ test('in the item maker the Icon row follows the type and attack picked, a raven
 
   await test.step('Edit shows the pick, the sheet opens on its group with it lit, and Default saves the item with no key', async () => {
     const saved = await libraryItem(page, 'Raven Draught');
-    await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
+    await workshop(page, 'item').locator(`li[data-id="${saved.defId}"] [data-act="edit"]`).tap();
     await expect(iconOpen(d)).toHaveText('Raven, picked');
     await iconOpen(d).tap();
     await expect(iconGroup(d, 'Foe')).toHaveAttribute('aria-pressed', 'true');
@@ -1974,7 +1975,7 @@ test('in the item maker the Icon row follows the type and attack picked, a raven
     await d.locator('[data-apply]').tap();
     await expect(d).toHaveCount(0);
     const item = await libraryItem(page, 'Raven Draught');
-    expect(item.id).toBe(saved.id);
+    expect(item.defId).toBe(saved.defId);
     expect('icon' in item).toBe(false);
   });
 });
@@ -2151,7 +2152,7 @@ test('a GM makes the Bulwark, a worn item whose wearer can use a shield of a fla
   });
 
   await test.step('Edit shows the active as saved, each amount in its field and its words', async () => {
-    await workshop(page, 'item').locator('li', { hasText: 'Bulwark' }).locator('[data-act="edit"]').tap();
+    await workshop(page, 'item').locator('> .ws-list li', { hasText: 'Bulwark' }).locator('[data-act="edit"]').tap();
     await expect(d.locator('[data-active-on]')).toBeChecked();
     await expect(d.locator('[data-chips="akind"] [data-chip="support"]')).toHaveAttribute('aria-pressed', 'true');
     await expect(fx(0).locator('[data-f="q"]')).toHaveValue('12');

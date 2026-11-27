@@ -7,8 +7,8 @@
 import { timeOf } from '../day.ts';
 import { parseHunterRef, parsePresetLineId, presetLineId } from '../ids.ts';
 import type { GateId, HunterRef, PresetLineId, SheetKey } from '../ids.ts';
-import { parseItem } from '../registry/items.ts';
-import type { ItemTemplate } from '../registry/items.ts';
+import { parseItemGrant } from '../registry/item-book.ts';
+import type { ItemGrant } from '../registry/item-book.ts';
 import { REWARD_BOUNDS } from '../rewards.ts';
 import type { Save } from '../save.ts';
 import { refuse } from '../save-step.ts';
@@ -23,7 +23,7 @@ export type PresetState = (typeof PRESET_STATES)[number];
 /** One item line in a gate's clear preset. `to: null` sends the item to the party stash at the clear. */
 export type PresetItem = {
   readonly id: PresetLineId;
-  readonly item: ItemTemplate;
+  readonly item: ItemGrant;
   readonly checked: boolean;
   readonly to: HunterRef | null;
 };
@@ -61,7 +61,7 @@ export type PresetEvent =
   | { readonly type: 'setXp'; readonly xp: number }
   | { readonly type: 'toggleItem'; readonly id: PresetLineId; readonly checked: boolean }
   | { readonly type: 'assignItem'; readonly id: PresetLineId; readonly to: HunterRef | null }
-  | { readonly type: 'addItem'; readonly item: ItemTemplate; readonly to: HunterRef | null }
+  | { readonly type: 'addItem'; readonly item: ItemGrant; readonly to: HunterRef | null }
   | { readonly type: 'removeItem'; readonly id: PresetLineId }
   | { readonly type: 'clear' }
   | { readonly type: 'pay'; readonly at: string; readonly payees?: readonly PresetPayee[] };
@@ -218,10 +218,10 @@ const payeeKey = (p: PresetPayee): string => (p.kind === 'local' ? p.hid : p.key
 export function partitionPresetItems(
   preset: Active,
   payees: readonly PresetPayee[],
-): { readonly byPayee: ReadonlyMap<string, readonly ItemTemplate[]>; readonly stash: readonly ItemTemplate[] } {
+): { readonly byPayee: ReadonlyMap<string, readonly ItemGrant[]>; readonly stash: readonly ItemGrant[] } {
   const valid = new Set(payees.map(payeeKey));
-  const map = new Map<string, ItemTemplate[]>();
-  const stash: ItemTemplate[] = [];
+  const map = new Map<string, ItemGrant[]>();
+  const stash: ItemGrant[] = [];
   for (const line of preset.items) {
     if (!line.checked) continue;
     const key = line.to ? refKey(line.to) : null;
@@ -324,7 +324,7 @@ function parsePresetItems(v: unknown): PresetItem[] {
   for (const raw of Array.isArray(v) ? v : []) {
     if (out.length >= PRESET_ITEMS_MAX || !isObj(raw)) continue;
     const id = parsePresetLineId(raw.id);
-    const item = parseItem(raw.item);
+    const item = parseItemGrant(raw.item);
     if (!id || !item || seen.has(id)) continue;
     seen.add(id);
     out.push({ id, item, checked: raw.checked === true, to: raw.to === null || raw.to === undefined ? null : parseHunterRef(raw.to) });
@@ -346,4 +346,13 @@ export function parseClearPreset(v: unknown): ClearPreset {
     return paidAt ? { at: 'paid', xp, gold, crystal, items, paidAt } : NO_PRESET;
   }
   return { at, xp, gold, crystal, items };
+}
+
+/**
+ * Gate `g` with each item its preset gives rewritten by `f` (item-refs.ts: a catalog rekey moves a custom item's id):
+ * the one writer of a preset besides `gatePreset` and `payGatePreset`, and it changes nothing but the items' grants.
+ */
+export function presetGrantsMapped<G extends { readonly preset: ClearPreset }>(g: G, f: (x: ItemGrant) => ItemGrant): G {
+  const p = g.preset;
+  return p.at === 'none' ? g : { ...g, preset: { ...p, items: p.items.map(l => ({ ...l, item: f(l.item) })) } };
 }

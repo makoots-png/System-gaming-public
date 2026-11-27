@@ -16,12 +16,13 @@ import type { Rewards } from './rewards.ts';
 import type { Pace } from './combat/timeline.ts';
 import type { DamageType, DamageTypeMap } from './combat/damage-type.ts';
 import type { ItemDefData } from './registry/item-book.ts';
+import type { ItemDefId } from './ids.ts';
 
 /**
  * Item definitions layered onto the rules (built-in overrides, GM custom items, and player heard fallbacks), keyed by
  * `ItemDefId`. Read via `resolveDef` in `src/core/registry/item-book.ts` so `rules.ts` has no value import from `items.ts`.
  */
-export type ItemBook = Readonly<Record<string, ItemDefData>>;
+export type ItemBook = Readonly<Record<ItemDefId, ItemDefData>>;
 /** An empty item book: shipped rules carry no overrides, so every built-in reads from `BUILT_IN_ITEMS`. */
 export const EMPTY_ITEM_BOOK: ItemBook = Object.freeze({});
 
@@ -365,6 +366,7 @@ const SPEC = {
   titleBudget: { E: of(1, TITLE_SPEND), D: of(2, TITLE_SPEND), C: of(3, TITLE_SPEND), B: of(3, TITLE_SPEND), A: of(4, TITLE_SPEND), S: of(5, TITLE_SPEND) },
   shadow: {
     maxAttempts: whole(3, 1, 20, 'shadow extraction attempts allowed per corpse. Must be at least 1'),
+    classAttempts: whole(1, 0, 5, 'extra shadow extraction attempts per corpse while awakened Necromancer is active, from 0 to 5'),
     dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'extra extraction DC per rank the monster is above the hunter, from 0 to 20'),
     bossDc: whole(5, 0, 50, 'extra extraction DC for boss monsters, from 0 to 50'), dcMin: of(5, DC),
     // Scaled to the real mana curve (manaBase 10 + capped(pow, 30)): a 2:1 Necromancer holds 12 (E) to 26 (S) mana,

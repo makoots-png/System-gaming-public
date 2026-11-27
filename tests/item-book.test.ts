@@ -13,7 +13,7 @@ import {
   parseItemDefId,
   saveId,
 } from '../src/core/ids.ts';
-import { EMPTY_ITEM_BOOK, RULES, rulesOf, withItems } from '../src/core/rules.ts';
+import { EMPTY_ITEM_BOOK, RULES, rulesOf, withItems, withStatuses } from '../src/core/rules.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import {
   BUNDLE_ITEMS,
@@ -337,7 +337,7 @@ describe('ItemBook on Rules and resolveDef / resolveItem / resolveGrant', () => 
     expect(resolveDef(fakeBuiltIn, R, { [fakeBuiltIn]: CUSTOM_BLADE_DEF })).toBeNull();
 
     // 5. Missing everywhere resolves to null / unknownItem placeholder using UNKNOWN_ITEM_WORDS
-    const missingId = customItemDefId(OTHER_CATALOG_ID, 'gone9999');
+    const missingId = customItemDefId(OTHER_CATALOG_ID, 'gone999900000000');
     expect(resolveDef(missingId, R)).toBeNull();
     expect(resolveItem(heldRef(9, missingId, 2), R)).toEqual(unknownItem(itemIdN(9), 2, missingId));
     expect(unknownItem(itemIdN(9), 2, missingId)).toMatchObject({ name: UNKNOWN_ITEM_WORDS.name, desc: UNKNOWN_ITEM_WORDS.desc });
@@ -362,7 +362,7 @@ describe('ItemBook on Rules and resolveDef / resolveItem / resolveGrant', () => 
     expect(resolveGrant(grantRef(CUSTOM_BLADE_ID, 1, staleInline), R).name).toBe('Rift Fang');
 
     // Grant with missing defId and no inline def resolves to unknownGrant placeholder without an id field
-    const gone = customItemDefId(OTHER_CATALOG_ID, 'miss1234');
+    const gone = customItemDefId(OTHER_CATALOG_ID, 'miss123400000000');
     const resolvedGone = resolveGrant(grantRef(gone, 1), R);
     expect(resolvedGone).toEqual(unknownGrant(1, gone));
     expect('id' in resolvedGone).toBe(false);
@@ -435,7 +435,7 @@ describe('follow: true live status resolution across items, skills, details, out
     const save = newSave(dev);
     const h0 = starterHunter(save, { now: new Date('2026-11-25T12:00:00.000Z'), newDeviceId: () => dev, newDeviceToken: () => 't'.repeat(32) });
     const { target: _other, ...selfDef } = CUSTOM_FLASK_FOLLOW_DEF;
-    const selfFlask = { ...selfDef, id: itemIdN(50), qty: 1 };
+    const selfFlask = heldAdhoc(50, selfDef);
     const hWith = { ...h0, items: [...h0.items, selfFlask] };
     const used = useItem(hWith, selfFlask.id, [[]], R80);
     expect(isRefused(used)).toBe(false);
@@ -445,7 +445,7 @@ describe('follow: true live status resolution across items, skills, details, out
     }
 
     // Combat rows resolve follow: true on active skills, passive worn statuses, worn items, and monsters
-    const staleThorn = { ...itemOf(RULES, RECIPE_ITEMS.find(d => d.defId === THORNMAIL_DEF_ID)!), id: itemIdN(60), qty: 1 };
+    const staleThorn = heldAdhoc(60, itemDefDataOf(itemOf(RULES, RECIPE_ITEMS.find(d => d.defId === THORNMAIL_DEF_ID)!)));
     const passiveWorn: StatusDef = {
       label: 'Cursed Aura', desc: '', ops: [],
       triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [followOp] }],
@@ -453,7 +453,7 @@ describe('follow: true live status resolution across items, skills, details, out
     const rh: RowHunter = {
       ...h0,
       items: [staleThorn],
-      equipped: { chest: staleThorn.id },
+      equipped: { ...h0.equipped, chest: staleThorn.id },
       skills: [
         { type: 'active', ability: followAbility },
         { type: 'active', ability: pinnedAbility },
@@ -601,7 +601,7 @@ describe('follow: true live status resolution across items, skills, details, out
     expect(resolvedFlask).toBe(dualFlask);
     expect(parseItem({ ...resolvedFlask, qty: 1 })).not.toBeNull();
 
-    // Double withStatuses (e.g. rulesOf + withRoomRules) still applies GM room status overrides on ~1.9 KiB self-applying statuses
+    // Double withStatuses (e.g. rulesOf + catalog status overlay) still applies GM status overrides on ~1.9 KiB self-applying statuses
     const pad7 = Array.from({ length: 7 }, (_, i) => ({ op: 'note' as const, text: `p${i}-${'x'.repeat(190)}` }));
     const medSelf: StatusDef = {
       label: 'Med Self',
@@ -613,8 +613,7 @@ describe('follow: true live status resolution across items, skills, details, out
       ],
     };
     const Rplayer = rulesOf({}, { 'med-self': medSelf, grievous: gwDef(55) });
-    const Rgm = rulesOf({}, { grievous: gwDef(80) });
-    const Rjoined = withRoomRules(Rplayer, roomRulesOf(Rgm));
+    const Rjoined = withStatuses(Rplayer, { grievous: gwDef(80) });
     const joinedGw = (Rjoined.conditions as Readonly<Record<string, StatusDef>>)['med-self']!.ops.find(o => o.op === 'applyStatus' && o.key === GW);
     expect(joinedGw?.op === 'applyStatus' ? grievousCutOf(joinedGw.def) : null).toBe(80);
   });
@@ -648,5 +647,33 @@ describe('follow: true live status resolution across items, skills, details, out
     );
     const sOp = sRow.statuses.find(s => s.key === statusKey('cursed'))?.def.triggers?.[0]?.ops[0];
     expect(sOp?.op === 'applyStatus' ? grievousCutOf(sOp.def) : null).toBe(75);
+  });
+});
+
+describe('armor follows its kit (C4)', () => {
+  test('a renamed Thornmail and an unedited one both read the heavy kit\'s numbers after the kit moves', () => {
+    const shipped = builtInDefData(THORNMAIL_DEF_ID, RULES)!;
+    expect(shipped.kit).toBe('heavy');
+    const renamed = { ...shipped, name: 'Thornmail of the Wall' };
+    const heavier = rulesOf({ fight: { kits: { heavy: { armor: 100 } } } }, {});
+    const R = withItems(heavier, { [THORNMAIL_DEF_ID]: renamed });
+    const edited = resolveDef(THORNMAIL_DEF_ID, R)!, plain = resolveDef(THORNMAIL_DEF_ID, heavier)!;
+    expect(edited.armor).toBe(35);
+    expect(plain.armor).toBe(35);
+    expect(edited.name).toBe('Thornmail of the Wall');
+  });
+
+  test('parseItem keeps kit only on armor in an armor slot; typed numbers without a kit stay as typed', () => {
+    expect(parseItemDef({ name: 'Plate', type: 'armor', slot: 'chest', kit: 'heavy' })!.kit).toBe('heavy');
+    expect(parseItemDef({ name: 'Plate', type: 'armor', slot: 'chest', kit: 'nope' })!.kit).toBeUndefined();
+    expect(parseItemDef({ name: 'Ring', type: 'accessory', slot: 'ring1', kit: 'heavy' })!.kit).toBeUndefined();
+    const typed = parseItemDef({ name: 'Plate', type: 'armor', slot: 'chest', armor: 7, resist: 3, weight: 2 })!;
+    expect(resolveDef(CUSTOM_BLADE_ID, withItems(RULES, { [CUSTOM_BLADE_ID]: typed }))).toMatchObject({ armor: 7, resist: 3, weight: 2 });
+  });
+
+  test('sameItemDef ignores the kit\'s numbers when both defs name one kit', () => {
+    const shipped = builtInDefData(THORNMAIL_DEF_ID, RULES)!;
+    expect(sameItemDef(shipped, { ...shipped, armor: 999, resist: 1, weight: 0 })).toBe(true);
+    expect(sameItemDef(shipped, { ...shipped, kit: 'light' })).toBe(false);
   });
 });

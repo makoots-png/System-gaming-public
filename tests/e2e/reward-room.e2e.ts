@@ -3,10 +3,12 @@
 // the Workshop. Driven through the UI; the store sets up and reads.
 import type { Locator, Page } from '@playwright/test';
 import { SHELF_WORDS } from '../../src/core/registry/bundles.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, openApp, openFeed, chooseList } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, openApp, openFeed, chooseList, addLibraryItem, adhoc } from './helpers.ts';
 
 const HUNTER = 'Mira Test';
 const BOON = { name: 'One free reroll', text: 'Reroll one die, once this session.' };
+/** The GM's own consumable that tells the GM when it is used (the item maker's "Notify GM when used"). */
+const TONIC = { name: 'Wolf Tonic', rar: 'common', type: 'consumable', slot: null, dice: '', bonus: {}, desc: 'Heals 5 HP.', armor: 0, resist: 0, tell: true, effects: [{ op: 'heal', amount: { kind: 'number', value: 5 }, when: 'use' }] };
 
 /** Taps through the UI and counts them. Typing is not a tap; picking from a select is one. */
 function tapCounter() {
@@ -31,14 +33,14 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await dismissAll(player, 4);
     await go(gm, 'gm');
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
+    await addLibraryItem(gm, TONIC);
   });
 
   await test.step('the GM builds the reward in the Award form and sees the preview the player will see', async () => {
     await unfold(gm, 'award');
     await gm.fill('#gm-xp', '100');
     await ed.locator('[data-add="item"]').tap();
-    await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Health Potion (E) (common)' });
-    await ed.locator('[data-kind="item"] [data-f="tell"]').check();
+    await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Wolf Tonic (common)' });
     await ed.locator('[data-add="title"]').tap();
     await ed.locator('[data-kind="title"] [data-f="name"]').fill('Wolf Slayer');
     await ed.locator('[data-kind="title"] [data-bonus="str"]').fill('2');
@@ -48,7 +50,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await ed.locator('[data-kind="boon"] [data-f="name"]').fill(BOON.name);
     await ed.locator('[data-kind="boon"] [data-f="text"]').fill(BOON.text);
     await expect(ed.locator('[data-kind="boon"]')).toContainText('A one-time custom favor the GM honors. When the player redeems it on their sheet, you get notified.');
-    await expect(ed.locator('.rw-preview li')).toHaveText(['+100 XP', 'Item acquired: Health Potion (E)', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]);
+    await expect(ed.locator('.rw-preview li')).toHaveText(['+100 XP', 'Item acquired: Wolf Tonic', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]);
   });
 
   await test.step('Save as bundle… keeps it as "Wolf hunt"', async () => {
@@ -65,7 +67,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await expect(gm.locator('#gm-award-msg')).toHaveText(`Sent to ${HUNTER}.`);
     const win = player.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
     await expect(win).toBeVisible({ timeout: 15_000 });
-    for (const line of ['+100 XP', 'Item acquired: Health Potion (E)', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]) await expect(win).toContainText(line);
+    for (const line of ['+100 XP', 'Item acquired: Wolf Tonic', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]) await expect(win).toContainText(line);
     await dismissAll(player, 6);
     await go(player, 'status');
     const titles = player.locator('[data-panel="titles"]');
@@ -73,7 +75,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await expect(player.locator('#view-status [data-chips]')).toContainText('Hasted · 3 rounds');
     await expect(titles.locator('[data-boons] li', { hasText: BOON.name })).toContainText(BOON.text);
     const h = await activeHunter(player);
-    expect(h.items.filter((i: any) => i.name === 'Health Potion (E)' && i.tell)).toHaveLength(1);
+    expect(h.bag.filter((i: any) => i.name === 'Wolf Tonic' && i.tell)).toHaveLength(1);
   });
 
   await test.step('the player redeems the boon: it leaves the sheet, and the GM gets the feed row, the toast, a count of 1 and one log line', async () => {
@@ -90,17 +92,17 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await expect(row.locator('.tb-out')).toHaveText(BOON.text);
   });
 
-  await test.step('the player uses the potion marked "Tell me when used": a second line; an item without the mark writes none', async () => {
-    await player.evaluate(() => {
+  await test.step('the player uses the tonic marked "Notify GM when used": a second line; an item without the mark writes none', async () => {
+    await player.evaluate(g => {
       const s = hunterApp.store, h = s.active();
       hunterApp.api.hunter.damage(h.id, 10);
-      s.update(() => { s.active().items.push({ id: s.id('i'), name: 'Trail Ration', type: 'consumable', rar: 'common', qty: 1, effects: [{ op: 'note', text: 'Tastes like dust.' }] }); }, 'test-setup');
-    });
-    await player.locator('#view-status [data-panel="inventory"] button[aria-label="Use Health Potion (E)"]').tap();
+      s.update(() => { s.active().items.push({ ...g, id: s.id('i') }); }, 'test-setup');
+    }, adhoc({ name: 'Trail Ration', type: 'consumable', rar: 'common', effects: [{ op: 'note', text: 'Tastes like dust.' }] }));
+    await player.locator('#view-status [data-panel="inventory"] button[aria-label="Use Wolf Tonic"]').tap();
     await expect.poll(() => useLines(gm), { timeout: 15_000 }).toHaveLength(2);
-    expect((await useLines(gm))[0]).toMatch(new RegExp(`^${HUNTER} used Item: Health Potion \\(E\\) \\| `));
+    expect((await useLines(gm))[0]).toMatch(new RegExp(`^${HUNTER} used Item: Wolf Tonic \\| `));
     await player.locator('#view-status [data-panel="inventory"] button[aria-label="Use Trail Ration"]').tap();
-    await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets()[0].data.items as any[]).some(i => i.name === n), 'Trail Ration'), { timeout: 15_000 }).toBe(false);
+    await expect.poll(() => gm.evaluate(n => hunterApp.api.inventory.bag(hunterApp.api.sync.remoteSheets()[0].data).some((i: any) => i.name === n), 'Trail Ration'), { timeout: 15_000 }).toBe(false);
     expect(await useLines(gm)).toHaveLength(2);
   });
 

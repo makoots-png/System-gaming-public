@@ -249,7 +249,7 @@ test('starter campaign preloads The Empty Seat (not running at load) and steps a
     await expect(card(page).locator('.st-at')).toContainText('Chapter 1 of 5: Seat Assigned.');
     await expect(card(page).locator('.st-note')).toContainText('Halfway House');
     const afterCh1 = await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => ({
-      potions: h.items.filter((i: any) => i.name === 'Health Potion (E)').reduce((n: number, i: any) => n + i.qty, 0),
+      potions: hunterApp.api.inventory.bag(h).filter((i: any) => i.name === 'Health Potion (E)').reduce((n: number, i: any) => n + i.qty, 0),
       quests: h.quests.filter((q: any) => q.kind !== 'daily').map((q: any) => q.title),
     })));
     expect(afterCh1.every((x: any) => x.potions >= 3 && x.quests.includes("Thursday's Gate"))).toBe(true);

@@ -18,11 +18,14 @@
 // or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`): the owner,
 // Nov 22, a crystal handed over after the death counts as bought before it.
 import { SLOTS, WEAR_LIMIT, valueOf } from '../registry/items.ts';
-import type { Item, ItemTemplate, PriceRules, Priced, Slot } from '../registry/items.ts';
-import type { Rank, Rules } from '../rules.ts';
+import type { PriceRules, Priced, Slot } from '../registry/items.ts';
+import { resolveGrant, resolveItem, sameItemDef } from '../registry/item-book.ts';
+import type { HeldItem, ItemDefData, ItemGrant, ItemResolveRules, ResolvedItem } from '../registry/item-book.ts';
+import type { ItemBook, Rank, Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
-import type { ItemId } from '../ids.ts';
+import { catalogOfItemDefId, isBuiltInItemId } from '../ids.ts';
+import type { CatalogId, ItemDefId, ItemId } from '../ids.ts';
 import { record } from './chronicle.ts';
 import type { Chronicle } from './chronicle.ts';
 import { borrowCap, debtStep, debtTermsLine } from './revive-standing.ts';
@@ -30,44 +33,78 @@ import type { DebtRules } from './revive-standing.ts';
 import { WAYS_BACK } from './vitals.ts';
 import type { Life } from './vitals.ts';
 
-type Carrying = { items: Item[]; equipped: Record<Slot, ItemId | null>; gold: number };
-/** The rules a sale reads: an item's price (`PriceRules`) and the share of it the Association pays. */
-type SaleRules = PriceRules & Pick<Rules, 'saleShare'>;
+type Carrying = { items: HeldItem[]; equipped: Record<Slot, ItemId | null>; gold: number };
+/** The rules a bag is read under: the item defs (`R.items`), the statuses a def follows, and the kits armor follows. */
+export type BagRules = ItemResolveRules;
+/** The rules a sale reads: an item's price (`PriceRules`), the share of it the Association pays, and the bag's defs. */
+type SaleRules = PriceRules & Pick<Rules, 'saleShare'> & BagRules;
+
+// ── the bag as its readers see it: every line resolved (item-book.ts `resolveItem`) ──
+/**
+ * Every line of a bag as an item: a reference read from its def under `R` (and `extra`, a remote sheet's defs), an
+ * ad hoc line from its own. The one reader of a bag: the sheet, a row, a use, the detail, worth and every view.
+ */
+export const bagOf = (h: { readonly items: readonly HeldItem[] }, R: BagRules, extra?: ItemBook): ResolvedItem[] =>
+  h.items.map(i => resolveItem(i, R, extra));
+/** Line `itemId` of `h`'s bag resolved, or null when it holds none. */
+export function heldItem(h: { readonly items: readonly HeldItem[] }, itemId: string, R: BagRules, extra?: ItemBook): ResolvedItem | null {
+  const line = h.items.find(i => i.id === itemId);
+  return line ? resolveItem(line, R, extra) : null;
+}
 
 /**
- * Whether a field of an item tells two things apart: true, they are different things and never one stack; false, it is
- * the stack's own business (the id of its first entry, the count, the slot, which no stackable item has). A field added
- * to `Item` fails the typecheck here until it is decided.
+ * What a hunter wears, by the rules: the single statement of the worn invariant over resolved items. Walks `SLOTS` in
+ * order, keeping an item when it is wearable in that slot, not already worn in an earlier slot, not in `offhand` while
+ * a two-handed weapon sits in `weapon`, and within `WEAR_LIMIT` (6). Everything else stays in the bag.
  */
-const DISTINGUISHES: Record<keyof Item, boolean> = {
-  id: false, qty: false, slot: false,
-  name: true, rar: true, grade: true, type: true, dice: true, bonus: true, value: true, weight: true, armor: true, resist: true,
-  icon: true, effects: true, target: true, tell: true, worn: true, active: true, revive: true, rankCap: true,
-  // `icon` tells two things apart: a GM who gave two potions two pictures wants them told apart in the bag, and merging
-  // them would lose one pick (loot's `lootOf` already compares every field but the count).
-  // Waits on the owner's ruling SMX-rules-5.3 ("items that differ in description or attack do not stack"): as the app
-  // behaves today, they do not. The ruling is this row.
-  desc: true, attack: true, damageType: true, finesse: true, twoHanded: true,
-};
-const DISTINGUISHING = (Object.keys(DISTINGUISHES) as (keyof Item)[]).filter(k => DISTINGUISHES[k]);
-/** What makes two unworn things one stack: every field that `DISTINGUISHES`, and nothing else. */
-const stackKey = (i: Partial<Item>): string => JSON.stringify(DISTINGUISHING.map(k => (k === 'effects' ? i.effects ?? [] : i[k] ?? null)));
-const stackable = (i: ItemTemplate | Item): boolean => !i.slot;
-/** The held item a new one would join, or null when it makes its own entry. */
-export const stackOf = (h: Carrying, it: ItemTemplate): Item | null =>
-  (stackable(it) && h.items.find(x => stackable(x) && stackKey(x) === stackKey(it))) || null;
+export function fitWorn(named: (slot: Slot) => Pick<ResolvedItem, 'id' | 'slot' | 'qty' | 'twoHanded'> | undefined): Record<Slot, ItemId | null> {
+  const out = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
+  let kept = 0, twoHanded = false;
+  for (const slot of SLOTS) {
+    if (kept >= WEAR_LIMIT) break;
+    if (slot === 'offhand' && twoHanded) continue;
+    const it = named(slot);
+    if (!it || !wearable(it, slot) || Object.values(out).includes(it.id)) continue;
+    out[slot] = it.id;
+    kept++;
+    if (slot === 'weapon' && it.twoHanded) twoHanded = true;
+  }
+  return out;
+}
+/**
+ * What `h` wears now: its stored slots (hunter.ts `parseWorn`, the structure) read against its items as they resolve
+ * under `R` (`fitWorn`), so an edit of a def that no longer fits its slot takes it off on every phone that reads it.
+ */
+export function wornOf(h: { readonly items: readonly HeldItem[]; readonly equipped: Readonly<Record<Slot, ItemId | null>> }, R: BagRules, extra?: ItemBook): Record<Slot, ItemId | null> {
+  const bag = bagOf(h, R, extra);
+  return fitWorn(s => { const id = h.equipped[s]; return id ? bag.find(i => i.id === id) : undefined; });
+}
+
+/** Whether a resolved item stacks: it has no slot. */
+const stackable = (i: Pick<ResolvedItem, 'slot'>): boolean => !i.slot;
+/**
+ * The bag line grant `g` joins, among the unworn lines, when it has no slot: a reference to the same def (stacking is by
+ * `defId`), or for a player's own (ad hoc) item a line of its own kind with the same def (`sameItemDef`), so a refused
+ * or taken-back offer joins the stack it left. Null when it makes its own line.
+ */
+export function stackOf(h: Carrying, g: ItemGrant, R: BagRules): HeldItem | null {
+  if (!stackable(resolveGrant(g, R))) return null;
+  const worn = new Set(Object.values(wornOf(h, R)));
+  return h.items.find(x => !worn.has(x.id) && (g.kind === 'ref'
+    ? x.kind === 'ref' && x.defId === g.defId
+    : x.kind === 'adhoc' && sameItemDef(x.item, g.item))) ?? null;
+}
 
 /**
  * Whether the Association buys an item back: not one that revives (the Resurrection Crystal). The GM decides how many
  * exist, and a sale would turn a crystal the GM gave into gold the GM never gave (notes-2b-crystal.md 3).
  */
-export const sellable = (i: Pick<Item, 'revive'>): boolean => !i.revive;
+export const sellable = (i: Pick<ResolvedItem, 'revive'>): boolean => !i.revive;
 /**
  * What one of an item sells for: `saleShare` of its price (`valueOf`: its own, else the rule's), rounded down, at least
- * 1; a free item, or one not bought back (`sellable`), sells for nothing. (Before, a literal half, and an item priced 0
- * sold for half of base value times multiplier, a second price rule.)
+ * 1; a free item, or one not bought back (`sellable`), sells for nothing.
  */
-export const sellPrice = (i: Priced & Partial<Pick<Item, 'revive'>>, R: SaleRules): number => {
+export const sellPrice = (i: Priced & Partial<Pick<ResolvedItem, 'revive'>>, R: PriceRules & Pick<Rules, 'saleShare'>): number => {
   const price = sellable(i) ? valueOf(i, R) : 0;
   return price > 0 ? Math.max(1, Math.floor(price * R.saleShare)) : 0;
 };
@@ -78,10 +115,10 @@ const unwear = (equipped: Record<Slot, ItemId | null>, id: string): Record<Slot,
 
 // ── what one item is: in the bag, worn, or gone ──
 /** Whether item `it` can be worn in `slot`: its own slot, or either ring slot for a ring. */
-export const fits = (it: Pick<Item, 'slot'> | null | undefined, slot: string): boolean =>
+export const fits = (it: Pick<ResolvedItem, 'slot'> | null | undefined, slot: string): boolean =>
   !!(it && it.slot && (it.slot === slot || (it.slot.startsWith('ring') && slot.startsWith('ring'))));
 /** Whether `it` may be worn in `slot`: it fits, and it is one, not a stack. */
-const wearable = (it: Pick<Item, 'slot' | 'qty'>, slot: string): boolean => fits(it, slot) && it.qty === 1;
+const wearable = (it: Pick<ResolvedItem, 'slot' | 'qty'>, slot: string): boolean => fits(it, slot) && it.qty === 1;
 
 export const WEAR_STATES = ['bag', 'worn', 'gone'] as const;
 /** Where one item is: in the bag, worn in a slot, or gone (never held, or sold, removed, used up or given). */
@@ -98,9 +135,10 @@ export type WearWhy = 'no-item' | 'not-worn' | 'in-fight';
 /** Why equipping an item may be refused: any `WearWhy`, an item without a gear slot, or already wearing `WEAR_LIMIT` items. */
 export type PlanWhy = WearWhy | 'not-gear' | 'wear-limit';
 /** What a refused change says (`ui.wrote`'s words). `no-item`, `not-worn` and `not-gear` are changes the screen never offers. */
-export const GEAR_WORDS: Readonly<Partial<Record<PlanWhy, string>>> = {
+export const GEAR_WORDS: Readonly<Partial<Record<PlanWhy | BagEditWhy, string>>> = {
   'in-fight': 'Gear cannot change during a fight.',
   'wear-limit': `You are already wearing ${WEAR_LIMIT} of ${WEAR_LIMIT} items. Unequip an item first.`,
+  'not-yours': 'Only the GM can change this item.',
 };
 /** An allowed equip: the slot the item takes and every item id it replaces (for the view's Equip vs Swap label). */
 export type WearPlan = { readonly ok: true; readonly slot: Slot; readonly replaces: readonly ItemId[] };
@@ -126,56 +164,33 @@ const TABLE: { readonly [P in 'calm' | 'fight']: { readonly [S in WearState]: { 
   },
 };
 
-/** The slot item `itemId` is worn in, or null. */
-export const slotOf = (h: Carrying, itemId: string): Slot | null =>
-  (Object.keys(h.equipped) as Slot[]).find(s => h.equipped[s] === itemId) ?? null;
+/** The slot item `itemId` is worn in (`wornOf`), or null. */
+export const slotOf = (h: Carrying, itemId: string, R: BagRules): Slot | null => {
+  const worn = wornOf(h, R);
+  return (Object.keys(worn) as Slot[]).find(s => worn[s] === itemId) ?? null;
+};
 /** Where item `itemId` is now. */
-export const wearOf = (h: Carrying, itemId: string): WearState =>
-  !h.items.some(i => i.id === itemId) ? 'gone' : slotOf(h, itemId) === null ? 'bag' : 'worn';
+export const wearOf = (h: Carrying, itemId: string, R: BagRules): WearState =>
+  !h.items.some(i => i.id === itemId) ? 'gone' : slotOf(h, itemId, R) === null ? 'bag' : 'worn';
 /** Where `event` takes item `itemId`, by `TABLE`, or why not. The Bag asks it before it opens a confirm or the item maker. */
-export function wearMove(h: Carrying, itemId: string, event: WearEvent, inFight: boolean): WearState | Refused<WearWhy> {
-  const cell = TABLE[inFight ? 'fight' : 'calm'][wearOf(h, itemId)][event];
+export function wearMove(h: Carrying, itemId: string, event: WearEvent, inFight: boolean, R: BagRules): WearState | Refused<WearWhy> {
+  const cell = TABLE[inFight ? 'fight' : 'calm'][wearOf(h, itemId, R)][event];
   return typeof cell === 'string' ? cell : refuse(cell.no);
 }
-/** What an edit to `it` is to item `itemId`: `reslot` when it is worn and `it` would not be wearable in its slot. */
-const editOf = (h: Carrying, itemId: string, it: ItemTemplate): WearEvent => {
-  const slot = slotOf(h, itemId);
-  return slot === null || wearable(it, slot) ? 'edit' : 'reslot';
-};
 
-/** How many gear slots `h` currently wears (derived from `equipped`, at most `WEAR_LIMIT`). */
-export const wornCount = (h: Carrying): number => Object.values(h.equipped).filter(Boolean).length;
+/** How many gear slots `h` currently wears (`wornOf`, at most `WEAR_LIMIT`). */
+export const wornCount = (h: Carrying, R: BagRules): number => Object.values(wornOf(h, R)).filter(Boolean).length;
 /** The two-handed weapon locking `h`'s off hand, or null when off hand is free to use. */
-export const handLockedBy = (h: Carrying): Item | null => {
-  const id = h.equipped.weapon;
-  const it = id ? h.items.find(i => i.id === id) : undefined;
+export const handLockedBy = (h: Carrying, R: BagRules): ResolvedItem | null => {
+  const id = wornOf(h, R).weapon;
+  const it = id ? heldItem(h, id, R) : null;
   return it?.twoHanded ? it : null;
 };
 
-/**
- * What a hunter wears, read from a save, a sheet, or a wear step: the single statement of the worn invariant.
- * Walks `SLOTS` in order, keeping an item when it is wearable in that slot, not already worn in an earlier slot, not
- * in `offhand` while a two-handed weapon sits in `weapon`, and within `WEAR_LIMIT` (6). Everything else stays in the bag.
- */
-export function parseWorn(named: (slot: Slot) => Item | undefined): Record<Slot, ItemId | null> {
-  const out = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
-  let kept = 0, twoHanded = false;
-  for (const slot of SLOTS) {
-    if (kept >= WEAR_LIMIT) break;
-    if (slot === 'offhand' && twoHanded) continue;
-    const it = named(slot);
-    if (!it || !wearable(it, slot) || Object.values(out).includes(it.id)) continue;
-    out[slot] = it.id;
-    kept++;
-    if (slot === 'weapon' && it.twoHanded) twoHanded = true;
-  }
-  return out;
-}
-
 /** Candidate slots for equipping `it`: empty ring slots first, then `it.slot`, then the other ring slot. */
-function ringCandidates(h: Carrying, own: Slot): readonly Slot[] {
+function ringCandidates(worn: Record<Slot, ItemId | null>, own: Slot): readonly Slot[] {
   const other: Slot = own === 'ring1' ? 'ring2' : 'ring1';
-  const empty: Slot[] = (['ring1', 'ring2'] as const).filter(s => !h.equipped[s]);
+  const empty: Slot[] = (['ring1', 'ring2'] as const).filter(s => !worn[s]);
   return [...new Set<Slot>([...empty, own, other])];
 }
 /**
@@ -183,84 +198,101 @@ function ringCandidates(h: Carrying, own: Slot): readonly Slot[] {
  * first (`in-fight`, `no-item`), then `not-gear`, then `WEAR_LIMIT` (counting a two-handed weapon as 1 worn item that
  * also replaces `offhand`, and an off-hand item as replacing a worn two-handed weapon).
  */
-export function wearPlan(h: Carrying, itemId: string, inFight: boolean): WearPlan | Refused<PlanWhy> {
-  const to = wearMove(h, itemId, 'equip', inFight), it = h.items.find(i => i.id === itemId);
+export function wearPlan(h: Carrying, itemId: string, inFight: boolean, R: BagRules): WearPlan | Refused<PlanWhy> {
+  const to = wearMove(h, itemId, 'equip', inFight, R), it = heldItem(h, itemId, R);
   if (isRefused(to) || !it) return isRefused(to) ? to : refuse('no-item');
   if (!it.slot) return refuse('not-gear');
-  const current = slotOf(h, itemId);
+  const worn = wornOf(h, R), current = (Object.keys(worn) as Slot[]).find(s => worn[s] === itemId) ?? null;
   if (current !== null) return { ok: true, slot: current, replaces: [] };
-  const candidates: readonly Slot[] = it.slot.startsWith('ring') ? ringCandidates(h, it.slot) : [it.slot];
-  const base = wornCount(h);
+  const candidates: readonly Slot[] = it.slot.startsWith('ring') ? ringCandidates(worn, it.slot) : [it.slot];
+  const base = Object.values(worn).filter(Boolean).length, locked = handLockedBy(h, R);
   for (const slot of candidates) {
-    const raw: (ItemId | null)[] = [h.equipped[slot]];
-    if (slot === 'weapon' && it.twoHanded) raw.push(h.equipped.offhand);
-    if (slot === 'offhand' && handLockedBy(h)) raw.push(h.equipped.weapon);
+    const raw: (ItemId | null)[] = [worn[slot]];
+    if (slot === 'weapon' && it.twoHanded) raw.push(worn.offhand);
+    if (slot === 'offhand' && locked) raw.push(worn.weapon);
     const replaces = [...new Set(raw.filter((id): id is ItemId => id !== null))];
     if (base - replaces.length + 1 <= WEAR_LIMIT) return { ok: true, slot, replaces };
   }
   return refuse('wear-limit');
 }
 
-/** Slot `slot` emptied. */
-const emptySlot = <H extends Carrying>(h: H, slot: Slot): H => ({ ...h, equipped: { ...h.equipped, [slot]: null } });
-
 /**
  * A saved loadout's slot map applied atomically in one step. Refused in a fight. Listed items that exist and fit are
  * split off a stack if needed (`nextId`) and proposed; absent slots are cleared; missing or unfit entries are named in
- * `skipped` and leave their current slot as a candidate. Finally `parseWorn` enforces uniqueness, two-handed lock, and
+ * `skipped` and leave their current slot as a candidate. Finally `fitWorn` enforces uniqueness, two-handed lock, and
  * `WEAR_LIMIT`, and any candidate item that did not fit is named in `left`.
  */
 export function wearSet<H extends Carrying>(
-  h: H, want: Partial<Record<Slot, ItemId>>, nextId: () => ItemId, inFight: boolean,
+  h: H, want: Partial<Record<Slot, ItemId>>, nextId: () => ItemId, inFight: boolean, R: BagRules,
 ): { readonly h: H; readonly slots: Partial<Record<Slot, ItemId>>; readonly skipped: string[]; readonly left: string[] } | Refused<'in-fight'> {
   if (inFight) return refuse('in-fight');
   let items = h.items;
+  const now = wornOf(h, R);
   const slots: Partial<Record<Slot, ItemId>> = { ...want };
   const skipped: string[] = [];
   const desired: Partial<Record<Slot, ItemId | null>> = {};
   for (const slot of SLOTS) {
     const id = want[slot] || null;
     if (!id) { desired[slot] = null; continue; }
-    const it = items.find(i => i.id === id);
-    if (!it || !fits(it, slot) || !(it.qty >= 1)) {
+    const line = items.find(i => i.id === id), it = line ? resolveItem(line, R) : null;
+    if (!line || !it || !fits(it, slot) || !(it.qty >= 1)) {
       skipped.push(it ? it.name : slot);
-      desired[slot] = h.equipped[slot];
+      desired[slot] = now[slot];
       continue;
     }
-    if (it.qty > 1) {
+    if (line.qty > 1) {
       const splitId = nextId();
-      items = [...items.map(i => (i === it ? { ...i, qty: i.qty - 1 } : i)), { ...it, id: splitId, qty: 1 }];
+      items = [...items.map(i => (i === line ? { ...i, qty: i.qty - 1 } : i)), { ...line, id: splitId, qty: 1 }];
       slots[slot] = splitId;
       desired[slot] = splitId;
     } else {
-      desired[slot] = it.id;
+      desired[slot] = line.id;
     }
   }
-  const equipped = parseWorn(s => { const id = desired[s]; return id ? items.find(i => i.id === id) : undefined; });
+  const bag = bagOf({ items }, R);
+  const equipped = fitWorn(s => { const id = desired[s]; return id ? bag.find(i => i.id === id) : undefined; });
   const wornIds = new Set(Object.values(equipped).filter((id): id is ItemId => id !== null));
   const left: string[] = [];
   for (const slot of SLOTS) {
     const id = desired[slot];
     if (!id || wornIds.has(id)) continue;
-    const it = items.find(i => i.id === id);
+    const it = bag.find(i => i.id === id);
     if (it && !left.includes(it.name)) left.push(it.name);
   }
   return { h: { ...h, items, equipped }, slots, skipped, left };
 }
 
-/** The save with the GM's shop list `shop` (a copy), or with none: the default shop of the rules is shown (`defaultShop`). */
-export const withShop = <S extends { shop: ItemTemplate[] | null }>(save: S, shop: readonly ItemTemplate[] | null): S => ({ ...save, shop: shop === null ? null : [...shop] });
-/** An item (already read by `parseItem`) put in the bag: onto its stack, else as its own entry under `id`. */
-export function putItem<H extends Carrying>(h: H, it: ItemTemplate, id: ItemId): H {
-  const into = stackOf(h, it);
-  if (into) return { ...h, items: h.items.map(x => (x === into ? { ...x, qty: x.qty + it.qty } : x)) };
-  return { ...h, items: [...h.items, { ...it, id }] };
+/** Slot `slot` emptied. */
+const emptySlot = <H extends Carrying>(h: H, worn: Record<Slot, ItemId | null>, slot: Slot): H => ({ ...h, equipped: { ...worn, [slot]: null } });
+
+// ── the shop: `save.shop`, ids of defs, null for the built-in list ──
+/** The save with the GM's shop list `shop` (a copy), or with none: the built-in shop is shown (items.ts `DEFAULT_SHOP_IDS`). */
+export const withShop = <S extends { shop: ItemDefId[] | null }>(save: S, shop: readonly ItemDefId[] | null): S => ({ ...save, shop: shop === null ? null : [...new Set(shop)] });
+/** The shop list after the item maker saved item `id`: in place of `was` (the id it was opened on), else added at the end. */
+export function writeShopItem(shown: readonly ItemDefId[], was: ItemDefId | null, id: ItemDefId): ItemDefId[] {
+  const at = was === null ? -1 : shown.indexOf(was);
+  const next = at >= 0 ? shown.map((t, i) => (i === at ? id : t)) : [...shown, id];
+  return [...new Set(next)];
+}
+/** The shop list without its `index`th item. */
+export const removeShopItem = (shown: readonly ItemDefId[], index: number): ItemDefId[] => shown.filter((_, i) => i !== index);
+
+// ── a bag line put, taken, removed ──
+/**
+ * An item put in the bag: onto its stack (`stackOf`), else as its own line under `id`. The def a grant carries is not
+ * kept here: the caller hands it to item-refs.ts `heardStep`.
+ */
+export function putItem<H extends Carrying>(h: H, g: ItemGrant, id: ItemId, R: BagRules): H {
+  const into = stackOf(h, g, R);
+  if (into) return { ...h, items: h.items.map(x => (x === into ? { ...x, qty: x.qty + g.qty } : x)) };
+  const line: HeldItem = g.kind === 'ref' ? { kind: 'ref', id, defId: g.defId, qty: g.qty } : { kind: 'adhoc', id, qty: g.qty, item: g.item };
+  return { ...h, items: [...h.items, line] };
 }
 /** Item `itemId` out of the bag and out of any slot. */
 const drop = <H extends Carrying>(h: H, itemId: string): H => ({ ...h, items: h.items.filter(i => i.id !== itemId), equipped: unwear(h.equipped, itemId) });
 /** The Bag's Remove: an item taken out of the bag whole, and out of any slot it was in, by `TABLE` (`remove`). */
-export function removeItem<H extends Carrying>(h: H, itemId: string, inFight: boolean): H | Refused<WearWhy> {
-  const to = wearMove(h, itemId, 'remove', inFight);
+export function removeItem<H extends Carrying>(h: H, itemId: string, inFight: boolean, R: BagRules): H | Refused<WearWhy> {
+  const to = wearMove(h, itemId, 'remove', inFight, R);
   return isRefused(to) ? to : drop(h, itemId);
 }
 /**
@@ -273,50 +305,102 @@ export function takeItems<H extends Carrying>(h: H, itemId: string, n = 1): H | 
   const left = it.qty - Math.min(it.qty, Math.max(1, Math.trunc(n) || 1));
   return left > 0 ? { ...h, items: h.items.map(i => (i.id === itemId ? { ...i, qty: left } : i)) } : drop(h, itemId);
 }
+
+// ── the Bag's Edit (the owner t153u: an item edit reaches every copy; Fable's strict reading for a player in a room) ──
+/** Where the phone stands for the Bag's Edit: alone (no room), the GM of its room, or a player in one. */
+export type BagSeat = 'alone' | 'gm' | 'player';
 /**
- * The item maker's edit of a held item: its fields replaced, its id kept. A worn item that the edit leaves unwearable
- * in its slot (another slot, none, or a stack) is taken off (`reslot`, SMX-rules-5.2), and `parseWorn` re-checks the
- * worn invariant (for instance, editing a worn weapon to two-handed clears `offhand`).
+ * What the Bag's Edit on line `held` does: `def` edits the item's def, so every copy changes (offered only where the
+ * phone owns the def: a built-in outside a room as a player, and a custom item of this campaign's own catalog `own`
+ * alone or as the GM); `adhoc` edits the player's own item in place; `none` offers no Edit and no "Make a separate
+ * item" (a player in a room on a reference, or a def of another catalog).
  */
-export function editItem<H extends Carrying>(h: H, itemId: string, it: ItemTemplate, inFight: boolean): H | Refused<WearWhy> {
-  const to = wearMove(h, itemId, editOf(h, itemId, it), inFight);
+export function bagEdit(held: HeldItem, seat: BagSeat, own: CatalogId | null): 'def' | 'adhoc' | 'none' {
+  if (held.kind === 'adhoc') return 'adhoc';
+  if (seat === 'player') return 'none';
+  if (isBuiltInItemId(held.defId)) return 'def';
+  return own !== null && catalogOfItemDefId(held.defId) === own ? 'def' : 'none';
+}
+/** What the Bag's Edit asks before it edits a def that every copy reads (`bagEdit` answered `def`). */
+export const BAG_EDIT_WORDS = {
+  title: 'Edit item',
+  body: (name: string): string => `Editing ${name} changes every copy of it: in every bag, in the stash and in the shop.`,
+  every: 'Edit every copy',
+  separate: 'Make a separate item',
+  cancel: 'Cancel',
+} as const;
+/** Why a Bag edit is refused besides `WearWhy`: the phone does not own the def (`bagEdit` answered `none`). */
+export type BagEditWhy = 'not-yours';
+/** What an edit to `it` is to item `itemId`: `reslot` when it is worn and `it` would not be wearable in its slot. */
+const editOf = (h: Carrying, itemId: string, it: Pick<ResolvedItem, 'slot' | 'qty'>, R: BagRules): WearEvent => {
+  const slot = slotOf(h, itemId, R);
+  return slot === null || wearable(it, slot) ? 'edit' : 'reslot';
+};
+/**
+ * The Bag's edit of an ad hoc line: its def replaced, its id and count kept. A worn item that the edit leaves unwearable
+ * in its slot is taken off (`reslot`, SMX-rules-5.2), and the worn invariant is read again (`fitWorn`). A reference is
+ * refused `not-yours`: its def is edited in the library (library.ts `saveItemDef`), or split off (`detachItem`).
+ */
+export function editItem<H extends Carrying>(h: H, itemId: string, def: ItemDefData, inFight: boolean, R: BagRules): H | Refused<WearWhy | BagEditWhy> {
+  const line = h.items.find(i => i.id === itemId);
+  if (line && line.kind !== 'adhoc') return refuse('not-yours');
+  const to = wearMove(h, itemId, editOf(h, itemId, { slot: def.slot, qty: line?.qty ?? 1 }, R), inFight, R);
   if (isRefused(to)) return to;
-  const items = h.items.map(i => (i.id === itemId ? { ...it, id: i.id } : i));
-  const base = to === 'bag' ? unwear(h.equipped, itemId) : h.equipped;
-  return { ...h, items, equipped: parseWorn(s => items.find(i => i.id === base[s])) };
+  const items = h.items.map(i => (i.id === itemId && i.kind === 'adhoc' ? { ...i, item: def } : i));
+  const worn = wornOf(h, R), base = to === 'bag' ? unwear(worn, itemId) : worn;
+  const bag = bagOf({ items }, R);
+  return { ...h, items, equipped: fitWorn(s => bag.find(i => i.id === base[s])) };
+}
+/**
+ * "Make a separate item": reference line `itemId` pointed at def `defId` (a new custom def the caller saved in the
+ * library), so it stops following the def it came from. Refused `not-yours` where `bagEdit` does not answer `def` (a
+ * player in a room, Fable's strict reading of t153u).
+ */
+export function detachItem<H extends Carrying>(h: H, itemId: string, defId: ItemDefId, inFight: boolean, R: BagRules, seat: BagSeat, own: CatalogId | null): H | Refused<WearWhy | BagEditWhy> {
+  const line = h.items.find(i => i.id === itemId);
+  if (!line) return refuse('no-item');
+  if (line.kind !== 'ref' || bagEdit(line, seat, own) !== 'def') return refuse('not-yours');
+  const items = h.items.map(i => (i === line ? { kind: 'ref' as const, id: line.id, defId, qty: line.qty } : i));
+  const next = bagOf({ items }, R).find(i => i.id === itemId)!;
+  const to = wearMove(h, itemId, editOf(h, itemId, next, R), inFight, R);
+  if (isRefused(to)) return to;
+  const worn = wornOf(h, R), base = to === 'bag' ? unwear(worn, itemId) : worn;
+  const bag = bagOf({ items }, R);
+  return { ...h, items, equipped: fitWorn(s => bag.find(i => i.id === base[s])) };
 }
 
 /** Gold added, or taken with a number below 0; never below 0. */
-export const addGold = <H extends Carrying>(h: H, n: number): H => ({ ...h, gold: Math.max(0, h.gold + (Math.trunc(n) || 0)) });
+export const addGold = <H extends { gold: number }>(h: H, n: number): H => ({ ...h, gold: Math.max(0, h.gold + (Math.trunc(n) || 0)) });
 /** The GM's edit of the gold to a number; never below 0. */
-export const setGold = <H extends Carrying>(h: H, n: number): H => ({ ...h, gold: Math.max(0, Math.trunc(n) || 0) });
+export const setGold = <H extends { gold: number }>(h: H, n: number): H => ({ ...h, gold: Math.max(0, Math.trunc(n) || 0) });
 
 /**
- * An item put on, by `wearPlan` and `parseWorn`: in its planned slot, replacing any conflicting items (including
+ * An item put on, by `wearPlan` and `fitWorn`: in its planned slot, replacing any conflicting items (including
  * off-hand under a two-handed weapon, or a two-handed weapon under an off-hand). From a stack of more than one, one is
  * split off under `splitId` and worn. An item already worn stays where it is. Refused when in a fight (`in-fight`),
  * when it has no slot (`not-gear`), or when equipping it would exceed `WEAR_LIMIT` (`wear-limit`).
  */
-export function equip<H extends Carrying>(h: H, itemId: string, splitId: ItemId, inFight = false): H | Refused<PlanWhy> {
-  const plan = wearPlan(h, itemId, inFight);
+export function equip<H extends Carrying>(h: H, itemId: string, splitId: ItemId, inFight: boolean, R: BagRules): H | Refused<PlanWhy> {
+  const plan = wearPlan(h, itemId, inFight, R);
   if (isRefused(plan)) return plan;
-  if (wearOf(h, itemId) === 'worn') return h;
-  const it = h.items.find(i => i.id === itemId)!;
-  const split = it.qty > 1, wornId = split ? splitId : it.id;
-  const items = split ? [...h.items.map(i => (i === it ? { ...i, qty: i.qty - 1 } : i)), { ...it, id: splitId, qty: 1 }] : h.items;
-  let next = unwear(h.equipped, wornId);
+  if (wearOf(h, itemId, R) === 'worn') return h;
+  const line = h.items.find(i => i.id === itemId)!;
+  const split = line.qty > 1, wornId = split ? splitId : line.id;
+  const items = split ? [...h.items.map(i => (i === line ? { ...i, qty: i.qty - 1 } : i)), { ...line, id: splitId, qty: 1 }] : h.items;
+  let next = unwear(wornOf(h, R), wornId);
   for (const oldId of plan.replaces) next = unwear(next, oldId);
   next = { ...next, [plan.slot]: wornId };
-  return { ...h, items, equipped: parseWorn(s => items.find(i => i.id === next[s])) };
+  const bag = bagOf({ items }, R);
+  return { ...h, items, equipped: fitWorn(s => bag.find(i => i.id === next[s])) };
 }
 /** Slot `slot` emptied, by `TABLE` for the item in it. A word that is not a slot is refused (`no-slot`), an empty slot (`not-worn`). */
-export function unequip<H extends Carrying>(h: H, slot: string, inFight: boolean): H | Refused<WearWhy | 'no-slot'> {
+export function unequip<H extends Carrying>(h: H, slot: string, inFight: boolean, R: BagRules): H | Refused<WearWhy | 'no-slot'> {
   const s = (SLOTS as readonly string[]).includes(slot) && slot in h.equipped ? (slot as Slot) : null;
   if (s === null) return refuse('no-slot');
-  const id = h.equipped[s];
+  const worn = wornOf(h, R), id = worn[s];
   if (id === null) return refuse('not-worn');
-  const to = wearMove(h, id, 'unequip', inFight);
-  return isRefused(to) ? to : emptySlot(h, s);
+  const to = wearMove(h, id, 'unequip', inFight, R);
+  return isRefused(to) ? to : emptySlot(h, worn, s);
 }
 
 /** Whether the shop trades with a hunter in this life: with anyone but the dead. */
@@ -439,16 +523,16 @@ type Trading = Carrying & { readonly chronicle: Chronicle; readonly life: Life }
 /** What a purchase reads on a hunter: bag, gold, chronicle, life, rank, and System debt. */
 type Buying = Trading & { readonly rank: Rank; readonly debt: number };
 /**
- * An item bought at its price (`valueOf`): spends cash first and adds any allowed shortfall to `Hunter.debt` via
- * `debtStep`. Refused when dead (`dead`), borrowing is off (`borrow-off`), debt collection is 0% (`no-payoff`), or
- * `debt + shortfall` exceeds the rank's borrow limit (`over-cap`).
+ * Grant `g` bought at its price (`valueOf` of the item it resolves to under `R`): spends cash first and adds any allowed
+ * shortfall to `Hunter.debt` via `debtStep`. Refused when dead (`dead`), borrowing is off (`borrow-off`), debt
+ * collection is 0% (`no-payoff`), or `debt + shortfall` exceeds the rank's borrow limit (`over-cap`).
  */
-export function buy<H extends Buying>(h: H, it: ItemTemplate, id: ItemId, R: BuyRules): H | Refused<BuyRefusal> {
-  const plan = buyPlan(h, it, R);
+export function buy<H extends Buying>(h: H, g: ItemGrant, id: ItemId, R: BuyRules & BagRules): H | Refused<BuyRefusal> {
+  const it = resolveGrant(g, R), plan = buyPlan(h, it, R);
   if (isRefused(plan)) return refuse(plan.why);
   const gold = h.gold - plan.cash;
   const debt = plan.borrow > 0 ? debtStep(h.debt, { type: 'incur', amount: plan.borrow }, R).debt : h.debt;
-  return record(putItem({ ...h, gold, debt }, it, id), { kind: 'shop', act: 'buy', item: it.name, rar: it.rar, price: plan.price, goldAfter: gold });
+  return record(putItem({ ...h, gold, debt }, g, id, R), { kind: 'shop', act: 'buy', item: it.name, rar: it.rar, price: plan.price, goldAfter: gold });
 }
 /**
  * `n` of an item sold (at most what is held), each for `sellPrice`. Refused for a dead hunter (`dead`), by `TABLE`
@@ -457,7 +541,7 @@ export function buy<H extends Buying>(h: H, it: ItemTemplate, id: ItemId, R: Buy
  */
 export function sell<H extends Trading>(h: H, itemId: string, n: number, R: SaleRules, inFight = false): H | Refused<'dead' | WearWhy | 'unsellable'> {
   if (!shopOpen(h)) return refuse('dead');
-  const to = wearMove(h, itemId, 'remove', inFight), it = h.items.find(i => i.id === itemId);
+  const to = wearMove(h, itemId, 'remove', inFight, R), it = heldItem(h, itemId, R);
   if (isRefused(to) || !it) return isRefused(to) ? to : refuse('no-item');
   if (!sellable(it)) return refuse('unsellable');
   const cnt = Math.min(Math.max(1, Math.trunc(n) || 1), it.qty);
@@ -467,13 +551,5 @@ export function sell<H extends Trading>(h: H, itemId: string, n: number, R: Sale
   return record({ ...out, gold }, { kind: 'shop', act: 'sell', item: it.name, rar: it.rar, price, goldAfter: gold });
 }
 /** What `sell` pays for `n` of an item. */
-export const sellTotal = (it: Item, n: number, R: SaleRules): number => sellPrice(it, R) * Math.min(Math.max(1, Math.trunc(n) || 1), it.qty);
-
-// ── the GM's shop: `save.shop`, null for the built-in list ──
-/** The shop list after the item maker saved `it`: in place of the item named `name`, else added at the end. */
-export function writeShopItem(shown: readonly ItemTemplate[], name: string | null, it: ItemTemplate): ItemTemplate[] {
-  const at = name === null ? -1 : shown.findIndex(t => t.name === name);
-  return at >= 0 ? shown.map((t, i) => (i === at ? it : t)) : [...shown, it];
-}
-/** The shop list without its `index`th item. */
-export const removeShopItem = (shown: readonly ItemTemplate[], index: number): ItemTemplate[] => shown.filter((_, i) => i !== index);
+export const sellTotal = (it: Priced & Pick<ResolvedItem, 'qty'> & Partial<Pick<ResolvedItem, 'revive'>>, n: number, R: PriceRules & Pick<Rules, 'saleShare'>): number =>
+  sellPrice(it, R) * Math.min(Math.max(1, Math.trunc(n) || 1), it.qty);

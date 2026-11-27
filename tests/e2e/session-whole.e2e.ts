@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { STASH_WORDS } from '../../src/core/trade/stash.ts';
 import { restRefusalWords } from '../../src/core/hunter/rests.ts';
-import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, save, startGoblinDenFight } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, chooseList, save, startGoblinDenFight, adhoc } from './helpers.ts';
 
 const KAI = 'Kai Test', MIRA = 'Mira Test', FALLEN = 'Brakk Ironhide', POTION = 'Healing Potion';
 
@@ -159,7 +159,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
   });
 
   await test.step('stage 4, a trade: Mira offers Kai a potion and Kai accepts it', async () => {
-    await mira.evaluate(p => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: p, rar: 'common', type: 'consumable', qty: 2 }), POTION);
+    await mira.evaluate(g => hunterApp.api.inventory.addItem(hunterApp.store.active().id, g), adhoc({ name: POTION, rar: 'common', type: 'consumable' }, 2));
     await expect.poll(() => kai.evaluate(() => hunterApp.api.sync.faces().map((f: any) => f.name)), { timeout: 20_000 }).toContain(MIRA);
     const panel = await bag(mira, 'Items');
     await expect(potions(mira).locator('.inv-qty')).toHaveText('×2');
@@ -205,6 +205,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     await stashLine.getByRole('button', { name: `Take: ${POTION}` }).tap();
     await expect(mira.locator('#toasts .toast', { hasText: `From the stash: 1 ${POTION}.` })).toBeVisible({ timeout: 20_000 });
     await bag(mira, 'Items');
+    // a player's own item stacks with its exact copy (inventory.ts `stackOf`): the one taken joins the one kept
     await expect(potions(mira).locator('.inv-qty')).toHaveText('×2');
     await expect((await bag(mira, 'Stash')).locator('[data-tr-list="stash"] .empty')).toHaveText('The stash is empty.', { timeout: 20_000 });
     await expect(gm.locator('#gm-trade [data-tr-list="gm-stash"]')).toHaveText('The stash is empty.', { timeout: 20_000 });

@@ -5,7 +5,9 @@ import { describe, expect, test } from 'bun:test';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { fightId } from '../src/core/ids.ts';
-import type { DeviceId } from '../src/core/ids.ts';
+import type { DeviceId, ItemId } from '../src/core/ids.ts';
+import { SLOTS } from '../src/core/registry/items.ts';
+import type { Slot } from '../src/core/registry/items.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import type { Ability, CombatantId, RiseSpec } from '../src/core/combat/ability-types.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
@@ -116,10 +118,11 @@ describe('corpse rise state machine and DC/bonus parity', () => {
   });
 
   test('riseBonus matches checksOf(Presence) plus raise.bonus, including fatigue penalty', () => {
+    const emptyWorn = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
     const h: SheetHunter = {
       stats: { str: 10, agi: 10, vit: 10, pow: 16, ins: 10, pre: 28, ctl: 10, dis: 10 },
       level: RULES.rankLevels.C, rank: 'C', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0,
-      titleId: null, titles: [], items: [], equipped: {}, skills: [], conditions: [],
+      titleId: null, titles: [], items: [], equipped: emptyWorn, skills: [], conditions: [],
     };
     const at = hunterSheet(h, RULES);
     const fresh = checksOf(h, at, RULES);

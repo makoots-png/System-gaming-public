@@ -3,7 +3,7 @@
 // them and lists the stash in "Trades and stash" with Remove, held under Undo. Driven through the UI; the store sets up and reads.
 import type { Page } from '@playwright/test';
 import { STASH_WORDS } from '../../src/core/trade/stash.ts';
-import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go } from './helpers.ts';
+import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go, adhoc } from './helpers.ts';
 
 type Table = { gm: Page; mira: Page; eldrin: Page; gmCtx: import('@playwright/test').BrowserContext };
 const CUT = [/Failed to load resource: net::ERR_(FAILED|INTERNET_DISCONNECTED)/];
@@ -22,12 +22,12 @@ async function table(device: (label: string, o?: DeviceOptions) => Promise<{ pag
   }
   return { gm: g.page, mira, eldrin, gmCtx: g.ctx };
 }
-/** Puts `n` Healing Potions in the active hunter's bag, as setup. */
-const stock = (page: Page, n: number): Promise<void> => page.evaluate(n => {
-  hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Healing Potion', rar: 'common', type: 'consumable', qty: n });
-}, n);
-const has = (page: Page): Promise<number> => page.evaluate(() => hunterApp.store.active().items.filter((i: any) => i.name === 'Healing Potion').reduce((a: number, i: any) => a + i.qty, 0));
-const stashOf = (gm: Page): Promise<string[]> => gm.evaluate(() => hunterApp.store.get().stash.items.map((i: any) => `${i.name} ${i.qty}`));
+/** Puts `n` Healing Potions, the hunter's own item, in the active hunter's bag, as setup. */
+const stock = (page: Page, n: number): Promise<void> => page.evaluate(g => {
+  hunterApp.api.inventory.addItem(hunterApp.store.active().id, g);
+}, adhoc({ name: 'Healing Potion', rar: 'common', type: 'consumable' }, n));
+const has = (page: Page): Promise<number> => page.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.active()).filter((i: any) => i.name === 'Healing Potion').reduce((a: number, i: any) => a + i.qty, 0));
+const stashOf = (gm: Page): Promise<string[]> => gm.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.get().stash).map((i: any) => `${i.name} ${i.qty}`));
 const tradeLog = (gm: Page): Promise<string[]> => gm.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.kind === 'trade').map((l: any) => l.text));
 
 /** The Bag on the Status view, on tab `tab`. */

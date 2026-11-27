@@ -4,7 +4,11 @@ import { KIT_SHARE, piece } from '../src/core/registry/items.ts';
 import type { Archetype, SheetBasis, GearPiece, MonsterKind, Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import { explain, hunterSheet, SOURCES } from '../src/core/hunter/sheet.ts';
-import type { SheetCondition, SheetHunter, SheetItem, SheetRules, SheetSource } from '../src/core/hunter/sheet.ts';
+import type { SheetCondition, SheetHunter, SheetRules, SheetSource } from '../src/core/hunter/sheet.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
+import { newHunter } from '../src/core/save.ts';
+import { iid } from './fixtures/ids.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -419,10 +423,14 @@ test('the fight\'s rule numbers are the ones the timeline and the map read', () 
 describe('explain', () => {
   const hunter = (o: Partial<SheetHunter> = {}): SheetHunter => ({
     stats: stats(), level: 1, rank: 'E', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-    items: [], equipped: {}, skills: [], conditions: [], ...o,
+    items: [], equipped: newHunter(RULES).equipped, skills: [], conditions: [], ...o,
   });
   const R: SheetRules = RULES;
-  const VEST: SheetItem = { id: 'vest', weight: 6, armor: 12, resist: 3, bonus: { str: 2 } };
+  /** A chest piece of the hunter's own (ad hoc), read through the one item parser, under bag id `i1`. */
+  const vest = (bonus: Record<string, number>): HeldItem =>
+    ({ kind: 'adhoc', id: iid('i1'), qty: 1, item: parseItemDef({ name: 'Vest', rar: 'common', type: 'armor', slot: 'chest', weight: 6, armor: 12, resist: 3, bonus })! });
+  const VEST = vest({ str: 2 });
+  const inChest = { ...newHunter(RULES).equipped, chest: iid('i1') };
   const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
   const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: -8 } }] };
   const on = (key: string, def: StatusDef): SheetCondition => ({ key: statusKey(key), def, source: { id: null, tier: 0 } });
@@ -430,7 +438,7 @@ describe('explain', () => {
   // every source at once: points spent, a level, worn gear with a bonus, a title, a passive, the GM's change, two statuses
   const FULL = hunter({
     stats: stats({ vit: 18, agi: 16, str: 14, pow: 12 }), level: 9, rank: 'D',
-    items: [VEST], equipped: { chest: 'vest' }, titleId: 't', titles: [{ id: 't', bonus: { ins: 3, threat: 10 } }],
+    items: [VEST], equipped: inChest, titleId: 't', titles: [{ id: 't', bonus: { ins: 3, threat: 10 } }],
     skills: [{ type: 'passive', bonus: { dis: 2, critSize: 0.05 } }],
     hpAdj: 7, manaAdj: -2, conditions: [on('slowed', SLOWED), on('frightened', FRIGHTENED)],
   });
@@ -447,7 +455,7 @@ describe('explain', () => {
 
   test('worn armor is the gear part of Armor, and nothing worn is a gear part of 0', () => {
     // design 2.2: armor is the gear's armor, plus the capped curve of Vitality above its base (0 at the base), plus bonuses
-    const worn = hunter({ items: [{ ...VEST, bonus: {} }], equipped: { chest: 'vest' } });
+    const worn = hunter({ items: [vest({})], equipped: inChest });
     expect(explain(worn, 'armor', R).parts.filter(p => p.amount !== 0)).toEqual([{ from: 'gear', amount: 12 }]);
     expect(part(hunter(), 'armor', 'gear')).toBe(0);
   });

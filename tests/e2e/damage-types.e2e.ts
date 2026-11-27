@@ -52,7 +52,7 @@ test('GM edits Poisoned and Arc Bolt damage types in Rules editor, and creates a
     await expect(dlg.locator('.mk-preview')).toContainText('True damage');
     await dlg.locator('[data-apply]').tap();
     await expect(dlg).toHaveCount(0);
-    const savedItem = await page.evaluate(() => hunterApp.store.get().library.items.find((x: any) => x.name === 'Void Blade'));
+    const savedItem = await page.evaluate(() => (Object.values(hunterApp.store.get().library.items) as any[]).find(x => x.name === 'Void Blade'));
     expect(savedItem.damageType).toBe('true');
   });
 

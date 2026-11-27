@@ -17,6 +17,14 @@ export const liveSince = (now: number): number => now - ROOM_TTL_MS;
 /** Whether a room last used at `touched` is still live at `now`. A room used exactly `ROOM_TTL_MS` ago still is. */
 export const roomLive = (touched: number, now: number): boolean => touched >= liveSince(now);
 
+// ── a catalog's life ──
+/** An unlinked catalog lives 30 days from its last update; a catalog linked by any live room stays alive as long as that room lives. */
+export const CATALOG_TTL_MS = ROOM_TTL_MS;
+/** The oldest update time an unlinked live catalog may have at `now`. Both stores' sweeps read this one rule. */
+export const catalogLiveSince = (now: number): number => now - CATALOG_TTL_MS;
+/** Whether a catalog last updated at `updated` stays live at `now` (`linked`: any live room points at it). */
+export const catalogLive = (updated: number, linked: boolean, now: number): boolean => linked || updated >= catalogLiveSince(now);
+
 // ── a removal ──
 /**
  * How long after the GM removes a hunter its phone may not push the sheet back: 20 s, two of a player's slowest polls,

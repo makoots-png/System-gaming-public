@@ -21,7 +21,8 @@ import { EARNED_WHAT_MAX, newEvent, newEventId, parseSheetKey } from '../protoco
 import type { EventBody, EventStamp, RewardFrom, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
 import { sheetKeyOf } from '../ids.ts';
 import type { FightId, GateId, HunterId, MonsterId } from '../ids.ts';
-import type { ItemTemplate } from '../registry/items.ts';
+import { resolveGrant } from '../registry/item-book.ts';
+import type { ItemGrant, ItemResolveRules } from '../registry/item-book.ts';
 import type { Dropped, FightLoot, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -191,8 +192,8 @@ export const dropWaiting = (l: FightLoot, fight: FightId): Dropped | null => (l.
 /** The drop the Loot dropped window offers: the oldest waiting. Null when none waits. */
 export const lootOffered = (l: FightLoot): Dropped | null => (l.at === 'waiting' ? l.drops[0] : null);
 /** A drop in one line: "50 gold, Frost Shard ×2"; '' for nothing. `fmt` writes a number as the screen does. */
-export const dropLine = (d: Pick<Dropped, 'gold' | 'items'>, fmt: (n: number) => string): string =>
-  [d.gold ? `${fmt(d.gold)} gold` : '', ...d.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ');
+export const dropLine = (d: Pick<Dropped, 'gold' | 'items'>, fmt: (n: number) => string, R: ItemResolveRules): string =>
+  [d.gold ? `${fmt(d.gold)} gold` : '', ...d.items.map(g => resolveGrant(g, R)).map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ');
 
 // ── a gate's Clear ──
 /** What one payee of a Clear gets: its share of the XP, gold, and mana crystal, and the gate's items to the one taker. */
@@ -290,7 +291,7 @@ export type SettledPreset = {
   readonly granted: readonly { readonly hid: string; readonly g: Granted }[];
   readonly remotePaid: readonly { readonly key: SheetKey; readonly name: string; readonly rewards: Rewards }[];
   readonly pending: readonly PendingReward[];
-  readonly stashed: readonly ItemTemplate[];
+  readonly stashed: readonly ItemGrant[];
 };
 /**
  * Gate `gateId` cleared using its active clear preset (`recommended` or `edited`), in one atomic step.
@@ -319,14 +320,14 @@ export function settleClearPreset(
   const firstCrystal = payees.length ? crystalFor(payees[0]!) : 0;
   const pay: ClearPay = {
     due, xp: payees.length ? preset.xp : 0, gold: payees.length ? preset.gold : 0, crystal: firstCrystal,
-    items: preset.items.filter(i => i.checked).map(i => i.item.name),
+    items: preset.items.filter(i => i.checked).map(i => resolveGrant(i.item, day.R).name),
     payees: payees.map(p => p.name),
   };
   const cleared = clearGate(save, gateId, pay, stamp);
   if (isRefused(cleared)) return cleared;
   const paid = payGatePreset(cleared, gateId, day.at, payees);
   if (isRefused(paid)) return refuse('no-preset');
-  const stashedSave = stashDeposit(paid, stash, stamp, `${g.name} clear`);
+  const stashedSave = stashDeposit(paid, stash, stamp, `${g.name} clear`, day.R);
   if (isRefused(stashedSave)) return refuse('stash-full');
 
   const toBreak = Math.max(0, g.breakDay - save.world.day);
@@ -372,7 +373,7 @@ export function settleClearPreset(
       if (p.kind !== 'remote') continue;
       const rw = rewardFor(p);
       if (!isEmptyReward(rw)) {
-        const awardEv = newEvent('award', { to: [p.key], rewards: rw, earned: { from: 'clear', what } }, { ...room.stamp, seq: i * 2 });
+        const awardEv = newEvent('award', { to: [p.key], rewards: rw, earned: { from: 'clear', what } }, { ...room.stamp, seq: i * 2 }, day.R);
         if (!awardEv) throw new Error('the room would refuse the clear preset award');
         events.push(awardEv);
       }

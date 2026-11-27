@@ -31,11 +31,15 @@ import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { printFormula } from '../src/core/formula.ts';
 import { describeItem } from '../src/core/effects.ts';
 import { newHunter } from '../src/core/save.ts';
-import { fightId, saveId } from '../src/core/ids.ts';
+import { fightId, parseCatalogKey, saveId } from '../src/core/ids.ts';
+import { catalogIdOf } from '../src/core/catalog-id.ts';
 import { roomRulesOf, withRoomRules } from '../src/core/hunter/build.ts';
+import { catalogDoc, catalogReadOf } from '../src/core/protocol.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import { putItem } from '../src/core/hunter/inventory.ts';
 import { STARTER_SKILLS, skillOf } from '../src/core/registry/skills.ts';
+import { refGrant } from '../src/core/registry/item-book.ts';
+import { customId, defOf, rulesWith } from './fixtures/items.ts';
 
 const num = (value: number) => ({ kind: 'number', value }) as const;
 
@@ -248,12 +252,13 @@ describe('GM overrides, weapons, keystones, running fight snapshots, and RoomRul
     expect(atk.effect?.type).toBe('true');
     expect(printFormula(formulaOf(atk, RULES)!)).toBe('1d8 + phys');
 
+    const R = rulesWith({ ...defOf('voidtrue', blade), ...defOf('voidphys', physBlade) });
     let h = newHunter(RULES);
-    h = putItem(h, blade, saveId('i', 1));
-    h = putItem(h, physBlade, saveId('i', 2));
+    h = putItem(h, refGrant(customId('voidtrue')), saveId('i', 1), R);
+    h = putItem(h, refGrant(customId('voidphys')), saveId('i', 2), R);
     expect(h.items.length).toBe(2);
     h = { ...h, equipped: { ...h.equipped, weapon: saveId('i', 1) } };
-    const rowAtk = hunterAbilities(h, RULES).find(a => a.id === ATTACK_ID)!;
+    const rowAtk = hunterAbilities(h, R).find(a => a.id === ATTACK_ID)!;
     expect(rowAtk.effect?.type).toBe('true');
 
     // Thrown true-damage consumable produces a true-damage itemAbility
@@ -390,7 +395,7 @@ describe('GM overrides, weapons, keystones, running fight snapshots, and RoomRul
     expect(r.ok && r.outcomes[0]!.type).toBe('arcane');
   });
 
-  test('RoomRules carries damageTypes and GM-overridden built-in statuses cleanly across the wire', () => {
+  test('RoomRules carries damageTypes (without statuses) and CatalogDoc carries GM-overridden statuses across the wire', () => {
     const arcanePoison = statusWithDamageType(BUILT_IN_STATUSES.poisoned, 'arcane');
     const gmRules = rulesOf(
       damageTypeSet({}, 'arc-bolt', 'true'),
@@ -398,19 +403,19 @@ describe('GM overrides, weapons, keystones, running fight snapshots, and RoomRul
     );
     const wire = JSON.parse(JSON.stringify(roomRulesOf(gmRules)));
     expect(wire.damageTypes).toEqual({ 'arc-bolt': 'true' });
-    expect(Object.keys(wire.statuses)).toEqual(['poisoned']);
-    expect(statusDamageTypeOf(wire.statuses.poisoned)).toBe('arcane');
+    expect('statuses' in wire).toBe(false);
 
     const parsed = DOCS.rules(wire)!;
     expect(parsed).not.toBeNull();
-    const playerRules = withRoomRules(RULES, parsed);
+    const { doc } = catalogDoc({ library: { items: {}, statuses: { poisoned: arcanePoison } }, shop: null });
+    const read = catalogReadOf(catalogIdOf(parseCatalogKey('ck_test_damage_types_key_123456')!), 1, doc, []);
+    const playerRules = withRoomRules(rulesOf({}, read.statuses, read.defs), parsed);
     expect(playerRules.fight.damageTypes).toEqual({ 'arc-bolt': 'true' });
     expect(statusDamageTypeOf(playerRules.conditions.poisoned)).toBe('arcane');
 
-    // Missing damageTypes/statuses or invalid keys refuse the doc
-    const { damageTypes: _d, statuses: _s, ...partial } = wire;
+    // Missing or invalid damageTypes refuses the doc
+    const { damageTypes: _d, ...partial } = wire;
     expect(DOCS.rules(partial)).toBeNull();
     expect(DOCS.rules({ ...wire, damageTypes: { attack: 'true' } })).toBeNull();
-    expect(DOCS.rules({ ...wire, statuses: { 'not-built-in': arcanePoison } })).toBeNull();
   });
 });

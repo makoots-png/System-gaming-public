@@ -23,7 +23,10 @@ import { isRefused } from '../src/core/save-step.ts';
 import { dev } from './fixtures/ids.ts';
 import { UNIT_MAKER_IDS } from './fixtures/maker-registry.ts';
 import type { UnitMakerId } from './fixtures/maker-registry.ts';
-import { parseItem } from '../src/core/registry/items.ts';
+import { BUILT_IN_ITEM_IDS, parseItem } from '../src/core/registry/items.ts';
+import { builtInDefData, itemDefDataOf } from '../src/core/registry/item-book.ts';
+import { saveItemDef } from '../src/core/library.ts';
+import { customId } from './fixtures/items.ts';
 import { parseSkill } from '../src/core/registry/skills.ts';
 import {
   WORST_BUNDLE,
@@ -259,6 +262,21 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     const ov1 = writeTable(ov0, 'urgent', '', linesOf(WORST_ROLL_TABLES.urgent.join('\n')));
     const ov2 = writeTable(ov1, 'encounter', 'B', linesOf(WORST_ROLL_TABLES.encounterB.join('\n')));
     expect(ov2).toEqual(ov0);
+  },
+
+  'item-def'() {
+    // every built-in saved untouched in the item maker (its form is what parseItem reads back) leaves no library entry
+    for (const id of BUILT_IN_ITEM_IDS) {
+      const shipped = builtInDefData(id, RULES)!, form = parseItem(JSON.parse(JSON.stringify({ ...shipped, qty: 1 })))!;
+      const saved = saveItemDef(newSave(dev('d-maker')), id, itemDefDataOf(form), RULES);
+      expect(isRefused(saved) ? saved : saved.library.items, id).toEqual({});
+    }
+    // a custom def saved, opened and saved again is the def it was
+    const cid = customId('roundtrip'), def = itemDefDataOf(parseItem({ name: 'Round Trip', rar: 'rare', type: 'armor', slot: 'chest', kit: 'heavy', desc: 'x' })!);
+    const once = saveItemDef(newSave(dev('d-maker')), cid, def, RULES);
+    if (isRefused(once)) throw new Error(once.why);
+    const twice = saveItemDef(once, cid, itemDefDataOf(parseItem(JSON.parse(JSON.stringify({ ...once.library.items[cid], qty: 1 })))!), RULES);
+    expect(isRefused(twice) ? twice : twice.library.items).toEqual(once.library.items);
   },
 
   'typed-weapon'() {

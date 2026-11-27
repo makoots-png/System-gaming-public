@@ -25,7 +25,9 @@ import type { Refused } from '../save-step.ts';
 import { raisedLine, sheetEdit } from './grant.ts';
 import { record } from './chronicle.ts';
 import type { SheetEdit } from './grant.ts';
-import { takeItems } from './inventory.ts';
+import { heldItem, takeItems } from './inventory.ts';
+import type { BagRules } from './inventory.ts';
+import type { ResolvedItem } from '../registry/item-book.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { hpOf, manaOf } from './vitals.ts';
 import type { Item } from '../registry/items.ts';
@@ -156,16 +158,18 @@ export const useWords = (name: string, low?: TooLow): Readonly<Record<ItemUseRef
   'too-low': USE_WORDS['too-low'](name, low), fight: USE_WORDS.fight(name),
 });
 
-/** A consumable `h` holds that does something when used (not `no-item`). */
-export const usable = (h: Pick<Hunter, 'items'>, itemId: string): Item | null =>
-  h.items.find(i => i.id === itemId && i.type === 'consumable' && i.qty > 0) ?? null;
+/** A consumable `h` holds, resolved under `R` (inventory.ts `heldItem`), that does something when used (not `no-item`). */
+export const usable = (h: Pick<Hunter, 'items'>, itemId: string, R: BagRules): ResolvedItem | null => {
+  const it = heldItem(h, itemId, R);
+  return it && it.type === 'consumable' && it.qty > 0 ? it : null;
+};
 
 /**
  * One of consumable `itemId` leaves `h`'s bag, used up: the last one leaves any slot it was in, and the maxima are fitted
  * (a worn thing used up lowers them). Refused when `h` holds no such consumable (`no-item`).
  */
 export function spendItem(h: Hunter, itemId: string, R: Rules): Hunter | Refused<'no-item'> {
-  if (!usable(h, itemId)) return refuse('no-item');
+  if (!usable(h, itemId, R)) return refuse('no-item');
   const taken = takeItems(h, itemId, 1);
   return isRefused(taken) ? taken : fitted(taken, R);
 }
@@ -178,8 +182,8 @@ export function spendItem(h: Hunter, itemId: string, R: Rules): Hunter | Refused
  * only from dead), when it revives and `h`'s rank is above its own (`too-low`, `revives`), or when nothing would change
  * (`nothing`). A refused use spends nothing.
  */
-export function useItem(h: Hunter, itemId: string, rolls: readonly (readonly number[])[], R: Rules): (Used & { readonly item: Item }) | Refused<'no-item' | 'nothing' | 'not-dead' | 'too-low'> {
-  const item = usable(h, itemId); if (!item) return refuse('no-item');
+export function useItem(h: Hunter, itemId: string, rolls: readonly (readonly number[])[], R: Rules): (Used & { readonly item: ResolvedItem }) | Refused<'no-item' | 'nothing' | 'not-dead' | 'too-low'> {
+  const item = usable(h, itemId, R); if (!item) return refuse('no-item');
   let from = h;
   const lines: string[] = [];
   if (item.revive) {

@@ -5,10 +5,12 @@
 // room state of its own, so a restart changes nothing a player sees.
 
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
+import { catalogIdOf } from './src/core/catalog-id.ts';
+import { sha256Hex } from './src/core/sha256.ts';
 import { buildApp, type Built } from './scripts/build.ts';
-import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, apiError, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedPage, sheetFor, speaksFor } from './src/core/protocol.ts';
-import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
-import { DB_RETRY_MS, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
+import { CATALOG_MAX, DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, apiError, catalogReadOf, deviceOf, isEventType, parseCatalogDoc, parseCatalogId, parseCatalogKey, parseCatalogReadIds, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedPage, sheetFor, speaksFor } from './src/core/protocol.ts';
+import type { CatalogDoc, CatalogId, CatalogPointer, DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
+import { DB_RETRY_MS, catalogLive, catalogLiveSince, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent, Pushed, RemovalChange } from './src/core/room-server.ts';
 import { ownedBy, ownerOf, ownerStep, parseTokenHash } from './src/core/sync/owner.ts';
 import type { Owner, OwnerEvent, TokenHash } from './src/core/sync/owner.ts';
@@ -42,7 +44,14 @@ const codeOf = (e: unknown): string => {
 // ── the store ──
 /** Who the `_kicked` doc is from: the server writes it, no phone. */
 const SERVER_DEVICE = 'server' as DeviceId;
-const MAX_BODY = 64 * 1024, MEM_ROOMS = 2000, PRESENCE_MAX = 200;
+const MAX_BODY = 64 * 1024, CATALOG_BODY_MAX = CATALOG_MAX + 1024, MEM_ROOMS = 2000, MEM_CATALOGS = 2000, PRESENCE_MAX = 200;
+const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
+/** Constant-time compare of two hex hashes. */
+function sameHash(got: string, want: string): boolean {
+  let d = got.length ^ want.length;
+  for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+  return d === 0;
+}
 /**
  * The most events a room keeps in the memory store, only to bound the process's memory: past it the room refuses a new
  * event (`room full`) and forgets none, so every phone reads every message it was sent and an event id is taken once for
@@ -53,6 +62,17 @@ export const MEM_EVENTS = 20_000;
 type Page = { events: StoredEvent[]; next: number; more: boolean };
 /** What a room holds besides its events: the hunter sheets by key and the room docs by name. */
 type Board = { sheets: Record<SheetKey, Stored<RoomSheet>>; docs: RoomDocs };
+/** One stored GM catalog row: its derived id, SHA-256 key hash, monotonic rev, last update ms, and parsed doc. */
+type StoredCatalog = { readonly id: CatalogId; readonly keyHash: string; readonly rev: number; readonly updated: number; readonly data: CatalogDoc };
+/** What `putCatalog` answered: stored with its new rev, or refused (`forbidden`, `full`, or `conflict` with the server's rev). */
+type CatalogPut =
+  | { readonly ok: true; readonly rev: number }
+  | { readonly ok: false; readonly why: 'forbidden' | 'full' }
+  | { readonly ok: false; readonly why: 'conflict'; readonly rev: number };
+/** What `linkCatalog` answered: the room's linked catalog pointer, or refused (`missing` or `forbidden`). */
+type CatalogLink =
+  | { readonly ok: true; readonly pointer: CatalogPointer }
+  | { readonly ok: false; readonly why: 'missing' | 'forbidden' };
 /**
  * Where rooms live. It keeps only what a protocol parser accepted and answers it typed; Postgres rows are parsed again
  * on the way out, since the database is outside the process. `now` is the request's clock, read once per request.
@@ -62,7 +82,7 @@ export interface Store {
   readonly kind: 'postgres' | 'memory';
   /** Throws when the store cannot answer now; /api/health asks it. */
   check(): Promise<void>;
-  /** Removes every room that is not live at `now`, with its events, sheets, owners and presence. The only sweep. */
+  /** Removes every room not live at `now` (with its events, sheets, owners and presence) and every unlinked expired catalog. The only sweep. */
   sweep(now: number): Promise<RoomCode[]>;
   /** False when the code is taken (or the memory store is full). Every room has a GM key. */
   create(code: RoomCode, keyHash: string, now: number): Promise<boolean>;
@@ -105,6 +125,16 @@ export interface Store {
    * A removal moves it inside `setRemoval`, which alone knows how many of the phone's sheets are left.
    */
   moveOwner(code: RoomCode, dev: DeviceId, event: Exclude<OwnerEvent, { type: 'removed' }>): Promise<Owner>;
+  /** Creates (`ifRev: 0`) or atomically updates a GM catalog when `ifRev` matches the current rev and `keyHash` matches. */
+  putCatalog(id: CatalogId, keyHash: string, ifRev: number, data: CatalogDoc, now: number): Promise<CatalogPut>;
+  /** Reads a GM catalog whole by id (for `GET /api/catalogs/:id`), or null when absent or unreadable. */
+  getCatalog(id: CatalogId): Promise<StoredCatalog | null>;
+  /** Links room `code` to catalog `id` after verifying `id` exists and its `keyHash` matches. */
+  linkCatalog(code: RoomCode, id: CatalogId, keyHash: string, now: number): Promise<CatalogLink>;
+  /** Reads only `{ id, rev }` of the catalog linked to room `code` (never loading its `data` blob), or null if unlinked. */
+  catalogPointer(code: RoomCode): Promise<CatalogPointer | null>;
+  /** Reads the catalog linked to room `code` (for `POST /api/rooms/:code/catalog/read`), or null if unlinked or unreadable. */
+  roomCatalog(code: RoomCode): Promise<{ readonly id: CatalogId; readonly rev: number; readonly data: CatalogDoc } | null>;
   see(code: RoomCode, dev: DeviceId, now: number): void;
   presence(code: RoomCode): ReadonlyMap<DeviceId, number>;
   close(): Promise<void>;
@@ -139,7 +169,7 @@ function withDoc<K extends DocName>(docs: RoomDocs, name: K, doc: Stored<DocOf<K
 const nameOn = (sheet: RoomSheet | null): string => (sheet && 'hunter' in sheet ? sheet.hunter.name : '');
 
 /** A room in memory. `events[i]` has seq i + 1, since the store forgets none; `ids` answers an event id's seq. */
-type MemRoom = { touched: number; events: StoredEvent[]; ids: Map<EventId, number>; board: Board; keyHash: string; owners: Map<DeviceId, TokenHash> };
+type MemRoom = { touched: number; events: StoredEvent[]; ids: Map<EventId, number>; board: Board; keyHash: string; owners: Map<DeviceId, TokenHash>; catalogId: CatalogId | null };
 /** The slot `dev` has in a memory room. */
 const memOwner = (r: MemRoom, dev: DeviceId): Owner => ownerOf(r.owners.get(dev) ?? null);
 /** Keeps `o` as `dev`'s slot in a memory room: a free slot holds no row. */
@@ -148,7 +178,7 @@ function keepMemOwner(r: MemRoom, dev: DeviceId, o: Owner): Owner {
   return o;
 }
 export function memoryStore(): Store {
-  const rooms = new Map<RoomCode, MemRoom>(), book = presenceBook();
+  const rooms = new Map<RoomCode, MemRoom>(), catalogs = new Map<CatalogId, StoredCatalog>(), book = presenceBook();
   /** A room a route already touched in this request. */
   const room = (code: RoomCode): MemRoom => {
     const r = rooms.get(code);
@@ -166,11 +196,14 @@ export function memoryStore(): Store {
       const gone = [...rooms].filter(([, r]) => !roomLive(r.touched, now)).map(([c]) => c);
       for (const c of gone) rooms.delete(c);
       book.drop(gone);
+      const linked = new Set<CatalogId>();
+      for (const r of rooms.values()) if (r.catalogId) linked.add(r.catalogId);
+      for (const [id, c] of [...catalogs]) if (!catalogLive(c.updated, linked.has(id), now)) catalogs.delete(id);
       return gone;
     },
     async create(code, keyHash, now) {
       if (rooms.size >= MEM_ROOMS || rooms.has(code)) return false;
-      rooms.set(code, { touched: now, events: [], ids: new Map(), board: { sheets: {}, docs: {} }, keyHash, owners: new Map() });
+      rooms.set(code, { touched: now, events: [], ids: new Map(), board: { sheets: {}, docs: {} }, keyHash, owners: new Map(), catalogId: null });
       return true;
     },
     async keyHash(code) { return rooms.get(code)?.keyHash ?? null; },
@@ -212,6 +245,36 @@ export function memoryStore(): Store {
     async putDoc(code, name, from, doc, now) { withDoc(room(code).board.docs, name, { at: iso(now), from, data: doc }); },
     async owner(code, dev) { return memOwner(room(code), dev); },
     async moveOwner(code, dev, event) { const r = room(code); return keepMemOwner(r, dev, ownerStep(memOwner(r, dev), event)); },
+    async putCatalog(id, keyHash, ifRev, data, now) {
+      const cur = catalogs.get(id);
+      if (!cur) {
+        if (ifRev !== 0) return { ok: false, why: 'conflict', rev: 0 };
+        if (catalogs.size >= MEM_CATALOGS) return { ok: false, why: 'full' };
+        catalogs.set(id, { id, keyHash, rev: 1, updated: now, data });
+        return { ok: true, rev: 1 };
+      }
+      if (!sameHash(cur.keyHash, keyHash)) return { ok: false, why: 'forbidden' };
+      if (cur.rev !== ifRev) return { ok: false, why: 'conflict', rev: cur.rev };
+      const rev = cur.rev + 1;
+      catalogs.set(id, { ...cur, rev, updated: now, data });
+      return { ok: true, rev };
+    },
+    async getCatalog(id) { return catalogs.get(id) ?? null; },
+    async linkCatalog(code, id, keyHash) {
+      const r = room(code), c = catalogs.get(id);
+      if (!c) return { ok: false, why: 'missing' };
+      if (!sameHash(c.keyHash, keyHash)) return { ok: false, why: 'forbidden' };
+      r.catalogId = id;
+      return { ok: true, pointer: { id, rev: c.rev } };
+    },
+    async catalogPointer(code) {
+      const id = room(code).catalogId, c = id ? catalogs.get(id) : null;
+      return c ? { id: c.id, rev: c.rev } : null;
+    },
+    async roomCatalog(code) {
+      const id = room(code).catalogId, c = id ? catalogs.get(id) : null;
+      return c ? { id: c.id, rev: c.rev, data: c.data } : null;
+    },
     see: book.see,
     presence: book.of,
     async close() {},
@@ -233,6 +296,8 @@ export async function postgresStore(url: string): Promise<Store> {
     await db`CREATE TABLE IF NOT EXISTS sheets (room text NOT NULL, hid text NOT NULL, at bigint NOT NULL, from_id text NOT NULL, data jsonb NOT NULL, PRIMARY KEY (room, hid))`;
     await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS gm_key_hash text`;
     await db`CREATE TABLE IF NOT EXISTS sheet_owners (room text NOT NULL, device text NOT NULL, token_hash text NOT NULL, PRIMARY KEY (room, device))`;
+    await db`CREATE TABLE IF NOT EXISTS catalogs (id text PRIMARY KEY, key_hash text NOT NULL, rev integer NOT NULL, updated bigint NOT NULL, data jsonb NOT NULL)`;
+    await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS catalog_id text`;
     // A room's last seq is its own counter, taken under the room's row lock; an event id is held once per room. Rows of
     // builds before this one: the counter is raised to the room's highest seq and each event's id is read from its
     // payload (a repeat of an id keeps none). Both change nothing when run again.
@@ -282,6 +347,7 @@ export async function postgresStore(url: string): Promise<Store> {
       await db`DELETE FROM events WHERE NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.code = events.room)`;
       await db`DELETE FROM sheets WHERE NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.code = sheets.room)`;
       await db`DELETE FROM sheet_owners WHERE NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.code = sheet_owners.room)`;
+      await db`DELETE FROM catalogs WHERE updated < ${catalogLiveSince(now)} AND NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.catalog_id = catalogs.id AND rooms.touched >= ${liveSince(now)})`;
       book.drop(gone);
       return gone;
     },
@@ -359,6 +425,62 @@ export async function postgresStore(url: string): Promise<Store> {
     async putDoc(code, name, from, doc, now) { await put(db, code, '_' + name, from, WIRES[name](doc), now); },
     async owner(code, dev) { return ownerIn(db, code, dev); },
     async moveOwner(code, dev, event) { return inRoom(code, tx => moveIn(tx, code, dev, event)); },
+    async putCatalog(id, keyHash, ifRev, data, now) {
+      return db.begin(async (tx): Promise<CatalogPut> => {
+        const [row] = await tx`SELECT key_hash, rev FROM catalogs WHERE id = ${id} FOR UPDATE`;
+        if (!row) {
+          if (ifRev !== 0) return { ok: false, why: 'conflict', rev: 0 };
+          const inserted = await tx`INSERT INTO catalogs (id, key_hash, rev, updated, data) VALUES (${id}, ${keyHash}, 1, ${now}, ${data}::jsonb) ON CONFLICT (id) DO NOTHING RETURNING rev`;
+          if (inserted.length) return { ok: true, rev: 1 };
+          const [won] = await tx`SELECT key_hash, rev FROM catalogs WHERE id = ${id}`;
+          if (!won) return { ok: false, why: 'conflict', rev: 0 };
+          if (typeof won.key_hash !== 'string' || !sameHash(won.key_hash, keyHash)) return { ok: false, why: 'forbidden' };
+          return { ok: false, why: 'conflict', rev: Number(won.rev) };
+        }
+        if (typeof row.key_hash !== 'string' || !sameHash(row.key_hash, keyHash)) return { ok: false, why: 'forbidden' };
+        const rev = Number(row.rev);
+        if (rev !== ifRev) return { ok: false, why: 'conflict', rev };
+        const next = rev + 1;
+        await tx`UPDATE catalogs SET rev = ${next}, updated = ${now}, data = ${data}::jsonb WHERE id = ${id}`;
+        return { ok: true, rev: next };
+      });
+    },
+    async getCatalog(id) {
+      const [row] = await db`SELECT id, key_hash, rev, updated, data FROM catalogs WHERE id = ${id}`;
+      if (!row) return null;
+      const cid = parseCatalogId(row.id), keyHash = text(row.key_hash), rev = Number(row.rev), updated = Number(row.updated);
+      const data = cid ? parseCatalogDoc(row.data, cid) : null;
+      if (!cid || !keyHash || !Number.isInteger(rev) || rev < 1 || !Number.isFinite(updated) || !data) {
+        console.warn(`[server] catalog ${id} is not one this build reads; left out`);
+        return null;
+      }
+      return { id: cid, keyHash, rev, updated, data };
+    },
+    async linkCatalog(code, id, keyHash) {
+      return db.begin(async (tx): Promise<CatalogLink> => {
+        if (!(await tx`SELECT code FROM rooms WHERE code = ${code} FOR UPDATE`).length) throw new Error(`no room ${code}`);
+        const [cat] = await tx`SELECT key_hash, rev FROM catalogs WHERE id = ${id}`;
+        if (!cat) return { ok: false, why: 'missing' };
+        if (typeof cat.key_hash !== 'string' || !sameHash(cat.key_hash, keyHash)) return { ok: false, why: 'forbidden' };
+        await tx`UPDATE rooms SET catalog_id = ${id} WHERE code = ${code}`;
+        return { ok: true, pointer: { id, rev: Number(cat.rev) } };
+      });
+    },
+    async catalogPointer(code) {
+      const [row] = await db`SELECT c.id, c.rev FROM rooms r JOIN catalogs c ON c.id = r.catalog_id WHERE r.code = ${code}`;
+      const id = row ? parseCatalogId(row.id) : null, rev = row ? Number(row.rev) : 0;
+      return id && Number.isInteger(rev) && rev >= 1 ? { id, rev } : null;
+    },
+    async roomCatalog(code) {
+      const [row] = await db`SELECT c.id, c.rev, c.data FROM rooms r JOIN catalogs c ON c.id = r.catalog_id WHERE r.code = ${code}`;
+      if (!row) return null;
+      const id = parseCatalogId(row.id), rev = Number(row.rev), data = id ? parseCatalogDoc(row.data, id) : null;
+      if (!id || !Number.isInteger(rev) || rev < 1 || !data) {
+        console.warn(`[server] room ${code}: catalog ${String(row.id)} is not one this build reads; left out`);
+        return null;
+      }
+      return { id, rev, data };
+    },
     see: book.see,
     presence: book.of,
     async close() { await db.close(); },
@@ -436,9 +558,7 @@ function newCode(): RoomCode {
 /** True when the request carries the room's GM key (a constant-time compare of hashes). */
 async function gmOk(req: Request, st: Store, code: RoomCode): Promise<boolean> {
   const want = await st.keyHash(code); if (!want) return false;
-  const got = await sha(req.headers.get('x-gm-key') || '');
-  let d = got.length ^ want.length; for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
-  return d === 0;
+  return sameHash(await sha(req.headers.get('x-gm-key') || ''), want);
 }
 /** The hash of the request's device token, or null when it carries none of the app's form: such a request proves nothing. */
 async function tokenOf(req: Request): Promise<TokenHash | null> {
@@ -467,11 +587,11 @@ async function mayWriteFor(req: Request, st: Store, code: RoomCode, dev: DeviceI
  */
 const faceBags = (docs: RoomDocs): { readonly bags: boolean } => ({ bags: docs.rules?.data.trade.on !== false });
 
-async function readJson(req: Request): Promise<Record<string, unknown> | Response> {
+async function readJson(req: Request, max = MAX_BODY): Promise<Record<string, unknown> | Response> {
   const len = Number(req.headers.get('content-length') || 0);
-  if (len > MAX_BODY) return J(apiError('tooLarge'), 413);
+  if (len > max) return J(apiError('tooLarge'), 413);
   const text = await req.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY) return J(apiError('tooLarge'), 413);
+  if (utf8Bytes(text) > max) return J(apiError('tooLarge'), 413);
   try { const v = JSON.parse(text); return isObj(v) ? v : J(apiError('badJson'), 400); } catch { return J(apiError('badJson'), 400); } // the client sent a body that is not JSON
 }
 
@@ -487,14 +607,40 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     const health = dbHealth(db, database.kind);
     return J(health.body, health.status);
   }
-  if (parts[0] !== 'rooms') return J(apiError('notFound'), 404);
-  // Build handshake: an app from another build may speak another wire format, so no room route answers it.
+  if (parts[0] !== 'rooms' && parts[0] !== 'catalogs') return J(apiError('notFound'), 404);
+  // Build handshake: an app from another build may speak another wire format, so no room or catalog route answers it.
   // Nothing is touched or written. The client updates itself and reloads (src/edge/upgrade.ts).
   const { build } = await built();
   if (req.headers.get('X-Hunter-Build') !== build) return J(apiError('upgrade', { build }), 426);
-  // A database that does not answer serves no room. Never 404: a phone would take its room for gone.
+  // A database that does not answer serves no room or catalog. Never 404: a phone would take its room for gone.
   if (db.at !== 'ready') return J(apiError('noDatabase'), 503);
   const st = db.store;
+  if (parts[0] === 'catalogs') {
+    if (parts.length !== 2) return J(apiError('notFound'), 404);
+    if (m !== 'PUT' && m !== 'GET') return J(apiError('method'), 405);
+    const id = parseCatalogId(parts[1]);
+    if (!id) return J(apiError('badCatalog'), 400);
+    const key = parseCatalogKey(req.headers.get('x-catalog-key'));
+    if (!key || catalogIdOf(key) !== id) return J(apiError('badCatalogKey'), 403);
+    const keyHash = sha256Hex(key);
+    if (m === 'GET') {
+      const cat = await st.getCatalog(id);
+      if (!cat) return J(apiError('noSuchCatalog'), 404);
+      if (!sameHash(cat.keyHash, keyHash)) return J(apiError('badCatalogKey'), 403);
+      return J({ id: cat.id, rev: cat.rev, data: cat.data });
+    }
+    const b = await readJson(req, CATALOG_BODY_MAX); if (b instanceof Response) return b;
+    const ifRev = b.ifRev;
+    if (typeof ifRev !== 'number' || !Number.isInteger(ifRev) || ifRev < 0 || ifRev > Number.MAX_SAFE_INTEGER) return J(apiError('badCatalog'), 400);
+    if (utf8Bytes(JSON.stringify(b.data ?? null)) > CATALOG_MAX) return J(apiError('tooLarge'), 413);
+    const doc = parseCatalogDoc(b.data, id);
+    if (!doc) return J(apiError('badCatalog'), 400);
+    if (ifRev === 0) await st.sweep(now);
+    const put = await st.putCatalog(id, keyHash, ifRev, doc, now);
+    if (put.ok) return J({ id, rev: put.rev });
+    if (put.why === 'conflict') return J(apiError('revConflict', { rev: put.rev }), 409);
+    return put.why === 'forbidden' ? J(apiError('badCatalogKey'), 403) : J(apiError('busy'), 503);
+  }
   if (parts.length === 1) {
     if (m !== 'POST') return J(apiError('method'), 405);
     await st.sweep(now);
@@ -517,7 +663,7 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     // each phone gets what is for it (src/core/protocol.ts `servedPage`, `sheetFor`); the cursor passes what it did not get,
     // but never a sealed message for the device the poll names while it is not proven
     const viewer: RoomViewer = gm ? { kind: 'gm' } : dev && (await proven(req, st, code, dev)) ? { kind: 'phone', device: dev } : { kind: 'anyone' };
-    const [page, board] = await Promise.all([st.events(code, after), st.board(code)]);
+    const [page, board, catalog] = await Promise.all([st.events(code, after), st.board(code), st.catalogPointer(code)]);
     const sheets: Record<SheetKey, Stored<ServedSheet>> = {}, bags = faceBags(board.docs);
     for (const [key, s] of Object.entries(board.sheets) as [SheetKey, Stored<RoomSheet>][]) sheets[key] = { ...s, data: sheetFor(key, s.data, viewer, bags) };
     const answer: RoomState = {
@@ -525,9 +671,31 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
       now: iso(now), // S11: server clock for everyone (joinedAt / kick stamps); presence stays GM-only
       ...(gm ? { presence: Object.fromEntries([...st.presence(code)].map(([d, t]) => [d, iso(t)])) } : {}),
       ...servedPage(page, viewer, dev), sheets, docs: board.docs,
+      ...(catalog ? { catalog } : {}),
     };
     // the docs go out in the shape `DOCS` reads (`WIRES`), filtered for `viewer`; the store keeps them as read
     return J({ ...answer, docs: wireDocs(board.docs, viewer) });
+  }
+  if (parts[2] === 'catalog' && parts.length === 3) {
+    if (m !== 'PUT') return J(apiError('method'), 405);
+    if (!gm) return J(apiError('gmOnly'), 403);
+    const b = await readJson(req); if (b instanceof Response) return b;
+    const catId = parseCatalogId(b.id);
+    if (!catId) return J(apiError('badCatalog'), 400);
+    const key = parseCatalogKey(req.headers.get('x-catalog-key'));
+    if (!key || catalogIdOf(key) !== catId) return J(apiError('badCatalogKey'), 403);
+    const linked = await st.linkCatalog(code, catId, sha256Hex(key), now);
+    if (linked.ok) return J(linked.pointer);
+    return linked.why === 'missing' ? J(apiError('noSuchCatalog'), 404) : J(apiError('badCatalogKey'), 403);
+  }
+  if (parts[2] === 'catalog' && parts[3] === 'read' && parts.length === 4) {
+    if (m !== 'POST') return J(apiError('method'), 405);
+    const b = await readJson(req); if (b instanceof Response) return b;
+    const ids = parseCatalogReadIds(b.ids);
+    if (!ids) return J(apiError('badCatalog'), 400);
+    const cat = await st.roomCatalog(code);
+    if (!cat) return J(apiError('noSuchCatalog'), 404);
+    return J(catalogReadOf(cat.id, cat.rev, cat.data, ids));
   }
   if (parts[2] === 'events' && parts.length === 3) {
     if (m !== 'POST') return J(apiError('method'), 405);

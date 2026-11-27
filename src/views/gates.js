@@ -1,5 +1,7 @@
 // gates.js: U08. Gates and dungeons: world day, spawn, break, encounter hand-off, clear + loot.
 // The world day and the gates change only through the steps of src/core/gates/world.ts (a gate's status through `transition`).
+import { refGrant } from '../core/registry/item-book.ts';
+import { parseItemDefId } from '../core/ids.ts';
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown, gateXp as rosterXp, hasGateWaves, monsterId, newGate, parseGate, waveRoster, xpDue } from '../core/gates/gate.ts';
 import { PRESET_ITEMS_MAX, PRESET_WORDS, gatePreset, isActivePreset, presetStep, refKey } from '../core/gates/preset.ts';
 import { OFFER_WORDS } from '../core/hunter/class-offer.ts';
@@ -208,8 +210,8 @@ export function register(app) {
     const settled = done.settled;
     S.flush();
     const body = PRESET_WORDS.clearedBody(g.rank, g.name);
-    const stashLine = settled.stashed.length ? [PRESET_WORDS.stashedLine(settled.stashed.map(i => i.name))] : [];
-    const rlines = settled.remotePaid.map(x => `${x.name}: ${[x.rewards.xp && `+${ui.fmt(x.rewards.xp)} XP`, x.rewards.gold && `${ui.fmt(x.rewards.gold)} gold`, x.rewards.crystal && `${ui.fmt(x.rewards.crystal)} mana crystal`, ...x.rewards.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
+    const stashLine = settled.stashed.length ? [PRESET_WORDS.stashedLine(settled.stashed.map(g => api.inventory.grant(g).name))] : [];
+    const rlines = settled.remotePaid.map(x => `${x.name}: ${[x.rewards.xp && `+${ui.fmt(x.rewards.xp)} XP`, x.rewards.gold && `${ui.fmt(x.rewards.gold)} gold`, x.rewards.crystal && `${ui.fmt(x.rewards.crystal)} mana crystal`, ...x.rewards.items.map(g => api.inventory.grant(g).name)].filter(Boolean).join(', ') || 'no rewards'}`);
     if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: [...rlines, ...stashLine] }); return true; }
     const noGrantLines = rlines.length
       ? [...rlines, ...stashLine]
@@ -364,7 +366,7 @@ export function register(app) {
     if (isRefused(ready)) { ui.toast('Gate', SOLO_REFUSAL_WORDS[ready.why], { kind: 'warning' }); return; }
     const made = soloFight(ready.h, ready.target, app.rules()); if (!made) return;
     // the hunter it plays and where it settles, as they stand at the start: the write is refused if either moved
-    const from = soloKey(ready.h), route = at.route;
+    const from = soloKey(ready.h, app.rules()), route = at.route;
     runMoved({ type: 'go' });
     // one play: the odds' machine asked for one fight, a few commands a frame, with the round and the moves as its count
     const end = await new Promise(resolve => {
@@ -538,7 +540,7 @@ export function register(app) {
         ].join('');
         const pLine = gm && g.preset.at !== 'none' ? `<div class="gt-notes" data-preset-summary>${esc(PRESET_WORDS.summary(g.preset, g.preset.at === 'paid', ui.fmt))}</div>` : '';
         const paidList = gm && g.preset.at === 'paid' && g.preset.items.some(i => i.checked)
-          ? `<ul class="gt-mons" data-preset-paid aria-label="${esc(PRESET_WORDS.paidItemsLabel)}">${g.preset.items.filter(i => i.checked).map(i => `<li><span>${esc(i.item.name)}</span><span class="mx">${esc(PRESET_WORDS.itemWentTo(destName(i.to)))}</span></li>`).join('')}</ul>` : '';
+          ? `<ul class="gt-mons" data-preset-paid aria-label="${esc(PRESET_WORDS.paidItemsLabel)}">${g.preset.items.filter(i => i.checked).map(i => `<li><span>${esc(api.inventory.grant(i.item).name)}</span><span class="mx">${esc(PRESET_WORDS.itemWentTo(destName(i.to)))}</span></li>`).join('')}</ul>` : '';
         const cfg = app.rules().gateSpawn;
         return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(typeChip(g.type))} ${esc(g.name)}">
           <div class="gt-head">${ui.rankBadge(g.rank)}<span class="gt-name">${esc(g.name)}</span>
@@ -576,25 +578,21 @@ export function register(app) {
       const partySizeOf = g => { const s = store.get(); if (s.fight && s.fightRefs && s.fightRefs.gate === g.id) return fighterIds(s.fight).size; return g.fought.length || payees().length || app.rules().gateParty; };
       const presetPickOpts = () => {
         const grp = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.join('')}</optgroup>` : '');
-        const o = (v, t) => `<option value="${esc(v)}">${esc(t.name)} (${esc(gradeLabel(t.rar, t.grade ?? 0))})</option>`;
+        const o = defId => { const t = api.inventory.grant(refGrant(defId)); return `<option value="def:${esc(defId)}">${esc(t.name)} (${esc(gradeLabel(t.rar, t.grade ?? 0))})</option>`; };
+        const c = api.inventory.choices();
         return `<option value="">${esc(PRESET_WORDS.pickItem)}</option>`
-          + grp('Library', store.get().library.items.map((t, n) => o(`L:${n}`, t)))
-          + grp('Shop', api.inventory.shop().map((t, n) => o(`S:${n}`, t)))
-          + grp('Built-in', api.inventory.itemTemplates().map((t, n) => o(`T:${n}`, t)))
+          + grp('Library', c.library.map(x => o(x.defId)))
+          + grp('Shop', api.inventory.shop().map(t => o(t.defId)))
+          + grp('Built-in', c.builtIn.map(x => o(x.defId)))
           + `<option value="__new">${esc(PRESET_WORDS.newItem)}</option>`;
       };
-      const presetItemTpl = v => {
-        const [k, idx] = String(v).split(':'), n = Number(idx);
-        if (k === 'L') return store.get().library.items[n] || null;
-        if (k === 'S') return api.inventory.shop()[n] || null;
-        if (k === 'T') return api.inventory.itemTemplates()[n] || null;
-        return null;
-      };
+      /** The grant a preset pick names (`def:<id>`), or null. */
+      const presetItemTpl = v => { const id = String(v).startsWith('def:') ? parseItemDefId(String(v).slice(4)) : null; return id ? refGrant(id) : null; };
       const presetItemsBlock = items => {
-        const rows = items.length ? items.map(line => `<div class="gt-prow" data-prow="${esc(line.id)}" data-pname="${esc(line.item.name)}">
-          <label class="gt-chk gt-pchk"><input type="checkbox" data-pchk="${esc(line.id)}"${line.checked ? ' checked' : ''}><span>${esc(PRESET_WORDS.payItem(line.item.name))}<small class="gt-prar">${esc(gradeLabel(line.item.rar, line.item.grade ?? 0))}</small></span></label>
+        const rows = items.length ? items.map(line => ({ line, it: api.inventory.grant(line.item) })).map(({ line, it }) => `<div class="gt-prow" data-prow="${esc(line.id)}" data-pname="${esc(it.name)}">
+          <label class="gt-chk gt-pchk"><input type="checkbox" data-pchk="${esc(line.id)}"${line.checked ? ' checked' : ''}><span>${esc(PRESET_WORDS.payItem(it.name))}<small class="gt-prar">${esc(gradeLabel(it.rar, it.grade ?? 0))}</small></span></label>
           <div class="gt-pdest">${ui.field(PRESET_WORDS.goesTo, `<select data-pto="${esc(line.id)}"><option value="">${esc(PRESET_WORDS.stash)}</option>${hunterOpts(line.to ? refKey(line.to) : '')}</select>`)}
-            <button type="button" class="danger gt-prm" data-act="preset-rm" data-pid="${esc(line.id)}" aria-label="${esc(PRESET_WORDS.removeItem)}: ${esc(line.item.name)}">${esc(PRESET_WORDS.removeItem)}</button></div></div>`).join('')
+            <button type="button" class="danger gt-prm" data-act="preset-rm" data-pid="${esc(line.id)}" aria-label="${esc(PRESET_WORDS.removeItem)}: ${esc(it.name)}">${esc(PRESET_WORDS.removeItem)}</button></div></div>`).join('')
           : `<p class="empty">${esc(PRESET_WORDS.noItems)}</p>`;
         const add = items.length < PRESET_ITEMS_MAX
           ? `<div class="gt-padd">${ui.field(PRESET_WORDS.addItemLabel, `<select data-padd-pick>${presetPickOpts()}</select>`)}<button type="button" data-act="preset-add">${esc(PRESET_WORDS.addItem)}</button></div>` : '';
@@ -871,7 +869,7 @@ export function register(app) {
         else if (act === 'preset-add') {
           const g = gate(id), pick = b.closest('form')?.querySelector('[data-padd-pick]'); if (!g || !pick) return;
           const v = pick.value; if (!v) return;
-          const tpl = v === '__new' ? await api.loot.item({ library: false }) : presetItemTpl(v);
+          const tpl = v === '__new' ? await api.loot.ref({}) : presetItemTpl(v);
           if (!tpl) return;
           if (isActivePreset(g.preset)) {
             if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, { type: 'addItem', item: tpl, to: null })), PRESET_WORDS.refusals)) refresh(id);

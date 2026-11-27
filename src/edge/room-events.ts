@@ -23,6 +23,8 @@ import type { ChainEvent } from '../core/hunter/job-chain.ts';
 import { WAYS_BACK, hpChange, lifeNews } from '../core/hunter/vitals.ts';
 import type { Life } from '../core/hunter/vitals.ts';
 import { spendItem } from '../core/hunter/use.ts';
+import { heardStep } from '../core/item-refs.ts';
+import { heldItem } from '../core/hunter/inventory.ts';
 import { setShadowHp, shadowRises } from '../core/hunter/shadows.ts';
 import { record } from '../core/hunter/chronicle.ts';
 import { chapterLanded, whoseLine } from '../core/story/story.ts';
@@ -112,7 +114,11 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   offerStop: OFFER_FOLD_READS,
   stashAsk: GM_ONLY_READS,
   // the GM's phone's answer to this phone's stash ask (trade/stash.ts `stashLanded`): lands once, only while the ask waits
-  stashAnswer: { once: true, land: (p, _hids, app) => save => { const r = stashLanded(save, p); return isRefused(r) ? r : { save: r.save, tell: () => { app.toast('Trade', r.text); } }; } },
+  stashAnswer: { once: true, land: (p, hids, app) => save => {
+    const held = hids.some(hid => app.hunter.fightOf({ hid }) !== null);
+    const r = stashLanded(save, p, app.rules(), held);
+    return isRefused(r) ? r : { save: r.save, tell: () => { app.toast('Trade', r.text); } };
+  } },
   system: { once: false, apply: (p, _hids, app) => { app.system({ tag: p.tag, title: p.title, body: p.body || undefined, kind: p.kind }); } },
   award: { once: true, land: landAward },
   quest: { once: true, land: (p, hids, app) => save => {
@@ -143,9 +149,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // the GM's fight took this hunter's use of an item: one leaves the bag (src/core/hunter/use.ts `spendItem`); an item
   // the bag no longer holds (sold since) leaves nothing to take, and the id is recorded all the same
   spent: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => {
-    const it = h.items.find(i => i.id === p.item), next = spendItem(h, p.item, app.rules());
+    const it = heldItem(h, p.item, app.rules()), next = spendItem(h, p.item, app.rules());
     if (isRefused(next) || !it) return { save: s, tell: nothing };
-    return { save: withHunter(s, next), tell: () => app.toast('! System', `${it.name} used.`, { kind: 'info' }) };
+    return { save: heardStep(withHunter(s, next)), tell: () => app.toast('! System', `${it.name} used.`, { kind: 'info' }) };
   }) },
   status: { once: true, land: landStatus },
   // a hunter no fight holds: only a dead one is revived (the vitals table), its statuses taken off with it (grant.ts

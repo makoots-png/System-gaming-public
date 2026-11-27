@@ -6,6 +6,7 @@ import { CHAPTER_MAX, chapterBody, chapterSize, parseStory } from '../../src/cor
 import type { Chapter } from '../../src/core/story/story.ts';
 import { ROOM_SHEETS } from '../../src/core/protocol.ts';
 import { ITEM_BOUNDS, parseItem } from '../../src/core/registry/items.ts';
+import { adhocGrant, itemDefDataOf } from '../../src/core/registry/item-book.ts';
 import { REWARD_BOUNDS, WORDS_BOUNDS } from '../../src/core/rewards.ts';
 
 /** `n` characters of three bytes each in UTF-8. */
@@ -16,9 +17,10 @@ export const wide = (n: number): string => 'ࠀ'.repeat(n);
  * refuses it whole).
  */
 const fat = (notes: number) => parseItem({ name: wide(ITEM_BOUNDS.name), desc: wide(ITEM_BOUNDS.desc), effects: Array(notes).fill({ op: 'note', text: wide(200) }) });
-const FAT = Array.from({ length: ITEM_BOUNDS.effects + 1 }, (_, i) => fat(ITEM_BOUNDS.effects - i)).find(it => it !== null)!;
+// a reward gives an item as a grant (item sync PR 2): the heaviest is a player's own (ad hoc) item carried whole
+const FAT = adhocGrant(itemDefDataOf(Array.from({ length: ITEM_BOUNDS.effects + 1 }, (_, i) => fat(ITEM_BOUNDS.effects - i)).find(it => it !== null)!));
 /** A plain item with a description of 500 one-byte characters, for the bytes the heavy ones leave. */
-const PLAIN = parseItem({ name: 'Pad', desc: 'a'.repeat(ITEM_BOUNDS.desc) })!;
+const PLAIN = adhocGrant(itemDefDataOf(parseItem({ name: 'Pad', desc: 'a'.repeat(ITEM_BOUNDS.desc) })!));
 
 /** The chapter with `items` split between its reward and its quest's reward, and a quest description of `desc`. */
 function chapterOf(items: readonly unknown[], desc: string): Chapter {

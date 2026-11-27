@@ -39,11 +39,13 @@ import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { nextWake } from '../src/core/hunter/quests.ts';
 import { dayKey } from '../src/core/day.ts';
-import { SHOP_ITEMS, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { SHOP_ITEMS, parseItem } from '../src/core/registry/items.ts';
 import { gatePreset } from '../src/core/gates/preset.ts';
 import { difficultyFactor, withDifficulty } from '../src/core/gates/difficulty.ts';
-import { fightId, presetLineId } from '../src/core/ids.ts';
-import { putItem } from '../src/core/hunter/inventory.ts';
+import { builtInItemId, fightId, presetLineId } from '../src/core/ids.ts';
+import { bagOf, putItem } from '../src/core/hunter/inventory.ts';
+import { itemDefDataOf, refGrant, resolveGrant } from '../src/core/registry/item-book.ts';
+import type { HeldItem, ItemGrant } from '../src/core/registry/item-book.ts';
 import { seedId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
 import { den } from './models/gate-events.ts';
@@ -75,7 +77,11 @@ function endOf(outcome: RunEnd['outcome'], row: Partial<RowEnd>, spent: RunEnd['
   const hp = row.hp ?? 7, { life: lifeLeft } = lifeAt('hunter', hp);
   return { outcome, rounds: 4, commands: 30, spent, party: { [ME]: { hp, mana: 3, fatigue: 22, statuses: [], used: {}, life: lifeLeft.at, lifeLeft: lifeLeft as Life, kills: [], ...row } } };
 }
-const runOf = (s: Save, end: RunEnd, route: SoloRoute = 'local'): SoloRun => ({ end, hunter: ME, shadows: {}, from: soloKey(s.hunters[0]!), route });
+const runOf = (s: Save, end: RunEnd, route: SoloRoute = 'local'): SoloRun => ({ end, hunter: ME, shadows: {}, from: soloKey(s.hunters[0]!, RULES), route });
+/** The names of a bag's lines under the shipped rules. */
+const namesIn = (h: { readonly items: readonly HeldItem[] }): string[] => bagOf(h, RULES).map(i => i.name);
+/** The name a grant reads under the shipped rules. */
+const nameOf = (g: ItemGrant): string => resolveGrant(g, RULES).name;
 const ROOM = room('ABCD23'), IN_ROOM: SoloRoute = { room: ROOM };
 const NO_LOOT = { gold: 0, items: [] };
 const hunter = (s: Save): Hunter => s.hunters[0]!;
@@ -84,7 +90,7 @@ const lifetimeXp = (h: Hunter): number => h.xp + Array.from({ length: h.level - 
 
 describe('a run writes what the play left, in one write', () => {
   test('a cleared personal gate: everything back, the gate gone, its roster\'s XP and the loot given, a log line', () => {
-    const s = alone({ restsTaken: RULES.rest.perGate }), loot = { gold: 120, items: [itemOf(RULES, SHOP_ITEMS[0]!)] };
+    const s = alone({ restsTaken: RULES.rest.perGate }), loot = { gold: 120, items: [refGrant(SHOP_ITEMS[0]!.defId)] };
     const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx() }));
     const h = hunter(r.save), max = hunterSheet(h, RULES).sheet;
     // the owner, Nov 22: "after a dungeon clear they should get everything back"
@@ -93,7 +99,7 @@ describe('a run writes what the play left, in one write', () => {
     expect(r.xp, 'one goblin of 63 XP').toBe(63);
     expect(h.xp).toBe(63);
     expect(h.gold).toBe(120);
-    expect(h.items.map(i => i.name)).toContain(SHOP_ITEMS[0]!.name);
+    expect(namesIn(h)).toContain(SHOP_ITEMS[0]!.name);
     expect(r.save.log.some(l => l.title === 'Solo run' && l.text === 'Mira cleared "Goblin Warren" (E-rank) alone in 4 rounds.')).toBe(true);
     expect(r.granted?.lines).toContain('+63 XP');
     // the run and the gate it cleared are facts of the chronicle, in the run's write
@@ -140,13 +146,13 @@ describe('a run writes what the play left, in one write', () => {
   });
 
   test('the items a run used leave the bag, one per use; a rank-capped potion below the hunter\'s rank is never spent in a solo run', () => {
-    const potion = { ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!), qty: 3 };
-    const s = alone({ ...putItem(mira({ solo: { clock: { at: 'off' }, gates: [pgate(1)] } }), potion, iid('i5')) });
+    const potion = refGrant(SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!.defId, 3);
+    const s = alone({ ...putItem(mira({ solo: { clock: { at: 'off' }, gates: [pgate(1)] } }), potion, iid('i5'), RULES) });
     const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {}, [{ by: ME, item: iid('i5') }, { by: ME, item: iid('i5') }])), NO_LOOT, { day, ready: ctx() }));
     expect(hunter(r.save).items.find(i => i.id === iid('i5'))!.qty).toBe(1);
 
     // A B-rank hunter injured in a solo fight never drinks a rank-E capped Health Potion (E)
-    const highHunter = putItem(mira({ rank: 'B', life: { at: 'up', hp: 5 }, solo: { clock: { at: 'off' }, gates: [pgate(1)] } }), potion, iid('i5'));
+    const highHunter = putItem(mira({ rank: 'B', life: { at: 'up', hp: 5 }, solo: { clock: { at: 'off' }, gates: [pgate(1)] } }), potion, iid('i5'), RULES);
     const highSave = { ...alone(), hunters: [highHunter] };
     const run = played(highSave, PERSONAL, 7);
     expect(run.end.spent.some(x => x.item === iid('i5'))).toBe(false);
@@ -187,7 +193,7 @@ describe('personal-gate clear rewards wait for the GM in a room and pay at once 
     ...s,
     settings: { ...s.settings, sync: { ...s.settings.sync, room: ROOM, gmKey: asGm ? gmKey('gm-key-test-0123456789abcdef') : null } },
   });
-  const loot = { gold: 45, items: [itemOf(RULES, SHOP_ITEMS[0]!)] };
+  const loot = { gold: 45, items: [refGrant(SHOP_ITEMS[0]!.defId)] };
   const log = { at: AT, cap: RULES.logCap };
   const stamp = { device: dev('d-gm'), now: NOW, rand: 0.4 };
 
@@ -196,7 +202,7 @@ describe('personal-gate clear rewards wait for the GM in a room and pay at once 
     const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx(), seat: ALONE }));
     const h = hunter(r.save);
     expect([r.xp, h.xp, h.gold]).toEqual([63, 63, 45]);
-    expect(h.items.map(i => i.name)).toContain(SHOP_ITEMS[0]!.name);
+    expect(namesIn(h)).toContain(SHOP_ITEMS[0]!.name);
     expect(r.granted?.lines).toContain('+63 XP');
     expect(r.save.settings.sync.outbox ?? []).toEqual([]);
     expect(pendingOf(r.save)).toEqual([]);
@@ -266,7 +272,7 @@ describe('personal-gate clear rewards wait for the GM in a room and pay at once 
     const gmStart = inRoom(freshSave({ ...ENV, newDeviceId: () => dev('d-gm') }, { onboarded: true }), true);
     const heard = pendingHeard(gmStart, letter.event.payload, ROOM, log);
     const rec = waitingIn(heard, ROOM)[0]!;
-    expect([rec.from, rec.what, rec.rewards.xp, rec.rewards.gold, rec.rewards.items.map(i => i.name)]).toEqual(['solo', 'Goblin Warren', 63, 45, [SHOP_ITEMS[0]!.name]]);
+    expect([rec.from, rec.what, rec.rewards.xp, rec.rewards.gold, rec.rewards.items.map(nameOf)]).toEqual(['solo', 'Goblin Warren', 63, 45, [SHOP_ITEMS[0]!.name]]);
 
     const approved = ok(pendingApproved(heard, rec.id, rec.rewards));
     expect(waitingIn(approved, ROOM)).toEqual([]);
@@ -274,7 +280,7 @@ describe('personal-gate clear rewards wait for the GM in a room and pay at once 
 
     const paid = ok(grant(ran.save, H1, rec.rewards, { ...day, vitals: 'sheet' }));
     const h = hunter(paid.save);
-    expect([h.xp, h.gold, h.items.map(i => i.name)]).toEqual([63, 45, [SHOP_ITEMS[0]!.name]]);
+    expect([h.xp, h.gold, namesIn(h)]).toEqual([63, 45, [SHOP_ITEMS[0]!.name]]);
   });
 
   test('refusing a waiting personal-gate clear pays nothing and tells a player\'s phone without telling the GM\'s own', () => {
@@ -342,7 +348,7 @@ function played(s: Save, gate: SoloGate, seed: number, R: Rules = RULES, at: Rea
   let run: OddsRun = oddsStep(IDLE, { type: 'ask', fight: f.fight, seed, of: 1 }, f.R);
   while (run.state === 'running') run = oddsStep(run, { type: 'step', commands: 25 }, f.R);
   if (run.state !== 'done') throw new Error('no answer');
-  return { end: run.odds.ends[0]!, hunter: f.hunter, shadows: f.shadows, from: soloKey(ready.h), route: 'local' };
+  return { end: run.odds.ends[0]!, hunter: f.hunter, shadows: f.shadows, from: soloKey(ready.h, R), route: 'local' };
 }
 
 describe('the run is one play of the engine', () => {
@@ -754,8 +760,8 @@ describe('a world gate open to solo runs, in a room', () => {
   });
 
   test('a won solo run of a gate with an active preset pays the preset (no roll), marks preset paid, and stashes unpicked items', () => {
-    const pot = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
-    const blade = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
+    const pot = refGrant(builtInItemId('health-potion-e'));
+    const blade = refGrant(builtInItemId('iron-dagger'));
     const s0 = gmSave([worldGate]);
     const s1 = ok(gatePreset(s0, worldGate.id, {
       type: 'recommend', xp: 333, gold: 88,
@@ -769,14 +775,14 @@ describe('a world gate open to solo runs, in a room', () => {
     const answer = newEvent('soloAnswer', body, { device: 'd-gm', now: NOW + 1, rand: 0.2 })!;
     const out = ok(soloTaken(s1, paidRun, plan, answer, { gold: 9999, items: [] }, TAKEN));
     expect(out.gates[0]!.preset.at).toBe('paid');
-    expect(out.stash.items.map(i => i.name)).toEqual(['Health Potion']);
+    expect(namesIn(out.stash)).toEqual(['Health Potion (E)']);
     const rec = pendingOf(out).find(r => r.id === answer.payload.eid)!;
-    expect([rec.rewards.xp, rec.rewards.gold, rec.rewards.items.map(i => i.name)]).toEqual([333, 88, ['Iron Blade']]);
+    expect([rec.rewards.xp, rec.rewards.gold, rec.rewards.items.map(nameOf)]).toEqual([333, 88, ['Iron Dagger']]);
   });
 
   test('a won solo run on a preset gate when the party stash is full answers the player refused (stash-full) and keeps the gate open', () => {
-    const pot = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
-    const fullItems = Array.from({ length: 40 }, (_, i) => ({ ...parseItem({ name: `Token ${i}`, type: 'misc' })!, id: `i${900 + i}` as never, qty: 1 }));
+    const pot = refGrant(builtInItemId('health-potion-e'));
+    const fullItems = Array.from({ length: 40 }, (_, i) => ({ kind: 'adhoc' as const, id: `i${900 + i}` as never, qty: 1, item: itemDefDataOf(parseItem({ name: `Token ${i}`, type: 'misc' })!) }));
     const s0: Save = { ...gmSave([worldGate]), stash: { gold: 0, items: fullItems } };
     const s1 = ok(gatePreset(s0, worldGate.id, {
       type: 'recommend', xp: 200, gold: 100,

@@ -5,6 +5,8 @@ import { test, expect, onboardGM, onboardPlayer, go } from './helpers.ts';
 import { giveTitle } from '../../src/core/hunter/record.ts';
 import { newHunter } from '../../src/core/hunter/hunter.ts';
 import { RULES } from '../../src/core/rules.ts';
+import type { Item } from '../../src/core/registry/items.ts';
+import type { ItemDefData } from '../../src/core/registry/item-book.ts';
 import { E2E_MAKER_IDS } from '../fixtures/maker-registry.ts';
 import type { MakerId } from '../fixtures/maker-registry.ts';
 import {
@@ -45,6 +47,17 @@ const COVERED_E2E_IDS: readonly MakerId[] = [
   'typed-weapon', 'true-ability', 'grievous-cut',
 ];
 
+/** A by-value item fixture as the def the library keys by its id: no `id`, no `qty`. */
+const defOf = ({ id: _id, qty: _qty, ...def }: Item): ItemDefData => def;
+/** The worst-case item fixtures, each a library item of the GM's catalog in the Workshop session. */
+const WORST_ITEMS = {
+  bulwark: defOf(WORST_ITEM_BULWARK),
+  worn: defOf(WORST_ITEM_WORN),
+  finesse: defOf(WORST_ITEM_FINESSE),
+  consumable: defOf(WORST_ITEM_CONSUMABLE),
+  typedWeapon: defOf(WORST_ITEM_TYPED_WEAPON),
+};
+
 test('registry check: every e2e-registered maker and editor is exercised by this suite', () => {
   expect([...COVERED_E2E_IDS].sort()).toEqual([...E2E_MAKER_IDS].sort());
 });
@@ -53,10 +66,16 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   const page = (await device('gm')).page;
   await onboardGM(page);
 
+  const itemIds = await page.evaluate(defs => {
+    const ids = Object.fromEntries(Object.keys(defs).map(k => [k, hunterApp.store.itemDefId() as string]));
+    hunterApp.store.update((d: any) => { for (const [k, def] of Object.entries(defs)) d.library.items[ids[k]!] = def; }, 'test-setup');
+    return ids;
+  }, WORST_ITEMS) as Record<keyof typeof WORST_ITEMS, string>;
+  const libraryItem = (id: string) => page.evaluate(i => hunterApp.store.get().library.items[i], id);
+
   await page.evaluate(f => hunterApp.store.update((d: any) => {
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
-    d.library.items.push(f.bulwark, f.worn, f.finesse, f.consumable, f.typedWeapon);
     d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.rewards.push(f.bundle);
@@ -67,11 +86,6 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   }, 'test-setup'), {
     statusOps: WORST_STATUS_OPS,
     statusKits: WORST_STATUS_KITS,
-    bulwark: WORST_ITEM_BULWARK,
-    worn: WORST_ITEM_WORN,
-    finesse: WORST_ITEM_FINESSE,
-    consumable: WORST_ITEM_CONSUMABLE,
-    typedWeapon: WORST_ITEM_TYPED_WEAPON,
     skillActive: WORST_SKILL_ACTIVE,
     skillReaction: WORST_SKILL_REACTION,
     skillPassive: WORST_SKILL_PASSIVE,
@@ -99,11 +113,11 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   }[] = [
     { label: 'status (colored ops)', ws: 'status', id: 'rt-ops', overlay: '.fg-overlay', expected: WORST_STATUS_OPS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-ops']) },
     { label: 'status (uncolored kits + long bounds + Reach most)', ws: 'status', id: 'rt-kits', overlay: '.fg-overlay', expected: WORST_STATUS_KITS, read: () => page.evaluate(() => hunterApp.store.get().library.statuses['rt-kits']) },
-    { label: 'item (Bulwark Ring active.name)', ws: 'item', id: WORST_ITEM_BULWARK.id, overlay: '.lf-overlay', expected: WORST_ITEM_BULWARK, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_BULWARK.id) },
-    { label: 'item (worn weapon + worn icon/label + active)', ws: 'item', id: WORST_ITEM_WORN.id, overlay: '.lf-overlay', expected: WORST_ITEM_WORN, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_WORN.id) },
-    { label: 'item (finesse strike weapon with formula dice)', ws: 'item', id: WORST_ITEM_FINESSE.id, overlay: '.lf-overlay', expected: WORST_ITEM_FINESSE, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_FINESSE.id) },
-    { label: 'item (consumable revive/rankCap/tell/target)', ws: 'item', id: WORST_ITEM_CONSUMABLE.id, overlay: '.lf-overlay', expected: WORST_ITEM_CONSUMABLE, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_CONSUMABLE.id) },
-    { label: 'typed-weapon (weapon with damageType true)', ws: 'item', id: WORST_ITEM_TYPED_WEAPON.id, overlay: '.lf-overlay', expected: WORST_ITEM_TYPED_WEAPON, read: () => page.evaluate(id => hunterApp.store.get().library.items.find((x: any) => x.id === id), WORST_ITEM_TYPED_WEAPON.id) },
+    { label: 'item (Bulwark Ring active.name)', ws: 'item', id: itemIds.bulwark, overlay: '.lf-overlay', expected: WORST_ITEMS.bulwark, read: () => libraryItem(itemIds.bulwark) },
+    { label: 'item (worn weapon + worn icon/label + active)', ws: 'item', id: itemIds.worn, overlay: '.lf-overlay', expected: WORST_ITEMS.worn, read: () => libraryItem(itemIds.worn) },
+    { label: 'item (finesse strike weapon with formula dice)', ws: 'item', id: itemIds.finesse, overlay: '.lf-overlay', expected: WORST_ITEMS.finesse, read: () => libraryItem(itemIds.finesse) },
+    { label: 'item (consumable revive/rankCap/tell/target)', ws: 'item', id: itemIds.consumable, overlay: '.lf-overlay', expected: WORST_ITEMS.consumable, read: () => libraryItem(itemIds.consumable) },
+    { label: 'typed-weapon (weapon with damageType true)', ws: 'item', id: itemIds.typedWeapon, overlay: '.lf-overlay', expected: WORST_ITEMS.typedWeapon, read: () => libraryItem(itemIds.typedWeapon) },
     { label: 'skill (active with null-duration zone + kits)', ws: 'skill', id: WORST_SKILL_ACTIVE.id, overlay: '.skm-overlay', expected: WORST_SKILL_ACTIVE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_ACTIVE.id) },
     { label: 'skill (reaction)', ws: 'skill', id: WORST_SKILL_REACTION.id, overlay: '.skm-overlay', expected: WORST_SKILL_REACTION, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_REACTION.id) },
     { label: 'skill (passive large bonus + worn icon/label)', ws: 'skill', id: WORST_SKILL_PASSIVE.id, overlay: '.skm-overlay', expected: WORST_SKILL_PASSIVE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_PASSIVE.id) },
@@ -272,7 +286,7 @@ test('Player-role editors: identity badge, self urgent quest, and bag item prese
   }, 'test-setup'), {
     identity: WORST_IDENTITY,
     selfQuest: WORST_QUEST_SELF,
-    consumable: WORST_ITEM_CONSUMABLE,
+    consumable: { kind: 'adhoc', id: WORST_ITEM_CONSUMABLE.id, qty: WORST_ITEM_CONSUMABLE.qty, item: WORST_ITEMS.consumable },
   });
 
   await test.step('identity emblem and color picker', async () => {
@@ -300,7 +314,7 @@ test('Player-role editors: identity badge, self urgent quest, and bag item prese
     expect(after).toEqual(WORST_QUEST_SELF);
   });
 
-  await test.step('player bag item edit preserves GM-only revive, rankCap, and tell flags', async () => {
+  await test.step('a player\'s own bag item, edited, keeps the GM-only revive, rankCap and tell flags', async () => {
     await go(page, 'status');
     await page.locator('#view-status [data-jump="inventory"]').tap();
     const editBtn = page.locator(`#view-status [data-panel="inventory"] [data-edit-item="${WORST_ITEM_CONSUMABLE.id}"]`);
@@ -311,6 +325,6 @@ test('Player-role editors: identity badge, self urgent quest, and bag item prese
     await dlg.locator('[data-apply]').tap();
     await expect(dlg).toHaveCount(0);
     const after = await page.evaluate(id => hunterApp.store.get().hunters[0].items.find((x: any) => x.id === id), WORST_ITEM_CONSUMABLE.id);
-    expect(after).toEqual(WORST_ITEM_CONSUMABLE);
+    expect(after).toEqual({ kind: 'adhoc', id: WORST_ITEM_CONSUMABLE.id, qty: WORST_ITEM_CONSUMABLE.qty, item: WORST_ITEMS.consumable });
   });
 });

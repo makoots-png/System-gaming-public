@@ -23,6 +23,7 @@ import type { PackKind } from './pack.ts';
 import type { Connection, RosterEntry } from './sync/connection.ts';
 import type { Call } from './sync/outbox.ts';
 import type { ItemTemplate } from './registry/items.ts';
+import type { HeldItem, ItemGrant, ResolvedGrant, ResolvedItem } from './registry/item-book.ts';
 import type { IconItem } from './registry/icon-defaults.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import type { Worth } from './registry/worth.ts';
@@ -46,7 +47,7 @@ import type { Thing } from './detail.ts';
 import type { DetailEvent } from './detail-open.ts';
 import type { Coin, RollId } from './coin.ts';
 import type { Check, RollKind } from './roll.ts';
-import type { DeviceId, FightId, HunterId, HunterRef, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
+import type { DeviceId, FightId, HunterId, HunterRef, ItemDefId, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
 
 /** A System window's text (the options `ui.system` takes that a reward window passes on). */
 export type RewardWindow = { tag?: string; title?: string; kind?: SystemKind; body?: string | undefined; lines?: string[] | undefined };
@@ -347,11 +348,21 @@ export type IdentityApi = {
 
 
 export type InventoryApi = {
-  /** The built-in items (src/core/registry/items.ts), priced. They have no id until a hunter holds one. */
-  itemTemplates(): ItemTemplate[];
-  shop(): ItemTemplate[];
+  /** The shop's items as they read now, each with its def id (`save.shop`, or the built-in shop). */
+  shop(): (ResolvedGrant & { readonly defId: ItemDefId })[];
+  /**
+   * A hunter's bag, each line resolved (inventory.ts `bagOf`) under the rules in force: on the GM's phone a player's
+   * custom item reads from the defs its sheet carries. The one way a view reads a bag.
+   */
+  bag(h: Pick<Hunter, 'items'>): ResolvedItem[];
+  /** What a hunter wears now, by the rules (inventory.ts `wornOf`). */
+  worn(h: Pick<Hunter, 'items' | 'equipped'>): Record<Slot, ItemId | null>;
+  /** What an item picker lists, by def id: the built-in items, and the library's own custom items. */
+  choices(): { readonly builtIn: readonly { readonly defId: ItemDefId; readonly name: string }[]; readonly library: readonly { readonly defId: ItemDefId; readonly name: string }[] };
+  /** A grant (a reward's, a drop's, a preset line's) as the item it gives. */
+  grant(g: ItemGrant): ResolvedGrant;
   /** Answers the item as the hunter now holds it, or null when there is no such hunter. */
-  addItem(hid: string, item: Partial<Item>): Item | null;
+  addItem(hid: string, item: ItemGrant): ResolvedItem | null;
   addGold(hid: string, n: number): void;
   addCrystal(hid: string, n: number): void;
   /**
@@ -359,12 +370,12 @@ export type InventoryApi = {
    * `lootPool`, spawn.ts `rollLoot`): a boss's when `boss`, at the `share` a gate of its kind pays (spawn.ts
    * `lootShareOf`; the whole table when left out).
    */
-  rollLoot(rank: Rank, o?: { boss?: boolean; share?: number }): LootDrop<ItemTemplate>[];
+  rollLoot(rank: Rank, o?: { boss?: boolean; share?: number }): LootDrop<ItemGrant>[];
   equip(hid: string, itemId: string): boolean;
   unequip(hid: string, slot: Slot): void;
   use(hid: string, itemId: string): unknown;
   /** The purchase written, or why not: the step's refusal (inventory.ts `buy`: `dead`, `borrow-off`, `no-payoff`, `over-cap`), `no-hunter`, `no-item` for a template that does not read, or the store's. */
-  buy(hid: string, tpl: ItemTemplate): Applied;
+  buy(hid: string, defId: ItemDefId): Applied;
   /** Answers the gold the sale paid, 0 when nothing was sold. */
   sell(hid: string, itemId: string, n?: number): number;
 };
@@ -394,8 +405,21 @@ export type MapsApi = {
 };
 
 export type LootApi = {
-  /** Opens the item maker; answers the item as parseItem reads it, or null. `library: false` leaves out "Save to library". */
+  /**
+   * Opens the item maker; answers the item as parseItem reads it, or null. "Save to library" saves it as a new custom
+   * item; `library: false` leaves it out.
+   */
   item(o?: { initial?: Partial<Item>; library?: boolean }): Promise<ItemTemplate | null>;
+  /**
+   * The GM's inline maker (a reward, a monster's loot, a clear preset, the shop): the item is saved as a custom item of
+   * this campaign's catalog (`defId`: an edit of that one), and answered as a reference to it with its count; null on Cancel.
+   */
+  ref(o?: { initial?: Partial<Item>; defId?: ItemDefId }): Promise<ItemGrant | null>;
+  /**
+   * Opens the maker on def `defId` (the Bag's Edit, the Workshop's): Save edits it for every copy. From a bag line
+   * (`held`) the save is library.ts `editHeldDef`, refused where the phone does not own the def. Answers whether it saved.
+   */
+  edit(defId: ItemDefId, initial: Partial<Item>, held?: HeldItem): Promise<boolean>;
 };
 
 /** What a maker's body gives its shell: the preview lines, whether Save is off, and the answer `T`. */
@@ -693,6 +717,12 @@ export type SyncApi = {
   release(key: string): Promise<Call>;
   /** A hunter deleted on this phone leaves the GM's board: a tombstone over its sheet, through the outbox. In no room, nothing. */
   forget(hid: HunterId): void;
+  /** The GM's custom shop list from the active room catalog while this phone is a player in a room, or null for the shipped shop. */
+  catalogShop(): readonly ItemDefId[] | null;
+  /** Whether the GM's catalog publish is paused on a 409 conflict with another device (shown in Workshop). */
+  catalogConflict(): boolean;
+  /** Resolves a GM catalog conflict in Workshop: keep this phone's items (`mine`) or adopt the server's (`theirs`). */
+  resolveCatalog(choice: 'mine' | 'theirs'): void;
 };
 
 /** Sharing the GM's custom content (src/views/io.js): a pack as a code or a file (src/core/pack.ts). */

@@ -4,19 +4,20 @@
 import { RANKS, RULES, clearOf, priceBaseOf } from '../../../../src/core/rules.ts';
 import type { Rank } from '../../../../src/core/rules.ts';
 import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, SLOTS, STARTER_GEAR, isFullHealItem, itemOf } from '../../../../src/core/registry/items.ts';
-import type { ItemDef, Rarity } from '../../../../src/core/registry/items.ts';
+import type { ItemSeed, Rarity } from '../../../../src/core/registry/items.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../../../../src/core/hunter/derive.ts';
 import { referenceBody } from '../../../../src/core/registry/worth.ts';
 import { itemSpend } from '../../../../src/core/registry/item-budget.ts';
+import { builtInItemId } from '../../../../src/core/ids.ts';
 
 const r0 = (n: number): number => Math.round(n);
 const f1 = (n: number): string => n.toFixed(1);
 const goldMean = (r: Rank): number => clearOf(RULES, r);
 const rankOf = (rar: Rarity): Rank => RULES.rarities[rar].rank;
 const clear = (rar: Rarity): number => priceBaseOf(RULES, rankOf(rar));
-const gearOf = (d: ItemDef): boolean => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory';
-const ALL: readonly ItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS];
-const pool: readonly ItemDef[] = ALL.filter(d => !(d.type === 'consumable' && (d.revive || d.rankCap)));
+const gearOf = (d: ItemSeed): boolean => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory';
+const ALL: readonly ItemSeed[] = [...SHOP_ITEMS, ...LOOT_ITEMS];
+const pool: readonly ItemSeed[] = ALL.filter(d => !(d.type === 'consumable' && (d.revive || d.rankCap)));
 
 // ── 2. the item's spend (design section 2.3): points, read on the item maker's sample wearer at the tier's rank ──
 type Conv = { hp: number; mana: number; phys: number; armor: number; sa: number };
@@ -29,7 +30,7 @@ function conv(rank: Rank): Conv {
   return { hp: per('vit', s => s.hpMax), mana: per('pow', s => s.manaMax), phys: per('str', s => s.phys), armor: per('vit', s => s.armor), sa };
 }
 /** The points an item spends beyond its slot's free base, from the game's own `itemSpend`; `unweighed` names what it carries and the budget cannot weigh. */
-function spend(d: ItemDef): { pts: number; unweighed: string[] } {
+function spend(d: ItemSeed): { pts: number; unweighed: string[] } {
   const sp = itemSpend(itemOf(RULES, d), RULES);
   return { pts: sp?.points ?? 0, unweighed: [...(sp?.unweighed ?? [])] };
 }
@@ -44,13 +45,13 @@ function span(r: Rank): [number, number, number, number] {
 type Verdict = { grade: -1 | 0 | 1; over: boolean };
 /** A grade a built-in claims above its spend, allowed only for what the budget cannot weigh (design section 2.5). */
 const CLAIMED: Readonly<Record<string, -1 | 0 | 1>> = { 'Knight Killer': 1 };
-function gradeOf(d: ItemDef): Verdict {
+function gradeOf(d: ItemSeed): Verdict {
   const [, e1, e2, hi] = span(rankOf(d.rar)), p = spend(d).pts;
   return { grade: CLAIMED[d.name] ?? (p < e1 ? -1 : p < e2 ? 0 : 1), over: p > hi };
 }
 
 // ── prices ──
-type Econ = { name: string; price: (d: ItemDef) => number; sale: number; soloShare: number; goldEach: (r: Rank, n: number) => number };
+type Econ = { name: string; price: (d: ItemSeed) => number; sale: number; soloShare: number; goldEach: (r: Rank, n: number) => number };
 // Today's prices, before economy unit 1 took them out of RULES and items.ts: a base value of 10 × a rarity's factor ×
 // 10, and the hand prices the built-in items carried.
 const TODAY_MULT: Readonly<Record<Rarity, number>> = { common: 1, uncommon: 2, rare: 5, epic: 15, legendary: 50, mythic: 200 };
@@ -107,7 +108,7 @@ for (const e of [TODAY, DESIGN_ECON]) {
 console.log('\n[2.1] price by rarity and grade (minus | middle | plus), sale at a quarter of each; today\'s price');
 for (const rar of RARITIES) {
   const p = [-1, 0, 1].map(g => designPrice(rar, g, false));
-  console.log(`${rar} (${rankOf(rar)}) | ${p.join(' | ')} | sells ${p.map(x => Math.floor(x * RULES.saleShare)).join(' / ')} | today ${TODAY.price({ name: '', rar, type: 'misc', desc: '' })}`);
+  console.log(`${rar} (${rankOf(rar)}) | ${p.join(' | ')} | sells ${p.map(x => Math.floor(x * RULES.saleShare)).join(' / ')} | today ${TODAY.price({ defId: builtInItemId('measure'), name: '', rar, type: 'misc', desc: '' })}`);
 }
 
 console.log('\n[2.3] conversions on the sample wearer: rank | max HP a Vit point | max mana a Pow point | phys a Str point | one SA a round in damage | so 1 max HP, 1 max mana, 1 mean damage, a worn status at the tolerance cost (points)');

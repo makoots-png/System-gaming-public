@@ -108,16 +108,17 @@ test('a player completes the GM\'s quest: the GM\'s log says so once, and a repl
 
 /** Frostbite for 2 rounds: a round is 1000 ticks of fight time (RULES.fight.round). */
 const FROSTBITE = { label: 'Frostbite', desc: 'Cold eats at you.', ops: [{ op: 'damage', type: 'arcane', amount: { kind: 'number', value: 3 } }] };
-const FROST_BOMB = {
-  name: 'Frost Bomb', type: 'consumable', rar: 'rare', slot: null, qty: 2, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
+/** Two Frost Bombs, the player's own item, as a bag line (its `id` given by `give`). */
+const FROST_BOMB = { kind: 'adhoc', qty: 2, item: {
+  name: 'Frost Bomb', type: 'consumable', rar: 'rare', slot: null, dice: '', bonus: {}, value: 0, desc: '', weight: 0, armor: 0, resist: 0, target: 'other',
   effects: [{ op: 'applyStatus', key: 'frostbite', def: FROSTBITE, duration: 2000 }],
-};
+} };
 
 test('a player in the GM\'s fight throws a Frost Bomb from the bag on their turn: the rat on the GM\'s phone has Frostbite, and one bomb is gone', async ({ device }) => {
   const { gm, player } = await room(device);
   await give(player, 'items', FROST_BOMB);
-  await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).some(r => r.data.items.some((i: any) => i.name === 'Frost Bomb')))).toBe(true);
-  const bombs = () => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Frost Bomb')?.qty ?? 0);
+  await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).some(r => hunterApp.api.inventory.bag(r.data).some((i: any) => i.name === 'Frost Bomb')))).toBe(true);
+  const bombs = () => player.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.active()).find((i: any) => i.name === 'Frost Bomb')?.qty ?? 0);
 
   await test.step('the GM runs a fight with the player\'s hunter and a rat, and the turn is the player\'s (setup)', async () => {
     await go(gm, 'combat');
@@ -155,7 +156,7 @@ test('a player in the GM\'s fight throws a Frost Bomb from the bag on their turn
 
 test('a player\'s Frost Bomb the GM\'s fight turns down stays in the bag: the player reads why, and nothing reached the rat', async ({ device }) => {
   const { gm, player } = await room(device);
-  const bombs = () => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Frost Bomb')?.qty ?? 0);
+  const bombs = () => player.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.active()).find((i: any) => i.name === 'Frost Bomb')?.qty ?? 0);
 
   await test.step('the GM runs a fight with the player\'s hunter and a rat, its turn the player\'s, before the player has the bomb', async () => {
     await go(gm, 'combat');

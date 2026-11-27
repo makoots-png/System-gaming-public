@@ -2,13 +2,16 @@
 // room's rules, and the same answer until one of them changes. A fight turn reads them 13 to 30 times (audit AW-sync-3),
 // so a read must not cost more for a GM with a full library of statuses than for one with none.
 import { expect, test } from 'bun:test';
-import { bindRoom, bindSave, rules } from '../src/edge/rules.ts';
+import { bindCatalog, bindRoom, bindSave, rules } from '../src/edge/rules.ts';
+import type { BoundCatalog } from '../src/edge/rules.ts';
 import { RULES } from '../src/core/rules.ts';
 import { roomRulesOf } from '../src/core/hunter/build.ts';
 import type { RoomRules } from '../src/core/protocol.ts';
 import { freshSave, repairSave } from '../src/core/save.ts';
 import type { ParseEnv } from '../src/core/save.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
+import { resolveDef } from '../src/core/registry/item-book.ts';
+import { CUSTOM_BLADE_DEF, CUSTOM_BLADE_ID, DAGGER_DEF_ID, FOREIGN_CHARM_DEF, FOREIGN_CHARM_ID } from './fixtures/items.ts';
 import { dev } from './fixtures/ids.ts';
 
 const AT = '2026-11-18T10:00:00.000Z';
@@ -22,7 +25,7 @@ const library = (n: number): Record<string, StatusDef> => Object.fromEntries(Arr
 test('a read of the rules between two writes does not walk the GM\'s statuses, however many there are', () => {
   let walks = 0;
   const statuses = new Proxy(library(200), { ownKeys(t) { walks++; return Reflect.ownKeys(t); } });
-  const save = { rulesOverrides: { xpPerLevel: 120 }, library: { statuses } };
+  const save = { rulesOverrides: { xpPerLevel: 120 }, library: { statuses, items: {} }, heardItems: {} };
   bindRoom(() => null);
   bindSave(() => save);
   const first = rules();
@@ -33,14 +36,14 @@ test('a read of the rules between two writes does not walk the GM\'s statuses, h
 });
 
 test('a write of the save reaches the next read: new overrides, a new status, the room\'s rules', () => {
-  const save = { rulesOverrides: {} as Record<string, unknown>, library: { statuses: library(2) } };
+  const save = { rulesOverrides: {} as Record<string, unknown>, library: { statuses: library(2), items: {} }, heardItems: {} };
   let room: RoomRules | null = null;
   bindRoom(() => room);
   bindSave(() => save);
   expect(rules().xpPerLevel).toBe(RULES.xpPerLevel);
   save.rulesOverrides = { xpPerLevel: 150 };
   expect(rules().xpPerLevel).toBe(150);
-  save.library = { statuses: { ...library(2), 'gm-new': { ...burning, label: 'Fresh' } } };
+  save.library = { statuses: { ...library(2), 'gm-new': { ...burning, label: 'Fresh' } }, items: {} };
   expect(status('gm-new')?.label).toBe('Fresh');
   const baseRoom = roomRulesOf(RULES);
   room = { ...baseRoom, solo: { personal: false, hours: 12, lootShare: RULES.solo.lootShare } };
@@ -59,4 +62,46 @@ test('every repair of the save gives the overrides and the GM\'s statuses new ob
   expect(save.rulesOverrides).not.toBe(ov);
   expect(save.library.statuses).not.toBe(statuses);
   expect([save.rulesOverrides, save.library.statuses]).toEqual([ov, statuses]);
+});
+
+test('bindCatalog layers catalog defs over heardItems and catalog statuses over built-ins, memoized by reference', () => {
+  const localPoison: StatusDef = { ...burning, label: 'Player Local Poison' };
+  const gmPoison: StatusDef = { ...burning, label: 'GM Synced Poison' };
+  const gmDagger = { ...CUSTOM_BLADE_DEF, name: 'GM Iron Dagger' };
+  const gmBladeEdit = { ...CUSTOM_BLADE_DEF, name: 'Rift Fang v2' };
+  const save = {
+    rulesOverrides: {},
+    library: { statuses: { poisoned: localPoison }, items: { [CUSTOM_BLADE_ID]: { ...CUSTOM_BLADE_DEF, name: 'Player Local Blade' } } },
+    heardItems: { [CUSTOM_BLADE_ID]: CUSTOM_BLADE_DEF, [FOREIGN_CHARM_ID]: FOREIGN_CHARM_DEF },
+  };
+  let cat: BoundCatalog | null = null;
+  bindRoom(() => null);
+  bindCatalog(() => cat);
+  bindSave(() => save);
+
+  // Alone: player's own library statuses and library items win
+  expect(rules().conditions.poisoned.label).toBe('Player Local Poison');
+  expect(resolveDef(CUSTOM_BLADE_ID, rules())?.name).toBe('Player Local Blade');
+
+  // Bound catalog: heardItems under catalog.defs, built-ins under catalog.statuses (player library ignored)
+  cat = { defs: { [CUSTOM_BLADE_ID]: gmBladeEdit, [DAGGER_DEF_ID]: gmDagger }, statuses: { poisoned: gmPoison } };
+  const r1 = rules();
+  expect(r1.conditions.poisoned.label).toBe('GM Synced Poison');
+  expect(resolveDef(CUSTOM_BLADE_ID, r1)?.name).toBe('Rift Fang v2');
+  expect(resolveDef(DAGGER_DEF_ID, r1)?.name).toBe('GM Iron Dagger');
+  expect(resolveDef(FOREIGN_CHARM_ID, r1)?.name).toBe(FOREIGN_CHARM_DEF.name);
+  // Memoized by reference: same catalog object returns the same Rules object
+  expect(rules()).toBe(r1);
+
+  // New catalog object without the custom blade falls back to heardItems; leaving room restores player's own
+  cat = { defs: {}, statuses: {} };
+  const r2 = rules();
+  expect(r2).not.toBe(r1);
+  expect(r2.conditions.poisoned.label).toBe(RULES.conditions.poisoned.label);
+  expect(resolveDef(CUSTOM_BLADE_ID, r2)?.name).toBe(CUSTOM_BLADE_DEF.name);
+  expect(resolveDef(DAGGER_DEF_ID, r2)?.name).toBe('Iron Dagger');
+
+  cat = null;
+  bindCatalog(() => null);
+  expect(rules().conditions.poisoned.label).toBe('Player Local Poison');
 });

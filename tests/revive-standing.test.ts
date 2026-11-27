@@ -22,6 +22,7 @@ import type { RoomCode } from '../src/core/protocol.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { day, dev, hid, iid, room } from './fixtures/ids.ts';
+import { adhocOf } from './fixtures/items.ts';
 
 describe('the revive ladder, as a machine: every standing against every event', () => {
   const EXPECTED: Record<ReviveStanding, Record<StandingEventType, ReviveStanding | 'spent'>> = {
@@ -400,14 +401,14 @@ describe('the revive debt machine: every state against every event, three-way sp
 
     // trade and shop sell leave debt untouched
     const h0 = withDebt(100).hunters[0]!;
-    const traded = received(h0, { gold: 80, items: [] }, () => iid('i99'));
+    const traded = received(h0, { gold: 80, items: [] }, () => iid('i99'), RULES);
     expect([traded.gold, traded.debt]).toEqual([90, 100]);
     const potion = parseItem({ name: 'Health Potion', rar: 'common', type: 'consumable', value: 40 })!;
-    const sold = ok(sell(putItem(h0, potion, iid('i1')), iid('i1'), 1, RULES));
+    const sold = ok(sell(putItem(h0, adhocOf(potion), iid('i1'), RULES), iid('i1'), 1, RULES));
     expect([sold.gold, sold.debt]).toEqual([20, 100]);
 
     // shop-borrowed debt pays off through the exact same gate clear split and 0.25x XP rule
-    const borrowed = ok(buy({ ...withDebt(0, 10, 0).hunters[0]!, reviveLeft: 'free' as const }, parseItem({ name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', value: 67 })!, iid('i2'), RULES));
+    const borrowed = ok(buy({ ...withDebt(0, 10, 0).hunters[0]!, reviveLeft: 'free' as const }, adhocOf(parseItem({ name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', value: 67 })!), iid('i2'), RULES));
     expect([borrowed.gold, borrowed.debt, borrowed.reviveLeft]).toEqual([0, 57, 'free']);
     const afterClear1 = ok(grant({ ...base0, hunters: [borrowed] }, H, { ...newRewards(), gold: 100, xp: 40 }, { ...DAY, from: 'clear' }));
     expect([afterClear1.save.hunters[0]!.gold, afterClear1.save.hunters[0]!.debt, afterClear1.save.hunters[0]!.xp, afterClear1.save.hunters[0]!.reviveLeft]).toEqual([25, 7, 10, 'free']);

@@ -10,7 +10,7 @@ import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { saveId } from '../ids.ts';
 import type { LoadoutId } from '../ids.ts';
-import { fits, wearSet } from './inventory.ts';
+import { fits, wearSet, wornOf } from './inventory.ts';
 
 /** Whether an item can be worn in a slot; inventory.ts owns it, and the Loadouts panel (custom.js) reads it here. */
 export { fits };
@@ -29,10 +29,10 @@ export function loadoutCap(R: Rules): number {
   const c = Math.trunc(Number(R.loadoutCap));
   return Math.min(LIMITS.loadouts, Number.isFinite(c) ? Math.max(0, c) : RULES.loadoutCap);
 }
-/** The gear worn now, as a set's slots. */
-const worn = (h: Hunter): Loadout['slots'] => {
-  const slots: Loadout['slots'] = {};
-  for (const s of SLOTS) { const id = h.equipped[s]; if (id) slots[s] = id; }
+/** The gear worn now (inventory.ts `wornOf`, by the rules), as a set's slots. */
+const worn = (h: Hunter, R: Rules): Loadout['slots'] => {
+  const slots: Loadout['slots'] = {}, now = wornOf(h, R);
+  for (const s of SLOTS) { const id = now[s]; if (id) slots[s] = id; }
   return slots;
 };
 const atSet = (h: Hunter, id: string): number => h.loadouts.findIndex(l => l.id === id);
@@ -41,13 +41,13 @@ const withSet = (h: Hunter, at: number, l: Loadout): Hunter => ({ ...h, loadouts
 /** The gear worn saved as set `id` under `name` (blank: "Set n"); refused at the cap. */
 export function saveLoadout(h: Hunter, id: LoadoutId, name: string, R: Rules): Hunter | Refused<LoadoutWhy> {
   if (h.loadouts.length >= loadoutCap(R)) return refuse('full');
-  const l: Loadout = { id, name: name.trim().slice(0, LOADOUT_NAME_MAX) || `Set ${h.loadouts.length + 1}`, slots: worn(h) };
+  const l: Loadout = { id, name: name.trim().slice(0, LOADOUT_NAME_MAX) || `Set ${h.loadouts.length + 1}`, slots: worn(h, R) };
   return { ...h, loadouts: [...h.loadouts, l] };
 }
 /** Set `id` made to hold the gear worn now. */
-export function overwriteLoadout(h: Hunter, id: string, _R?: Rules): Hunter | Refused<LoadoutWhy> {
+export function overwriteLoadout(h: Hunter, id: string, R: Rules): Hunter | Refused<LoadoutWhy> {
   const at = atSet(h, id);
-  return at < 0 ? refuse('missing') : withSet(h, at, { ...h.loadouts[at]!, slots: worn(h) });
+  return at < 0 ? refuse('missing') : withSet(h, at, { ...h.loadouts[at]!, slots: worn(h, R) });
 }
 /** Set `id` renamed; a name of spaces is refused. */
 export function renameLoadout(h: Hunter, id: string, name: string): Hunter | Refused<LoadoutWhy> {
@@ -66,13 +66,13 @@ export function removeLoadout(h: Hunter, id: string): Hunter | Refused<LoadoutWh
  * the save's `seq`, and the set names it from then on); an item gone or unfit leaves its slot as a candidate and is
  * named in `skipped`; any item dropped by two-handed lock or `WEAR_LIMIT` is named in `left`. Refused in a fight.
  */
-export function swapLoadout<S extends Pick<Save, 'hunters' | 'seq'>>(save: S, hid: string, lid: string, _R: Rules, inFight: boolean): { save: S; skipped: string[]; left: string[] } | Refused<LoadoutWhy | 'no-hunter'> {
+export function swapLoadout<S extends Pick<Save, 'hunters' | 'seq'>>(save: S, hid: string, lid: string, R: Rules, inFight: boolean): { save: S; skipped: string[]; left: string[] } | Refused<LoadoutWhy | 'no-hunter'> {
   const hi = save.hunters.findIndex(x => x.id === hid);
   if (hi < 0) return refuse('no-hunter');
   const h = save.hunters[hi]!, li = atSet(h, lid);
   if (li < 0) return refuse('missing');
   let seq = save.seq;
-  const res = wearSet(h, h.loadouts[li]!.slots, () => saveId('i', ++seq), inFight);
+  const res = wearSet(h, h.loadouts[li]!.slots, () => saveId('i', ++seq), inFight, R);
   if (isRefused(res)) return res;
   const loadouts = h.loadouts.map((l, i) => (i === li ? { ...l, slots: res.slots } : l));
   const next: Hunter = { ...res.h, loadouts };

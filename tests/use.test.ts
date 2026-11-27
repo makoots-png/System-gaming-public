@@ -6,6 +6,8 @@ import { toldStep } from '../src/core/use-told.ts';
 import { RARITIES, SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import type { ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { putItem } from '../src/core/hunter/inventory.ts';
+import { adhocGrant, itemDefDataOf, refGrant } from '../src/core/registry/item-book.ts';
+import type { ItemDefId } from '../src/core/ids.ts';
 import { sheetEdit } from '../src/core/hunter/grant.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { REVIVE_HP, hpOf, lifeAfter } from '../src/core/hunter/vitals.ts';
@@ -27,32 +29,34 @@ import { dev, hid as hidOf, iid, jcid, lid, qid, room } from './fixtures/ids.ts'
 
 const ok = <T extends object>(v: T | Refused): T => { if (isRefused(v)) throw new Error(`refused: ${v.why}`); return v as T; };
 const shop = (name: string): ItemTemplate => itemOf(RULES, SHOP_ITEMS.find(d => d.name === name)!);
-const POTION = shop('Health Potion (E)'), MANA = shop('Mana Potion (E)');
+const shopId = (name: string): ItemDefId => SHOP_ITEMS.find(d => d.name === name)!.defId;
+const POTION = shop('Health Potion (E)');
+const POTION_ID = shopId('Health Potion (E)'), MANA_ID = shopId('Mana Potion (E)');
 const hpMax = (h: Hunter): number => hunterSheet(h, RULES).sheet.hpMax;
-/** A hunter with `n` of `item` (id i1) in the bag, `hp` below its maximum. */
-function holding(item: ItemTemplate, n: number, down = 0): Hunter {
-  const h = putItem({ ...newHunter(RULES), id: hidOf('h1') }, { ...item, qty: n }, iid('i1'));
+/** A hunter with `n` of `item` (id i1) in the bag, `hp` below its maximum: a def id by reference, a template as the hunter's own. */
+function holding(item: ItemTemplate | ItemDefId, n: number, down = 0): Hunter {
+  const h = putItem({ ...newHunter(RULES), id: hidOf('h1') }, typeof item === 'string' ? refGrant(item, n) : adhocGrant(itemDefDataOf(item), n), iid('i1'), RULES);
   return down ? { ...h, life: { at: 'up', hp: hpMax(h) - down } } : h;
 }
 const qty = (h: Hunter): number => h.items.find(i => i.id === 'i1')?.qty ?? 0;
 
 describe('a consumable used on oneself outside a fight', () => {
   test('a Health Potion heals what is missing, says what it healed, and one leaves the bag, in one answer', () => {
-    const h = holding(POTION, 2, 10), u = ok(useItem(h, 'i1', [[]], RULES));
+    const h = holding(POTION_ID, 2, 10), u = ok(useItem(h, 'i1', [[]], RULES));
     expect(hpOf(u.hunter.life, hpMax(h))).toBe(hpMax(h));
     expect(u.lines).toEqual(['+10 HP']);
     expect(qty(u.hunter)).toBe(1);
   });
 
   test('the last one leaves the bag', () => {
-    expect(ok(useItem(holding(POTION, 1, 10), 'i1', [[]], RULES)).hunter.items).toEqual([]);
+    expect(ok(useItem(holding(POTION_ID, 1, 10), 'i1', [[]], RULES)).hunter.items).toEqual([]);
   });
 
   test('a potion that would change nothing is refused and kept: full HP, full mana, a dead hunter', () => {
-    const full = holding(POTION, 1);
+    const full = holding(POTION_ID, 1);
     expect(useItem(full, 'i1', [[]], RULES)).toEqual({ ok: false, why: 'nothing' });
-    expect(useItem(holding(MANA, 1), 'i1', [[]], RULES)).toEqual({ ok: false, why: 'nothing' });
-    const dead: Hunter = { ...holding(POTION, 1), life: { at: 'dead' } };
+    expect(useItem(holding(MANA_ID, 1), 'i1', [[]], RULES)).toEqual({ ok: false, why: 'nothing' });
+    const dead: Hunter = { ...holding(POTION_ID, 1), life: { at: 'dead' } };
     expect(useItem(dead, 'i1', [[]], RULES)).toEqual({ ok: false, why: 'nothing' });
   });
 
@@ -67,8 +71,8 @@ describe('a consumable used on oneself outside a fight', () => {
   });
 
   test('an item that is not held, or not a consumable, or none is left, is refused', () => {
-    expect(useItem(holding(POTION, 1, 10), 'i9', [[]], RULES)).toEqual({ ok: false, why: 'no-item' });
-    const gear = putItem(newHunter(RULES), { ...POTION, type: 'weapon' }, iid('i1'));
+    expect(useItem(holding(POTION_ID, 1, 10), 'i9', [[]], RULES)).toEqual({ ok: false, why: 'no-item' });
+    const gear = putItem(newHunter(RULES), adhocGrant(itemDefDataOf({ ...POTION, type: 'weapon' })), iid('i1'), RULES);
     expect(useItem(gear, 'i1', [[]], RULES)).toEqual({ ok: false, why: 'no-item' });
   });
 
@@ -273,7 +277,7 @@ describe('a raising costs levels (economy design 7.1 `reviveLevelShare`, the own
 
 describe('a skill used on oneself outside a fight', () => {
   test('its ops land in one answer; a skill that changes nothing is refused', () => {
-    const h = { ...holding(POTION, 0, 5), items: [] };
+    const h = { ...holding(POTION_ID, 0, 5), items: [] };
     const u = ok(useOn(h, [{ op: 'heal', amount: { kind: 'number', value: 30 } }, { op: 'note', text: 'A glow.' }], { id: null, tier: 0 }, [[], []], RULES));
     expect(u.lines).toEqual(['+5 HP', 'A glow.']);
     expect(useOn({ ...h, life: { at: 'up', hp: hpMax(h) } }, [{ op: 'cureStatus', key: statusKey('poisoned') }], { id: null, tier: 0 }, [[]], RULES)).toEqual({ ok: false, why: 'nothing' });
@@ -282,8 +286,8 @@ describe('a skill used on oneself outside a fight', () => {
 
 describe('an item used up in a fight', () => {
   test('one leaves the bag; one not held is refused', () => {
-    expect(qty(ok(spendItem(holding(POTION, 3), 'i1', RULES)))).toBe(2);
-    expect(spendItem(holding(POTION, 3), 'i2', RULES)).toEqual({ ok: false, why: 'no-item' });
+    expect(qty(ok(spendItem(holding(POTION_ID, 3), 'i1', RULES)))).toBe(2);
+    expect(spendItem(holding(POTION_ID, 3), 'i2', RULES)).toEqual({ ok: false, why: 'no-item' });
   });
 });
 

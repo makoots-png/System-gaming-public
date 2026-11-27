@@ -6,7 +6,7 @@ import type { ItemDefId, ItemId } from '../ids.ts';
 import type { ItemBook, Rules } from '../rules.ts';
 import { liveAbility, liveOps, liveStatusDef } from '../combat/live-status.ts';
 import type { ConditionMap } from '../combat/live-status.ts';
-import { BUILT_IN_ITEMS, ITEM_BOUNDS, itemOf, parseItem, weightOf } from './items.ts';
+import { BUILT_IN_ITEMS, ITEM_BOUNDS, KIT_SHARE, itemOf, parseItem, piece, weightOf } from './items.ts';
 import type { Item, ItemTemplate } from './items.ts';
 import { withinSize } from '../size.ts';
 
@@ -52,8 +52,11 @@ export type ResolvedGrant = ItemTemplate & {
   readonly unknown?: true;
 };
 
+/** The most defs a save's `heardItems` keeps (item-refs.ts `heardStep` keeps only the ones the save names). */
+export const HEARD_MAX = 400;
+
 /** Minimal rules slice required to resolve an item definition or held item. */
-export type ItemResolveRules = Pick<Rules, 'items' | 'conditions' | 'fight'>;
+export type ItemResolveRules = Pick<Rules, 'items' | 'fight'> & { readonly conditions: ConditionMap };
 
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -73,6 +76,22 @@ export function itemDefDataOf(t: ItemTemplate): ItemDefData {
 export function parseItemDef(v: unknown): ItemDefData | null {
   const t = parseItem(v);
   return t ? itemDefDataOf(t) : null;
+}
+
+/**
+ * Item defs by id from outside data (the library, `heardItems`, a sheet's or a doc's `defs`): each key `parseItemDefId`
+ * reads with a def `parseItemDef` reads, at most `cap`; anything else is dropped.
+ */
+export function parseItemBook(v: unknown, cap: number): Record<ItemDefId, ItemDefData> {
+  const out: Record<ItemDefId, ItemDefData> = {};
+  if (!isObj(v)) return out;
+  let n = 0;
+  for (const [k, raw] of Object.entries(v)) {
+    if (n >= cap) break;
+    const id = parseItemDefId(k), def = id ? parseItemDef(raw) : null;
+    if (id && def) { out[id] = def; n++; }
+  }
+  return out;
 }
 
 /** Parses a `HeldItem` (`ref` or `adhoc`) from outside data, or null when invalid. */
@@ -126,8 +145,18 @@ export function liveItemDef(def: ItemDefData, conditions: ConditionMap): ItemDef
   return withinSize('item', { ...next, qty: 1 }) ? next : def;
 }
 
+/**
+ * `def` with its kit's numbers under `R` (`piece`) when it names a kit and sits in an armor slot, so a change of
+ * `fight.kits` reaches every piece of armor made of a kit, built-in or the GM's own; `def` itself when not or unchanged.
+ */
+export function kittedDef(def: ItemDefData, R: Pick<Rules, 'fight'>): ItemDefData {
+  if (!def.kit || def.slot === null || !Object.hasOwn(KIT_SHARE, def.slot)) return def;
+  const p = piece(def.kit, def.slot as keyof typeof KIT_SHARE, R);
+  return def.weight === p.weight && def.armor === p.armor && def.resist === p.resist ? def : { ...def, ...p };
+}
+
 /** Built-in item definition data for `defId` under `R`, or null when `defId` is not a shipped built-in. */
-export function builtInDefData(defId: ItemDefId, R: Pick<Rules, 'conditions' | 'fight'>): ItemDefData | null {
+export function builtInDefData(defId: ItemDefId, R: Pick<ItemResolveRules, 'conditions' | 'fight'>): ItemDefData | null {
   const seed = BUILT_IN_ITEMS.get(defId);
   return seed ? itemDefDataOf(itemOf(R, seed)) : null;
 }
@@ -151,12 +180,19 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 const withWeight = (d: ItemDefData): Record<string, unknown> => ({ ...d, weight: weightOf(d) });
+/** `d` without the numbers its kit decides (weight, armor, resist), for comparing two defs that name one kit. */
+const kitless = (d: ItemDefData): Record<string, unknown> => { const { weight: _w, armor: _a, resist: _r, ...rest } = d; return rest; };
 
-/** Structural equality of two `ItemDefData` values (key-order independent, comparing effective weight via `weightOf`), used to drop no-op built-in overrides. */
-export const sameItemDef = (a: ItemDefData, b: ItemDefData): boolean => deepEqual(withWeight(a), withWeight(b));
+/**
+ * Structural equality of two `ItemDefData` values (key-order independent, comparing effective weight via `weightOf`;
+ * two that name one kit are compared without the weight, armor and resist the kit decides), used to drop no-op
+ * built-in overrides.
+ */
+export const sameItemDef = (a: ItemDefData, b: ItemDefData): boolean =>
+  (a.kit !== undefined && a.kit === b.kit ? deepEqual(kitless(a), kitless(b)) : deepEqual(withWeight(a), withWeight(b)));
 
 /** Whether `def` (after live `follow: true` resolution under `R.conditions`) matches the shipped built-in definition for `defId` under `R`. */
-export function isShippedItemDef(defId: ItemDefId, def: ItemDefData, R: Pick<Rules, 'conditions' | 'fight'>): boolean {
+export function isShippedItemDef(defId: ItemDefId, def: ItemDefData, R: Pick<ItemResolveRules, 'conditions' | 'fight'>): boolean {
   const shipped = builtInDefData(defId, R);
   return shipped !== null && sameItemDef(liveItemDef(def, R.conditions), shipped);
 }
@@ -189,7 +225,7 @@ export function unknownItem(id: ItemId, qty: number, defId: ItemDefId): Resolved
  * 1. `R.items[defId]` (GM override, custom item, synced room catalog, or player's heard fallback — always wins over stale `extraDefs`).
  * 2. `BUILT_IN_ITEMS` (shipped built-in, computed from `R` so armor kit rules stay live; prevents remote `extraDefs` from spoofing built-ins).
  * 3. `extraDefs[defId]` (remote sheet's attached fallback for a custom `c:*` def absent from `R.items`; never read for `b:*` ids).
- * Every resolved def then applies `liveItemDef(..., R.conditions)` for `follow: true` status ops.
+ * Every resolved def then takes its kit's numbers (`kittedDef`) and applies `liveItemDef(..., R.conditions)` for `follow: true` status ops.
  */
 export function resolveDef(defId: ItemDefId, R: ItemResolveRules, extraDefs?: ItemBook): ItemDefData | null {
   const raw = Object.hasOwn(R.items, defId)
@@ -199,13 +235,13 @@ export function resolveDef(defId: ItemDefId, R: ItemResolveRules, extraDefs?: It
       : isCustomItemDefId(defId) && extraDefs && Object.hasOwn(extraDefs, defId)
         ? extraDefs[defId]!
         : null;
-  return raw ? liveItemDef(raw, R.conditions) : null;
+  return raw ? liveItemDef(kittedDef(raw, R), R.conditions) : null;
 }
 
 /** Resolves a `HeldItem` against `R` (and optional remote sheet `extraDefs`), falling back to `unknownItem`. */
 export function resolveItem(held: HeldItem, R: ItemResolveRules, extraDefs?: ItemBook): ResolvedItem {
   if (held.kind === 'adhoc') {
-    return { ...liveItemDef(held.item, R.conditions), id: held.id, qty: held.qty, adhoc: true };
+    return { ...liveItemDef(kittedDef(held.item, R), R.conditions), id: held.id, qty: held.qty, adhoc: true };
   }
   const def = resolveDef(held.defId, R, extraDefs);
   return def ? { ...def, id: held.id, qty: held.qty, defId: held.defId } : unknownItem(held.id, held.qty, held.defId);
@@ -214,11 +250,73 @@ export function resolveItem(held: HeldItem, R: ItemResolveRules, extraDefs?: Ite
 /** Resolves an `ItemGrant` against `R` (using `grant.def` as last-resort fallback for custom `c:*` defs absent from `R.items`). */
 export function resolveGrant(grant: ItemGrant, R: ItemResolveRules, extraDefs?: ItemBook): ResolvedGrant {
   if (grant.kind === 'adhoc') {
-    return { ...liveItemDef(grant.item, R.conditions), qty: grant.qty, adhoc: true };
+    return { ...liveItemDef(kittedDef(grant.item, R), R.conditions), qty: grant.qty, adhoc: true };
   }
   const fallback: ItemBook | undefined = grant.def
     ? (extraDefs ? { ...extraDefs, [grant.defId]: grant.def } : { [grant.defId]: grant.def })
     : extraDefs;
   const def = resolveDef(grant.defId, R, fallback);
   return def ? { ...def, qty: grant.qty, defId: grant.defId } : unknownGrant(grant.qty, grant.defId);
+}
+
+/**
+ * `qty` of bag line `held` as a grant, for a hand over, the stash or a message: a reference keeps its id and, for a
+ * custom item, carries its def as this phone reads it (`resolveDef`), so a phone without the def can still read it; an
+ * ad hoc line carries its own.
+ */
+export function grantOf(held: HeldItem, qty: number, R: ItemResolveRules): ItemGrant {
+  if (held.kind === 'adhoc') return { kind: 'adhoc', qty, item: held.item };
+  const def = isCustomItemDefId(held.defId) ? resolveDef(held.defId, R) : null;
+  return def ? { kind: 'ref', defId: held.defId, qty, def } : { kind: 'ref', defId: held.defId, qty };
+}
+
+/** The defs grants carry, by id (`ItemGrant.def`), for item-refs.ts `heardStep`. */
+export function grantDefs(grants: readonly ItemGrant[]): Record<ItemDefId, ItemDefData> {
+  const out: Record<ItemDefId, ItemDefData> = {};
+  for (const g of grants) if (g.kind === 'ref' && g.def && isCustomItemDefId(g.defId)) out[g.defId] = g.def;
+  return out;
+}
+
+/**
+ * `v` (a room event's body) with each reference grant to a custom item that carries no def given its def as `R` reads
+ * it (`resolveDef`), so a phone without the GM's library reads what it is given. A grant is an object of `kind: 'ref'`
+ * with a `defId` and a `qty` and no `id` (a bag line has one and is never filled). Everything else is copied as it is.
+ */
+export function withGrantDefs<T>(v: T, R: ItemResolveRules): T {
+  const walk = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(walk);
+    if (!isObj(x)) return x;
+    if (x.kind === 'ref' && typeof x.defId === 'string' && typeof x.qty === 'number' && !('id' in x) && x.def === undefined) {
+      const id = parseItemDefId(x.defId), def = id && isCustomItemDefId(id) ? resolveDef(id, R) : null;
+      return def ? { ...x, def } : x;
+    }
+    return Object.fromEntries(Object.entries(x).map(([k, y]) => [k, walk(y)]));
+  };
+  return walk(v) as T;
+}
+
+/** The custom defs bag `items` reads under `R`, by id: what a pushed sheet carries so the GM and the server can read them. */
+export function bagDefs(items: readonly HeldItem[], R: ItemResolveRules): Record<ItemDefId, ItemDefData> {
+  const out: Record<ItemDefId, ItemDefData> = {};
+  for (const i of items) {
+    if (i.kind !== 'ref' || !isCustomItemDefId(i.defId) || Object.hasOwn(out, i.defId)) continue;
+    const def = resolveDef(i.defId, R);
+    if (def) out[i.defId] = def;
+  }
+  return out;
+}
+
+/** A grant of `qty` of def `defId`, by reference. */
+export const refGrant = (defId: ItemDefId, qty = 1): ItemGrant => ({ kind: 'ref', defId, qty });
+/** A grant of `qty` of a player's own item `item` (ad hoc). */
+export const adhocGrant = (item: ItemDefData, qty = 1): ItemGrant => ({ kind: 'adhoc', qty, item });
+
+/**
+ * The name a grant gives, without the rules: an ad hoc item's own, a custom item's def it carries, the shipped name of a
+ * built-in, else `UNKNOWN_ITEM_WORDS.name`. What goods and the stash say in words, on any phone.
+ */
+export function grantName(g: ItemGrant): string {
+  if (g.kind === 'adhoc') return g.item.name;
+  if (g.def) return g.def.name;
+  return BUILT_IN_ITEMS.get(g.defId)?.name ?? UNKNOWN_ITEM_WORDS.name;
 }

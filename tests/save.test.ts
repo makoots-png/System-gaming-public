@@ -1,4 +1,4 @@
-// What a save is at schema 5: an older save is refused at the schema boundary; a current save reads back as it was
+// What a save is at schema 6 (items by reference): an older save is refused at the schema boundary; a current save reads back as it was
 // written; a damaged one is repaired.
 // Expected numbers come from the rules by name: a new hunter has `statBase` in each of the eight stats, the creation
 // points free, and the HP, mana and fatigue capacity of base stats at level 1, where every curve term of design 2.2 is 0
@@ -24,7 +24,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
 import { MAX_STATUSES } from '../src/core/combat/fight-types.ts';
-import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
+import { ITEM_BOUNDS, LOOT_ITEMS } from '../src/core/registry/items.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { formulaOf, abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { parseFormula, printFormula } from '../src/core/formula.ts';
@@ -32,6 +32,8 @@ import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
 import { cid, day, dev, gmKey, hid, iid, qid, rbid, room, shid, tid } from './fixtures/ids.ts';
 import { dayKey } from '../src/core/day.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
+import { bagOf } from '../src/core/hunter/inventory.ts';
+import { DAGGER_DEF_ID, customId } from './fixtures/items.ts';
 
 type Raw = Record<string, any>;
 
@@ -75,6 +77,10 @@ function runningFight(): Fight {
   if (!fight || fight.phase !== 'running') throw new Error('the fight did not start');
   return fight;
 }
+/** A stored ad hoc bag line of `item` (a player's own item, by value), as a save holds one. */
+const adhoc = (item: Raw, line: Raw = {}): Raw => ({ kind: 'adhoc', qty: 1, ...line, item });
+/** A stored bag line by reference to the shipped Iron Dagger. */
+const dagger = (id: string): Raw => ({ id, kind: 'ref', defId: DAGGER_DEF_ID, qty: 1 });
 const POISONED = { key: 'poisoned', def: RULES.conditions.poisoned, source: { id: 'c3', tier: 3 }, rounds: 2.5 };
 const SLOWED = { key: 'slowed', def: RULES.conditions.slowed, source: { id: null, tier: 0 }, rounds: null };
 
@@ -102,13 +108,20 @@ function campaign(): Save {
 describe('the schema boundary for older saves', () => {
   test('an integer schema below SCHEMA with a hunters list is refused as old; non-saves and bad schemas are not-a-save', () => {
     const raw = samplePlayer();
-    for (const schema of [4, 3, 2, 1]) expect(parseSaveValue({ ...copy(raw), schema }, env())).toEqual({ kind: 'invalid', reason: 'old' });
-    for (const schema of [0, -1, undefined, '4', 4.5, 5.5, Number.POSITIVE_INFINITY, Number.NaN]) {
+    expect(SCHEMA, 'items by reference are schema 6').toBe(6);
+    for (const schema of [5, 4, 3, 2, 1]) expect(parseSaveValue({ ...copy(raw), schema }, env())).toEqual({ kind: 'invalid', reason: 'old' });
+    for (const schema of [0, -1, undefined, '4', '5', 4.5, 5.5, Number.POSITIVE_INFINITY, Number.NaN]) {
       expect(parseSaveValue({ ...copy(raw), schema }, env())).toEqual({ kind: 'invalid', reason: 'not-a-save' });
     }
     for (const v of [{ schema: 4, foo: 1 }, { schema: 2, hunters: { h1: {} } }, { name: 'Solo' }, { stats: { str: 12 } }, { quests: [] }]) {
       expect(parseSaveValue(v, env())).toEqual({ kind: 'invalid', reason: 'not-a-save' });
     }
+  });
+
+  test('a schema 5 save, whose bags held items by value, is refused as old, its by-value items never read as references', () => {
+    const v5 = { ...copy(samplePlayer()), schema: 5, hunters: [{ ...newHunter(), items: [{ id: 'i1', name: 'Iron Dagger', rar: 'common', type: 'weapon', slot: 'weapon', qty: 1, dice: '1d8', bonus: {}, desc: '', armor: 0, resist: 0 }] }] };
+    expect(parseSaveValue(v5, env())).toEqual({ kind: 'invalid', reason: 'old' });
+    expect(parseSave(JSON.stringify(v5), env())).toEqual({ kind: 'invalid', reason: 'old' });
   });
 });
 
@@ -145,10 +158,11 @@ describe('what the app opens with, from the stored save key', () => {
     const negated = (n: number): object => (n === 1 ? { kind: 'number', value: 1 } : { kind: 'negate', arg: negated(n - 1) });
     const kept = { op: 'shield', amount: { kind: 'number', value: 3 } };
     const save = JSON.parse(current('Stored Hunter'));
-    save.library.items = [{ id: 'i20001', name: 'Odd Charm', effects: [{ op: 'shield', amount: negated(201) }, kept] }];
+    const charm = customId('oddcharm');
+    save.library.items = { [charm]: { name: 'Odd Charm', effects: [{ op: 'shield', amount: negated(201) }, kept] } };
     const loaded = loadSave(JSON.stringify(save), env());
-    expect(loaded.save.library.items).toHaveLength(1);
-    expect(loaded.save.library.items[0]).toMatchObject({ name: 'Odd Charm', effects: [kept] });
+    expect(Object.keys(loaded.save.library.items)).toEqual([charm]);
+    expect(loaded.save.library.items[charm]).toMatchObject({ name: 'Odd Charm', effects: [kept] });
     expect(loaded.save.hunters[0]!.name).toBe('Stored Hunter');
   });
 
@@ -186,7 +200,8 @@ describe('a new hunter', () => {
     const [sprint, bloodlust] = h.skills;
     expect(sprint!.type === 'active' && sprint!.ability?.name).toBe('Sprint');
     expect(bloodlust!.type === 'passive' && bloodlust!.bonus).toEqual({ str: 1 });
-    expect(h.items.map(i => [i.name, i.type, i.attack ?? null])).toEqual([["Kasaka's Venom Fang", 'weapon', 'strike'], ['Health Potion (E)', 'consumable', null]]);
+    expect(h.items.every(i => i.kind === 'ref'), 'each a reference to its shipped def').toBe(true);
+    expect(bagOf(h, RULES).map(i => [i.name, i.type, i.attack ?? null])).toEqual([["Kasaka's Venom Fang", 'weapon', 'strike'], ['Health Potion (E)', 'consumable', null]]);
     expect(new Set([...h.skills, ...h.items].map(x => x.id)).size).toBe(4);
   });
 });
@@ -338,7 +353,7 @@ describe('a damaged or hostile save', () => {
     const save = parseRaw({ schema: SCHEMA, seq: 'x', settings: 5, world: [], rulesOverrides: [], hunters: [null, 'x'], gates: 'g', monsters: 1,
       library: 'x', fight: 'x', log: {}, rolls: 7, savedAt: 12 });
     expect(save.hunters.map(h => h.name)).toEqual(['Sung Jin-Woo']);
-    expect(save).toMatchObject({ savedAt: '', gates: [], monsters: [], library: { items: [] }, fight: null, log: [], rolls: [],
+    expect(save).toMatchObject({ savedAt: '', gates: [], monsters: [], library: { items: {} }, fight: null, log: [], rolls: [],
       rulesOverrides: {}, world: { day: 1 }, settings: { mode: 'player', deviceId: 'd-test1', sync: { room: null, cursor: 0, serverOk: false } } });
   });
 
@@ -352,7 +367,7 @@ describe('a damaged or hostile save', () => {
     const text = `{"schema":${SCHEMA},"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},
       "settings":{"__proto__":{"polluted":true}},"rulesOverrides":{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}}},
       "hunters":[{"name":"Proto","__proto__":{"polluted":true,"level":50},"constructor":"x","stats":{"__proto__":{"str":99}},
-        "items":[{"name":"Fang","bonus":{"__proto__":{"str":5}}}],"titles":[{"name":"T","bonus":{"__proto__":{"str":5}}}]}]}`;
+        "items":[{"kind":"adhoc","qty":1,"item":{"name":"Fang","bonus":{"__proto__":{"str":5}}}}],"titles":[{"name":"T","bonus":{"__proto__":{"str":5}}}]}]}`;
     const save = saved(parseSave(text, env()));
     const h = onlyHunter(save);
     expect(h.name).toBe('Proto');
@@ -374,12 +389,13 @@ describe('a damaged or hostile save', () => {
 
   test('a name of 100,000 characters is cut to 60, and long notes and quest titles are cut too', () => {
     const long = 'n'.repeat(100_000);
-    const h = onlyHunter(parseRaw(withHunter({ name: long, job: long, notes: long, quests: [{ title: long, desc: long, penaltyText: long }], items: [{ name: long }] })));
+    const h = onlyHunter(parseRaw(withHunter({ name: long, job: long, notes: long, quests: [{ title: long, desc: long, penaltyText: long }], items: [adhoc({ name: long })] })));
     expect(h.name).toHaveLength(60);
     expect(h.job).toHaveLength(60);
     expect(h.notes).toHaveLength(500);
     expect(h.quests[0]).toMatchObject({ title: 'n'.repeat(120), desc: 'n'.repeat(500), penaltyText: 'n'.repeat(300) });
-    expect(h.items[0]!.name).toHaveLength(60);
+    const line = h.items[0]!;
+    expect(line.kind === 'adhoc' && line.item.name).toHaveLength(60);
   });
 
   test('NaN, Infinity and numbers written as text in number fields fall back to the defaults', () => {
@@ -400,8 +416,8 @@ describe('a damaged or hostile save', () => {
 
   test('entities that repeat an id get new ids, the first keeps its own, and seq ends above them all', () => {
     const save = parseRaw({ schema: SCHEMA, seq: 5, hunters: [
-      { id: 'h7', name: 'First', items: [{ id: 'i300', name: 'A' }, { id: 'i300', name: 'B' }] },
-      { id: 'h7', name: 'Second', items: [{ id: 'i300', name: 'C' }, { name: 'D' }, { id: 'not an id', name: 'E' }] },
+      { id: 'h7', name: 'First', items: [adhoc({ name: 'A' }, { id: 'i300' }), adhoc({ name: 'B' }, { id: 'i300' })] },
+      { id: 'h7', name: 'Second', items: [adhoc({ name: 'C' }, { id: 'i300' }), adhoc({ name: 'D' }), adhoc({ name: 'E' }, { id: 'not an id' })] },
     ] });
     expect(save.hunters.map(h => h.name)).toEqual(['First', 'Second']);
     expect(save.hunters[0]!.id).toBe(hid('h7'));
@@ -415,7 +431,7 @@ describe('a damaged or hostile save', () => {
   });
 
   test('two hunters that share an item id each keep their weapon equipped, through two repairs', () => {
-    const sword = { id: 'i50', name: 'Sword', slot: 'weapon' };
+    const sword = dagger('i50');
     const save = parseRaw({ schema: SCHEMA, hunters: [
       { id: 'h1', name: 'First', items: [sword], equipped: { weapon: 'i50' } },
       { id: 'h2', name: 'Second', items: [sword], equipped: { weapon: 'i50' } },
@@ -436,7 +452,7 @@ describe('a damaged or hostile save', () => {
     const some = <T>(make: () => T): T[] => Array.from({ length: Math.floor(rand() * 3) }, make);
     const ITEMS = ['i1', 'i2', 'not an id', undefined], TITLES = ['t1', 't2', 'title'], QUESTS = ['q1', 'q2', 'quest'];
     const hunter = (): Raw => ({
-      id: pick(['h1', 'h2']), items: some(() => ({ id: pick(ITEMS), name: 'Blade', slot: pick(['weapon', 'offhand']) })),
+      id: pick(['h1', 'h2']), items: some(() => ({ id: pick(ITEMS), kind: 'ref', defId: pick([DAGGER_DEF_ID, 'b:knights-aegis']), qty: 1 })),
       equipped: { weapon: pick(ITEMS), offhand: pick(ITEMS) },
       titles: some(() => ({ id: pick(TITLES), name: 'Brave' })), titleId: pick(TITLES),
       quests: some(() => ({ id: pick(QUESTS), kind: pick(['penalty', 'job']), status: pick(['active', 'failed']) })),
@@ -483,18 +499,19 @@ describe('a damaged or hostile save', () => {
     const heal = { op: 'heal', amount: { kind: 'number', value: 1 } };
     const save = parseRaw({ schema: SCHEMA,
       log: many(5000, i => ({ id: `l${i + 1}`, title: `entry ${i}` })), rolls: many(5000, i => ({ id: `r${i + 6000}` })),
-      library: { items: many(500, i => ({ id: `i${i + 20000}`, name: 'Stock' })) },
+      library: { items: Object.fromEntries(Array.from({ length: 500 }, (_, i) => [customId(`stock${i}`), { name: 'Stock' }])) },
       hunters: [{ id: 'h1',
-        items: [{ id: 'i1', name: 'Wand', effects: many(100, () => heal) }],
+        items: [adhoc({ name: 'Wand', effects: many(100, () => heal) }, { id: 'i1' })],
         conditions: many(40, i => ({ ...SLOWED, key: `slowed-${i}` })),
         loadouts: many(100, i => ({ id: `lo${i + 30000}`, name: `Set ${i}` })) }] });
     expect(save.log).toHaveLength(RULES.logCap);
     expect(save.log[0]!.title).toBe('entry 0');
     expect(save.rolls).toHaveLength(RULES.rollCap);
-    expect(save.library.items).toHaveLength(200);
+    expect(Object.keys(save.library.items)).toHaveLength(200);
     const h = onlyHunter(save);
     expect(h.loadouts).toHaveLength(24);
-    expect(h.items[0]!.effects).toHaveLength(ITEM_BOUNDS.effects);
+    const wand = h.items[0]!;
+    expect(wand.kind === 'adhoc' && wand.item.effects).toHaveLength(ITEM_BOUNDS.effects);
     expect(h.conditions).toHaveLength(MAX_STATUSES);
   });
 
@@ -548,7 +565,7 @@ describe('what a repair fixes', () => {
     const save = parseRaw({ schema: SCHEMA, settings: { mode: 'admin', dailyResetHour: 99 }, world: { day: -2, session: -3 },
       hunters: [{ id: 'h1', rank: 'Z', emblem: 'unicorn', color: 'red',
         quests: [{ id: 'q1', kind: 'weird', status: 'lost', from: 'nobody' }], skills: [{ id: 's1', name: 'Dash', type: 'aura' }],
-        items: [{ id: 'i1', name: 'Gun', rar: 'godly', type: 'gun', slot: 'tail', qty: -2 }],
+        items: [adhoc({ name: 'Gun', rar: 'godly', type: 'gun', slot: 'tail' }, { id: 'i1' })],
         shadows: [{ id: 'sh1', rank: 'Q', grade: 'King', archetype: 'dragon', hp: -5 }] }],
       gates: [{ id: 'g1', rank: 'X', type: 'blue', status: 'open' }], monsters: [{ id: 'm1', rank: 'F' }],
       log: [{ id: 'l1', kind: 'gossip' }] });
@@ -558,7 +575,7 @@ describe('what a repair fixes', () => {
     expect(h).toMatchObject({ rank: 'E', emblem: '', color: '' });
     expect(h.quests[0]).toMatchObject({ kind: 'side', status: 'active', from: 'self' });
     expect(h.skills[0]).toMatchObject({ type: 'active' });
-    expect(h.items[0]).toMatchObject({ rar: 'common', type: 'misc', slot: null, qty: 1 });
+    expect(h.items[0]).toMatchObject({ kind: 'adhoc', qty: 1, item: { rar: 'common', type: 'misc', slot: null } });
     expect(h.shadows[0]).toMatchObject({ rank: 'E', grade: 'Normal', archetype: 'brute', hp: 0 });
     expect(save.gates[0]).toMatchObject({ rank: 'E', type: 'normal', status: 'detected' });
     expect(save.monsters[0]).toMatchObject({ rank: 'E' });
@@ -566,7 +583,7 @@ describe('what a repair fixes', () => {
   });
 
   test('gear and a title that point at nothing are cleared, and a real one stays', () => {
-    const h = onlyHunter(parseRaw(withHunter({ items: [{ id: 'i1', name: 'Sword', slot: 'weapon' }], equipped: { weapon: 'i1', head: 'i404' },
+    const h = onlyHunter(parseRaw(withHunter({ items: [dagger('i1')], equipped: { weapon: 'i1', head: 'i404' },
       titles: [{ id: 't1', name: 'Brave' }], titleId: 't404',
       loadouts: [{ id: 'lo1', name: '  Raid   set  ', slots: { weapon: 'i1', offhand: 'i1', head: 'i404' } }] })));
     expect(h.equipped.weapon).toBe(iid('i1'));
@@ -632,14 +649,14 @@ describe('what a repair fixes', () => {
       codex: { 'goblin|E': { name: 'Goblin', rank: 'Z', kills: 'x', firstAt: at, lastAt: at, monsterId: 4 }, junk: 5,
         'wolf|D': { name: 'Wolf', rank: 'D', kills: 2, firstAt: at, lastAt: at, monsterId: null, room: true,
           info: { hpMax: 90, armor: 'x', resist: -4, speed: 110, abilities: ['Bite', 3, 'Howl', 'Pounce', 'Rend', 'Five'] } } },
-      codexSeen: ['c1', 2, 'c3'], shop: [{ name: 'Rope', type: 'gizmo', value: 5 }, 7] });
+      codexSeen: ['c1', 2, 'c3'], shop: [DAGGER_DEF_ID, { name: 'Rope', type: 'gizmo', value: 5 }, 7, 'not an id', DAGGER_DEF_ID] });
     expect(save.codex).toEqual({
       'goblin|E': { name: 'Goblin', rank: 'E', kills: 1, firstAt: at, lastAt: at, monsterId: null },
       'wolf|D': { name: 'Wolf', rank: 'D', kills: 2, firstAt: at, lastAt: at, monsterId: null, room: true,
         info: { hpMax: 90, armor: 0, resist: 0, speed: 110, abilities: ['Bite', 'Howl', 'Pounce', 'Rend'] } },
     });
     expect(save.codexSeen).toEqual(['c1', 'c3']);
-    expect(save.shop!.map(t => [t.name, t.type, 'id' in t])).toEqual([['Rope', 'misc', false]]);
+    expect(save.shop, 'the shop lists item ids, each once').toEqual([DAGGER_DEF_ID]);
     const empty = parseRaw({ schema: SCHEMA, hunters: [], codex: [], codexSeen: 'x', shop: 'x' });
     expect([empty.codex, empty.codexSeen, empty.shop]).toEqual([{}, [], null]);
   });
@@ -765,7 +782,7 @@ describe('what a repair fixes', () => {
       settings: { sync: { room: 7, gmKey: 5, gmKeys: { ABCDEF: 'key', GHJKLM: 9 }, lastRoom: 'ABCDEF', boundHunterId: 3, deviceToken: {}, joined: 1,
         outbox: [{ room: 'ABCDEF', letter: { kind: 'tomb', hid: 'h1' }, at: 'sending' }, { room: 1 }, 'x', { room: 'ABCDEF', letter: { kind: 'event', event: { type: 'roll', payload: {} } } }], applied: 'd-gm1-e1' } },
       hunters: [{ id: 'h1', penalty: 'yes', titleId: 5, daily: { lastCheckedKey: 5 },
-        quests: [{ id: 'q1', doneAt: 5, dueAt: {}, chainId: 1, rewards: { job: [], items: [{ name: 'Gem', effects: 'shiny' }, 3] } }],
+        quests: [{ id: 'q1', doneAt: 5, dueAt: {}, chainId: 1, rewards: { job: [], items: [adhoc({ name: 'Gem', effects: 'shiny' }), 3] } }],
         skills: [{ id: 's1', name: 'Dash', label: 9 }], shadows: [{ id: 'sh1', monster: 4 }] }],
       gates: [{ id: 'g1', bossId: 4, clearedDay: 'today', monsters: [{ monsterId: 'm1', count: 2 }, 5] }],
       log: [{ id: 'l1', hunterId: 9 }], rolls: [{ id: 'r1', natural: 'x', rolls: [3, 'x', 4] }] });
@@ -775,7 +792,7 @@ describe('what a repair fixes', () => {
     const h = onlyHunter(save);
     expect([h.penalty, h.titleId, h.daily.lastCheckedKey]).toEqual([null, null, null]);
     const q = h.quests[0]!;
-    expect(q).toMatchObject({ doneAt: null, dueAt: null, rewards: { job: null, items: [{ name: 'Gem' }] } });
+    expect(q).toMatchObject({ doneAt: null, dueAt: null, rewards: { job: null, items: [{ kind: 'adhoc', item: { name: 'Gem' } }] } });
     expect('chainId' in q).toBe(false);
     expect(h.skills[0]).toMatchObject({ name: 'Dash', label: null });
     expect(h.shadows[0]!.monster).toBeNull();
@@ -893,7 +910,7 @@ describe('what a repair fixes', () => {
 });
 
 describe('the loot waiting for the GM (SMX-gates-1)', () => {
-  const shard = itemOf(RULES, LOOT_ITEMS[0]!);
+  const shard = { kind: 'ref', defId: LOOT_ITEMS[0]!.defId, qty: 1 };
   const loot = (drops: unknown, at: unknown = 'waiting'): Save['loot'] => parseRaw({ schema: SCHEMA, hunters: [], loot: { at, drops } }).loot;
 
   test('loot waiting reads back whole, in the order the fights dropped it', () => {
@@ -916,16 +933,16 @@ describe('the loot waiting for the GM (SMX-gates-1)', () => {
     expect(loot(bad.slice(0, -1))).toEqual({ at: 'none' });
   });
 
-  test('an item of a drop is read by parseItem: one it refuses is left out of the drop', () => {
-    expect(loot([{ fight: 'f-1', gold: 5, items: [shard, { qty: 1 }] }])).toEqual({ at: 'waiting', drops: [{ fight: 'f-1', gold: 5, items: [shard] }] as never });
+  test('an item of a drop is a grant read by parseItemGrant: one it refuses is left out of the drop', () => {
+    expect(loot([{ fight: 'f-1', gold: 5, items: [shard, { qty: 1 }, { name: 'Orb', qty: 1 }, { ...shard, defId: 'nope' }] }])).toEqual({ at: 'waiting', drops: [{ fight: 'f-1', gold: 5, items: [shard] }] as never });
   });
 });
 
 describe('fields the types do not know', () => {
   const extras = (): Raw => ({ schema: SCHEMA, futureThing: { a: [1, 2] }, settings: { theme: 'dark', sync: { relay: 'x' } }, world: { weather: 'rain' },
-    hunters: [{ id: 'h1', name: 'Kai', petName: 'Rex', stats: { luck: 3 }, items: [{ id: 'i1', name: 'Orb' }],
+    hunters: [{ id: 'h1', name: 'Kai', petName: 'Rex', stats: { luck: 3 }, items: [adhoc({ name: 'Orb' }, { id: 'i1' })],
       quests: [{ id: 'q1', title: 'Go', objectives: [{ label: 'Walk', target: 2, progress: 1, hint: 'north' }], rewards: { xp: 2 } }] }],
-    monsters: [{ id: 'm1', name: 'Wolf' }], library: { shelf: 2, items: [] } });
+    monsters: [{ id: 'm1', name: 'Wolf' }], library: { shelf: 2, items: {} } });
 
   test('unknown keys on the save, a hunter and what a hunter holds survive a parse', () => {
     const save = parseRaw(extras());
@@ -938,16 +955,17 @@ describe('fields the types do not know', () => {
     expect(save.monsters[0]).not.toHaveProperty('lair');
   });
 
-  test('an item keeps only an item\'s fields: it is read by parseItem, wherever it is kept', () => {
-    const item = { id: 'i1', name: 'Orb', glow: true };
-    const save = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', items: [item], quests: [{ id: 'q1', rewards: { items: [item] } }] }],
-      library: { items: [{ ...item, id: 'i2' }] }, shop: [item] });
-    const h = onlyHunter(save);
-    for (const kept of [h.items[0], h.quests[0]!.rewards.items[0], save.library.items[0], save.shop![0]]) {
+  test('an item keeps only an item\'s fields: it is read by parseItem, wherever it is kept, and a bag line or grant keeps only its own', () => {
+    const item = { name: 'Orb', glow: true }, orb = customId('orb');
+    const save = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', items: [adhoc(item, { id: 'i1', shine: 1 })], quests: [{ id: 'q1', rewards: { items: [adhoc(item, { shine: 1 })] } }] }],
+      library: { items: { [orb]: item } } });
+    const h = onlyHunter(save), line = h.items[0]!, grant = h.quests[0]!.rewards.items[0]!;
+    for (const kept of [line.kind === 'adhoc' ? line.item : null, grant.kind === 'adhoc' ? grant.item : null, save.library.items[orb]]) {
       expect(kept).toMatchObject({ name: 'Orb' });
       expect(kept).not.toHaveProperty('glow');
+      expect(kept).not.toHaveProperty('id');
     }
-    expect(save.shop![0]).not.toHaveProperty('id');
+    for (const kept of [line, grant]) expect(kept).not.toHaveProperty('shine');
   });
 
   test('a quest\'s reward keeps only a reward\'s fields: it is read by parseRewards', () => {

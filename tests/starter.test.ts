@@ -16,6 +16,8 @@ import { dayKey } from '../src/core/day.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { available, capDisplayChip } from '../src/core/hunter/progress.ts';
 import { hpOf } from '../src/core/hunter/vitals.ts';
+import { bagOf, wornOf } from '../src/core/hunter/inventory.ts';
+import { resolveGrant } from '../src/core/registry/item-book.ts';
 import { activeGateWave, hasGateWaves, parseGate, waveRoster } from '../src/core/gates/gate.ts';
 import { CHAPTER_MAX, STORY_BOUNDS, chapterSize, parseStory } from '../src/core/story/story.ts';
 import { REWARD_BOUNDS, WORDS_BOUNDS } from '../src/core/rewards.ts';
@@ -66,10 +68,12 @@ describe('the starter campaign, one atomic step', () => {
       expect(h.capDisplay).toBe('E');
       expect(capDisplayChip(h.capDisplay, RULES)).toBe('Cap: 9');
       expect(h.skills.map(k => k.name)).toEqual(p.skills.map(k => k.name));
-      expect(h.items.map(x => x.name)).toEqual(p.items.map(x => x.name));
-      expect(h.items.some(x => x.name === 'Health Potion (E)')).toBe(true);
-      for (const item of h.items) {
-        if (item.slot) expect(h.equipped[item.slot]).toBe(item.id);
+      const bag = bagOf(h, RULES);
+      expect(bag.map(x => [x.name, x.defId])).toEqual(p.items.map(x => [x.name, x.defId]));
+      expect(bag.some(x => x.name === 'Health Potion (E)')).toBe(true);
+      const worn = wornOf(h, RULES);
+      for (const item of bag) {
+        if (item.slot) expect(worn[item.slot]).toBe(item.id);
       }
       expect(hpOf(h.life, sheet.hpMax)).toBe(sheet.hpMax);
       expect(h.mana).toBe(sheet.manaMax);
@@ -87,7 +91,7 @@ describe('the starter campaign, one atomic step', () => {
       }
     }
     const dolan = s.hunters[0]!;
-    const shield = dolan.items.find(i => i.name === 'Dented Tower Shield')!;
+    const shield = bagOf(dolan, RULES).find(i => i.name === 'Dented Tower Shield')!;
     expect(shield.armor).toBeGreaterThan(0);
     const bram = s.hunters.find(h => h.name === 'Bram Halstead')!;
     expect(bram.skills.map(k => k.name)).toContain('Mending Aura');
@@ -174,7 +178,7 @@ describe('the starter campaign, one atomic step', () => {
 
     // Chapter 1 gives 2 Health Potions (E) and Quest 1; Chapter 2 issues Quest 2; Chapter 5 gives Guest (+1 dis).
     expect(story.chapters[0]!.rewards.items).toHaveLength(1);
-    expect(story.chapters[0]!.rewards.items[0]).toMatchObject({ name: 'Health Potion (E)', qty: 2, rankCap: true });
+    expect(resolveGrant(story.chapters[0]!.rewards.items[0]!, RULES)).toMatchObject({ name: 'Health Potion (E)', qty: 2, rankCap: true });
     expect(story.chapters[0]!.quest?.title).toBe("Thursday's Gate");
     expect(story.chapters[0]!.quest?.rewards.xp).toBe(50);
     expect(story.chapters[1]!.quest?.title).toBe('Tidewall Cannery Gate');

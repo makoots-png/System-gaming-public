@@ -17,8 +17,9 @@
 import { grantLines, newRewards } from '../rewards.ts';
 import type { RewardRules, RewardTitle, Rewards, SystemWords } from '../rewards.ts';
 import { BONUS_KEYS, BONUS_LABELS, RULES } from '../rules.ts';
-import { BUNDLE_ITEMS, SHOP_ITEMS, itemOf } from './items.ts';
-import type { ItemTemplate } from './items.ts';
+import { BUNDLE_ITEMS, SHOP_ITEMS } from './items.ts';
+import type { ItemGrant } from './item-book.ts';
+import type { ItemDefId } from '../ids.ts';
 
 /** The moments an award for roleplay is for, in the order the shelf lists them. */
 export const MOMENTS = ['hard', 'sacrifice', 'lie', 'kindness', 'speech', 'silence', 'rivalry', 'joke', 'spotlight', 'mind', 'owned', 'comic', 'goodbye', 'secret', 'promise', 'mercy', 'fear', 'any'] as const;
@@ -68,11 +69,12 @@ const boon = (name: string, text: string, extra: Partial<Rewards> = {}): Rewards
 const title = (t: RewardTitle, extra: Partial<Rewards> = {}): Rewards => ({ ...newRewards(), ...extra, title: t });
 /** The held reroll of the shelf: a d20 rolled again, once, the second kept. */
 const REROLL = 'Once, roll one of your d20s again and keep the second roll.';
-const HEALTH_POTION: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
+const ref = (defId: ItemDefId): ItemGrant => ({ kind: 'ref', defId, qty: 1 });
+const HEALTH_POTION: ItemGrant = ref(SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!.defId);
 /** A31's item: worn, a status that gives its bearer a shield of a quarter of its max HP as each fight begins. */
-const PUNCHLINE: ItemTemplate = itemOf(RULES, BUNDLE_ITEMS.punchline);
+const PUNCHLINE: ItemGrant = ref(BUNDLE_ITEMS.punchline.defId);
 /** A46's item: a thing exchanged at a goodbye, worth nothing to the shop. */
-const KEEPSAKE: ItemTemplate = itemOf(RULES, BUNDLE_ITEMS.keepsake);
+const KEEPSAKE: ItemGrant = ref(BUNDLE_ITEMS.keepsake.defId);
 
 type Entry = Omit<BuiltInBundle, 'rare'> & { readonly rare?: true };
 const ENTRIES: readonly Entry[] = [

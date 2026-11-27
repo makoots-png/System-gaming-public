@@ -1,13 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
 import { MEM_EVENTS, database, handler, memoryStore, openDatabase, postgresStore, serverOf } from '../server.ts';
-import { apiError, parseEvent } from '../src/core/protocol.ts';
-import type { StoredEvent } from '../src/core/protocol.ts';
+import { CATALOG_MAX, CATALOG_READ_MAX, apiError, parseEvent } from '../src/core/protocol.ts';
+import type { CatalogDoc, StoredEvent } from '../src/core/protocol.ts';
 import type { Store } from '../server.ts';
 import { DOC_MAX, ROOM_PAGE, ROOM_SHEETS, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
-import { ROOM_TTL_MS } from '../src/core/room-server.ts';
+import { CATALOG_TTL_MS, ROOM_TTL_MS } from '../src/core/room-server.ts';
 import { newEvent } from '../src/core/protocol.ts';
+import { catalogIdOf } from '../src/core/catalog-id.ts';
+import { builtInItemId, customItemDefId } from '../src/core/ids.ts';
+import type { CatalogId, CatalogKey } from '../src/core/ids.ts';
+import { itemDefDataOf } from '../src/core/registry/item-book.ts';
+import { SHOP_ITEMS, parseItem } from '../src/core/registry/items.ts';
+import { sha256Hex } from '../src/core/sha256.ts';
 import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
 import { worstBody, worstChapter } from './fixtures/worst-chapter.ts';
 import { roomRulesOf } from '../src/core/hunter/build.ts';
@@ -344,7 +350,7 @@ describe('events', () => {
     const { code, gm } = await newRoom();
     const post = (from: string, type: string, payload: unknown, headers: Record<string, string> = token(from)) => call('POST', `/api/rooms/${code}/events`, { headers, body: { from, type, payload } });
     const offer = 'd-player1-mo1', end = `${offer}-e`, A = `${PLAYER}:h1`, B = `${OTHER}:h3`;
-    const potion = { from: 'i2', item: { name: 'Healing Potion', qty: 1 } };
+    const potion = { from: 'i2', item: { kind: 'adhoc', qty: 1, item: { name: 'Healing Potion' } } };
     expect((await post(PLAYER, 'offer', { eid: offer, by: A, to: [B], names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 0, items: [potion] }, asks: { gold: 20, items: [] } })).body).toEqual({ seq: 1 });
     const answers = await Promise.all([
       post(OTHER, 'offerEnd', { eid: end, by: B, to: [A], offer, how: 'accept', gives: { gold: 20, items: [] } }),
@@ -404,10 +410,13 @@ describe('events', () => {
 
 describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
   const THIRD = 'd-player3', A = `${PLAYER}:h1`, B = `${OTHER}:h3`;
-  const sword = { id: 'i1', name: 'Iron Sword', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1 };
-  const potions = { id: 'i2', name: 'Healing Potion', rar: 'common', type: 'consumable', qty: 3 };
+  // bag lines by reference (item sync PR 2): a custom sword and potions whose defs the sheet carries, so the server names them on a face
+  const SWORD_ID = 'c:cat-servertest00:ironsword0000000', POTION_ID = 'c:cat-servertest00:healingpotion000';
+  const sword = { kind: 'ref', id: 'i1', defId: SWORD_ID, qty: 1 };
+  const potions = { kind: 'ref', id: 'i2', defId: POTION_ID, qty: 3 };
+  const defs = { [SWORD_ID]: { name: 'Iron Sword', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {}, desc: '', armor: 0, resist: 0 }, [POTION_ID]: { name: 'Healing Potion', rar: 'common', type: 'consumable', slot: null, dice: '', bonus: {}, desc: '', armor: 0, resist: 0 } };
   /** Mira, with a worn sword and three potions in her bag. */
-  const mira = { from: OTHER, data: { hunter: { id: 'h3', name: 'Mira', level: 4, job: 'Healer', items: [sword, potions], equipped: { weapon: 'i1' } } } };
+  const mira = { from: OTHER, data: { hunter: { id: 'h3', name: 'Mira', level: 4, job: 'Healer', items: [sword, potions], equipped: { weapon: 'i1' } }, defs } };
   const offer = (eid: string) => ({ eid, by: A, to: [B], names: { by: 'Kai', to: 'Mira' }, gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } });
   /** A room with Kai's and Mira's sheets, a third player's, and an offer from Kai to Mira that Mira refused. */
   async function tradeRoom() {
@@ -428,7 +437,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     const { poll } = await tradeRoom();
     const sheets = (await poll(PLAYER)).body.sheets;
     expect(sheets[A].data).toMatchObject({ hunter: { id: 'h1', name: 'Kai' } });
-    expect(sheets[B].data).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: [{ id: 'i2', name: 'Healing Potion', qty: 3, rar: 'common' }] } });
+    expect(sheets[B].data).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: [{ id: 'i2', qty: 3, defId: POTION_ID, name: 'Healing Potion', rar: 'common' }] } });
     expect(sheets[`${THIRD}:h1`].data).toEqual({ face: { name: 'Eldrin', level: 1, job: null, bag: [] } });
   });
 
@@ -438,7 +447,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect((await rules(false)).status).toBe(200);
     expect((await poll(PLAYER)).body.sheets[B].data).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: null } });
     expect((await rules(true)).status).toBe(200);
-    expect((await poll(PLAYER)).body.sheets[B].data.face.bag).toEqual([{ id: 'i2', name: 'Healing Potion', qty: 3, rar: 'common' }]);
+    expect((await poll(PLAYER)).body.sheets[B].data.face.bag).toEqual([{ id: 'i2', qty: 3, defId: POTION_ID, name: 'Healing Potion', rar: 'common' }]);
   });
 
   test('the GM\'s poll carries every sheet whole and every message, sealed ones too', async () => {
@@ -860,7 +869,7 @@ describe('a Postgres that does not answer', () => {
       expect(health.status).toBe(503);
       expect(health.body).toMatchObject({ ok: false, db: 'postgres', error: 'ERR_POSTGRES_CONNECTION_REFUSED' });
       expect(Number.isNaN(Date.parse(health.body.since))).toBe(false);
-      for (const [method, path] of [['POST', '/api/rooms'], ['GET', '/api/rooms/ABCD23?peek=1'], ['GET', '/api/rooms/ABCD23?after=0']] as const) {
+      for (const [method, path] of [['POST', '/api/rooms'], ['GET', '/api/rooms/ABCD23?peek=1'], ['GET', '/api/rooms/ABCD23?after=0'], ['GET', `/api/catalogs/${catalogIdOf('down_pg_catalog_key_1234' as CatalogKey)}`]] as const) {
         expect(await call(method, path, { server })).toEqual({ status: 503, body: apiError('noDatabase') });
       }
     } finally { await db.close(); }
@@ -1096,6 +1105,272 @@ pgOnly('Postgres rows (with DATABASE_URL)', () => {
     finally { await sql.close(); }
     const r = await call('GET', `/api/rooms/${code}`);
     expect([r.status, r.body.sheets]).toEqual([200, {}]);
+  });
+
+  test('a catalog is stored as a JSONB object, not as a string of JSON', async () => {
+    const key = `pg_jsonb_cat_key_${Date.now()}` as CatalogKey, id = catalogIdOf(key);
+    const put = await call('PUT', `/api/catalogs/${id}`, { headers: { 'x-catalog-key': key }, body: { ifRev: 0, data: { items: {}, statuses: {}, shop: null } } });
+    expect(put).toEqual({ status: 200, body: { id, rev: 1 } });
+    const sql = new Bun.SQL(PG!);
+    try {
+      expect((await sql`SELECT jsonb_typeof(data) AS t FROM catalogs WHERE id = ${id}`).map(r => r.t)).toEqual(['object']);
+    } finally { await sql.close(); }
+  });
+});
+
+describe('GM item catalogs (item sync PR 3)', () => {
+  let seq = 0;
+  const freshKey = (tag: string): { key: CatalogKey; id: CatalogId; hdr: Record<string, string> } => {
+    const key = `catkey_${tag}_${Date.now()}_${++seq}`.padEnd(28, 'x') as CatalogKey;
+    const id = catalogIdOf(key);
+    return { key, id, hdr: { 'x-catalog-key': key } };
+  };
+  const itemDef = (name: string, rar: 'common' | 'rare' | 'epic' = 'rare', desc = '') =>
+    itemDefDataOf(parseItem({ name, rar, type: 'misc', slot: null, qty: 1, dice: '', bonus: {}, desc })!);
+  const gwStatus = { label: 'Grievous Wounds', desc: 'Receives less healing.', ops: [{ op: 'share' as const, on: 'healed' as const, pct: -70 }] };
+  const potionId = builtInItemId('health-potion');
+  const swordId = SHOP_ITEMS[0]!.defId === potionId ? SHOP_ITEMS[1]!.defId : SHOP_ITEMS[0]!.defId;
+
+  test('PUT creates at rev 1, updates on matching ifRev, GET returns the whole doc, and wrong or non-derived keys get 403', async () => {
+    const { id, hdr } = freshKey('crud');
+    const other = freshKey('other');
+    const relicId = customItemDefId(id, 'relic00000000001');
+    const doc1: CatalogDoc = { items: { [relicId]: itemDef('Sun Relic', 'epic') }, statuses: { grievous: gwStatus }, shop: null };
+    const doc2: CatalogDoc = { items: { [relicId]: itemDef('Moon Relic', 'epic') }, statuses: { grievous: gwStatus }, shop: [relicId] };
+
+    // Missing, wrong, or non-derived catalog keys are refused 403
+    expect(await call('PUT', `/api/catalogs/${id}`, { body: { ifRev: 0, data: doc1 } })).toEqual({ status: 403, body: apiError('badCatalogKey') });
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: other.hdr, body: { ifRev: 0, data: doc1 } })).toEqual({ status: 403, body: apiError('badCatalogKey') });
+    expect(await call('PUT', '/api/catalogs/cat-notderived00000000', { headers: hdr, body: { ifRev: 0, data: doc1 } })).toEqual({ status: 403, body: apiError('badCatalogKey') });
+    expect(await call('GET', `/api/catalogs/${id}`, { headers: other.hdr })).toEqual({ status: 403, body: apiError('badCatalogKey') });
+    expect(await call('PUT', '/api/catalogs/bad-id', { headers: hdr, body: { ifRev: 0, data: doc1 } })).toEqual({ status: 400, body: apiError('badCatalog') });
+
+    // Nonexistent catalog: GET is 404 and PUT with ifRev > 0 is 409 with rev 0
+    expect(await call('GET', `/api/catalogs/${id}`, { headers: hdr })).toEqual({ status: 404, body: apiError('noSuchCatalog') });
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 1, data: doc1 } })).toEqual({ status: 409, body: apiError('revConflict', { rev: 0 }) });
+
+    // Foreign custom key in doc is refused 400
+    const foreignId = customItemDefId(other.id, 'foreign000000001');
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 0, data: { items: { [foreignId]: itemDef('Stolen') }, statuses: {}, shop: null } } }))
+      .toEqual({ status: 400, body: apiError('badCatalog') });
+
+    // Create with ifRev: 0 -> rev 1
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 0, data: doc1 } })).toEqual({ status: 200, body: { id, rev: 1 } });
+    expect(await call('GET', `/api/catalogs/${id}`, { headers: hdr })).toEqual({ status: 200, body: { id, rev: 1, data: doc1 } });
+
+    // Stale ifRev (0 or 99) -> 409 with current rev 1
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 0, data: doc2 } })).toEqual({ status: 409, body: apiError('revConflict', { rev: 1 }) });
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 99, data: doc2 } })).toEqual({ status: 409, body: apiError('revConflict', { rev: 1 }) });
+
+    // Matching ifRev: 1 -> rev 2, and GET reflects the update
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 1, data: doc2 } })).toEqual({ status: 200, body: { id, rev: 2 } });
+    expect(await call('GET', `/api/catalogs/${id}`, { headers: hdr })).toEqual({ status: 200, body: { id, rev: 2, data: doc2 } });
+
+    // Two concurrent updates at ifRev: 2: exactly one wins (rev 3) and the other gets 409 with rev 3
+    const race = await Promise.all([
+      call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 2, data: doc1 } }),
+      call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 2, data: doc2 } }),
+    ]);
+    expect(race.map(r => r.status).sort()).toEqual([200, 409]);
+    expect(race.find(r => r.status === 200)!.body).toEqual({ id, rev: 3 });
+    expect(race.find(r => r.status === 409)!.body).toEqual(apiError('revConflict', { rev: 3 }));
+  });
+
+  test('catalog PUT accepts up to 256 KiB (past the 64 KiB room cap) and refuses over 256 KiB with 413; room routes keep 64 KiB', async () => {
+    const { id, hdr } = freshKey('size');
+    // ~130 KiB catalog (200 items × ~650 bytes each): well past 64 KiB, well under 256 KiB
+    const items: CatalogDoc['items'] = {};
+    for (let i = 0; i < 200; i++) {
+      items[customItemDefId(id, `bigitem${String(i).padStart(9, '0')}`)] = itemDef(`Big ${i}`, 'rare', 'd'.repeat(500));
+    }
+    const medium: CatalogDoc = { items, statuses: {}, shop: null };
+    const mediumBytes = new TextEncoder().encode(JSON.stringify(medium)).length;
+    expect(mediumBytes).toBeGreaterThan(100_000);
+    expect(mediumBytes).toBeLessThan(CATALOG_MAX);
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 0, data: medium } })).toEqual({ status: 200, body: { id, rev: 1 } });
+
+    // Over CATALOG_MAX (256 KiB) inside data -> 413
+    const overData = { items: {}, statuses: {}, shop: null, pad: 'x'.repeat(CATALOG_MAX + 50) };
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 1, data: overData } })).toEqual({ status: 413, body: apiError('tooLarge') });
+
+    // Over CATALOG_BODY_MAX raw body -> 413
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: `{"ifRev":1,"data":{"items":{},"statuses":{},"shop":null},"pad":"${'y'.repeat(CATALOG_MAX + 2000)}"}` }))
+      .toEqual({ status: 413, body: apiError('tooLarge') });
+
+    // Non-catalog route (/catalog/read) still enforces 64 KiB MAX_BODY
+    const { code } = await newRoom();
+    expect((await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: [], pad: 'z'.repeat(70_000) } })).status).toBe(413);
+  });
+
+  test('linking a room requires both keys, and one catalog PUT moves the pointer of two linked rooms', async () => {
+    const { id, hdr } = freshKey('link');
+    const other = freshKey('linkother');
+    const roomA = await newRoom();
+    const roomB = await newRoom();
+    const doc1: CatalogDoc = { items: {}, statuses: {}, shop: null };
+    const doc2: CatalogDoc = { items: { [potionId]: itemDef('Super Potion', 'rare') }, statuses: { grievous: gwStatus }, shop: [potionId] };
+
+    // Room with no catalog omits catalog pointer and answers 404 on /catalog/read
+    expect((await call('GET', `/api/rooms/${roomA.code}`)).body.catalog).toBeUndefined();
+    expect(await call('POST', `/api/rooms/${roomA.code}/catalog/read`, { body: { ids: [] } })).toEqual({ status: 404, body: apiError('noSuchCatalog') });
+
+    // Missing GM key -> 403 gmOnly; missing/wrong catalog key -> 403 badCatalogKey; missing catalog -> 404 noSuchCatalog
+    expect(await call('PUT', `/api/rooms/${roomA.code}/catalog`, { headers: hdr, body: { id } })).toEqual({ status: 403, body: apiError('gmOnly') });
+    expect(await call('PUT', `/api/rooms/${roomA.code}/catalog`, { headers: roomA.gm, body: { id } })).toEqual({ status: 403, body: apiError('badCatalogKey') });
+    expect(await call('PUT', `/api/rooms/${roomA.code}/catalog`, { headers: { ...roomA.gm, ...other.hdr }, body: { id } })).toEqual({ status: 403, body: apiError('badCatalogKey') });
+    expect(await call('PUT', `/api/rooms/${roomA.code}/catalog`, { headers: { ...roomA.gm, ...hdr }, body: { id } })).toEqual({ status: 404, body: apiError('noSuchCatalog') });
+
+    // Create catalog, link both Room A and Room B
+    expect((await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 0, data: doc1 } })).status).toBe(200);
+    expect(await call('PUT', `/api/rooms/${roomA.code}/catalog`, { headers: { ...roomA.gm, ...hdr }, body: { id } })).toEqual({ status: 200, body: { id, rev: 1 } });
+    expect(await call('PUT', `/api/rooms/${roomB.code}/catalog`, { headers: { ...roomB.gm, ...hdr }, body: { id } })).toEqual({ status: 200, body: { id, rev: 1 } });
+    expect((await call('GET', `/api/rooms/${roomA.code}`)).body.catalog).toEqual({ id, rev: 1 });
+    expect((await call('GET', `/api/rooms/${roomB.code}`)).body.catalog).toEqual({ id, rev: 1 });
+
+    // One PUT moves the pointer in BOTH rooms (even unopened Room B)
+    expect(await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 1, data: doc2 } })).toEqual({ status: 200, body: { id, rev: 2 } });
+    expect((await call('GET', `/api/rooms/${roomA.code}`)).body.catalog).toEqual({ id, rev: 2 });
+    expect((await call('GET', `/api/rooms/${roomB.code}`)).body.catalog).toEqual({ id, rev: 2 });
+  });
+
+  test('POST /api/rooms/:code/catalog/read returns only built-in overrides, shop items, and asked own custom ids, naming missing/foreign ids in gone', async () => {
+    const { id, hdr } = freshKey('read');
+    const other = freshKey('readother');
+    const { code, gm } = await newRoom();
+    const shopCustom = customItemDefId(id, 'shopcustom000001');
+    const askedCustom = customItemDefId(id, 'askedcustom00002');
+    const secretCustom = customItemDefId(id, 'secretcustom0003');
+    const missingCustom = customItemDefId(id, 'missingcustom004');
+    const foreignCustom = customItemDefId(other.id, 'foreigncustom005');
+    const doc: CatalogDoc = {
+      items: {
+        [potionId]: itemDef('Edited Potion', 'common'),
+        [shopCustom]: itemDef('Shop Dagger', 'rare'),
+        [askedCustom]: itemDef('Asked Ring', 'epic'),
+        [secretCustom]: itemDef('GM Secret Loot', 'epic'),
+      },
+      statuses: { grievous: gwStatus },
+      shop: [swordId, shopCustom],
+    };
+    expect((await call('PUT', `/api/catalogs/${id}`, { headers: hdr, body: { ifRev: 0, data: doc } })).status).toBe(200);
+    expect((await call('PUT', `/api/rooms/${code}/catalog`, { headers: { ...gm, ...hdr }, body: { id } })).status).toBe(200);
+
+    // Asking for nothing returns built-in overrides + shop custom items + statuses + shop (never askedCustom or secretCustom)
+    const emptyRead = await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: [] } });
+    expect(emptyRead.status).toBe(200);
+    expect(emptyRead.body.id).toBe(id);
+    expect(emptyRead.body.rev).toBe(1);
+    expect(emptyRead.body.statuses).toEqual({ grievous: gwStatus });
+    expect(emptyRead.body.shop).toEqual([swordId, shopCustom]);
+    expect(Object.keys(emptyRead.body.defs).sort()).toEqual([potionId, shopCustom].sort());
+    expect(emptyRead.body.gone).toEqual([]);
+
+    // Asking for askedCustom, missingCustom, foreignCustom, and unedited built-in swordId
+    const read = await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: [askedCustom, missingCustom, foreignCustom, swordId] } });
+    expect(read.status).toBe(200);
+    expect(Object.keys(read.body.defs).sort()).toEqual([potionId, shopCustom, askedCustom].sort());
+    expect(read.body.defs[secretCustom]).toBeUndefined();
+    expect(read.body.gone).toEqual([missingCustom, foreignCustom]);
+
+    // Over 400 ids or invalid id -> 400 badCatalog
+    const tooMany = Array.from({ length: CATALOG_READ_MAX + 1 }, (_, i) => customItemDefId(id, `over${String(i).padStart(12, '0')}`));
+    expect(await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: tooMany } })).toEqual({ status: 400, body: apiError('badCatalog') });
+    expect(await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: ['bad-id'] } })).toEqual({ status: 400, body: apiError('badCatalog') });
+    expect(await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: 'not-array' } })).toEqual({ status: 400, body: apiError('badCatalog') });
+  });
+
+  test('a room poll reads only catalogPointer (never loading the catalog blob) and fills FaceLine names/rarities from sheet defs only', async () => {
+    const st = await freshStore(), asked: string[] = [];
+    const spy = new Proxy(st, {
+      get(target, name, receiver) {
+        const v: unknown = Reflect.get(target, name, receiver);
+        if (typeof v !== 'function' || name === 'see' || name === 'presence') return v;
+        return async (...args: unknown[]) => { asked.push(String(name)); return v.apply(target, args); };
+      },
+    });
+    const server = serverOf(openDatabase(spy));
+    try {
+      const { id, hdr } = freshKey('noblog');
+      const liveId = customItemDefId(id, 'livecatalog00001');
+      const deletedId = customItemDefId(id, 'deleteditem00002');
+      const made = await call('POST', '/api/rooms', { server }), code = made.body.code as string, gm = { 'x-gm-key': made.body.gmKey as string };
+      const doc: CatalogDoc = { items: { [liveId]: itemDef('Live Blade', 'rare') }, statuses: {}, shop: null };
+      expect((await call('PUT', `/api/catalogs/${id}`, { server, headers: hdr, body: { ifRev: 0, data: doc } })).status).toBe(200);
+      expect((await call('PUT', `/api/rooms/${code}/catalog`, { server, headers: { ...gm, ...hdr }, body: { id } })).status).toBe(200);
+
+      // Push Mira's sheet with: built-in potion, live catalog item (no sheet def), deleted custom item (with sheet def), and adhoc item
+      const miraBody = {
+        from: OTHER,
+        data: {
+          hunter: {
+            id: 'h3',
+            name: 'Mira',
+            level: 3,
+            job: null,
+            items: [
+              { kind: 'ref', id: 'i1', defId: potionId, qty: 2 },
+              { kind: 'ref', id: 'i2', defId: liveId, qty: 1 },
+              { kind: 'ref', id: 'i3', defId: deletedId, qty: 1 },
+              { kind: 'adhoc', id: 'i4', qty: 1, item: itemDef('Rope', 'common') },
+            ],
+            equipped: {},
+          },
+          defs: { [deletedId]: itemDef('Old Relic', 'epic') },
+        },
+      };
+      expect((await call('PUT', `/api/rooms/${code}/sheets/${OTHER}:h3`, { server, headers: token(OTHER), body: miraBody })).status).toBe(200);
+      expect((await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { server, headers: token(PLAYER), body: sheetOf(PLAYER, 'Kai') })).status).toBe(200);
+
+      asked.length = 0;
+      const poll = await call('GET', `/api/rooms/${code}?after=0&d=${PLAYER}`, { server, headers: token(PLAYER) });
+      expect(poll.status).toBe(200);
+      expect(poll.body.catalog).toEqual({ id, rev: 1 });
+      expect(asked).toContain('catalogPointer');
+      expect(asked).not.toContain('getCatalog');
+      expect(asked).not.toContain('roomCatalog');
+      expect(poll.body.sheets[`${OTHER}:h3`].data.face.bag).toEqual([
+        { id: 'i1', qty: 2, defId: potionId },
+        { id: 'i2', qty: 1, defId: liveId },
+        { id: 'i3', qty: 1, defId: deletedId, name: 'Old Relic', rar: 'epic' },
+        { id: 'i4', qty: 1, name: 'Rope', rar: 'common' },
+      ]);
+    } finally { await st.close(); }
+  });
+
+  test('sweep keeps catalogs linked by a live room and unlinked catalogs within 30 days, and sweeps expired unlinked or dead-room catalogs', async () => {
+    const st = await freshStore();
+    try {
+      const t0 = Date.parse('2026-11-01T12:00:00.000Z');
+      const liveRoomCode = parseRoomCode('LV2345')!;
+      const deadRoomCode = parseRoomCode('DD2345')!;
+      const cLive = freshKey('sweeplive');
+      const cDead = freshKey('sweepdead');
+      const cUnlinkedOld = freshKey('sweepold');
+      const cUnlinkedFresh = freshKey('sweepfresh');
+      const emptyDoc: CatalogDoc = { items: {}, statuses: {}, shop: null };
+
+      await st.create(liveRoomCode, 'gm-live', t0);
+      await st.create(deadRoomCode, 'gm-dead', t0);
+      for (const c of [cLive, cDead, cUnlinkedOld]) {
+        expect(await st.putCatalog(c.id, sha256Hex(c.key), 0, emptyDoc, t0)).toEqual({ ok: true, rev: 1 });
+      }
+      expect(await st.linkCatalog(liveRoomCode, cLive.id, sha256Hex(cLive.key), t0)).toEqual({ ok: true, pointer: { id: cLive.id, rev: 1 } });
+      expect(await st.linkCatalog(deadRoomCode, cDead.id, sha256Hex(cDead.key), t0)).toEqual({ ok: true, pointer: { id: cDead.id, rev: 1 } });
+
+      // Touch liveRoomCode at day 25 and create a fresh unlinked catalog at day 25
+      const day = 24 * 3600 * 1000;
+      expect(await st.touch(liveRoomCode, t0 + 25 * day)).toBe(true);
+      expect(await st.putCatalog(cUnlinkedFresh.id, sha256Hex(cUnlinkedFresh.key), 0, emptyDoc, t0 + 25 * day)).toEqual({ ok: true, rev: 1 });
+
+      // Sweep at t0 + 30 days + 1 ms: deadRoomCode expires, liveRoomCode is still live (last touched 5 days ago)
+      const swept = await st.sweep(t0 + CATALOG_TTL_MS + 1);
+      expect(swept).toContain(deadRoomCode);
+      expect(swept).not.toContain(liveRoomCode);
+      expect(await st.getCatalog(cLive.id), 'catalog linked by live room survives past 30 days').not.toBeNull();
+      expect(await st.getCatalog(cUnlinkedFresh.id), 'unlinked catalog updated within 30 days survives').not.toBeNull();
+      expect(await st.getCatalog(cDead.id), 'catalog linked only by swept dead room is swept').toBeNull();
+      expect(await st.getCatalog(cUnlinkedOld.id), 'unlinked catalog older than 30 days is swept').toBeNull();
+    } finally { await st.close(); }
   });
 });
 

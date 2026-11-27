@@ -3,6 +3,9 @@
 // and the subscribers, the one wait for the save's next write (`flushTimer`), this tab's unsaved snapshot kept for
 // Export backup while read-only (`unsavedBackup`), and runs the store's life
 // (src/core/store-life.ts): whether this tab may change the save and whether storage holds it. What a save is, how one is repaired and what an old one becomes is src/core/save.ts.
+import { ITEM_STAMP_CHARS, ITEM_STAMP_LEN, customItemDefId, parseCatalogKey } from '../core/ids.ts';
+import type { CatalogId, CatalogKey, ItemDefId } from '../core/ids.ts';
+import { importRekey, withCatalog } from '../core/item-refs.ts';
 import { ACCENTS, TEXT_SCALES, bindSave, rules } from './rules.ts';
 import { featsFor } from '../core/hunter/feats.ts';
 import type { FeatDef } from '../core/hunter/feats.ts';
@@ -46,6 +49,13 @@ function randToken(): string {
   const a = new Uint8Array(24); crypto.getRandomValues(a);
   return Array.from(a, b => b.toString(36).padStart(2, '0')).join('').slice(0, 32);
 }
+/** A custom item's stamp: 16 of `ITEM_STAMP_CHARS` from the browser's random source (Fable C1: knowing an id is the right to read its def). */
+function randStamp(): string {
+  const a = new Uint8Array(ITEM_STAMP_LEN); crypto.getRandomValues(a);
+  return Array.from(a, b => ITEM_STAMP_CHARS[b % ITEM_STAMP_CHARS.length]).join('');
+}
+/** A new catalog key: the secret that owns this campaign's custom items (item-refs.ts `withCatalog`, `importRekey`). */
+const randCatalogKey = (): CatalogKey => parseCatalogKey(`ck_${randToken()}`)!;
 /** Active class trees: production `CLASS_TREES` always takes precedence over Playwright test fixtures. */
 export const activeClassTrees = (): ClassTreeMap => {
   const injected = (globalThis as { __e2eClassTrees?: ClassTreeMap }).__e2eClassTrees;
@@ -308,7 +318,8 @@ export type Replaced = 'replaced' | 'unkept';
  */
 function replace(next: Save, backupReason: string, reason: string, anyway: boolean): Replaced {
   if (!pushBackup(backupReason, currentText(), backupCap(state)) && !anyway) return 'unkept';
-  state = keepPhone(next, state);
+  // a campaign whose catalog this phone holds no key for gets a catalog of its own at once (item-refs.ts `importRekey`)
+  state = importRekey(keepPhone(next, state), randCatalogKey());
   newCampaignTold(state);
   carry(storeStep(life, { type: 'replaced' }), null, true);
   emit({ reason, replaced: true });
@@ -355,7 +366,7 @@ export const store = {
     if (!mayChange(life)) return refuse(READ_ONLY);
     const answered = step(state);
     if (isRefused(answered)) return answered;
-    const next = asksKept(lettersKept(answered));
+    const R = rules(), next = asksKept(lettersKept(answered, R), R);
     // a player in a room checks the built-ins with the GM's feats from the room's feats doc over them; alone or the GM, this save's library
     const done = noticed(next, () => {
       const room = noticeOf(next), R = rules();
@@ -369,6 +380,21 @@ export const store = {
   },
   /** A new id of the kind `prefix` names (src/core/ids.ts `SaveIds`), from the save's `seq`. */
   id: <P extends string>(prefix: P): IdOf<P> => saveId(prefix, ++state.seq),
+  /** A random stamp for a custom item's id (ids.ts `customItemDefId`), for a core step that mints them (pack.ts `mergePack`). */
+  stamp: (): string => randStamp(),
+  /**
+   * This campaign's catalog, minted with a new key at the first custom item (item-refs.ts `withCatalog`, one write);
+   * null when the write is refused (a read-only tab).
+   */
+  catalog(): CatalogId | null {
+    if (state.library.catalogId === null) store.apply('catalog', s => withCatalog(s, randCatalogKey()));
+    return state.library.catalogId;
+  },
+  /** A new custom item's id under this campaign's catalog (`catalog`), or null when there is none. */
+  itemDefId(): ItemDefId | null {
+    const cat = store.catalog();
+    return cat ? customItemDefId(cat, randStamp()) : null;
+  },
   /** The active hunter. A save holds one: the repair gives a save read with none the starter (save.ts). */
   active: (): Hunter => state.hunters.find(h => h.id === state.settings.activeHunterId) ?? state.hunters[0]!,
   hunter: (id: string): Hunter | null => state.hunters.find(h => h.id === id) ?? null,

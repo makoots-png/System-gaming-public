@@ -307,7 +307,7 @@ export function register(app) {
   }
   function kitHtml(e, h, acts) {
     const mine = myTurn(e), inFight = new Set(hunterAbilities(h, app.rules()).map(a => itemOfAbility(a)));
-    const items = (h.items || []).filter(i => i && i.type === 'consumable' && !inFight.has(i.id) && int(i.qty) > 0).slice(0, 12).map(i =>
+    const items = app.api.inventory.bag(h).filter(i => i && i.type === 'consumable' && !inFight.has(i.id) && int(i.qty) > 0).slice(0, 12).map(i =>
       `<li><span class="tb-kn">${esc(str(i.name, 60))}<small>×${int(i.qty)}${i.desc ? ' · ' + esc(str(i.desc, 60)) : ''}</small></span><button type="button" data-kit-item="${esc(i.id)}" title="Use ${esc(str(i.name, 60))}">Use</button></li>`).join('');
     return `<section class="tb-kit${mine ? ' my-turn' : ''}" data-kit aria-label="Your abilities"><h3 class="tb-kh">${mine ? 'YOUR TURN' : 'YOUR ABILITIES'}</h3>
       ${acts}
@@ -445,7 +445,7 @@ export function register(app) {
       return {
         list: hunterAbilities(h, app.rules()), readyAt: myTurn(e) ? e.ready : {}, now: e.now, costCut: app.api.hunter.sheet(h).sheet.costCut, pinKey: myPinKey(h.id), channel: ch && ch.state === 'holding' ? ch : null,
         armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {}, answers: answersOf(e, hunterAbilities(h, app.rules())),
-        itemOf: id => h.items.find(i => i.id === id) ?? null,
+        itemOf: id => app.api.inventory.bag(h).find(i => i.id === id) ?? null,
       };
     },
     arm: ability => { const e = encounter(), h = meHunter(e); if (h) armTo(e, h, ability); },

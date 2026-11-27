@@ -60,7 +60,7 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
 
     await expect(player.locator('#toasts .toast').last()).toContainText(BORROW_WORDS.bought('Steel Longsword', { cash: 10, borrow: 57 }));
     const h = await activeHunter(player);
-    expect([h.gold, h.debt, h.items.some((i: any) => i.name === 'Steel Longsword')]).toEqual([0, 57, true]);
+    expect([h.gold, h.debt, h.bag.some((i: any) => i.name === 'Steel Longsword')]).toEqual([0, 57, true]);
     await expect(player.locator('[data-debt]')).toHaveText(debtLine(57)!);
     await expect(player.locator('#view-status [data-shop-credit]')).toHaveText(
       shopCreditLine({ life: { at: 'up' }, gold: 0, debt: 57, rank: 'E' }, RULES)!,

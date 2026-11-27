@@ -6,6 +6,7 @@
 // out through `command`, under the turn's one hold (src/core/combat/hold.ts), kept here. Publishes app.api.uses.
 import { logLine, logged } from '../core/session-log.ts';
 import { toldStep } from '../core/use-told.ts';
+import { heardStep } from '../core/item-refs.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { notifyHidden } from '../edge/notify.ts';
 import { aims, docSpots } from '../core/combat/fight-view.ts';
@@ -76,7 +77,7 @@ export function register(app) {
       const h = store.hunter(hid); if (!h) return refuse('no-hunter');
       const t = u ? toldOf(h, u) : NOBODY;
       if (!change && t.kind === 'none') return { ok: true, sent: false };
-      const w = store.apply(why, both(change ? atHunter(hid, change) : s => s, toldStep(t, app.rules())));
+      const w = store.apply(why, both(both(change ? atHunter(hid, change) : s => s, toldStep(t, app.rules())), heardStep));
       if (isRefused(w)) return w;
       if (t.kind !== 'post' || !u) return { ok: true, sent: false };
       const sy = app.api.sync;

@@ -161,7 +161,7 @@ export function register(app) {
   // ── loadouts ─────────────────────────────────────────────────────────────
   // new saves only: a lowered cap (even 0 or negative) never hides or deletes saved sets; never above the store's structural limit
   const loCap = () => loadoutCap(rules());
-  const sameSet = (h, l) => SLOTS.every(s => (l.slots[s] || null) === (h.equipped[s] || null));
+  const sameSet = (h, l) => { const worn = A().inventory.worn(h); return SLOTS.every(s => (l.slots[s] || null) === (worn[s] || null)); };
   // a fight holds hunter hid (core/combat/fight-save.ts `fightHold`, through the hunter api): its gear and build wait
   const inFight = hid => A().hunter.fightOf({ hid }) !== null;
   const LO = A().loadouts = {
@@ -189,7 +189,7 @@ export function register(app) {
   async function manageLoadout(hid, id) {
     const h = store.hunter(hid), l = h && h.loadouts.find(x => x.id === id); if (!l) return;
     const rows = SLOTS.map(s => {
-      const want = l.slots[s], it = want && h.items.find(i => i.id === want);
+      const want = l.slots[s], it = want && app.api.inventory.bag(h).find(i => i.id === want);
       return `<li><span>${esc(SLOT_LABELS[s] || s)}</span><span class="${want && !fits(it, s) ? 'bad' : ''}">${it ? esc(it.name) + (fits(it, s) ? '' : ' (cannot equip)') : '<i>empty</i>'}</span></li>`;
     }).join('');
     const v = await ui.system({ tag: '! Loadout', title: l.name, kind: 'info', layout: 'list', html: `<ul class="lo-pv">${rows}</ul>`,

@@ -3,12 +3,15 @@ import { parseFeat } from '../src/core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 import { describe, expect, test } from 'bun:test';
 import { PACK_CAP, PACK_WORDS, mergePack, packCounts, packOf, parsePack } from '../src/core/pack.ts';
-import type { MergeTarget, Pack, PackKind, PackRead } from '../src/core/pack.ts';
+import type { MergeMode, MergeTarget, Pack, PackKind, PackRead } from '../src/core/pack.ts';
 import { SCHEMA, newSave } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
 import { writeInto } from '../src/core/save-step.ts';
-import { parseItem } from '../src/core/registry/items.ts';
-import type { Item } from '../src/core/registry/items.ts';
+import { builtInDefData, parseItemDef } from '../src/core/registry/item-book.ts';
+import type { ItemDefData } from '../src/core/registry/item-book.ts';
+import { customItemDefId } from '../src/core/ids.ts';
+import type { CatalogId, ItemDefId } from '../src/core/ids.ts';
+import { DAGGER_DEF_ID, GM_CATALOG_ID, OTHER_CATALOG_ID, customId, grantRef, stampSeq } from './fixtures/items.ts';
 import { parseMonster } from '../src/core/registry/monsters.ts';
 import type { Monster } from '../src/core/registry/monsters.ts';
 import type { Skill } from '../src/core/registry/skills.ts';
@@ -22,7 +25,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { RULES } from '../src/core/rules.ts';
 import { parseBattleMap } from '../src/core/registry/maps.ts';
 import type { BattleMap } from '../src/core/registry/maps.ts';
-import { dev, gmKey, iid, mid, rbid, room, skid } from './fixtures/ids.ts';
+import { dev, gmKey, mid, rbid, room, skid } from './fixtures/ids.ts';
 import { parseStory } from '../src/core/story/story.ts';
 import type { Story } from '../src/core/story/story.ts';
 import type { StoryId } from '../src/core/ids.ts';
@@ -35,7 +38,8 @@ const CHILL: StatusDef = { label: 'Chill', desc: 'Slower in the cold.', ops: [{ 
 const DEEP_FREEZE: StatusDef = { label: 'Deep Freeze', desc: 'Frozen through.', ops: [{ op: 'applyStatus', key: statusKey('chill'), def: CHILL, duration: tick(2000) }] };
 /** An op that puts the GM's Frostbite on for 3 rounds, under `key`. */
 const frostbite = (key = 'frostbite') => ({ op: 'applyStatus' as const, key: statusKey(key), def: FROSTBITE, duration: tick(3 * RULES.fight.round) });
-const SHARD: Item = { ...parseItem({ name: 'Frost Shard', type: 'consumable', rar: 'rare' })!, id: iid('i5'), effects: [frostbite()], target: 'other' };
+const SHARD_ID = customId('frostshard');
+const SHARD: ItemDefData = { ...parseItemDef({ name: 'Frost Shard', type: 'consumable', rar: 'rare' })!, effects: [frostbite()], target: 'other' };
 const LANCE_ABILITY = abilityOf('shot', { id: abilityId('frost-lance'), name: 'Frost Lance', ops: [frostbite()] }, RULES);
 const LANCE: Skill = { id: skid('s6'), name: 'Frost Lance', type: 'active', level: 1, label: null, desc: '', ability: LANCE_ABILITY };
 const WARDEN: Monster = { ...parseMonster({ name: 'Ice Warden', rank: 'C' })!, id: mid('m7'), statuses: [{ key: 'frostbite', rounds: 3 }], abilities: [LANCE_ABILITY] };
@@ -57,8 +61,9 @@ const HUNT = { id: rbid('rb8'), name: 'Wolf hunt', rewards: { ...newRewards(), x
 function gmSave(): Save {
   const s = newSave(dev('d1'));
   s.seq = 10;
+  s.library.catalogId = GM_CATALOG_ID;
   s.library.statuses = { frostbite: copy(FROSTBITE) };
-  s.library.items = [copy(SHARD)];
+  s.library.items = { [SHARD_ID]: copy(SHARD) };
   s.library.skills = [copy(LANCE)];
   s.library.rewards = [copy(HUNT)];
   s.monsters = [copy(WARDEN)];
@@ -74,37 +79,46 @@ const read = (v: unknown): Extract<PackRead, { ok: true }> => {
 };
 const target = (s: Save): MergeTarget => ({ library: s.library, monsters: s.monsters, seq: s.seq });
 const noIds = <T extends { id: string }>(xs: T[]): Omit<T, 'id'>[] => xs.map(({ id: _id, ...x }) => x);
-const items = (n: number): Partial<Item>[] => Array.from({ length: n }, (_, i) => ({ name: `Junk ${i + 1}` }));
+/** `n` custom item defs "Junk 1" to "Junk n", by id of `catalog`, as a pack's or a library's items. */
+const items = (n: number, catalog: CatalogId = OTHER_CATALOG_ID): Record<ItemDefId, Partial<ItemDefData>> =>
+  Object.fromEntries(Array.from({ length: n }, (_, i) => [customId(`junk${String(i + 1).padStart(4, '0')}`, catalog), { name: `Junk ${i + 1}` }]));
+/** A fresh save on another phone whose library has a catalog of its own (`OTHER_CATALOG_ID`), so it can take custom items. */
+const phone = (d = 'd2', catalog: CatalogId | null = OTHER_CATALOG_ID): Save => { const s = newSave(dev(d)); s.library.catalogId = catalog; return s; };
+const defs = (s: Pick<Save, 'library'>): ItemDefData[] => Object.values(s.library.items);
+const itemNames = (s: Pick<Save, 'library'>): string[] => defs(s).map(d => d.name);
+/** Stamps a merge mints, shared by every merge of this file so two merges in one test never mint one id twice. */
+const MINT = stampSeq('p');
+const merge = <S extends MergeTarget>(t: S, p: Pack, mode: MergeMode) => mergePack(t, p, mode, MINT);
 
 describe('a pack made and read back', () => {
   test('one of each kind arrives on an empty phone as it was made, under new ids', () => {
     const from = gmSave();
     const r = read(packOf(from, AT));
     expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, maps: 1, feats: 1, stories: 1 });
-    const { save } = mergePack(target(newSave(dev('d2'))), r.pack, 'add');
+    const { save } = mergePack(target(phone()), r.pack, 'add', stampSeq('n'));
     expect(save.library.statuses).toEqual(from.library.statuses);
-    expect(noIds(save.library.items)).toEqual(noIds(from.library.items));
+    expect(defs(save)).toEqual(defs(from));
     expect(noIds(save.library.skills)).toEqual(noIds(from.library.skills));
     expect(noIds(save.library.rewards)).toEqual(noIds(from.library.rewards));
     expect(noIds(save.monsters)).toEqual(noIds(from.monsters));
     expect(noIds(save.library.maps)).toEqual(noIds(from.library.maps));
     expect(save.library.feats).toEqual(from.library.feats);
     expect(noIds(save.library.stories)).toEqual(noIds(from.library.stories));
-    expect(save.library.items[0]!.id).toBe(iid('i101'));
+    expect(Object.keys(save.library.items)).toEqual([customItemDefId(OTHER_CATALOG_ID, stampSeq('n')())]);
   });
 
   test('an icon a GM picked travels on a monster, an item and a status, and one a build lacks is dropped on arrival', () => {
     const from = gmSave();
     from.monsters = [{ ...WARDEN, icon: 'bear' }];
-    from.library.items = [{ ...SHARD, icon: 'crystal' }];
+    from.library.items = { [SHARD_ID]: { ...SHARD, icon: 'crystal' } };
     from.library.statuses = { frostbite: { ...FROSTBITE, icon: 'ward' } };
-    const { save } = mergePack(target(newSave(dev('d2'))), read(packOf(from, AT)).pack, 'add');
-    expect([save.monsters[0]!.icon, save.library.items[0]!.icon, save.library.statuses.frostbite!.icon]).toEqual(['bear', 'crystal', 'ward']);
-    const wire = copy(packOf(from, AT)) as { monsters: { icon?: string }[]; library: { items: { icon?: string }[] } };
-    wire.monsters[0]!.icon = 'gone'; wire.library.items[0]!.icon = 'gone';
-    const later = mergePack(target(newSave(dev('d2'))), read(wire).pack, 'add').save;
+    const { save } = merge(target(phone()), read(packOf(from, AT)).pack, 'add');
+    expect([save.monsters[0]!.icon, defs(save)[0]!.icon, save.library.statuses.frostbite!.icon]).toEqual(['bear', 'crystal', 'ward']);
+    const wire = copy(packOf(from, AT)) as unknown as { monsters: { icon?: string }[]; library: { items: Record<string, { icon?: string }> } };
+    wire.monsters[0]!.icon = 'gone'; wire.library.items[SHARD_ID]!.icon = 'gone';
+    const later = merge(target(phone()), read(wire).pack, 'add').save;
     expect(later.monsters[0]).not.toHaveProperty('icon');
-    expect(later.library.items[0]).not.toHaveProperty('icon');
+    expect(defs(later)[0]).not.toHaveProperty('icon');
   });
 
   test('a pack holds the library and the monsters only: no hunter, no settings, no room key', () => {
@@ -126,9 +140,9 @@ describe('a pack made and read back', () => {
   test('one entry holds that entry alone with the statuses it names, and the statuses those name', () => {
     const s = gmSave();
     s.library.statuses = { frostbite: copy(FROSTBITE), chill: copy(CHILL), 'deep-freeze': copy(DEEP_FREEZE), unrelated: { label: 'Unrelated', desc: '', ops: [] } };
-    s.library.items.push({ ...parseItem({ name: 'Freezer' })!, id: iid('i9'), effects: [{ op: 'applyStatus', key: statusKey('deep-freeze'), def: DEEP_FREEZE, duration: tick(1000) }, { op: 'cureStatus', key: statusKey('hasted') }] });
-    const doc = packOf(s, AT, 'items', 'i9');
-    expect(doc.library.items!.map(i => i.name)).toEqual(['Freezer']);
+    s.library.items[customId('freezer')] = { ...parseItemDef({ name: 'Freezer' })!, effects: [{ op: 'applyStatus', key: statusKey('deep-freeze'), def: DEEP_FREEZE, duration: tick(1000) }, { op: 'cureStatus', key: statusKey('hasted') }] };
+    const doc = packOf(s, AT, 'items', customId('freezer'));
+    expect(Object.values(doc.library.items!).map(i => i.name)).toEqual(['Freezer']);
     expect(Object.keys(doc.library.statuses!).sort()).toEqual(['chill', 'deep-freeze']);
   });
 
@@ -162,7 +176,7 @@ describe('a pack from outside data', () => {
           'Bad Key!': FROSTBITE, dead: FROSTBITE, nolabel: { desc: 'x', ops: [] }, bad: { label: 'Bad', desc: '', ops: [{ op: 'explode', amount: 9 }, { op: 'hold' }] },
           old: { label: 'Old', desc: '', ops: [{ op: 'mod', stat: 'ac', value: -1 }] }, ok: { label: 'Ok', desc: '', ops: [{ op: 'heal', amount: { kind: 'number', value: 2 } }] },
         },
-        items: [{ name: '' }, 'sword', { name: 'Sword', qty: 1e12, rar: 'godly' }],
+        items: { [customId('blank')]: { name: '' }, 'Bad Key!': { name: 'Sword' }, [customId('sword')]: { name: 'Sword', qty: 1e12, rar: 'godly' } },
         skills: [{ type: 'active' }, { name: 'Jab', ability: 'punch' }],
         rewards: [{ rewards: {} }, { name: 'Bag', rewards: 'gold' }],
         maps: [{ w: 5 }, { name: 'Pit', w: 99, tiles: 'xyz', sight: -3 }],
@@ -179,7 +193,8 @@ describe('a pack from outside data', () => {
     expect(r.pack.stories[0]).toMatchObject({ name: 'Odd', for: 'table', chapters: [{ words: { title: 'HI', line: '' }, quest: null }] });
     expect(r.pack.maps[0]).toMatchObject({ name: 'Pit', w: RULES.fight.grid.w, sight: RULES.fight.sight, fog: false });
     expect(r.pack.statuses.ok!.ops).toEqual([{ op: 'heal', amount: { kind: 'number', value: 2 } }]);
-    expect(r.pack.items[0]).toMatchObject({ name: 'Sword', qty: 9999, rar: 'common' });
+    expect(r.pack.items[customId('sword')]).toMatchObject({ name: 'Sword', rar: 'common' });
+    expect(r.pack.items[customId('sword')], 'a def holds no count').not.toHaveProperty('qty');
     expect(r.pack.skills[0]).toMatchObject({ name: 'Jab', type: 'active', ability: null });
     expect(r.pack.rewards[0]!.rewards).toEqual(newRewards());
     expect(r.pack.monsters[0]!.tweak).toEqual({});
@@ -188,25 +203,26 @@ describe('a pack from outside data', () => {
   test('500 items keep the first 200 and count 300 over', () => {
     const r = read({ schema: SCHEMA, kind: 'library', library: { items: items(500) } });
     expect(r.counts.items).toEqual({ kept: PACK_CAP.items, unreadable: 0, over: 500 - PACK_CAP.items });
-    expect(r.pack.items.at(-1)!.name).toBe('Junk 200');
+    expect(Object.values(r.pack.items).at(-1)!.name).toBe('Junk 200');
   });
 
   test('an entry keeps no key its parser does not know, nor an id', () => {
-    const r = read({ schema: SCHEMA, kind: 'library', library: { items: [{ name: 'Gem', id: 'i1', hunters: [{ name: 'x' }], gmKey: 'k' }] } });
-    expect(r.pack.items[0]).not.toHaveProperty('gmKey');
-    expect(r.pack.items[0]).not.toHaveProperty('id');
+    const r = read({ schema: SCHEMA, kind: 'library', library: { items: { [customId('gem')]: { name: 'Gem', id: 'i1', hunters: [{ name: 'x' }], gmKey: 'k' } } } });
+    expect(r.pack.items[customId('gem')]).toMatchObject({ name: 'Gem' });
+    expect(r.pack.items[customId('gem')]).not.toHaveProperty('gmKey');
+    expect(r.pack.items[customId('gem')]).not.toHaveProperty('id');
   });
 });
 
 describe('merging a pack', () => {
   test('Add keeps both: a name or key that exists arrives as "… 2", and its entries name the renamed status', () => {
     const s = gmSave();
-    const { save, report } = mergePack(target(s), read(packOf(s, AT)).pack, 'add');
+    const { save, report } = merge(target(s), read(packOf(s, AT)).pack, 'add');
     expect(save.library.statuses.frostbite).toEqual(FROSTBITE);
     expect(save.library.statuses['frostbite-2']).toEqual({ ...FROSTBITE, label: 'Frostbite 2' });
-    expect(save.library.items.map(i => i.name)).toEqual(['Frost Shard', 'Frost Shard 2']);
-    expect(save.library.items[0]!.effects).toEqual([frostbite()]);
-    expect(save.library.items[1]!.effects).toEqual([frostbite('frostbite-2')]);
+    expect(itemNames(save)).toEqual(['Frost Shard', 'Frost Shard 2']);
+    expect(defs(save)[0]!.effects).toEqual([frostbite()]);
+    expect(defs(save)[1]!.effects).toEqual([frostbite('frostbite-2')]);
     expect(save.library.skills.map(k => k.name)).toEqual(['Frost Lance', 'Frost Lance 2']);
     expect(save.library.skills.map(k => k.type === 'active' && k.ability?.ops)).toEqual([[frostbite()], [frostbite('frostbite-2')]]);
     expect(save.monsters.map(m => m.abilities[0]!.ops)).toEqual([[frostbite()], [frostbite('frostbite-2')]]);
@@ -214,27 +230,27 @@ describe('merging a pack', () => {
     expect(save.monsters.map(m => m.name)).toEqual(['Ice Warden', 'Ice Warden 2']);
     expect(save.monsters[1]!.statuses).toEqual([{ key: 'frostbite-2', rounds: 3 }]);
     expect(report.items).toEqual({ added: 1, renamed: 1, replaced: 0, full: 0 });
-    expect(new Set(save.library.items.map(i => i.id)).size).toBe(2);
+    expect(Object.keys(save.library.items)).toHaveLength(2);
   });
 
   test('Add a second time makes "… 3"', () => {
     const s = gmSave(), pack = read(packOf(s, AT)).pack;
-    const once = mergePack(target(s), pack, 'add').save;
-    const twice = mergePack(once, pack, 'add').save;
-    expect(twice.library.items.map(i => i.name)).toEqual(['Frost Shard', 'Frost Shard 2', 'Frost Shard 3']);
+    const once = merge(target(s), pack, 'add').save;
+    const twice = merge(once, pack, 'add').save;
+    expect(itemNames(twice)).toEqual(['Frost Shard', 'Frost Shard 2', 'Frost Shard 3']);
     expect(Object.values(twice.library.statuses).map(d => d.label)).toEqual(['Frostbite', 'Frostbite 2', 'Frostbite 3']);
   });
 
   test('Add renames a status whose label a built-in has, and one whose key is a built-in\'s', () => {
     const pack: Pack = { ...read({ schema: SCHEMA, kind: 'library' }).pack, statuses: { 'my-poison': { label: 'Poisoned', desc: 'Mine.', ops: [] }, hasted: { label: 'Quick', desc: '', ops: [] } } };
-    const { save } = mergePack(target(newSave(dev('d'))), pack, 'add');
+    const { save } = merge(target(newSave(dev('d'))), pack, 'add');
     expect(save.library.statuses).toEqual({ 'poisoned-2': { label: 'Poisoned 2', desc: 'Mine.', ops: [] }, 'quick-2': { label: 'Quick 2', desc: '', ops: [] } });
   });
 
   test('Add renames a status inside the statuses that apply it', () => {
     const s = gmSave();
     s.library.statuses = { chill: copy(CHILL), 'deep-freeze': copy(DEEP_FREEZE) };
-    const { save } = mergePack(target(s), read(packOf(s, AT, 'statuses')).pack, 'add');
+    const { save } = merge(target(s), read(packOf(s, AT, 'statuses')).pack, 'add');
     expect(save.library.statuses['deep-freeze-2']!.ops[0]).toEqual({ ...DEEP_FREEZE.ops[0]!, key: statusKey('chill-2') });
     expect(save.library.statuses['deep-freeze']!.ops[0]).toEqual(DEEP_FREEZE.ops[0]);
   });
@@ -249,16 +265,17 @@ describe('merging a pack', () => {
       triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('rot'), def: ROT, duration: null }] }] };
     s.library.statuses = { rot: ROT, chill: CHILL, burst: BURST, late: LATE };
     s.library.skills = [{ id: skid('s1'), name: 'Festering', type: 'passive', level: 1, label: null, desc: '', bonus: {}, worn }];
-    s.library.items = [{ ...parseItem({ name: 'Burst Ring', type: 'accessory', slot: 'ring1' })!, id: iid('i1'), worn: { ...worn, triggers: [{ ...worn.triggers![0]!, ops: [{ op: 'applyStatus', key: statusKey('burst'), def: BURST, duration: null }] }] } }];
+    const RING_ID = customId('burstring');
+    s.library.items = { [RING_ID]: { ...parseItemDef({ name: 'Burst Ring', type: 'accessory', slot: 'ring1' })!, worn: { ...worn, triggers: [{ ...worn.triggers![0]!, ops: [{ op: 'applyStatus', key: statusKey('burst'), def: BURST, duration: null }] }] } } };
     s.monsters = [{ ...parseMonster({ name: 'Einar', rank: 'C' })!, id: mid('m1'), statuses: [{ key: 'late', rounds: 2, stacks: 3 }] }];
     expect(Object.keys(packOf(s, AT, 'skills', 's1').library.statuses!)).toEqual(['rot']);
-    expect(Object.keys(packOf(s, AT, 'items', 'i1').library.statuses!)).toEqual(['chill', 'burst']);
+    expect(Object.keys(packOf(s, AT, 'items', RING_ID).library.statuses!)).toEqual(['chill', 'burst']);
     expect(Object.keys(packOf(s, AT, 'monsters', 'm1').library.statuses!)).toEqual(['rot', 'late']);
     const r = read(packOf(s, AT));
     expect(r.pack.skills[0]).toEqual(noIds(s.library.skills)[0]!);
-    expect(r.pack.items[0]!.worn).toEqual(s.library.items[0]!.worn!);
+    expect(r.pack.items[RING_ID]!.worn).toEqual(s.library.items[RING_ID]!.worn!);
     expect(r.pack.monsters[0]!.statuses).toEqual([{ key: 'late', rounds: 2, stacks: 3 }]);
-    const { save } = mergePack(target(s), r.pack, 'add');
+    const { save } = merge(target(s), r.pack, 'add');
     const skill = save.library.skills.find(k => k.name === 'Festering 2')!;
     expect(skill.type === 'passive' && skill.worn?.triggers?.[0]!.ops[0]).toMatchObject({ op: 'applyStatus', key: 'rot-2' });
     expect(save.library.statuses['burst-2']!.stack!.threshold!.ops[0]).toMatchObject({ key: 'chill-2' });
@@ -269,11 +286,11 @@ describe('merging a pack', () => {
     const s = gmSave();
     const pack = read(packOf(s, AT)).pack;
     pack.statuses.frostbite = { ...pack.statuses.frostbite!, desc: 'Colder now.' };
-    pack.items[0]!.rar = 'epic';
+    pack.items[SHARD_ID] = { ...pack.items[SHARD_ID]!, rar: 'epic' };
     pack.monsters[0]!.xp = 300;
-    const { save, report } = mergePack(target(s), pack, 'replace');
+    const { save, report } = merge(target(s), pack, 'replace');
     expect(save.library.statuses).toEqual({ frostbite: { ...FROSTBITE, desc: 'Colder now.' } });
-    expect(save.library.items).toEqual([{ ...SHARD, rar: 'epic' }]);
+    expect(save.library.items).toEqual({ [SHARD_ID]: { ...SHARD, rar: 'epic' } });
     expect(save.monsters.map(m => [m.id, m.xp])).toEqual([['m7', 300]]);
     expect(report.items).toEqual({ added: 0, renamed: 0, replaced: 1, full: 0 });
     expect(save.seq).toBe(s.seq);
@@ -281,24 +298,24 @@ describe('merging a pack', () => {
 
   test('Replace adds what has no match, and the same pack replaced twice changes nothing the second time', () => {
     const pack = read(packOf(gmSave(), AT)).pack;
-    const s = newSave(dev('d2'));
-    s.library.items = [{ ...parseItem({ name: 'Rope' })!, id: iid('i3') }];
-    const once = mergePack(target(s), pack, 'replace');
-    expect(once.save.library.items.map(i => i.name)).toEqual(['Rope', 'Frost Shard']);
-    const twice = mergePack(once.save, pack, 'replace');
+    const s = phone();
+    s.library.items = { [customId('rope', OTHER_CATALOG_ID)]: parseItemDef({ name: 'Rope' })! };
+    const once = merge(target(s), pack, 'replace');
+    expect(itemNames(once.save)).toEqual(['Rope', 'Frost Shard']);
+    const twice = merge(once.save, pack, 'replace');
     expect(twice.save).toEqual(once.save);
     expect(twice.report.items).toEqual({ added: 0, renamed: 0, replaced: 1, full: 0 });
   });
 
   test('a merge never grows a list past its cap, and counts what did not fit', () => {
-    const s = newSave(dev('d'));
-    s.library.items = items(PACK_CAP.items - 1).map((it, i) => ({ ...parseItem(it)!, id: iid(`i${i + 1}`) }));
-    const pack = read({ schema: SCHEMA, kind: 'library', library: { items: [{ name: 'Junk 1' }, { name: 'New A' }, { name: 'New B' }] } }).pack;
-    const add = mergePack(target(s), pack, 'add');
-    expect(add.save.library.items.length).toBe(PACK_CAP.items);
+    const s = phone('d', GM_CATALOG_ID);
+    s.library.items = Object.fromEntries(Object.entries(items(PACK_CAP.items - 1, GM_CATALOG_ID)).map(([k, it]) => [k, parseItemDef(it)!]));
+    const pack = read({ schema: SCHEMA, kind: 'library', library: { items: { [customId('junk1')]: { name: 'Junk 1' }, [customId('newa')]: { name: 'New A' }, [customId('newb')]: { name: 'New B' } } } }).pack;
+    const add = merge(target(s), pack, 'add');
+    expect(Object.keys(add.save.library.items)).toHaveLength(PACK_CAP.items);
     expect(add.report.items).toEqual({ added: 1, renamed: 1, replaced: 0, full: 2 });
-    const replace = mergePack(target(s), pack, 'replace');
-    expect(replace.save.library.items.length).toBe(PACK_CAP.items);
+    const replace = merge(target(s), pack, 'replace');
+    expect(Object.keys(replace.save.library.items)).toHaveLength(PACK_CAP.items);
     expect(replace.report.items).toEqual({ added: 1, renamed: 0, replaced: 1, full: 1 });
   });
 
@@ -306,49 +323,86 @@ describe('merging a pack', () => {
     const s = newSave(dev('d'));
     for (let i = 0; i < PACK_CAP.statuses; i++) s.library.statuses[`s-${i}`] = { label: `S ${i}`, desc: '', ops: [] };
     const pack = read({ schema: SCHEMA, kind: 'library', library: { statuses: { 's-0': { label: 'S 0', desc: 'new', ops: [] }, fresh: { label: 'Fresh', desc: '', ops: [] } } } }).pack;
-    const r = mergePack(target(s), pack, 'replace');
+    const r = merge(target(s), pack, 'replace');
     expect(Object.keys(r.save.library.statuses).length).toBe(PACK_CAP.statuses);
     expect(r.save.library.statuses['s-0']!.desc).toBe('new');
     expect(r.report.statuses).toEqual({ added: 0, renamed: 0, replaced: 1, full: 1 });
   });
 
   test('the status an imported item applies arrives with it when the pack holds it', () => {
-    const { save } = mergePack(target(newSave(dev('d'))), read(packOf(gmSave(), AT, 'items', 'i5')).pack, 'add');
+    const { save } = merge(target(phone('d')), read(packOf(gmSave(), AT, 'items', SHARD_ID)).pack, 'add');
     expect(save.library.statuses).toEqual({ frostbite: FROSTBITE });
-    expect(save.library.items[0]!.effects).toEqual(SHARD.effects);
+    expect(defs(save)[0]!.effects).toEqual(SHARD.effects);
   });
 
   test('when the pack does not hold the status, the item\'s op is kept as it was, its own def included', () => {
     const def = { label: 'Numb', desc: 'Cannot feel.', ops: [] };
     const numb = { op: 'applyStatus' as const, key: statusKey('numb'), def, duration: tick(2000) };
-    const pack = read({ schema: SCHEMA, kind: 'library', library: { items: [{ name: 'Numbing Dart', effects: [numb] }] } }).pack;
-    const { save } = mergePack(target(newSave(dev('d'))), pack, 'add');
+    const pack = read({ schema: SCHEMA, kind: 'library', library: { items: { [customId('dart')]: { name: 'Numbing Dart', effects: [numb] } } } }).pack;
+    const { save } = merge(target(phone('d')), pack, 'add');
     expect(save.library.statuses).toEqual({});
-    expect(save.library.items[0]!.effects).toEqual([numb]);
+    expect(defs(save)[0]!.effects).toEqual([numb]);
   });
 
   test('the save given to a merge is not changed', () => {
     const s = gmSave(), before = copy(s);
-    mergePack(target(s), read(packOf(s, AT)).pack, 'add');
-    mergePack(target(s), read(packOf(s, AT)).pack, 'replace');
+    merge(target(s), read(packOf(s, AT)).pack, 'add');
+    merge(target(s), read(packOf(s, AT)).pack, 'replace');
     expect(s).toEqual(before);
   });
 
   test('merging into a full save returns the whole save so writeInto keeps every other field intact', () => {
     const from = gmSave();
-    const live = newSave(dev('d2')) as Save & { futureField?: { keep: boolean } };
+    const live = phone() as Save & { futureField?: { keep: boolean } };
     live.futureField = { keep: true };
     const beforeKeys = Object.keys(live).sort();
     const huntersRef = live.hunters;
-    const merged = mergePack(live, read(packOf(from, AT)).pack, 'add');
+    const merged = merge(live, read(packOf(from, AT)).pack, 'add');
     expect(Object.keys(merged.save).sort()).toEqual(beforeKeys);
     expect(merged.save.futureField).toEqual({ keep: true });
     writeInto(live, merged.save);
     expect(Object.keys(live).sort()).toEqual(beforeKeys);
     expect(live.hunters).toBe(huntersRef);
     expect(live.futureField).toEqual({ keep: true });
-    expect(live.library.items.map(i => i.name)).toEqual(['Frost Shard']);
+    expect(itemNames(live)).toEqual(['Frost Shard']);
     expect(live.monsters.map(m => m.name)).toEqual(['Ice Warden']);
+  });
+});
+
+describe('custom items in a pack (item sync PR 2)', () => {
+  test('a custom item arrives in the target\'s catalog under a stamp the merge mints; a built-in\'s edit keeps its id', () => {
+    const from = gmSave(), dagger = { ...builtInDefData(DAGGER_DEF_ID, RULES)!, name: 'Old Dagger' };
+    from.library.items = { ...from.library.items, [DAGGER_DEF_ID]: dagger };
+    const { save, report } = mergePack(target(phone()), read(packOf(from, AT, 'items')).pack, 'add', stampSeq('x'));
+    const minted = customItemDefId(OTHER_CATALOG_ID, stampSeq('x')());
+    expect(save.library.items).toEqual({ [minted]: SHARD, [DAGGER_DEF_ID]: dagger });
+    expect(report.items).toEqual({ added: 2, renamed: 0, replaced: 0, full: 0 });
+  });
+
+  test('a bundle and a monster\'s loot that give a custom item follow it to its new id', () => {
+    const from = gmSave();
+    from.library.rewards = [{ ...HUNT, rewards: { ...HUNT.rewards, items: [grantRef(SHARD_ID, 2)] } }];
+    from.monsters = [{ ...WARDEN, loot: { gold: 5, items: [grantRef(SHARD_ID, 1)] } }];
+    const doc = packOf(from, AT, 'rewards', 'rb8');
+    expect(Object.keys(doc.library.items ?? {}), 'the item a bundle gives travels with it').toEqual([SHARD_ID]);
+    const { save } = mergePack(target(phone()), read(packOf(from, AT)).pack, 'add', stampSeq('y'));
+    const minted = customItemDefId(OTHER_CATALOG_ID, stampSeq('y')());
+    expect(Object.keys(save.library.items)).toEqual([minted]);
+    expect(save.library.rewards[0]!.rewards.items).toEqual([grantRef(minted, 2)]);
+    expect(save.monsters[0]!.loot.items).toEqual([grantRef(minted, 1)]);
+  });
+
+  test('a pack item of the target\'s own catalog that its library lacks keeps its id', () => {
+    const { save } = mergePack(target(phone('d3', GM_CATALOG_ID)), read(packOf(gmSave(), AT, 'items')).pack, 'add', stampSeq('z'));
+    expect(save.library.items).toEqual({ [SHARD_ID]: SHARD });
+  });
+
+  test('a target with no catalog counts every custom item full and takes none; a built-in\'s edit still lands', () => {
+    const from = gmSave(), dagger = { ...builtInDefData(DAGGER_DEF_ID, RULES)!, name: 'Old Dagger' };
+    from.library.items = { ...from.library.items, [DAGGER_DEF_ID]: dagger };
+    const { save, report } = merge(target(phone('d4', null)), read(packOf(from, AT, 'items')).pack, 'add');
+    expect(save.library.items).toEqual({ [DAGGER_DEF_ID]: dagger });
+    expect(report.items).toEqual({ added: 1, renamed: 0, replaced: 0, full: 1 });
   });
 });
 
@@ -386,7 +440,7 @@ describe('a status named anywhere in a shared thing travels with it', () => {
     { where: 'a worn status\'s threshold formula', kind: 'skills', name: 'Hunger', put: s => {
       s.library.skills = [passive({ ops: [], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'formula', formula: { kind: 'stacks', whose: 'user', key: rot } }, to: { kind: 'bearer' }, ops: [heal], then: 'spend' } } })];
     } },
-    { where: 'the formula of an item\'s use', kind: 'items', name: 'Rot Salve', put: s => { s.library.items = [{ ...parseItem({ name: 'Rot Salve', type: 'consumable' })!, id: iid('i1'), effects: [{ op: 'heal', amount: { kind: 'stacks', whose: 'user', key: rot } }] }]; } },
+    { where: 'the formula of an item\'s use', kind: 'items', name: 'Rot Salve', put: s => { s.library.items = { [customId('rotsalve')]: { ...parseItemDef({ name: 'Rot Salve', type: 'consumable' })!, effects: [{ op: 'heal', amount: { kind: 'stacks', whose: 'user', key: rot } }] } }; } },
     { where: 'a library status\'s trigger on a status ended', kind: 'statuses', name: 'hunger', put: s => { s.library.statuses.hunger = { label: 'Hunger', desc: '', ops: [], triggers: [{ on: 'statusEnded', key: rot, to: 'self', limit: each, ops: [heal] }] }; } },
     { where: 'a trigger of a reward status\'s def', kind: 'rewards', name: 'Spoils', put: s => { s.library.rewards = [bundle({ ops: [], triggers: [{ on: 'struck', tag: null, to: 'self', limit: each, ops: [apply] }] })]; } },
     { where: 'the threshold of a reward status\'s def', kind: 'rewards', name: 'Spoils', put: s => {
@@ -397,7 +451,7 @@ describe('a status named anywhere in a shared thing travels with it', () => {
       s.library.rewards = [{ id: rbid('rb1'), name: 'Spoils', rewards: { ...newRewards(), title: { name: 'Plague Bearer', desc: '', bonus: {}, worn: { label: 'Plague', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: each, ops: [apply] }] } } } }];
     } },
     { where: 'the active of a worn item (powers.ts)', kind: 'items', name: 'Rot Ring', put: s => {
-      s.library.items = [{ ...parseItem({ name: 'Rot Ring', type: 'accessory', slot: 'ring1' })!, id: iid('i1'), active: { ...LANCE_ABILITY, ops: [apply] } }];
+      s.library.items = { [customId('rotring')]: { ...parseItemDef({ name: 'Rot Ring', type: 'accessory', slot: 'ring1' })!, active: { ...LANCE_ABILITY, ops: [apply] } } };
     } },
     { where: 'the active of a reward\'s title (powers.ts)', kind: 'rewards', name: 'Spoils', put: s => {
       s.library.rewards = [{ id: rbid('rb1'), name: 'Spoils', rewards: { ...newRewards(), title: { name: 'Plague Bearer', desc: '', bonus: {}, active: { ...LANCE_ABILITY, ops: [apply] } } } }];
@@ -414,8 +468,15 @@ describe('a status named anywhere in a shared thing travels with it', () => {
   /** The thing of `kind` called `name` (a status or a feat by its key). */
   const thing = (s: Pick<Save, 'library' | 'monsters'>, kind: PackKind, name: string): unknown => {
     if (kind === 'statuses' || kind === 'feats') return s.library[kind][name];
+    if (kind === 'items') return defs(s).find(x => x.name === name);
     const list: readonly { name: string }[] = kind === 'monsters' ? s.monsters : s.library[kind];
     return list.find(x => x.name === name);
+  };
+  /** The id or key `packOf` takes for the thing of `kind` called `name`. */
+  const idOf = (s: Pick<Save, 'library' | 'monsters'>, kind: PackKind, name: string): string => {
+    if (kind === 'statuses') return name;
+    if (kind === 'items') return Object.entries(s.library.items).find(([, d]) => d.name === name)![0];
+    return (thing(s, kind, name) as { id: string }).id;
   };
   /** How many times `key` is written as a whole value in `v`: each place it names that status. */
   const named = (v: unknown, key: string): number => JSON.stringify(v).split(`"${key}"`).length - 1;
@@ -428,9 +489,9 @@ describe('a status named anywhere in a shared thing travels with it', () => {
       c.put(from);
       const sent = thing(from, c.kind, c.name);
       expect(named(sent, 'rot')).toBeGreaterThan(0);
-      const there = newSave(dev('d2'));
+      const there = phone();
       there.library.statuses = { rot: copy(RUST) };
-      const { save } = mergePack(target(there), read(packOf(from, AT, c.kind, c.kind === 'statuses' ? c.name : (thing(from, c.kind, c.name) as { id: string }).id)).pack, 'add');
+      const { save } = merge(target(there), read(packOf(from, AT, c.kind, idOf(from, c.kind, c.name))).pack, 'add');
       expect(save.library.statuses.rot).toEqual(RUST);
       expect(save.library.statuses['rot-2']).toEqual({ ...ROT, label: 'Rot 2' });
       const got = thing(save, c.kind, c.name);
@@ -444,29 +505,29 @@ describe('feats in a pack', () => {
     const from = gmSave();
     const one = read(packOf(from, AT, 'feats', 'frost-ward'));
     expect(packCounts(one.pack)).toMatchObject({ feats: 1, statuses: 1 });
-    const added = mergePack(target(from), one.pack, 'add');
+    const added = merge(target(from), one.pack, 'add');
     expect(Object.keys(added.save.library.feats).sort()).toEqual(['frost-ward', 'frost-ward-2']);
     expect(added.save.library.feats['frost-ward-2']!.name).toBe('Frost Ward 2');
     expect(added.report.feats).toEqual({ added: 1, renamed: 1, replaced: 0, full: 0 });
     const changed = { ...one.pack, feats: { 'frost-ward': { ...FROST_WARD, desc: 'Twenty wolves.' } } };
-    const replaced = mergePack(target(from), changed, 'replace');
+    const replaced = merge(target(from), changed, 'replace');
     expect(replaced.save.library.feats).toEqual({ 'frost-ward': { ...FROST_WARD, desc: 'Twenty wolves.' } });
-    expect(mergePack({ ...target(from), library: replaced.save.library }, changed, 'replace').save.library.feats).toEqual(replaced.save.library.feats);
+    expect(merge({ ...target(from), library: replaced.save.library }, changed, 'replace').save.library.feats).toEqual(replaced.save.library.feats);
   });
   test('a pack holding a built-in as it shipped leaves no entry, and Replace of a changed one brings it back as shipped; a built-in turned off arrives off', () => {
     const from = gmSave(), shipped = BUILT_IN_FEATS.find(([k]) => k === 'ratcatcher')![1];
     const holding = (feats: Record<string, unknown>) => read({ ...packOf(from, AT, 'feats'), library: { feats } }).pack;
     const none = { added: 0, renamed: 0, replaced: 0, full: 0 };
     for (const mode of ['add', 'replace'] as const) {
-      const m = mergePack(target(from), holding({ ratcatcher: shipped }), mode);
+      const m = merge(target(from), holding({ ratcatcher: shipped }), mode);
       expect(m.save.library.feats).toEqual(from.library.feats);
       expect(m.report.feats).toEqual(none);
     }
     const changed = { ...target(from), library: { ...from.library, feats: { ...from.library.feats, ratcatcher: { ...shipped, rule: { ...shipped.rule, reach: 40 } } } } };
-    const back = mergePack(changed, holding({ ratcatcher: shipped }), 'replace');
+    const back = merge(changed, holding({ ratcatcher: shipped }), 'replace');
     expect(back.save.library.feats).toEqual(from.library.feats);
     expect(back.report.feats).toEqual({ ...none, replaced: 1 });
-    const off = mergePack(target(from), holding({ ratcatcher: { ...shipped, off: true } }), 'add');
+    const off = merge(target(from), holding({ ratcatcher: { ...shipped, off: true } }), 'add');
     expect(off.save.library.feats).toEqual({ ...from.library.feats, ratcatcher: { ...shipped, off: true } });
     expect(off.report.feats).toEqual({ ...none, added: 1 });
   });
@@ -483,7 +544,7 @@ describe('stories in a pack', () => {
 
   test('Add of a story whose name the library holds arrives as "The wager 2" under a new id, its chapters naming the renamed status', () => {
     const s = gmSave();
-    const { save, report } = mergePack(target(s), read(packOf(s, AT)).pack, 'add');
+    const { save, report } = merge(target(s), read(packOf(s, AT)).pack, 'add');
     expect(save.library.stories.map(x => x.name)).toEqual(['The wager', 'The wager 2']);
     expect(new Set(save.library.stories.map(x => x.id)).size).toBe(2);
     const [kept, added] = save.library.stories;
@@ -496,10 +557,10 @@ describe('stories in a pack', () => {
   test('Replace overwrites the story of the same name and keeps its id; replaced twice changes nothing the second time', () => {
     const s = gmSave(), pack = read(packOf(s, AT, 'stories')).pack;
     const changed = { ...pack, stories: [{ ...pack.stories[0]!, when: 'When a hunter bets.' }] };
-    const once = mergePack(target(s), changed, 'replace');
+    const once = merge(target(s), changed, 'replace');
     expect(once.save.library.stories).toEqual([{ ...WAGER, when: 'When a hunter bets.' }]);
     expect(once.report.stories).toEqual({ added: 0, renamed: 0, replaced: 1, full: 0 });
-    expect(mergePack(once.save, changed, 'replace').save).toEqual(once.save);
+    expect(merge(once.save, changed, 'replace').save).toEqual(once.save);
   });
 
   test(`a pack holds at most ${PACK_CAP.stories} stories, and a full library takes no more`, () => {
@@ -507,7 +568,7 @@ describe('stories in a pack', () => {
     expect(r.counts.stories).toEqual({ kept: PACK_CAP.stories, unreadable: 0, over: 40 - PACK_CAP.stories });
     const full = newSave(dev('d'));
     full.library.stories = r.pack.stories.map((x, i) => ({ ...x, name: `Mine ${i}`, id: `st${i + 1}` as StoryId }));
-    const merged = mergePack(target(full), { ...r.pack, stories: r.pack.stories.slice(0, 2) }, 'add');
+    const merged = merge(target(full), { ...r.pack, stories: r.pack.stories.slice(0, 2) }, 'add');
     expect([merged.save.library.stories.length, merged.report.stories.full]).toEqual([PACK_CAP.stories, 2]);
   });
 });

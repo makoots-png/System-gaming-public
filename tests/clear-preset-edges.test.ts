@@ -9,9 +9,12 @@ import { editGate } from '../src/core/gates/world.ts';
 import { SOLO_REFUSAL_WORDS, soloAnswerBody, soloFight, soloKey, soloPlan, soloRan, soloReady, soloTaken } from '../src/core/gates/solo.ts';
 import type { ReadyCtx, SoloGate, SoloRun } from '../src/core/gates/solo.ts';
 import type { RunEnd } from '../src/core/combat/odds.ts';
-import { parsePresetLineId, parseRoomCode, parseSheetKey, presetLineId } from '../src/core/ids.ts';
+import { builtInItemId, parsePresetLineId, parseRoomCode, parseSheetKey, presetLineId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
 import { parseItem } from '../src/core/registry/items.ts';
+import { itemDefDataOf, refGrant, resolveGrant } from '../src/core/registry/item-book.ts';
+import type { ItemGrant } from '../src/core/registry/item-book.ts';
+import { bagOf } from '../src/core/hunter/inventory.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { pendingOf, waitingIn } from '../src/core/hunter/pending.ts';
 import { STASH_LINES, newEvent } from '../src/core/protocol.ts';
@@ -32,8 +35,10 @@ const DAY = { at: AT, today: TODAY, R: RULES };
 const STAMP = { at: AT, cap: RULES.logCap };
 const ROOM = parseRoomCode('ABC234')!;
 const KAI = parseSheetKey('d-p1:h1')!;
-const POTION = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
-const SWORD = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
+const POTION = refGrant(builtInItemId('health-potion-e'));
+const SWORD = refGrant(builtInItemId('iron-dagger'));
+/** The name a grant reads under the shipped rules. */
+const nameOf = (g: ItemGrant): string => resolveGrant(g, RULES).name;
 const xpOf = (id: string): number => (id === 'm-goblin' ? 25 : id === 'm-hob' ? 75 : 0);
 
 const baseSave = (): Save => {
@@ -46,9 +51,10 @@ const baseSave = (): Save => {
 const fullStash = () => ({
   gold: 0,
   items: Array.from({ length: STASH_LINES }, (_, i) => ({
-    ...parseItem({ name: `Token ${i}`, type: 'misc' })!,
+    kind: 'adhoc' as const,
     id: `i${900 + i}` as never,
     qty: 1,
+    item: itemDefDataOf(parseItem({ name: `Token ${i}`, type: 'misc' })!),
   })),
 });
 
@@ -121,7 +127,7 @@ describe('clear-preset adversarial repros', () => {
       stashed: 1,
       xpPaid: 0,
       presetAt: 'paid',
-      log: 'E-rank gate "Goblin Den" cleared. No one rewarded: +0 XP, 0 gold, Health Potion.',
+      log: 'E-rank gate "Goblin Den" cleared. No one rewarded: +0 XP, 0 gold, Health Potion (E).',
       summary: 'Clear rewards given: nobody got XP or gold, 1 item, 1 to the stash',
     });
   });
@@ -138,7 +144,7 @@ describe('clear-preset adversarial repros', () => {
 
     const first = ok(settleClearPreset(withPreset, soloGate.id, xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY));
     const goldAfterFirst = first.save.hunters[0]!.gold;
-    const itemsAfterFirst = first.save.hunters[0]!.items.length;
+    const itemsAfterFirst = first.save.hunters[0]!.items.reduce((n, i) => n + i.qty, 0);
 
     const reopened = ok(editGate(first.save, soloGate.id, {
       name: soloGate.name, rank: soloGate.rank, type: soloGate.type, breakDay: soloGate.breakDay,
@@ -154,14 +160,14 @@ describe('clear-preset adversarial repros', () => {
       outcome: 'won', rounds: 2, commands: 4, spent: [],
       party: { [fight.hunter]: { hp: 20, mana: 5, fatigue: 0, statuses: [], used: {}, life: 'up', lifeLeft: { at: 'up', hp: 20 }, kills: [] } },
     };
-    const run: SoloRun = { end, hunter: fight.hunter, shadows: fight.shadows, from: soloKey(ready.h), route: 'local' };
+    const run: SoloRun = { end, hunter: fight.hunter, shadows: fight.shadows, from: soloKey(ready.h, RULES), route: 'local' };
     const second = soloRan(reopened, h.id, targetGate, run, { gold: 500, items: [POTION] }, { day: DAY, ready: readyCtx });
 
     if (!isRefused(second)) {
       const hAfter = second.save.hunters[0]!;
       expect({
         extraGoldPaid: hAfter.gold - goldAfterFirst,
-        extraItemsPaid: hAfter.items.length - itemsAfterFirst,
+        extraItemsPaid: hAfter.items.reduce((n, i) => n + i.qty, 0) - itemsAfterFirst,
       }).toEqual({ extraGoldPaid: 0, extraItemsPaid: 0 });
     }
   });
@@ -190,7 +196,7 @@ describe('clear-preset adversarial repros', () => {
     });
 
     if (!isRefused(res)) {
-      expect(waitingIn(res, ROOM).map(p => ({ gold: p.rewards.gold, items: p.rewards.items.map(i => i.name) }))).toEqual([]);
+      expect(waitingIn(res, ROOM).map(p => ({ gold: p.rewards.gold, items: p.rewards.items.map(nameOf) }))).toEqual([]);
     }
   });
 
@@ -212,7 +218,7 @@ describe('clear-preset adversarial repros', () => {
       outcome: 'won', rounds: 2, commands: 4, spent: [],
       party: { [fight.hunter]: { hp: 20, mana: 5, fatigue: 0, statuses: [], used: {}, life: 'up', lifeLeft: { at: 'up', hp: 20 }, kills: [] } },
     };
-    const run: SoloRun = { end, hunter: fight.hunter, shadows: fight.shadows, from: soloKey(ready.h), route: 'local' };
+    const run: SoloRun = { end, hunter: fight.hunter, shadows: fight.shadows, from: soloKey(ready.h, RULES), route: 'local' };
     const res = soloRan(withPreset, h.id, targetGate, run, { gold: 0, items: [] }, { day: DAY, ready: readyCtx });
 
     expect(res).toEqual({ ok: false, why: 'stash-full' });
@@ -257,7 +263,7 @@ describe('clear-preset adversarial repros', () => {
       day: DAY, room: { code: ROOM, stamp: { device: 'd-gm', now: 3000, rand: 0.5 } }, rank: 'E',
     }));
 
-    expect(out.stash.items.map(i => i.name)).toEqual(['Health Potion']);
+    expect(bagOf(out.stash, RULES).map(i => i.name)).toEqual(['Health Potion (E)']);
     expect(pendingOf(out).filter(r => isEmptyReward(r.rewards))).toEqual([]);
   });
 
@@ -280,11 +286,11 @@ describe('clear-preset adversarial repros', () => {
     expect({
       mintedId: newId,
       parsedBack: parsePresetLineId(newId),
-      reloadedItems: reloaded.at === 'edited' ? reloaded.items.map(i => i.item.name) : [],
+      reloadedItems: reloaded.at === 'edited' ? reloaded.items.map(i => nameOf(i.item)) : [],
     }).toEqual({
       mintedId: newId,
       parsedBack: newId,
-      reloadedItems: ['Health Potion', 'Iron Blade'],
+      reloadedItems: ['Health Potion (E)', 'Iron Dagger'],
     });
   });
 
@@ -296,10 +302,10 @@ describe('clear-preset adversarial repros', () => {
       items: [{ id: presetLineId(1), item: SWORD, checked: true, to: { kind: 'local', hunterId: brakk.id } }],
     }));
 
-    // Clear with only Mira selected; Brakk is NOT picked, so Iron Blade goes to Party stash
+    // Clear with only Mira selected; Brakk is NOT picked, so Iron Dagger goes to Party stash
     const out = ok(settleClearPreset(s1, gid('g-den'), xpOf, [{ kind: 'local', hid: mira.id, name: mira.name }], null, DAY));
-    expect(out.stashed.map(i => i.name)).toEqual(['Iron Blade']);
-    expect(out.save.hunters.find(x => x.id === brakk.id)!.items.map(i => i.name)).not.toContain('Iron Blade');
+    expect(out.stashed.map(nameOf)).toEqual(['Iron Dagger']);
+    expect(bagOf(out.save.hunters.find(x => x.id === brakk.id)!, RULES).map(i => i.name)).not.toContain('Iron Dagger');
 
     const paidPreset = out.save.gates[0]!.preset;
     expect(paidPreset.at).toBe('paid');

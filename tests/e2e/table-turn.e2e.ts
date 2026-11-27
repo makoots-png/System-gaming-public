@@ -7,7 +7,8 @@ import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { OUTBOX_MAX, OUTBOX_WORDS } from '../../src/core/sync/outbox.ts';
 import { TABLE_REFUSAL_WORDS } from '../../src/core/combat/refusal-words.ts';
-import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc, adhoc } from './helpers.ts';
+import type { ItemGrant } from '../../src/core/registry/item-book.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -15,8 +16,8 @@ const hudRow = (player: Page, name: string) => combat(player).locator('.tb-row',
 /** Every die rolls its lowest face: a reaction d20 of 1 is caught and a crit, so a use lands. */
 const lowestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0) }));
 
-/** A GM and a player in one room, the player's card on the GM's party board. `carry` goes in the player's bag first (setup). */
-async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page: Page }>, carry: Record<string, unknown>[] = [], gmOptions: DeviceOptions = {}, playerOptions: DeviceOptions = {}): Promise<{ gm: Page; player: Page }> {
+/** A GM and a player in one room, the player's card on the GM's party board. `carry`, the player's own items, goes in the player's bag first (setup). */
+async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page: Page }>, carry: ItemGrant[] = [], gmOptions: DeviceOptions = {}, playerOptions: DeviceOptions = {}): Promise<{ gm: Page; player: Page }> {
   const gm = (await device('gm', gmOptions)).page, player = (await device('player', playerOptions)).page;
   await setupGoblinDenGM(gm);
   await chooseList(gm);
@@ -27,7 +28,8 @@ async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page
   await dismissAll(player, 4);
   if (carry.length) {
     await player.evaluate(list => { const s = hunterApp.store; s.update(() => { for (const t of list) s.active().items.push({ ...t, id: s.id('i') }); }, 'test-setup'); }, carry);
-    await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).some(r => r.data.items.some((i: any) => i.name === n)), String(carry[0]!.name))).toBe(true);
+    const first = carry[0]!, name = first.kind === 'adhoc' ? first.item.name : first.defId;
+    await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).some(r => hunterApp.api.inventory.bag(r.data).some((i: any) => i.name === n)), name)).toBe(true);
   }
   await go(gm, 'gm');
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
@@ -269,7 +271,7 @@ test('a player\'s −5 on their own sheet during the GM\'s fight is turned down 
 
 test('a potion a player drinks on their turn heals their row on both phones, and the healed HP stays after the next doc arrives', async ({ device }) => {
   // A Health Potion "Restores 30 HP" (src/core/registry/items.ts); it goes to its user.
-  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
+  const potion = adhoc({ name: 'Health Potion', rar: 'common', type: 'consumable', slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' }, 2);
   const { gm, player } = await room(device, [potion]);
   await fight(gm, player, { x: 2, y: 10 });
   const kai = await fightRow(gm, HUNTER), hurt = kai.sheet.hpMax - 35, healed = hurt + 30;
@@ -285,7 +287,7 @@ test('a potion a player drinks on their turn heals their row on both phones, and
     await go(player, 'combat');
     await expect(ownHp).toHaveText(`${healed} / ${kai.sheet.hpMax}`, { timeout: 15_000 });
     await expect(hudRow(player, HUNTER)).toContainText(`${healed}/${kai.sheet.hpMax}`);
-    await expect.poll(() => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Health Potion')?.qty)).toBe(1);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.active()).find((i: any) => i.name === 'Health Potion')?.qty)).toBe(1);
   });
 
   await test.step('the GM ends the turn, and the next doc keeps the healed HP on the player\'s phone', async () => {
@@ -412,7 +414,7 @@ test('a target picked after the fight changed under the window keeps the turn he
 });
 
 test('a Use on the Skills panel holds the turn as the table does: a second Use and a potion from the Bag send nothing until the GM\'s phone answers', async ({ device }) => {
-  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
+  const potion = adhoc({ name: 'Health Potion', rar: 'common', type: 'consumable', slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' }, 2);
   // setOffline reaches the app's requests only past no service worker
   const { gm, player } = await room(device, [potion], OFFLINE);
   const jab = abilityOf('strike', { id: abilityId('jab'), name: 'Jab' }, RULES);

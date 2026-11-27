@@ -29,6 +29,7 @@ import { BLADEFIEND_SIGNATURE, BLADEFIEND_TREE } from '../src/core/registry/clas
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 
 const AT = '2026-11-25T12:00:00.000Z';
 const HUNDREDTHS = new Set<BonusKey>(BONUS_HUNDREDTHS);
@@ -169,7 +170,7 @@ describe('Bladefiend signature, 38-node tree, and gold pricing', () => {
       resist: 0,
       target: 'other' as const,
       effects: [{ op: 'damage' as const, type: 'arcane' as const, amount: { kind: 'number' as const, value: 10 } }],
-    }));
+    })).map(({ id, qty, ...item }): HeldItem => ({ kind: 'adhoc', id, qty, item }));
     const fullBagRow = hunterRow({ ...maxH, items: [...maxH.items, ...bombs] }, combatantId('bf-bag'), KEYSTONES_ON);
     for (const id of ['bf-keen-slash', 'bf-deflecting-edge', 'bf-rending-gale', 'bf-hundred-cuts']) {
       expect(fullBagRow.abilities.map(a => a.id)).toContain(wornAbilityId(abilityId(id)));

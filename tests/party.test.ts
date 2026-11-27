@@ -12,6 +12,8 @@ import { VITAL_CHIPS } from '../src/core/hunter/vitals.ts';
 import { STATUS_KEYS } from '../src/core/registry/statuses.ts';
 import { freshSave, newHunter, newQuest } from '../src/core/save.ts';
 import { parseItem } from '../src/core/registry/items.ts';
+import { itemDefDataOf } from '../src/core/registry/item-book.ts';
+import { DAGGER_DEF_ID } from './fixtures/items.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
 import type { SkillTemplate } from '../src/core/registry/skills.ts';
 import { both, isRefused } from '../src/core/save-step.ts';
@@ -149,7 +151,8 @@ describe('a hunter nothing was played on', () => {
     ['at level 2', h => ({ ...h, level: 2 }), false],
     ['with 10 XP', h => ({ ...h, xp: 10 }), false],
     ['with 5 gold', h => ({ ...h, gold: 5 }), false],
-    ['with an item', h => ({ ...h, items: [{ ...parseItem({ name: 'Rope' })!, id: iid('i3') }] }), false],
+    ['with an item of its own', h => ({ ...h, items: [{ kind: 'adhoc', id: iid('i3'), qty: 1, item: itemDefDataOf(parseItem({ name: 'Rope' })!) }] }), false],
+    ['with a shipped item', h => ({ ...h, items: [{ kind: 'ref', id: iid('i3'), defId: DAGGER_DEF_ID, qty: 1 }] }), false],
     ['with a quest of its own', h => ({ ...h, quests: [{ ...newQuest(), id: qid('q9'), kind: 'side' }] }), false],
     ['with a daily streak', h => ({ ...h, daily: { ...h.daily, streak: 1 } }), false],
     ['with a job', h => ({ ...h, job: 'Ranger' }), false],

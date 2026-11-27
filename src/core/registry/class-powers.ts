@@ -1,15 +1,15 @@
 // class-powers.ts: class signatures and the sole reader of `Hunter.classes[job].nodes` for combat and the sheet. Pure.
 // Exposes the folding seam (`classPowers`) and fight-doc status lookup (`classStatusDef`).
-import { BONUS_KEYS } from '../rules.ts';
-import type { BonusKey, Perk, Rules } from '../rules.ts';
+import type { Rules } from '../rules.ts';
 import type { Scaler } from './scalers.ts';
 import type { LandOp, Op, StatusDef } from '../combat/effect-ops.ts';
 import type { Ability } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName } from './jobs.ts';
-import { CLASS_ACTIVES_MAX, CLASS_TREES, repairNodes } from './class-trees.ts';
-import type { ClassTreeMap, ClassWorn, NodeGift } from './class-trees.ts';
+import { CLASS_ACTIVES_MAX, CLASS_BONUS_KEYS, CLASS_TREES, repairNodes } from './class-trees.ts';
+import type { ClassBonusKey, ClassPerk, ClassTreeMap, ClassWorn, NodeGift } from './class-trees.ts';
 import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
+import { NECROMANCER_SIGNATURE } from './class-necromancer.ts';
 import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
 import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
@@ -20,6 +20,12 @@ import { GRIMREAPER_SIGNATURE } from './class-grimreaper.ts';
 import { BRAMBLEGUARD_SIGNATURE } from './class-brambleguard.ts';
 import { PYROMANCER_SIGNATURE } from './class-pyromancer.ts';
 import { SNIPER_SIGNATURE } from './class-sniper.ts';
+import { FIGHTER_SIGNATURE } from './class-fighter.ts';
+import { ASSASSIN_SIGNATURE } from './class-assassin.ts';
+import { MAGE_SIGNATURE } from './class-mage.ts';
+import { TANKER_SIGNATURE } from './class-tanker.ts';
+import { HEALER_SIGNATURE } from './class-healer.ts';
+import { RANGER_SIGNATURE } from './class-ranger.ts';
 import type { ClassLocker } from '../hunter/class-locker.ts';
 
 /** Rule slice accepted by `classPowers` (satisfied by `Rules`, `SheetRules`, and `RowRules`). */
@@ -35,7 +41,7 @@ export type ClassPowersHunter = {
 /** Base combat and sheet powers of one built-in class before skill-tree nodes are folded on top. */
 export type ClassSignature = {
   readonly className: ClassName;
-  readonly bonus?: Perk;
+  readonly bonus?: ClassPerk;
   readonly scalers?: readonly Scaler[];
   readonly worn?: ClassWorn;
   /** At most `CLASS_ACTIVES_MAX` (4) active abilities. */
@@ -46,7 +52,7 @@ export type ClassSignature = {
 
 /** Folded class powers for the hunter's active awakened class. */
 export type ClassPowersResult = {
-  readonly bonus: Perk;
+  readonly bonus: ClassPerk;
   readonly scalers: readonly Scaler[];
   readonly worn: ClassWorn | null;
   readonly actives: readonly Ability[];
@@ -57,6 +63,7 @@ export type ClassSignatureMap = Readonly<Partial<Record<ClassName, ClassSignatur
 /** Shipped class signatures. */
 export const CLASS_SIGNATURES: ClassSignatureMap = {
   Hemomancer: HEMOMANCER_SIGNATURE,
+  Necromancer: NECROMANCER_SIGNATURE,
   Bladefiend: BLADEFIEND_SIGNATURE,
   Rifthunter: RIFTHUNTER_SIGNATURE,
   Seraph: SERAPH_SIGNATURE,
@@ -67,6 +74,12 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Brambleguard: BRAMBLEGUARD_SIGNATURE,
   Pyromancer: PYROMANCER_SIGNATURE,
   Sniper: SNIPER_SIGNATURE,
+  Fighter: FIGHTER_SIGNATURE,
+  Assassin: ASSASSIN_SIGNATURE,
+  Mage: MAGE_SIGNATURE,
+  Tanker: TANKER_SIGNATURE,
+  Healer: HEALER_SIGNATURE,
+  Ranger: RANGER_SIGNATURE,
 };
 
 const EMPTY_CLASS_POWERS: ClassPowersResult = { bonus: {}, scalers: [], worn: null, actives: [] };
@@ -91,10 +104,10 @@ export function classPowers(
   const tree = trees[h.job] ?? null;
   if (!sig && !tree) return EMPTY_CLASS_POWERS;
 
-  const bonus: Partial<Record<BonusKey, number>> = {};
-  const addBonus = (p: Perk | undefined): void => {
+  const bonus: Partial<Record<ClassBonusKey, number>> = {};
+  const addBonus = (p: ClassPerk | undefined): void => {
     if (!p) return;
-    for (const k of BONUS_KEYS) {
+    for (const k of CLASS_BONUS_KEYS) {
       const n = p[k];
       if (typeof n === 'number' && Number.isFinite(n) && n !== 0) {
         bonus[k] = (bonus[k] ?? 0) + n;

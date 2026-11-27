@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DB_EVENTS, DB_STATES, ROOM_TTL_MS, dbHealth, dbStep, dbTransition, keptOut, kickedAfter, pushed, roomLive } from '../src/core/room-server.ts';
+import { CATALOG_TTL_MS, DB_EVENTS, DB_STATES, ROOM_TTL_MS, catalogLive, dbHealth, dbStep, dbTransition, keptOut, kickedAfter, pushed, roomLive } from '../src/core/room-server.ts';
 import type { Db } from '../src/core/room-server.ts';
 import { FREE, OWNER_EVENTS, OWNER_STATES, ownedBy, ownerStep } from '../src/core/sync/owner.ts';
 import type { Owner, OwnerEvent, TokenHash } from '../src/core/sync/owner.ts';
@@ -15,6 +15,17 @@ describe('a room\'s life', () => {
     expect(roomLive(t0, t0)).toBe(true);
     expect(roomLive(t0, t0 + 30 * DAY)).toBe(true);
     expect(roomLive(t0, t0 + 30 * DAY + 1)).toBe(false);
+  });
+});
+
+describe('a catalog\'s life', () => {
+  test('an unlinked catalog lives 30 days after its last update, and a catalog linked by a live room stays alive past 30 days', () => {
+    const t0 = Date.parse('2026-11-01T12:00:00.000Z');
+    expect(CATALOG_TTL_MS).toBe(30 * DAY);
+    expect(catalogLive(t0, false, t0)).toBe(true);
+    expect(catalogLive(t0, false, t0 + 30 * DAY)).toBe(true);
+    expect(catalogLive(t0, false, t0 + 30 * DAY + 1)).toBe(false);
+    expect(catalogLive(t0, true, t0 + 90 * DAY)).toBe(true);
   });
 });
 

@@ -5,7 +5,7 @@ import { RANKS, RULES } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { presetLineId } from '../ids.ts';
-import type { ItemTemplate } from '../registry/items.ts';
+import type { BuiltInItem } from '../registry/items.ts';
 import { clearCrystalEach } from '../hunter/crystal.ts';
 import { GATE_TYPES, xpDue } from './gate.ts';
 import type { Gate, GateType, XpOf } from './gate.ts';
@@ -147,7 +147,7 @@ export function recommendPreset(
   partySize: number,
   xpOf: XpOf,
   R: Pick<Rules, 'loot' | 'gateParty'> & Partial<Pick<Rules, 'priceBase' | 'crystal'>>,
-  pool: readonly ItemTemplate[],
+  pool: readonly BuiltInItem[],
   rand: Random,
 ): Extract<PresetEvent, { type: 'recommend' }> {
   const n = Math.max(1, Math.trunc(partySize) || 1);
@@ -160,7 +160,7 @@ export function recommendPreset(
   const items: PresetItem[] = [];
   for (const d of drops) {
     if (d.kind !== 'item' || items.length >= PRESET_ITEMS_MAX) continue;
-    items.push({ id: presetLineId(items.length + 1), item: { ...d.item }, checked: true, to: null });
+    items.push({ id: presetLineId(items.length + 1), item: { kind: 'ref', defId: d.item.defId, qty: 1 }, checked: true, to: null });
   }
   return { type: 'recommend', xp, gold, crystal, items };
 }

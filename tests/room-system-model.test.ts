@@ -6,8 +6,9 @@
 // A failure prints the seed and the shortest sequence that still breaks the same rule.
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
+import { grantName } from '../src/core/registry/item-book.ts';
 import { deadEnd } from './models/dead-ends.ts';
-import { START_BAGS, START_STASH, enabled, isGm, keyOf, newWorld, play, probe, quiet, roster } from './models/room-world.ts';
+import { START_BAGS, START_STASH, enabled, isGm, keyOf, nameOf, newWorld, play, probe, quiet, roster } from './models/room-world.ts';
 import type { Move, Phone, World } from './models/room-world.ts';
 import { coinOf } from '../src/core/coin.ts';
 import { endOf, outcomeOf } from '../src/core/trade/offer.ts';
@@ -135,13 +136,13 @@ function heldBy(w: World, p: Phone): { tokens: string[]; gold: number } {
   const puts: Goods[] = p.save.asked.flatMap(a => (a.kind === 'stash' && a.ask.kind === 'put' && !keptInRoom(w, a.id) ? [a.ask.goods] : []));
   const asides: Goods[] = [...p.save.offers.flatMap(r => ('aside' in r && !settledInRoom(w, r) ? [r.aside] : [])), ...puts];
   return {
-    tokens: [...p.save.hunter.items.map(i => i.name), ...asides.flatMap(g => g.items.map(l => l.item.name))],
+    tokens: [...p.save.hunter.items.map(nameOf), ...asides.flatMap(g => g.items.map(l => grantName(l.item)))],
     gold: p.save.hunter.gold + asides.reduce((n, g) => n + g.gold, 0),
   };
 }
 const START_GOLD = START_BAGS.reduce((n, b) => n + b.gold, 0);
 /** The tokens in the GM's party stash (trade/stash.ts). */
-const stashed = (w: World): string[] => w.phones[0]!.save.stash.items.map(i => i.name);
+const stashed = (w: World): string[] => w.phones[0]!.save.stash.items.map(nameOf);
 /**
  * After every move: no token in two places among the players' bags and asides (never doubled); the gold never more than
  * the start; both sides of an offer that read its end read one outcome; a token a settled trade took from player 1 is
@@ -152,7 +153,7 @@ const stashed = (w: World): string[] => w.phones[0]!.save.stash.items.map(i => i
 function tradeRule(w: World): string | null {
   const players = w.phones.slice(1);
   if (players.length < 2) return null;
-  const twice = new Set(w.reclaimed.flatMap(g => g.items.map(l => l.item.name))), extra = w.reclaimed.reduce((n, g) => n + g.gold, 0);
+  const twice = new Set(w.reclaimed.flatMap(g => g.items.map(l => grantName(l.item)))), extra = w.reclaimed.reduce((n, g) => n + g.gold, 0);
   const held = players.map(p => heldBy(w, p)), tokens = [...held.flatMap(h => h.tokens), ...stashed(w)].filter(t => !twice.has(t));
   const doubled = tokens.find((t, i) => tokens.indexOf(t) !== i);
   if (doubled) return `${doubled} is in two places among the players' bags and asides and the stash`;
@@ -166,7 +167,7 @@ function tradeRule(w: World): string | null {
     if (ev.type !== 'offerEnd') continue;
     const o = w.stored[ev.payload.offer], e = endOf(ev);
     if (o?.type !== 'offer' || !e || e.how !== 'accept' || e.by !== o.payload.to[0]) continue;
-    for (const l of o.payload.gives.items) if (!twice.has(l.item.name) && players[0]!.save.hunter.items.some(i => i.name === l.item.name)) return `${l.item.name} went to ${players[1]!.name} in a settled trade and is back in ${players[0]!.name}'s bag`;
+    for (const l of o.payload.gives.items) if (!twice.has(grantName(l.item)) && players[0]!.save.hunter.items.some(i => nameOf(i) === grantName(l.item))) return `${grantName(l.item)} went to ${players[1]!.name} in a settled trade and is back in ${players[0]!.name}'s bag`;
   }
   for (const [id, n] of Object.entries(w.phones[0]!.traded)) if (n > 1) return `the GM's session log has the trade ${id} ${n} times`;
   return null;
@@ -545,7 +546,7 @@ describe('a trade between two players (notes-5-trade.md 1.8, unit 2)', () => {
     await play(w, 'p1 join'); await play(w, 'p2 join'); await quiet(w, 3);
     return w;
   }
-  const bagOf = (p: Phone): string[] => p.save.hunter.items.map(i => i.name).sort();
+  const bagOf = (p: Phone): string[] => p.save.hunter.items.map(nameOf).sort();
   const outcomesOf = (w: World): string[] => Object.values(w.outcomes).map(by => [...new Set(Object.values(by))].join('|'));
 
   test('player 1 offers a token, player 2 accepts, and each sheet changes once, through a lost answer and a reload of each phone', async () => {
@@ -617,7 +618,7 @@ describe('a trade between two players (notes-5-trade.md 1.8, unit 2)', () => {
       expect([p1.save.asked, p2.save.asked]).toEqual([[], []]);
       expect(await play(w, 'p1 put')).toBe(true);
       await quiet(w, QUIET_ROUNDS);
-      expect([gm.save.stash.items.map(i => i.name), bagOf(p1)]).toEqual([['Token 1'], ['Token 2', 'Token 3']]);
+      expect([gm.save.stash.items.map(nameOf), bagOf(p1)]).toEqual([['Token 1'], ['Token 2', 'Token 3']]);
       expect(safety(w) ?? (await converged(w))).toBeNull();
     } finally { done(w); }
   });

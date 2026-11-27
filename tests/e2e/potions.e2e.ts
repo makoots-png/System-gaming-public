@@ -76,7 +76,7 @@ test('on a 390 px phone the Shop lists all 35 items, filters cleanly by rank, an
   await bagPotion.locator('[data-use]').tap();
   const h = await activeHunter(page);
   const wantHp = 10 + Math.round(0.5 * RULES.fight.hpBase);
-  expect([h.gold, h.life.hp, h.items.some((i: any) => i.name === 'Health Potion (E)')]).toEqual([2000 - 1250 - 35, wantHp, false]);
+  expect([h.gold, h.life.hp, h.bag.some((i: any) => i.name === 'Health Potion (E)')]).toEqual([2000 - 1250 - 35, wantHp, false]);
 });
 
 test('a rank B hunter is refused a rank E potion outside a fight and inside a fight by core, keeping the bottle', async ({ device }) => {
@@ -90,8 +90,8 @@ test('a rank B hunter is refused a rank E potion outside a fight and inside a fi
     h.rank = 'B';
     h.rankBy = 'gm';
     h.life = { at: 'up', hp: 10 };
-    const potionE = hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === 'Health Potion (E)');
-    h.items.push({ ...potionE, id: hunterApp.store.id('i'), qty: 2 });
+    const potionE = hunterApp.api.inventory.choices().builtIn.find((i: any) => i.name === 'Health Potion (E)');
+    h.items.push({ kind: 'ref', id: hunterApp.store.id('i'), defId: potionE.defId, qty: 2 });
   }, 'test-setup'));
 
   // Out of a fight: refused with USE_WORDS['too-low'], bottle kept
@@ -102,7 +102,7 @@ test('a rank B hunter is refused a rank E potion outside a fight and inside a fi
     USE_WORDS['too-low']('Health Potion (E)', { upTo: 'E', name: 'Brakk Ironhide', rank: 'B', revive: false }),
   );
   const afterBag = await activeHunter(page);
-  expect([afterBag.life.hp, afterBag.items.find((i: any) => i.name === 'Health Potion (E)')?.qty]).toEqual([10, 2]);
+  expect([afterBag.life.hp, afterBag.bag.find((i: any) => i.name === 'Health Potion (E)')?.qty]).toEqual([10, 2]);
 
   // Inside a fight: refused in core by charge.ts (`tooLow`), bottle kept and HP unchanged
   await chooseList(page);
@@ -117,7 +117,7 @@ test('a rank B hunter is refused a rank E potion outside a fight and inside a fi
   await page.locator('#view-status [data-item]', { hasText: 'Health Potion (E)' }).locator('[data-use]').tap();
   await expect(page.locator('#toasts .toast').last()).toContainText(REFUSAL_WORDS.tooLow);
   const afterFight = await activeHunter(page);
-  expect([afterFight.life.hp, afterFight.items.find((i: any) => i.name === 'Health Potion (E)')?.qty]).toEqual([10, 2]);
+  expect([afterFight.life.hp, afterFight.bag.find((i: any) => i.name === 'Health Potion (E)')?.qty]).toEqual([10, 2]);
 });
 
 test('in the item maker a GM can toggle rank cap on a consumable and sees 1.0x default price for full-heal consumables', async ({ device }) => {
@@ -139,6 +139,6 @@ test('in the item maker a GM can toggle rank cap on a consumable and sees 1.0x d
   await expect(d.locator('.mk-preview')).toContainText(RANK_CAP_TEXT);
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
-  const saved = await page.evaluate(() => hunterApp.store.get().library.items.find((i: any) => i.name === 'Royal Elixir'));
+  const saved = await page.evaluate(() => (Object.values(hunterApp.store.get().library.items) as any[]).find(i => i.name === 'Royal Elixir'));
   expect(saved.rankCap).toBe(true);
 });

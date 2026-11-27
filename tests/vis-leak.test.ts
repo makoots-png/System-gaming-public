@@ -1,4 +1,8 @@
-import { fightId } from '../src/core/ids.ts';
+import { builtInItemId, customItemDefId, fightId } from '../src/core/ids.ts';
+import type { CatalogKey } from '../src/core/ids.ts';
+import { catalogIdOf } from '../src/core/catalog-id.ts';
+import { itemDefDataOf } from '../src/core/registry/item-book.ts';
+import { parseItem } from '../src/core/registry/items.ts';
 import { describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
 import { handler } from '../server.ts';
@@ -454,6 +458,63 @@ describe('sealed events and room projections hide GM-only data', () => {
       expect(ambushDoc.dodge!.reach).toBeGreaterThan(0);
       expect(ambushDoc.dodge!.left).toBeGreaterThan(0);
     }
+  });
+
+  test('unrevealed custom items in a GM catalog never leak on room polls, catalog/read, or unauthenticated catalog GET', async () => {
+    const { code, gm, pollAs } = await setupRoom();
+    const catKey = `visleak_cat_key_${Date.now()}`.padEnd(28, 'k') as CatalogKey;
+    const catId = catalogIdOf(catKey);
+    const catHdr = { 'x-catalog-key': catKey };
+    const potionId = builtInItemId('health-potion');
+    const shopId = customItemDefId(catId, 'publicshop000001');
+    const miraItemId = customItemDefId(catId, 'miraprivate00002');
+    const secretBossId = customItemDefId(catId, 'secretboss000003');
+    const mkDef = (name: string, desc: string) => itemDefDataOf(parseItem({ name, rar: 'epic', type: 'misc', slot: null, qty: 1, dice: '', bonus: {}, desc })!);
+
+    const putCat = await call('PUT', `/api/catalogs/${catId}`, {
+      headers: catHdr,
+      body: {
+        ifRev: 0,
+        data: {
+          items: {
+            [potionId]: mkDef('Edited Potion', 'Public built-in override.'),
+            [shopId]: mkDef('Guild Lantern', 'Public shop item.'),
+            [miraItemId]: mkDef('Mira Signet', 'Private reward for Mira only.'),
+            [secretBossId]: mkDef('Crown of the Shadow Monarch', 'Unrevealed final boss loot.'),
+          },
+          statuses: { grievous: { label: 'Grievous Wounds', desc: 'Receives less healing.', ops: [{ op: 'share', on: 'healed', pct: -65 }] } },
+          shop: [shopId],
+        },
+      },
+    });
+    expect(putCat.status).toBe(200);
+    expect((await call('PUT', `/api/rooms/${code}/catalog`, { headers: { ...gm, ...catHdr }, body: { id: catId } })).status).toBe(200);
+
+    // 1. Kai's room poll carries only the compact pointer { id, rev }, never any secret item text or id
+    const kaiPoll = await pollAs(KAI_DEV, 0);
+    expect((kaiPoll as { catalog?: unknown }).catalog).toEqual({ id: catId, rev: 1 });
+    expect(JSON.stringify(kaiPoll)).not.toContain('Crown of the Shadow Monarch');
+    expect(JSON.stringify(kaiPoll)).not.toContain('Mira Signet');
+    expect(JSON.stringify(kaiPoll)).not.toContain(secretBossId);
+
+    // 2. Kai's catalog/read with ids: [] returns built-in override + shop item only (never Mira's item or secret boss loot)
+    const kaiReadEmpty = await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: [] } });
+    expect(kaiReadEmpty.status).toBe(200);
+    expect(Object.keys(kaiReadEmpty.body.defs).sort()).toEqual([potionId, shopId].sort());
+    expect(JSON.stringify(kaiReadEmpty.body)).not.toContain('Crown of the Shadow Monarch');
+    expect(JSON.stringify(kaiReadEmpty.body)).not.toContain('Mira Signet');
+    expect(JSON.stringify(kaiReadEmpty.body)).not.toContain(secretBossId);
+
+    // 3. Even if Kai asks for Mira's id, the unasked secret boss loot STILL never leaves the catalog
+    const kaiReadMira = await call('POST', `/api/rooms/${code}/catalog/read`, { body: { ids: [miraItemId] } });
+    expect(kaiReadMira.status).toBe(200);
+    expect(Object.keys(kaiReadMira.body.defs).sort()).toEqual([potionId, shopId, miraItemId].sort());
+    expect(JSON.stringify(kaiReadMira.body)).not.toContain('Crown of the Shadow Monarch');
+    expect(JSON.stringify(kaiReadMira.body)).not.toContain(secretBossId);
+
+    // 4. Kai cannot GET the whole catalog without the GM's X-Catalog-Key
+    expect((await call('GET', `/api/catalogs/${catId}`)).status).toBe(403);
+    expect((await call('GET', `/api/catalogs/${catId}`, { headers: { 'x-catalog-key': 'wrong_key_1234567890123456' } })).status).toBe(403);
   });
 
   test('classPick stays sealed to the GM and DOCS.classOffer omits for anyone, hides targeted offers from other phones, and strips other devices\' keys', async () => {

@@ -6,6 +6,8 @@ import { SCHEMA, freshSave, newSettings, parseSaveValue } from '../src/core/save
 import type { Hunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { dev, hid, iid, qid, tid } from './fixtures/ids.ts';
+import { heldAdhoc } from './fixtures/items.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
 
 const env = { now: new Date('2026-11-14T10:00:00Z'), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') };
 /** The starter save's hunter: the canon seed, with a title, items, skills and the daily quest. */
@@ -60,7 +62,7 @@ describe('hunters added from another campaign\'s file', () => {
   test('each hunter and each entry gets a fresh id, and what it wears follows its entries', () => {
     const save = { ...freshSave(env, { onboarded: true }), seq: 200 };
     const file = fileHunter({
-      id: 'h1', name: 'Bo', titleId: 't5', titles: [{ id: 't5', name: 'X' }], items: [{ id: 'i3', name: 'Sword', type: 'weapon', slot: 'weapon' }, { id: 'i4', name: 'Hat', type: 'armor', slot: 'head' }],
+      id: 'h1', name: 'Bo', titleId: 't5', titles: [{ id: 't5', name: 'X' }], items: [heldAdhoc(3, parseItemDef({ name: 'Sword', type: 'weapon', slot: 'weapon' })!), heldAdhoc(4, parseItemDef({ name: 'Hat', type: 'armor', slot: 'head' })!)],
       equipped: { weapon: 'i3', head: 'i4' }, loadouts: [{ id: 'lo1', name: 'Set', slots: { weapon: 'i3', head: 'i4' } }],
     });
     const next = withImportedHunters(save, [file]), h = next.hunters.at(-1)!;

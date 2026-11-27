@@ -1,13 +1,13 @@
 // The chart of a gate's clear preset (src/core/gates/preset.ts `presetStep`), walked with every event.
 import { NO_PRESET, PRESET_STATES, presetStep } from '../../src/core/gates/preset.ts';
 import type { ClearPreset, PresetEvent, PresetItem, PresetState } from '../../src/core/gates/preset.ts';
-import { presetLineId } from '../../src/core/ids.ts';
+import { builtInItemId, presetLineId } from '../../src/core/ids.ts';
 import type { HunterId } from '../../src/core/ids.ts';
-import { parseItem } from '../../src/core/registry/items.ts';
+import { refGrant } from '../../src/core/registry/item-book.ts';
 import { bfs, machine } from '../statecharts.ts';
 
-const POTION = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
-const SWORD = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
+const POTION = refGrant(builtInItemId('health-potion-e'));
+const SWORD = refGrant(builtInItemId('iron-dagger'));
 const LINE: PresetItem = { id: presetLineId(1), item: POTION, checked: true, to: null };
 const AT = '2026-11-22T20:00:00.000Z';
 

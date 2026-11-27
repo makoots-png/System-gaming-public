@@ -15,7 +15,9 @@ import type { Formula } from '../formula.ts';
 import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, referenceBonus, split } from '../hunter/derive.ts';
 import type { Archetype, Bonus, SheetBasis, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
 import { buildOf, heldKeystones } from '../hunter/sheet.ts';
-import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
+import type { SheetHunter, SheetRules } from '../hunter/sheet.ts';
+import { bagOf, wornOf } from '../hunter/inventory.ts';
+import type { HeldItem, ResolvedItem } from '../registry/item-book.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
@@ -46,24 +48,23 @@ import { liveAbility, liveStatusDef } from './live-status.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { mythicStart } from './mythic.ts';
+import { extractBonusOf } from './extraction.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
 import type { NewRow } from './fight-types.ts';
 
-/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, rarities (for rank-capped consumables), and live conditions for `follow: true` ops. */
-export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities'> & { readonly conditions: StatusDefs };
+/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, rarities (for rank-capped consumables), shadow extraction class bonus, and live conditions for `follow: true` ops. */
+export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities' | 'shadow'> & { readonly conditions: StatusDefs };
 /** The statuses a monster may start with, by key: the built-ins with the GM's laid over them (`rulesOf`). */
 export type StatusDefs = Readonly<Partial<Record<string, StatusDef>>>;
 
 /** A skill as a row reads it: an active one may have a fight ability (Arise has none in M2), a passive one a bonus. */
 export type RowSkill = { readonly type: 'active'; readonly ability: Ability | null } | { readonly type: 'passive'; readonly bonus: Bonus; readonly worn?: StatusDef };
 /**
- * An item as a row reads it: a worn weapon is one with `attack` and `dice`; a consumable in the bag that goes to another
- * (`target: 'other'`) is an ability the hunter takes into the fight; a worn one gives its powers (`heldPowers`).
+ * An item as a row reads it, resolved from its bag line (inventory.ts `bagOf`): a worn weapon is one with `attack` and
+ * `dice`; a consumable in the bag that goes to another (`target: 'other'`) is an ability the hunter takes into the
+ * fight; a worn one gives its powers (`heldPowers`).
  */
-export type RowItem = SheetItem & {
-  readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack']; readonly finesse?: true; readonly damageType?: Weapon['damageType'];
-  readonly type?: string; readonly rar?: string; readonly qty?: number; readonly target?: 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true;
-} & Readonly<Powers>;
+type RowItem = ResolvedItem;
 /** The fields of a schema 4 hunter a row reads, on this phone or from a parsed remote sheet. */
 export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions' | 'titles'> & {
   /** Each title's bonus, and its powers (in the fight while it is the active title, `heldPowers`). */
@@ -73,7 +74,7 @@ export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions' | 't
   readonly life: Life;
   readonly mana: number;
   readonly skills: readonly RowSkill[];
-  readonly items: readonly RowItem[];
+  readonly items: readonly HeldItem[];
   readonly conditions: readonly SheetStatus[];
   /** The uses spent this gate of each ability limited a gate (`Vitals.used`, kits table 2.3); absent, none. */
   readonly used?: Readonly<Record<string, number>>;
@@ -138,7 +139,7 @@ type Held = { readonly powers: Readonly<Powers>; readonly tier: number };
  */
 export function heldPowers(h: RowHunter, R: RowRules): Held[] {
   const title = h.titles.find(t => t.id === h.titleId);
-  const worn = Object.values(h.equipped).flatMap(id => h.items.find(i => i.id === id) ?? []);
+  const bag = bagOf(h, R), worn = Object.values(wornOf(h, R)).flatMap(id => bag.find(i => i.id === id) ?? []);
   const tier = rankIdx(h.rank);
   const keystones = heldKeystones(h, R).flatMap(({ keystone, awakened }) => [{ powers: keystone, tier }, ...(awakened ? [{ powers: awakened, tier }] : [])]);
   return [...(title ? [{ powers: title, tier }] : []), ...worn.map(i => ({ powers: i, tier: itemSource({ rar: i.rar ?? 'common' }).tier })), ...keystones];
@@ -182,8 +183,9 @@ function withClassScalers(a: Ability, scalers: readonly Scaler[], R: RowRules): 
  * to non-consumable damaging abilities.
  */
 export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
-  const weapon = asWeapon(h.items.find(i => i.id === h.equipped['weapon']));
-  const thrown = h.items.flatMap(i => {
+  const bag = bagOf(h, R), weaponId = wornOf(h, R).weapon;
+  const weapon = asWeapon(bag.find(i => i.id === weaponId));
+  const thrown = bag.flatMap(i => {
     // a bag item is spent by its id, so one whose id does not read as an item's (a player's sheet keeps ids as sent) is no use in a fight
     const id = parseSaveId<'i'>(i.id);
     const a = id !== null && i.type === 'consumable' && (i.qty ?? 0) > 0
@@ -250,10 +252,12 @@ function partyRow(h: RowHunter, id: CombatantId, holder: HunterRef, R: RowRules)
   const shield = statuses.filter(s => s.worn).reduce<Shield | null>((held, s) => statusShield(s.def, { shield: held, statuses }, { user: self, target: self, charge: 0 }, null, now, null, R), null);
   // an ability limited a gate starts the fight with the uses its sheet has spent since the last Clear (table 2.3)
   const used = Object.fromEntries(abilities.filter(a => usesGates(a).some(g => g.per === 'gate') && (h.used?.[a.id] ?? 0) > 0).map(a => [a.id, h.used![a.id]!]));
+  const extractBonus = extractBonusOf(h, R.shadow);
   return {
     id, name: cut(h.name), side: 'party', kind: 'hunter', origin, tier: rankIdx(h.rank), place: null,
     life: lifeAfter(h.life, { type: 'maxChanged' }, sheet.hpMax), mana: clamp(h.mana, 0, sheet.manaMax), fatigue: clamp(h.fatigue, 0, sheet.fatigueMax),
     shield, stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities, intent: null, holder, xp: 0, mythic: null,
+    ...(extractBonus > 0 ? { extractBonus } : {}),
     ...(Object.keys(used).length ? { used } : {}),
   };
 }

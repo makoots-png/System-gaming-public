@@ -46,6 +46,8 @@ import { OFFER_OUTCOMES, TAKER, GIVER, closeNews, endOf, letterTaken, lettersKep
 import type { Closed, OfferOutcome, OfferRecord } from '../../src/core/trade/offer.ts';
 import type { Goods } from '../../src/core/trade/goods.ts';
 import { endIdOf } from '../../src/core/ids.ts';
+import { resolveItem } from '../../src/core/registry/item-book.ts';
+import type { HeldItem } from '../../src/core/registry/item-book.ts';
 
 /** As in src/edge/sync.ts: a removal in the `_kicked` doc younger than this keeps the player out. */
 const KICK_MS = REMOVED_MS;
@@ -148,7 +150,10 @@ export const isGm = (p: Phone): boolean => roleOf({ mode: p.save.mode, sync: { g
 
 /** The tokens and gold each player's hunter starts with: player 1 gives tokens, player 2 pays gold (notes-5-trade.md 1.8). */
 export const START_BAGS: readonly { readonly tokens: readonly number[]; readonly gold: number }[] = [{ tokens: [], gold: 0 }, { tokens: [1, 2, 3], gold: 100 }, { tokens: [11, 12], gold: 50 }];
-const token = (n: number) => ({ id: iid(`i${n}`), name: `Token ${n}`, rar: 'common' as const, type: 'misc' as const, slot: null, qty: 1, dice: '', bonus: {}, desc: '', armor: 0, resist: 0 });
+/** A token: a player's own (ad hoc) thing of its own name, so it never stacks and can be counted wherever it is. */
+const token = (n: number): HeldItem => ({ kind: 'adhoc', id: iid(`i${n}`), qty: 1, item: { name: `Token ${n}`, rar: 'common', type: 'misc', slot: null, dice: '', bonus: {}, desc: '', armor: 0, resist: 0 } });
+/** A bag or stash line's name, read under the shipped rules. */
+export const nameOf = (i: HeldItem): string => resolveItem(i, RULES).name;
 /** The tokens the GM's stash starts with, so a take is possible from the first move. */
 export const START_STASH: readonly number[] = [21];
 const HUNTER = newHunter(RULES);
@@ -224,7 +229,7 @@ function runLink(w: World, p: Phone, fx: LinkEffect[], before: Link, data: Data)
         const code = 'code' in before ? before.code : null;
         // sync.ts `notice` 'gone': the room's offers step `roomGone` in the write that refuses its letters
         if (x.id === 'gone' && code) {
-          const gone = offersGone(tradeSave(p), code);
+          const gone = offersGone(tradeSave(p), code, RULES);
           noteClosed(w, p, gone.closed);
           write(w, p, s => { tradeBack(p, gone.save); s.asked = onAsked(s, x2 => askedGone(x2, code)); s.outbox = roomGone(s.outbox, code); });
         }
@@ -256,7 +261,7 @@ function runPush(w: World, p: Phone, fx: PushEffect[]): void {
  */
 function write(w: World, p: Phone, fn: (s: PhoneSave) => void): void {
   fn(p.save);
-  if (p.save.offers.length || p.save.asked.length) { const before = tradeSave(p), next = asksKept(lettersKept(before)); if (next !== before) tradeBack(p, next); }
+  if (p.save.offers.length || p.save.asked.length) { const before = tradeSave(p), next = asksKept(lettersKept(before, RULES), RULES); if (next !== before) tradeBack(p, next); }
   if (p.push.at !== 'off' && sheetJson(p) !== p.sheetText) pushDo(w, p, { type: 'changed' });
 }
 
@@ -297,31 +302,31 @@ function noteClosed(w: World, p: Phone, closed: readonly Closed[]): void {
 function foldOffers(w: World, p: Phone, page: RoomState['events']): void {
   if (p.link.at !== 'live' || !page.length) return;
   const me = { room: p.link.code, seat: p.link.key === null ? 'player' as const : 'gm' as const };
-  const before = tradeSave(p), seen = offersSeen(before, page, me);
+  const before = tradeSave(p), seen = offersSeen(before, page, me, RULES);
   noteClosed(w, p, seen.closed);
   for (const n of seen.news) if (n.kind === 'log') p.traded[n.offer] = (p.traded[n.offer] ?? 0) + 1;
   if (seen.save !== before) write(w, p, () => tradeBack(p, seen.save));
 }
 /** The tap for each trade move; a move is enabled only where its tap is not refused (notes-5-trade.md 1.8's moves). */
 function tradeTap(w: World, p: Phone, verb: string, rand = 0): Save | { ok: false } {
-  const s = tradeSave(p), gate = { on: true, held: false } as const;
+  const s = tradeSave(p), gate = { on: true, held: false, R: RULES } as const;
   const open = (side: OfferRecord['side'], ok: (r: OfferRecord) => boolean) => p.save.offers.find(r => r.side === side && ok(r)) ?? null;
   switch (verb) {
     case 'offer': {
       const to = w.phones[2]; if (!to) return { ok: false };
       const t = p.save.hunter.items[0], asks = w.made % 2 ? 5 : 0;
       return offerPosted(s, { hid: hid('h1'), to: keyOf(to), toName: to.name, at: new Date(w.clock).toISOString(), stamp: { device: p.device, now: w.clock, rand }, ...gate,
-        gives: { gold: t ? 0 : 5, items: t ? [{ id: t.id, qty: 1, name: t.name }] : [] }, asks: { gold: asks, items: [] } });
+        gives: { gold: t ? 0 : 5, items: t ? [{ id: t.id, qty: 1, name: nameOf(t) }] : [] }, asks: { gold: asks, items: [] } });
     }
     case 'accept': case 'refuse': { const r = open('taker', x => x.state === 'offered'); return r ? offerAnswered(s, r.offer.id, verb, gate) : { ok: false }; }
-    case 'withdraw': { const r = takeBackOf(p); return r ? offerTakenBack(s, r.offer.id) : { ok: false }; }
-    case 'stop': { const r = open('gm', x => x.state === 'open'); return r ? offerStopped(s, r.offer.id) : { ok: false }; }
+    case 'withdraw': { const r = takeBackOf(p); return r ? offerTakenBack(s, r.offer.id, RULES) : { ok: false }; }
+    case 'stop': { const r = open('gm', x => x.state === 'open'); return r ? offerStopped(s, r.offer.id, RULES) : { ok: false }; }
     // the party stash (trade/stash.ts `stashAsked`): a put of the bag's first token; a take of the first line of the GM's
     // stash as the player reads it (off the GM's phone, as `invite` reads the code)
     case 'put': case 'take': {
       const t = verb === 'put' ? p.save.hunter.items[0] : w.phones[0]!.save.stash.items[0];
       if (!t) return { ok: false };
-      const want = verb === 'put' ? { kind: 'put' as const, pick: { gold: 0, items: [{ id: t.id, qty: 1, name: t.name }] } } : { kind: 'take' as const, item: t.id, qty: 1, name: t.name };
+      const want = verb === 'put' ? { kind: 'put' as const, pick: { gold: 0, items: [{ id: t.id, qty: 1, name: nameOf(t) }] } } : { kind: 'take' as const, item: t.id, qty: 1, name: nameOf(t) };
       return stashAsked(s, { hid: hid('h1'), want, at: new Date(w.clock).toISOString(), stamp: { device: p.device, now: w.clock, rand }, ...gate });
     }
     default: return { ok: false };
@@ -496,7 +501,7 @@ function applyOne(w: World, p: Phone, ev: RoomEvent): void {
     if (ev.payload.verdict === 'cleared') p.paid[run] = (p.paid[run] ?? 0) + 1;
   }
   // room-events.ts `stashAnswer`: the answer closes its waiting ask and moves its goods in the write that lands it
-  if (took && ev.type === 'stashAnswer') { const r = stashLanded(tradeSave(p), ev.payload); if (!isRefused(r)) write(w, p, () => tradeBack(p, r.save)); }
+  if (took && ev.type === 'stashAnswer') { const r = stashLanded(tradeSave(p), ev.payload, RULES); if (!isRefused(r)) write(w, p, () => tradeBack(p, r.save)); }
 }
 
 /** The asks of `s` after a step of sync/asked.ts on a save that holds them and the outbox. */
@@ -543,7 +548,7 @@ function stashOne(w: World, p: Phone, ev: RoomEvent): void {
   if (ev.type !== 'stashAsk' || !code) return;
   const ring = recordApplied(p.save.applied, ev.payload.eid);
   if (!ring) return;
-  const next = stashTaken(tradeSave(p), ev.payload, { on: true, room: code, stamp: { device: p.device, now: w.clock, rand: (w.made++ % 997) / 997 }, log: { at: new Date(w.clock).toISOString(), cap: RULES.logCap } });
+  const next = stashTaken(tradeSave(p), ev.payload, { on: true, room: code, stamp: { device: p.device, now: w.clock, rand: (w.made++ % 997) / 997 }, log: { at: new Date(w.clock).toISOString(), cap: RULES.logCap }, R: RULES });
   write(w, p, s => { s.applied = ring; if (!isRefused(next)) tradeBack(p, next); });
 }
 
@@ -682,7 +687,7 @@ function flushOut(w: World, p: Phone, first: ((s: PhoneSave) => void) | null = n
     if (ev.type === 'failed') write(w, p, s => { s.outbox = outStep(s.outbox, out.id, ev); });
     // sync.ts `answered`: a solo run whose message the room took is heard taken in the same write, before its letter leaves
     // and an offer's letter heard taken (trade/offer.ts `letterTaken`), in that write too
-    else flushOut(w, p, s => { if (ev.type === 'sent') { s.asked = onAsked(s, x => askTaken(x, out.id)); tradeBack(p, letterTaken(tradeSave(p), out.id)); } s.outbox = outStep(s.outbox, out.id, ev); });
+    else flushOut(w, p, s => { if (ev.type === 'sent') { s.asked = onAsked(s, x => askTaken(x, out.id)); tradeBack(p, letterTaken(tradeSave(p), out.id, RULES)); } s.outbox = outStep(s.outbox, out.id, ev); });
   });
 }
 /** `deliver`: an event is posted with the GM key on the GM's phone. */

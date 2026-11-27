@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, save, roomHeaders, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, save, roomHeaders, adhoc, type Page } from './helpers.ts';
 
 const status = '#view-status ';
 const win = '.sys-overlay.show';
@@ -115,18 +115,18 @@ test('a player saves gear sets, swaps them in one tap, keeps them when the GM lo
   await onboardPlayer(page, 'Kai Test');
   await dismissAll(page);
   const hid = await page.evaluate(() => hunterApp.store.active().id as string);
-  const gear = await page.evaluate(id => {
-    const add = (it: any) => hunterApp.api.inventory.addItem(id, { rar: 'common', qty: 1, ...it }).id as string;
-    const ids = {
-      sword: add({ name: 'Iron Sword', type: 'weapon', slot: 'weapon', attack: 'strike', dice: '1d8', weight: 2, bonus: { str: 1 } }),
-      shield: add({ name: 'Oak Shield', type: 'armor', slot: 'offhand', weight: 2, armor: 3, resist: 1 }),
-      mail: add({ name: 'Chain Mail', type: 'armor', slot: 'chest', weight: 6, armor: 6, resist: 2 }),
-      spear: add({ name: 'Long Spear', type: 'weapon', slot: 'weapon', attack: 'strike', dice: '1d10', weight: 2, bonus: { str: 2 } }),
-      robe: add({ name: 'Silk Robe', type: 'armor', slot: 'chest', weight: 1, resist: 3, bonus: { pow: 1 } }),
-    };
-    for (const k of ['sword', 'shield', 'mail'] as const) hunterApp.api.inventory.equip(id, ids[k]);
+  const kit = {
+    sword: adhoc({ rar: 'common', name: 'Iron Sword', type: 'weapon', slot: 'weapon', attack: 'strike', dice: '1d8', weight: 2, bonus: { str: 1 } }),
+    shield: adhoc({ rar: 'common', name: 'Oak Shield', type: 'armor', slot: 'offhand', weight: 2, armor: 3, resist: 1 }),
+    mail: adhoc({ rar: 'common', name: 'Chain Mail', type: 'armor', slot: 'chest', weight: 6, armor: 6, resist: 2 }),
+    spear: adhoc({ rar: 'common', name: 'Long Spear', type: 'weapon', slot: 'weapon', attack: 'strike', dice: '1d10', weight: 2, bonus: { str: 2 } }),
+    robe: adhoc({ rar: 'common', name: 'Silk Robe', type: 'armor', slot: 'chest', weight: 1, resist: 3, bonus: { pow: 1 } }),
+  };
+  const gear = await page.evaluate(([id, kit]) => {
+    const ids = Object.fromEntries(Object.entries(kit).map(([k, g]) => [k, hunterApp.api.inventory.addItem(id, g).id as string]));
+    for (const k of ['sword', 'shield', 'mail']) hunterApp.api.inventory.equip(id, ids[k]);
     return ids;
-  }, hid);
+  }, [hid, kit] as const) as Record<keyof typeof kit, string>;
   const base = await activeHunter(page);
   // Worn armor adds its armor to the sheet's (design 2.3): the shield's 3 and the mail's 6.
   const strBare = base.derived.stats.str - 1, armorBare = base.derived.armor - 9, powBare = base.derived.stats.pow;
@@ -184,7 +184,7 @@ test('a player saves gear sets, swaps them in one tap, keeps them when the GM lo
   });
 
   await test.step('a set holding an item that can no longer be worn skips it and says which one', async () => {
-    await page.evaluate(([id, g]) => hunterApp.store.update((d: any) => { d.hunters.find((x: any) => x.id === id).items.find((i: any) => i.id === g.spear).slot = null; }, 'test-setup'), [hid, gear] as const);
+    await page.evaluate(([id, g]) => hunterApp.store.update((d: any) => { d.hunters.find((x: any) => x.id === id).items.find((i: any) => i.id === g.spear).item.slot = null; }, 'test-setup'), [hid, gear] as const);
     await page.evaluate(([id, g]) => { hunterApp.api.inventory.equip(id, g.sword); hunterApp.api.inventory.equip(id, g.robe); }, [hid, gear] as const);
     await chip('Caster').tap();
     await expect(toasts(page).filter({ hasText: 'No longer in the bag: Long Spear' })).toHaveCount(1);
@@ -194,7 +194,7 @@ test('a player saves gear sets, swaps them in one tap, keeps them when the GM lo
   await test.step('during a fight a set does not swap and Unequip changes nothing, because the fight keeps the sheet it started with', async () => {
     await page.evaluate(([id, g]) => hunterApp.store.update((d: any) => {
       const x = d.hunters.find((h: any) => h.id === id);
-      x.items.find((i: any) => i.id === g.spear).slot = 'weapon'; x.equipped.weapon = g.spear; x.equipped.chest = g.robe;
+      x.items.find((i: any) => i.id === g.spear).item.slot = 'weapon'; x.equipped.weapon = g.spear; x.equipped.chest = g.robe;
     }, 'test-setup'), [hid, gear] as const);
     await startLocalFight(page);
     await go(page, 'status');
@@ -355,21 +355,21 @@ test('10 gear slots allow 6 active at once, show Swap on occupied slots, and loc
   await onboardPlayer(page, 'Kai Gear');
   await dismissAll(page);
   const hid = await page.evaluate(() => hunterApp.store.active().id as string);
-  const ids = await page.evaluate(id => {
-    const add = (it: any) => hunterApp.api.inventory.addItem(id, { rar: 'rare', qty: 1, ...it }).id as string;
-    const out = {
-      bow: add({ name: 'Frost Longbow', type: 'weapon', slot: 'weapon', attack: 'shot', dice: '1d8', twoHanded: true, bonus: { agi: 2 } }),
-      helm: add({ name: 'Steel Helm', type: 'armor', slot: 'head', armor: 4 }),
-      armor: add({ name: 'Shadow Plate', type: 'armor', slot: 'chest', armor: 10 }),
-      neck: add({ name: 'Mana Charm', type: 'accessory', slot: 'neck', bonus: { manaMax: 2 } }),
-      pants: add({ name: 'Wind Greaves', type: 'armor', slot: 'legs', armor: 4 }),
-      orb: add({ name: 'Avarice Orb', type: 'accessory', slot: 'orb', bonus: { pow: 3 } }),
-      boots: add({ name: 'Swift Boots', type: 'armor', slot: 'feet', armor: 2 }),
-      crown: add({ name: 'Iron Crown', type: 'armor', slot: 'head', armor: 5 }),
-    };
-    for (const k of ['bow', 'helm', 'armor', 'neck', 'pants', 'orb'] as const) hunterApp.api.inventory.equip(id, out[k]);
+  const kit = {
+    bow: adhoc({ rar: 'rare', name: 'Frost Longbow', type: 'weapon', slot: 'weapon', attack: 'shot', dice: '1d8', twoHanded: true, bonus: { agi: 2 } }),
+    helm: adhoc({ rar: 'rare', name: 'Steel Helm', type: 'armor', slot: 'head', armor: 4 }),
+    armor: adhoc({ rar: 'rare', name: 'Shadow Plate', type: 'armor', slot: 'chest', armor: 10 }),
+    neck: adhoc({ rar: 'rare', name: 'Mana Charm', type: 'accessory', slot: 'neck', bonus: { manaMax: 2 } }),
+    pants: adhoc({ rar: 'rare', name: 'Wind Greaves', type: 'armor', slot: 'legs', armor: 4 }),
+    orb: adhoc({ rar: 'rare', name: 'Avarice Orb', type: 'accessory', slot: 'orb', bonus: { pow: 3 } }),
+    boots: adhoc({ rar: 'rare', name: 'Swift Boots', type: 'armor', slot: 'feet', armor: 2 }),
+    crown: adhoc({ rar: 'rare', name: 'Iron Crown', type: 'armor', slot: 'head', armor: 5 }),
+  };
+  const ids = await page.evaluate(([id, kit]) => {
+    const out = Object.fromEntries(Object.entries(kit).map(([k, g]) => [k, hunterApp.api.inventory.addItem(id, g).id as string]));
+    for (const k of ['bow', 'helm', 'armor', 'neck', 'pants', 'orb']) hunterApp.api.inventory.equip(id, out[k]);
     return out;
-  }, hid);
+  }, [hid, kit] as const) as Record<keyof typeof kit, string>;
 
   await go(page, 'status');
   const eq = page.locator(`${status}[data-panel=equipment]`);

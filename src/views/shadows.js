@@ -3,6 +3,7 @@
 // sheet's `shadows`, and the extraction roll is a Presence check.
 import { canExtract as canExtractJob, RANKS } from '../edge/rules.ts';
 import { shadowSheet } from '../core/combat/rows.ts';
+import { extractAttemptsMax } from '../core/combat/extraction.ts';
 import { ARCHETYPE_LIST, MONSTER_KINDS } from '../core/registry/monsters.ts';
 import { oneOf } from '../core/one-of.ts';
 import { armyCap, can, extractDc, extractOutcome, healShadow, noteShadow, renameShadow, risesAs, shadowRises, shadowState, stepShadow } from '../core/hunter/shadows.ts';
@@ -48,12 +49,13 @@ export function register(app) {
     if (!h || !c || !c.down) return null;
     if (!canExtract(h)) { ui.toast('System', `${h.name} cannot extract shadows.`, { kind: 'warning' }); return null; }
     if (c.extractable === false) { ui.toast('System', `${c.name} cannot be extracted.`, { kind: 'warning' }); return null; }
-    const left = int(c.left), tried = R.maxAttempts - left;
+    const max = extractAttemptsMax(R, h);
+    const left = int(c.left), tried = max - left;
     if (left <= 0) { ui.toast('System', 'No attempts left on this corpse.', { kind: 'warning' }); return null; }
     if (h.shadows.length >= cap(h)) { ui.toast('System', `Army is full (${h.shadows.length} / ${cap(h)}). Release a shadow first.`, { kind: 'warning' }); return null; }
     const m = c, dc = dcFor(h, m), bonus = A().hunter.sheet(h).checks.bonus.pre;
     const go = await ui.system({ tag: '! Extraction', title: 'Shadow Extraction', kind: 'arise', body: `Target: ${m.name} (${m.rank}-rank${m.kind === 'boss' ? ' boss' : ''}).`,
-      lines: [`DC ${dc}`, `Roll: d20 ${bonus >= 0 ? '+' : '−'}${Math.abs(bonus)} (Presence check)`, `Attempt ${tried + 1} of ${R.maxAttempts}`],
+      lines: [`DC ${dc}`, `Roll: d20 ${bonus >= 0 ? '+' : '−'}${Math.abs(bonus)} (Presence check)`, `Attempt ${tried + 1} of ${max}`],
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Extract', value: true, primary: true }] });
     if (!go) return null;
     // a player's hunter rolls on the GM's phone with its own sheet's bonus; the roll is the GM's, not a hunter of this phone's

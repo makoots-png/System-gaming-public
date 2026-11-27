@@ -1,7 +1,8 @@
 import { writeFile } from 'node:fs/promises';
 import { test as base, expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { STARTER_GEAR, parseItem } from '../../src/core/registry/items.ts';
-import type { ItemDef } from '../../src/core/registry/items.ts';
+import type { ItemSeed } from '../../src/core/registry/items.ts';
+import { itemDefDataOf, type ItemDefData, type ItemGrant } from '../../src/core/registry/item-book.ts';
 import { STARTER_SKILLS, skillOf } from '../../src/core/registry/skills.ts';
 import type { SkillDef } from '../../src/core/registry/skills.ts';
 import { confirm, raiseMany } from '../../src/core/hunter/progress.ts';
@@ -205,7 +206,7 @@ export async function onboardGM(page: Page, path = '/'): Promise<void> {
 // Decouples combat, gate, maker, and room E2E tests from `src/core/starter.ts` and onboarding copy so starter
 // campaign changes do not break unrelated browser tests. Kept here (non-matcher literals) so `tests/e2e-copy.test.ts`
 // recognizes fixture names (`Brakk Ironhide`, `Mira Vale`, `Eldrin Voss`, `Goblin Den`) as test-written data.
-const LEGACY_PREGENS: readonly { name: string; job: string; stats: StatPoints; skills: readonly SkillDef[]; item: ItemDef }[] = [
+const LEGACY_PREGENS: readonly { name: string; job: string; stats: StatPoints; skills: readonly SkillDef[]; item: ItemSeed }[] = [
   { name: 'Brakk Ironhide', job: 'Tanker', stats: { vit: 8, str: 4 }, skills: [STARTER_SKILLS.shieldWall, STARTER_SKILLS.ironSkin], item: STARTER_GEAR.towerShield },
   { name: 'Mira Vale', job: 'Ranger', stats: { agi: 8, ctl: 4 }, skills: [STARTER_SKILLS.markedShot, STARTER_SKILLS.trailsense], item: STARTER_GEAR.huntingBow },
   { name: 'Eldrin Voss', job: 'Mage', stats: { pow: 8, ctl: 4 }, skills: [STARTER_SKILLS.arcBolt, STARTER_SKILLS.manaSense], item: STARTER_GEAR.manaPotion },
@@ -238,17 +239,17 @@ function buildLegacyGoblinDenSave(
     const created = makeHunter({ seq, settings: base.settings }, p.name, R, now);
     seq = created.seq;
     const jobbed = setJob(created.hunter, p.job, { held: false, dead: false });
-    const item = parseItem(p.item);
-    if (isRefused(jobbed) || !item) throw new Error(`legacy Goblin Den fixture pregen failed: ${p.name}`);
+    const item: ItemGrant = { kind: 'ref', defId: p.item.defId, qty: 1 };
+    if (isRefused(jobbed)) throw new Error(`legacy Goblin Den fixture pregen failed: ${p.name}`);
     const raised = raiseMany(jobbed, p.stats, R);
     if (isRefused(raised)) throw new Error(`legacy Goblin Den fixture raiseMany failed: ${p.name}`);
     let h = confirm(raised);
     if (browserDayKey) h = { ...h, daily: { ...h.daily, lastCheckedKey: browserDayKey } };
     for (const k of p.skills) h = learnSkill(h, { ...skillOf(k, R), label: 'Lv.1' }, next('s'));
     const itemId = next('i');
-    h = putItem(h, item, itemId);
-    if (item.slot) {
-      const worn = equip(h, itemId, itemId);
+    h = putItem(h, item, itemId, R);
+    if ('slot' in p.item) {
+      const worn = equip(h, itemId, itemId, false, R);
       if (isRefused(worn)) throw new Error(`legacy Goblin Den fixture equip failed: ${p.name}`);
       h = worn;
     }
@@ -363,11 +364,38 @@ export async function editIdentity(page: Page, field: 'name' | 'job' | 'title', 
 /** The whole save as the app holds it. */
 export const save = (page: Page): Promise<any> => page.evaluate(() => JSON.parse(JSON.stringify(hunterApp.store.get())));
 
-/** The active hunter, with HP and mana as its sheet shows them and `derived`: its sheet's numbers and its stats after perks and conditions. */
+/**
+ * The active hunter, with HP and mana as its sheet shows them, `derived`: its sheet's numbers and its stats after perks
+ * and conditions, and `bag`: its bag lines as the app reads them (`inventory.bag`, each with its name, rarity and count).
+ */
 export const activeHunter = (page: Page): Promise<any> => page.evaluate(() => {
   const h = hunterApp.store.active(), s = hunterApp.api.hunter.sheet(h);
-  return { ...JSON.parse(JSON.stringify(h)), hp: s.hp, mana: s.mana, derived: { ...s.sheet, stats: s.stats } };
+  return { ...JSON.parse(JSON.stringify(h)), hp: s.hp, mana: s.mana, derived: { ...s.sheet, stats: s.stats }, bag: JSON.parse(JSON.stringify(hunterApp.api.inventory.bag(h))) };
 });
+
+/** An item's fields (any the item maker leaves out take the parser's defaults) as the def the one item parser reads. */
+export function itemDef(t: Record<string, unknown>): ItemDefData {
+  const p = parseItem(t);
+  if (!p) throw new Error(`not an item: ${JSON.stringify(t)}`);
+  return itemDefDataOf(p);
+}
+/** A player's own item of `qty` (its fields as `itemDef` reads them), as an ad hoc grant for `inventory.addItem`. */
+export const adhoc = (t: Record<string, unknown>, qty = 1): ItemGrant => ({ kind: 'adhoc', qty, item: itemDef(t) });
+
+/** The library's items, each def with its id as `defId`. */
+export const libraryItems = (page: Page): Promise<any[]> => page.evaluate(() =>
+  Object.entries(JSON.parse(JSON.stringify(hunterApp.store.get().library.items))).map(([defId, d]: [string, any]) => ({ defId, ...d })));
+/** The library's item named `name`, with its id as `defId`, or undefined. */
+export const libraryItem = async (page: Page, name: string): Promise<any> => (await libraryItems(page)).find(i => i.name === name);
+/**
+ * Puts `def` (an item's fields, no `id` or `qty`) in the library as a custom item of this campaign's catalog, as the item
+ * maker's Save to library would; answers its def id.
+ */
+export const addLibraryItem = (page: Page, def: Record<string, unknown>): Promise<string> => page.evaluate(d => {
+  const id = hunterApp.store.itemDefId() as string;
+  hunterApp.store.update((s: any) => { s.library.items[id] = d; }, 'test-setup');
+  return id;
+}, def);
 
 /** The GM creates a room from the GM tab and gets its code. */
 export async function createRoom(gm: Page): Promise<string> {

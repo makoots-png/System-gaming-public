@@ -3,8 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { LOOT_EVENTS, LOOT_STATES, clearGoldEach, clearShares, dropDealt, dropLine, encounterAwards, gateFact, lootOffered, lootStep, planEncounter, settleClear, settleClearPreset, settleEncounter, shareEach } from '../src/core/gates/pay.ts';
 import { gatePreset } from '../src/core/gates/preset.ts';
 import { waitingIn } from '../src/core/hunter/pending.ts';
-import { fightId, presetLineId } from '../src/core/ids.ts';
+import { builtInItemId, fightId, presetLineId } from '../src/core/ids.ts';
 import { parseItem } from '../src/core/registry/items.ts';
+import { adhocGrant, itemDefDataOf, refGrant, resolveGrant } from '../src/core/registry/item-book.ts';
+import type { ItemGrant } from '../src/core/registry/item-book.ts';
+import { bagOf } from '../src/core/hunter/inventory.ts';
+import { customId, rulesWith } from './fixtures/items.ts';
 import { STASH_LINES } from '../src/core/protocol.ts';
 import type { LootEvent } from '../src/core/gates/pay.ts';
 import { remoteFacts } from '../src/core/combat/fight-facts.ts';
@@ -298,16 +302,19 @@ describe('a fight\'s loot waiting for the GM (SMX-gates-1)', () => {
   });
 
   test('a drop in one line: its gold, then each item with its count past one', () => {
-    const shard = { ...({} as Dropped['items'][number]), name: 'Frost Shard', qty: 2 }, rope = { ...shard, name: 'Rope', qty: 1 };
-    expect(dropLine({ gold: 1500, items: [shard, rope] }, n => n.toLocaleString('en-US'))).toBe('1,500 gold, Frost Shard ×2, Rope');
-    expect(dropLine({ gold: 0, items: [] }, String)).toBe('');
+    const R = rulesWith({ [customId('frostshard')]: itemDefDataOf(parseItem({ name: 'Frost Shard', type: 'material' })!) });
+    const shard = refGrant(customId('frostshard'), 2), rope = adhocGrant(itemDefDataOf(parseItem({ name: 'Rope', type: 'misc' })!), 1);
+    expect(dropLine({ gold: 1500, items: [shard, rope] }, n => n.toLocaleString('en-US'), R)).toBe('1,500 gold, Frost Shard ×2, Rope');
+    expect(dropLine({ gold: 0, items: [] }, String, R)).toBe('');
   });
 });
 
 describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
-  const POTION = parseItem({ name: 'Health Potion', type: 'consumable', rar: 'common' })!;
-  const SWORD = parseItem({ name: 'Iron Blade', type: 'weapon', slot: 'weapon', dice: '1d8', rar: 'uncommon' })!;
-  const DAGGER = parseItem({ name: 'Rusty Dagger', type: 'weapon', slot: 'weapon', dice: '1d4', rar: 'common' })!;
+  const POTION = refGrant(builtInItemId('health-potion-e'));
+  const SWORD = refGrant(builtInItemId('iron-dagger'));
+  const DAGGER = adhocGrant(itemDefDataOf(parseItem({ name: 'Rusty Dagger', type: 'weapon', slot: 'weapon', dice: '1d4', rar: 'common' })!));
+  /** The name a grant reads under the shipped rules. */
+  const nameOf = (g: ItemGrant): string => resolveGrant(g, RULES).name;
 
   const withPreset = (s: Save): Save => {
     const rec = ok(gatePreset(s, gid('g-den'), {
@@ -331,12 +338,12 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
     expect(out.granted).toHaveLength(1);
     expect(lifetimeXp(out.save.hunters[0]!)).toBe(lifetimeXp(h) + 220);
     expect(out.save.hunters[0]!.gold).toBe(h.gold + 120);
-    expect(out.save.stash.items.map(i => i.name), 'unpicked checked item went to party stash').toEqual(['Health Potion']);
-    expect(out.stashed.map(i => i.name)).toEqual(['Health Potion']);
+    expect(bagOf(out.save.stash, RULES).map(i => i.name), 'unpicked checked item went to party stash').toEqual(['Health Potion (E)']);
+    expect(out.stashed.map(nameOf)).toEqual(['Health Potion (E)']);
     expect(out.pending).toEqual([]);
     expect(waitingIn(out.save, ROOM)).toEqual([]);
-    expect(out.remotePaid.map(r => [r.name, r.rewards.xp, r.rewards.gold, r.rewards.items.map(i => i.name)])).toEqual([
-      ['Kai', 220, 120, ['Iron Blade']],
+    expect(out.remotePaid.map(r => [r.name, r.rewards.xp, r.rewards.gold, r.rewards.items.map(nameOf)])).toEqual([
+      ['Kai', 220, 120, ['Iron Dagger']],
     ]);
 
     const boxEvents = (out.save.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' ? [e.letter.event] : []));
@@ -346,7 +353,7 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
       earned: { from: 'clear', what: 'Goblin Den' },
       rewards: { xp: 220, gold: 120 },
     });
-    expect(boxEvents[0]!.type === 'award' && boxEvents[0]!.payload.rewards.items.map(i => i.name)).toEqual(['Iron Blade']);
+    expect(boxEvents[0]!.type === 'award' && boxEvents[0]!.payload.rewards.items.map(nameOf)).toEqual(['Iron Dagger']);
     // a second clear is refused
     expect(settleClearPreset(out.save, gid('g-den'), xpOf, payees, room, DAY)).toEqual({ ok: false, why: 'no-preset' });
   });
@@ -381,8 +388,8 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
     expect(out.pending).toEqual([]);
     expect(lifetimeXp(out.save.hunters[0]!)).toBe(lifetimeXp(h) + 180);
     expect(out.save.hunters[0]!.gold).toBe(h.gold + 75);
-    expect(out.save.hunters[0]!.items.map(i => i.name)).toContain('Iron Blade');
-    expect(out.save.stash.items.map(i => i.name)).toEqual(['Health Potion']);
+    expect(bagOf(out.save.hunters[0]!, RULES).map(i => i.name)).toContain('Iron Dagger');
+    expect(bagOf(out.save.stash, RULES).map(i => i.name)).toEqual(['Health Potion (E)']);
     expect(out.save.gates[0]!.preset.at).toBe('paid');
   });
 
@@ -390,7 +397,7 @@ describe('a gate\'s Clear with a preset (settleClearPreset)', () => {
     const s0 = { ...inDen(), fight: null }, h = s0.hunters[0]!;
     expect(settleClearPreset(s0, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY)).toEqual({ ok: false, why: 'no-preset' });
 
-    const fullItems = Array.from({ length: STASH_LINES }, (_, i) => ({ ...parseItem({ name: `Token ${i}`, type: 'misc' })!, id: `i${900 + i}` as never, qty: 1 }));
+    const fullItems = Array.from({ length: STASH_LINES }, (_, i) => ({ kind: 'adhoc' as const, id: `i${900 + i}` as never, qty: 1, item: itemDefDataOf(parseItem({ name: `Token ${i}`, type: 'misc' })!) }));
     const fullSave: Save = { ...withPreset(s0), stash: { gold: 0, items: fullItems } };
     expect(settleClearPreset(fullSave, gid('g-den'), xpOf, [{ kind: 'local', hid: h.id, name: h.name }], null, DAY)).toEqual({ ok: false, why: 'stash-full' });
     expect(fullSave.gates[0]!.status).toBe('detected');

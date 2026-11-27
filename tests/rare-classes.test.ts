@@ -43,6 +43,7 @@ import { SNIPER_SIGNATURE, SNIPER_TREE } from '../src/core/registry/class-sniper
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 import { onCooldown, payCost } from '../src/core/combat/charge.ts';
 import { inRange } from '../src/core/combat/resolve.ts';
 import { playFight } from './models/fight-sim.ts';
@@ -262,7 +263,7 @@ describe('Wave 1 Rare trees, gold pricing, and budget compliance', () => {
         resist: 0,
         target: 'other' as const,
         effects: [{ op: 'damage' as const, type: 'arcane' as const, amount: { kind: 'number' as const, value: 10 } }],
-      }));
+      })).map(({ id, qty, ...item }): HeldItem => ({ kind: 'adhoc', id, qty, item }));
       const bagRow = hunterRow({ ...h, items: [...h.items, ...bombs] }, combatantId('h-bag'), KEYSTONES_ON);
       for (const id of spec.activeIds) {
         expect(bagRow.abilities.map(a => a.id)).toContain(wornAbilityId(abilityId(id)));

@@ -493,3 +493,75 @@ test('a grant onto a class the player keeps from another campaign is reported, a
   expect(await p1.locator('#toasts .toast-warning', { hasText: grantNotTakenLine('Hemomancer', 'foreign-class') }).count()).toBeLessThanOrEqual(1);
   expect(await p1.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).filter((e: any) => e.letter.kind === 'event' && e.letter.event.type === 'classGrantRefused').length)).toBeLessThanOrEqual(1);
 });
+
+test('Common skill tree (Fighter): 12 buyable nodes with zero forks, early Depth 5 Capstone unlock, D-rank gold pricing, and preserved progress across swaps', async ({ device }) => {
+  const page = (await device('solo-common')).page;
+  await onboardPlayer(page, 'Ren Common');
+  await dismissAll(page);
+  await page.evaluate(() => {
+    hunterApp.store.update((d: any) => {
+      const h = d.hunters[0];
+      const at = new Date().toISOString();
+      h.rank = 'D';
+      h.level = 10;
+      h.gold = 500;
+      h.classes = {
+        Fighter: { unlockedAt: at, nodes: [] },
+        Mage: { unlockedAt: at, nodes: [] },
+      };
+      h.job = 'Fighter';
+      h.jobDone = 'Fighter';
+    }, 'test-setup');
+  });
+  await go(page, 'status');
+
+  const panel = page.locator('#view-status [data-panel="classes"]');
+  const tree = panel.locator('[data-cls-tree="Fighter"]');
+
+  await test.step('Fighter tree shows 0/12 nodes, zero forks, and rushing Branch A unlocks Depth 5 Capstone early', async () => {
+    await expect(tree).toBeVisible();
+    await tree.locator('summary').tap();
+    await expect(tree).toHaveAttribute('open', '');
+    await expect(tree.locator('[data-cls-fork]')).toHaveCount(0);
+    await expect(tree.locator('[data-cls-node="ftr-root"]')).toHaveAttribute('data-cls-status', 'buyable');
+    await expect(tree.locator('[data-cls-node="ftr-cap"]')).toHaveAttribute('data-cls-status', 'locked');
+
+    // Buy root (24g) -> a2 (41g) -> a3x (65g) -> a4x (98g) = 228g total
+    for (const id of ['ftr-root', 'ftr-a2', 'ftr-a3x', 'ftr-a4x']) {
+      await tree.locator(`[data-cls-buy="${id}"]`).tap();
+      const warn = page.locator('.sys-overlay.show .sys-window.sys-warn');
+      await warn.locator('button.primary').tap();
+      await expect(warn).toHaveCount(0);
+    }
+
+    await expect(tree.locator('[data-cls-capstone-ready]')).toHaveText(CLASS_UI_WORDS.capstoneReady);
+    await expect(tree.locator('[data-cls-node="ftr-cap"]')).toHaveAttribute('data-cls-status', 'buyable');
+
+    // Buy Depth 5 Capstone (146g) -> total 374g spent, 126g left
+    await tree.locator('[data-cls-buy="ftr-cap"]').tap();
+    const capWarn = page.locator('.sys-overlay.show .sys-window.sys-warn');
+    await expect(capWarn).toContainText(CLASS_UI_WORDS.nodeWarnTitle('Unbroken Grit'));
+    await capWarn.locator('button', { hasText: CLASS_UI_WORDS.payAction(146) }).tap();
+    await expect(capWarn).toHaveCount(0);
+
+    await expect(tree.locator('[data-cls-node="ftr-cap"]')).toHaveAttribute('data-cls-status', 'owned');
+    expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(126);
+  });
+
+  await test.step('swapping to Mage opens Mage 12-node tree and swapping back keeps Fighter nodes intact', async () => {
+    await panel.locator('[data-cls-swap="Mage"]').tap();
+    const mageTree = panel.locator('[data-cls-tree="Mage"]');
+    await expect(mageTree).toBeVisible();
+    await mageTree.locator('summary').tap();
+    await expect(mageTree.locator('[data-cls-node="mag-root"]')).toHaveAttribute('data-cls-status', 'buyable');
+
+    await panel.locator('[data-cls-swap="Fighter"]').tap();
+    expect(await page.evaluate(() => hunterApp.store.active().classes.Fighter.nodes)).toEqual([
+      'ftr-root',
+      'ftr-a2',
+      'ftr-a3x',
+      'ftr-a4x',
+      'ftr-cap',
+    ]);
+  });
+});

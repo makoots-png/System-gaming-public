@@ -22,6 +22,9 @@ import type { StashAsk } from '../src/core/trade/goods.ts';
 import { owedAnswer, wordsOf } from '../src/core/sync/word.ts';
 import type { MineWord } from '../src/core/sync/word.ts';
 import { parseItem } from '../src/core/registry/items.ts';
+import { itemDefDataOf } from '../src/core/registry/item-book.ts';
+import { bagOf } from '../src/core/hunter/inventory.ts';
+import { customId, rulesWith } from './fixtures/items.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
@@ -386,14 +389,15 @@ describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s 
 
 describe('a reward the GM sends lands whole', () => {
   // A reward that touches every part a grant writes: points, a title, a status, gold, an item, a boon and XP.
+  const SHARD_ID = customId('moonshard');
   const AWARD = {
     to: ['d-player1:h1'],
     rewards: {
-      xp: 40, points: 2, gold: 30, items: [{ name: 'Moon Shard', rar: 'rare', qty: 2 }], title: { name: 'Gatebreaker', desc: '', bonus: {} },
+      xp: 40, points: 2, gold: 30, items: [{ kind: 'ref', defId: SHARD_ID, qty: 2, def: { name: 'Moon Shard', rar: 'rare' } }], title: { name: 'Gatebreaker', desc: '', bonus: {} },
       statuses: [{ key: 'hasted', rounds: 3 }], boons: [{ name: 'A favour', text: 'The guild owes you.' }],
     },
   };
-  const shards = (h: Hunter): number => h.items.filter(i => i.name === 'Moon Shard').reduce((n, i) => n + i.qty, 0);
+  const shards = (h: Hunter): number => h.items.filter(i => i.kind === 'ref' && i.defId === SHARD_ID).reduce((n, i) => n + i.qty, 0);
   /** What a reward changes on the hunter, read back. */
   const parts = (h: Hunter) => ({ xp: h.xp, bonus: h.bonusPoints, gold: h.gold, shards: shards(h), titles: h.titles.map(t => t.name), statuses: h.conditions.map(c => c.key), boons: h.boons.map(b => b.name) });
 
@@ -405,15 +409,17 @@ describe('a reward the GM sends lands whole', () => {
       titles: [...before.titles, 'Gatebreaker'], statuses: [...before.statuses, 'hasted'], boons: [...before.boons, 'A favour'],
     });
     expect(p.applied).toEqual([e(1)]);
+    expect(Object.keys(p.save.heardItems), 'the GM\'s def the award carried is kept on this phone').toEqual([SHARD_ID]);
     expect(p.shown).toEqual([['+40 XP', '+30 gold', '+2 ability points', 'Item acquired: Moon Shard ×2', 'Title acquired: Gatebreaker', 'Status: Hasted (3 rounds)', 'Boon: A favour']]);
   });
 
   test('a Resurrection Crystal the GM gives a dead hunter lands in its bag, and the hunter uses it to come back (the owner, Nov 19)', () => {
     const p = phone({ life: { at: 'dead' } });
-    p.receive(1, 'award', { to: ['d-player1:h1'], rewards: { items: [{ name: 'Resurrection Crystal', rar: 'mythic', type: 'consumable', effects: [], revive: true, tell: true, value: 100000, qty: 1 }] } });
-    const got = p.hunter.items.find(i => i.name === 'Resurrection Crystal');
+    const def = { name: 'Resurrection Crystal', rar: 'mythic', type: 'consumable', effects: [], revive: true, tell: true, value: 100000 };
+    p.receive(1, 'award', { to: ['d-player1:h1'], rewards: { items: [{ kind: 'ref', defId: customId('crystal'), qty: 1, def }] } });
+    const R = rulesWith(p.save.heardItems), got = bagOf(p.hunter, R).find(i => i.name === 'Resurrection Crystal');
     expect([p.hunter.life, got?.revive, p.applied]).toEqual([{ at: 'dead' }, true, [e(1)]]);
-    const used = useItem(p.hunter, got!.id, [], RULES);
+    const used = useItem(p.hunter, got!.id, [], R);
     expect(isRefused(used) ? used : used.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
@@ -595,7 +601,7 @@ describe('the GM\'s Job Change on a player\'s phone', () => {
 });
 
 describe('an item the GM\'s fight took from a player\'s hunter', () => {
-  const consumable = (h: Hunter) => h.items.find(i => i.type === 'consumable')!;
+  const consumable = (h: Hunter) => bagOf(h, RULES).find(i => i.type === 'consumable')!;
 
   test('one leaves the bag when the fight took it, once however often the message arrives, and the player is told', () => {
     const p = phone(), it = consumable(p.hunter), had = it.qty;
@@ -671,9 +677,9 @@ describe('a chapter the GM opened lands whole, once (notes-1-stories.md 4.2)', (
 
 describe('the GM\'s answer to a stash ask lands once, only while its ask waits (notes-5-trade.md 3.3)', () => {
   const ASK = 'd-player1-ask1' as EventId;
-  const potions = (n: number) => ({ gold: 0, items: [{ from: 'i3' as never, item: { ...parseItem({ name: 'Healing Potion', type: 'consumable' })!, qty: n } }] });
+  const potions = (n: number) => ({ gold: 0, items: [{ from: 'i3' as never, item: { kind: 'adhoc' as const, qty: n, item: itemDefDataOf(parseItem({ name: 'Healing Potion', type: 'consumable' })!) } }] });
   const asked = (ask: StashAsk): Asked => ({ id: ASK, room: 'ABCD23' as never, hid: 'h1' as never, kind: 'stash', ask, at: AT, state: 'taken', sent: true });
-  const count = (h: Hunter) => h.items.filter(i => i.name === 'Healing Potion').reduce((n, i) => n + i.qty, 0);
+  const count = (h: Hunter) => bagOf(h, RULES).filter(i => i.name === 'Healing Potion').reduce((n, i) => n + i.qty, 0);
 
   test('a stash answer lands once, only while its ask waits: given goods reach the bag once; a replay or a second GM phone\'s answer gives nothing', () => {
     const p = phone({ asked: [asked({ kind: 'take', item: 'i50' as never, qty: 1, name: 'Healing Potion' })] }), before = count(p.hunter);

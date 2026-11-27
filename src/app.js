@@ -299,10 +299,11 @@ function scheduleUpdate() {
   });
 }
 store.subscribe(p => { app.emit('change', p); scheduleUpdate(); });
-// a player's rules follow the room's build doc (src/edge/rules.ts), which changes with no save change: redraw when they move
+// a player's rules follow the room's build doc and synced catalog (src/edge/rules.ts), which change with no save change: redraw when they move
 let ruled = rules();
 const rulesMoved = () => { const R = rules(); if (R !== ruled) { ruled = R; scheduleUpdate(); } };
 app.on('sync:docs', rulesMoved); app.on('sync:status', rulesMoved);
+app.on('sync:catalog', () => { ruled = rules(); scheduleUpdate(); });
 
 // ── boot ──
 // Registration order is load order: a module's register may read the api of a module listed before it (a read of one

@@ -4,8 +4,9 @@
 // deterministic two-wave gate (`Tidewall Cannery Gate`), and the 5-chapter `The Empty Seat` Story in
 // `save.library.stories` (not started at load), in one atomic step so `store.apply` writes all of it or none. Pure:
 // every id comes from the save's `seq`.
-import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem } from './registry/items.ts';
-import type { ItemDef } from './registry/items.ts';
+import { SHOP_ITEMS, STARTER_GEAR } from './registry/items.ts';
+import type { ItemSeed } from './registry/items.ts';
+import type { ItemGrant } from './registry/item-book.ts';
 import { STARTER_SKILLS, skillOf } from './registry/skills.ts';
 import type { SkillDef } from './registry/skills.ts';
 import { confirm, raiseMany, setCapDisplay } from './hunter/progress.ts';
@@ -43,7 +44,7 @@ export function ownSeed(save: Save, name: string, job = ''): Save {
   return seed ? { ...save, hunters: save.hunters.map(h => (h === seed ? neutralSeed(h, name || 'Hunter', job) : h)) } : save;
 }
 
-const HEALTH_POTION_E: ItemDef = (() => {
+const HEALTH_POTION_E: ItemSeed = (() => {
   const found = SHOP_ITEMS.find(i => i.defId === builtInItemId('health-potion-e'));
   if (!found) throw new Error('missing built-in Health Potion (E)');
   return found;
@@ -55,7 +56,7 @@ export type StarterPregen = {
   readonly job: string;
   readonly stats: StatPoints;
   readonly skills: readonly SkillDef[];
-  readonly items: readonly ItemDef[];
+  readonly items: readonly ItemSeed[];
 };
 
 // Four zero-collision sample hunters: Dolan (Tanker), Nadia (Ranger), Bram (Healer), and Tessa (Mage with 12 unspent
@@ -128,9 +129,9 @@ const chapter = (c: Partial<Chapter> & Pick<Chapter, 'name' | 'words'>): Chapter
   ...c,
 });
 
-/** Builds the 5-chapter `The Empty Seat` Story template under `R` (so Health Potion (E) resolves live conditions). */
-export function starterStory(R: Rules): StoryTemplate {
-  const twoPotions = { ...itemOf(R, HEALTH_POTION_E), qty: 2 };
+/** Builds the 5-chapter `The Empty Seat` Story template (Health Potion (E) travels as a built-in ref grant). */
+export function starterStory(_R?: Rules): StoryTemplate {
+  const twoPotions: ItemGrant = { kind: 'ref', defId: HEALTH_POTION_E.defId, qty: 2 };
   return {
     name: STARTER_STORY_NAME,
     when: 'Start in Session 1 at the Halfway House to open Chapter 1 for the table.',
@@ -279,13 +280,12 @@ export function starterCampaign(
       }
       h = setCapDisplay(h, 'E');
       for (const k of p.skills) h = learnSkill(h, { ...skillOf(k, R), label: 'Lv.1' }, next('s'));
-      for (const def of p.items) {
-        const item = parseItem(itemOf(R, def));
-        if (!item) return refuse('pregen');
+      for (const seed of p.items) {
+        const item: ItemGrant = { kind: 'ref', defId: seed.defId, qty: 1 };
         const itemId = next('i');
-        h = putItem(h, item, itemId);
-        if (item.slot) {
-          const worn = equip(h, itemId, itemId);
+        h = putItem(h, item, itemId, R);
+        if ('slot' in seed) {
+          const worn = equip(h, itemId, itemId, false, R);
           if (isRefused(worn)) return refuse('pregen');
           h = worn;
         }

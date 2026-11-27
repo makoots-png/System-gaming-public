@@ -12,8 +12,9 @@ import type { ObjectiveCount } from './counts.ts';
 import type { SheetStatus } from '../combat/effect-ops.ts';
 import { parseSheetStatus } from '../combat/fight-parse.ts';
 import { MAX_STATUSES } from '../combat/fight-types.ts';
-import { SLOTS } from '../registry/items.ts';
-import type { Item, Slot } from '../registry/items.ts';
+import { SLOTS, WEAR_LIMIT } from '../registry/items.ts';
+import type { Slot } from '../registry/items.ts';
+import type { HeldItem } from '../registry/item-book.ts';
 import { parsePowers } from '../registry/powers.ts';
 import type { Powers } from '../registry/powers.ts';
 import { ARCHETYPE_LIST } from '../registry/monsters.ts';
@@ -31,7 +32,6 @@ import { newProgress, parseCapDisplay, undoableOn } from './progress.ts';
 import { levelOf } from './level.ts';
 import type { CapDisplay, Pending, Progress, StatPoints } from './progress.ts';
 import { newVitals, parseLife, parseUsed } from './vitals.ts';
-import { parseWorn } from './inventory.ts';
 import type { Vitals } from './vitals.ts';
 import { REVIVE_STANDINGS } from './revive-standing.ts';
 import type { ReviveStanding } from './revive-standing.ts';
@@ -142,7 +142,7 @@ export type Hunter = Progress & Vitals & {
   guild: GuildMembership | null;
   stats: Stats;
   hpAdj: number; manaAdj: number; conditions: Condition[];
-  titleId: TitleId | null; titles: Title[]; quests: Quest[]; skills: Skill[]; items: Item[]; equipped: Record<Slot, ItemId | null>;
+  titleId: TitleId | null; titles: Title[]; quests: Quest[]; skills: Skill[]; items: HeldItem[]; equipped: Record<Slot, ItemId | null>;
   shadows: Shadow[]; daily: Daily; penalty: Penalty | null; jobChain: JobChain | null; notes: string; updatedAt: string;
   emblem: string; color: string; loadouts: Loadout[]; boons: Boon[];
   /** The rests taken since a gate last ended for it: src/core/hunter/rests.ts. Only grant.ts `sheetEdit` changes it. */
@@ -317,8 +317,27 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
 }
 
 /**
+ * What a hunter wears as a save or a sheet holds it: the structure only (item sync PR 2). Walks `SLOTS` in order and
+ * keeps a slot's item when it is held, a single one (qty 1), not worn in an earlier slot, and within `WEAR_LIMIT`.
+ * Whether it fits the slot, and the two-handed lock, depend on its def, which may change after the save: inventory.ts
+ * `wornOf` reads them each time from the resolved items.
+ */
+export function parseWorn(named: (slot: Slot) => HeldItem | undefined): Record<Slot, ItemId | null> {
+  const out = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
+  let kept = 0;
+  for (const slot of SLOTS) {
+    if (kept >= WEAR_LIMIT) break;
+    const it = named(slot);
+    if (!it || it.qty !== 1 || Object.values(out).includes(it.id)) continue;
+    out[slot] = it.id;
+    kept++;
+  }
+  return out;
+}
+
+/**
  * Points a hunter's references at what it holds, once the save's repair has given every object its final id: the
- * active title, the gear (`parseWorn`: each item once, single, in a slot it fits), each loadout's slots (each item once; the fit is checked at swap time), and the quest of the
+ * active title, the gear (`parseWorn`: each item once, single, at most `WEAR_LIMIT`), each loadout's slots (each item once; the fit is checked at swap time), and the quest of the
  * penalty and of the Job Change chain. A stored reference meant the first object of its list stored under that id, so
  * it is read against the ids as stored: `storedAs` holds, for each object of this hunter's that took a new id, its new
  * id and the id it was stored under. A reference that names nothing is cleared (the title, the gear), or read by the

@@ -18,6 +18,7 @@ import { mythicStep } from '../src/core/combat/mythic.ts';
 import { mythicSwitched } from '../src/core/mythic-switch.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
+import { newEquipped } from '../src/core/hunter/hunter.ts';
 
 const ENV = {
   now: new Date('2026-11-22T12:00:00Z'),
@@ -31,7 +32,7 @@ const HUNTER: RowHunter = {
   stats: { str: 14, agi: 12, vit: 12, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10 },
   level: 1, rank: 'E', life: { at: 'up', hp: 30 }, mana: 20, fatigue: 0,
   penalty: null, hpAdj: 0, manaAdj: 0, titleId: null,
-  items: [], equipped: {}, skills: [], titles: [], conditions: [],
+  items: [], equipped: newEquipped(), skills: [], titles: [], conditions: [],
 };
 
 describe('mythic-phases-on adversarial probes', () => {

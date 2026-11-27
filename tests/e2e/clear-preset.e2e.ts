@@ -130,7 +130,7 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing pa
   // Pending rewards holds zero clear rows; stash holds Health Potion (E)
   const pendingClear = await gm.evaluate(() => (hunterApp.store.get().settings.sync.pending || []).filter((p: any) => p.from === 'clear'));
   expect(pendingClear).toEqual([]);
-  const stashNames = await gm.evaluate(() => hunterApp.store.get().stash.items.map((i: any) => i.name));
+  const stashNames = await gm.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.get().stash).map((i: any) => i.name));
   expect(stashNames).toContain('Health Potion (E)');
 
   // Player receives exact preset XP, gold, and assigned item directly
@@ -138,7 +138,7 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing pa
   await dismissAll(player, 6);
   const kaiAfter = await activeHunter(player);
   expect(kaiAfter.gold - kaiBefore.gold).toBe(customGold);
-  expect(kaiAfter.items.map((i: any) => i.name)).toContain(row1Name);
+  expect(kaiAfter.bag.map((i: any) => i.name)).toContain(row1Name);
 
   // 6. Paid preset shows read-only on GM's gate card under Finished gates, never editable
   await go(gm, 'gates');
@@ -196,7 +196,7 @@ test('non-preset gate opens the unified editable Clear panel with rolled boss lo
   await expect.poll(async () => (await activeHunter(player)).gold - seraBefore.gold, { timeout: 30_000 }).toBe(333);
   await dismissAll(player, 6);
   const seraAfter = await activeHunter(player);
-  expect(seraAfter.items.map((i: any) => i.name)).toContain(rolledItem);
+  expect(seraAfter.bag.map((i: any) => i.name)).toContain(rolledItem);
 });
 
 test('playing alone: clearing a gate with a preset pays exact amounts immediately and stashes unpicked items', async ({ device }) => {
@@ -236,8 +236,8 @@ test('playing alone: clearing a gate with a preset pays exact amounts immediatel
     expect(afterXp[name]! - startXp[name]!).toBe(xpSet);
     expect(afterGold[name]! - startGold[name]!).toBe(goldSet);
   }
-  const firstItems: string[] = await gm.evaluate((id: string) => hunterApp.store.get().hunters.find((h: any) => h.id === id).items.map((i: any) => i.name), firstHunter.id);
-  const stashItems: string[] = await gm.evaluate(() => hunterApp.store.get().stash.items.map((i: any) => i.name));
+  const firstItems: string[] = await gm.evaluate((id: string) => hunterApp.api.inventory.bag(hunterApp.store.hunter(id)).map((i: any) => i.name), firstHunter.id);
+  const stashItems: string[] = await gm.evaluate(() => hunterApp.api.inventory.bag(hunterApp.store.get().stash).map((i: any) => i.name));
   expect(firstItems).toContain(assignedName);
   expect(stashItems).toContain(stashedName);
 });

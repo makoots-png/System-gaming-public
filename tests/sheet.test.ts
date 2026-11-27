@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { autoSpend, buildOf, checkBonus, checksOf, explain, hunterSheet, setMaximum } from '../src/core/hunter/sheet.ts';
 import { newHunter } from '../src/core/save.ts';
-import type { SheetCondition, SheetHunter, SheetItem, SheetRules } from '../src/core/hunter/sheet.ts';
+import type { SheetCondition, SheetHunter, SheetRules } from '../src/core/hunter/sheet.ts';
+import { parseItemDef } from '../src/core/registry/item-book.ts';
+import type { HeldItem, ItemDefData } from '../src/core/registry/item-book.ts';
+import { SLOTS } from '../src/core/registry/items.ts';
+import type { Slot } from '../src/core/registry/items.ts';
+import type { ItemId } from '../src/core/ids.ts';
+import { customId, rulesWith } from './fixtures/items.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { levelPoints } from '../src/core/hunter/progress.ts';
@@ -9,24 +15,35 @@ import type { Progress } from '../src/core/hunter/progress.ts';
 import { RULES } from '../src/core/rules.ts';
 import { keystoneOf } from '../src/core/registry/keystones.ts';
 import type { Stats } from '../src/core/stats.ts';
-import { qid } from './fixtures/ids.ts';
+import { iid, qid } from './fixtures/ids.ts';
 import { withKeystones } from './fixtures/keystone-rules.ts';
 
 // Curve values are worked by hand from design 2.1: eff(s) = 10 * (s / 10) ^ 0.8, x(s) = eff(s) - 10,
 // capped(x, cap) = cap * x / (x + 40). Rule numbers are read from RULES by name.
 
 const stats = (o: Partial<Stats> = {}): Stats => ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
-const hunter = (o: Partial<SheetHunter> = {}): SheetHunter => ({
+const NOTHING_WORN = Object.fromEntries(SLOTS.map(s => [s, null])) as Record<Slot, ItemId | null>;
+/** A hunter for the sheet; `equipped` names only the slots that hold something, by item id. */
+const hunter = ({ equipped = {}, ...o }: Partial<Omit<SheetHunter, 'equipped'>> & { readonly equipped?: Partial<Record<Slot, string | null>> } = {}): SheetHunter => ({
   stats: stats(), level: 1, rank: 'E', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, skills: [], conditions: [], ...o,
+  items: [], skills: [], conditions: [], ...o,
+  equipped: { ...NOTHING_WORN, ...Object.fromEntries(Object.entries(equipped).map(([k, v]) => [k, v === null || v === undefined ? null : iid(v)])) },
 });
 
 const R: SheetRules = RULES;
 
-const VEST: SheetItem = { id: 'vest', weight: 6, armor: 12, resist: 3 };
-const KNIFE: SheetItem = { id: 'knife', weight: 1, bonus: { str: 2, armorPenFlat: 5 } };
-const RING: SheetItem = { id: 'ring', weight: 0, bonus: { vit: 5 } };
-const PLATE: SheetItem = { id: 'plate', weight: 32, armor: 60, resist: 20, bonus: { pow: 3 } };
+/** An item def read through the one item parser: gear of `slot` with the numbers given. */
+const gearDef = (name: string, slot: Slot, more: Record<string, unknown>): ItemDefData => parseItemDef({
+  name, rar: 'common', slot,
+  ...(slot === 'weapon' ? { type: 'weapon', dice: '1d4', attack: 'strike' } : slot.startsWith('ring') ? { type: 'accessory' } : { type: 'armor' }),
+  ...more,
+})!;
+/** The hunter's own (ad hoc) copy of `def` under bag id `id`. */
+const own = (id: string, def: ItemDefData): HeldItem => ({ kind: 'adhoc', id: iid(id), qty: 1, item: def });
+const VEST = own('i1', gearDef('Vest', 'chest', { weight: 6, armor: 12, resist: 3 }));
+const KNIFE = own('i2', gearDef('Knife', 'weapon', { weight: 1, bonus: { str: 2, armorPenFlat: 5 } }));
+const RING = own('i3', gearDef('Ring', 'ring1', { weight: 0, bonus: { vit: 5 } }));
+const PLATE = own('i4', gearDef('Plate', 'chest', { weight: 32, armor: 60, resist: 20, bonus: { pow: 3 } }));
 
 const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
 const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: -8 } }] };
@@ -40,16 +57,16 @@ describe('buildOf', () => {
   });
 
   test('only worn items are gear; an item in the bag adds nothing', () => {
-    const h = hunter({ items: [VEST, KNIFE, PLATE], equipped: { chest: 'vest', weapon: 'knife', offhand: null } });
+    const h = hunter({ items: [VEST, KNIFE, PLATE], equipped: { chest: 'i1', weapon: 'i2', offhand: null } });
     const b = buildOf(h, R);
-    expect(b.gear).toEqual([{ weight: 6, armor: 12, resist: 3 }, { weight: 1, armor: 0, resist: 0 }]);
+    expect(b.gear, 'worn gear in slot order: the knife (weapon), then the vest (chest)').toEqual([{ weight: 1, armor: 0, resist: 0 }, { weight: 6, armor: 12, resist: 3 }]);
     expect(b.perks).toEqual({ str: 2, armorPenFlat: 5 });
   });
 
   test('the active title, worn gear, passive skills and the GM\'s adjustments all add up', () => {
     const h = hunter({
       titleId: 'wolf', titles: [{ id: 'wolf', bonus: { str: 2 } }],
-      items: [KNIFE, RING], equipped: { weapon: 'knife', ring1: 'ring' },
+      items: [KNIFE, RING], equipped: { weapon: 'i2', ring1: 'i3' },
       skills: [{ type: 'passive', bonus: { str: 1, hpMax: 10 } }, { type: 'active' }],
       hpAdj: 7, manaAdj: -3,
     });
@@ -73,12 +90,21 @@ describe('hunterSheet', () => {
   });
 
   test('worn gear\'s weight, armor, resist and its bonus\'s Lethality reach the sheet', () => {
-    const { sheet } = hunterSheet(hunter({ items: [VEST, KNIFE], equipped: { chest: 'vest', weapon: 'knife' } }), R);
+    const { sheet } = hunterSheet(hunter({ items: [VEST, KNIFE], equipped: { chest: 'i1', weapon: 'i2' } }), R);
     expect([sheet.weight, sheet.armor, sheet.resist, sheet.armorPenFlat]).toEqual([7, 12, 3, 5]);
   });
 
+  test('a worn reference reads its def from the rules: an edit of the def changes the sheet, and a def no phone has adds nothing', () => {
+    const id = customId('vest');
+    const h = hunter({ items: [{ kind: 'ref', id: iid('i1'), defId: id, qty: 1 }], equipped: { chest: 'i1' } });
+    const armorUnder = (def: ItemDefData | null): number => hunterSheet(h, def ? rulesWith({ [id]: def }) : R).sheet.armor;
+    expect(armorUnder(gearDef('Vest', 'chest', { armor: 12 }))).toBe(12);
+    expect(armorUnder(gearDef('Vest', 'chest', { armor: 20 }))).toBe(20);
+    expect(armorUnder(null)).toBe(0);
+  });
+
   test('a stat bonus raises the stat and the numbers it feeds', () => {
-    const { stats: s, sheet } = hunterSheet(hunter({ items: [RING], equipped: { ring1: 'ring' } }), R);
+    const { stats: s, sheet } = hunterSheet(hunter({ items: [RING], equipped: { ring1: 'i3' } }), R);
     expect(s.vit).toBe(15);
     // x(15) = 3.83; HP 45 * (1 + 0.9 * 3.83 / 43.83) = 48.54, rounded 49.
     expect(sheet.hpMax).toBe(49);
@@ -222,7 +248,7 @@ describe('keystones on the sheet (notes-11-keystones.md, design A.3)', () => {
   });
 
   test('the keystone is earned from points, not from gear: a ring of Discipline adds its bonus and no mark', () => {
-    const ringed = hunter({ rank: 'D', level: 12, stats: stats({ vit: 15 }), items: [{ id: 'r', bonus: { dis: 20 } }], equipped: { ring1: 'r' } });
+    const ringed = hunter({ rank: 'D', level: 12, stats: stats({ vit: 15 }), items: [own('i5', gearDef('Ring of Discipline', 'ring1', { bonus: { dis: 20 } }))], equipped: { ring1: 'i5' } });
     expect(buildOf(ringed, on).perks).toEqual({ dis: 20 });
   });
 

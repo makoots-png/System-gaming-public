@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { shareEach } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { NO_PEN, afterDefence } from '../../src/core/combat/land.ts';
-import { test, expect, setupGoblinDenGM, go, startGoblinDenFight, answerWindow, openApp, fightRow, PHONE, SMALL_PHONE, LANDSCAPE, chooseList } from './helpers.ts';
+import { test, expect, setupGoblinDenGM, go, startGoblinDenFight, answerWindow, openApp, fightRow, PHONE, SMALL_PHONE, LANDSCAPE, chooseList, addLibraryItem } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const currentRow = (page: Page) => combat(page).locator('.cmb-row.cur .cmb-nm');
@@ -246,9 +246,9 @@ test('the loot of a monster defeated in a fight opens in the Award form when the
   const page = (await device('gm')).page;
   await setupGoblinDenGM(page);
   await chooseList(page);
-  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
-  await page.evaluate(p => hunterApp.store.update((d: any) => {
-    d.monsters.push({ id: 'm900', name: 'Hoard Rat', rank: 'E', type: '', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 40, extractable: false, desc: '', statuses: [], loot: { gold: 75, items: [p] } });
+  const potion = await addLibraryItem(page, { name: 'Health Potion', rar: 'common', type: 'consumable', slot: null, dice: '', bonus: {}, armor: 0, resist: 0, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' });
+  await page.evaluate(defId => hunterApp.store.update((d: any) => {
+    d.monsters.push({ id: 'm900', name: 'Hoard Rat', rank: 'E', type: '', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 40, extractable: false, desc: '', statuses: [], loot: { gold: 75, items: [{ kind: 'ref', defId, qty: 2 }] } });
   }, 'test-setup'), potion);
   await go(page, 'bestiary');
   await page.locator('#view-bestiary [data-addc="m900"]').tap();

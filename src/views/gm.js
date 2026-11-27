@@ -538,7 +538,7 @@ export function register(app) {
   function showTie() {
     const p = root && root.querySelector('#gm-award-tie'), d = tiedDrop(), w = waitingOf(), g = sendGives(awardDraft); if (!p) return;
     p.hidden = !d && !w && !g;
-    p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt)}. Tap Send award to give it, or collapse the Award section to save it for later.` : w ? PENDING_WORDS.tie(w.name, w.from, w.what)
+    p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt, app.rules())}. Tap Send award to give it, or collapse the Award section to save it for later.` : w ? PENDING_WORDS.tie(w.name, w.from, w.what)
       : g ? SHELF_WORDS.tie(g.given.name, whoName(g.to)) : '';
     const go = root.querySelector('#gm-award-go'); if (go) go.textContent = w ? PENDING_WORDS.approve : g ? SHELF_WORDS.send : 'Send award';
   }
@@ -874,7 +874,7 @@ export function register(app) {
     let text = '', fill = null;
     if (t.id === 'loot') {
       const r = A().inventory.rollLoot(rank, { boss: false });
-      text = r.length ? r.map(e => (e.kind === 'gold' ? `${ui.fmt(e.gold)} gold` : `${e.item.name}${e.item.rar ? ` (${e.item.rar})` : ''}`)).join(', ') : 'Nothing.';
+      text = r.length ? r.map(e => (e.kind === 'gold' ? `${ui.fmt(e.gold)} gold` : (it => `${it.name} (${it.rar})`)(A().inventory.grant(e.item)))).join(', ') : 'Nothing.';
       text = `${rank}-rank loot: ${text}`;
     } else {
       const list = listFor(t);

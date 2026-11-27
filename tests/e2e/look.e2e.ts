@@ -1,4 +1,4 @@
-import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, createRoom, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, createRoom, PHONE, SMALL_PHONE, adhoc } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import { WAYS_BACK } from '../../src/core/hunter/vitals.ts';
 import type { Locator } from '@playwright/test';
@@ -523,7 +523,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
     await p.evaluate(() => {
       const h = hunterApp.store.active();
       hunterApp.api.hunter.addCondition(h.id, { key: 'poisoned', def: hunterApp.rules().conditions.poisoned, rounds: 3, source: { id: null, tier: 0 } });
-      hunterApp.api.inventory.addItem(h.id, { name: 'Ember Flask', rar: 'common', type: 'consumable', qty: 1, desc: 'Throw it.', effects: [{ op: 'applyStatus', key: 'burning', def: hunterApp.rules().conditions.burning, duration: 3000 }] });
+      hunterApp.api.inventory.addItem(h.id, { kind: 'adhoc', qty: 1, item: { name: 'Ember Flask', rar: 'common', type: 'consumable', slot: null, dice: '', bonus: {}, desc: 'Throw it.', armor: 0, resist: 0, effects: [{ op: 'applyStatus', key: 'burning', def: hunterApp.rules().conditions.burning, duration: 3000 }] } });
     });
     await go(p, 'status');
     const inside = async (sel: string) => {
@@ -946,12 +946,11 @@ test('on 360 and 390 px phones the Bag\'s four tabs and an item\'s row with Give
   for (const viewport of [SMALL_PHONE, PHONE]) {
     const player = (await device(`player ${viewport.width}`, { viewport })).page;
     await onboardPlayer(player, 'Mira Test');
-    await player.evaluate(() => {
+    await player.evaluate(gs => {
       const hid = hunterApp.store.active().id;
-      hunterApp.api.inventory.addItem(hid, { name: 'Greater Health Potion', rar: 'rare', type: 'consumable', qty: 2 });
-      hunterApp.api.inventory.addItem(hid, { name: 'Iron Shield', rar: 'uncommon', type: 'armor', slot: 'offhand' });
+      for (const g of gs) hunterApp.api.inventory.addItem(hid, g);
       hunterApp.api.inventory.addGold(hid, 50);
-    });
+    }, [adhoc({ name: 'Greater Health Potion', rar: 'rare', type: 'consumable' }, 2), adhoc({ name: 'Iron Shield', rar: 'uncommon', type: 'armor', slot: 'offhand' })]);
     await go(player, 'status');
     const bag = player.locator('[data-panel="inventory"]');
     await expect(bag.getByRole('button', { name: 'Give Iron Shield' })).toBeVisible();
@@ -973,8 +972,8 @@ test('on a 390 px phone the Give window with Ask in return open fits the width, 
   await onboardPlayer(brakk, 'Brakk', code);
   await onboardPlayer(mira, 'Mira', code);
   await dismissAll(brakk, 4);
-  await brakk.evaluate(() => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Healing Potion', rar: 'common', type: 'consumable', qty: 3 }));
-  await mira.evaluate(() => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Greater Health Potion of the Long Night', rar: 'rare', type: 'consumable', qty: 2 }));
+  await brakk.evaluate(g => hunterApp.api.inventory.addItem(hunterApp.store.active().id, g), adhoc({ name: 'Healing Potion', rar: 'common', type: 'consumable' }, 3));
+  await mira.evaluate(g => hunterApp.api.inventory.addItem(hunterApp.store.active().id, g), adhoc({ name: 'Greater Health Potion of the Long Night', rar: 'rare', type: 'consumable' }, 2));
   await expect.poll(() => brakk.evaluate(() => hunterApp.api.sync.faces().flatMap((f: any) => (f.bag ?? []).map((l: any) => l.name))), { timeout: 20_000 }).toContain('Greater Health Potion of the Long Night');
   await go(brakk, 'status');
   await brakk.locator('[data-panel="inventory"]').getByRole('button', { name: 'Give Healing Potion' }).tap();
@@ -995,12 +994,11 @@ test('on a 390 px phone a player\'s Stash tab and the GM\'s stash list fit the w
   const code = await createRoom(gm);
   await onboardPlayer(mira, 'Mira', code);
   await dismissAll(mira, 4);
-  await gm.evaluate(() => {
+  await gm.evaluate(gs => {
     const hid = hunterApp.store.active().id;
-    hunterApp.api.inventory.addItem(hid, { name: 'Healing Potion', rar: 'common', type: 'consumable', qty: 3 });
-    hunterApp.api.inventory.addItem(hid, { name: 'Greater Health Potion of the Long Night', rar: 'rare', type: 'consumable', qty: 1 });
+    for (const g of gs) hunterApp.api.inventory.addItem(hid, g);
     hunterApp.api.inventory.addGold(hid, 40);
-  });
+  }, [adhoc({ name: 'Healing Potion', rar: 'common', type: 'consumable' }, 3), adhoc({ name: 'Greater Health Potion of the Long Night', rar: 'rare', type: 'consumable' })]);
   await go(gm, 'status');
   for (const name of ['Healing Potion', 'Greater Health Potion of the Long Night']) {
     await gm.locator('[data-panel="inventory"]').getByRole('button', { name: `Give ${name}`, exact: true }).tap();

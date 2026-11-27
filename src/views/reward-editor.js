@@ -3,6 +3,8 @@
 // gold and points in one row, then a row per part (an item, a title, a skill, a status, a boon, a job) added by its chip,
 // a Bundle row that loads a saved bundle and saves the editor as one (app.api.bundles), and a live preview of the reward
 // window's lines (`grantLines`). Its answer is what `parseRewards` reads, so it passes the parser unchanged.
+import { refGrant } from '../core/registry/item-book.ts';
+import { parseItemDefId } from '../core/ids.ts';
 import { esc, field } from './ui.js';
 import { rewardJobs, rules } from '../edge/rules.ts';
 import { ACTIVE_WORDS, REPLACES_WORDS, REWARD_BOUNDS, WORN_WORDS, bandOf, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
@@ -39,9 +41,8 @@ export function rewardEditor(app, box, o = {}) {
   let say = { text: '', bad: false };
 
   // ── the lists a row picks from ──
-  const libItems = () => store.get().library.items;
-  const shopItems = () => app.api.inventory.shop();
-  const tplItems = () => app.api.inventory.itemTemplates();
+  /** The item a row's grant gives, as it reads now. */
+  const shown = g => app.api.inventory.grant(g);
   const libSkills = () => store.get().library.skills;
   const statusKeys = () => Object.keys(rules().conditions).filter(k => !isStateChip(k));
   /** The status key whose def a title's worn status is, by its words and ops; '' when none is. */
@@ -63,9 +64,10 @@ export function rewardEditor(app, box, o = {}) {
   }
 
   // ── drawing ──
-  const itemPicker = i => `<select data-f="pick" aria-label="Item ${i + 1}">${opt('', 'Pick an item', true)}
-    ${group('Library', libItems().map((t, n) => opt(`L:${n}`, `${t.name} (${t.rar})`)))}${group('Shop', shopItems().map((t, n) => opt(`S:${n}`, `${t.name} (${t.rar})`)))}
-    ${group('Built-in', tplItems().map((t, n) => opt(`T:${n}`, `${t.name} (${t.rar})`)))}${opt(NEW, 'New item…')}</select>`;
+  const itemOpt = defId => { const t = shown(refGrant(defId)); return opt(`def:${defId}`, `${t.name} (${t.rar})`); };
+  const itemPicker = i => { const c = app.api.inventory.choices(); return `<select data-f="pick" aria-label="Item ${i + 1}">${opt('', 'Pick an item', true)}
+    ${group('Library', c.library.map(x => itemOpt(x.defId)))}${group('Shop', app.api.inventory.shop().map(t => itemOpt(t.defId)))}
+    ${group('Built-in', c.builtIn.map(x => itemOpt(x.defId)))}${opt(NEW, 'New item…')}</select>`; };
   const skillPicker = i => `<select data-f="pick" aria-label="Skill ${i + 1}">${opt('', 'Pick a skill', true)}
     ${group('Built-in', SKILL_SEEDS.map((s, n) => opt(`B:${n}`, `${s.name} (${s.type})`)))}${group('Library', libSkills().map((s, n) => opt(`L:${n}`, `${s.name} (${s.type})`)))}${opt(NEW, 'New skill…')}</select>`;
   const itemMeta = it => [it.type, ...app.api.effects.describeItem({ id: '', ...it })].filter(Boolean).join(' · ');
@@ -74,10 +76,10 @@ export function rewardEditor(app, box, o = {}) {
   function rowHtml(r, i) {
     let body = '', head = '';
     if (r.kind === 'item') {
-      head = r.item ? `<span class="rw-nm">Item: ${esc(r.item.name)} <span class="rw-tag">${esc(r.item.rar)}</span></span>` : '<span class="rw-nm">Item</span>';
-      body = !r.item ? itemPicker(i) : `<div class="rw-meta">${esc(itemMeta(r.item))}</div>
-        <div class="rw-two">${field('Quantity', `<input type="number" min="1" max="${ITEM_BOUNDS.qty}" step="1" inputmode="numeric" data-f="qty" value="${esc(r.item.qty)}">`)}
-        <label class="rw-chk"><input type="checkbox" data-f="tell"${r.item.tell ? ' checked' : ''}><span>Notify GM when used</span></label></div>`;
+      const it = r.item ? shown(r.item) : null;
+      head = it ? `<span class="rw-nm">Item: ${esc(it.name)} <span class="rw-tag">${esc(it.rar)}</span></span>` : '<span class="rw-nm">Item</span>';
+      body = !it ? itemPicker(i) : `<div class="rw-meta">${esc(itemMeta(it))}</div>
+        <div class="rw-two">${field('Quantity', `<input type="number" min="1" max="${ITEM_BOUNDS.qty}" step="1" inputmode="numeric" data-f="qty" value="${esc(r.item.qty)}">`)}</div>`;
     } else if (r.kind === 'skill') {
       head = r.skill ? `<span class="rw-nm">Skill: ${esc(r.skill.name)} <span class="rw-tag">${esc(r.skill.type)}</span></span>` : '<span class="rw-nm">Skill</span>';
       body = r.skill ? `<div class="rw-meta">${esc(skillMeta(r.skill))}</div>` : skillPicker(i);
@@ -163,11 +165,11 @@ export function rewardEditor(app, box, o = {}) {
   // ── what a row picks ──
   async function pickItem(i, v) {
     if (v === NEW) {
-      const made = await app.api.loot.item({});
-      if (made && rows[i]) rows[i].item = parseItem(made);
+      const made = await app.api.loot.ref({});
+      if (made && rows[i]) rows[i].item = made;
     } else {
-      const [k, n] = v.split(':'), src = (k === 'L' ? libItems() : k === 'S' ? shopItems() : tplItems())[int(n)];
-      if (src && rows[i]) { const { id: _drop, ...t } = /** @type {any} */ (src); rows[i].item = parseItem({ ...t, qty: k === 'L' ? t.qty || 1 : 1 }); }
+      const id = v.startsWith('def:') ? parseItemDefId(v.slice(4)) : null;
+      if (id && rows[i]) rows[i].item = refGrant(id);
     }
     render(); raise();
   }
@@ -236,7 +238,6 @@ export function rewardEditor(app, box, o = {}) {
       const src = t.value ? libSkills()[int(t.value.split(':')[1])] : null;
       r.active = src && src.type === 'active' && src.ability ? src.ability : null;
     }
-    if (t.dataset.f === 'tell') { if (t.checked) r.item.tell = true; else delete r.item.tell; }
     mark(i); paint();
   });
   box.addEventListener('input', e => {
@@ -245,7 +246,7 @@ export function rewardEditor(app, box, o = {}) {
     const rowEl = t.closest && t.closest('[data-row]'); if (!rowEl) return;
     const r = rows[Number(rowEl.dataset.row)]; if (!r) return;
     const f = t.dataset.f;
-    if (r.kind === 'item' && f === 'qty') r.item.qty = Math.max(1, Math.min(ITEM_BOUNDS.qty, int(t.value) || 1));
+    if (r.kind === 'item' && f === 'qty' && r.item) r.item = { ...r.item, qty: Math.max(1, Math.min(ITEM_BOUNDS.qty, int(t.value) || 1)) };
     else if (r.kind === 'title' && t.dataset.bonus) r.bonus = Object.fromEntries(Object.entries(app.api.maker.readBonus(rowEl)).map(([k, n]) => [k, Math.max(-REWARD_BOUNDS.bonus, Math.min(REWARD_BOUNDS.bonus, n))]));
     else if (f === 'rounds' || f === 'name' || f === 'desc' || f === 'replaces' || f === 'text' || f === 'job') r[f] = t.value;
     if (r.kind === 'title' && (f === 'name' || f === 'desc' || t.dataset.bonus)) r.pick = '';

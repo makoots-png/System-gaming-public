@@ -38,6 +38,7 @@ import type { ClassName } from '../src/core/registry/jobs.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
+import type { HeldItem } from '../src/core/registry/item-book.ts';
 
 const AT = '2026-11-25T12:00:00.000Z';
 const nid = (s: string): ClassNodeId => parseClassNodeId(s)!;
@@ -226,7 +227,7 @@ describe('Wave 1 Epics: Seraph, Ironclad, and Stormcaller trees, pricing, and in
       resist: 0,
       target: 'other' as const,
       effects: [{ op: 'damage' as const, type: 'arcane' as const, amount: { kind: 'number' as const, value: 10 } }],
-    }));
+    })).map(({ id, qty, ...item }): HeldItem => ({ kind: 'adhoc', id, qty, item }));
 
     for (const spec of EPICS) {
       const builds = allForkBuilds(spec.tree);

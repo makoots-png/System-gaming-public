@@ -39,7 +39,7 @@ import { crowded } from './summons.ts';
 import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseStep } from './rise.ts';
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
-import { attemptsLeft, extractionStep, UNTRIED } from './extraction.ts';
+import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
 import type { Command, CommandType, Ctx, DodgeWait, Effect, Fight, HeldUse, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
@@ -877,11 +877,12 @@ function resize<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
  * not is refused (`notExtractor`), as a body that is not a monster or still up, and a corpse with no attempt left.
  */
 function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' }>, ctx: Ctx): Result {
-  const u = rowOf(f, cmd.id), by = rowOf(f, cmd.by), max = ctx.rules.shadow.maxAttempts;
+  const u = rowOf(f, cmd.id), by = rowOf(f, cmd.by);
   if (!u) return refused(f, 'unknown');
   if (!by || by.kind !== 'hunter') return refused(f, 'notExtractor');
   if (u.kind !== 'monster') return refused(f, 'notMonster');
   if (isUp(u)) return refused(f, 'notNow');
+  const max = extractAttemptsMax(ctx.rules.shadow, by);
   const e = extractionStep(u.extraction ?? UNTRIED, cmd.outcome, max);
   if (!e) return refused(f, 'noAttempts');
   const said = cmd.outcome === 'risen' ? `${u.name} rises as a shadow.` : cmd.outcome === 'crumbled' ? `${u.name}'s corpse is destroyed.`

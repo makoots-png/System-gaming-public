@@ -37,6 +37,7 @@ import { sheetEdit, statusGiven } from '../hunter/grant.ts';
 import { setShadowHp } from '../hunter/shadows.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { spendItem } from '../hunter/use.ts';
+import { heardStep } from '../item-refs.ts';
 import { itemOfAbility } from '../registry/abilities.ts';
 import { parseSaveId } from '../ids.ts';
 import type { GateId, HunterId, ItemId, MonsterId, SheetKey } from '../ids.ts';
@@ -108,7 +109,7 @@ export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refus
   // the fight ended: each hunter of this phone in it remembers it (fight-facts.ts), in this write, so the store notices it here
   if (r.fight?.phase === 'ended' && r.effects.some(x => x.type === 'ended')) s = foughtFacts(s, r.fight);
   const sp = b.spent, room = b.room;
-  if (sp?.kind === 'local') { const t = atHunter(sp.hunterId, h => spendItem(h, sp.item, R))(s); if (isRefused(t)) return t; s = t; }
+  if (sp?.kind === 'local') { const t = atHunter(sp.hunterId, h => spendItem(h, sp.item, R))(s); if (isRefused(t)) return t; s = heardStep(t); }
   if (room && sp?.kind === 'remote') s = atOutbox(box => post(box, room, { kind: 'event', event: sp.event }).box)(s);
   // a shadow that rose for a player's hunter reaches it only through the room: with no room the outcome is not kept either
   if (b.risen) { if (!room) return refuse('no-room'); const ev = b.risen; s = atOutbox(box => post(box, room, { kind: 'event', event: ev }).box)(s); }
