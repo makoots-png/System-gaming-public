@@ -474,7 +474,7 @@ describe('grant.ts, gmAward, storyMove, and pendingApproveAll unique rewards.job
     expect(holderOf(res.save, 'Hemomancer')).toMatchObject({ kind: 'remote', sheetKey: MIRA_KEY });
   });
 
-  test('storyMove claims remote unique job with disjoint eid and strips job from chapter payload', () => {
+  test('storyMove refuses multi-hunter on a unique-job chapter, claims a single remote hunter with disjoint eid and stripped job, and refuses a second hunter when taken', () => {
     let s = gmSave();
     const story = {
       id: 'st1' as never,
@@ -495,37 +495,54 @@ describe('grant.ts, gmAward, storyMove, and pendingApproveAll unique rewards.job
       { key: MIRA_KEY, data: { ...newHunter(RULES), name: 'Mira' }, updatedAt: AT },
       { key: KAEL_KEY, data: { ...newHunter(RULES), name: 'Kael' }, updatedAt: AT },
     ] as never;
-    const refs = [{ kind: 'remote' as const, remote: MIRA_KEY }, { kind: 'remote' as const, remote: KAEL_KEY }];
+    const bothRefs = [{ kind: 'remote' as const, remote: MIRA_KEY }, { kind: 'remote' as const, remote: KAEL_KEY }];
+    const moveCtx = {
+      day: { at: AT, today: day('2026-11-25'), R: RULES },
+      vitals: () => 'sheet' as const,
+      room: { code: ROOM, sheets, onRow: () => false, stamp: nextStamp() },
+    };
 
+    // Multi-hunter on a unique-job chapter is refused before runStep (Wave 2 PR 4 TLA+ rule 11)
+    const multi = storyMove(
+      s,
+      'sr1' as StoryRunId,
+      { type: 'turnOn', id: 'sr1' as StoryRunId, story: story.id, who: { at: 'hunters', refs: bothRefs }, to: bothRefs, at: AT, session: 1 },
+      moveCtx,
+    );
+    expect(multi).toEqual({ ok: false, why: 'one-for-unique' });
+
+    // Single remote hunter claims with disjoint outbox eids and stripped job on wire chapter payload
+    const miraRef = [{ kind: 'remote' as const, remote: MIRA_KEY }];
     const out = storyMove(
       s,
       'sr1' as StoryRunId,
-      {
-        type: 'turnOn',
-        id: 'sr1' as StoryRunId,
-        story: story.id,
-        who: { at: 'hunters', refs },
-        to: refs,
-        at: AT,
-        session: 1,
-      },
-      {
-        day: { at: AT, today: day('2026-11-25'), R: RULES },
-        vitals: () => 'sheet',
-        room: { code: ROOM, sheets, onRow: () => false, stamp: nextStamp() },
-      },
+      { type: 'turnOn', id: 'sr1' as StoryRunId, story: story.id, who: { at: 'hunters', refs: miraRef }, to: miraRef, at: AT, session: 1 },
+      moveCtx,
     );
     expect(isRefused(out)).toBe(false);
     if (isRefused(out)) return;
     expect(out.remoteClaimed).toEqual([MIRA_KEY]);
-    expect(out.remoteJobRefused).toHaveLength(1);
-    expect(out.remoteJobRefused[0]?.refusal.why).toBe('class-taken');
-    // Every chapter wire event has job stripped to null, and all outbox eids are unique.
+    expect(out.remoteJobRefused).toEqual([]);
     const outbox = out.save.settings.sync.outbox ?? [];
     const eids = outbox.map(e => e.id);
     expect(new Set(eids).size).toBe(eids.length);
     const chapters = outbox.filter(e => e.letter.kind === 'event' && e.letter.event.type === 'chapter');
     expect(chapters.every(e => e.letter.kind === 'event' && e.letter.event.type === 'chapter' && e.letter.event.payload.rewards.job === null)).toBe(true);
+
+    // Opening the same unique-job chapter for Kael while Mira holds it is refused before runStep
+    const kaelRef = [{ kind: 'remote' as const, remote: KAEL_KEY }];
+    const taken = storyMove(
+      out.save,
+      'sr1' as StoryRunId,
+      { type: 'open', chapter: 0, seen: 1, to: kaelRef, at: AT, session: 1 },
+      moveCtx,
+    );
+    expect(taken).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Hemomancer', why: 'class-taken', holderName: 'Mira' },
+      targetName: 'Kael',
+    });
   });
 
   test('pendingApproveAll claims open remote unique job and keeps refused job-only pending rewards waiting', () => {

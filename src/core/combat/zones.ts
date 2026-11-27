@@ -129,7 +129,7 @@ export const entryKey = (hold: StatusKey): StatusKey => statusKey(`${hold}-in`);
  * Whether `b` stands in `z`, laid on `at` (`zoneTiles`): on one of its tiles, of a side it does not spare, owned by
  * `z.owner` when `z.minionsOnly` is set, and not the bearer of the status the aura comes from.
  */
-export const standsIn = (z: Zone, at: readonly Place[], b: Pick<Body, 'id' | 'place' | 'side'> & { readonly owner?: CombatantId | null }): boolean =>
+export const standsIn = (z: Zone, at: readonly Place[], b: Pick<Body, 'id' | 'place' | 'side' | 'kind'> & { readonly owner?: CombatantId | null }): boolean =>
   z.spares !== b.side
   && !(z.minionsOnly && (z.owner === null || !isMinionOf(b, z.owner)))
   && !(z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.status !== null && z.ground.anchor.id === b.id)

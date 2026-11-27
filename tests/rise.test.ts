@@ -223,7 +223,7 @@ describe('Arise mid-fight flow, caps, lanes, and placement', () => {
   test('enforces elite cap (1 per fight even after death), rejects boss/mythic/shadow corpses, and separates risen vs timed summon lanes', () => {
     const arise = ariseAbility({ bonus: 4, maxRisen: 2, elitePerFight: 1 });
     const call = callAbility();
-    const sh = { ...shadowRow({ id: 'sh1', name: 'Igris', rank: 'C', archetype: 'brute', grade: 'Normal', hp: 0 }, 'h1', id('SH'), RULES), place: place(3, 5) };
+    const sh = { ...shadowRow({ id: 'sh1', name: 'Igris', rank: 'C', archetype: 'brute', grade: 'Normal', hp: 0 }, 'h1', id('N'), id('SH'), RULES), place: place(3, 5) };
     const f0 = startFight('N', [
       caster('N', place(2, 2), [arise, call]),
       monster('E1', place(4, 2), { kind: 'elite', dead: true, name: 'Alpha' }),

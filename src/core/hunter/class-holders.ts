@@ -12,11 +12,13 @@ import { newEvent } from '../protocol.ts';
 import type { ClassGrantRefusal, ClassGrantRefusedPayload, EventStamp, HoldersDoc, HoldersDocEntry } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { told } from '../session-log.ts';
-import { isUniqueClass } from '../registry/jobs.ts';
+import { canonicalUniqueClass, isUniqueClass } from '../registry/jobs.ts';
 import type { UniqueClassName } from '../registry/jobs.ts';
+import { roleOf } from '../role.ts';
 import { CLASS_LOCKER_CAP } from '../registry/class-trees.ts';
 import { dropClass, earnClass, parkClass } from './classes.ts';
 import type { ClassHolder, ClassHolders } from './class-locker.ts';
+import type { UniqueJobRefusal } from './grant.ts';
 
 export type { ClassHolder, ClassHolders };
 
@@ -63,7 +65,7 @@ const stamp36 = (at: string): string => {
 };
 const makeGrantId = (seq: number, at: string): string => `cg${seq}-${stamp36(at)}`;
 
-const isTargetHeld = (target: HolderTarget | ClassHolder, ctx: HolderStepCtx): boolean =>
+const isTargetHeld = (target: HolderTarget | ClassHolder, ctx: Pick<HolderStepCtx, 'heldLocal' | 'heldRemote'>): boolean =>
   (target.kind === 'local' && ctx.heldLocal(target.hunterId))
   || (target.kind === 'remote' && ctx.heldRemote(target.sheetKey));
 
@@ -119,6 +121,42 @@ function hasForeignEntry(save: Save, hunterId: HunterId, cls: UniqueClassName): 
   if (!h || !Object.hasOwn(h.classes, cls)) return false;
   const entry = h.classes[cls]!;
   return !!entry.registryId && entry.registryId !== save.classHolders.registryId;
+}
+
+/**
+ * Pre-checks whether unique class `cls` can be claimed for `target` without mutating `save`.
+ * Returns `'already'` when `target` already holds `cls` (safe to reopen a chapter without re-claiming),
+ * a `UniqueJobRefusal` when the claim would be refused, or `null` when `cls` is not unique or the claim is open.
+ */
+export function uniqueJobBlock(
+  save: Save,
+  cls: string,
+  target: HolderTarget,
+  ctx: Pick<HolderStepCtx, 'heldLocal' | 'heldRemote'>,
+): UniqueJobRefusal | 'already' | null {
+  const uniqueCls = canonicalUniqueClass(cls);
+  if (!uniqueCls) return null;
+  const current = save.classHolders.held[uniqueCls];
+  if (current) {
+    if (sameHolder(current, target)) return 'already';
+    return { className: uniqueCls, why: 'class-taken', holderName: current.name };
+  }
+  if (target.kind === 'local' && roleOf(save.settings, save.settings.sync.room) !== 'gm') {
+    return { className: uniqueCls, why: 'not-gm', holderName: null };
+  }
+  if (isTargetHeld(target, ctx)) return { className: uniqueCls, why: 'held', holderName: null };
+  if (target.kind === 'local') {
+    const h = save.hunters.find(x => x.id === target.hunterId);
+    if (!h) return { className: uniqueCls, why: 'no-hunter', holderName: null };
+    if (h.life.at === 'dead') return { className: uniqueCls, why: 'dead', holderName: null };
+    if (hasForeignEntry(save, target.hunterId, uniqueCls)) return { className: uniqueCls, why: 'foreign-class', holderName: null };
+    if (!Object.hasOwn(h.classes, uniqueCls) && Object.keys(h.classes).length >= CLASS_LOCKER_CAP) {
+      return { className: uniqueCls, why: 'locker-full', holderName: null };
+    }
+  } else if (target.kind === 'npc') {
+    if (!cleanHolderName(target.name)) return { className: uniqueCls, why: 'bad-target', holderName: null };
+  }
+  return null;
 }
 
 function applyGrantToSave(

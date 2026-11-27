@@ -511,7 +511,14 @@ export function register(app) {
     function pick(id) {
       D().move(dtList, { kind: 'close' }, drawDetail);
       const k = src.kit(), a = k && k.list.find(x => x.id === id);
-      if (scene && a && act({ kind: 'pick', scene, ability: a })) draw();
+      if (!scene || !a) return;
+      if (a.aim === 'corpse') {
+        if (!scene.actor) { src.offTurn(); return; }
+        act({ kind: 'cancel' }); draw();
+        src.use(a, null);
+        return;
+      }
+      if (act({ kind: 'pick', scene, ability: a })) draw();
     }
     function pin(id) {
       const k = src.kit(); if (!k) return;

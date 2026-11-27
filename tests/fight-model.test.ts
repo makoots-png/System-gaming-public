@@ -23,7 +23,7 @@ import { boostsOn, counts, edgeOn, exposedOf, hides, holds, rangeWith, shareOf, 
 import { tick } from '../src/core/combat/timeline.ts';
 import { perceivedBy } from '../src/core/combat/sight.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
-import { dodgeAsk, MAX_SPREAD, owed, reduce, runningState } from '../src/core/combat/fight.ts';
+import { dodgeAsk, MAX_SPREAD, owed, reduce, runningState, shadowFieldCap } from '../src/core/combat/fight.ts';
 import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
 import { gateOf, scriptOf } from '../src/core/combat/mythic.ts';
 import type { Command, Effect, Fight } from '../src/core/combat/fight.ts';
@@ -76,16 +76,17 @@ function toldWrong(after: Fight, effects: readonly Effect[], mem: Memory): strin
     const r = after.rows.find(x => x.holder && (
       e.type === 'vitals' ? x.holder.kind === 'local' && x.holder.hunterId === e.hunterId
         : e.type === 'sendRemote' ? x.holder.kind === 'remote' && x.holder.remote === e.remote
-          : e.type === 'shadowHp' && x.holder.kind === 'shadow' && x.holder.shadowId === e.shadowId));
+          : e.type === 'shadowHp' ? x.holder.kind === 'shadow' && x.holder.shadowId === e.shadowId
+            : e.type === 'sendRemoteShadow' && x.holder.kind === 'remoteShadow' && x.holder.remote === e.remote && x.holder.shadowId === e.shadowId));
     if (!r) continue;
     const was = mem.told.get(r.id)!;
-    mem.told.set(r.id, e.type === 'shadowHp' ? { ...was, hp: e.hp } : e.type === 'vitals' || e.type === 'sendRemote'
+    mem.told.set(r.id, e.type === 'shadowHp' || e.type === 'sendRemoteShadow' ? { ...was, hp: e.hp } : e.type === 'vitals' || e.type === 'sendRemote'
       ? { hp: hpOf(e.life, Infinity), mana: e.mana, fatigue: e.fatigue, keys: keysOf(e.statuses) } : was);
   }
   for (const r of after.rows) {
     if (!r.holder) continue;
     const t = mem.told.get(r.id)!;
-    const now: Told = r.holder.kind === 'shadow' ? { ...t, hp: rowHp(r) } : { hp: rowHp(r), mana: r.mana, fatigue: r.fatigue, keys: sheetKeysOf(r.statuses) };
+    const now: Told = r.holder.kind === 'shadow' || r.holder.kind === 'remoteShadow' ? { ...t, hp: rowHp(r) } : { hp: rowHp(r), mana: r.mana, fatigue: r.fatigue, keys: sheetKeysOf(r.statuses) };
     if (json(now) !== json(t)) return `${r.id}'s sheet was last told ${json(t)} but the row holds ${json(now)}`;
   }
   return null;
@@ -129,6 +130,14 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
     if (r.channel && (r.channel.charge < 0 || r.channel.charge > max)) return `${r.id}'s channel has charge ${r.channel.charge} of ${max}`;
     if (r.kind !== 'hunter' && (r as { moved?: unknown }).moved !== undefined) return `non-hunter ${r.id} carries moved`;
     if (r.kind === 'hunter' && r.moved !== undefined && (!Number.isInteger(r.moved) || r.moved < 1)) return `hunter ${r.id} has invalid moved ${r.moved}`;
+    if (r.kind === 'shadow') {
+      const owner = after.rows.find(x => x.id === r.owner);
+      if (!owner || owner.kind !== 'hunter') return `shadow ${r.id} has no owning hunter row ${r.owner}`;
+    }
+    if (r.kind === 'hunter') {
+      const fielded = after.rows.filter(x => x.kind === 'shadow' && x.owner === r.id).length;
+      if (fielded > shadowFieldCap(r.sheet.shadows)) return `hunter ${r.id} fields ${fielded} shadows past cap ${shadowFieldCap(r.sheet.shadows)}`;
+    }
   }
   const fresh = freshLogs(before, after);
   const expired = expiredStatusWrong(before, cmd, after, effects, mem, fresh, refused);
@@ -178,7 +187,7 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   const scripted = mythicWrong(before, cmd, after, effects);
   if (scripted) return scripted;
   if (after.phase === 'running') {
-    for (const side of ['party', 'foe'] as const) if (!after.rows.some(r => r.side === side && isUp(r) && r.kind !== 'summon')) return `the ${side} side has only summons up, or none, and the fight runs on`;
+    for (const side of ['party', 'foe'] as const) if (!after.rows.some(r => r.side === side && isUp(r) && r.kind !== 'summon' && r.kind !== 'shadow')) return `the ${side} side has only summons or shadows up, or none, and the fight runs on`;
     const cur = after.rows.find(r => r.id === after.currentId);
     if (!cur) return `the current row ${after.currentId} is not in the fight`;
     if (!isUp(cur)) return `the current row ${cur.id} is down`;

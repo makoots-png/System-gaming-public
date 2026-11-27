@@ -132,6 +132,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], shadow: { rank: 'C', archetype: 'brute', grade: 'Knight', monster: 'm7', name: 'Ice Bear' } },
     { eid: EID, to: [KEY], shadow: { rank: 'C', archetype: 'brute', grade: 'Knight', monster: 'm7', name: 'Ice Bear' } },
   ],
+  shadowHp: [
+    { eid: EID, to: [KEY], shadowId: 'sh1', hp: 14 },
+    { eid: EID, to: [KEY], shadowId: 'sh1', hp: 14 },
+  ],
   soloRun: [
     { eid: EID, by: KEY, gate: 'g12', name: 'Kai', outcome: 'won', rounds: 4.5, life: 'up' },
     { eid: EID, by: KEY, gate: 'g12', name: 'Kai', outcome: 'won', rounds: 4.5, life: 'up' },

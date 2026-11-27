@@ -10,11 +10,13 @@ import { pickables, pickedRef } from '../core/party.ts';
 import { RANKS, rules } from '../edge/rules.ts';
 import { stepTime } from '../core/day.ts';
 import { isUp, rowHp } from '../core/combat/row-hp.ts';
-import { can, owed, reduce, reduceAll } from '../core/combat/fight.ts';
+import { can, owed, reduce, reduceAll, shadowFieldCap } from '../core/combat/fight.ts';
 import { fightGateName, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
 import { gateFought } from '../core/gates/world.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
+import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/rise.ts';
+import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
 import { autoMonsterTurn } from '../core/combat/policy.ts';
 import { WAIT_WORDS, aims, answersBy, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
@@ -26,7 +28,7 @@ import { MYTHIC_SWITCH_WORDS } from '../core/rules-text.ts';
 import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
 import { EVERYTHING, eyesChoices, fightBodies, fightDodge, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
-import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
+import { hunterRow, monsterRows, remoteRow, remoteShadowRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
 import { REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
 import { combatantId } from '../core/combat/ability-types.ts';
@@ -141,9 +143,15 @@ export function register(app) {
     // what the motion compares with: the fight's rows are written into in place (save-step.ts `writeInto`)
     const hpWas = new Map(was ? was.rows.map(r => [r.id, rowHp(r)]) : []), readyWas = new Set(was ? was.rows.filter(r => r.armed && !r.armed.spent).map(r => r.id) : []);
     const r = reduceAll(was, cmds, c), reason = String((r.fight && r.fight.log[0] && r.fight.log[0].text) || 'Fight').slice(0, 120);
-    // the fight's totals for a hunter on another phone, its row's life among them: one `vitals` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
+    // the fight's totals for a hunter or shadow on another phone: one `vitals` or `shadowHp` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
     const rf = r.fight;
-    const totals = rf ? r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [S.event('vitals', { to: [fx.remote], fight: rf.id, life: { ...fx.life }, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })] : [])).flatMap(ev => (ev ? [ev] : [])) : [];
+    const totals = rf ? r.effects.flatMap(fx => (
+      fx.type === 'sendRemote'
+        ? [S.event('vitals', { to: [fx.remote], fight: rf.id, life: { ...fx.life }, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })]
+        : fx.type === 'sendRemoteShadow'
+          ? [S.event('shadowHp', { to: [fx.remote], shadowId: fx.shadowId, hp: fx.hp })]
+          : []
+    )).flatMap(ev => (ev ? [ev] : [])) : [];
     // an item's use leaves the bag in the same write (fight-save.ts `itemSpent`): this phone's hunter's, or the player's by
     // `spent`. A use is one `act` sent alone; a batch is the GM's edits of rows (`held`), which spend no item
     const sole = cmds.length === 1 ? cmds[0] : undefined, sp = sole ? itemSpent(was, sole) : null, ev = sp && sp.kind === 'remote' ? S.event('spent', { to: [sp.remote], item: sp.item }) : null;
@@ -164,13 +172,30 @@ export function register(app) {
     for (const fx of of('omen')) { const b = rowOf(fight(), fx.id), o = b && b.mythic && mythicScriptOf(b.mythic.script).omens[fx.omen]; if (b && o) toast(`${b.name} readies ${o.name}.`, 'warning'); }
     for (const fx of of('phased')) { const b = rowOf(fight(), fx.id), p = b && b.mythic && mythicScriptOf(b.mythic.script).phases[fx.phase]; if (p) toast(`Phase ${fx.phase + 1}: ${p.name}.`); }
     for (const fx of of('omenAnswered')) toast(fx.line);
-    for (const fx of asked ? [] : of('refused')) toast(REFUSAL_WORDS[fx.reason], 'warning');
+    for (const fx of asked ? [] : of('refused')) toast(refusalLine(fx.reason, was, cmds), 'warning');
     if (of('burst').length) lastBurst = { n: (lastBurst ? lastBurst.n : 0) + 1, ids: of('burst').map(x => x.id) };
     showEffects(effects, hpWas, readyWas);
     if (of('ended').length && !cmds.some(x => x.type === 'end')) toast('The fight is over. Tap End fight to see the summary.');
     return effects;
   }
   const refused = fx => fx.some(x => x.type === 'refused');
+  /** Names the hunter when a shadow guard refuses a command, falling back to REFUSAL_WORDS. */
+  function refusalLine(reason, was, cmds) {
+    const first = cmds[0];
+    if (reason === 'shadowsIn' && first && first.type === 'remove') {
+      const who = rowOf(was, first.id);
+      if (who) return `Remove ${who.name}'s shadows first.`;
+    }
+    if (reason === 'shadowCap' && first && first.type === 'add') {
+      const sh = first.rows.find(x => x.kind === 'shadow');
+      const who = sh ? rowOf(was, sh.owner) : null;
+      if (who) {
+        const cap = shadowFieldCap(who.sheet.shadows);
+        return `${who.name} can field at most ${cap} shadow${cap === 1 ? '' : 's'} in a fight.`;
+      }
+    }
+    return REFUSAL_WORDS[reason];
+  }
   /**
    * What a member of `app.api.combat` answers for the effects of what it sent: written, or refused with the refusal told
    * already in the fight's news (`command`), so its caller's `ui.wrote` says nothing more.
@@ -244,7 +269,9 @@ export function register(app) {
   /** @returns {JoinRow} */
   const remoteJoin = r => ({ row: remoteRow(r.data, r.key, newId(), rules()), monsterId: null });
   /** @returns {JoinRow} */
-  const shadowJoin = (s, owner) => ({ row: shadowRow(s, owner, newId(), rules()), monsterId: null });
+  const shadowJoin = (s, hunter, ownerRowId) => ({ row: shadowRow(s, hunter, ownerRowId, newId(), rules()), monsterId: null });
+  /** @returns {JoinRow} */
+  const remoteShadowJoin = (s, key, ownerRowId) => ({ row: remoteShadowRow(s, key, ownerRowId, newId(), rules()), monsterId: null });
 
   // S06/F07: another GM device is already running the room's fight; replacing it needs a confirm.
   const otherGMRunning = () => { const d = inRoomAsGM() && A().sync.doc('fight'); const me = store.get().settings.deviceId; return !!(d && d.active && !d.ended && d.by && d.by !== me); };
@@ -297,8 +324,11 @@ export function register(app) {
   // ── the turn's actions ──
   /** The current row passes: a standard action's time, then the next turn. */
   function next() { const f = fight(); if (running(f)) send({ type: 'endTurn', by: f.currentId }); }
-  /** What aims and steps read of each row (fight-view.ts `Spot`), with its name for the picker. @param {Fight} f */
-  const spots = f => f.rows.map(r => ({ ...spotOf(r), name: r.name }));
+  /** What aims and steps read of each row (fight-view.ts `Spot`), with its name for the picker. @param {Fight} f @param {import('../core/combat/ability-types.ts').RiseSpec | null} [raise] */
+  const spots = (f, raise = null) => f.rows.map(r => {
+    const canRise = raise ? canRiseFor(r, f.rows, raise) : canRiseInFight(r, f.rows);
+    return { ...spotOf(r), canRise, name: r.name };
+  });
   /** The foes `row` may step toward or away from, nearest first, as its first foe ability aims (fight-view.ts `aims`). */
   function foesOf(f, row) {
     const a = row.abilities.find(x => x.aim === 'foe');
@@ -339,12 +369,30 @@ export function register(app) {
     let aim = row.id;
     if (a.aim === 'place' && a.range === 0) aim = row.place;
     else if (a.aim !== 'self') {
-      const list = aims(spots(f), row.id, a, f.grid).filter(x => x.inRange && x.inShape);
-      if (!list.length) { toast(`Nobody in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`, 'warning'); return; }
+      const all = aims(spots(f, a.raise ?? null), row.id, a, f.grid);
+      const list = all.filter(x => x.inRange && x.inShape);
+      if (!list.length) {
+        const msg = a.aim === 'corpse'
+          ? (all.length ? `No fallen monsters in range of ${a.name}. Move closer to a fallen monster first.` : `No fallen monsters can be raised with ${a.name} right now.`)
+          : `Nobody in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`;
+        toast(msg, 'warning'); return;
+      }
       const first = picks.get(row.id), sorted = [...list.filter(x => x.target.id === first), ...list.filter(x => x.target.id !== first)];
+      const R = rules();
+      const body = a.aim === 'corpse' && a.raise
+        ? (() => { const bn = riseBonus(row, a.raise, R); return `Presence check (${bn >= 0 ? `+${bn}` : `−${-bn}`}) to raise a fallen monster until the fight ends.`; })()
+        : undefined;
+      const labelOf = x => {
+        const d = `${x.dist} tile${x.dist === 1 ? '' : 's'}`;
+        if (a.aim === 'corpse' && a.raise) {
+          const corpse = rowOf(f, x.target.id);
+          if (corpse) return `${x.target.name} · ${d} · DC ${riseDc(row, corpse, R)}`;
+        }
+        return `${x.target.name} · ${d}`;
+      };
       if (b) b.disabled = true;
-      const id = await ui.system({ tag: '! Fight', title: `Use ${a.name} on…`, layout: 'list',
-        actions: [...sorted.map((x, i) => ({ label: `${x.target.name} · ${x.dist} tile${x.dist === 1 ? '' : 's'}`, value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
+      const id = await ui.system({ tag: '! Fight', title: `Use ${a.name} on…`, ...(body ? { body } : {}), layout: 'list',
+        actions: [...sorted.map((x, i) => ({ label: labelOf(x), value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
       if (b) b.disabled = false;
       const t = id ? list.find(x => x.target.id === id) : null; if (!t) return;
       aim = a.aim === 'place' ? t.target.place : t.target.id;
@@ -356,10 +404,24 @@ export function register(app) {
   /** `row` uses `a` at `aim` (a row id or a tile): the dice `needs` asks for and the fight's `act` (an item leaves the bag in its write). */
   function useAt(row, a, aim) {
     const g = fight(), u = rowOf(g, row.id); if (!running(g) || !u) return;
+    const risenWas = a.raise ? new Set(g.rows.filter(isRisen).map(x => x.id)) : null;
+    const prevTop = g.log[0] ?? null;
     const fx = send({ type: 'act', by: u.id, ability: a.id, aim, rolls: drawnFor(g, u.id, needs(a, u, g.rows, aim, g.grid, g.now, rules())) });
     if (refused(fx)) return;
+    const after = fight();
+    const risenNow = risenWas && after ? after.rows.find(x => isRisen(x) && !risenWas.has(x.id)) : null;
+    if (risenNow) afterFrame(() => {
+      const box = root; if (!box) return;
+      const el = box.querySelector(`[data-mapbox] [data-tok="${CSS.escape(risenNow.id)}"]`) || box.querySelector(`.cmb-row:has([data-pick="${CSS.escape(risenNow.id)}"])`);
+      if (el) motion.burst('extract', el);
+    });
+    const added = after ? (() => { const idx = prevTop ? after.log.indexOf(prevTop) : -1; return idx >= 0 ? after.log.slice(0, idx) : after.log.slice(0, 8); })() : [];
+    const targetId = typeof aim === 'string' ? rowOf(g, aim)?.id ?? null : null;
+    const riseLine = a.raise && targetId
+      ? added.find(l => l.rows.includes(u.id) && l.rows.includes(targetId))?.text ?? null
+      : null;
     // the line the use logged, as the fight answers it, once the map or the card shows what it did
-    for (const x of fx) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); }
+    for (const x of fx) if (x.type === 'used') { const said = riseLine || x.line; afterFrame(() => toast(said)); }
   }
 
   /** `row`'s channel goes off: a holding one on its turn at its charge, a broken one at once at half (design 4.1). */
@@ -668,7 +730,14 @@ export function register(app) {
       rose && rose.kind === 'local' ? rose.step : null, rose && rose.kind === 'remote' ? rose.event : null)),
     add: list => add(list), isActive: () => running(fight()),
     startFlow, showParty, okToReplace: async () => !otherGMLive() || confirmReplace(),
-    removeRemote: key => { const f = fight(); const rs = f ? f.rows.filter(r => remoteKeyOf(r) === key) : []; rs.forEach(removeRow); return rs.length; }, // R01
+    removeRemote: key => {
+      const f = fight(); if (!f) return 0;
+      const rs = f.rows.filter(r => remoteKeyOf(r) === key), ids = new Set(rs.map(r => r.id));
+      const shs = f.rows.filter(r => (r.holder && r.holder.kind === 'remoteShadow' && r.holder.remote === key) || (r.kind === 'shadow' && ids.has(r.owner)));
+      shs.forEach(removeRow);
+      rs.forEach(removeRow);
+      return rs.length;
+    }, // R01
     // A hunter of this phone in the running fight uses an item it took in as an ability: the card's use of it.
     useItem: (hid, itemId) => {
       const f = fight(), r = running(f) ? f.rows.find(x => x.holder && x.holder.kind === 'local' && x.holder.hunterId === hid) : null;
@@ -909,7 +978,7 @@ export function register(app) {
     },
     move: (to, dash) => { const c = cur(); if (c) send({ type: 'move', by: c.id, to, ...(dash ? { dash: true } : {}) }); },
     place: (id, to) => { send({ type: 'place', id, to }); },
-    use: (a, aim) => { const c = cur(); if (c) useAt(c, a, aim); },
+    use: (a, aim) => { const c = cur(); if (!c) return; if (aim === null) void useAbility(c, a.id, null); else useAt(c, a, aim); },
     dodge: to => { dodgePick(null, to); },
     offTurn: () => toast('It is not their turn.'),
     waiting: () => false,
@@ -985,7 +1054,7 @@ export function register(app) {
       ...Object.fromEntries(Object.entries(k).filter(([, v]) => v === null || typeof v !== 'object')),
       key: r.id, cls: `cmb-card${now ? ' turn' : ''}`,
       head: `${pic ? icon(pic) : ''}${esc(r.name)} ${ui.rankBadge(rankOf(r))}
-        ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(r.kind)}</span>${remote ? '<span class="cmb-tag now">player phone</span>' : ''}${tag}`,
+        ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(isRisen(r) ? 'risen' : r.kind)}</span>${remote ? '<span class="cmb-tag now">player phone</span>' : ''}${tag}`,
       staggerF: k.stagger ? share(k.stagger.fill, k.stagger.max) : null, staggerFill: k.stagger ? k.stagger.fill : 0, staggerMax: k.stagger ? k.stagger.max : 0,
       staggered: k.stagger ? k.stagger.staggered : null,
       staggeredText: k.stagger && k.stagger.staggered != null ? `${k.stagger.staggered} round${k.stagger.staggered === 1 ? '' : 's'}` : '',
@@ -1051,11 +1120,17 @@ export function register(app) {
         ? `<label class="field row-full"><span class="lbl">${esc(WAIT_WORDS.label)}</span><select data-fk="garm-on" data-garm-on>${others.map(x => `<option value="${esc(x.id)}"${x.id === r.armed.on ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : '';
       out.push(`<div class="cmb-x react"><span>Reaction</span><div class="seg" role="group" aria-label="Reaction of ${esc(r.name)}">${[{ id: '', name: 'No reaction' }, ...reacts].map(a => `<button type="button" data-fk="garm-${esc(a.id)}" data-garm="${esc(a.id)}" aria-pressed="${on === a.id}">${esc(a.name)}</button>`).join('')}</div>${r.armed ? `<b>${r.armed.spent ? 'Spent' : 'Ready'}</b>` : ''}${before}</div>`);
     }
-    if (r.kind === 'summon') { const o = r.owner && rowOf(f, r.owner), left = k.summon; out.push(`<div class="cmb-x summon">Summoned by <b>${esc(o ? o.name : 'someone')}</b>${left !== null ? ` · ${left} round${left === 1 ? '' : 's'} left` : ''}</div>`); }
+    if (r.kind === 'summon') {
+      const o = r.owner && rowOf(f, r.owner), left = k.summon;
+      out.push(isRisen(r)
+        ? `<div class="cmb-x summon">Raised by <b>${esc(o ? o.name : 'someone')}</b> · lasts until the fight ends</div>`
+        : `<div class="cmb-x summon">Summoned by <b>${esc(o ? o.name : 'someone')}</b>${left !== null ? ` · ${left} round${left === 1 ? '' : 's'} left` : ''}</div>`);
+    }
     const c = k.channel;
     if (c) out.push(`<div class="cmb-x chan">${c.state === 'broken' ? 'Channel broken' : 'Channeling'} <b>${esc(c.name)}</b><span class="cmb-pips" data-charge="${c.charge}" aria-label="Charge ${c.charge} of ${c.max}">${Array.from({ length: c.max }, (_, i) => `<i${i < c.charge ? ' class="on"' : ''}></i>`).join('')}</span><span>Power ×${c.factor}</span></div>`);
     if (k.taunt) out.push(`<div class="cmb-x taunt">Taunted by <b>${esc(name(k.taunt.by))}</b>${k.taunt.left !== null ? ` · ${k.taunt.left} round${k.taunt.left === 1 ? '' : 's'}` : ''}</div>`);
     if (r.kind === 'monster') {
+      if (k.down && r.rose) out.push('<div class="cmb-x">Already raised in this fight.</div>');
       const i = k.intent;
       if (i && !i.channel) out.push(`<div class="cmb-x intent" data-intent>Intent: <b>${esc(i.name)}</b> at ${esc(at(i.target))}${i.revealed ? `<ul>${i.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ' <small>(numbers hidden from players)</small>'}</div>`);
       const t = k.threat;
@@ -1254,8 +1329,29 @@ export function register(app) {
         if (add(cs)) toast(`${n} × ${o.kind === 'monster' ? o.name : first.row.name} added.`); return;
       }
       if (b.hasAttribute('data-adds')) {
-        const sid = val('[data-ssel]'), h = store.get().hunters.find(x => x.shadows.some(s => s.id === sid)), s = h && h.shadows.find(x => x.id === sid);
-        if (s) add([shadowJoin(s, h.id)]); return;
+        const raw = val('[data-ssel]'), [kind, ownerKey, sid] = raw.split('|');
+        if (!kind || !ownerKey || !sid) return;
+        if (kind === 'local') {
+          const h = store.hunter(ownerKey), s = h && h.shadows.find(x => x.id === sid);
+          if (!h || !s) return;
+          const ownerRow = f ? f.rows.find(x => x.holder && x.holder.kind === 'local' && x.holder.hunterId === h.id) : null;
+          if (!ownerRow) { toast(`Add ${h.name} first, then ${h.name}'s shadows.`, 'warning'); return; }
+          if (f && f.rows.some(x => x.holder && x.holder.kind === 'shadow' && x.holder.hunterId === h.id && x.holder.shadowId === s.id)) {
+            toast(REFUSAL_WORDS.duplicate, 'warning'); return;
+          }
+          add([shadowJoin(s, h.id, ownerRow.id)]); return;
+        }
+        if (kind === 'remote') {
+          const rm = remoteList().find(x => x.key === ownerKey), s = rm && (rm.data.shadows || []).find(x => x.id === sid);
+          if (!rm || !s) return;
+          const ownerRow = f ? f.rows.find(x => remoteKeyOf(x) === rm.key) : null;
+          if (!ownerRow) { toast(`Add ${rm.data.name} first, then ${rm.data.name}'s shadows.`, 'warning'); return; }
+          if (f && f.rows.some(x => x.holder && x.holder.kind === 'remoteShadow' && x.holder.remote === rm.key && x.holder.shadowId === s.id)) {
+            toast(REFUSAL_WORDS.duplicate, 'warning'); return;
+          }
+          add([remoteShadowJoin(s, rm.key, ownerRow.id)]); return;
+        }
+        return;
       }
       if (!f || !r) return;
       if (b.hasAttribute('data-dmg') || b.hasAttribute('data-heal')) {
@@ -1282,7 +1378,7 @@ export function register(app) {
         const mid = refs().monsters[r.id], m = mid ? A().bestiary.get(mid) : null;
         const o = r.origin.kind === 'monster' ? r.origin : null;
         const exId = b.getAttribute('data-extract'), byRow = exId ? rowOf(f, exId) : null;
-        if (!byRow || !byRow.holder || byRow.holder.kind === 'shadow') return;
+        if (!byRow || !byRow.holder || (byRow.holder.kind !== 'local' && byRow.holder.kind !== 'remote')) return;
         /** @type {import('../core/api.ts').ExtractTarget} */
         const corpse = { id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
           down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, rules().shadow.maxAttempts) };
@@ -1504,7 +1600,9 @@ export function register(app) {
       if (hsel) fillSelect(hsel, pickables(s.hunters, remoteList()).map(p => [p.id, p.ref.kind === 'remote' ? `${p.name} (player phone)` : p.name]), 'No hunters');
       if (msel) fillSelect(msel, A().bestiary.list().map(m => [m.id, `${m.name} (${m.rank}${m.kind === 'normal' ? '' : ` ${m.kind}`})`]), 'No monsters');
       if (ssel) {
-        fillSelect(ssel, s.hunters.flatMap(h => h.shadows.filter(x => x.summoned).map(x => [x.id, `${x.name} (${h.name})`])), 'No summoned shadows');
+        const localOpts = s.hunters.flatMap(h => h.shadows.filter(x => x.summoned).map(x => [`local|${h.id}|${x.id}`, `${x.name} (${h.name})`]));
+        const remoteOpts = remoteList().flatMap(rm => (rm.data.shadows || []).filter(x => x.summoned).map(x => [`remote|${rm.key}|${x.id}`, `${x.name} (${rm.data.name}, player phone)`]));
+        fillSelect(ssel, [...localOpts, ...remoteOpts], 'No summoned shadows');
         // few jobs hold shadows: their block shows only while there is a summoned one to add
         const sfs = ssel.closest('fieldset'); if (sfs) sfs.hidden = !ssel.value;
       }

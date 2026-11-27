@@ -468,7 +468,7 @@ export function register(app) {
       const e = encounter(), h = meHunter(e); if (!h || !canAct(e)) return;
       // an item stays in the bag until the GM's fight takes it: the room's `spent` takes it then (fight-save.ts `itemSpent`).
       // The map sends a consumable as a use, held as any use is (the List's goes through the bag: SMX-views-5.1)
-      void app.api.uses.cast(h.id, a.id, aim);
+      void app.api.uses.cast(h.id, a.id, aim ?? undefined);
     },
     dodge: to => {
       const e = encounter(), h = meHunter(e), dg = myDodge(e); if (!e || e.ended !== false || !h || !dg) return;

@@ -153,9 +153,9 @@ export function triggered<F extends Running>(f: F, events: readonly Raised[], ct
 /** Thresholds that went off (a use's, a reaction's), one `burst` a bearer. */
 export const burstsOf = (bursts: readonly { readonly bearer: CombatantId }[]): Fx => [...new Set(bursts.map(b => b.bearer))].map(id => ({ type: 'burst', id }));
 
-/** Whether a row keeps its side in the fight: up, and not a summon (kits design 1.9: a fight is not held by a sprite). */
-export const holdsSide = (b: Body): boolean => isUp(b) && !isSummon(b);
-/** A side with nobody up ends the fight. A summon does not count. */
+/** Whether a row keeps its side in the fight: up, and neither a summon nor a shadow (hunters and monsters only). */
+export const holdsSide = (b: Body): boolean => isUp(b) && !isSummon(b) && b.kind !== 'shadow';
+/** A side with nobody up ends the fight. Summons and shadows do not count. */
 export function overIf(f: Running, fx: Fx, R: Rules): Ended | null {
   const up = standing(f);
   if (up.length === 2) return null;
@@ -452,14 +452,15 @@ export function sheetBacks(before: Fight | null, after: Fight, ctx: Ctx): Effect
 /**
  * The write-back of a row whose sheet holder must hear of a change from `b` to `a` at `now`: a hunter's life, mana,
  * fatigue and statuses as `vitals` (this phone) or `sendRemote` (another phone); the row's life is the sheet's while the
- * fight holds it, wherever the sheet is. A shadow's HP as `shadowHp`. Totals, so a repeat changes nothing. A row no sheet
- * holds, or with nothing changed, writes nothing. A stacking status whose count is the fight's (kits table 2.1, `keep:
- * 'fight'`) is not the sheet's: it stays in the fight and ends with it.
+ * fight holds it, wherever the sheet is. A shadow's HP as `shadowHp` (this phone) or `sendRemoteShadow` (another phone).
+ * Totals, so a repeat changes nothing. A row no sheet holds, or with nothing changed, writes nothing. A stacking status
+ * whose count is the fight's (kits table 2.1, `keep: 'fight'`) is not the sheet's: it stays in the fight and ends with it.
  */
 function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
   const h = a.holder;
   if (!h) return;
   if (h.kind === 'shadow') { if (rowHp(a) !== rowHp(b)) fx.push({ type: 'shadowHp', hunterId: h.hunterId, shadowId: h.shadowId, hp: rowHp(a) }); return; }
+  if (h.kind === 'remoteShadow') { if (rowHp(a) !== rowHp(b)) fx.push({ type: 'sendRemoteShadow', remote: h.remote, shadowId: h.shadowId, hp: rowHp(a) }); return; }
   // a hunter's sheet, here or on another phone, is held only by a hunter's row (rows.ts `partyRow`)
   if (a.kind !== 'hunter') return;
   if (sameLife(a.life, b.life) && a.mana === b.mana && a.fatigue === b.fatigue && sameStatuses(a.statuses, b.statuses) && a.used === b.used) return;
@@ -469,13 +470,15 @@ function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
 }
 
 /**
- * What a hunter's row on another phone tells that phone as it joins (the fight's `add`): its life, mana, fatigue and
- * statuses as `sendRemote`, whatever they are. The row is built from the sheet the GM's phone last read, which can be a
- * poll behind the player's own (a fall to 0 HP just before the join), and from the join the row is the one writer of
- * them: the sheet hears the row at once, not at the row's first change, so the two never disagree in between.
+ * What a hunter's or shadow's row on another phone tells that phone as it joins (the fight's `add`): its life, mana,
+ * fatigue and statuses as `sendRemote`, or its shadow's HP as `sendRemoteShadow`. The row is built from the sheet the
+ * GM's phone last read, which can be a poll behind the player's own (a fall to 0 HP just before the join), and from the
+ * join the row is the one writer of them: the sheet hears the row at once, not at the row's first change, so the two
+ * never disagree in between.
  */
 function joinedBack(a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
   if (a.holder?.kind === 'remote' && a.kind === 'hunter') fx.push(remoteBack(a, a.holder.remote, now, ctx.rules));
+  if (a.holder?.kind === 'remoteShadow') fx.push({ type: 'sendRemoteShadow', remote: a.holder.remote, shadowId: a.holder.shadowId, hp: rowHp(a) });
 }
 /** The `sendRemote` of hunter row `a` for the phone of `remote` at `now`: the row's own life, and its other totals. */
 function remoteBack(a: HunterRow, remote: SheetKey, now: Tick, R: Rules): Effect {

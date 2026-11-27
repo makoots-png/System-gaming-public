@@ -13,6 +13,7 @@ import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
 import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
 import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
+import { PACKLORD_SIGNATURE } from './class-packlord.ts';
 import { SERAPH_SIGNATURE } from './class-seraph.ts';
 import { STORMCALLER_SIGNATURE } from './class-stormcaller.ts';
 import { GRIMREAPER_SIGNATURE } from './class-grimreaper.ts';
@@ -39,6 +40,8 @@ export type ClassSignature = {
   readonly worn?: ClassWorn;
   /** At most `CLASS_ACTIVES_MAX` (4) active abilities. */
   readonly actives?: readonly Ability[];
+  /** Extra class-defined statuses referenced by key (such as summon starting statuses) for `classStatusDef` and fight-doc lookup. */
+  readonly statuses?: readonly ClassWorn[];
 };
 
 /** Folded class powers for the hunter's active awakened class. */
@@ -58,6 +61,7 @@ export const CLASS_SIGNATURES: ClassSignatureMap = {
   Rifthunter: RIFTHUNTER_SIGNATURE,
   Seraph: SERAPH_SIGNATURE,
   Ironclad: IRONCLAD_SIGNATURE,
+  Packlord: PACKLORD_SIGNATURE,
   Stormcaller: STORMCALLER_SIGNATURE,
   Grimreaper: GRIMREAPER_SIGNATURE,
   Brambleguard: BRAMBLEGUARD_SIGNATURE,
@@ -171,6 +175,7 @@ function buildClassStatusDefs(signatures: ClassSignatureMap, trees: ClassTreeMap
   for (const sig of Object.values(signatures)) {
     if (!sig) continue;
     if (sig.worn) record(sig.worn.key, sig.worn.def);
+    for (const st of sig.statuses ?? []) record(st.key, st.def);
     for (const active of sig.actives ?? []) recordOps(active.ops);
   }
   for (const tree of Object.values(trees)) {

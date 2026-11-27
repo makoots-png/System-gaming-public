@@ -133,7 +133,7 @@ const RARER_CLASSES_RAW = {
   Seraph:       { rarity: 'epic', unique: true, recRank: 'A', pair: 'dis+pre', alloc: { dis: 2, pre: 1 } },
   Voidstalker:  { rarity: 'epic', unique: true, recRank: 'A', pair: 'agi+ins', alloc: { agi: 2, ins: 1 } },
   Ironclad:     { rarity: 'epic', unique: true, recRank: 'A', pair: 'vit+dis', alloc: { vit: 2, dis: 1 } },
-  Packlord:     { rarity: 'epic', unique: true, recRank: 'A', pair: 'vit+pre', alloc: { pre: 2, vit: 1 } },
+  Packlord:     { rarity: 'epic', unique: true, recRank: 'A', pair: 'pre+ctl', alloc: { pre: 2, ctl: 1 } },
   Soulforger:   { rarity: 'epic', unique: true, recRank: 'A', pair: 'dis+pow', alloc: { pow: 2, dis: 1 } },
   // Mythic (10, unique)
   Hemomancer:   { rarity: 'mythic', unique: true, recRank: 'S', pair: 'vit+pow', alloc: { pow: 2, vit: 1 } },

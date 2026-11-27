@@ -23,7 +23,7 @@ import type { ChainEvent } from '../core/hunter/job-chain.ts';
 import { WAYS_BACK, hpChange, lifeNews } from '../core/hunter/vitals.ts';
 import type { Life } from '../core/hunter/vitals.ts';
 import { spendItem } from '../core/hunter/use.ts';
-import { shadowRises } from '../core/hunter/shadows.ts';
+import { setShadowHp, shadowRises } from '../core/hunter/shadows.ts';
 import { record } from '../core/hunter/chronicle.ts';
 import { chapterLanded, whoseLine } from '../core/story/story.ts';
 import { weightHeard } from '../core/table-weight.ts';
@@ -183,6 +183,11 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     const next = shadowRises({ ...s, seq: ids.seq() }, h.id, p.shadow, id, { at: app.now(), cap: app.rules().logCap }, app.rules());
     if (isRefused(next)) return { save: s, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rose, but ${h.name}'s army is full.`, { kind: 'warning' }) };
     return { save: next, tell: () => app.toast('ARISE', `${p.shadow.name || 'A shadow'} rises and joins ${h.name}'s army.`, { kind: 'levelup' }) };
+  }) },
+  // the GM's fight wrote back this hunter's shadow's HP (0 dismisses it to resting): idempotent total through setShadowHp
+  shadowHp: { once: true, land: (p, hids) => save => forEach(save, hids, (s, h) => {
+    const next = setShadowHp(h, p.shadowId, p.hp);
+    return isRefused(next) ? { save: s, tell: nothing } : { save: withHunter(s, next), tell: nothing };
   }) },
   // the GM's phone takes a player's run (gates.js, gates/solo.ts `soloTaken`); a player's phone does nothing with one
   soloRun: GM_ONLY_READS,

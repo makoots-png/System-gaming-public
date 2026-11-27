@@ -742,6 +742,10 @@ function holderOf(v: unknown): Holder | null | undefined {
     const h = idText(v.hunterId), s = idText(v.shadowId);
     return h && s ? { kind: 'shadow', hunterId: hunterId(h), shadowId: shadowId(s) } : undefined;
   }
+  if (v.kind === 'remoteShadow') {
+    const k = parseSheetKey(v.remote), s = idText(v.shadowId);
+    return k && s ? { kind: 'remoteShadow', remote: k, shadowId: shadowId(s) } : undefined;
+  }
   return undefined;
 }
 function idRecord<K extends string, T>(v: unknown, max: number, read: (x: unknown) => T | null, brandOf: (s: string) => K): Readonly<Record<K, T>> | null {
@@ -823,7 +827,7 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
   hunter: ({ v, hpMax }) => {
     const holder = holderOf(v.holder), life = parseLife(v.life, Math.max(1, hpMax));
     const moved = v.moved === undefined ? undefined : whole(v.moved, 1, BIG);
-    if (holder === undefined || holder?.kind === 'shadow' || !life || v.xp !== 0 || moved === null) return null;
+    if (holder === undefined || holder?.kind === 'shadow' || holder?.kind === 'remoteShadow' || !life || v.xp !== 0 || moved === null) return null;
     if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction', 'rose'])) return null;
     return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null, ...(moved === undefined ? {} : { moved }) };
   },
@@ -836,10 +840,11 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
     return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }), ...(rose ? { rose } : {}) };
   },
   shadow: ({ v, hpMax }) => {
-    const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), holder = read === null ? null : read?.kind === 'shadow' ? read : undefined;
-    if (!life || holder === undefined || v.xp !== 0) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'owner', 'until', 'extraction', 'rose'])) return null;
-    return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null };
+    const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), owner = idText(v.owner);
+    const holder = read === null ? null : read?.kind === 'shadow' || read?.kind === 'remoteShadow' ? read : undefined;
+    if (!life || holder === undefined || !owner || v.xp !== 0) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['moved', 'until', 'extraction', 'rose'])) return null;
+    return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner) };
   },
   summon: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), owner = idText(v.owner);
@@ -1070,6 +1075,7 @@ export function parseFight(raw: unknown, R: Rules): Fight | null {
   if (!id || !phase || !grid || !log || banked === null) return null;
   const rows = all(raw.rows, MAX_ROWS, x => rowOf(x, grid, R));
   if (!rows || new Set(rows.map(r => r.id)).size !== rows.length) return null;
+  if (rows.some(r => r.kind === 'shadow' && !rows.some(o => o.id === r.owner && o.kind === 'hunter'))) return null;
   const tiles = rows.filter(r => isUp(r) || r.kind === 'hunter').map(r => `${r.place.x},${r.place.y}`);
   if (new Set(tiles).size !== tiles.length) return null;
   const zones = all(raw.zones, MAX_ZONES, x => parseZone(x, grid, R)), fog = fogOn(raw.fog, grid);

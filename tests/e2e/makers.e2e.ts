@@ -1813,7 +1813,7 @@ test('a GM copies The wager from the stories to copy and finds it whole in the l
   await go(page, 'workshop');
   const sec = workshop(page, 'story');
   await sec.locator('[data-examples] summary').tap();
-  await expect(sec.locator('[data-examples] summary')).toHaveText('Stories to copy (2)');
+  await expect(sec.locator('[data-examples] summary')).toHaveText('Stories to copy (3)');
   await sec.getByRole('button', { name: 'Duplicate The wager' }).tap();
   await expect(page.locator('#toasts .toast', { hasText: 'The wager is in your stories.' })).toBeVisible();
   expect(await libraryStories(page)).toEqual([EXAMPLE_STORIES[0]!.story]);

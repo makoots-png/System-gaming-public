@@ -912,9 +912,10 @@ describe('status: the GM\'s Status window, which takes no time', () => {
 
 describe('who holds a row\'s sheet, and the XP of the foes', () => {
   test('a shadow\'s HP goes back to its hunter\'s list as shadowHp, and nothing else is written for it', () => {
-    const shadow = row('S', 'party', { kind: 'shadow', holder: { kind: 'shadow', hunterId: hunterId('h-1'), shadowId: shadowId('s-1') } });
-    const r = play(add(shadow, row('M', 'foe')), start(['S', 20], ['M', 10]), pass('S'), hit('M', 'S'));
-    expect(r.effects.filter(e => e.type === 'shadowHp' || e.type === 'vitals' || e.type === 'sendRemote')).toEqual([
+    const owner = row('A', 'party');
+    const shadow = row('S', 'party', { kind: 'shadow', owner: id('A'), holder: { kind: 'shadow', hunterId: hunterId('h-1'), shadowId: shadowId('s-1') } });
+    const r = play(add(owner, shadow, row('M', 'foe')), start(['A', 20], ['S', 15], ['M', 10]), pass('A'), pass('S'), hit('M', 'S'));
+    expect(r.effects.filter(e => e.type === 'shadowHp' || e.type === 'vitals' || e.type === 'sendRemote' || e.type === 'sendRemoteShadow')).toEqual([
       { type: 'shadowHp', hunterId: hunterId('h-1'), shadowId: shadowId('s-1'), hp: HP - 9 },
     ]);
   });
@@ -931,7 +932,7 @@ describe('a stored row holds only its own kind\'s fields (SMX-rules-8)', () => {
   const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] } };
   const stored = (): { rows: Record<string, unknown>[] } => JSON.parse(JSON.stringify(play(add(
     row('A', 'party'), row('M', 'foe', { origin: WOLF, xp: 30 }),
-    row('S', 'party', { kind: 'shadow', origin: WOLF, holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } }),
+    row('S', 'party', { kind: 'shadow', origin: WOLF, owner: id('A'), holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } }),
     row('U', 'foe', { kind: 'summon', origin: WOLF, owner: id('M'), until: tick(5000) }),
   ), start(['A', 20], ['M', 10], ['S', 5], ['U', 1])).fight));
   /** The stored fight with row `name`'s fields changed (`undefined` drops one), read back. */
@@ -956,10 +957,13 @@ describe('a stored row holds only its own kind\'s fields (SMX-rules-8)', () => {
       ['a hunter worth XP', 'A', { xp: 30 }],
       ['a hunter with an owner', 'A', { owner: 'M' }],
       ['a hunter held as a shadow', 'A', { holder: { kind: 'shadow', hunterId: 'h-A', shadowId: 's-1' } }],
+      ['a hunter held as a remoteShadow', 'A', { holder: { kind: 'remoteShadow', remote: 'd-1:h-A', shadowId: 's-1' } }],
       ['a monster held by a hunter', 'M', { holder: local }],
       ['a monster with an owner and an end', 'M', { owner: 'A', until: 5000 }],
       ['a monster with no threat table', 'M', { threat: null }],
       ['a shadow held by a hunter', 'S', { holder: local }],
+      ['a shadow with no owner', 'S', { owner: undefined }],
+      ['a shadow whose owner is a monster', 'S', { owner: 'M' }],
       ['a shadow with a stagger bar', 'S', { stagger: bar }],
       ['a shadow with a threat table', 'S', { threat: {} }],
       ['a summon with no owner', 'U', { owner: undefined }],
@@ -2028,7 +2032,7 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
       add(
         row('A', 'party', { abilities: [swap, shadowSwap, foeSwap], place: place(1, 2) }),
         row('B', 'party', { place: place(4, 2) }),
-        row('S', 'party', { kind: 'shadow', place: place(6, 2) }),
+        row('S', 'party', { kind: 'shadow', owner: id('A'), place: place(6, 2) }),
         row('M', 'foe', { place: place(8, 2), statuses: [st('root', null, { op: 'root' })] }),
       ),
       start(['A', 20], ['B', 10], ['S', 8], ['M', 5]),
@@ -2036,7 +2040,7 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
     refuses(f0, { type: 'act', by: id('A'), ability: swap.id, aim: id('A'), rolls: rolls() }, 'noTarget');
     refuses(f0, { type: 'act', by: id('A'), ability: shadowSwap.id, aim: id('B'), rolls: rolls() }, 'noTarget');
     const swapped = play(
-      add(row('A', 'party', { abilities: [shadowSwap], place: place(1, 2) }), row('S', 'party', { kind: 'shadow', place: place(6, 2) }), row('M', 'foe')),
+      add(row('A', 'party', { abilities: [shadowSwap], place: place(1, 2) }), row('S', 'party', { kind: 'shadow', owner: id('A'), place: place(6, 2) }), row('M', 'foe')),
       start(['A', 20], ['S', 8], ['M', 5]),
       { type: 'act', by: id('A'), ability: shadowSwap.id, aim: id('S'), rolls: rolls() },
     );

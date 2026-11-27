@@ -33,7 +33,7 @@ import type { OmenKey } from '../src/core/combat/mythic-types.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, itemAbility, itemOfAbility, weaponAttack, wornAbilityId } from '../src/core/registry/abilities.ts';
-import { hunterAbilities, hunterRow, monsterRows, remoteRow, sameRankHit, shadowRow, shadowSheet, staggerOf, summonRow } from '../src/core/combat/rows.ts';
+import { hunterAbilities, hunterRow, monsterRows, remoteRow, remoteShadowRow, sameRankHit, shadowRow, shadowSheet, staggerOf, summonRow } from '../src/core/combat/rows.ts';
 import { pinKeyOf } from '../src/core/combat/map-view.ts';
 import { codexKey } from '../src/core/bestiary.ts';
 import type { RowHunter, RowMonster, RowShadow } from '../src/core/combat/rows.ts';
@@ -410,7 +410,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
   test('with mythic phases off a mythic row holds no standing', () => {
     const [r] = monsterRows(zaratan(), [id('m1')], OFF);
     expect([r!.mythic, r!.statuses]).toEqual([null, []]);
-    expect([hunterRow(hunter(), id('c1'), RULES).mythic, shadowRow(shadow(), 'h1', id('x1'), RULES).mythic]).toEqual([null, null]);
+    expect([hunterRow(hunter(), id('c1'), RULES).mythic, shadowRow(shadow(), 'h1', id('c1'), id('x1'), RULES).mythic]).toEqual([null, null]);
   });
 
   test('a stored mythic row reads back', () => {
@@ -435,24 +435,32 @@ describe('a shadow', () => {
   test('has the body of its grade\'s kind: Normal a normal, Elite, Knight and Elite Knight an elite, Commander and Marshal a boss', () => {
     const KIND: Record<ShadowGrade, MonsterKind> = { Normal: 'normal', Elite: 'elite', Knight: 'elite', 'Elite Knight': 'elite', Commander: 'boss', Marshal: 'boss' };
     for (const grade of SHADOW_GRADES) {
-      const r = shadowRow(shadow({ grade, hp: 1e9 }), 'h1', id('x1'), RULES);
+      const r = shadowRow(shadow({ grade, hp: 1e9 }), 'h1', id('c1'), id('x1'), RULES);
       expect([grade, rowHp(r)]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
       expect([grade, shadowSheet(shadow({ grade }), RULES).hpMax]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
     }
   });
 
-  test('joins on the party side with its HP as its hunter keeps it and its archetype\'s attack, written back to its hunter', () => {
-    const r = shadowRow(shadow({ archetype: 'caster' }), 'h1', id('x1'), RULES);
+  test('joins on the party side with its HP as its hunter keeps it, its owner row and its archetype\'s attack, written back to its hunter', () => {
+    const r = shadowRow(shadow({ archetype: 'caster' }), 'h1', id('c1'), id('x1'), RULES);
     expect([r.side, r.kind, r.name, r.tier, rowHp(r), r.xp, r.threat, r.stagger, r.statuses]).toEqual(['party', 'shadow', 'Igris', 2, 12, 0, null, null, []]);
     expect(r.holder).toEqual({ kind: 'shadow', hunterId: hunterId('h1'), shadowId: shadowId('s1') });
+    expect(r.kind === 'shadow' && r.owner).toBe(id('c1'));
     expect(r.abilities).toEqual([ARCHETYPE_ATTACKS.caster(RULES)]);
+  });
+
+  test('a remote shadow carries its owner row and remoteShadow holder', () => {
+    const r = remoteShadowRow(shadow({ archetype: 'brute' }), sheetKey('dev-2:h2'), id('c2'), id('x2'), RULES);
+    expect(r.kind).toBe('shadow');
+    expect(r.holder).toEqual({ kind: 'remoteShadow', remote: sheetKey('dev-2:h2'), shadowId: shadowId('s1') });
+    expect(r.kind === 'shadow' && r.owner).toBe(id('c2'));
   });
 });
 
 test('a name past 60 characters is cut, and a pack keeps its letter', () => {
   const long = 'x'.repeat(70);
   expect(hunterRow(hunter({ name: long }), id('c1'), RULES).name).toBe('x'.repeat(60));
-  expect(shadowRow(shadow({ name: long }), 'h1', id('x1'), RULES).name).toBe('x'.repeat(60));
+  expect(shadowRow(shadow({ name: long }), 'h1', id('c1'), id('x1'), RULES).name).toBe('x'.repeat(60));
   expect(monsterRows(monster({ name: long }), [id('m1'), id('m2')], R).map(r => r.name)).toEqual([`${'x'.repeat(58)} A`, `${'x'.repeat(58)} B`]);
 });
 
@@ -461,7 +469,8 @@ test('every kind of row joins one fight, which starts and stores and reads back 
   const rows = [
     hunterRow(hunter({ conditions: [condition('slowed', SLOWED, 2)] }), id('c1'), RULES),
     remoteRow(hunter({ id: 'h2', name: 'Mira' }), sheetKey('dev-2:h2'), id('c2'), RULES),
-    shadowRow(shadow(), 'h1', id('x1'), RULES),
+    shadowRow(shadow(), 'h1', id('c1'), id('x1'), RULES),
+    remoteShadowRow(shadow({ id: 'sh2', name: 'Tank' }), sheetKey('dev-2:h2'), id('c2'), id('x2'), RULES),
     ...monsterRows(monster(), [id('m1'), id('m2')], R),
     ...monsterRows(monster({ name: 'Kasaka', rank: 'D', archetype: 'brute', kind: 'boss', statuses: [{ key: 'regenerating', rounds: null }] }), [id('m3')], R),
   ];
@@ -476,7 +485,7 @@ test('every kind of row joins one fight, which starts and stores and reads back 
     f = r.fight;
   }
   expect(f!.phase).toBe('running');
-  expect(f!.rows.map(r => r.name)).toEqual(['Brakk', 'Mira', 'Igris', 'Goblin A', 'Goblin B', 'Kasaka']);
+  expect(f!.rows.map(r => r.name)).toEqual(['Brakk', 'Mira', 'Igris', 'Tank', 'Goblin A', 'Goblin B', 'Kasaka']);
   expect(parseFight(JSON.parse(JSON.stringify(f)), RULES)).toEqual(f);
 });
 
@@ -597,7 +606,7 @@ describe('keystones on a fight\'s rows (notes-11-keystones.md, design A.5)', () 
   });
 
   test('a shadow and a timed summon hold no keystones at any rank or side', () => {
-    expect(labels(shadowRow(shadow({ rank: 'S', grade: 'Marshal' }), 'h1', id('s1'), on))).toEqual([]);
+    expect(labels(shadowRow(shadow({ rank: 'S', grade: 'Marshal' }), 'h1', id('c1'), id('s1'), on))).toEqual([]);
     const summoned = summonRow({ id: id('m1'), side: 'foe', tier: 5 }, { name: 'Imp', archetype: 'brute', rounds: 2, statuses: [] }, id('su1'), tick(0), on);
     expect(labels(summoned)).toEqual([]);
     expect(summoned.abilities.map(a => a.id)).toEqual([ATTACK_ID]);

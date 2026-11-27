@@ -67,8 +67,8 @@ export function itemSpent(f: Fight | null, cmd: Command): ItemSpent | null {
 }
 /**
  * What a command writes beside the fight: its links (null for none), the room the players' totals go to (null when
- * this phone is in none), those totals (one for each `sendRemote` effect), and `also`, a step of another module the
- * command's write carries (a gate's start mark, or a shadow risen from a corpse joining its army), or none.
+ * this phone is in none), those totals (one for each `sendRemote` or `sendRemoteShadow` effect), and `also`, a step of
+ * another module the command's write carries (a gate's start mark, or a shadow risen from a corpse joining its army), or none.
  */
 export type Beside = {
   readonly links: Links | null; readonly room: RoomCode | null; readonly totals: readonly Totals[];

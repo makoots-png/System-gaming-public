@@ -653,12 +653,12 @@ test('only the fight changes a combatant\'s place, shield, stagger, channel, thr
   expect(report(hits), 'a combatant changes only in src/core/combat/fight.ts and the rule modules it calls (resolve.ts, charge.ts, effect-ops.ts, fight-turn.ts, fight-channel.ts, and the kits\' land.ts and triggers.ts). Send a command (adjust, status, move, act) through send() in combat.js.').toEqual([]);
 });
 
-test('what a fight row\'s sheet hears is read once a command, by reduce: only sheetBacks makes a vitals, sendRemote or shadowHp', async () => {
+test('what a fight row\'s sheet hears is read once a command, by reduce: only sheetBacks makes a vitals, sendRemote, shadowHp or sendRemoteShadow', async () => {
   // Each step once called the write-back itself (`consequences`, a GM's edit in setup, a join), so a path that changed a
   // row and skipped it left the sheet behind: a turn reaction's mana and fatigue reached neither the hunter's sheet nor
   // the player's phone (BUG-rules-5). `reduce` now reads it from the fight the command found and the one it left.
   const maker = 'src/core/combat/fight-turn.ts', caller = 'src/core/combat/fight.ts';
-  const builds = /\{\s*type:\s*'(vitals|sendRemote|shadowHp)'/, calls = /\bsheetBacks\s*\(/;
+  const builds = /\{\s*type:\s*'(vitals|sendRemote|shadowHp|sendRemoteShadow)'/, calls = /\bsheetBacks\s*\(/;
   const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
   const built = lines.filter(line => builds.test(line.text));
   expect(built.length, 'the rule sees the write-backs sheetBacks makes').toBeGreaterThan(0);
@@ -2138,7 +2138,7 @@ test('the Gates view makes a solo fight only by soloFight: the odds a card shows
   // A row built or a fight added in the view would be a second builder: its odds could be of one fight and its run of another.
   const lines = (await sourceLines('src/views')).filter(line => line.file === 'src/views/gates.js' && !isComment(line.text));
   expect(lines.filter(line => /\bsoloFight\s*\(/.test(line.text)).length, 'the rule sees the card\'s soloFight and the run\'s').toBe(2);
-  const built = lines.filter(line => /\b(hunterRow|monsterRows|shadowRow|remoteRow)\s*\(|(?<![.\w$])reduce\s*\(|type:\s*'add'/.test(line.text));
+  const built = lines.filter(line => /\b(hunterRow|monsterRows|shadowRow|remoteShadowRow|remoteRow)\s*\(|(?<![.\w$])reduce\s*\(|type:\s*'add'/.test(line.text));
   expect(report(built), 'build a solo run\'s fight with soloFight in src/core/gates/solo.ts, for the odds box and for the run').toEqual([]);
 });
 
@@ -3243,4 +3243,15 @@ test('only src/core/hunter/progress.ts (and hunter.ts defaults/repair) writes hu
     }
   }
   expect(report(hits), 'write hunter.capDisplay only through setCapDisplay in src/core/hunter/progress.ts').toEqual([]);
+});
+
+test('only src/core/hunter/shadows.ts calls addShadow in src/ (callers go through shadowRises)', async () => {
+  // addShadow stays exported for unit tests, while runtime code adds shadows only through shadowRises so every shadow
+  // carries its chronicle fact and session log entry (Wave 2 PR 1).
+  const owner = 'src/core/hunter/shadows.ts';
+  const call = /\baddShadow\s*\(/;
+  const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
+  const calls = lines.filter(line => call.test(line.text));
+  expect(calls.length, 'the rule sees shadowRises calling addShadow').toBeGreaterThan(0);
+  expect(report(calls.filter(line => line.file !== owner)), 'add shadows through shadowRises in src/core/hunter/shadows.ts, never addShadow directly').toEqual([]);
 });

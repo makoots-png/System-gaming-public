@@ -211,12 +211,12 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'shadowHp', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'capSet', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
+    expect(gmOnly).toEqual(['award', 'capSet', 'chain', 'chapter', 'classGrant', 'classPickRefused', 'classRevoke', 'coinLand', 'guild', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'shadowHp', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
@@ -733,6 +733,23 @@ describe('a shadow risen for a player\'s hunter', () => {
 
   test('a name is cut to the fight\'s name bound', () => {
     expect(shadow({ name: BIG })!.shadow.name).toHaveLength(NAME_MAX);
+  });
+});
+
+describe('a shadow HP write-back for a player\'s hunter', () => {
+  const shadowHp = (fields: Raw) => payload('shadowHp', { ...valid('shadowHp'), ...fields });
+
+  test('is for exactly one hunter, requires a valid shadow id and finite non-negative HP, and stands for hunter + shadow', () => {
+    expect(shadowHp({ to: [] })).toBeNull();
+    expect(shadowHp({ to: [KEY, OTHER] })).toBeNull();
+    for (const bad of ['', 'not-a-save-id', 'has space', 12, null]) expect(shadowHp({ shadowId: bad })).toBeNull();
+    expect(shadowHp({ hp: 'ten' })).toBeNull();
+    expect(shadowHp({ hp: -5 })!.hp).toBe(0);
+    expect(shadowHp({ hp: 14.9 })!.hp).toBe(14);
+    expect(shadowHp({ hp: 0 })!.hp).toBe(0);
+    const ev = parseEvent('shadowHp', valid('shadowHp'))!;
+    expect(isSealed(ev)).toBe(true);
+    expect(standsFor(ev)).toBe(`shadowHp ${KEY} sh1`);
   });
 });
 

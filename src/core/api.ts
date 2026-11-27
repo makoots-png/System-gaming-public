@@ -741,7 +741,7 @@ export type MapSource = {
   kit(): MapKit | null;
   move(to: Place, dash: boolean): void;
   place: ((id: CombatantId, to: Place) => void) | null;
-  use(a: Ability, aim: CombatantId | Place): void;
+  use(a: Ability, aim: CombatantId | Place | null): void;
   /** The actor's holding channel goes off at its charge. */
   release(): void;
   /** The actor ends its turn from the hotbar: a player's phone sends a `pass`. Null where the bar has its own Next (the GM's). */

@@ -26,6 +26,9 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   omenStands: 'An omen is already active. Resolve, cancel, or drop it first.', omenDue: 'Its omen is due. Resolve the omen move where it was aimed.',
   lastPhase: 'This is the last phase. It ends when HP reaches 0.', weakened: 'The omen is already weakened.',
   noDodge: 'No dodge is open.', dodging: 'Finish the dodge first.',
+  ownerOut: 'Add the hunter first, then their shadows.',
+  shadowsIn: 'Remove this hunter\'s shadows first.',
+  shadowCap: 'This hunter already has the maximum shadows in the fight.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */

@@ -1012,7 +1012,7 @@ describe('the Hunter type', () => {
     const shadow: RowShadow = { ...newShadow(), id: 'sh1' };
     const monster: RowMonster = newMonster();
     expect(rowHp(hunterRow(h, combatantId('c1'), RULES))).toBe(RULES.fight.hpBase);
-    expect(shadowRow(shadow, 'h1', combatantId('c2'), RULES).kind).toBe('shadow');
+    expect(shadowRow(shadow, 'h1', combatantId('c1'), combatantId('c2'), RULES).kind).toBe('shadow');
     expect(monsterRows(monster, [combatantId('c3')], RULES)).toHaveLength(1);
   });
 });

@@ -37,7 +37,7 @@ import { isRefused } from '../save-step.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
 import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseStep } from './rise.ts';
-import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
+import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from './extraction.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
@@ -97,6 +97,12 @@ function add<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add
   if (f.rows.length + cmd.rows.length > MAX_ROWS) return refused(f, 'tooMany');
   for (const nr of cmd.rows) {
     if (rowOf(g, nr.id)) return refused(f, 'duplicate');
+    if (nr.kind === 'shadow') {
+      const owner = rowOf(g, nr.owner);
+      if (!owner || owner.kind !== 'hunter') return refused(f, 'ownerOut');
+      const fielded = g.rows.filter(r => r.kind === 'shadow' && r.owner === owner.id).length;
+      if (fielded >= shadowFieldCap(owner.sheet.shadows)) return refused(f, 'shadowCap');
+    }
     const asked = nr.place && freeAt(g, nr.place, null) ? nr.place : null;
     const start = asked ? null : cmd.starts?.[nr.side].find(p => freeAt(g, p, null)) ?? null;
     const place = asked ?? start ?? defaultPlace(nr.side, g.rows.filter(alive).map(r => r.place), g.grid, R.fight);
@@ -122,18 +128,19 @@ const create: Step<'none', 'add'> = (_f, cmd, ctx) => {
   return 'effects' in r ? { fight: null, effects: r.effects } : done(r, []);
 };
 
-function removeFrom<F extends Setup | Running>(f: F, id: string, R: Rules): F | null {
+function removeFrom<F extends Setup | Running>(f: F, id: string, R: Rules): F | Refusal {
   const row = rowOf(f, id);
-  if (!row) return null;
+  if (!row) return 'unknown';
+  if (f.rows.some(r => r.kind === 'shadow' && r.owner === row.id)) return 'shadowsIn';
   const rows = f.rows.filter(r => r.id !== id).map(r => (r.threat && id in r.threat ? withThreat(r, t => Object.fromEntries(Object.entries(t).filter(([k]) => k !== id))) : r));
   // A foe removed while down keeps the XP it earned the party; the GM's weight on it goes with it.
   const g = { ...f, rows, banked: row.side === 'foe' && !isUp(row) ? f.banked + row.xp : f.banked, fudge: fudgeStep(f.fudge, { kind: 'left', id: row.id }) };
   return logged(g.phase === 'running' ? { ...g, pending: g.pending.filter(p => p.id !== id) } : g, line(`${row.name} leaves the fight.`, [row.id]), R);
 }
-const removeInSetup: Step<'setup', 'remove'> = (f, cmd, ctx) => { const g = removeFrom(f, cmd.id, ctx.rules); return g ? done(g, []) : refused(f, 'unknown'); };
+const removeInSetup: Step<'setup', 'remove'> = (f, cmd, ctx) => { const g = removeFrom(f, cmd.id, ctx.rules); return typeof g === 'string' ? refused(f, g) : done(g, []); };
 const removeRunning: Step<'running', 'remove'> = (f, cmd, ctx) => {
   const g = removeFrom(f, cmd.id, ctx.rules);
-  if (!g) return refused(f, 'unknown');
+  if (typeof g === 'string') return refused(f, g);
   const fx: Fx = [];
   // a zone that ends with the row that left is gone
   const h = consequences(g.rows, g, ctx, fx);
@@ -141,10 +148,10 @@ const removeRunning: Step<'running', 'remove'> = (f, cmd, ctx) => {
   return done(cmd.id === f.currentId || !rowOf(h, h.currentId) ? startTurn(h, ctx, fx) : overIf(h, fx, ctx.rules) ?? h, fx);
 };
 
-/** Every row's first turn from its opening roll; then the first turn starts. Both sides need someone up. */
+/** Every row's first turn from its opening roll; then the first turn starts. Both sides need someone up who holds the side. */
 const start: Step<'setup', 'start'> = (f, cmd, ctx) => {
   const R = ctx.rules;
-  if (!f.rows.some(r => r.side === 'party' && isUp(r)) || !f.rows.some(r => r.side === 'foe' && isUp(r))) return refused(f, 'needBothSides');
+  if (!f.rows.some(r => r.side === 'party' && holdsSide(r)) || !f.rows.some(r => r.side === 'foe' && holdsSide(r))) return refused(f, 'needBothSides');
   const rows: Body[] = [];
   for (const r of f.rows) {
     const o = cmd.openings.find(x => x.id === r.id);

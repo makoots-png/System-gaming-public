@@ -36,12 +36,7 @@ export function summonStep(s: SummonState, event: SummonEvent): SummonState {
 
 /** Whether a row is a summon (timed summon or risen corpse). */
 export const isSummon = (b: Pick<Body, 'kind'>): boolean => b.kind === 'summon';
-/** The combatant that owns `b` (a summon, risen corpse, or shadow with `owner`), or null when `b` has no owner. */
-export const ownerOf = (b: { readonly owner?: CombatantId | null }): CombatantId | null =>
-  ('owner' in b ? b.owner ?? null : null);
-/** Whether `b` is a minion owned by `ownerId` (any summon, risen corpse, or owned shadow belonging to `ownerId`). */
-export const isMinionOf = (b: { readonly owner?: CombatantId | null }, ownerId: CombatantId): boolean =>
-  ownerOf(b) === ownerId;
+export { isMinionOf, ownerOf } from './effect-ops.ts';
 /** Whether `b` is a corpse risen mid-fight by Arise (`kind === 'summon'` with `rose` set). */
 export const isRisen = (b: Body): boolean => b.kind === 'summon' && b.rose !== undefined;
 /** Whether `b` is a timed summon (`kind === 'summon'` without `rose`). */

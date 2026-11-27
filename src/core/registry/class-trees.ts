@@ -15,6 +15,7 @@ import { HEMOMANCER_TREE } from './class-hemomancer.ts';
 import { BLADEFIEND_TREE } from './class-bladefiend.ts';
 import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
 import { IRONCLAD_TREE } from './class-ironclad.ts';
+import { PACKLORD_TREE } from './class-packlord.ts';
 import { SERAPH_TREE } from './class-seraph.ts';
 import { STORMCALLER_TREE } from './class-stormcaller.ts';
 import { GRIMREAPER_TREE } from './class-grimreaper.ts';
@@ -102,6 +103,7 @@ export const CLASS_TREES: ClassTreeMap = {
   Rifthunter: RIFTHUNTER_TREE,
   Seraph: SERAPH_TREE,
   Ironclad: IRONCLAD_TREE,
+  Packlord: PACKLORD_TREE,
   Stormcaller: STORMCALLER_TREE,
   Grimreaper: GRIMREAPER_TREE,
   Brambleguard: BRAMBLEGUARD_TREE,

@@ -6,12 +6,20 @@ import { grantLines, newRewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { EXAMPLE_STORIES } from '../src/core/registry/stories.ts';
+import { storyMove, storyRefusalWords } from '../src/core/story/run.ts';
+import type { MoveCtx } from '../src/core/story/run.ts';
+import { claimUniqueClass, holderOf, uniqueJobBlock } from '../src/core/hunter/class-holders.ts';
+import { uniqueJobRefusalText } from '../src/core/hunter/grant.ts';
+import { WAVE1_EPIC_OFFER, WAVE1_MYTHIC_OFFER, WAVE1_OFFER_POOL } from '../src/core/hunter/class-locker.ts';
+import { openClassOffer } from '../src/core/hunter/class-offer.ts';
+import { chooseMode } from '../src/core/role.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { dayKey } from '../src/core/day.ts';
-import { dev, hid } from './fixtures/ids.ts';
+import type { HunterRef, SheetKey } from '../src/core/ids.ts';
+import { dev, hid, room, srid, stid } from './fixtures/ids.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
@@ -167,8 +175,8 @@ describe('whose window it is', () => {
 });
 
 describe('the stories to copy (src/core/registry/stories.ts)', () => {
-  test('there are two, each with a key of its own', () => {
-    expect(EXAMPLE_STORIES.map(e => e.key)).toEqual(['wager', 'spared']);
+  test('there are three, each with a key of its own', () => {
+    expect(EXAMPLE_STORIES.map(e => e.key)).toEqual(['wager', 'spared', 'empty-throne']);
   });
 
   for (const { key, story } of EXAMPLE_STORIES) {
@@ -238,5 +246,137 @@ describe('a chapter given to a hunter (chapterLanded)', () => {
 
   test('a hunter that is not there is refused', () => {
     expect(chapterLanded(saveOf(brakk()), hid('h9'), chapterBody(ASK, AT), { ...DAY, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
+  });
+});
+
+describe('The Empty Throne and unique-class story pre-check (Wave 2 PR 4)', () => {
+  const AT = '2026-11-26T12:00:00.000Z', DAY = { at: AT, today: dayKey(new Date(AT), 0), R: RULES };
+  const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') };
+  const H1 = hid('h1'), H2 = hid('h2');
+  const MIRA: HunterRef = { kind: 'local', hunterId: H1 }, TEO: HunterRef = { kind: 'local', hunterId: H2 };
+  const KAI_KEY = 'd-player1:h1' as SheetKey;
+  const KAI: HunterRef = { kind: 'remote', remote: KAI_KEY };
+  const THRONE = { ...EXAMPLE_STORIES.find(e => e.key === 'empty-throne')!.story, id: stid('st9') };
+  const R1 = srid('sr9');
+  const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
+
+  function gmWithThrone(): Save {
+    const base = freshSave(ENV, { onboarded: true });
+    const mira: Hunter = { ...newHunter(RULES), id: H1, name: 'Mira' };
+    const teo: Hunter = { ...newHunter(RULES), id: H2, name: 'Teo' };
+    return {
+      ...base,
+      settings: chooseMode(base.settings, 'gm'),
+      hunters: [mira, teo],
+      library: { ...base.library, stories: [THRONE] },
+    };
+  }
+  const baseCtx = (o: Partial<MoveCtx> = {}): MoveCtx => ({ day: DAY, vitals: () => 'sheet', room: null, ...o });
+  const startThrone = (s: Save, who: HunterRef = MIRA, ctx = baseCtx()) =>
+    ok(storyMove(s, R1, { type: 'turnOn', id: R1, story: THRONE.id, who: { at: 'hunters', refs: [who] }, to: [who], at: AT, session: 1 }, ctx));
+
+  test('multi-hunter: opening chapter 2 for more than one hunter is refused one-for-unique and delivers nothing', () => {
+    const s1 = startThrone(gmWithThrone()).save;
+    const res = storyMove(s1, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA, TEO], at: AT, session: 1 }, baseCtx());
+    expect(res).toEqual({ ok: false, why: 'one-for-unique' });
+    if (!isRefused(res)) return;
+    expect(storyRefusalWords(res, 2)).toBe('This chapter grants a class only one hunter can hold. Pick one hunter.');
+    expect(holderOf(s1, 'Necromancer')).toBeNull();
+    expect(s1.storyRuns[0]!.state.chapter).toBe(0);
+  });
+
+  test('taken: opening chapter 2 when another hunter holds Necromancer is refused unique-job and delivers nothing', () => {
+    const s0 = startThrone(gmWithThrone()).save;
+    const claimed = ok(claimUniqueClass(s0, 'Necromancer', { kind: 'local', hunterId: H2 }, { at: AT, room: null, stamp: null, R: RULES, heldLocal: () => false, heldRemote: () => false })).save;
+    const res = storyMove(claimed, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA], at: AT, session: 1 }, baseCtx());
+    expect(res).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Necromancer', why: 'class-taken', holderName: 'Teo' },
+      targetName: 'Mira',
+    });
+    if (!isRefused(res)) return;
+    expect(storyRefusalWords(res, 2)).toBe(uniqueJobRefusalText({ className: 'Necromancer', why: 'class-taken', holderName: 'Teo' }, 'Mira'));
+    expect(storyRefusalWords(res, 2)).toBe('Necromancer was not granted to Mira. Teo holds it. Release or reassign it first.');
+    // Nothing delivered: Mira has no King of Shadows title and run stays at chapter 1
+    expect(claimed.hunters[0]!.titles.some(t => t.name === 'King of Shadows')).toBe(false);
+    expect(claimed.storyRuns[0]!.opens).toBe(1);
+  });
+
+  test('held & dead: opening chapter 2 while target is in a fight (local or remote) or dead is refused unique-job and delivers nothing', () => {
+    const s1 = startThrone(gmWithThrone()).save;
+    // Local held in a fight
+    const heldLocal = storyMove(s1, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA], at: AT, session: 1 }, baseCtx({ vitals: id => (id === H1 ? 'fight' : 'sheet') }));
+    expect(heldLocal).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Necromancer', why: 'held', holderName: null },
+      targetName: 'Mira',
+    });
+    // Local dead
+    const sDead: Save = { ...s1, hunters: s1.hunters.map(h => (h.id === H1 ? { ...h, life: { at: 'dead' as const } } : h)) };
+    const deadLocal = storyMove(sDead, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA], at: AT, session: 1 }, baseCtx());
+    expect(deadLocal).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Necromancer', why: 'dead', holderName: null },
+      targetName: 'Mira',
+    });
+    // Remote held in GM fight
+    const roomCtx = (onRow: (k: SheetKey) => boolean): MoveCtx => baseCtx({
+      room: { code: room('ABC234'), sheets: [{ key: KAI_KEY, data: { name: 'Kai', rank: 'B' } }], onRow, stamp: { device: 'd-gm', now: Date.parse(AT), rand: 0.2 } },
+    });
+    const sRem = startThrone(gmWithThrone(), KAI, roomCtx(() => false)).save;
+    const heldRem = storyMove(sRem, R1, { type: 'open', chapter: 1, seen: 1, to: [KAI], at: AT, session: 1 }, roomCtx(k => k === KAI_KEY));
+    expect(heldRem).toEqual({
+      ok: false,
+      why: 'unique-job',
+      refusal: { className: 'Necromancer', why: 'held', holderName: null },
+      targetName: 'Kai',
+    });
+  });
+
+  test('reopen: chapter 2 grants Necromancer + King of Shadows, and reopening for the current holder delivers safely without re-claiming or duplicating title (local & remote)', () => {
+    const s1 = startThrone(gmWithThrone()).save;
+    const first = ok(storyMove(s1, R1, { type: 'open', chapter: 1, seen: 1, to: [MIRA], at: AT, session: 1 }, baseCtx()));
+    const mira1 = first.save.hunters.find(h => h.id === H1)!;
+    expect(holderOf(first.save, 'Necromancer')).toMatchObject({ kind: 'local', hunterId: H1 });
+    expect(mira1.job).toBe('Necromancer');
+    expect(mira1.titles.filter(t => t.name === 'King of Shadows')).toHaveLength(1);
+    expect(mira1.titles.find(t => t.name === 'King of Shadows')!.bonus).toEqual({ pow: 5 });
+
+    // Pre-check returns 'already' for the current holder
+    expect(uniqueJobBlock(first.save, 'Necromancer', { kind: 'local', hunterId: H1 }, { heldLocal: () => true, heldRemote: () => false })).toBe('already');
+
+    // Reopen chapter 2 for Mira -> delivers window without re-claiming or changing class state or duplicating title
+    const reopen = ok(storyMove(first.save, R1, { type: 'open', chapter: 1, seen: 2, to: [MIRA], at: AT, session: 1 }, baseCtx()));
+    const mira2 = reopen.save.hunters.find(h => h.id === H1)!;
+    expect(reopen.granted[0]!.g.jobRefused).toBeNull();
+    expect(reopen.save.classHolders).toEqual(first.save.classHolders);
+    expect(mira2.classes).toEqual(mira1.classes);
+    expect(mira2.titles.filter(t => t.name === 'King of Shadows')).toHaveLength(1);
+    expect(reopen.run.opens).toBe(3);
+
+    // Remote claim + reopen changes no classHolders and emits no class-taken refusal
+    const roomCtx = (rand: number): MoveCtx => baseCtx({
+      room: { code: room('ABC234'), sheets: [{ key: KAI_KEY, data: { name: 'Kai', rank: 'B' } }], onRow: () => false, stamp: { device: 'd-gm', now: Date.parse(AT), rand } },
+    });
+    const sr1 = startThrone(gmWithThrone(), KAI, roomCtx(0.3)).save;
+    const remFirst = ok(storyMove(sr1, R1, { type: 'open', chapter: 1, seen: 1, to: [KAI], at: AT, session: 1 }, roomCtx(0.4)));
+    expect(remFirst.remoteClaimed).toEqual([KAI_KEY]);
+    expect(holderOf(remFirst.save, 'Necromancer')).toMatchObject({ kind: 'remote', sheetKey: KAI_KEY });
+    const remReopen = ok(storyMove(remFirst.save, R1, { type: 'open', chapter: 1, seen: 2, to: [KAI], at: AT, session: 1 }, roomCtx(0.5)));
+    expect(remReopen.remoteClaimed).toEqual([]);
+    expect(remReopen.remoteJobRefused).toEqual([]);
+    expect(remReopen.posted).toEqual([KAI_KEY]);
+    expect(remReopen.save.classHolders).toEqual(remFirst.save.classHolders);
+  });
+
+  test('no offer pool: Necromancer is never in any default offer pool', () => {
+    expect((WAVE1_OFFER_POOL as readonly string[]).includes('Necromancer')).toBe(false);
+    expect((WAVE1_MYTHIC_OFFER as readonly string[]).includes('Necromancer')).toBe(false);
+    expect((WAVE1_EPIC_OFFER as readonly string[]).includes('Necromancer')).toBe(false);
+    const opened = openClassOffer(gmWithThrone(), { at: AT, room: null, R: RULES });
+    expect((opened.offer.pool as readonly string[]).includes('Necromancer')).toBe(false);
   });
 });

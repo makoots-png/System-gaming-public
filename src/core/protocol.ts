@@ -60,7 +60,7 @@ import { MAX_ZONES, ZONE_NAME_MAX, zoneId } from './combat/zones.ts';
 import { deviceOf, fightId, hunterIdOf, parseClassNodeId, parseDeviceId, parseEventId, parseGateId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
-import type { ClassNodeId, DeviceId, EventId, FightId, ItemId, RoomCode, SheetKey } from './ids.ts';
+import type { ClassNodeId, DeviceId, EventId, FightId, ItemId, RoomCode, ShadowId, SheetKey } from './ids.ts';
 import { OFFER_ID_MAX, approvalIdOf, endIdOf, grantRefusalIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
 import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods, parseStashAsk } from './trade/goods.ts';
@@ -357,6 +357,12 @@ export type SpentPayload = Base & { to: [SheetKey]; item: ItemId };
  * refuses an army at its cap). Once by its id.
  */
 export type ShadowPayload = Base & { to: [SheetKey]; shadow: ShadowOrigin };
+/**
+ * The fight's write-back of a shadow on another phone (`sendRemoteShadow` in src/core/combat/fight-types.ts): its HP
+ * as the fight's row holds it (0 dismisses it to resting, core/hunter/shadows.ts `setShadowHp`). Totals, so a repeat
+ * changes nothing, and a newer one for the same hunter and shadow stands for an older one. Sealed to GM and that phone.
+ */
+export type ShadowHpPayload = Base & { to: [SheetKey]; shadowId: ShadowId; hp: number };
 export type StatusPayload = Base & { to: SheetKey[]; add: SheetStatus[]; remove: StatusKey[]; reason: string };
 /**
  * The GM raises these dead hunters at 1 HP: the vitals `revive` event (src/core/hunter/vitals.ts) on the player's phone.
@@ -563,7 +569,7 @@ type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; dodge: DodgePayload; chain: ChainPayload;
-  coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
+  coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; shadowHp: ShadowHpPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload; capSet: CapSetPayload;
   classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload; classPick: ClassPickPayload;
@@ -740,6 +746,10 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), shadow: shadowOrigin(own(o, 'shadow')) };
   } },
+  shadowHp: { gmOnly: true, ownSheet: false, audience: 'named', standsFor: p => `shadowHp ${p.to[0]} ${p.shadowId}`, read: o => {
+    const to = toList(own(o, 'to'));
+    return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), shadowId: need(parseSaveId<'sh'>(own(o, 'shadowId'))), hp: int(0, MAX_TOTAL)(own(o, 'hp')) };
+  } },
   soloRun: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), gate: need(parseGateId(own(o, 'gate'))), name: opt(own(o, 'name'), text(NAME_MAX), ''),
     outcome: choiceOf(RUN_OUTCOMES)(own(o, 'outcome')), rounds: num(0, CAP_ROUNDS + 1)(own(o, 'rounds')), life: choiceOf(LIFE_STATES)(own(o, 'life')),
@@ -868,7 +878,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'), stashAsk: entry('stashAsk'), stashAnswer: entry('stashAnswer'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'), dodge: entry('dodge'),
-  chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
+  chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'), shadowHp: entry('shadowHp'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
   systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'), capSet: entry('capSet'),

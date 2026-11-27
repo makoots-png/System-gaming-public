@@ -10,8 +10,10 @@
 import { GIVE_HOLD_MS } from '../registry/bundles.ts';
 import { parseHunterRef, parseSaveId } from '../ids.ts';
 import type { HunterId, HunterRef, StoryId, StoryRunId } from '../ids.ts';
-import { claimRemoteRewardJob } from '../hunter/grant.ts';
+import { claimRemoteRewardJob, uniqueJobRefusalText } from '../hunter/grant.ts';
 import type { Day, UniqueJobRefusal, VitalsAt } from '../hunter/grant.ts';
+import { uniqueJobBlock } from '../hunter/class-holders.ts';
+import type { HolderTarget } from '../hunter/class-holders.ts';
 import { canonicalUniqueClass } from '../registry/jobs.ts';
 import type { Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -72,8 +74,14 @@ export type RunEvent =
  * `moved`: it was opened since the window or the tap was drawn. `no-chapter`: the story has no such chapter now.
  * `nobody`: no hunter at the table to give it to. `no-story`: the story is no longer in the library. `full`: `RUNNING_MAX`
  * stories run already. `too-large`: the chapter is past `CHAPTER_MAX` and a player's hunter would be sent it.
+ * `one-for-unique`: a chapter granting a unique class was opened for more than one hunter. `unique-job`: the unique
+ * class claim was blocked (`uniqueJobBlock`).
  */
-export type RunRefusal = 'running' | 'ended' | 'no-run' | 'moved' | 'no-chapter' | 'nobody' | 'no-story' | 'full' | 'too-large';
+export type RunRefusal =
+  | 'running' | 'ended' | 'no-run' | 'moved' | 'no-chapter' | 'nobody' | 'no-story' | 'full' | 'too-large'
+  | 'one-for-unique' | 'unique-job';
+/** Extra detail carried on a `unique-job` refusal from `storyMove` for `storyRefusalWords`. */
+export type UniqueJobStoryRefusal = Refused<'unique-job'> & { readonly refusal: UniqueJobRefusal; readonly targetName: string };
 /** What the app must do after a step: give chapter `chapter` to `to`. */
 export type RunFx = { readonly type: 'deliver'; readonly chapter: number; readonly to: readonly HunterRef[] } | null;
 type Stepped = { readonly run: StoryRun; readonly fx: RunFx };
@@ -199,6 +207,38 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
   const sheets = ctx.room ? ctx.room.sheets : [], here = atTable(save, sheets), present = (r: HunterRef) => here.some(x => sameRef(x.ref, r));
   const skipped = 'to' in e ? e.to.filter(r => !present(r)) : [];
   const ev: RunEvent = 'to' in e ? { ...e, to: e.to.filter(present) } : e;
+  // Pre-check unique-class chapters before `runStep` so refused claims deliver no window, title, quest, or run advance.
+  const preChapter = (() => {
+    if (!story || !('to' in ev) || !ev.to.length) return null;
+    if (ev.type === 'turnOn') return !run && story.id === ev.story ? story.chapters[0] ?? null : null;
+    if (ev.type === 'open') {
+      return run && run.state.at === 'running' && ev.seen === run.opens && Number.isInteger(ev.chapter) && ev.chapter >= 0 && ev.chapter < story.chapters.length
+        ? story.chapters[ev.chapter] ?? null
+        : null;
+    }
+    return null;
+  })();
+  const uniqueCls = preChapter?.rewards.job ? canonicalUniqueClass(preChapter.rewards.job) : null;
+  let alreadyHeldUniqueJob = false;
+  if (uniqueCls && ev.type !== 'end') {
+    if (ev.to.length > 1) return refuse('one-for-unique');
+    if (ev.to.length === 1) {
+      const only = ev.to[0]!;
+      const targetName = nameOf(save, sheets, only);
+      const target: HolderTarget = only.kind === 'local'
+        ? { kind: 'local', hunterId: only.hunterId }
+        : { kind: 'remote', sheetKey: only.remote, name: targetName };
+      const block = uniqueJobBlock(save, uniqueCls, target, {
+        heldLocal: hid => ctx.vitals(hid) === 'fight',
+        heldRemote: key => !!ctx.room?.onRow(key),
+      });
+      if (block === 'already') alreadyHeldUniqueJob = true;
+      else if (block !== null) {
+        const denied: UniqueJobStoryRefusal = { ok: false, why: 'unique-job', refusal: block, targetName };
+        return denied;
+      }
+    }
+  }
   const stepped = runStep(run, ev, story);
   if (isRefused(stepped)) return stepped;
   const r = stepped.run, fx = stepped.fx;
@@ -212,16 +252,18 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
   let onRow: StoryMoved['onRow'] = [];
   if (fx && chapter) {
     const body = chapterBody(chapter, ctx.day.at);
+    // Reopening a unique-job chapter for its current holder strips `job` so class state stays untouched and no refusal fires.
+    const deliveryBody: ChapterBody = alreadyHeldUniqueJob ? { ...body, rewards: stripRewardJob(body.rewards) } : body;
     for (const ref of fx.to) {
       if (ref.kind !== 'local') continue;
-      const g = chapterLanded(next, ref.hunterId, body, { ...ctx.day, vitals: ctx.vitals(ref.hunterId) });
+      const g = chapterLanded(next, ref.hunterId, deliveryBody, { ...ctx.day, vitals: ctx.vitals(ref.hunterId) });
       if (isRefused(g)) continue;
       next = g.save; granted.push({ hid: ref.hunterId, g });
     }
     const room = ctx.room;
     if (room && players.length) {
       const hasUniqueJob = !!(body.rewards.job && canonicalUniqueClass(body.rewards.job));
-      if (hasUniqueJob) {
+      if (hasUniqueJob && !alreadyHeldUniqueJob) {
         for (let i = 0; i < players.length; i++) {
           const key = players[i]!;
           const name = sheetName(room.sheets, key, "a player's hunter");
@@ -317,7 +359,19 @@ export const RUN_REFUSAL_WORDS: { readonly [K in RunRefusal]: (chapter: number) 
   'no-story': () => 'This story is no longer in your Workshop. You can end it.',
   full: () => `You can run at most ${RUNNING_MAX} stories at once. End one first.`,
   'too-large': n => `Chapter ${n} is too large to send to players' phones. Open it for this phone's hunters only, or give it fewer items in the Workshop.`,
+  'one-for-unique': () => 'This chapter grants a class only one hunter can hold. Pick one hunter.',
+  'unique-job': () => 'This chapter rewards a unique class that cannot be granted right now.',
 };
+
+/** Plain-English error line for any `storyMove` refusal, using `uniqueJobRefusalText` for blocked unique-class chapters. */
+export function storyRefusalWords(out: Refused, chapter: number): string {
+  if (out.why === 'unique-job' && 'refusal' in out && out.refusal) {
+    const r = out as UniqueJobStoryRefusal;
+    return uniqueJobRefusalText(r.refusal, r.targetName);
+  }
+  const fn = RUN_REFUSAL_WORDS[out.why as RunRefusal];
+  return fn ? fn(chapter) : STORY_WORDS.notSaved;
+}
 
 /** What a chapter gives, for the card's next line. */
 export const givesLine = (c: Pick<Chapter, 'rewards' | 'quest'>, empty: boolean): string =>

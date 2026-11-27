@@ -1,4 +1,4 @@
-// registry/stories.ts: the two stories a GM copies in the Workshop ("Stories to copy"), taken from the ideas file
+// registry/stories.ts: the stories a GM copies in the Workshop ("Stories to copy"), taken from the ideas file
 // (docs/agent-handoff/features/ideas-2-imaginative.md section 7) as examples of what a story holds: a chapter of words
 // alone, a chapter opened again, a cost that comes due, a branch as two chapters, a quest, a boon and a title. A story
 // is never turned on as it ships: the GM copies one into the library (Duplicate) and changes it there. Where the ideas
@@ -68,6 +68,35 @@ export const EXAMPLE_STORIES: readonly ExampleStory[] = [
         chapter({
           name: 'A second mercy', words: { title: 'YOU LET IT GO TWICE', line: 'The foe you spared is free again. Give it a name.' },
           rewards: reward({ title: { name: 'The Spared One\'s Shadow', desc: 'The GM may bring back a foe you spared in any gate. You cannot refuse to meet it.', bonus: { ins: 2 } } }),
+        }),
+      ],
+    },
+  },
+  // Wave 2 PR 4: The Empty Throne (Necromancer unique-class trial)
+  {
+    key: 'empty-throne',
+    story: {
+      name: 'The Empty Throne', when: 'The GM picks one hunter to try for the Necromancer class.', for: 'hunters',
+      chapters: [
+        chapter({
+          name: 'The trial',
+          words: { title: 'THE SYSTEM OFFERS YOU A TRIAL', line: 'Win one fight alone. The prize is the Necromancer class. Only one hunter can hold it.' },
+          quest: {
+            kind: 'side', title: 'Win the trial alone', desc: 'Win a fight the GM runs, with no other hunter in it.',
+            objectives: [{ label: 'Win the trial fight alone', target: 1, progress: 0 }],
+            rewards: newRewards(), onFail: newRewards(), dueHours: null, penaltyText: '',
+          },
+          note: 'Run a solo GM fight for this hunter (never a solo auto-run). If they win, open chapter 2. If they lose, open chapter 3.',
+        }),
+        chapter({
+          name: 'The throne',
+          words: { title: 'YOU ARE THE NECROMANCER', line: 'Only one hunter can hold this class. In a fight, use Arise on a fallen monster to raise it until the fight ends. After the fight, extract permanent shadows from the Shadows panel.' },
+          rewards: reward({ job: 'Necromancer', title: { name: 'King of Shadows', desc: 'Claimed the Necromancer class.', bonus: { pow: 5 } } }),
+          note: 'Then end the story.',
+        }),
+        chapter({
+          name: 'Lost',
+          words: { title: 'THE TRIAL IS OVER', line: 'You lost the trial. The GM can offer it again later.' },
         }),
       ],
     },

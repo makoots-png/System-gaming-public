@@ -33,7 +33,10 @@ export const newShadowOf = (o: ShadowOrigin, id: ShadowId, R: RowRules): Shadow 
   ({ id, name: cleanName(o.name) || 'Shadow', monster: o.monster, rank: o.rank, archetype: o.archetype, grade: o.grade, hp: shadowSheet(o, R).hpMax, summoned: false, notes: '' });
 /** How many shadows the hunter's army holds at most: its sheet's shadow capacity. */
 export const armyCap = (h: SheetHunter, R: SheetRules): number => Math.max(0, hunterSheet(h, R).sheet.shadows);
-/** A shadow joins the army; at its cap (`armyCap`) it is refused (`army-full`), whatever the view showed. */
+/**
+ * A shadow joins the army; at its cap (`armyCap`) it is refused (`army-full`), whatever the view showed.
+ * Exported for tests; `src/` callers go through `shadowRises` (enforced by tests/lint.test.ts).
+ */
 export const addShadow = <H extends Army & SheetHunter>(h: H, s: Shadow, R: SheetRules): H | Refused<'army-full'> =>
   h.shadows.length >= armyCap(h, R) ? refuse('army-full') : { ...h, shadows: [...h.shadows, s] };
 /**
@@ -129,7 +132,7 @@ export function stepShadow<H extends Army>(h: H, sid: string, event: ShadowEvent
   if (to.at === 'released') return { ...h, shadows: h.shadows.filter(s => s.id !== sid) };
   return { ...h, shadows: h.shadows.map(s => (s.id === sid ? { ...s, summoned: to.at === 'summoned', hp: to.hp } : s)) };
 }
-/** Its HP as a fight leaves it (at 0 it fell): the fight's `shadowHp` write-back (src/core/combat/fight-save.ts) and a solo run's. */
+/** Its HP as a fight leaves it (at 0 it fell): the fight's `shadowHp` write-back (fight-save.ts, room-events.ts) and a solo run's. */
 export const setShadowHp = <H extends Army>(h: H, sid: string, hp: number): H | Refused<'not-now'> => stepShadow(h, sid, { kind: 'fought', hp });
 /** HP back to the full HP its body gives: the panel's Full HP. */
 export function healShadow<H extends Army>(h: H, sid: string, R: RowRules): H | Refused<'not-now'> {

@@ -1028,7 +1028,7 @@ describe('dodge-tile ask mode in resolve', () => {
       ops: [{ op: 'negate' }],
     });
     const h = body('h', hunterOrigin('speed'), place(5, 5), 'party', { abilities: [negate], armed: { ability: negate.id, on: null, spent: false } });
-    const sh = body('sh', monsterOrigin('skirmisher'), place(5, 5), 'party', { kind: 'shadow', abilities: [negate], armed: { ability: negate.id, on: null, spent: false } });
+    const sh = body('sh', monsterOrigin('skirmisher'), place(5, 5), 'party', { kind: 'shadow', owner: combatantId('h'), abilities: [negate], armed: { ability: negate.id, on: null, spent: false } });
 
     const rHunter = resolve(blast, caster, [caster, h], place(5, 5), GRID, rolls({ h: [] }, { h: 20 }), NOW, RULES, null, {});
     expect('ok' in rHunter && rHunter.ok).toBe(true);

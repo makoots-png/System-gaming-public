@@ -273,7 +273,13 @@ export type Refusal = UseRefusal
   /** A `dodge` command when no dodge is open, for the wrong hunter, or to a tile outside the offered dodge set. */
   | 'noDodge'
   /** Any command other than `dodge`, `end`, or `clear` while a dodge prompt waits for a pick. */
-  | 'dodging';
+  | 'dodging'
+  /** Adding a shadow whose owning hunter row is not in the fight. */
+  | 'ownerOut'
+  /** Removing a hunter row while any of that hunter's shadows remain in the fight. */
+  | 'shadowsIn'
+  /** Adding a shadow when its owner already fields `min(sheet.shadows, MAX_FIELD_SHADOWS)` shadows in the fight. */
+  | 'shadowCap';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =
@@ -298,6 +304,8 @@ export type Effect =
   }
   /** The write-back of a shadow of a hunter on this phone: its HP as a total. */
   | { readonly type: 'shadowHp'; readonly hunterId: HunterId; readonly shadowId: ShadowId; readonly hp: number }
+  /** The write-back of a shadow of a hunter on another phone: the room's `shadowHp` message (protocol.ts). */
+  | { readonly type: 'sendRemoteShadow'; readonly remote: SheetKey; readonly shadowId: ShadowId; readonly hp: number }
   /** `id` stands on a new tile (a walk, a dodge, a drag): the map animates it. */
   | { readonly type: 'moved'; readonly id: CombatantId; readonly to: Place }
   /** `id`'s channel is in a new state; null when it ended without going off. */
@@ -339,3 +347,7 @@ export const MAX_ABILITIES = 12;
 export const MAX_PENDING = 200;
 /** At most this many spreading statuses a fight remembers who has held (design 4.8); another one does not spread. */
 export const MAX_SPREAD = 16;
+/** Maximum shadows one hunter may field in a single fight (bounded further by that hunter's sheet `shadows`). */
+export const MAX_FIELD_SHADOWS = 4;
+/** Maximum shadows a hunter with sheet capacity `shadows` may field in one fight. */
+export const shadowFieldCap = (shadows: number): number => Math.min(Math.max(0, Math.floor(shadows)), MAX_FIELD_SHADOWS);

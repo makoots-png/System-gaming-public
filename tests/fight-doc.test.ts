@@ -123,7 +123,7 @@ describe('the band a player sees for HP they may not see', () => {
   });
 
   test('a hunter and a shadow show their exact HP; a monster shows only its band', () => {
-    const shadow = row('S', 'party', { kind: 'shadow', hp: 10, holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } });
+    const shadow = row('S', 'party', { kind: 'shadow', owner: id('A'), hp: 10, holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } });
     const doc = fightDoc(play(add(row('A', 'party', { hp: 30 }), shadow, row('M', 'foe', { hp: 1 }))), RULES, docCtx());
     expect(rowIn(doc, 'A')).toMatchObject({ kind: 'hunter', hp: 30, hpMax: HP_MAX });
     expect(rowIn(doc, 'S')).toMatchObject({ kind: 'shadow', hp: 10, hpMax: HP_MAX });
@@ -188,7 +188,7 @@ describe('the fight on the table', () => {
 
   test('a hunter on this phone carries its sheet key, a player\'s hunter its own, and a shadow or monster none', () => {
     const remote = row('P', 'party', { holder: { kind: 'remote', remote: sheetKey('d-player:h-9') } });
-    const shadow = row('S', 'party', { kind: 'shadow', holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } });
+    const shadow = row('S', 'party', { kind: 'shadow', owner: id('A'), holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } });
     const unheld = row('U', 'party', { holder: null });
     const doc = fightDoc(play(add(row('A', 'party'), remote, shadow, unheld, row('M', 'foe'))), RULES, docCtx());
     expect(['A', 'P', 'S', 'U', 'M'].map(n => rowIn(doc, n).key)).toEqual([`${ME}:h-A`, 'd-player:h-9', null, null, null]);
@@ -274,7 +274,7 @@ describe('the doc stays small enough for the room', () => {
     const named = (name: string, side: Side, o: Partial<NewRow>) => row(name, side, { name: long(name, 60), statuses, shield: null, ...o });
     const rows = [
       ...Array.from({ length: 4 }, (_, i) => named(`hunter-${i}`, 'party', { holder: { kind: 'remote', remote: sheetKey(long(`d-player${i}:h-`, 40)) } })),
-      ...Array.from({ length: 4 }, (_, i) => named(`shadow-${i}`, 'party', { kind: 'shadow', holder: { kind: 'shadow', hunterId: hunterId('h-1'), shadowId: shadowId(`s-${i}`) } })),
+      ...Array.from({ length: 4 }, (_, i) => named(`shadow-${i}`, 'party', { kind: 'shadow', owner: id(`hunter-${i}`), holder: { kind: 'shadow', hunterId: hunterId('h-1'), shadowId: shadowId(`s-${i}`) } })),
       ...Array.from({ length: 12 }, (_, i) => named(`monster-${i}`, 'foe', { stagger: { fill: 123.456, max: 987.654, hit: 35 } })),
     ];
     const fight = play(add(...rows), start(...rows.map(r => [r.id, 10] as [string, number])));

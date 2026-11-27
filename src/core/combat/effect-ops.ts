@@ -32,7 +32,7 @@ import type { FoeLife } from './row-life.ts';
 import { liveOps, liveStatusDef } from './live-status.ts';
 import type { Life } from '../hunter/vitals.ts';
 import type { Stack } from './stacks.ts';
-import type { HunterRef, Id, ShadowId } from '../ids.ts';
+import type { HunterRef, Id, ShadowId, SheetKey } from '../ids.ts';
 
 /** A status's key: lower-case words joined by hyphens, as the GM's library keeps them. */
 export type StatusKey = Id<'StatusKey'>;
@@ -416,17 +416,21 @@ export const shadowId = (s: string): ShadowId => s as ShadowId;
 
 /**
  * Who holds a row's sheet, which the fight writes back to: a hunter on this phone (its `vitals` effect), a hunter on
- * another phone (`sendRemote`), or a shadow of a hunter on this phone (`shadowHp`).
+ * another phone (`sendRemote`), a shadow of a hunter on this phone (`shadowHp`), or a shadow of a hunter on another
+ * phone (`sendRemoteShadow`).
  */
-export type Holder = HunterRef | { readonly kind: 'shadow'; readonly hunterId: HunterId; readonly shadowId: ShadowId };
+export type Holder =
+  | HunterRef
+  | { readonly kind: 'shadow'; readonly hunterId: HunterId; readonly shadowId: ShadowId }
+  | { readonly kind: 'remoteShadow'; readonly remote: SheetKey; readonly shadowId: ShadowId };
 /**
  * What a monster will do on its turn, set by the GM and shown to the players (design 4.5). Cleared when it acts. Players
  * see its name and aim; its numbers only once `revealed`.
  */
 export type Intent = { readonly ability: AbilityId; readonly aim: Place | CombatantId; readonly revealed: boolean };
 
-/** A shadow's holder: the hunter on this phone whose Shadows panel keeps its HP (`shadowHp`). */
-export type ShadowHolder = Extract<Holder, { readonly kind: 'shadow' }>;
+/** A shadow's holder: the local or remote hunter whose Shadows panel keeps its HP (`shadowHp` / `sendRemoteShadow`). */
+export type ShadowHolder = Extract<Holder, { readonly kind: 'shadow' | 'remoteShadow' }>;
 /** A threat table (design 4.2): what each foe of its keeper has done to it, which its keeper's target follows. */
 export type ThreatTable = Readonly<Record<CombatantId, number>>;
 
@@ -514,7 +518,7 @@ type MonsterOwn = {
 type ShadowOwn = {
   readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly owner?: never; readonly until?: never; readonly extraction?: never; readonly rose?: never;
+  readonly moved?: never; readonly owner: CombatantId; readonly until?: never; readonly extraction?: never; readonly rose?: never;
 };
 type SummonOwn = {
   readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
@@ -536,6 +540,11 @@ export type SummonRow = BodyCommon & SummonOwn;
  * of four kinds, each with only its own fields (SMX-rules-8).
  */
 export type Body = HunterRow | MonsterRow | ShadowRow | SummonRow;
+type Owned = Body | { readonly kind: CombatantKind; readonly owner?: CombatantId | null };
+/** The combatant row that owns `b` (a shadow's hunter or a summon's caller), or null for a hunter or monster. */
+export const ownerOf = (b: Owned): CombatantId | null => (b.kind === 'shadow' || b.kind === 'summon' ? b.owner ?? null : null);
+/** Whether `b` is a minion (shadow or summon) owned by combatant row `ownerId`. */
+export const isMinionOf = (b: Owned, ownerId: CombatantId): boolean => ownerOf(b) === ownerId;
 /**
  * `b` with its threat table changed by `change`: a monster's, and a summon's that keeps one; any other row as it was.
  * Every write of a table goes through here, so none can give one to a row whose kind keeps none.

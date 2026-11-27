@@ -184,7 +184,7 @@ export const ROSTER: readonly NewRow[] = [
   row('c-sela', 'Sela', 'party', 'hunter', build('pow', 'ctl', 'light'), [BLAST, CURSE, CHARGE, SHOT, BLOODLETTING, PACT, HEMOPLAGUE], { holder: { kind: 'local', hunterId: hunterId('h-sela') }, statuses: [wornStatus('crimson-pact', 'Crimson Pact')] }),
   row('c-mira', 'Mira', 'party', 'hunter', build('pre', 'dis', 'light'), [SHIELD, MEND, ROOT, WARD, BOUNDARY, SHATTER, SPRITE], { holder: { kind: 'remote', remote: sheetKey('dev-mira:h1') } }),
   row('c-igris', 'Igris', 'party', 'shadow', mon('D', 'brute', 'normal'), [STRIKE, BITE],
-    { holder: { kind: 'shadow', hunterId: hunterId('h-sela'), shadowId: shadowId('s-igris') }, statuses: [EASEL] }),
+    { owner: combatantId('c-sela'), holder: { kind: 'shadow', hunterId: hunterId('h-sela'), shadowId: shadowId('s-igris') }, statuses: [EASEL] }),
   row('c-w1', 'Wolf A', 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE, HOWL], { xp: 50, statuses: [SICK, holding('resonance', RESONANCE, 1)] }),
   row('c-w2', 'Wolf B', 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE, PLAGUE], { xp: 50, statuses: [RETRIBUTION] }),
   row('c-imp', 'Imp', 'foe', 'monster', mon('D', 'caster', 'normal', { hp: 0.7, dealt: 1, stats: { ins: 8 }, traits: [] }), [CURSE, SHOT, SPRITE], { place: place(15, 11), xp: 40 }),

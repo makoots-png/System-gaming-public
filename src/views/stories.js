@@ -10,7 +10,7 @@
 // room, the players' (their sheets), to whom a move posts the chapter's message in the same write.
 import { closeWindow, css, esc, h, openWindow, trapTab } from './ui.js';
 import { enter } from './motion.ts';
-import { END_HOLD_MS, RUN_REFUSAL_WORDS, STORY_WORDS as W, atTable, givesLine, hadChapter, nameOf, nextChapter, openedLine, running, sameRef, storyMove, whoFor } from '../core/story/run.ts';
+import { END_HOLD_MS, STORY_WORDS as W, atTable, givesLine, hadChapter, nameOf, nextChapter, openedLine, running, sameRef, storyMove, storyRefusalWords, whoFor } from '../core/story/run.ts';
 import { chapterWindow, storyMeta, whoseLine } from '../core/story/story.ts';
 import { grantLines, isEmptyReward } from '../core/rewards.ts';
 import { stepTime } from '../core/day.ts';
@@ -65,7 +65,7 @@ export function register(app) {
   const sheets = () => A().sync.remoteSheets(), here = () => atTable(S(), sheets()).map(p => p.ref);
   const nameFor = r => nameOf(S(), sheets(), r), namesOf = refs => refs.map(nameFor);
   const forWho = run => W.forWho(run.who, run.who.at === 'hunters' ? namesOf(run.who.refs.filter(r => here().some(x => sameRef(x, r)))) : []);
-  const words = (why, n) => (RUN_REFUSAL_WORDS[why] ? RUN_REFUSAL_WORDS[why](n) : W.notSaved);
+  const words = (out, n) => storyRefusalWords(out, n);
 
   /**
    * One tap's move: `make` builds the event at the write's moment and session, `storyMove` writes it with what a fight
@@ -160,7 +160,7 @@ export function register(app) {
       act() {
         const to = table.filter(r => st.picked.has(idOf(r)));
         const out = move(runId, (at, session) => ({ type: 'open', chapter: st.chapter, seen, to, at, session }));
-        if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); w.err.textContent = words(out.why, out.why === 'no-chapter' || out.why === 'too-large' || !now ? st.chapter + 1 : now.state.chapter + 1); return false; }
+        if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); w.err.textContent = words(out, out.why === 'no-chapter' || out.why === 'too-large' || !now ? st.chapter + 1 : now.state.chapter + 1); return false; }
         told(W.opened(st.chapter, namesOf(out.run.opened.at(-1).to)), out);
         return true;
       },
@@ -198,7 +198,7 @@ export function register(app) {
         /** @type {import('../core/story/run.ts').Who} */
         const who = st.table ? { at: 'table' } : { at: 'hunters', refs: to };
         const out = move(runId, (at, session) => ({ type: 'turnOn', id: runId, story: s.id, who, to, at, session }));
-        if (isRefused(out)) { w.err.textContent = words(out.why, 1); return false; }
+        if (isRefused(out)) { w.err.textContent = words(out, 1); return false; }
         told(W.turnedOn(s.name, namesOf(out.run.opened[0].to)), out);
         return true;
       },
@@ -232,7 +232,7 @@ export function register(app) {
     const seen = run.opens;
     ui.toast(W.tag, W.endedToast(run.name), { hold: { what: { kind: 'end', run: runId }, ms: END_HOLD_MS, undo: W.undo, act: () => {
       const out = move(runId, (at, session) => ({ type: 'end', seen, at, session }));
-      if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); ui.toast(W.tag, words(out.why, now ? now.state.chapter + 1 : 1), { kind: 'warning' }); }
+      if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); ui.toast(W.tag, words(out, now ? now.state.chapter + 1 : 1), { kind: 'warning' }); }
     } } });
   }
   /** The "⋯" list of a running story's card. */

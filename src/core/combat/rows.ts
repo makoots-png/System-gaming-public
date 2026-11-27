@@ -19,7 +19,7 @@ import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
-import { classPowers } from '../registry/class-powers.ts';
+import { classPowers, classStatusDef } from '../registry/class-powers.ts';
 import { scalerText, scalersOf } from '../registry/scalers.ts';
 import type { Scaler } from '../registry/scalers.ts';
 import type { Powers } from '../registry/powers.ts';
@@ -40,7 +40,7 @@ import type { Ability, CombatantId, Summon } from './ability-types.ts';
 import { freeStatusKey, modified, shadowId, statusKey, statusOn, statusShield, TYPE_MAX } from './effect-ops.ts';
 import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
-import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
+import type { Body, Op, Origin, ShadowHolder, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
 import { isDamage, typed } from './damage-type.ts';
 import { liveAbility, liveStatusDef } from './live-status.ts';
 import { resolve } from './resolve.ts';
@@ -355,36 +355,46 @@ const shadowOrigin = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | 'grade'
 /** A shadow's sheet out of a fight, as its row starts with it: its max HP is the one its hunter's Shadows panel shows. */
 export const shadowSheet = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | 'grade'>, R: RowRules): Sheet => modified(shadowOrigin(s), [], R).sheet;
 
-/**
- * A shadow of hunter `owner` on this phone: the body of the monster it was, at its rank and archetype with its grade's
- * kind, the archetype's attack, its HP as its hunter keeps it (dead at 0), written back with `shadowHp`. It holds no statuses and,
- * being on the party's side, no threat table and no stagger bar.
- */
-export function shadowRow(s: RowShadow, owner: string, id: CombatantId, R: RowRules): NewRow {
+function shadowRowWith(s: RowShadow, owner: CombatantId, holder: ShadowHolder, id: CombatantId, R: RowRules): NewRow {
   const origin = shadowOrigin(s);
   const { sheet } = modified(origin, [], R);
   return {
     id, name: cut(s.name), side: 'party', kind: 'shadow', origin, tier: rankIdx(s.rank), place: null,
     life: s.hp >= 1 ? { at: 'up', hp: clamp(s.hp, 1, sheet.hpMax) } : { at: 'dead' }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null, statuses: [],
-    readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)], R), intent: null, holder: { kind: 'shadow', hunterId: hunterId(owner), shadowId: shadowId(s.id) }, xp: 0, mythic: null,
+    readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)], R), intent: null, holder, xp: 0, mythic: null, owner,
   };
 }
+
+/**
+ * A shadow of hunter `hunter` on this phone, owned in the fight by hunter row `owner`: the body of the monster it was,
+ * at its rank and archetype with its grade's kind, the archetype's attack, its HP as its hunter keeps it (dead at 0),
+ * written back with `shadowHp`. It holds no statuses and, being on the party's side, no threat table and no stagger bar.
+ */
+export const shadowRow = (s: RowShadow, hunter: string, owner: CombatantId, id: CombatantId, R: RowRules): NewRow =>
+  shadowRowWith(s, owner, { kind: 'shadow', hunterId: hunterId(hunter), shadowId: shadowId(s.id) }, id, R);
+
+/**
+ * A shadow of a hunter on another phone (`key`), owned in the fight by hunter row `owner`: written back to that phone
+ * through the room's `shadowHp` message (`sendRemoteShadow`).
+ */
+export const remoteShadowRow = (s: RowShadow, key: SheetKey, owner: CombatantId, id: CombatantId, R: RowRules): NewRow =>
+  shadowRowWith(s, owner, { kind: 'remoteShadow', remote: key, shadowId: shadowId(s.id) }, id, R);
 
 // ── summons ──
 
 /**
  * A timed summon of `user` (kits design 1.9, rule 18d): a normal monster's body of the summon's archetype at the user's
  * rank, its archetype's attack, full HP and mana, on the user's side, owned by the user and leaving at `now` plus its
- * rounds. Its starting statuses come from `R.conditions` by key (one the rules do not hold is left out), the summon
- * itself their source. It keeps a threat table on the foes' side, as a monster does, and holds no sheet, so it writes
- * nothing back and gives no XP.
+ * rounds. Its starting statuses come from `R.conditions` or `classStatusDef` by key (one neither holds is left out),
+ * the summon itself their source. It keeps a threat table on the foes' side, as a monster does, and holds no sheet, so
+ * it writes nothing back and gives no XP.
  */
 export function summonRow(user: Pick<Body, 'id' | 'side' | 'tier'>, s: Summon, id: CombatantId, now: Tick, R: RowRules): NewRow {
   const rank = RANKS[Math.max(0, Math.min(RANKS.length - 1, user.tier))]!;
   const origin: Origin = { kind: 'monster', name: cut(s.name), rank, archetype: s.archetype, monsterKind: 'normal', tweak: NO_TWEAK };
   const rounds = Math.max(1, Math.min(R.fight.kit.summonRounds, s.rounds));
   const statuses = s.statuses.flatMap(x => {
-    const def = Object.hasOwn(R.conditions, x.key) ? R.conditions[x.key] : undefined;
+    const def = Object.hasOwn(R.conditions, x.key) ? R.conditions[x.key] : classStatusDef(x.key) ?? undefined;
     return def ? [starting(x.key, def, { id, tier: user.tier }, x.rounds, now, R)] : [];
   }).slice(0, MAX_STATUSES);
   const { sheet } = modified(origin, statuses, R);

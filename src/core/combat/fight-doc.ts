@@ -467,7 +467,7 @@ function keyOf(b: Body, o: DocContext): SheetKey | null {
   switch (b.holder?.kind) {
     case 'local': return o.keyOf(b.holder.hunterId);
     case 'remote': return parseSheetKey(b.holder.remote);
-    case 'shadow': case undefined: return null;
+    case 'shadow': case 'remoteShadow': case undefined: return null;
     default: return b.holder satisfies never;
   }
 }

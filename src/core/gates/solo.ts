@@ -40,6 +40,7 @@ import type { StatusDef } from '../combat/effect-ops.ts';
 import { combatantId } from '../combat/ability-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { reduce } from '../combat/fight.ts';
+import { shadowFieldCap } from '../combat/fight-types.ts';
 import type { NewRow, Setup } from '../combat/fight-types.ts';
 import { hunterRow, monsterRows, shadowRow } from '../combat/rows.ts';
 import type { RowMonster } from '../combat/rows.ts';
@@ -274,7 +275,8 @@ export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null
   const R = withStatuses(R0, t.statuses);
   const me = combatantId('solo-h'), shadows: Record<CombatantId, ShadowId> = {};
   const rows: NewRow[] = [hunterRow(h, me, R)];
-  h.shadows.filter(s => s.summoned).forEach((s, i) => { const id = combatantId(`solo-s${i}`); shadows[id] = s.id; rows.push(shadowRow(s, h.id, id, R)); });
+  const cap = shadowFieldCap(hunterSheet(h, R).sheet.shadows);
+  h.shadows.filter(s => s.summoned).slice(0, cap).forEach((s, i) => { const id = combatantId(`solo-s${i}`); shadows[id] = s.id; rows.push(shadowRow(s, h.id, me, id, R)); });
   t.monsters.forEach((m, i) => rows.push(...monsterRows(harder(m.monster, R), Array.from({ length: m.count }, (_, k) => combatantId(`solo-m${i}-${k}`)), R)));
   const r = reduce(null, { type: 'add', fightId: fightId('solo'), rows, openings: [] }, { rules: R });
   return r.fight?.phase === 'setup' ? { fight: r.fight, hunter: me, shadows, R } : null;

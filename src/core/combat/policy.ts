@@ -150,9 +150,9 @@ function monsterChoice(f: Running, me: Body, all: readonly Ability[], foes: read
 
 /**
  * Anyone else (a hunter, a shadow, a summon of the party): mends the most hurt of its side under half HP; calls its
- * summon when none of its own is up; puts a status on its target that the target lacks; uses its strongest damaging
- * ability on the nearest foe (the taunter while taunted), or on any foe it reaches; then a status on itself it lacks;
- * else steps toward the nearest foe.
+ * summon while fewer than `kit.summons` of its timed summons are up; puts a status on its target that the target lacks;
+ * uses its strongest damaging ability on the nearest foe (the taunter while taunted), or on any foe it reaches; then a
+ * status on itself it lacks; else steps toward the nearest foe.
  */
 function partyChoice(f: Running, me: Body, uses: readonly Ability[], foes: readonly Body[], R: Rules): TurnChoice {
   const hurt = alliesOf(f, me).filter(b => rowHp(b) < HURT * b.sheet.hpMax && !(b.shield && b.shield.until > f.now))

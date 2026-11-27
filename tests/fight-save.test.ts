@@ -59,7 +59,7 @@ function goblin(): NewRow {
 }
 function rowsOf(s: Save): NewRow[] {
   const h = s.hunters[0]!;
-  return [hunterRow(h, id('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, id('c2'), RULES), goblin(), shadowRow(h.shadows[0]!, h.id, id('c4'), RULES)];
+  return [hunterRow(h, id('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, id('c2'), RULES), goblin(), shadowRow(h.shadows[0]!, h.id, id('c1'), id('c4'), RULES)];
 }
 
 /**

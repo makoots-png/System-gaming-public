@@ -108,8 +108,14 @@ export function register(app) {
         if (given !== undefined) aim = typeof given === 'string' ? given : { x: given.x, y: given.y }; // the map picked it (map-view.ts)
         else if (a.aim === 'place' && a.range === 0) aim = { x: t.me.place.x, y: t.me.place.y };
         else if (a.aim !== 'self') {
-          const list = aims(docSpots(t.doc.rows), t.me.id, a, openGrid(t.doc.grid.w, t.doc.grid.h)).filter(x => x.inRange && x.inShape);
-          if (!list.length) { ui.news(`No targets in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`, 'warning'); return null; }
+          const all = aims(docSpots(t.doc.rows), t.me.id, a, openGrid(t.doc.grid.w, t.doc.grid.h));
+          const list = all.filter(x => x.inRange && x.inShape);
+          if (!list.length) {
+            const msg = a.aim === 'corpse'
+              ? (all.length ? `No fallen monsters in range of ${a.name}. Move closer to a fallen monster first.` : `No fallen monsters can be raised with ${a.name} right now.`)
+              : `No targets in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`;
+            ui.news(msg, 'warning'); return null;
+          }
           const id = await ui.system({ tag: '! Fight', title: `Use ${a.name} on…`, layout: 'list',
             actions: [...list.map((x, i) => ({ label: `${x.target.name} · ${x.dist} tile${x.dist === 1 ? '' : 's'}`, value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
           const pick = id ? list.find(x => x.target.id === id) : null; if (!pick) return null;
