@@ -3,8 +3,13 @@
 // is src/views/rulesref.js, which keeps its layout and calls these.
 import { RANKS, RULES } from './rules.ts';
 import type { Rank, Rules } from './rules.ts';
+import type { ShadowGrade } from './save.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT, above } from './stats.ts';
 import type { StatKey } from './stats.ts';
+import { SHEET_LABELS } from './hunter/derive.ts';
+import type { MonsterKind } from './hunter/derive.ts';
+import { extractAttemptsMax } from './combat/extraction.ts';
+import { SHADOW_KINDS } from './combat/rows.ts';
 import { STAT_PAIRS, keystoneKeyId, statsOfPair } from './hunter/keystones.ts';
 import type { KeystoneDiff, KeystoneKey, KeystoneTier, NearestKeystone } from './hunter/keystones.ts';
 import { keystoneOf } from './registry/keystones.ts';
@@ -316,6 +321,46 @@ export function defenceLines(R: Pick<Rules, 'fight'>): readonly string[] {
   return [
     `Armor reduces physical damage and Resist reduces arcane damage. True damage ignores both Armor and Resist. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense). For example, ${kit.heavy.armor} armor cuts damage by ${armorCutPct(R, kit.heavy.armor)}%, and no amount grants full immunity.`,
     `Damaging status effects also meet your Armor or Resist each round (with no penetration), unless the status deals true damage.`,
+  ];
+}
+
+/** How percentage and flat penetration reduce armor and resist (land.ts `defenceLeft`), using the sheet's own flat-penetration labels. */
+export function penetrationLine(R: Pick<Rules, 'fight'>): string {
+  const F = R.fight;
+  return `Penetration reduces defense first. Armor penetration lowers armor and magic penetration lowers resist by a percentage. Control gives up to ${F.penCap}% of both, and items and perks can raise the total up to ${F.penMax}%. Next, ${SHEET_LABELS.armorPenFlat} subtracts directly from remaining armor, and ${SHEET_LABELS.resistPenFlat} subtracts directly from remaining resist.`;
+}
+
+const SHADOW_MONSTER_KINDS = ['normal', 'elite', 'boss'] as const;
+
+/**
+ * How shadow extraction and the shadow army work (rules.ts `canExtract`, hunter/shadows.ts `extractDc` and `armyCap`,
+ * combat/extraction.ts `extractAttemptsMax`, combat/rows.ts `SHADOW_KINDS`).
+ */
+export function shadowLines(R: Pick<Rules, 'extractJobs' | 'shadow' | 'fight'>): readonly string[] {
+  const S = R.shadow;
+  const who = R.extractJobs.length === 0
+    ? 'No job can extract shadows from defeated monsters under current rules.'
+    : R.extractJobs.length === 1
+      ? `Only a ${R.extractJobs[0]} can extract shadows from defeated monsters.`
+      : `Only ${joinAnd(R.extractJobs)} hunters can extract shadows from defeated monsters.`;
+  const extra = S.classAttempts > 0
+    ? ` An awakened Necromancer gets ${S.classAttempts} extra attempt${S.classAttempts === 1 ? '' : 's'} per corpse (${extractAttemptsMax(S, S.classAttempts)} total).`
+    : '';
+  const grades = SHADOW_MONSTER_KINDS
+    .map(kind => {
+      const list = (Object.entries(SHADOW_KINDS) as [ShadowGrade, MonsterKind][])
+        .filter(([, k]) => k === kind)
+        .map(([g]) => g);
+      return list.length ? `${joinAnd(list)} ${list.length === 1 ? 'uses' : 'use'} ${kind} monster stats.` : '';
+    })
+    .filter(Boolean)
+    .join(' ');
+  return [
+    who,
+    `Extraction rolls d20 + Presence check bonus against DC ${S.dcBase} + ${S.dcPerRank} × (monster rank − hunter rank) + ${S.bossDc} for a boss (minimum ${S.dcMin}). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${S.maxAttempts} attempt${S.maxAttempts === 1 ? '' : 's'} per corpse.${extra}`,
+    `On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster's rank and archetype. Its grade sets its monster kind. ${grades}`,
+    `Army capacity = floor(${R.fight.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${r} ${S.summonMp[r]}`).join(', ')}. Unsummoning is free. Clearing a gate heals resting shadows to full HP.`,
+    ...(S.adjustMax > 0 ? [`Before an extraction or Arise roll, the GM can add a visible roll adjustment from −${S.adjustMax} to +${S.adjustMax} on a fallen monster. It applies to one roll and appears in the fight log. A natural 20 still succeeds and a natural 1 still fails.`] : []),
   ];
 }
 

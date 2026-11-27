@@ -37,9 +37,16 @@ import { harmful, warded } from '../src/core/combat/standing.ts';
 import { dist } from '../src/core/combat/space.ts';
 import { spotOf, stepAway, stepToward } from '../src/core/combat/fight-view.ts';
 import { taunter } from '../src/core/combat/threat.ts';
-import { canRiseFor } from '../src/core/combat/rise.ts';
+import { canRiseFor, riseBonus } from '../src/core/combat/rise.ts';
 import { isMinionOf, isRisen, isTimedSummon } from '../src/core/combat/summons.ts';
 import { shadowFieldCap } from '../src/core/combat/fight-types.ts';
+import { reduce } from '../src/core/combat/fight.ts';
+import type { Running } from '../src/core/combat/fight.ts';
+import { needs } from '../src/core/combat/resolve.ts';
+import { weightsFor } from '../src/core/combat/fudge.ts';
+import { drawNeeds, seededSource } from '../src/core/draws.ts';
+import { fightId } from '../src/core/ids.ts';
+import { place } from '../src/core/combat/space.ts';
 import { monsterPolicy, playFight, runSoloMythicArmy, scripted } from './models/fight-sim.ts';
 import type { Policy, SimRow } from './models/fight-sim.ts';
 import { simTest, workBudget } from './models/sim-budget.ts';
@@ -320,4 +327,47 @@ describe('Necromancer solo-army vs Mythic bosses (4 gating rows, target 75% to 9
     console.log(`[solo-mythic-army:adds] Necromancer vs plain + 4 S normals: ${(res.winRate * 100).toFixed(1)}% (${res.wins}/${res.runs}, mean ${res.meanRounds.toFixed(1)} rounds, ${res.capped} capped, probe Arise casts: ${ariseCasts})`);
     expect(res.capped).toBe(0);
   }, SOLO_BUDGET);
+
+  simTest('PR A: GM Adjust roll is strictly monotonic on PR 3 Necromancer Arise fixture and respects nat 20/1 bounds and fudge isolation', () => {
+    const arise = hero.row.abilities.find(a => a.id === NECRO_ARISE_ID)!;
+    const dummy = monsterRows({ name: 'Cultist', rank: 'S', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], statuses: [] }, [combatantId('c-dead')], SOLO_MYTHIC_RULES)[0]!;
+    const anchor = monsterRows({ name: 'Anchor', rank: 'S', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], statuses: [] }, [combatantId('c-live')], SOLO_MYTHIC_RULES)[0]!;
+    const heroReady = { ...hero.row, place: place(2, 2), mana: 200 };
+    const deadRow = { ...dummy, place: place(4, 2), life: { at: 'dead' as const } };
+    const liveRow = { ...anchor, place: place(10, 10) };
+
+    const baseSetup = reduce(null, { type: 'add', fightId: fightId('f-adj-sim'), rows: [heroReady, deadRow, liveRow], openings: [] }, { rules: SOLO_MYTHIC_RULES }).fight!;
+    const started = reduce(baseSetup, { type: 'start', openings: [{ id: heroReady.id, d20: 20, tie: 3 }, { id: deadRow.id, d20: 1, tie: 2 }, { id: liveRow.id, d20: 1, tie: 1 }] }, { rules: SOLO_MYTHIC_RULES }).fight as Running;
+    // Also set hidden fight fudge (+5 party) to verify Arise ignores hidden fudge while honoring Adjust roll
+    const fudged = reduce(started, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 5 } }, { rules: SOLO_MYTHIC_RULES }).fight as Running;
+
+    const u = fudged.rows.find(r => r.id === heroReady.id)!;
+    const bonus = riseBonus(u, arise.raise!, SOLO_MYTHIC_RULES);
+    // Center dcBase so unadjusted Arise passes on 11..20 (50%), -10 passes only on nat 20 (5%), +10 passes on 2..20 (95%)
+    const simRules: Rules = { ...SOLO_MYTHIC_RULES, shadow: { ...SOLO_MYTHIC_RULES.shadow, dcBase: bonus + 11 } };
+    const TRIALS = 200;
+
+    const rateAt = (adj: number): number => {
+      const rng = seededSource(1001 + adj + 20);
+      let wins = 0;
+      for (let i = 0; i < TRIALS; i++) {
+        const fAdj = adj === 0 ? fudged : reduce(fudged, { type: 'adjustRoll', id: deadRow.id, n: adj }, { rules: simRules }).fight as Running;
+        const n = needs(arise, u, fAdj.rows, deadRow.id, fAdj.grid, fAdj.now, simRules);
+        const rolls = drawNeeds(n, rng.random, weightsFor(fAdj, u.id, n));
+        const res = reduce(fAdj, { type: 'act', by: u.id, ability: arise.id, aim: deadRow.id, rolls }, { rules: simRules }).fight as Running;
+        if (res.rows.some(isRisen)) wins++;
+        expect(res.rows.find(r => r.id === deadRow.id)?.adjust).toBeUndefined();
+      }
+      return wins / TRIALS;
+    };
+
+    const low = rateAt(-10), mid = rateAt(0), high = rateAt(10);
+    console.log(`[arise-adjust-sim] Necromancer Arise pass rate (${TRIALS} trials each): -10=${(low * 100).toFixed(1)}%, 0=${(mid * 100).toFixed(1)}%, +10=${(high * 100).toFixed(1)}%`);
+    expect(low).toBeLessThan(mid);
+    expect(mid).toBeLessThan(high);
+    expect(low).toBeGreaterThanOrEqual(0.01);
+    expect(low).toBeLessThan(0.15);
+    expect(high).toBeGreaterThan(0.85);
+    expect(high).toBeLessThanOrEqual(0.99);
+  }, workBudget(0));
 });

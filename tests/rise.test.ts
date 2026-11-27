@@ -33,6 +33,8 @@ import type { Place } from '../src/core/combat/space.ts';
 import { cost, tick } from '../src/core/combat/timeline.ts';
 import { isRisen, isTimedSummon, timeUp } from '../src/core/combat/summons.ts';
 import { canRiseCorpse, canRiseFor, elitesRisen, riseBonus, riseDc, risePassed, riseState, riseStep } from '../src/core/combat/rise.ts';
+import { forcesRead, weightsFor } from '../src/core/combat/fudge.ts';
+import { drawNeeds } from '../src/core/draws.ts';
 import { RISE_WALK } from './models/rise-events.ts';
 import { hunter } from './models/fight-sim.ts';
 
@@ -425,5 +427,99 @@ describe('minion swap, minion-only aura, fight-doc, fight-view, and fight-parse'
     const bad2 = JSON.parse(JSON.stringify(f1));
     bad2.rows.find((r: { id: string }) => r.id === risen.id).until = 500;
     expect(parseFight(bad2, RULES)).toBeNull();
+  });
+});
+
+describe('PR A: GM Adjust roll on Arise (20-face matrix, fudge isolation, spent/cleared, and parseFight round-trip)', () => {
+  test('20-face exact matrix across adjust in [-10..+10] preserves nat 20 auto-pass and nat 1 auto-fail invariants', () => {
+    const bonus = 4, dc = 15;
+    for (let adj = -10; adj <= 10; adj++) {
+      for (let d20 = 1; d20 <= 20; d20++) {
+        const expected = d20 === 20 ? true : d20 === 1 ? false : d20 + bonus + adj >= dc;
+        expect(risePassed(d20, bonus, dc, adj), `d20=${d20} adj=${adj}`).toBe(expected);
+      }
+      expect(risePassed(20, 0, 100, adj), `nat 20 always passes at adj=${adj}`).toBe(true);
+      expect(risePassed(1, 100, 1, adj), `nat 1 always fails at adj=${adj}`).toBe(false);
+    }
+  });
+
+  test('Arise is exempt from hidden Fight.fudge: weightsFor leaves its d20 unweighted and forcesRead leaves forced faces intact', () => {
+    const arise = ariseAbility();
+    let f = startFight('N', [
+      caster('N', place(2, 2), [arise]),
+      monster('G1', place(4, 2), { dead: true, name: 'High Orc' }),
+      monster('Anchor', place(10, 10)),
+    ]);
+    // Set extreme hidden fudge + forced 20 on caster and extreme negative fudge + forced 1 on corpse
+    f = mustAct(f, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 10 } }).fight as Running;
+    f = mustAct(f, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'row', id: id('N') }, n: 5 } }).fight as Running;
+    f = mustAct(f, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'row', id: id('G1') }, n: -5 } }).fight as Running;
+    f = mustAct(f, { type: 'fudge', set: { kind: 'force', id: id('N'), face: 20 } }).fight as Running;
+    f = mustAct(f, { type: 'fudge', set: { kind: 'force', id: id('G1'), face: 1 } }).fight as Running;
+
+    const n = needs(arise, body(f, 'N'), f.rows, id('G1'), f.grid, f.now, RULES);
+    expect(n.raise).toBe(true);
+    const w = weightsFor(f, id('N'), n);
+    expect(w.dice).toEqual({});
+    expect(w.react).toEqual({});
+
+    // Drawing face 7 stays face 7 despite +20 net fudge and forced 20/1
+    const drawn = drawNeeds(n, () => (7 - 0.5) / 20, w);
+    expect(drawn.dice[id('G1')]).toEqual([7]);
+
+    const cmd: Command = { type: 'act', by: id('N'), ability: arise.id, aim: id('G1'), rolls: drawn };
+    expect(forcesRead(f, cmd)).toEqual([]);
+    const after = mustAct(f, cmd).fight as Running;
+    expect(after.fudge.forced).toEqual({ [id('N')]: 20, [id('G1')]: 1 });
+  });
+
+  test('adjustRoll applies once to Arise (pass and fail), logs exact GM breakdown, clears corpse.adjust, and round-trips parseFight', () => {
+    const arise = ariseAbility({ bonus: 0, maxRisen: 2, elitePerFight: 1 });
+    const f0 = startFight('N', [
+      caster('N', place(2, 2), [arise], 'E'),
+      monster('G1', place(4, 2), { dead: true, name: 'High Orc', rank: 'C' }),
+      monster('Anchor', place(10, 10)),
+    ]);
+    const u = body(f0, 'N'), corpse0 = body(f0, 'G1') as MonsterRow;
+    const bonus = riseBonus(u, arise.raise!, RULES), dc = riseDc(u, corpse0, RULES);
+
+    // Pick a natural face in 2..19 that fails by 2 without adjustment and passes with +2
+    const natural = Math.max(2, Math.min(19, dc - bonus - 2));
+    expect(natural + bonus).toBe(dc - 2);
+
+    // Set +2 and verify parseFight round-trip + rejection of invalid values + cardOf + no FightDoc leak
+    const fAdj = mustAct(f0, { type: 'adjustRoll', id: id('G1'), n: 2 }).fight as Running;
+    expect((body(fAdj, 'G1') as MonsterRow).adjust).toBe(2);
+    expect(cardOf(fAdj, body(fAdj, 'G1'), RULES).rollAdjust).toBe(2);
+    const doc = fightDoc(fAdj, RULES, { by: 'd-gm' as DeviceId, at: '2026-11-26T00:00:00Z', was: null, keyOf: () => null });
+    if (!doc || doc.ended) throw new Error('expected active doc');
+    expect('adjust' in (doc.rows.find(r => r.id === id('G1')) as Record<string, unknown>)).toBe(false);
+
+    const parsed = parseFight(JSON.parse(JSON.stringify(fAdj)), RULES);
+    expect(parsed).not.toBeNull();
+    expect((body(parsed!, 'G1') as MonsterRow).adjust).toBe(2);
+    for (const badVal of [0, 21, -21, 1.5, '2']) {
+      const raw = JSON.parse(JSON.stringify(fAdj));
+      raw.rows.find((r: { id: string }) => r.id === id('G1')).adjust = badVal;
+      expect(parseFight(raw, RULES), `reject monster adjust=${String(badVal)}`).toBeNull();
+    }
+    const rawHunter = JSON.parse(JSON.stringify(fAdj));
+    rawHunter.rows.find((r: { id: string }) => r.id === id('N')).adjust = 2;
+    expect(parseFight(rawHunter, RULES), 'reject adjust on hunter row').toBeNull();
+
+    // Negative adjustment (-2) makes a normally passing face fail, logs - 2 GM, and clears adjust
+    const passFace = Math.max(2, Math.min(19, dc - bonus));
+    const fNeg = mustAct(f0, { type: 'adjustRoll', id: id('G1'), n: -2 }).fight as Running;
+    const afterFail = mustAct(fNeg, { type: 'act', by: id('N'), ability: arise.id, aim: id('G1'), rolls: { dice: { [id('G1')]: [passFace] }, react: {} } }).fight as Running;
+    expect((body(afterFail, 'G1') as MonsterRow).adjust).toBeUndefined();
+    expect((body(afterFail, 'G1') as MonsterRow).rose).toBeUndefined();
+    expect(afterFail.log.map(l => l.text).join('\n')).toContain(`- 2 GM = ${passFace + bonus - 2} vs DC ${dc}`);
+
+    // Positive adjustment (+2) turns a miss into a pass, logs + 2 GM, and clears adjust
+    const afterPass = mustAct(fAdj, { type: 'act', by: id('N'), ability: arise.id, aim: id('G1'), rolls: { dice: { [id('G1')]: [natural] }, react: {} } }).fight as Running;
+    expect((body(afterPass, 'G1') as MonsterRow).adjust).toBeUndefined();
+    expect((body(afterPass, 'G1') as MonsterRow).rose).toBe(true);
+    expect(afterPass.rows.filter(isRisen).length).toBe(1);
+    expect(afterPass.log.map(l => l.text).join('\n')).toContain(`+ 2 GM = ${natural + bonus + 2} vs DC ${dc}`);
   });
 });

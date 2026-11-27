@@ -92,9 +92,9 @@ export function riseBonus(user: Pick<Body, 'tier' | 'stats' | 'sheet' | 'fatigue
   return Math.floor(above(user.stats.pre, R.fight) / 2) + R.rankBonus[rank] - tired + raise.bonus;
 }
 
-/** Whether a natural d20 roll with `bonus` passes `dc` (nat 20 always passes, nat 1 always fails without crumbling). */
-export const risePassed = (d20: number, bonus: number, dc: number): boolean =>
-  d20 === NAT_SUCCESS || (d20 !== NAT_FAIL && d20 + bonus >= dc);
+/** Whether a natural d20 roll with `bonus` (plus optional GM roll `adjust`) passes `dc` (nat 20 always passes, nat 1 always fails without crumbling). */
+export const risePassed = (d20: number, bonus: number, dc: number, adjust = 0): boolean =>
+  d20 === NAT_SUCCESS || (d20 !== NAT_FAIL && d20 + bonus + adjust >= dc);
 
 /**
  * Builds the fresh risen summon row for `corpse` raised by `user`: copies the corpse's monster origin (normal or elite,

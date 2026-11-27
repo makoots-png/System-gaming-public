@@ -80,6 +80,8 @@ export function weightsFor(f: Setup | Running, by: CombatantId, needs: Needs): N
   if (!u) return NO_WEIGHTS;
   const dice: Record<CombatantId, number> = {}, react: Record<CombatantId, Weight> = {};
   for (const id of Object.keys(needs.dice) as CombatantId[]) {
+    // Arise's trailing d20 is governed solely by visible per-corpse Adjust roll, never hidden fight fudge
+    if (needs.raise) continue;
     const t = rows.get(id);
     if (t) dice[id] = fudgeOf(w, u) - (t.side === u.side ? 0 : fudgeOf(w, t));
   }

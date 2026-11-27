@@ -16,7 +16,7 @@ import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { applyStatus, modified, removeStatus, statusOn, statusShield, withMoved, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
-import type { Body, Status, StatusKey } from './effect-ops.ts';
+import type { Body, MonsterRow, Status, StatusKey } from './effect-ops.ts';
 import { diceFor, landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive, drainWords, landedWords, putBy, stealthAfter } from './land.ts';
 import type { DodgeAsked, DodgePick, Resolved, Rolls } from './resolve.ts';
@@ -40,6 +40,7 @@ import { canRiseFor, riseBonus, riseDc, risenRow, risePassed, riseState, riseSte
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey, shadowFieldCap } from './fight-types.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
+import { adjustRollStep, clampedAdjust, clearRollAdjust, extractionCheck, rollCheckText, validExtractRoll, validRollAdjust } from './roll-adjust.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
 import type { Command, CommandType, Ctx, DodgeWait, Effect, Fight, HeldUse, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
@@ -335,13 +336,15 @@ function risen(f: Running, a: Ability, by: CombatantId, aim: Aim, rolls: Rolls, 
   if (!u || !isUp(u) || !corpse || !canRiseFor(corpse, f.rows, a.raise)) return f;
   const d20 = rolls.dice[corpse.id]?.[diceFor(a, u.tier, R).length - 1];
   if (d20 === undefined) return f;
-  const dc = riseDc(u, corpse, R), bonus = riseBonus(u, a.raise, R), ok = risePassed(d20, bonus, dc);
-  const checkText = `${d20}${bonus >= 0 ? ` + ${bonus}` : ` - ${-bonus}`} vs DC ${dc}`;
+  const dc = riseDc(u, corpse, R), bonus = riseBonus(u, a.raise, R), adj = clampedAdjust(corpse.adjust, R.shadow.adjustMax);
+  const ok = risePassed(d20, bonus, dc, adj);
+  const checkText = rollCheckText(d20, bonus, adj, dc);
+  const cleared = withRow(f, clearRollAdjust(corpse));
   const nextState = riseStep(riseState(corpse), { type: ok ? 'succeed' : 'fail' });
   if (!ok || nextState !== 'risen') {
-    return logged(f, line(`${u.name}'s ${a.name} fails on ${corpse.name} (rolled ${checkText}).`, [u.id, corpse.id]), R);
+    return logged(cleared, line(`${u.name}'s ${a.name} fails on ${corpse.name} (rolled ${checkText}).`, [u.id, corpse.id]), R);
   }
-  const g = sentAway(f, crowded(f.rows, u.id, 'risen', a.raise.maxRisen), 'leaves because a newer risen took its place', ctx);
+  const g = sentAway(cleared, crowded(cleared.rows, u.id, 'risen', a.raise.maxRisen), 'leaves because a newer risen took its place', ctx);
   if (g.rows.length >= MAX_ROWS) return g;
   const at = freeAt(g, corpse.place, null) ? corpse.place : nearestFreeTile(g, corpse.place);
   if (!at) return g;
@@ -870,11 +873,13 @@ function resize<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   return groundChange(f, { ...f, grid, rows, zones, fog }, line(`The GM makes the map ${w} by ${h}.`), ctx);
 }
 
-// ── a fallen monster's extraction ──
+// ── a fallen monster's extraction and GM roll adjustment ──
 /**
- * An attempt to extract a shadow from fallen monster `id` (extraction.ts): its outcome kept on the row, with a log line,
- * so the corpse's attempts outlive a reload. No time passes. It is made by a hunter row of the fight (`by`); one that is
- * not is refused (`notExtractor`), as a body that is not a monster or still up, and a corpse with no attempt left.
+ * An attempt to extract a shadow from fallen monster `id` (extraction.ts, roll-adjust.ts): computes the outcome from
+ * `cmd.roll` and `cmd.adjust` (or the corpse's standing `adjust`), records it on the row, clears `corpse.adjust`, and
+ * logs the full roll breakdown so attempts outlive a reload. No time passes. It is made by a hunter row of the fight
+ * (`by`); one that is not is refused (`notExtractor`), as a body that is not a monster or still up, an invalid roll
+ * (`needsRoll`) or adjustment (`adjustValue`), and a corpse with no attempt left (`noAttempts`).
  */
 function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' }>, ctx: Ctx): Result {
   const u = rowOf(f, cmd.id), by = rowOf(f, cmd.by);
@@ -882,33 +887,56 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
   if (!by || by.kind !== 'hunter') return refused(f, 'notExtractor');
   if (u.kind !== 'monster') return refused(f, 'notMonster');
   if (isUp(u)) return refused(f, 'notNow');
+  if (!validExtractRoll(cmd.roll)) return refused(f, 'needsRoll');
+  if (cmd.adjust !== undefined && !validRollAdjust(cmd.adjust, ctx.rules.shadow.adjustMax)) return refused(f, 'adjustValue');
+  const adj = cmd.adjust !== undefined ? cmd.adjust : clampedAdjust(u.adjust, ctx.rules.shadow.adjustMax);
+  const checked = extractionCheck(cmd.roll, adj);
   const max = extractAttemptsMax(ctx.rules.shadow, by);
-  const e = extractionStep(u.extraction ?? UNTRIED, cmd.outcome, max);
+  const e = extractionStep(u.extraction ?? UNTRIED, checked.outcome, max);
   if (!e) return refused(f, 'noAttempts');
-  const said = cmd.outcome === 'risen' ? `${u.name} rises as a shadow.` : cmd.outcome === 'crumbled' ? `${u.name}'s corpse is destroyed.`
-    : `The extraction of ${u.name} fails (${attemptsLeft(e, max)} left).`;
-  return done(logged(withRow(f, { ...u, extraction: e }), line(said, [u.id, by.id]), ctx.rules), []);
+  const checkText = rollCheckText(checked.natural, checked.bonus, checked.adjust, checked.dc);
+  const said = checked.outcome === 'risen'
+    ? `${u.name} rises as a shadow (rolled ${checkText}).`
+    : checked.outcome === 'crumbled'
+      ? `${u.name}'s corpse is destroyed (rolled ${checkText}).`
+      : `The extraction of ${u.name} fails (rolled ${checkText}, ${attemptsLeft(e, max)} left).`;
+  const nextRow: MonsterRow = { ...clearRollAdjust(u), extraction: e };
+  return done(logged(withRow(f, nextRow), line(said, [u.id, by.id]), ctx.rules), []);
+}
+
+/**
+ * The GM's visible signed adjustment (`±RULES.shadow.adjustMax`) for the next extraction or Arise roll on monster
+ * `id`, through `adjustRollStep`: set, never added, and 0 clears it. Allowed in setup, running, and ended. No time
+ * passes and nothing is logged until a roll consumes it.
+ */
+function adjustRoll<F extends Fight>(f: F, cmd: Extract<Command, { type: 'adjustRoll' }>, ctx: Ctx): Result {
+  const u = rowOf(f, cmd.id);
+  if (!u) return refused(f, 'unknown');
+  if (u.kind !== 'monster') return refused(f, 'notMonster');
+  const next = adjustRollStep(u, cmd.n, ctx.rules.shadow.adjustMax);
+  if (!next) return refused(f, 'adjustValue');
+  return done(next === u ? f : withRow(f, next), []);
 }
 
 // ── the table ──
 const ACTING: Row<'running'> = {
   add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, revive, status, settle: settleDue,
-  paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+  paint, zoneAdd, zoneRemove, resize, arm, extract, adjustRoll, fudge, mythic, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const DODGING: Row<'running'> = {
   add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-  revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, mythic: null,
+  revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, adjustRoll: null, fudge: null, mythic: null,
   dodge: pickDodge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, mythic: null, dodge: null, end: null, clear: null,
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, adjustRoll: null, fudge: null, mythic: null, dodge: null, end: null, clear: null,
   },
   setup: {
     add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, revive, status,
     // a mythic's script starts when the fight does, so the GM's hand on it waits for the start
-    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic: null, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, adjustRoll, fudge, mythic: null, dodge: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   // a running fight's four states (`runningState`): a hunter picks its dodge tile, its turn's actor acts, the fight owes dice first, or a mythic lands its omen
   running: {
@@ -924,7 +952,7 @@ const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { read
   // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, mythic: null, dodge: null, end: null, clear: () => done(null, []),
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, adjustRoll, fudge: null, mythic: null, dodge: null, end: null, clear: () => done(null, []),
   },
 };
 

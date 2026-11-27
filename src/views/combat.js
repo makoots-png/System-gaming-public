@@ -15,6 +15,7 @@ import { fightGateName, heldCommands, itemSpent } from '../core/combat/fight-sav
 import { gateFought } from '../core/gates/world.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, extractAttemptsMax, UNTRIED } from '../core/combat/extraction.ts';
+import { ADJUST_HINT } from '../core/combat/roll-adjust.ts';
 import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/rise.ts';
 import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
@@ -386,7 +387,7 @@ export function register(app) {
         const d = `${x.dist} tile${x.dist === 1 ? '' : 's'}`;
         if (a.aim === 'corpse' && a.raise) {
           const corpse = rowOf(f, x.target.id);
-          if (corpse) return `${x.target.name} · ${d} · DC ${riseDc(row, corpse, R)}`;
+          if (corpse) return `${x.target.name} · ${d} · DC ${riseDc(row, corpse, R)}${corpse.kind === 'monster' && corpse.adjust ? ` · GM ${signed(corpse.adjust)}` : ''}`;
         }
         return `${x.target.name} · ${d}`;
       };
@@ -725,8 +726,8 @@ export function register(app) {
     adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return NO_ROW; return answered(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
     revive: cid => { const r = rowOf(fight(), cid); return r ? revive(r) : NO_ROW; },
     spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return r ? answered(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)) : NO_ROW; },
-    // an extraction's outcome on the corpse's row (the fight's `extract`), and a risen shadow's join in the same write
-    extracted: (cid, by, outcome, rose) => answered(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), outcome }, null,
+    // an extraction's roll and GM adjustment on the corpse's row (the fight's `extract`), and a risen shadow's join in the same write
+    extracted: (cid, by, roll, adjust, rose) => answered(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), roll, adjust }, null,
       rose && rose.kind === 'local' ? rose.step : null, rose && rose.kind === 'remote' ? rose.event : null)),
     add: list => add(list), isActive: () => running(fight()),
     startFlow, showParty, okToReplace: async () => !otherGMLive() || confirmReplace(),
@@ -856,6 +857,7 @@ export function register(app) {
 .cmb-fudge{display:flex;flex-direction:column;gap:6px}.cmb-fudge[hidden]{display:none}.cmb-fudge .cmb-step{justify-content:space-between}.cmb-fudge .cmb-step .lbl{flex:1 1 auto;min-width:0}
 .cmb-fdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:6px;vertical-align:middle}
 .cmb-fz{display:flex;flex-direction:column;gap:6px}.cmb-fz .seg>button{min-width:0}
+.cmb-adj{display:flex;flex-direction:column;gap:4px}.cmb-adj .cmb-step{flex-wrap:wrap;justify-content:space-between;width:100%}.cmb-adj .cmb-step .lbl{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.cmb-adj .cmb-step-btns{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}.cmb-adj .cmb-hint{margin:0;font-size:12px;color:var(--muted)}
 .cmb-eyes{display:flex;flex-direction:column;gap:4px}.cmb-eyes .seg>button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win.cmb-mapmode .cmb-log{max-height:none}
 @media (min-width:900px){.win.cmb-mapmode .cmb-tools.open{left:auto;top:0;bottom:0;width:min(520px,100vw);max-height:none;border-top:none;border-left:1px solid var(--line-bright)}}
@@ -1026,6 +1028,7 @@ export function register(app) {
       <div class="lbl">Statuses</div><div class="cmb-conds" data-part="conds"></div><ul class="cmb-fx" data-part="fx" data-attr="hidden:noFx"></ul>
       <div class="cmb-line"><button type="button" data-fk="cforge" data-cforge title="Add status (S)" aria-keyshortcuts="s">+ Status</button></div>
       <div class="slot cmb-fz" data-part="fudgeBox"></div>
+      <div class="slot cmb-adj" data-part="adjustRollBox"></div>
       <div class="cmb-line"><span class="slot" data-part="lifeAct"></span>
         <span class="slot" data-part="extract"></span>
         <button type="button" class="danger" data-fk="remove" data-remove data-attr="aria-label:removeLabel">Remove</button></div>`}
@@ -1106,7 +1109,7 @@ export function register(app) {
       lifeAct: lifeActHtml(r),
       extract: extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract (${esc(x.h.name)})` : 'Extract'}</button>`).join(''),
       removeLabel: `Remove ${r.name} from the fight`,
-      fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k),
+      fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k), adjustRollBox: adjustRollCard(r, k, R),
     };
   }
 
@@ -1284,6 +1287,11 @@ export function register(app) {
         if (row) send({ type: 'fudge', set: { kind: 'force', id: row.id, face: face === '20' ? 20 : face === '1' ? 1 : null } });
         return;
       }
+      if (b.dataset.adjustRoll !== undefined) {
+        const to = Number(b.dataset.to), target = rowOf(f, b.dataset.adjustRoll);
+        if (Number.isInteger(to) && target) send({ type: 'adjustRoll', id: target.id, n: to });
+        return;
+      }
       if (b.hasAttribute('data-mythsw-btn')) { ui.wrote('GM', store.apply('gm-rules', st => mythicSwitched(st, !rules().fight.mythic.scripts))); return; }
       const mid = b.dataset.myland || b.dataset.mydrop || b.dataset.mynext, mrow = mid && rowOf(f, mid);
       if (mrow) {
@@ -1388,7 +1396,7 @@ export function register(app) {
         const max = extractAttemptsMax(rules().shadow, byRow.kind === 'hunter' && byRow.extractBonus ? byRow : byHunter);
         /** @type {import('../core/api.ts').ExtractTarget} */
         const corpse = { id: r.id, by: byRow.id, name: r.name, rank: rankOf(r), archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', monster: mid || null,
-          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, max) };
+          down: cardOf(f, r, rules()).down, extractable: m ? m.extractable !== false : true, left: attemptsLeft(r.extraction ?? UNTRIED, max), adjust: r.kind === 'monster' ? (r.adjust ?? 0) : 0 };
         const made = await A().shadows.extract(byRow.holder, corpse);
         if (made) { const c = el.querySelector(`.cmb-card[data-cid="${CSS.escape(r.id)}"]`); if (c) motion.burst('extract', c); }
         if (rowOf(fight(), r.id)) toast(made ? `${r.name} rises as a shadow.` : `Extraction of ${r.name} failed.`);
@@ -1461,6 +1469,16 @@ export function register(app) {
     return `<div class="cmb-fgroup">${weightStepper(`Fudge on ${r.name}'s rolls`, k.fudgeOwn, `data-fudge-row="${esc(r.id)}"`, r.name)}</div>`
       + `<div class="cmb-x"><span>Force ${esc(r.name)}'s next d20</span><div class="seg" role="group" aria-label="Force ${esc(r.name)}'s next d20">${face.map(([v, l, fk]) =>
         `<button type="button" data-fk="fz-${fk}" data-fudge-force="${esc(r.id)}" data-face="${v ?? ''}" aria-pressed="${k.forced === v}">${l}</button>`).join('')}</div></div>`;
+  }
+  /** The corpse card's visible GM roll adjustment stepper: shown on fallen monsters while `shadow.adjustMax > 0`. */
+  function adjustRollCard(r, k, R) {
+    const max = R.shadow.adjustMax;
+    if (r.kind !== 'monster' || !k.down || max <= 0) return '';
+    const n = k.rollAdjust;
+    return `<div class="cmb-fgroup" data-adjust-box><span class="cmb-step"><span class="lbl">Adjust next roll on ${esc(r.name)}${n !== 0 ? '<i class="cmb-fdot" aria-hidden="true"></i><span class="sr-only"> active</span>' : ''}</span>`
+      + `<span class="cmb-step-btns"><button type="button" class="icon-btn" data-fk="adj-m" data-adjust-roll="${esc(r.id)}" data-to="${n - 1}" aria-label="Lower roll adjustment on ${esc(r.name)}"${n <= -max ? ' disabled' : ''}>−</button><b data-adjust-val>${signed(n)}</b>`
+      + `<button type="button" class="icon-btn" data-fk="adj-p" data-adjust-roll="${esc(r.id)}" data-to="${n + 1}" aria-label="Raise roll adjustment on ${esc(r.name)}"${n >= max ? ' disabled' : ''}>+</button></span></span></div>`
+      + `<p class="cmb-hint">${esc(ADJUST_HINT)}</p>`;
   }
 
   /**

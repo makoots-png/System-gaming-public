@@ -34,7 +34,7 @@ import type { WorldWhy } from './gates/world.ts';
 import type { NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { SoloFight } from './gates/solo.ts';
-import type { ExtractionOutcome } from './combat/extraction.ts';
+import type { ExtractRoll } from './combat/roll-adjust.ts';
 import type { MapInput, ViewAs } from './combat/map-view.ts';
 import type { Ability, AbilityId, AbilityKind, CombatantId } from './combat/ability-types.ts';
 import type { Place } from './combat/space.ts';
@@ -133,10 +133,11 @@ export type CombatApi = {
   /** The GM's Status window on a row (the fight's `status` command): a status taken off, one put on. Answers as `adjust`. */
   status(cid: string, change: { add?: { key: string; def: StatusDef; rounds: number | null; tier: number }; remove?: string }): Applied;
   /**
-   * An extraction attempt by hunter row `by` on fallen monster `cid` came to `outcome`: the fight's `extract` keeps it on
-   * the row, and a shadow that rose (`rose`) is written with it, or nothing is. Answers as `adjust`.
+   * An extraction attempt by hunter row `by` on fallen monster `cid` with `roll` and GM `adjust`: the fight's `extract`
+   * computes the outcome, keeps it on the row, clears `corpse.adjust`, and writes a shadow that rose (`rose`) with it,
+   * or nothing when refused. Answers as `adjust`.
    */
-  extracted(cid: string, by: string, outcome: ExtractionOutcome, rose: Rose | null): Applied;
+  extracted(cid: string, by: string, roll: ExtractRoll, adjust: number, rose: Rose | null): Applied;
   /** Rows join the fight (a new one in setup when there is none; while it runs each rolls its opening). Answers how many joined. */
   add(list: JoinRow[]): number;
   isActive(): boolean;
@@ -609,7 +610,7 @@ export type Rose = { readonly kind: 'local'; readonly step: Step<Save> } | { rea
  */
 export type ExtractTarget = {
   id: string; by: string; name: string; rank: Rank; archetype: Archetype; kind: MonsterKind; monster: string | null;
-  down: boolean; extractable: boolean; left: number;
+  down: boolean; extractable: boolean; left: number; adjust: number;
 };
 export type ShadowsApi = {
   canExtract(h: Hunter | null): boolean;

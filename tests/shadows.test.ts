@@ -4,7 +4,9 @@ import type { ShadowEvent, ShadowState } from '../src/core/hunter/shadows.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { ARMY, WALK_EVENTS } from './models/shadow-events.ts';
 import { shadowSheet } from '../src/core/combat/rows.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RULES, domainOf } from '../src/core/rules.ts';
+import { extractDiceExpr, extractDiceLabel, extractionCheck, rollCheckText } from '../src/core/combat/roll-adjust.ts';
+import { parseFormula } from '../src/core/formula.ts';
 import { newHunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
@@ -162,5 +164,47 @@ describe('the army\'s cap, an extraction\'s outcome and the grade a monster rise
 
   test('a boss rises as a Knight, an elite as an Elite, a normal monster as a Normal shadow', () => {
     expect([risesAs('boss'), risesAs('elite'), risesAs('normal')]).toEqual(['Knight', 'Elite', 'Normal']);
+  });
+});
+
+describe('PR A: GM roll adjustment on shadow extraction (20-face matrix, dice expression/label, rules domain)', () => {
+  test('RULES.shadow.adjustMax defaults to 10 with whole domain 0..20', () => {
+    expect(RULES.shadow.adjustMax).toBe(10);
+    expect(domainOf('shadow.adjustMax')).toMatchObject({ least: 0, most: 20, whole: true });
+  });
+
+  test('20-face exact matrix across adjust in [-10..+10] preserves nat 20 auto-rise and nat 1 auto-crumble invariants', () => {
+    const bonus = 6, dc = 15;
+    for (let adj = -10; adj <= 10; adj++) {
+      for (let natural = 1; natural <= 20; natural++) {
+        const checked = extractionCheck({ natural, bonus, dc }, adj);
+        const total = natural + bonus + adj;
+        const expected = natural === 1 ? 'crumbled' : natural === 20 || total >= dc ? 'risen' : 'failed';
+        expect(checked.total, `d20=${natural} adj=${adj}`).toBe(total);
+        expect(checked.outcome, `d20=${natural} adj=${adj}`).toBe(expected);
+        if (adj === 0) expect(checked.outcome).toBe(extractOutcome({ natural, total }, dc));
+      }
+      expect(extractionCheck({ natural: 1, bonus: 50, dc: 5 }, adj).outcome, `nat 1 always crumbles at adj=${adj}`).toBe('crumbled');
+      expect(extractionCheck({ natural: 20, bonus: -5, dc: 100 }, adj).outcome, `nat 20 always rises at adj=${adj}`).toBe('risen');
+    }
+  });
+
+  test('extractDiceExpr, extractDiceLabel, and rollCheckText format positive, negative, and zero adjustments cleanly', () => {
+    expect(extractDiceExpr(6, 2)).toBe('1d20+6+2');
+    expect(extractDiceExpr(6, -2)).toBe('1d20+6-2');
+    expect(extractDiceExpr(6, 0)).toBe('1d20+6');
+    expect(extractDiceExpr(-1, 3)).toBe('1d20-1+3');
+    for (const expr of ['1d20+6+2', '1d20+6-2', '1d20+6', '1d20-1+3', '1d20+0-5']) {
+      expect(parseFormula(expr, RULES).ok, `parseFormula(${expr})`).toBe(true);
+    }
+
+    expect(extractDiceLabel('shadow', 'Igris', 2)).toBe('Extract shadow: Igris (GM +2)');
+    expect(extractDiceLabel('shadow', 'Igris', -2)).toBe('Extract shadow: Igris (GM -2)');
+    expect(extractDiceLabel('shadow', 'Igris', 0)).toBe('Extract shadow: Igris');
+
+    expect(rollCheckText(9, 6, 2, 15)).toBe('9 + 6 + 2 GM = 17 vs DC 15');
+    expect(rollCheckText(9, 6, 0, 15)).toBe('9 + 6 = 15 vs DC 15');
+    expect(rollCheckText(11, 10, -2, 13)).toBe('11 + 10 - 2 GM = 19 vs DC 13');
+    expect(rollCheckText(8, -1, 3, 12)).toBe('8 - 1 + 3 GM = 10 vs DC 12');
   });
 });

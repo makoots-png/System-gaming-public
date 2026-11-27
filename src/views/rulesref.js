@@ -4,7 +4,7 @@ import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { SLOTS, SLOT_LABELS, WEAR_LIMIT } from '../core/registry/items.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, KEYSTONE_WORDS, borrowLine, checkExample, crystalLines, crystalRows, deathLine, defenceLines, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, KEYSTONE_WORDS, borrowLine, checkExample, crystalLines, crystalRows, deathLine, defenceLines, gatePayLines, guildLines, guildStandingRows, guildSummaryRows, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, penetrationLine, pointsLine, saleLine, saleRows, dailyPointsLine, shadowLines, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { GUILD_TABLE_PERKS, guildDisplayName, guildSheetLine } from '../core/hunter/guild.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
@@ -134,7 +134,7 @@ export function register(app) {
       { id: 'armor', title: 'Armor and Resist', body: [ul([
         ...defenceLines(R).map(esc),
         `Before that reduction, ${Math.round(F.armorFlat * 100)}% of your defense subtracts directly from each hit, so small hits lose more than large ones.`,
-        `<b>Penetration</b> reduces defense first. Armor penetration lowers armor and magic penetration lowers resist by a percentage. Control gives up to ${F.penCap}% of both, and items and perks can raise the total up to ${F.penMax}%. Next, <b>Lethality</b> ignores a flat amount of armor and <b>Unravel</b> ignores a flat amount of resist.`,
+        esc(penetrationLine(R)),
         `Most defense comes from gear. A full six-piece set of light gear weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}). Medium weighs ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), and heavy weighs ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Higher-rarity gear has the same base armor and resist as common gear, but can have more bonuses and costs more. Carrying more than half your limit slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
       ] },
       { id: 'leveling', title: 'Leveling and points', body: [
@@ -194,10 +194,7 @@ export function register(app) {
           '<b>Passive</b> skills grant their bonus permanently.', 'Skill levels run from 1 to 10. Level 10 shows MAX. Raise skill levels from the Skills panel.']),
       ] },
       { id: 'shadows', title: 'Shadows', body: [
-        ul([`Only a Necromancer (${R.extractJobs.map(esc).join(', ')}) can extract shadows from defeated monsters.`,
-          `Extraction rolls d20 + Presence check bonus against DC ${R.shadow.dcBase} + ${R.shadow.dcPerRank} × (monster rank − hunter rank) + ${R.shadow.bossDc} for a boss (minimum 5). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${R.shadow.maxAttempts} attempts per corpse.`,
-          'On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster\'s rank and archetype. Its grade sets its monster kind: Normal is normal, Elite and Knight are elite, and Commander and Marshal are boss.',
-          `Army capacity = floor(${F.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${esc(r)} ${esc(R.shadow.summonMp[r])}`).join(', ')}. Unsummoning is free. Clearing a gate heals resting shadows to full HP.`]),
+        ul(shadowLines(R).map(esc)),
       ] },
       { id: 'gates', title: 'Gates', body: [
         table(['Type', 'Notes'], [['Normal', 'A standard dungeon. You may leave at any time.'],

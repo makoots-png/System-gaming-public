@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, defenceLines, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, defenceLines, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, penetrationLine, pointsLine, saleLine, saleRows, shadowLines, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { SHEET_LABELS } from '../src/core/hunter/derive.ts';
+import { extractAttemptsMax } from '../src/core/combat/extraction.ts';
+import { SHADOW_KINDS } from '../src/core/combat/rows.ts';
+import { extractDc } from '../src/core/hunter/shadows.ts';
+import { BONUS_LABELS, canExtract } from '../src/core/rules.ts';
 import { keystoneDiff, keystoneReach, nearestKeystone } from '../src/core/hunter/keystones.ts';
 import { keystoneSwitched } from '../src/core/hunter/build.ts';
 import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
@@ -115,6 +120,72 @@ describe('the defence lines (rule 12)', () => {
     expect(lines[0]).toContain(`${armorCutPct(RULES, RULES.fight.kits.heavy.armor)}%`);
     expect(lines[1]).toContain('Damaging status effects also meet your Armor or Resist each round (with no penetration), unless the status deals true damage.');
     expect(afterDefence(100, 'true', { armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0 }, { armor: 100, resist: 100 }, RULES)).toBe(100);
+  });
+
+  test('penetrationLine uses the sheet and bonus flat-penetration labels and follows penCap and penMax overrides', () => {
+    const line = penetrationLine(RULES);
+    expect(line).toContain(`${RULES.fight.penCap}%`);
+    expect(line).toContain(`${RULES.fight.penMax}%`);
+    expect(line).toContain(SHEET_LABELS.armorPenFlat);
+    expect(line).toContain(SHEET_LABELS.resistPenFlat);
+    expect(line).toContain(BONUS_LABELS.armorPenFlat);
+    expect(line).toContain(BONUS_LABELS.resistPenFlat);
+    expect(line).not.toMatch(/\b(Lethality|Unravel)\b/);
+    const custom = penetrationLine({ fight: { ...RULES.fight, penCap: 35, penMax: 55 } });
+    expect(custom).toContain('up to 35%');
+    expect(custom).toContain('up to 55%');
+  });
+});
+
+describe('the shadow lines', () => {
+  test('state who can extract without stuttering and follow extractJobs overrides as canExtract does', () => {
+    const [who] = shadowLines(RULES);
+    expect(who).toBe('Only a Necromancer can extract shadows from defeated monsters.');
+    expect(canExtract(RULES, 'Necromancer')).toBe(true);
+    expect(canExtract(RULES, 'Fighter')).toBe(false);
+
+    const two = { ...RULES, extractJobs: ['Necromancer', 'Reaper'] };
+    expect(shadowLines(two)[0]).toBe('Only Necromancer and Reaper hunters can extract shadows from defeated monsters.');
+    expect(canExtract(two, 'Reaper')).toBe(true);
+
+    const none = { ...RULES, extractJobs: [] };
+    expect(shadowLines(none)[0]).toBe('No job can extract shadows from defeated monsters under current rules.');
+    expect(canExtract(none, 'Necromancer')).toBe(false);
+  });
+
+  test('state extraction DC, minimum DC, base attempts, and awakened Necromancer bonus attempts from the live rules', () => {
+    const dcLine = shadowLines(RULES)[1]!;
+    expect(dcLine).toContain(`DC ${RULES.shadow.dcBase} + ${RULES.shadow.dcPerRank}`);
+    expect(dcLine).toContain(`+ ${RULES.shadow.bossDc} for a boss (minimum ${RULES.shadow.dcMin})`);
+    expect(extractDc('S', 'E', 'normal', RULES.shadow)).toBe(RULES.shadow.dcMin);
+    expect(dcLine).toContain(`up to ${RULES.shadow.maxAttempts} attempts per corpse.`);
+    const awakenedTotal = extractAttemptsMax(RULES.shadow, RULES.shadow.classAttempts);
+    expect(dcLine).toContain(`An awakened Necromancer gets ${RULES.shadow.classAttempts} extra attempt per corpse (${awakenedTotal} total).`);
+
+    const custom = shadowLines({ ...RULES, shadow: { ...RULES.shadow, dcMin: 7, maxAttempts: 1, classAttempts: 2 } })[1]!;
+    expect(custom).toContain('(minimum 7)');
+    expect(custom).toContain('up to 1 attempt per corpse.');
+    expect(custom).toContain('gets 2 extra attempts per corpse (3 total).');
+
+    const noBonus = shadowLines({ ...RULES, shadow: { ...RULES.shadow, classAttempts: 0 } })[1]!;
+    expect(noBonus).not.toContain('awakened Necromancer');
+  });
+
+  test('state the GM roll adjustment range from shadow.adjustMax, and drop the line when it is 0', () => {
+    expect(shadowLines(RULES).at(-1)).toContain(`−${RULES.shadow.adjustMax} to +${RULES.shadow.adjustMax}`);
+    const off = { ...RULES, shadow: { ...RULES.shadow, adjustMax: 0 } };
+    expect(shadowLines(off).some(l => l.includes('roll adjustment'))).toBe(false);
+  });
+
+  test('name every shadow grade in SHADOW_KINDS with its monster kind, and state army capacity and summon costs', () => {
+    const [, , gradesLine, armyLine] = shadowLines(RULES);
+    for (const grade of Object.keys(SHADOW_KINDS)) expect(gradesLine).toContain(grade);
+    expect(gradesLine).toContain('Normal uses normal monster stats.');
+    expect(gradesLine).toContain('Elite, Knight, and Elite Knight use elite monster stats.');
+    expect(gradesLine).toContain('Commander and Marshal use boss monster stats.');
+    expect(armyLine).toContain(`floor(${RULES.fight.shadowPerEff} × Presence's effective points)`);
+    expect(armyLine).toContain(`E ${RULES.shadow.summonMp.E}`);
+    expect(armyLine).toContain(`S ${RULES.shadow.summonMp.S}`);
   });
 });
 

@@ -367,6 +367,7 @@ const SPEC = {
   shadow: {
     maxAttempts: whole(3, 1, 20, 'shadow extraction attempts allowed per corpse. Must be at least 1'),
     classAttempts: whole(1, 0, 5, 'extra shadow extraction attempts per corpse while awakened Necromancer is active, from 0 to 5'),
+    adjustMax: whole(10, 0, 20, 'maximum positive or negative GM roll adjustment on extraction and Arise rolls, from 0 to 20'),
     dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'extra extraction DC per rank the monster is above the hunter, from 0 to 20'),
     bossDc: whole(5, 0, 50, 'extra extraction DC for boss monsters, from 0 to 50'), dcMin: of(5, DC),
     // Scaled to the real mana curve (manaBase 10 + capped(pow, 30)): a 2:1 Necromancer holds 12 (E) to 26 (S) mana,

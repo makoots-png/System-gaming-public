@@ -88,6 +88,8 @@ export type Card = {
   readonly fudgeOwn: number;
   /** The face this row's next d20 roll is forced to, or null. */
   readonly forced: ForcedFace | null;
+  /** The GM's visible adjustment for the next extraction or Arise roll on this monster corpse (0 when none or non-monster). */
+  readonly rollAdjust: number;
 };
 
 /** Whether the GM has any weight or forced roll on in `f` (the gold dot on the Fight tools). A fight with no fudge field has none. */
@@ -119,6 +121,7 @@ export function cardOf(f: Fight, row: Body, R: OpRules & KindRules): Card {
     fudge: f.phase === 'ended' ? 0 : fudgeOf(f.fudge, row),
     fudgeOwn: f.phase === 'ended' ? 0 : f.fudge.rows[row.id] ?? 0,
     forced: f.phase === 'ended' ? null : f.fudge.forced[row.id] ?? null,
+    rollAdjust: row.kind === 'monster' ? (row.adjust ?? 0) : 0,
   };
 }
 

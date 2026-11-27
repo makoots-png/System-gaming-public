@@ -315,7 +315,8 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   if (fight.phase === 'ended') {
     const fallen = fight.rows.filter(r => r.kind === 'monster' && !isUp(r)).map(r => r.id);
     const corpse = (): CombatantId => (fallen.length ? g.pick(fallen) : anyId());
-    return g.chance(fallen.length ? 0.3 : 0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
+    const rolls = [{ natural: 5, bonus: 0, dc: 15 }, { natural: 1, bonus: 0, dc: 15 }, { natural: 20, bonus: 0, dc: 15 }] as const;
+    return g.chance(fallen.length ? 0.3 : 0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), roll: rolls[fight.log.length % rolls.length]! }]);
   }
   if (fight.phase === 'setup') {
     const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'revive', 'status', 'ground', 'fudge'] as const);

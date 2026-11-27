@@ -2348,7 +2348,9 @@ describe('surprise (kits design 8.7.5)', () => {
 
 describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
   const MAX = RULES.shadow.maxAttempts;
-  const extract = (who: string, outcome: 'failed' | 'crumbled' | 'risen', by = 'A'): Command => ({ type: 'extract', id: id(who), by: id(by), outcome });
+  const ROLLS = { failed: { natural: 5, bonus: 2, dc: 15 }, crumbled: { natural: 1, bonus: 10, dc: 10 }, risen: { natural: 12, bonus: 3, dc: 15 } } as const;
+  const extract = (who: string, outcome: 'failed' | 'crumbled' | 'risen', by = 'A', adjust?: number): Command =>
+    ({ type: 'extract', id: id(who), by: id(by), roll: ROLLS[outcome], ...(adjust !== undefined ? { adjust } : {}) });
   /** A against two monsters; M falls to the 999 hit, N stands, so the fight goes on. */
   const fallen = () => [add(row('A', 'party'), row('M', 'foe'), row('N', 'foe')), start(['A', 20], ['M', 10], ['N', 5]), hit('A', 'M', BIG)] as const;
 
@@ -2371,7 +2373,7 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
   test('each failed attempt is kept on the corpse\'s row with a log line, and the stored fight read back keeps it, so a reload gives no try back', () => {
     const r = play(...fallen(), extract('M', 'failed'));
     expect(body(r.fight, 'M').extraction).toEqual({ at: 'open', tried: 1 });
-    expect(r.fight!.log[0]!.text).toContain(`The extraction of M fails (${MAX - 1} left).`);
+    expect(r.fight!.log[0]!.text).toContain(`The extraction of M fails (rolled 5 + 2 = 7 vs DC 15, ${MAX - 1} left).`);
     expect(running(r).now, 'no time passes').toBe(running(play(...fallen())).now);
     const read = parseFight(JSON.parse(JSON.stringify(r.fight)), RULES);
     expect(body(read, 'M').extraction).toEqual({ at: 'open', tried: 1 });
@@ -2389,12 +2391,43 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     refuses(f0, extract('N', 'failed'), 'notNow');
     refuses(f0, extract('A', 'failed'), 'notMonster');
     refuses(f0, extract('ghost', 'failed'), 'unknown');
+    refuses(f0, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 21, bonus: 0, dc: 10 } }, 'needsRoll');
+    refuses(f0, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 0, dc: 10 }, adjust: RULES.shadow.adjustMax + 1 }, 'adjustValue');
   });
 
   test('after the fight ends its corpses may still be tried, until the fight is closed', () => {
     expect(play(...fallen(), { type: 'end' }).fight!.phase).toBe('ended');
     expect(body(play(...fallen(), { type: 'end' }, extract('M', 'risen')).fight, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
     refuses(null, extract('M', 'failed'), 'notNow');
+  });
+
+  test('adjustRoll sets per-corpse GM adjustment across setup, running, and ended; extract consumes and clears it and logs the modifier', () => {
+    // Setup accepts adjustRoll on monsters, refuses hunters, unknown rows, and out-of-range/non-integer values
+    const s0 = play(add(row('A', 'party'), row('M', 'foe'))).fight!;
+    refuses(s0, { type: 'adjustRoll', id: id('A'), n: 2 }, 'notMonster');
+    refuses(s0, { type: 'adjustRoll', id: id('ghost'), n: 2 }, 'unknown');
+    refuses(s0, { type: 'adjustRoll', id: id('M'), n: RULES.shadow.adjustMax + 1 }, 'adjustValue');
+    refuses(s0, { type: 'adjustRoll', id: id('M'), n: 1.5 }, 'adjustValue');
+    const s1 = play(add(row('A', 'party'), row('M', 'foe')), { type: 'adjustRoll', id: id('M'), n: 4 }).fight!;
+    expect(body(s1, 'M').adjust).toBe(4);
+    expect(reduce(s1, { type: 'adjustRoll', id: id('M'), n: 4 }, ctx).fight, 'setting same value is a no-op').toBe(s1);
+    expect(body(reduce(s1, { type: 'adjustRoll', id: id('M'), n: 0 }, ctx).fight, 'M').adjust, 'setting 0 clears field').toBeUndefined();
+
+    // Standing +2 turns 9 + 4 = 13 vs DC 15 into 9 + 4 + 2 = 15 (risen), logs + 2 GM, and clears adjust
+    const f1 = play(...fallen(), { type: 'adjustRoll', id: id('M'), n: 2 }).fight!;
+    expect(body(f1, 'M').adjust).toBe(2);
+    const f2 = reduce(f1, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 9, bonus: 4, dc: 15 } }, ctx).fight!;
+    expect(body(f2, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
+    expect(body(f2, 'M').adjust).toBeUndefined();
+    expect(f2.log[0]!.text).toContain('M rises as a shadow (rolled 9 + 4 + 2 GM = 15 vs DC 15).');
+
+    // Modal override adjust in ended fight overrides standing adjust and clears corpse.adjust on fail too
+    const e0 = play(...fallen(), { type: 'end' }, { type: 'adjustRoll', id: id('M'), n: 5 }).fight!;
+    expect(body(e0, 'M').adjust).toBe(5);
+    const e1 = reduce(e0, { type: 'extract', id: id('M'), by: id('A'), roll: { natural: 10, bonus: 5, dc: 15 }, adjust: -2 }, ctx).fight!;
+    expect(body(e1, 'M').extraction).toEqual({ at: 'open', tried: 1 });
+    expect(body(e1, 'M').adjust).toBeUndefined();
+    expect(e1.log[0]!.text).toContain(`The extraction of M fails (rolled 10 + 5 - 2 GM = 13 vs DC 15, ${MAX - 1} left).`);
   });
 });
 
@@ -2505,9 +2538,9 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
 describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
   const ALL: Record<CommandType, true> = {
     add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
-    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, mythic: true, dodge: true, end: true, clear: true,
+    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, adjustRoll: true, fudge: true, mythic: true, dodge: true, end: true, clear: true,
   };
-  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'fudge', 'end', 'clear'];
+  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'adjustRoll', 'fudge', 'end', 'clear'];
   const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start' && t !== 'dodge');
   const CHARGE = ability('blast', 'charge', '10 * (1 + charge)', { channel: { growth: 'linear', max: 5 }, range: tiles(20) });
   const owing = play(add(row('A', 'party', { abilities: [HIT, CHARGE], statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]),
@@ -2525,7 +2558,7 @@ describe('the fight\'s table: every state under every command (SMX-rules-3)', ()
     // rules-3.2: a turn is neither taken nor ended (act, move, endTurn) while dice are owed
     ['running, owing', owing, RUNNING.filter(t => t !== 'act' && t !== 'move' && t !== 'endTurn')],
     ['running, dodging', dodging, ['dodge', 'end', 'clear']],
-    ['ended', play(...duel(), { type: 'end' }).fight, ['extract', 'clear']],
+    ['ended', play(...duel(), { type: 'end' }).fight, ['extract', 'adjustRoll', 'clear']],
   ];
 
   test('each state takes the commands of its row and refuses the rest', () => {

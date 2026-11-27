@@ -4,7 +4,7 @@ import { parseOverrides, refusalWords } from '../../src/core/overrides.ts';
 import { restRefusalWords } from '../../src/core/hunter/rests.ts';
 import { RAISE_TITLE } from '../../src/core/hunter/revive-standing.ts';
 import { DIED_WORDS } from '../../src/core/hunter/vitals.ts';
-import { deathLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
+import { deathLine, naturalLines, penetrationLine, pointsLine, shadowLines, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
 import { test, expect, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList, adhoc, addLibraryItem } from './helpers.ts';
 
 const lifeWord = (p: Page) => p.locator('#view-status [data-death] [data-life]');
@@ -679,6 +679,13 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
   await expect(p.locator('#view-rules')).not.toContainText('Unconscious');
   await test.step('the Gates section tells solo runs and the personal gates, the first of them the even one', async () => {
     for (const line of soloLines(RULES)) await expect(p.locator('#rr-gates')).toContainText(line);
+  });
+  await test.step('the Armor and Shadows sections agree with the live labels and extraction rules', async () => {
+    await expect(p.locator('#rr-armor')).toContainText(penetrationLine(RULES));
+    await expect(p.locator('#rr-armor')).not.toContainText('Lethality');
+    await expect(p.locator('#rr-armor')).not.toContainText('Unravel');
+    for (const line of shadowLines(RULES)) await expect(p.locator('#rr-shadows')).toContainText(line);
+    await expect(p.locator('#rr-shadows')).not.toContainText('Necromancer (Necromancer)');
   });
 });
 

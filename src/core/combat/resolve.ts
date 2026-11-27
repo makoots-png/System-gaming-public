@@ -62,6 +62,8 @@ export type Rolls = {
 export type Needs = {
   readonly dice: Readonly<Record<CombatantId, readonly Dice[]>>; readonly react: readonly CombatantId[]; readonly refund: boolean;
   readonly second?: readonly CombatantId[]; readonly boost?: readonly { readonly id: HeldDieId; readonly sides: number }[];
+  /** Set when the use raises a corpse (`a.raise`): exempts the corpse's trailing d20 from hidden fight fudge (`fudge.ts`). */
+  readonly raise?: true;
 };
 /** Why a use was refused: rules 3 to 4's refusals (`ChargeRefusal`, charge.ts), and those of the rules here. */
 export type UseRefusal = ChargeRefusal | 'taunted' | 'range' | 'noTarget' | 'needsRoll'
@@ -431,6 +433,7 @@ function asked(a: Ability, f: Field, now: Tick, R: KindRules): Needs {
     react: reacting.map(b => b.id),
     refund: refundRolls(user, now),
     ...(second.length ? { second } : {}), ...(boost.length ? { boost } : {}),
+    ...(a.raise ? { raise: true as const } : {}),
   };
 }
 

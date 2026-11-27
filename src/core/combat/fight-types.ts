@@ -11,7 +11,7 @@ import type { FightId, SheetKey } from '../ids.ts';
 import type { Body, Channel, Due, ShadowId, SheetStatus, Source, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Aim, UseRefusal as UseRefusal, Rolls } from './resolve.ts';
 import type { Zone, ZoneId } from './zones.ts';
-import type { ExtractionOutcome } from './extraction.ts';
+import type { ExtractRoll } from './roll-adjust.ts';
 import type { Answer, MythicRefusal } from './mythic.ts';
 import type { AnswerOutcome, OmenKey } from './mythic-types.ts';
 
@@ -214,11 +214,16 @@ export type Command =
    */
   | { readonly type: 'arm'; readonly by: CombatantId; readonly ability: AbilityId | null; readonly on?: CombatantId }
   /**
-   * An attempt to extract a shadow from fallen monster `id` came to `outcome` (extraction.ts): kept on its row. No time
-   * passes; it may come after the fight ended, while its rows are the summary's record. `by`: the hunter row of the fight
-   * that extracts (its hunter's job and rank are the view's to judge, `canExtract`, `extractDc`).
+   * An attempt to extract a shadow from fallen monster `id` with `roll` (and optional GM `adjust` overriding `corpse.adjust`):
+   * the reducer computes the outcome (roll-adjust.ts `extractionCheck`), records it on the row, clears `corpse.adjust`,
+   * and logs the full roll breakdown. No time passes; it may come after the fight ended, while its rows are the summary's record.
    */
-  | { readonly type: 'extract'; readonly id: CombatantId; readonly by: CombatantId; readonly outcome: ExtractionOutcome }
+  | { readonly type: 'extract'; readonly id: CombatantId; readonly by: CombatantId; readonly roll: ExtractRoll; readonly adjust?: number }
+  /**
+   * The GM sets the visible signed adjustment (`±RULES.shadow.adjustMax`) for the next extraction or Arise roll on
+   * monster `id`. It sets, never adds, and 0 clears it. No time passes and nothing is logged until a roll consumes it.
+   */
+  | { readonly type: 'adjustRoll'; readonly id: CombatantId; readonly n: number }
   /**
    * The GM sets the fight's hidden weight (`Fudge`): a side's or a row's to `n` faces, or a row's forced next roll. It
    * sets, never adds. No time passes and nothing is logged.
@@ -264,6 +269,8 @@ export type Refusal = UseRefusal
   | 'lifeCannot'
   /** A `fudge` whose weight is not a whole number, or whose forced face is not 1 or 20. */
   | 'fudgeValue'
+  /** An `adjustRoll` or `extract` adjustment that is not a whole number within `±RULES.shadow.adjustMax`. */
+  | 'adjustValue'
   /** A mythic's machine refused the event (mythic.ts `MythicRefusal`): no omen to drop, one standing, its last phase. */
   | MythicRefusal
   /** A `mythic` command on a row that plays no script. */
