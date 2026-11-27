@@ -16,7 +16,7 @@ Every number in this file comes from one of three places, and the script keeps t
    they last (`items.md`, section 2), a crystal costs ten Clears (after a free first revive and one revive on debt),
    and a gate's gold is shared.
 2. **Assumptions about the world.** The object `WORLD` in the script holds them, each with a comment that gives
-   its reason. Examples are the number of gates a month in Carrow, the share of hunters who carry a crystal, and
+   its reason. Examples are the number of gates a month in San Francisco, the share of hunters who carry a crystal, and
    the chance of dying in a gate.
 3. **Derived numbers.** Everything else is computed from the first two. The script derives the head-counts, the
    gold created and destroyed each month, insurance premiums and every price table.
@@ -34,48 +34,48 @@ Every number in this file comes from one of three places, and the script keeps t
 - **Premiums follow from death rates.** Crystal cover and break cover are the expected loss plus the insurer's
   margin.
 
-### Who is in Carrow
+### Who is in San Francisco
 
 <!-- prices:model-people -->
 | Who | How many | How the number is found |
 |---|---|---|
-| Hunters in Carrow | 12,000 | one person in 500 |
-| Seats in world gates a month | 12,000 | 3,000 gates, four seats each |
-| Guild members | 1,600 | the four raiding guilds of `factions.md` |
-| Liners (a guild's first teams) | 1,500 | the guilds' half of the seats, at 4 gates a month each |
-| Guild members on the bench | 100 | members less liners |
-| Unsigned hunters with a public gate a month | 4,533 | what the public seats allow, after the rest take one gate in four months |
-| Unsigned hunters with one gate in four months | 5,867 | the rest |
-| Gate keys dropped a month | 15 | one cleared gate in 200; each opens one personal gate |
-| Reclaimers | 8,730 | a quarter of the harvest, at a reclaimer's wage |
-| Full-time runners | 1,874 | the 20% markup on Residents' Shop medicine, at an unskilled month's wage |
-| Regular hunters who die for good in a year | 46 (0.8% of regulars) | red-gate wipes, lost bodies, and 3rd+ deaths without a crystal |
-| All hunters who die for good in a year | 56 (10 occasional) | regulars plus occasional hunters |
-| Breaks a year | 36 | 0.1% of world gates |
+| Hunters in San Francisco | 1,600 | one person in 500 |
+| Seats in world gates a month | 1,600 | 400 gates, four seats each |
+| Guild members | 213 | the four raiding guilds of `factions.md` |
+| Liners (a guild's first teams) | 200 | the guilds' half of the seats, at 4 gates a month each |
+| Guild members on the bench | 13 | members less liners |
+| Unsigned hunters with a public gate a month | 604 | what the public seats allow, after the rest take one gate in four months |
+| Unsigned hunters with one gate in four months | 783 | the rest |
+| Gate keys dropped a month | 2 | one cleared gate in 200; each opens one personal gate |
+| Reclaimers | 1,164 | a quarter of the harvest, at a reclaimer's wage |
+| Full-time runners | 250 | the 20% markup on Residents' Shop medicine, at an unskilled month's wage |
+| Regular hunters who die for good in a year | 6 (0.8% of regulars) | red-gate wipes, lost bodies, and 3rd+ deaths without a crystal |
+| All hunters who die for good in a year | 8 (1 occasional) | regulars plus occasional hunters |
+| Breaks a year | 4.8 | 0.1% of world gates |
 <!-- /prices:model-people -->
 
-Two rows matter at the table. About 6,000 of 12,000 hunters have a regular seat in world gates: 1,500 in guilds at
-four gates a month and 4,500 unsigned at one. The other 6,000 get one gate in four months and live on other jobs.
+Two rows matter at the table. About 800 of 1,600 hunters have a regular seat in world gates: 200 in guilds at
+four gates a month and 600 unsigned at one. The other 800 get one gate in four months and live on other jobs.
 
 ### Gold created and destroyed each month
 
 <!-- prices:model-flows -->
-| Gold a month in Carrow | Gold | Share |
+| Gold a month in San Francisco | Gold | Share |
 |---|---|---|
-| Minted: world gates | 14.0 million | 100% of the mint |
+| Minted: world gates | 1.9 million | 100% of the mint |
 | Minted: personal gates (from keys) | 0.0 million | 0% of the mint |
-| Destroyed: hunters' staples, tonics, food catalysts and escape stones | 2.2 million | 15% of the mint |
-| Destroyed: hunters' gear, bought new or as catalysts | 1.8 million | 13% of the mint |
-| Destroyed: enhancement stones (Shop and catalysts) | 0.7 million | 5% of the mint |
-| Destroyed: seeds and skill books (Shop and catalysts) | 1.5 million | 11% of the mint |
-| Destroyed: debt revives and pre-bought crystals used | 0.1 million | 0% of the mint |
-| Destroyed: Residents' medicine through runners (ER, homes, trauma, Elixirs) | 2.8 million | 20% of the mint |
-| Left in circulation | 4.9 million | 35% of the mint |
-| All income in the city | 2000.0 million | for scale: the mint is 0.7% of it |
-| The harvest (crystal and carcass) | 21.0 million | 24% of the city's power bill |
-| Gold accumulated in Carrow over 20 years | 825 million | 8.6% of notes and deposits |
-| Gold needed for the 3% Tide alone | 2.1 million | the rest (4.2%/yr) rebuilds thin bank reserves and adds mild inflation |
-| Notes and deposits, with the gold | 10 billion | a year's income changes hands 2.5 times |
+| Destroyed: hunters' staples, tonics, food catalysts and escape stones | 0.3 million | 15% of the mint |
+| Destroyed: hunters' gear, bought new or as catalysts | 0.2 million | 13% of the mint |
+| Destroyed: enhancement stones (Shop and catalysts) | 0.1 million | 5% of the mint |
+| Destroyed: seeds and skill books (Shop and catalysts) | 0.2 million | 11% of the mint |
+| Destroyed: debt revives and pre-bought crystals used | 0.0 million | 0% of the mint |
+| Destroyed: Residents' medicine through runners (ER, homes, trauma, Elixirs) | 0.4 million | 20% of the mint |
+| Left in circulation | 0.7 million | 35% of the mint |
+| All income in the city | 266.7 million | for scale: the mint is 0.7% of it |
+| The harvest (crystal and carcass) | 2.8 million | 24% of the city's power bill |
+| Gold accumulated in San Francisco over 20 years | 110 million | 8.6% of notes and deposits |
+| Gold needed for the 3% Tide alone | 0.3 million | the rest (4.2%/yr) rebuilds thin bank reserves and adds mild inflation |
+| Notes and deposits, with the gold | 1 billion | a year's income changes hands 2.5 times |
 <!-- /prices:model-flows -->
 
 World gates create nearly all the gold, apart from the few personal gates that keys open. The Shop destroys about
@@ -86,7 +86,7 @@ Potions (a quarter of 0.25 visits per person a year), one household Health Potio
 Greater Health Potions for severe trauma (0.5% of people a year), and Elixirs of Life for a third of critical
 illnesses (0.5% of people a year). Bank gold reserves are not assumed at steady state either: integrating twenty
 years of net minting (with lower clearing during the Break Years and 3% annual Tide growth since Year 5) puts
-Carrow's accumulated gold stock at about 825 million, or 8.6% of notes and deposits. Because the gold supply is only
+San Francisco's accumulated gold stock at about 110 million, or 8.6% of notes and deposits. Because the gold supply is only
 twenty years old, net minting grows that stock faster than the 3% Tide; the extra 4.2% a year goes into bank reserves and into mild price inflation.
 
 ### What moves the wage
@@ -120,17 +120,17 @@ does not hold.
 |---|---|---|---|
 | The anchor: the owner's rule for an E-rank | 418 gold a month against a labourer's 300 | an E-rank with a regular seat nets 1.1 to 1.6 times a labourer's month for four gates: "only a bit richer than a day laborer despite not having to work as often" (the owner, Nov 20) | yes |
 | Shop sinks leave healthy growth | 35% of the mint left | bottom-up hunter and Resident sinks leave 15% to 40% of minted gold in circulation, with no fitted GDP share | yes |
-| Twenty-year gold stock is sound | 825M gold (8.6% reserve, +4.2%/yr above Tide) | gold is money: 20 years of net minting is 5% to 40% of notes and deposits (under 5% a bank run empties the vaults, over 40% no bank is needed), and it grows under 5% a year faster than the Tide | yes |
-| Guild seats | 1,500 liners of 1,600 members | the guilds' seats give at least a third and at most all of the members a liner's gates | yes |
-| Public seats | 4,533 of 10,400 unsigned | the public seats are neither oversubscribed nor left empty | yes |
+| Twenty-year gold stock is sound | 110M gold (8.6% reserve, +4.2%/yr above Tide) | gold is money: 20 years of net minting is 5% to 40% of notes and deposits (under 5% a bank run empties the vaults, over 40% no bank is needed), and it grows under 5% a year faster than the Tide | yes |
+| Guild seats | 200 liners of 213 members | the guilds' seats give at least a third and at most all of the members a liner's gates | yes |
+| Public seats | 604 of 1,387 unsigned | the public seats are neither oversubscribed nor left empty | yes |
 | Signing pays | 5.3, 5.5, 5.7, 5.7, 5.7, 5.8 | a liner nets more than a freelancer at every rank, or nobody signs | yes |
 | A guild survives | 0.82 Clears a gate (same at every rank) | a guild keeps something from a gate, and under two Clears, or a rival bids rights up | yes |
 | A mercenary's day | 2.4, 2.6, 2.8, 2.9, 2.9 | from E to A, a day rate is 1 to 3 times a liner's net working day | yes |
 | Retired scouts do not out-earn liners | 1,200 against 4,394 net | a retired C-rank scout earns less than an active C-rank liner nets | yes |
-| Regular hunters die | 0.8% a year (46 of 6,033) | between 0.5% and 3% of regular hunters die for good in a year, matching numerator and denominator | yes |
+| Regular hunters die | 0.8% a year (6 of 804) | between 0.5% and 3% of regular hunters die for good in a year, matching numerator and denominator | yes |
 | The harvest powers the city | 24% of the power bill | fuel is 5% to 40% of what the city pays for power | yes |
-| Boss cores leave Helix its share | 124 of 285 B/A/S cores (4.1% of all gates) | high-tier crafted gear uses fewer cores than B/A/S gates supply and under 10% of Carrow's total cores | yes |
-| Reclaimers can live | 8,730 crew | the quarter of the harvest pays at least a few hundred reclaimers a reclaimer's wage | yes |
+| Boss cores leave Helix its share | 17 of 38 B/A/S cores (4.1% of all gates) | high-tier crafted gear uses fewer cores than B/A/S gates supply and under 10% of San Francisco's total cores | yes |
+| Reclaimers can live | 1,164 crew | the quarter of the harvest pays at least a few hundred reclaimers a reclaimer's wage | yes |
 | Fines deter: unlicensed entry | 1.0 Clears expected | the law table's fine times the catch chance is at least the Clear gained | yes |
 | Fines deter: under-declared gold | 1.2 times the levy | the law table's fine multiple times the catch chance exceeds the levy dodged | yes |
 | Table party pace | 1.2 to 1.6 sessions per item; 3.0 to 4.0 per pooled crystal | at every rank, an own-rank item takes 0.5 to 2 sessions and a 4-way pooled crystal takes 2 to 6 sessions | yes |
@@ -159,8 +159,8 @@ than a day labourer despite working less often. Two conditions fix the wage at 1
   days of work that can kill them. At a wage of 30 the same E-rank would earn half of a labourer's month, which
   breaks the rule. At a wage of 5 the E-rank would be rich.
 - **The supply of gold.** For gold to be everyone's money, the gold that gates have created must be a sound
-  reserve for the city's notes and deposits. At a wage of 12, twenty years of gates have left 825 million gold in
-  Carrow, which is 8.6% of the city's money. At a wage of 30 the same gold would be 1.4%, too little to stand
+  reserve for the city's notes and deposits. At a wage of 12, twenty years of gates have left 110 million gold in
+  San Francisco, which is 8.6% of the city's money. At a wage of 30 the same gold would be 1.4%, too little to stand
   behind a currency.
 
 The higher ranks follow from the game's ladder, where each rank's Clear is about 3.5 times the one below. A guild
@@ -187,7 +187,7 @@ When a party clears a gate, the System puts gold in each hunter's Inventory. A h
 coin weighs 8 grams and is identical to every other, and a hunter's window shows at once whether a coin is real. No
 state or forger can make one, so nobody can add to the supply except by clearing gates.
 
-By Year 8 every state had pegged its currency to gold or stopped issuing it. In Carrow's country the Ledger Act of
+By Year 8 every state had pegged its currency to gold or stopped issuing it. In San Francisco's country the Ledger Act of
 Year 17 made gold the legal unit of account. National banknotes still circulate as receipts for gold held in a bank.
 
 The world's money supply therefore works like a game economy's:
@@ -424,17 +424,17 @@ carry the risk of the wait.
 | S | 2 | 300,000 | 75,000 | 7,500 | 450,000 | 112,500 | 90,000 | 247,500 | 148,500 | 675,000 |
 <!-- /prices:gates -->
 
-Carrow has 6 million people, 12,000 hunters and 3,000 world gates a month:
+San Francisco has 800,000 people, 1,600 hunters and 400 world gates a month:
 
 <!-- prices:gate-count -->
-| Rank | Hunters in Carrow | World gates a month | Seats a month (parties of 4) | Seats a hunter of the rank a month |
+| Rank | Hunters in San Francisco | World gates a month | Seats a month (parties of 4) | Seats a hunter of the rank a month |
 |---|---|---|---|---|
-| E | 4,800 | 1,400 | 5,400 | 1.13 |
-| D | 4,000 | 900 | 3,600 | 0.91 |
-| C | 2,200 | 470 | 1,900 | 0.86 |
-| B | 840 | 210 | 840 | 1.00 |
-| A | 240 | 75 | 300 | 1.25 |
-| S | 1.2 | 0.15 | 0.60 | 0.50 |
+| E | 640 | 180 | 720 | 1.13 |
+| D | 530 | 120 | 480 | 0.91 |
+| C | 290 | 62 | 250 | 0.86 |
+| B | 110 | 28 | 110 | 1.00 |
+| A | 32 | 10 | 40 | 1.25 |
+| S | 0.2 | 0.02 | 0.08 | 0.50 |
 <!-- /prices:gate-count -->
 
 If seats were shared equally, a hunter would get a seat in a gate of their own rank about once in two months.
@@ -457,13 +457,13 @@ rank at assay. The rest of a harvest is wall crystal and carcass.
 | S | 75,000 | 67,500 | 63,750 | 52,500 | 18,750 | 17,000 |
 <!-- /prices:crystal-trade -->
 
-Helix Manaworks buys nine tenths of Carrow's crystal and burns it in the reactors that power the city. The Bureau's
+Helix Manaworks buys nine tenths of San Francisco's crystal and burns it in the reactors that power the city. The Bureau's
 exchange on Ledger Row pays a little less, pays at once, and asks for no paperwork. A fence pays less than the
 exchange and asks no questions. The Shop pays a quarter, so nobody sells crystal to the Shop.
 
 The city burns its whole harvest. Fuel is 18% of what the city pays for power, and the rest pays for the grid,
 the reactors and Helix's profit. The last column of the table follows from that: it is the number of households
-in Carrow divided by the gold value of a month's harvest.
+in San Francisco divided by the gold value of a month's harvest.
 
 ## 10. Mercenaries
 
@@ -702,7 +702,7 @@ The next table describes the life a signed liner can afford. A capped liner keep
 | C | 11 | More than a surgeon earns. A flat in Ledger Row, private school for the children. A full rare set costs three months' net. |
 | B | 43 | A flat in the Crown, household staff and an agent. The model transfer fee for a B-rank is 100,000 gold, so the guild pays attention to which other guilds the hunter talks to. |
 | A | 160 | Three months' net buys a family flat in the Crown. Sponsorship (`fame.md`, section 5) often pays as much as hunting. The state tracks where each A-rank lives. |
-| S | 630 (when S gates exist) | Carrow gets fewer than two S gates a year, so an S-rank's regular clears are A gates (about 780,000 a year), topped up by Carrow's 4 million residency payment and sponsorship. The S-liner row shows the rate per S gate when one opens. |
+| S | 630 (when S gates exist) | San Francisco gets about one S gate every four years, so an S-rank's regular clears are A gates (about 780,000 a year), topped up by San Francisco's 4 million residency payment and sponsorship. The S-liner row shows the rate per S gate when one opens. |
 
 An unsigned hunter with one public gate a month nets 79 gold at E, which is a quarter of a labourer's month, and
 776 at C, which is twice the median wage. An unsigned E-rank or D-rank needs other work.
@@ -760,7 +760,7 @@ do not give, or where the numbers have a result that the world had to explain.
 | 7 | Mana Crystal Shard ships at 40 and sells for 20. The design prices it at 100, selling for 25 | In the world a hunter sells crystal for 85 to 90% of its assay value. A quarter suits used gear and does not suit a raw material | Add a `materialShare` of 0.85 beside `saleShare`, for items of type material |
 | 8 | A gate pays gold and two item picks. Its crystal and carcasses pay nobody | The world's guilds earn most of their margin from the harvest, which is 1.5 times the gold pot. A rights holder nets 55% of it | No rule change. A GM who lets a party buy a gate's rights (section 8) can pay the holder's net as a quest reward |
 | 9 | The game has no fee, tax or upkeep | The world has an entry fee of 10% of a Clear, a levy of 10% of System gold and a house share of 25% | Optional rule numbers that a GM can turn on, off by default |
-| 10 | `gateSpawn.rank.S` is 1 in 100 | In the world 1 gate in 20,000 is an S gate, so Carrow gets about one S gate a year (0.9 a year at 1,500 gates a month) | No change. A table rolls for the gates worth a session |
+| 10 | `gateSpawn.rank.S` is 1 in 100 | In the world 1 gate in 20,000 is an S gate, so San Francisco gets about one S gate every four years (0.24 a year at 400 gates a month) | No change. A table rolls for the gates worth a session |
 | 11 | Shipped prices: `baseValue` 10 times a literal 10, rarity factors 1 to 200, a sale at half, a crystal at a flat 100,000 | The bible uses the ruled design: one Clear for a tier's middle item, a sale at a quarter, a crystal at ten Clears. Until the design's unit 1 ships, the app's prices above common are lower than the bible's | Ships with the economy units |
 | 12 | Some built-in item, title and job names come from Solo Leveling | the owner's ruling: the names stay, and the setting is Solo Leveling's world | Closed by the owner's ruling |
 | 13 | A world gate cleared alone pays four Clears | The world agrees. Guild contracts forbid it and insurers exclude it | No change |

@@ -34,7 +34,7 @@ records above and hunters rely on titles.
 |---|---|---|---|
 | The Register | The Bureau | Rank, read once at awakening. The Bureau re-reads a hunter only after a reported second fever or on a court's order | Courts, contracts, insurers, the call-up |
 | The Hundred | Vantage, once a year | Declared Clears weighted by rank, breaks answered, and a panel vote that Vantage does not publish | Sponsors and states. Most hunters read it |
-| The Forty | A city's press. Carrow's paper is the *Tide-Table* | The same measures for one city, with a public vote worth a fifth | Guild recruiters and landlords |
+| The Forty | A city's press. San Francisco's paper is the *Tide-Table* | The same measures for one city, with a public vote worth a fifth | Guild recruiters and landlords |
 | A guild's board | The guild, for members only | Seats earned, gates led and harvest value | The guild, to decide who gets the next seat. This is the only list that changes a hunter's income |
 
 The Hundred overrates hunters whose work happens in public. It underrates healers and hunters who work red gates
@@ -47,7 +47,7 @@ list quickly without a guild behind them is news, and Vantage will investigate h
   in which the party walks in and who stops to greet the crowd.
 - **Break footage.** A break is the only real combat that people outside the trade have seen, and stations replay
   it for years. A ninety-second clip from the Tidewall break of Year 12 made Amara Nkemelu the best-known person in
-  Carrow.
+  San Francisco.
 - **Tellers.** A teller is a hunter, usually retired, who narrates a raid afterwards from the party's accounts,
   with maps. The best tellers have millions of listeners. A teller who is caught inventing details loses the
   audience.
@@ -65,7 +65,7 @@ A sponsor pays for a hunter's face and name. Typical deals, in gold a year:
 | A B-rank raid leader | 100,000 to 400,000 | National brands, Paragon Mutual, a carmaker |
 | An A-rank near the Hundred | 1 to 5 million | Most large companies. A guild A-rank nets about 780,000 a year from hunting, so sponsorship often pays more |
 | An S-rank | 10 million or more | States, Helix, the hunter's own guild. Many S-ranks take no sponsor because they own the company |
-| An S-rank's residency | 2 to 6 million a year, a house, and a vote on the Bureau's budget | The city. Carrow pays 4 million |
+| An S-rank's residency | 2 to 6 million a year, a house, and a vote on the Bureau's budget | The city. San Francisco pays 4 million |
 
 A standard guild contract gives the guild the right to the hunter's sponsorship income (`careers.md`, section 4).
 
@@ -90,10 +90,10 @@ fighting a break in daylight, by a deed that earns an epithet, or by joining a g
 
 Each entry ends with a hook for the GM.
 
-**In Carrow**
+**In San Francisco**
 
 - **Amara Nkemelu**, called Tidebreaker. S-rank Mage, aged 47 with the body of someone 32. In Year 12 she held the
-  sea wall alone for forty minutes. She leads the Ninth Hour. Carrow pays her four million a year to live in the
+  sea wall alone for forty minutes. She leads the Ninth Hour. San Francisco pays her four million a year to live in the
   Crown, and Paragon Mutual sets every premium in the city on the assumption that she is there. *Hook:* she has
   had no holiday in eight years and has asked her lawyers what happens if she leaves.
 - **Dax Verrault.** A-rank Assassin, 31, the public face of Aurelian. The Bureau's record credits him with more A
@@ -112,7 +112,7 @@ Each entry ends with a hook for the GM.
 
 - **Sabine Okoro.** Read as D at seventeen and as S at twenty-eight. The Bureau recorded a re-awakening, and no
   other recorded re-awakening rose more than one rank. She has no guild, no sponsor and no home city. *Hook, for
-  the GM only:* she passed a trial gate and has no cap. She is searching gates for other hunters like her, and the search brings her to Carrow. `story.md` gives her
+  the GM only:* she passed a trial gate and has no cap. She is searching gates for other hunters like her, and the search brings her to San Francisco. `story.md` gives her
   part in the ending.
 - **Tomas Reyes-Lindahl.** S-rank Tanker, aged 71 with the body of someone 56. He was on the tanker in Year 11 when
   the Abstention was agreed, and other S-ranks treat him as its spokesman. *Hook:* he believes a hunter who can

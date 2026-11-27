@@ -24,7 +24,8 @@ import { questOffer } from '../core/hunter/quests.ts';
 import { SECRET_WORDS, questReaches } from '../core/hunter/quest-secret.ts';
 import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
-import { damageTypeSet, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
+import { damageTypeSet, featsSwitched, primerRuleSet, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
+import { PRIMER_WORDS } from '../core/first-run.ts';
 import { DAMAGE_HELP_LINE, DAMAGE_SHORT, DAMAGE_TYPES, DAMAGE_WORD, damageTypeOf, isDamage } from '../core/combat/damage-type.ts';
 import { DEFAULT_GRIEVOUS_PCT, GRIEVOUS_MIN, grievousCapPct, grievousCutOf, hasTieredGrievousCut, parseGrievousCut, withGrievousCut } from '../core/combat/grievous.ts';
 import { BUILT_IN_ABILITY_DAMAGE_ROWS, DAMAGING_STATUS_KEYS, DEFAULT_ATTACK_ROWS, KEYSTONE_DAMAGE_ROWS, isShippedStatusDef, statusDamageTypeOf, statusWithDamageType } from '../core/registry/damage-catalog.ts';
@@ -389,8 +390,9 @@ export function register(app) {
       const rs = sy.roster();
       const on = rs.filter(r => r.state === 'online').length, away = rs.filter(r => r.state === 'away').length, unk = rs.some(r => r.state === 'unknown');
       const n = !rs.length ? '' : unk ? `${rs.length} player${rs.length === 1 ? '' : 's'}` : `${on} online${away ? `, ${away} away` : ''}`;
+      const primerOn = app.rules().primer.on;
       html = `<div class="gm-rm-row"><b class="gm-rm-code" data-gmroomcode><span>${esc(code.slice(0, 3))}</span><span>${esc(code.slice(3))}</span></b>${MARK[cn] ? `<span class="gm-rm-st" data-conn="${esc(cn)}">${MARK[cn]}</span>` : ''}<span class="gm-rm-n" data-gmcount>${esc(n)}</span>
-        <div class="gm-rm-acts"><button type="button" class="${rs.length ? '' : 'primary'}" data-gminvite>Invite</button></div></div>${rs.length ? '' : '<p class="gm-rm-hint">No players yet. Tap Invite to share the QR code or join link.</p>'}`;
+        <div class="gm-rm-acts"><button type="button" data-gmprimer>${esc(primerOn ? PRIMER_WORDS.hide : PRIMER_WORDS.show)}</button><button type="button" class="${rs.length ? '' : 'primary'}" data-gminvite>Invite</button></div></div>${rs.length ? '' : '<p class="gm-rm-hint">No players yet. Tap Invite to share the QR code or join link.</p>'}`;
     }
     if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
   }
@@ -1225,6 +1227,11 @@ export function register(app) {
       el.addEventListener('click', e => {
         const t = e.target.closest('button'); if (!t) return;
         if (t.hasAttribute('data-gminvite')) { app.go('room'); return; }
+        if (t.hasAttribute('data-gmprimer')) {
+          const next = !app.rules().primer.on;
+          if (ui.wrote('GM', store.apply('gm-rules', s => primerRuleSet(s, next)))) say('#gm-board-msg', next ? PRIMER_WORDS.shown : PRIMER_WORDS.hidden);
+          return;
+        }
         if (t.dataset.gmrejoin || t.hasAttribute('data-gmcreate')) { // busy until settled: a second tap must not start a second request
           if (t.disabled) return; t.disabled = true; t.setAttribute('aria-busy', 'true');
           (async () => {

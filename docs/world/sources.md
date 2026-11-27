@@ -71,7 +71,7 @@ and [an article on its narrative design](https://gamedeveloper.com/design/player
 | Set the story long enough after the disaster for factions to form | The present is Year 20. Guilds date from Year 2 and the Accord from Year 3 |
 | Give each faction a long-term aim, a short-term aim and an internal disagreement | Every entry in `factions.md` has all three |
 | Write a setting that a GM can run from | Every named person has a hook, and `seeds.md` has hooks, places and a primer |
-| Describe one place in depth | Carrow has six districts and about forty named people |
+| Describe one place in depth | San Francisco has six districts and about forty named people |
 | Expect the document to change | `README.md` records the owner's five rulings, which changed four files |
 | Give the GM the answer and the order in which to reveal it | `story.md` |
 

@@ -3,7 +3,7 @@ import { keystoneSwitched, withRoomRules, roomRulesOf } from '../src/core/hunter
 import { fits, loadoutCap, overwriteLoadout, removeLoadout, renameLoadout, saveLoadout, swapLoadout } from '../src/core/hunter/loadouts.ts';
 import { LIMITS, newHunter, newSave } from '../src/core/save.ts';
 import type { Hunter, Item, Save } from '../src/core/save.ts';
-import { RULES, rulesOf } from '../src/core/rules.ts';
+import { RULES, primerRuleSet, rulesOf } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { parseItem, priceOf, valueOf, RARITIES } from '../src/core/registry/items.ts';
 import { FULL_HEAL } from '../src/core/combat/effect-ops.ts';
@@ -44,6 +44,18 @@ describe('the GM\'s room switches', () => {
     const own = rulesOf({ trade: { on: false } });
     expect(withRoomRules(own, roomRulesOf(rulesOf({}))).trade.on, 'the GM\'s on over a player\'s own off').toBe(true);
     expect(withRoomRules(own, null).trade.on, 'out of the room: the player\'s own').toBe(false);
+  });
+  test('primerRuleSet flips only primer.on, keeps other overrides, and players follow the GM\'s room switch', () => {
+    const save = { rulesOverrides: { logCap: 50, trade: { on: false } }, other: 1 };
+    const on = primerRuleSet(save, true);
+    expect(on).toEqual({ rulesOverrides: { logCap: 50, trade: { on: false }, primer: { on: true } }, other: 1 });
+    expect(primerRuleSet(on, false)).toEqual({ rulesOverrides: { logCap: 50, trade: { on: false }, primer: { on: false } }, other: 1 });
+    expect(RULES.primer.on, 'default is locked').toBe(false);
+    expect(roomRulesOf(rulesOf({ primer: { on: true } })).primer).toEqual({ on: true });
+    expect(withRoomRules(rulesOf({}), roomRulesOf(rulesOf({ primer: { on: true } }))).primer.on).toBe(true);
+    const ownOn = rulesOf({ primer: { on: true } });
+    expect(withRoomRules(ownOn, roomRulesOf(rulesOf({}))).primer.on, 'locked room overrides own true').toBe(false);
+    expect(withRoomRules(ownOn, null).primer.on, 'out of the room: own rules').toBe(true);
   });
 });
 

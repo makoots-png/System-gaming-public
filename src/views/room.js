@@ -4,7 +4,8 @@ import { CODE_LEFT_OUT, CODE_LEN, parseRoomCode } from '../core/ids.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import * as motion from './motion.ts';
 import { qrSvg } from '../core/qr.js';
-import { ROOM_IS, ROOM_PATH } from '../core/first-run.ts';
+import { PRIMER_WORDS, ROOM_IS, ROOM_PATH } from '../core/first-run.ts';
+import { primerRuleSet } from '../core/rules.ts';
 import { LOBBY_START, checkAnswer, checkAsking, lobbyStep, seatBusy } from '../core/sync/lobby.ts';
 import { rosterSignature, rosterStatus } from '../core/sync/connection.ts';
 /** Whether `v` is a room code (src/core/ids.ts `parseRoomCode`). */
@@ -138,6 +139,10 @@ export function register(app) {
       <section class="win" data-who><span class="cb"></span><h2>Who is here</h2>
         <p class="rm-sub" data-count></p><ul class="rm-list" data-roster></ul>
         <div class="rm-sec" data-kickbox hidden><h3>Recently removed</h3><ul class="rm-list" data-kicks></ul></div>
+      </section>
+      <section class="win" data-primerbox hidden><span class="cb"></span><h2>${esc(PRIMER_WORDS.title)}</h2>
+        <p class="rm-sub" data-primerstate></p>
+        <button type="button" class="rm-wide" data-primertoggle></button>
       </section>
       <section class="win" data-wordsec hidden><span class="cb"></span><h2>Word to the GM</h2><div data-words></div></section>
       <section class="win" data-conncard><span class="cb"></span><h2>Connection</h2>
@@ -303,6 +308,10 @@ export function register(app) {
       try { await navigator.clipboard.writeText(k); flash(e.currentTarget, 'Copied'); } catch { q.gmkey.type = 'text'; q.gmkey.select(); flash(e.currentTarget, 'Select and copy'); } // the browser refused the clipboard: the key is shown and selected
     });
     q.leave.addEventListener('click', () => { Y().leave(); window.scrollTo(0, 0); });
+    q.primertoggle.addEventListener('click', () => {
+      if (app.seat() !== 'gm') return;
+      ui.wrote('Room', store.apply('gm-rules', s => primerRuleSet(s, !app.rules().primer.on)));
+    });
     // roster actions
     el.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -396,7 +405,7 @@ export function register(app) {
     q.card.dataset.gm = gm ? '1' : '0';
     q.state.dataset.conn = c; set(q.statetxt, (STATE[c] || STATE.reconnecting)[0]);
     setCode(q.roomcode, code);
-    q.who.hidden = !gm; q.tools.hidden = !gm; q.invitedet.hidden = gm; q.invitebox.hidden = !gm;
+    q.who.hidden = !gm; q.primerbox.hidden = !gm; q.tools.hidden = !gm; q.invitedet.hidden = gm; q.invitebox.hidden = !gm;
     place(q.sharebox, gm ? q.sharehost_g : q.sharehost_p);
     place(q.roomsbox, q.roomshost_c);
     // connection
@@ -426,6 +435,10 @@ export function register(app) {
     const ks = A.recentKicks().filter(k => !rs.some(r => r.key === k.key)), ksig = JSON.stringify(ks) + '|' + ks.map(k => waits(k.key)).join();
     q.kickbox.hidden = !ks.length;
     if (q.kicks.dataset.sig !== ksig) { q.kicks.dataset.sig = ksig; q.kicks.innerHTML = ks.map(k => `<li class="rm-kick"><b>${esc(k.name)}</b><button type="button" class="primary" data-gmallow="${esc(k.key)}"${waits(k.key)} aria-label="Allow ${esc(k.name)} back into the room">Allow back</button></li>`).join(''); }
+    // primer unlock
+    const primerOn = app.rules().primer.on;
+    set(q.primerstate, primerOn ? PRIMER_WORDS.shown : PRIMER_WORDS.hidden);
+    set(q.primertoggle, primerOn ? PRIMER_WORDS.hide : PRIMER_WORDS.show);
     // GM tools
     const key = sy().gmKey; q.keyrow.hidden = !key; if (key && q.gmkey.value !== key) q.gmkey.value = key;
     roomsRows(A.gmRooms().filter(r => !r.current));

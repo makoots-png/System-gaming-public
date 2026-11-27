@@ -9,7 +9,7 @@ import { ownSeed } from '../core/starter.ts';
 import { onboarded } from '../core/settings.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { chooseMode } from '../core/role.ts';
-import { ABOUT, LOADED, ROOM_IS, TIPS, WORLD_PRIMER, createdLine, nextSteps } from '../core/first-run.ts';
+import { ABOUT, LOADED, ROOM_IS, TIPS, WORLD_PRIMER, createdLine, nextSteps, showsPrimer } from '../core/first-run.ts';
 import { available } from '../core/hunter/progress.ts';
 import { enter } from './motion.ts';
 import { closeWindow, openWindow, trapTab } from './ui.js';
@@ -156,18 +156,33 @@ export function register(app) {
   const nextHtml = f => { const li = stepsHtml(f); return li ? `<div class="ob-h3">Next steps</div><ol class="ob-tips ob-next" data-obnext>${li}</ol>` : ''; };
   /** Whether Hunter created still offers Join a room: the join step is listed, not done and not under way. */
   const mayJoin = f => f.rooms && f.room === null && f.joining === null;
-  // the open window's next steps follow the room as it changes (a join or a create under way, a player joining the GM's)
+  // the open window's next steps and primer drawer follow the room as it changes
   function freshen() {
-    const list = root && root.querySelector('[data-obnext]'); if (!list) return;
-    const f = facts(list.closest('[data-role]').dataset.role, list.closest('[data-rooms]') ? list.closest('[data-rooms]').dataset.rooms === 'yes' : undefined);
-    const li = stepsHtml(f); if (list.innerHTML !== li) list.innerHTML = li;
-    const j = root.querySelector('[data-objoin]'); if (j) j.hidden = !mayJoin(f);
+    const list = root && root.querySelector('[data-obnext]');
+    if (list) {
+      const f = facts(list.closest('[data-role]').dataset.role, list.closest('[data-rooms]') ? list.closest('[data-rooms]').dataset.rooms === 'yes' : undefined);
+      const li = stepsHtml(f); if (list.innerHTML !== li) list.innerHTML = li;
+      const j = root.querySelector('[data-objoin]'); if (j) j.hidden = !mayJoin(f);
+    }
+    syncPrimer();
   }
   app.on('sync:room', freshen);
   app.on('sync:status', freshen);
+  app.on('sync:docs', freshen);
+  app.on('change', freshen);
 
-  /** Collapsible 3-minute Carrow primer read aloud before Session 1 (src/core/first-run.ts `WORLD_PRIMER`). */
-  const primerHtml = () => `<details class="ob-primer" data-primer><summary>Read aloud: Carrow primer</summary><div class="ob-primer-body">${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details>`;
+  /** Collapsible 3-minute San Francisco primer read aloud before Session 1 (src/core/first-run.ts `WORLD_PRIMER`). */
+  const primerHtml = () => `<details class="ob-primer" data-primer><summary>Read aloud: San Francisco primer</summary><div class="ob-primer-body">${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details>`;
+  /** Shows or hides the primer drawer inside an open ? Quick Start window based on seat and room rules. */
+  function syncPrimer() {
+    const slot = root && root.querySelector('[data-primer-slot]');
+    if (!slot) return;
+    const show = showsPrimer(app.seat(), app.api.sync.doc('rules'));
+    slot.hidden = !show;
+    const has = !!slot.querySelector('[data-primer]');
+    if (show && !has) slot.innerHTML = primerHtml();
+    else if (!show && has) slot.innerHTML = '';
+  }
 
   function welcome() {
     const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Window active</h2>
@@ -340,8 +355,9 @@ export function register(app) {
       <p>${esc(ABOUT)}</p>
       <div data-role="${role}">${nextHtml(facts(role))}</div>
       <div class="ob-h3">Tips</div><ol class="ob-tips">${TIPS[role].map(t => `<li>${esc(t)}</li>`).join('')}</ol>
-      ${primerHtml()}
+      <div data-primer-slot></div>
       <div class="ob-act"><button type="button" class="primary" data-focus data-ok>Close</button></div>`);
+    syncPrimer();
     w.querySelector('[data-ok]').addEventListener('click', gotIt);
   }
 

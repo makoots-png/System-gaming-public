@@ -52,7 +52,7 @@ gate to the party's rank.
 18. **An exit permit.** A C-rank healer wants to leave for a country that will pay her three times as much.
     Smuggling her costs ten Clears. She offers a year of her service in return. *Complication:* the Corps knows
     and is waiting for her to lead them to the smuggler.
-19. **Sabine Okoro in Carrow.** The only hunter recorded as rising from D to S is clearing public gates alone.
+19. **Sabine Okoro in San Francisco.** The only hunter recorded as rising from D to S is clearing public gates alone.
     *Complication:* she asks the party, in private, what colour their gate was. Hearing "none, behind an E-rank
     cannery" tells her someone on the Host floor broke protocol.
 20. **03:14.** Arlo Finch's reactor core hums every night at the minute the gates opened. Last night the gate
@@ -132,7 +132,7 @@ Read this to new players. It takes about three minutes.
 > day, and an E-rank hunter earns a hundred for clearing a gate. Guilds control most of the gates, and a
 > government office called the Bureau controls the rest. Most hunters are poor and a few are very rich.
 >
-> You live in Carrow, a port city of six million people. You became a hunter recently. The Bureau has given you
+> You live in San Francisco, a port city of 800,000 people. You became a hunter recently. The Bureau has given you
 > a rank and a license. Your window says level 1 and tells you where you will stop. You have a seat in a gate on
 > Thursday.
 >

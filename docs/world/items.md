@@ -91,7 +91,7 @@ A crafter turns materials and one catalyst into an item. Four rules keep craftin
 
 | Material | Where it is found | What needs it |
 |---|---|---|
-| Boss core | One in every cleared gate | Epic, legendary, and mythic (B, A, S) middle gear and signature boss items (common to rare middle gear uses wall crystal and standard parts, leaving Helix its 90% share of Carrow's crystal |
+| Boss core | One in every cleared gate | Epic, legendary, and mythic (B, A, S) middle gear and signature boss items (common to rare middle gear uses wall crystal and standard parts, leaving Helix its 90% share of San Francisco's crystal |
 | Red bloom | Only in red gates, on the walls near the boss | Plus-grade weapons and thrown items |
 | Second-area relic | Only in the second area of a double gate | Plus-grade armor and accessories |
 | Standing silt | Only in gates that never close | Skill books |
@@ -164,7 +164,7 @@ cannot be bought again. `machines.md` charts a piece of gear's grade.
 - The Shop destroys about 71% of the gold that gates create. Catalysts, stones, seeds, skill books, and escape stones
   replace part of what cheaper potions lost.
 - Residents buy more Shop goods, because staples cost a fifth of what they did.
-- A capped hunter has a second career. Carrow's E-ranks and D-ranks are most of its alchemists and cooks.
+- A capped hunter has a second career. San Francisco's E-ranks and D-ranks are most of its alchemists and cooks.
 - A-ranks and S-ranks now have things to buy: seeds, skill books and stones at their own tier.
 
 ## 7. The owner's rulings (Nov 20)

@@ -75,8 +75,8 @@ Status: fixed in `prices.ts` and `economy.md` (`00eae066`). Modeled `unrecoverab
 
 ## 3. Fitted numbers and premise attacks
 
-### R9. Stock-flow impossibility: Carrow's banks cannot hold 1.0 billion gold
-`prices.ts` set `reserveRatio = 0.04`, putting `goldStock` at 960 million (`1.0 billion`) and requiring `needed = 2.4 million`/month. At Year 20's peak net minting rate (2.6 million/month), 20 years of gates could never have accumulated more than ~450 to 470 million gold in Carrow.
+### R9. Stock-flow impossibility: San Francisco's banks cannot hold 1.0 billion gold
+`prices.ts` set `reserveRatio = 0.04`, putting `goldStock` at 960 million (`1.0 billion`) and requiring `needed = 2.4 million`/month. At Year 20's peak net minting rate (2.6 million/month), 20 years of gates could never have accumulated more than ~450 to 470 million gold in San Francisco.
 
 Status: fixed in `prices.ts` and `economy.md` (`00eae066`). Derived `goldStock` by integrating 20 years of net minting (4 Break Years at 40% of Year 4's rate plus 16 years at 3% annual Tide growth), giving 333 million gold (a 1.4% bank reserve ratio against 24 billion in notes and deposits). Because a 20-year-old gold supply grows faster than the 3% Tide, the extra 4.2%/year goes into banks rebuilding thin post-Break-Years reserves and into mild price inflation. Added the `Twenty-year gold stock is sound` check.
 
@@ -86,14 +86,14 @@ Status: fixed in `prices.ts` and `economy.md` (`00eae066`). Derived `goldStock` 
 Status: fixed in `prices.ts` and `economy.md` (`00eae066`). Added food catalysts, escape stones, seeds, and skill books to hunter sinks, split gear replacement into active raiders (`0.5` sets/year) and occasional/bench hunters (`0.05` sets/year), and derived Resident spending from concrete medical rates.
 
 ### R11. Boss core supply contradicts Helix's 90% crystal share
-`items.md` section 3 required a Boss core for every crafted middle item. At 50% crafted gear share, crafting consumed two-thirds of Carrow's 1,500 monthly boss cores, contradicting `economy.md` section 9 (Helix buys nine tenths of Carrow's crystal).
+`items.md` section 3 required a Boss core for every crafted middle item. At 50% crafted gear share, crafting consumed two-thirds of San Francisco's 1,500 monthly boss cores, contradicting `economy.md` section 9 (Helix buys nine tenths of San Francisco's crystal).
 
 Status: fixed in `items.md` (section 3), `prices.ts`, and `economy.md` (`00eae066`). Proposed (needs the owner): common to rare (E to C) middle gear uses standard wall crystal and monster parts, while Boss cores are required for epic, legendary, and mythic (B, A, S) middle gear and signature boss items (43 of 143 B/A/S cores a month, 2.9% of all gates). Added the `Boss cores leave Helix its share` check.
 
 ### R12. S-rank liner income assumes 48 S gates a year in a city that gets less than one
-`economy.md` section 8 gives Carrow 0.07 S gates/month (~0.9/year), while section 14 calculated S-rank liner income from 4 S gates/month.
+`economy.md` section 8 gives San Francisco 0.07 S gates/month (~0.9/year), while section 14 calculated S-rank liner income from 4 S gates/month.
 
-Status: fixed in `prices.ts` and `economy.md` section 14 (`00eae066`). Annotated the S-liner table and "What that buys" to state plainly that an S-rank's regular clears in Carrow are A gates (~780,000/year), supplemented by the 4 million residency payment and sponsors, while the S row gives the rate per S gate when one opens.
+Status: fixed in `prices.ts` and `economy.md` section 14 (`00eae066`). Annotated the S-liner table and "What that buys" to state plainly that an S-rank's regular clears in San Francisco are A gates (~780,000/year), supplemented by the 4 million residency payment and sponsors, while the S row gives the rate per S gate when one opens.
 
 ### R13. Retired C-rank scouts out-earn active C-rank liners
 `economy.md` (`guild-staff`) and `careers.md` section 1 paid a retired C-rank scout 4,500 gold/month, exceeding an active C-rank liner's 4,394 net/month.
@@ -153,10 +153,10 @@ Status: fixed in `prices.ts` and `economy.md` section 14 (`00eae066`). Generated
 
 Status: fixed in `story.md` sections 4 and 5 (`2f4d287f`): changed to about 7,300 runs over twenty years since Year 0.
 
-### R19. Scale mismatch between Carrow's gates and Earth's gates in `history.md`
-`history.md` section 3 said "A few thousand new gates opened worldwide every month" in Year 0 to 3, contradicting Carrow alone having 1,500 world gates/month in Year 20.
+### R19. Scale mismatch between San Francisco's gates and Earth's gates in `history.md`
+`history.md` section 3 said "A few thousand new gates opened worldwide every month" in Year 0 to 3, contradicting San Francisco alone having 1,500 world gates/month in Year 20.
 
-Status: fixed in `history.md` sections 2 and 3 (`c85dd33e`). Framed Day Zero's ~4,000 gates as the opening wave, climbing over Year 0 to 3 into hundreds of thousands of monthly gates worldwide (~1,000/month in a city of Carrow's size by Year 5, reaching 1,500/month in Year 20 with the 3% Tide).
+Status: fixed in `history.md` sections 2 and 3 (`c85dd33e`). Framed Day Zero's ~4,000 gates as the opening wave, climbing over Year 0 to 3 into hundreds of thousands of monthly gates worldwide (~1,000/month in a city of San Francisco's size by Year 5, reaching 1,500/month in Year 20 with the 3% Tide).
 
 ### R20. Contradictions around awakening, re-awakening, and Councillor Baskin's son
 1. `seeds.md` hook 13 had Baskin asking the party to judge her newly awakened son's rank (even though his own window already shows it) and gave him `"Cap: none"` at awakening (contradicting `power.md`, `story.md`, and `machines.ts`). `factions.md` cited an E-rank 300-gold fine.
@@ -199,9 +199,9 @@ Act 1 also put third-raising collateral ("mother does not know them") on the fir
 Status: fixed and boldly expanded in `story.md` (`2f4d287f`), with all new canon marked `proposed, needs the owner`:
 - Fixed Act 1 collateral to match section 3 (first free revive takes a cherished personal memory; moved "mother forgets you" to a third-raising arc).
 - Added playable horror scenes where player choices trigger the reveal in Acts 1, 2, 3, and 4 (the barricaded warren, the Value map offer, the Scarside 400 evacuation-vs-cordon dilemma, the transit concourse before Sorin speaks).
-- Added Carrow faction reactions to Scenarios in Act 3 and planted concrete Okoro/Osei clues across Acts 3 to 5.
+- Added San Francisco faction reactions to Scenarios in Act 3 and planted concrete Okoro/Osei clues across Acts 3 to 5.
 - Named and fleshed out Captain Yael Sorin (Season 9) and exact Keepsakes terminal rules/prices (1 to 3 levels for own collateral, 50 gold for stranger keepsakes) in Act 4.
-- Named the five Season 1 Finale champions with distinct roles and regrets, gave each Carrow faction a concrete coalition demand, and wrote Branch B (`Earth is lost`) matching `machines.ts` in Act 5.
+- Named the five Season 1 Finale champions with distinct roles and regrets, gave each San Francisco faction a concrete coalition demand, and wrote Branch B (`Earth is lost`) matching `machines.ts` in Act 5.
 - Built the playable Control Room encounter (12 level-15 Hosts pulling live System overrides, Host #4 Maren the potion designer, and the three screens at the Seat) in Act 6.
 - Deepened three flat factions in `factions.md` (`c85dd33e`): Redline's third-life crystal escorts, Vantage oddsmaker Soren Kalt tracing The Bettor's 41-win streak, and The Fallen as crystal-strippers; added two table-ready places in `seeds.md` (The Salt Locker and The Glass Gallery).
 
@@ -253,11 +253,11 @@ Complete index of every rule, number, or canon addition invented beyond the owne
 - **Redline third-life crystal escorts and Kofi Stein's Stair side-deals:** `factions.md` section 2 (Redline); `story.md` section 5 (`Third-life escort`).
 - **Vantage oddsmaker Soren Kalt and The Bettor's 41-win betting streak:** `factions.md` section 4 (Vantage); `story.md` section 5 (`The unbeatable punter`).
 - **The Fallen operating as crystal-strippers targeting pre-bought crystals:** `factions.md` section 6 (The Fallen).
-- **Two new Carrow places (The Salt Locker in Tidewall; The Glass Gallery on floor 38 of Aurelian Tower):** `seeds.md` section 2 (places 11 and 12).
+- **Two new San Francisco places (The Salt Locker in Tidewall; The Glass Gallery on floor 38 of Aurelian Tower):** `seeds.md` section 2 (places 11 and 12).
 - **Act 2 shared party open trial and 60-second reset loop / step-trial exit to prevent stranding a PC at level 9:** `story.md` section 4 (Act 2).
-- **Act 3 10,000-viewer broadcast threshold explaining why Okoro and Osei did not trigger scenarios, Carrow faction reactions to scenarios, Scarside 400 evacuation-vs-cordon dilemma, and planted Okoro/Osei Act 6 clues:** `story.md` section 4 (Act 3); `machines.ts` (`The season`).
+- **Act 3 10,000-viewer broadcast threshold explaining why Okoro and Osei did not trigger scenarios, San Francisco faction reactions to scenarios, Scarside 400 evacuation-vs-cordon dilemma, and planted Okoro/Osei Act 6 clues:** `story.md` section 4 (Act 3); `machines.ts` (`The season`).
 - **Act 4 concourse reveal, Captain Yael Sorin (Season 9), Earth as Season 12, and Keepsakes terminal prices (1 to 3 levels for own collateral, 50 gold clearance bins):** `story.md` section 4 (Act 4); `machines.ts` (`A keepsake`).
-- **Act 5 five named Season 1 Finale champions (Kaelen Vane, Sera Lin, Dario Moss, Tova Hren, Branek), Carrow faction coalition demands, and Branch B (`Earth is lost`):** `story.md` section 4 (Act 5).
+- **Act 5 five named Season 1 Finale champions (Kaelen Vane, Sera Lin, Dario Moss, Tova Hren, Branek), San Francisco faction coalition demands, and Branch B (`Earth is lost`):** `story.md` section 4 (Act 5).
 - **Act 6 Control Room encounter (12 level-15 Hosts using live System overrides, Host #4 Maren the potion designer, and the three Seat screens: Schedule, Cast & Caps, Ledger):** `story.md` section 4 (Act 6).
 
 ## Fable's reply and the owner's rulings on it (Nov 20)
@@ -268,7 +268,7 @@ R26 are real and the fixes stand, with three exceptions that the owner has now r
 - **Gold (R on the gold stock).** Neon was right that my 1.0 billion reserve was impossible. The fix left gold at
   1.4% of the city's money and drew the check's band around that result. The owner's ruling: "Hunters tend to be
   richer, but an E rank would be only a bit richer than a day laborer despite not having to work as often. Dollars
-  are replaced with gold." The labourer's day is now 12 gold (0.12 of an E Clear), Carrow has 3,000 world gates a
+  are replaced with gold." The labourer's day is now 12 gold (0.12 of an E Clear), San Francisco has 400 world gates a
   month, a guild E-rank nets 1.4 labourer's months for four gates, and twenty years of gates leave gold at 8.6% of
   the city's money. The check's band is now 5% to 40%, with its reason.
 - **Two rulings in the lead's design that neither of us had applied.** A raising costs 3.33% of the hunter's

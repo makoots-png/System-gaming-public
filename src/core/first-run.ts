@@ -1,10 +1,10 @@
 // first-run.ts: what a new person is told once, in one place. What the site is (`ABOUT`), what a room is (`ROOM_IS`),
-// each role's way to one (`ROOM_PATH`), the Carrow read-aloud primer (`WORLD_PRIMER`), what loaded (`LOADED`), the ?
+// each role's way to one (`ROOM_PATH`), the San Francisco read-aloud primer (`WORLD_PRIMER`), what loaded (`LOADED`), the ?
 // guide's tips (`TIPS`), and the next steps after setup (`nextSteps`). The Welcome window, Hunter created and Campaign
 // ready (src/views/onboard.js), the Room view (src/views/room.js) and the ? guide all read these, so their words cannot
 // drift apart. Pure: the view reads the facts from this phone and passes them in.
 import type { RoomCode } from './ids.ts';
-import type { Role } from './role.ts';
+import type { Role, Seat } from './role.ts';
 import type { Rules } from './rules.ts';
 import { STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER } from './starter.ts';
 
@@ -17,7 +17,7 @@ export const ROOM_PATH: Readonly<Record<Role, string>> = {
   player: 'Your GM creates the room and gives you its code or an invite link.',
 };
 
-/** Three-minute Carrow primer read aloud to new players before Session 1 (synced with docs/world/seeds.md section 3). */
+/** Three-minute San Francisco primer read aloud to new players before Session 1 (synced with docs/world/seeds.md section 3). */
 export const WORLD_PRIMER: readonly string[] = [
   'Twenty years ago, gates opened all over the world. They looked like doors made of light. Nothing came out of them at first.',
   'Two days later the largest gate broke. Monsters came out and destroyed a city of two million people in a day. Over the next five days every other gate broke too, in every country. About one person in twenty died in the three years that followed.',
@@ -26,9 +26,25 @@ export const WORLD_PRIMER: readonly string[] = [
   'Something pays hunters for this work. It gives them gold and sells them things that nobody can make, such as a potion that closes a wound and a crystal that brings a dead hunter back to life. The System raises a dead hunter once for free, once on debt, and after that only with a crystal bought before death and used within an hour. Gold in your pocket after death does nothing, and none of it works on anyone who never awakened. People call this something the System.',
   'Everyone has the System. On the first night every person alive saw a window that only they could see. For most people it says "Resident, level 0" and does nothing. A hunter\'s window lists a level, quests, and a rank. It also lists a cap. An E-rank\'s level stops at 9, and nothing they do will raise it. The System has never said what the game is for or why it stops people where it does.',
   'Cities run on crystal that crews cut out of cleared gates. Rent depends on how quickly hunters can reach your street. Everyone uses the System\'s gold as money. A bowl of noodles costs under half a gold, a laborer earns twelve a day, and an E-rank hunter earns a hundred for clearing a gate. Guilds control most of the gates, and a government office called the Bureau controls the rest. Most hunters are poor and a few are very rich.',
-  'You live in Carrow, a port city of six million people. You became a hunter recently. The Bureau has given you a rank and a license. Your window says level 1 and tells you where you will stop. You have a seat in a gate on Thursday.',
+  'You live in San Francisco, a port city of 800,000 people. You became a hunter recently. The Bureau has given you a rank and a license. Your window says level 1 and tells you where you will stop. You have a seat in a gate on Thursday.',
   'What do you do?',
 ];
+
+/** GM-facing copy for unlocking or hiding the San Francisco primer drawer for players in a room. */
+export const PRIMER_WORDS = {
+  title: 'San Francisco primer',
+  show: 'Show primer to players',
+  hide: 'Hide primer from players',
+  hidden: 'Players cannot see the San Francisco primer yet.',
+  shown: 'Players can read the San Francisco primer in the ? guide.',
+} as const;
+
+/**
+ * Whether this phone shows the San Francisco primer drawer: always for the GM and in solo mode (no room),
+ * and for a player in a room only once the room's rules unlock it (`primer.on`).
+ */
+export const showsPrimer = (seat: Seat, roomRules: Pick<Rules, 'primer'> | null): boolean =>
+  seat !== 'player' || Boolean(roomRules?.primer.on);
 
 /** Hunter created's line: the hunter, and its job when it has one. */
 export const createdLine = (name: string, job: string): string => `Your hunter ${name}${job ? ` (${job})` : ''} is ready.`;
@@ -39,7 +55,7 @@ export const LOADED: Readonly<Record<'starter' | 'blank', string>> = {
     `The first mission is loaded: ${STARTER_STORY_NAME} (about 3 hours, 1 to 6 players).`,
     '1. Create a room and share the code, link, or QR code.',
     `2. Let each player make a hunter on their phone (or spend ${STARTER_UNSPENT_HUNTER}'s 12 points if testing alone).`,
-    '3. Open Read aloud: Carrow primer below and read it to the table (3 minutes).',
+    '3. Open Read aloud: San Francisco primer below and read it to the table (3 minutes).',
     `4. Open GM -> Stories and tap Start a story for ${STARTER_STORY_NAME} to send Chapter 1 to every phone.`,
   ].join('\n'),
   blank: 'A blank campaign is ready for your own hunters, gates, and quests.',

@@ -1453,6 +1453,25 @@ describe('the other room docs', () => {
     expect(withRoomRules(gmOn, rules).fight.keystone.on, 'a room with keystones off turns a player\'s own off').toBe(false);
   });
 
+  test('the room carries the primer unlock switch: absent defaults to locked, invalid is refused, and a player\'s rules follow the GM\'s', () => {
+    const rules = roomRulesOf(RULES);
+    expect(rules.primer, 'the shipped primer switch is locked').toEqual({ on: false });
+    const unlocked = { ...rules, primer: { on: true } };
+    expect(DOCS.rules(copy(rules))!.primer).toEqual({ on: false });
+    expect(DOCS.rules(copy(unlocked))!.primer).toEqual({ on: true });
+
+    const { primer: _none, ...older } = rules;
+    expect(DOCS.rules(copy(older))!.primer, 'an old room doc without primer defaults to locked').toEqual({ on: false });
+    for (const bad of [{ on: 'yes' }, { on: 1 }, {}, null, true, 'on']) {
+      expect(DOCS.rules(copy({ ...rules, primer: bad })), JSON.stringify(bad)).toBeNull();
+    }
+
+    const gmOn: Rules = { ...RULES, primer: { on: true } };
+    expect(roomRulesOf(gmOn).primer).toEqual({ on: true });
+    expect(withRoomRules(RULES, unlocked).primer.on, 'a player\'s phone unlocks with the room').toBe(true);
+    expect(withRoomRules(gmOn, rules).primer.on, 'a locked room keeps the player\'s primer locked').toBe(false);
+  });
+
   describe('the room\'s rules carry the economy, each number read in its rule\'s domain', () => {
     const doc = roomRulesOf(RULES);
     /** The doc with `patch` over it, through JSON as the wire carries it: a field set to undefined is not there. */
@@ -1462,7 +1481,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'classSwapPrices', 'classTreeDepthMult', 'classTreeRarityMult', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'statuses', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'classSwapPrices', 'classTreeDepthMult', 'classTreeRarityMult', 'crystal', 'damageTypes', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'guilds', 'keystone', 'loot', 'mythic', 'priceBase', 'primer', 'rarities', 'respecPrices', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'shadow', 'shareCap', 'solo', 'statuses', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {

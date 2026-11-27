@@ -422,6 +422,9 @@ const SPEC = {
   // room's `rules` doc carries it to the players. Off refuses a new offer and an accept at the tap, never a refuse, a take
   // back, a stop or the read of an end (notes-5-trade.md 2.2)
   trade: { on: true },
+  // world primer (first-run.ts, views/onboard.js): `on` is the GM's switch that unlocks the San Francisco primer drawer for
+  // players in a room. Off by default; the GM and solo mode (no room) always see it. The room's `rules` doc carries it.
+  primer: { on: false },
   // The reworked fight's numbers (docs/agent-handoff/rw/design.md; scripts/rw-paper.ts prints the tables they make).
   // src/core/stats.ts, src/core/hunter/derive.ts, combat/timeline.ts and combat/space.ts read them. Each comment is the
   // reason for the value; the last words of each rule are the reason for its domain.
@@ -1081,6 +1084,11 @@ export function damageTypeSet(ov: Overrides, key: string, type: DamageType | nul
 export const tradeRuleSet = <S extends { readonly rulesOverrides: unknown }>(save: S, on: boolean): S => {
   const ov = recOf(save.rulesOverrides);
   return { ...save, rulesOverrides: { ...ov, trade: { ...recOf(ov.trade), on } } };
+};
+/** The save with the GM's primer switch (`primer.on`) set to `on`, the other overrides kept: shows or hides the San Francisco primer for players in a room. */
+export const primerRuleSet = <S extends { readonly rulesOverrides: unknown }>(save: S, on: boolean): S => {
+  const ov = recOf(save.rulesOverrides);
+  return { ...save, rulesOverrides: { ...ov, primer: { ...recOf(ov.primer), on } } };
 };
 /** Every rule number back to its default; the GM's roll tables are kept. */
 export const resetRuleNumbers = (ov: Overrides): Overrides => ('gmTables' in ov ? { gmTables: ov.gmTables } : {});

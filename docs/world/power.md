@@ -28,7 +28,7 @@ Researchers have established three things about who awakens:
 - Awakening is not inherited. The children of two hunters awaken no more often than other children.
 - Awakening is more likely near a break. A person who survives a break within sight of it is about eight times as
   likely to awaken in the following year. Most researchers now link this to the "Survive" quest. Scarside is the
-  poorest district in Carrow and has the most hunters for its population. Some parents move toward Red zones for
+  poorest district in San Francisco and has the most hunters for its population. Some parents move toward Red zones for
   this reason, and some people walk toward a break siren.
 - Awakening does not depend on fitness, religion or character.
 
@@ -70,7 +70,7 @@ A hunter gains XP from kills and quests and rises to the cap. At the cap the XP 
 | D | 10 to 19 | 33% | Survives small-arms fire in good gear. |
 | C | 20 to 34 | 18% | Can fight a platoon of soldiers alone. Most states refuse exit permits from this rank up. |
 | B | 35 to 49 | 7% | Can break through a concrete wall. The police know every B-rank in the city by name. |
-| A | 50 to 69 | 2% | Can stop a C break alone. Carrow has about two hundred. |
+| A | 50 to 69 | 2% | Can stop a C break alone. San Francisco has about thirty. |
 | S | 70 and up | 1 in 10,000 | About fourteen hundred in the world. Nobody has found an S-rank's cap. |
 
 A hunter awakens at the first level of their rank. Most working hunters reach their cap within a few years and
@@ -260,7 +260,7 @@ behind them.
 
 ## 9. What people think the System is
 
-In Carrow's polls a third of people say the System is a machine that someone else left behind. A quarter say it
+In San Francisco's polls a third of people say the System is a machine that someone else left behind. A quarter say it
 is a god. A fifth say it is the Earth. The rest give other answers or none. Millions of people have asked their
 window what it is. It has never answered.
 

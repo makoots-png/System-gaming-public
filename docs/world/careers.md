@@ -12,7 +12,7 @@ fact. Section 10 covers what happens to a hunter who passes their cap.
 **The fever.** Awakening starts with a three-day fever and blue veins at the wrists. Clinics must report these
 symptoms. The Bureau sends a nurse, who leaves a card with a registration deadline.
 
-**The 72 hours.** The new hunter must report to a Bureau hall within three days of the fever ending. In Carrow the
+**The 72 hours.** The new hunter must report to a Bureau hall within three days of the fever ending. In San Francisco the
 hall is the Halfway House on Ledger Row. A late hunter pays a fine of three Clears of the rank they are then given.
 
 **The reading.** The hunter puts a hand on a block of raw crystal, and an assessor reads the hunter's mana from it. The hunter also states the rank and cap that their window shows, and
@@ -54,7 +54,7 @@ live longer than other people, so a young hunter's contract covers more working 
 bond, and a crystal cover policy.
 
 
-Carrow's Guild Council publishes a model contract. Most guilds use it with few changes.
+San Francisco's Guild Council publishes a model contract. Most guilds use it with few changes.
 
 | Clause | The model contract | In gold, for a C-rank |
 |---|---|---|

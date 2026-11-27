@@ -121,6 +121,14 @@ describe('an override of a list rule', () => {
     expect(bad.refused.map(r => [r.path, r.reason])).toEqual([['trade.on', 'boolean'], ['trade.limit', 'unknown']]);
     expect(rulesOf(bad.overrides).trade.on).toBe(true);
   });
+  test('the primer switch defaults to off and accepts only true or false', () => {
+    expect(RULES.primer.on).toBe(false);
+    expect(parseOverrides({ primer: { on: true } })).toEqual({ overrides: { primer: { on: true } }, refused: [] });
+    expect(rulesOf(parseOverrides({ primer: { on: true } }).overrides).primer.on).toBe(true);
+    const bad = parseOverrides({ primer: { on: 'yes', extra: 1 } });
+    expect(bad.refused.map(r => [r.path, r.reason])).toEqual([['primer.on', 'boolean'], ['primer.extra', 'unknown']]);
+    expect(rulesOf(bad.overrides).primer.on).toBe(false);
+  });
 
   test('the difficulty curve lists require 10 entries in their domains and scalars respect their bounds', () => {
     const ok = parseOverrides({

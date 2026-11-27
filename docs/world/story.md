@@ -78,7 +78,7 @@ Death follows the owner's revive ladder (`machines.md`, `Revive standing` and `A
 
 **The System takes collateral on every raising, including the free first revive.** When a hunter rises, the window
 shows one GM-approved line, `"Collateral taken"`, and does not say what. The hunter finds out later. Doctors in
-Carrow call the first gap "first-return amnesia" (`power.md`, section 9). Use this table, or choose.
+San Francisco call the first gap "first-return amnesia" (`power.md`, section 9). Use this table, or choose.
 
 | Raising | Gold cost (revive ladder) | What the System takes |
 |---|---|---|
@@ -113,7 +113,7 @@ Each act matches a rank. The party's rank decides which act they are in.
 
 ### Act 1, ranks E and D: the trial and the job
 
-Act 1 opens with **The Empty Seat** (Mission 1, levels 1 to 3) and then follows broke Level 3 E-ranks working Carrow's
+Act 1 opens with **The Empty Seat** (Mission 1, levels 1 to 3) and then follows broke Level 3 E-ranks working San Francisco's
 gate economy while hiding `Cap: none` and impossible classes. High-depth nodes on Mythic and Epic trees cost heavy
 gold, and the party still has E-rank HP, E-rank gear, and an E-rank Bureau license.
 
@@ -175,7 +175,7 @@ gold, and the party still has E-rank HP, E-rank gear, and an E-rank Bureau licen
   no gold, until `"Collateral taken"` flashes and, two sessions later, that hunter cannot recall their own mother's
   voice or a song their sibling hums. A second death brings the 10-Clear debt and the second collateral.
 - **How it ends (Level 10):** crossing into D-rank while registered as E-rank produces four simultaneous
-  "re-awakenings" against fewer than thirty on record (`power.md`, section 5). Act 1 ends with a Carrow cover-up
+  "re-awakenings" against fewer than thirty on record (`power.md`, section 5). Act 1 ends with a San Francisco cover-up
   choice: fake a single re-awakening, pay a five-Clear assessor bribe, or go underground with Redline or the Stair.
 
 ### Act 2, rank C: the audit and the audience
@@ -203,7 +203,7 @@ rank with a later re-offer, or exacts collateral or sponsor debt).
 Season 12 channel, fills the blank line below `"Cap: none"` with `"Viewers"` in the low hundreds, and activates
 `"Value: XX XP"` above every Resident.
 
-- **What they enjoy:** levels past C-rank and full Mythic/Epic depth while managing Carrow's factions.
+- **What they enjoy:** levels past C-rank and full Mythic/Epic depth while managing San Francisco's factions.
 - **Playable horror beat (Value):** walking out of the Halfway House after the audit, the party sees a new line above
   every Resident's head: `"Value: 18 XP"` over Pim Aldous, `"Value: 45 XP"` over a child at the tram stop (and over the
   people they named in Mission 1's first question). Children are worth more because monsters get more XP for killing
@@ -222,18 +222,18 @@ hunters like Okoro and Osei never drew enough concurrent viewers to pay for city
 party climbing fast in public pushes Earth's viewer count past the Hosts' 10,000-viewer threshold, greenlighting the
 season's second half. The party's own rise triggered the scenarios.
 
-The System speaks to every window in Carrow at once, issuing **scenarios** with a timer and a penalty.
+The System speaks to every window in San Francisco at once, issuing **scenarios** with a timer and a penalty.
 
 - **What they enjoy:** sponsors. A viewer who adopts a hunter sends gold, gear, and private quests (`machines.md`,
   `Sponsor patronage`). By mid-act the party can afford B-rank gear, skill books, and pre-bought crystals.
-- **How Carrow reacts when scenarios start (proposed, needs the owner):**
+- **How San Francisco reacts when scenarios start (proposed, needs the owner):**
   - **The Bureau** denies the messages are binding for six hours, then treats scenarios like breaks and starts
     assigning parties to meet them.
   - **Ironwake** pulls its liners into Ledger Row and refuses to spend them on Scarside scenarios.
   - **Aurelian** films every scenario exit and tries to claim credit on television.
   - **The Once-Born League and Plain Men** blame uncapped hunters for drawing the System's attention and picket the
     Halfway House.
-- **Playable horror beat (the Scarside count; proposed, needs the owner):** every window in Carrow displays
+- **Playable horror beat (the Scarside count; proposed, needs the owner):** every window in San Francisco displays
   `"Scenario: Scarside's population must fall by 400 before dawn. Penalty: Scarside loses power and Shop access for
   one year."` The wording says **population**, not deaths. Colonel Yun's Corps seals Scarside's bridges to prevent
   a stampede; a guild crew and the Plain Men both move in to settle the count in blood. The party can either force a
@@ -293,22 +293,22 @@ earlier season except the first lost to them.
   4. **Tova Hren (Mage):** levels districts from a kilometre away to end the Finale quickly so Earth suffers less.
   5. **Branek (Necromancer):** refuses to extract a single shadow from Earth's dead, fighting only with the frayed,
      centuries-old shadows of his own original world.
-- **Uniting Carrow (proposed, needs the owner):** Carrow's factions have every reason to distrust an uncapped party.
+- **Uniting San Francisco (proposed, needs the owner):** San Francisco's factions have every reason to distrust an uncapped party.
   Give each faction a concrete price for joining the line at Port Sarn:
   - **Ironwake:** Reinholt wants the Bureau to bury the Year 7 sealing (or, if Ines Carvalho replaced him, Ironwake
     marches at once on the promise that the party holds the front beside them).
   - **Aurelian:** Sato wants live broadcast rights until Six or Dax Verrault breaks her hold.
-  - **The Ninth Hour:** Amara Nkemelu marches immediately if the party covers Carrow's seawall while she anchors the
+  - **The Ninth Hour:** Amara Nkemelu marches immediately if the party covers San Francisco's seawall while she anchors the
     harbour line.
   - **The Once-Born League and Plain Men:** bring their crystal-tipped munitions only if the party swears that
     unawakened witnesses will hear whatever truth lies inside Port Sarn's gate.
-- **The cost:** Carrow, or most of it. The Finale should destroy a district or place the players built ties to.
+- **The cost:** San Francisco, or most of it. The Finale should destroy a district or place the players built ties to.
 - **Branch A, Earth wins:** the five fall, thanking the party as they die. Every window on Earth displays
   `"Season 12 complete. Thank you for playing."` No gate closes and nobody is released. The viewer count hits its
   highest number of the campaign. Then a private window opens for every uncapped hunter on Earth: the same Finale
   contract.
 - **Branch B, Earth is lost (`machines.md`, `The season`; proposed, needs the owner):** if the five break Earth's
-  lines, Carrow burns and every window displays `"Season failed. Processing cast."` Before the Hosts can strip the
+  lines, San Francisco burns and every window displays `"Season failed. Processing cast."` Before the Hosts can strip the
   survivors' windows, Marek Osei drags the battered party through a maintenance seam behind Port Sarn's fish-market
   gate directly into Act 6's control room.
 

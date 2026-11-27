@@ -1094,6 +1094,8 @@ export type RoomRules = {
   feats: { on: boolean };
   /** The GM's trading switch (`RULES.trade`): a doc without it reads as on. */
   trade: { on: boolean };
+  /** The GM's primer switch (`RULES.primer`): a doc without it reads as off (locked for players). */
+  primer: { on: boolean };
   /** The GM's mythic switch (`RULES.fight.mythic.scripts`): a doc without it reads as off, so a room from before scripts plays none. */
   mythic: { scripts: boolean };
   /** The GM's keystone switch and thresholds (`RULES.fight.keystone`): a doc without it reads as off with shipped shares and ranks. */
@@ -1675,6 +1677,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
     feats: { on: bool(own(obj(own(o, 'feats')), 'on')) },
     trade: { on: bool(own(obj(own(o, 'trade')), 'on')) },
+    primer: { on: opt(own(o, 'primer'), v => bool(own(obj(v), 'on')), false) },
     mythic: { scripts: bool(own(obj(own(o, 'mythic')), 'scripts')) },
     keystone: roomKeystone(own(o, 'keystone')),
     damageTypes: roomDamageTypes(own(o, 'damageTypes')),

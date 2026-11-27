@@ -169,7 +169,7 @@ describe('first-run setup and the quick start', () => {
     expect(STARTS).toEqual([SHUT]);
   });
 
-  test('onboarding UI replaces the dodging No welcome with Day Zero copy, adds the sample-hunters toggle, and renders the Carrow primer drawer', async () => {
+  test('onboarding UI replaces the dodging No welcome with Day Zero copy, adds the sample-hunters toggle, and renders the San Francisco primer drawer', async () => {
     const [coreSrc, viewSrc] = await Promise.all([
       Bun.file(`${import.meta.dir}/../src/core/onboarding.ts`).text(),
       Bun.file(`${import.meta.dir}/../src/views/onboard.js`).text(),
@@ -189,7 +189,7 @@ describe('first-run setup and the quick start', () => {
     expect(viewSrc).toContain('Include 4 sample hunters');
     expect(viewSrc).toContain('starterStep(app, { includePregens })');
 
-    expect(viewSrc).toContain('Read aloud: Carrow primer');
+    expect(viewSrc).toContain('Read aloud: San Francisco primer');
     expect(viewSrc).toContain('WORLD_PRIMER');
     expect(viewSrc.match(/primerHtml\(\)/g)?.length ?? 0).toBe(2);
   });

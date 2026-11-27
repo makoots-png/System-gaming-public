@@ -50,6 +50,7 @@ export function withRoomRules(R: Rules, room: RoomRules | null): Rules {
     solo: { ...R.solo, ...room.solo },
     feats: { ...R.feats, ...room.feats },
     trade: { ...R.trade, ...room.trade },
+    primer: { ...R.primer, ...room.primer },
     fight: { ...R.fight, ...fightOver(R, room) },
     shadow: { ...R.shadow, summonMp: room.shadow.summonMp },
     rarities: { ...R.rarities, ...eachRarity(r => ({ ...R.rarities[r], rank: room.rarities[r].rank })) },
@@ -82,6 +83,7 @@ export const roomRulesOf = (R: Rules): RoomRules => ({
   solo: { personal: R.solo.personal, hours: R.solo.hours, lootShare: R.solo.lootShare },
   feats: { on: R.feats.on },
   trade: { on: R.trade.on },
+  primer: { on: R.primer.on },
   mythic: { scripts: R.fight.mythic.scripts },
   keystone: {
     on: R.fight.keystone.on,

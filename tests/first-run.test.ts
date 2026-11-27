@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER, createdLine, nextSteps } from '../src/core/first-run.ts';
+import { ABOUT, LOADED, PRIMER_WORDS, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER, createdLine, nextSteps, showsPrimer } from '../src/core/first-run.ts';
 import type { FirstRunFacts } from '../src/core/first-run.ts';
 import { STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER, starterStory } from '../src/core/starter.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -140,15 +140,15 @@ describe('the sentences a new person reads', () => {
   test('LOADED.starter names The Empty Seat, Tessa Corbin, the primer, and Start a story', () => {
     expect(LOADED.starter).toContain(STARTER_STORY_NAME);
     expect(LOADED.starter).toContain(STARTER_UNSPENT_HUNTER);
-    expect(LOADED.starter).toContain('Read aloud: Carrow primer');
+    expect(LOADED.starter).toContain('Read aloud: San Francisco primer');
     expect(LOADED.starter).toContain('Start a story');
     expect(LOADED.starter).toContain('Chapter 1');
   });
 
-  test('WORLD_PRIMER carries the 9 Carrow primer paragraphs in American English', () => {
+  test('WORLD_PRIMER carries the 9 San Francisco primer paragraphs in American English', () => {
     expect(WORLD_PRIMER).toHaveLength(9);
     const full = WORLD_PRIMER.join('\n\n');
-    expect(full).toContain('Carrow');
+    expect(full).toContain('San Francisco');
     expect(full).toContain('laborer');
     expect(full).toContain('license');
     expect(full).not.toMatch(/\b(labourer|licence)\b/i);
@@ -183,7 +183,7 @@ describe('the sentences a new person reads', () => {
     ].join('\n');
 
     const checks: readonly { readonly label: string; readonly referencedIn: string; readonly uiSource: string; readonly uiFile: string }[] = [
-      { label: 'Read aloud: Carrow primer', referencedIn: LOADED.starter, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
+      { label: 'Read aloud: San Francisco primer', referencedIn: LOADED.starter, uiSource: onboardSrc, uiFile: 'src/views/onboard.js' },
       { label: 'Start a story', referencedIn: LOADED.starter, uiSource: storyRunSrc, uiFile: 'src/core/story/run.ts' },
       { label: 'Confirm allocation', referencedIn: stepText, uiSource: rulesTextSrc, uiFile: 'src/core/rules-text.ts' },
       { label: 'Mark as raiding', referencedIn: notes, uiSource: gatesSrc, uiFile: 'src/views/gates.js' },
@@ -205,9 +205,22 @@ describe('the sentences a new person reads', () => {
     expect(TIPS.gm.some(t => /create a room/.test(t))).toBe(true);
     expect(TIPS.gm.some(t => /GM -> Stories/.test(t))).toBe(true);
     expect(TIPS.player.some(t => /join your GM's room/.test(t))).toBe(true);
-    for (const t of [...TIPS.gm, ...TIPS.player, ...Object.values(LOADED), ABOUT, ROOM_IS, ...WORLD_PRIMER]) {
+    for (const t of [...TIPS.gm, ...TIPS.player, ...Object.values(LOADED), ...Object.values(PRIMER_WORDS), ABOUT, ROOM_IS, ...WORLD_PRIMER]) {
       expect(t).not.toMatch(/open a room|run a room/i);
       expect(t).not.toMatch(/[—!;]/);
     }
+  });
+
+  test('showsPrimer always shows for solo and GM seats, and gates players in a room on primer.on', () => {
+    const locked = { primer: { on: false } };
+    const unlocked = { primer: { on: true } };
+    expect(showsPrimer('alone', null)).toBe(true);
+    expect(showsPrimer('alone', locked)).toBe(true);
+    expect(showsPrimer('gm', null)).toBe(true);
+    expect(showsPrimer('gm', locked)).toBe(true);
+    expect(showsPrimer('gm', unlocked)).toBe(true);
+    expect(showsPrimer('player', null)).toBe(false);
+    expect(showsPrimer('player', locked)).toBe(false);
+    expect(showsPrimer('player', unlocked)).toBe(true);
   });
 });

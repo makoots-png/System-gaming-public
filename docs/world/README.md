@@ -9,7 +9,7 @@ numbers disagree.
 | File | Contents | When to read it |
 |---|---|---|
 | `seeds.md` | A primer to read to players (section 3), twenty hooks, ten places | First |
-| `history.md` | Day Zero, the Long Week, the Break Years, the Carrow Accord, the world in Year 20 | Before a first session |
+| `history.md` | Day Zero, the Long Week, the Break Years, the San Francisco Accord, the world in Year 20 | Before a first session |
 | `power.md` | The window every human has, awakening, ranks and caps, the trial gate, lifespans, gates | When a player asks why something works as it does |
 | `story.md` | For the GM only: what the game is, the campaign in six acts, the horror arcs, the ending | Before planning a campaign |
 | `economy.md` | What one gold is worth, every price, income by rank, the table for the lead | When a player asks what something costs |
@@ -48,7 +48,7 @@ numbers disagree.
 
 ## Names
 
-- **Carrow** is the city, a port of six million people.
+- **San Francisco** is the city, a port of 800,000 people.
 - **The Bureau** reads gates and hunters, licenses parties and auctions gate rights. Its hall is the Halfway House.
 - **The guilds** are Ironwake, the Lantern Company, Aurelian, the Ninth Hour, the Gravewardens and Redline.
 - **Helix** makes the city's power from crystal. **Paragon** sells insurance.

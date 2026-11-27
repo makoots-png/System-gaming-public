@@ -34,14 +34,14 @@ const WORLD = {
   mealsADay: 30,          // a labourer's day buys 30 plain street meals' worth: so one meal is one gold at the shipped rules
   workDaysAMonth: 25,
   medianOverUnskilled: 4 / 3, // the median wage over the unskilled one
-  // The city of Carrow (history.md section 6).
-  cityPeople: 6_000_000, awakenedOneIn: 500,
+  // The city of San Francisco (history.md section 6).
+  cityPeople: 800_000, awakenedOneIn: 500,
   rankShare: { E: 0.40, D: 0.33, C: 0.18, B: 0.07, A: 0.0199, S: 0.0001 } as Record<Rank, number>,
-  worldGatesAMonth: 3000, // 100 a day: set so that the guilds' members can be seated (the check `Guild seats`)
+  worldGatesAMonth: 400,  // about 13 a day: set so that the guilds' members can be seated (the check `Guild seats`)
   auctionedShare: 0.5,    // the share of world gates whose rights the Bureau sells; the rest are public
   workersShare: 0.5, peopleAHousehold: 2.5, labourShare: 0.6, // workers of the people; people a home; wages of all income
-  // Carrow's guilds that raid (factions.md): their members. Redline's mercenaries are counted with the unsigned.
-  guildMembers: { Ironwake: 500, 'Lantern Company': 1000, Aurelian: 60, 'Ninth Hour': 40 } as Record<string, number>,
+  // San Francisco's guilds that raid (factions.md): their members. Redline's mercenaries are counted with the unsigned.
+  guildMembers: { Ironwake: 67, 'Lantern Company': 133, Aurelian: 8, 'Ninth Hour': 5 } as Record<string, number>,
   linerGates: 4, freelancerGates: 1, occasionalGates: 0.25,           // world gates a month, by way of working
   // PERSONAL GATES (the owner, Nov 20): the System opens none on a timer. One opens when a gate key is used, or when the GM says so.
   keyAClear: 1 / 200,       // gate keys a cleared world gate drops
@@ -217,7 +217,7 @@ const holderNet = (r: Rank): number => harvest(r) * (1 - WORLD.crewLay - WORLD.g
 const rights = (r: Rank): number => holderNet(r) * WORLD.rightsBid;
 block('gates', table(['Gate', 'Breaks on day', 'Gold pot (party of 4)', 'One Clear', 'Entry fee for each hunter', 'Harvest', 'Crew\'s share', 'State levy', 'Holder nets', 'Rights at auction', 'Harvest if ripe (last day)'],
   RANKS.map(r => [r, RULES.rankTable[r].breakDays, whole(pot(r)), whole(clear(r)), whole(clear(r) * WORLD.entryFee), whole(harvest(r)), whole(harvest(r) * WORLD.crewLay), whole(harvest(r) * WORLD.gateLevy), whole(holderNet(r)), whole(rights(r)), whole(harvest(r) * (1 + WORLD.ripeBonus))])));
-block('gate-count', table(['Rank', 'Hunters in Carrow', 'World gates a month', 'Seats a month (parties of 4)', 'Seats a hunter of the rank a month'],
+block('gate-count', table(['Rank', 'Hunters in San Francisco', 'World gates a month', 'Seats a month (parties of 4)', 'Seats a hunter of the rank a month'],
   RANKS.map(r => { const h = WORLD.cityPeople / WORLD.awakenedOneIn * WORLD.rankShare[r], g = WORLD.worldGatesAMonth * WORLD.worldGateShare[r]; return [r, nice(h), g >= 1 ? nice(g) : g.toFixed(2), g * 4 >= 1 ? nice(g * 4) : (g * 4).toFixed(2), (g * 4 / h).toFixed(2)]; })));
 
 // ── 9. mana crystal ──
@@ -399,7 +399,7 @@ const g = WORLD.growthAYear;
 const eqTideYears = (1 - (1 + g) ** -tideYears) / (1 - (1 + g) ** -1);
 const eqBreakYears = WORLD.breakYears * WORLD.breakYearsShare * ((1 + g) ** -tideYears);
 const cumulativeNetYears = eqTideYears + eqBreakYears;
-const goldStock = net * 12 * cumulativeNetYears;                     // gold accumulated in Carrow over 20 years
+const goldStock = net * 12 * cumulativeNetYears;                     // gold accumulated in San Francisco over 20 years
 const broadMoney = income * 12 / WORLD.moneyTurnsAYear;
 const derivedReserveRatio = goldStock / broadMoney;
 const stockGrowthAYear = (net * 12) / goldStock;                     // annual growth of the 20-year gold stock
@@ -426,7 +426,7 @@ const bossCoreCraftShare = craftedHighGearAMonth / WORLD.worldGatesAMonth;
 
 const mil = (n: number): string => `${(n / 1e6).toFixed(1)} million`;
 block('model-people', table(['Who', 'How many', 'How the number is found'], [
-  ['Hunters in Carrow', whole(HUNTERS), `one person in ${WORLD.awakenedOneIn}`],
+  ['Hunters in San Francisco', whole(HUNTERS), `one person in ${WORLD.awakenedOneIn}`],
   ['Seats in world gates a month', whole(SEATS), `${whole(WORLD.worldGatesAMonth)} gates, four seats each`],
   ['Guild members', whole(members), 'the four raiding guilds of `factions.md`'],
   ['Liners (a guild\'s first teams)', whole(liners), `the guilds' half of the seats, at ${WORLD.linerGates} gates a month each`],
@@ -440,7 +440,7 @@ block('model-people', table(['Who', 'How many', 'How the number is found'], [
   ['All hunters who die for good in a year', `${whole(totalFinalDeathsAYear)} (${whole(occasionalFinalDeathsAYear)} occasional)`, 'regulars plus occasional hunters'],
   ['Breaks a year', nice(breaksAYear), `${WORLD.breakShare * 100}% of world gates`],
 ]));
-block('model-flows', table(['Gold a month in Carrow', 'Gold', 'Share'], [
+block('model-flows', table(['Gold a month in San Francisco', 'Gold', 'Share'], [
   ['Minted: world gates', mil(mintWorld), `${(mintWorld / mint * 100).toFixed(0)}% of the mint`],
   ['Minted: personal gates (from keys)', mil(mintPersonal), `${(mintPersonal / mint * 100).toFixed(0)}% of the mint`],
   ['Destroyed: hunters\' staples, tonics, food catalysts and escape stones', mil(sinkConsumables), `${(sinkConsumables / mint * 100).toFixed(0)}% of the mint`],
@@ -452,7 +452,7 @@ block('model-flows', table(['Gold a month in Carrow', 'Gold', 'Share'], [
   ['Left in circulation', mil(net), `${(net / mint * 100).toFixed(0)}% of the mint`],
   ['All income in the city', mil(income), 'for scale: the mint is ' + (mint / income * 100).toFixed(1) + '% of it'],
   ['The harvest (crystal and carcass)', mil(HARVEST_TOTAL), `${(fuelShare * 100).toFixed(0)}% of the city's power bill`],
-  ['Gold accumulated in Carrow over 20 years', `${(goldStock / 1e6).toFixed(0)} million`, `${(derivedReserveRatio * 100).toFixed(1)}% of notes and deposits`],
+  ['Gold accumulated in San Francisco over 20 years', `${(goldStock / 1e6).toFixed(0)} million`, `${(derivedReserveRatio * 100).toFixed(1)}% of notes and deposits`],
   ['Gold needed for the 3% Tide alone', mil(neededForTide), `the rest (${(reserveAndPriceDrift * 100).toFixed(1)}%/yr) rebuilds thin bank reserves and adds mild inflation`],
   ['Notes and deposits, with the gold', `${(broadMoney / 1e9).toFixed(0)} billion`, `a year's income changes hands ${WORLD.moneyTurnsAYear} times`],
 ]));
@@ -473,7 +473,7 @@ const CHECKS: Check[] = [
   ['Retired scouts do not out-earn liners', `${nice(SCOUT_DAYS * W)} against ${whole(linerNet('C'))} net`, 'a retired C-rank scout earns less than an active C-rank liner nets', SCOUT_DAYS * W < linerNet('C')],
   ['Regular hunters die', `${(regularFinalDeathsAYear / regulars * 100).toFixed(1)}% a year (${whole(regularFinalDeathsAYear)} of ${whole(regulars)})`, 'between 0.5% and 3% of regular hunters die for good in a year, matching numerator and denominator', within(regularFinalDeathsAYear / regulars, 0.005, 0.03)],
   ['The harvest powers the city', `${(fuelShare * 100).toFixed(0)}% of the power bill`, 'fuel is 5% to 40% of what the city pays for power', within(fuelShare, 0.05, 0.4)],
-  ['Boss cores leave Helix its share', `${whole(craftedHighGearAMonth)} of ${whole(highRankCoresAMonth)} B/A/S cores (${(bossCoreCraftShare * 100).toFixed(1)}% of all gates)`, 'high-tier crafted gear uses fewer cores than B/A/S gates supply and under 10% of Carrow\'s total cores', craftedHighGearAMonth < highRankCoresAMonth && bossCoreCraftShare < 0.10],
+  ['Boss cores leave Helix its share', `${whole(craftedHighGearAMonth)} of ${whole(highRankCoresAMonth)} B/A/S cores (${(bossCoreCraftShare * 100).toFixed(1)}% of all gates)`, 'high-tier crafted gear uses fewer cores than B/A/S gates supply and under 10% of San Francisco\'s total cores', craftedHighGearAMonth < highRankCoresAMonth && bossCoreCraftShare < 0.10],
   ['Reclaimers can live', `${whole(reclaimers)} crew`, 'the quarter of the harvest pays at least a few hundred reclaimers a reclaimer\'s wage', reclaimers >= 300],
   ['Fines deter: unlicensed entry', `${(FINES.unlicensedEntry * WORLD.caught.unlicensed).toFixed(1)} Clears expected`, 'the law table\'s fine times the catch chance is at least the Clear gained', FINES.unlicensedEntry * WORLD.caught.unlicensed >= 1],
   ['Fines deter: under-declared gold', `${(FINES.underDeclaredMult * WORLD.caught.underDeclared).toFixed(1)} times the levy`, 'the law table\'s fine multiple times the catch chance exceeds the levy dodged', FINES.underDeclaredMult * WORLD.caught.underDeclared > 1],

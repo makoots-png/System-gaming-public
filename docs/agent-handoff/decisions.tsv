@@ -850,3 +850,4 @@ ts	phase	decision	why	evidence	result
 2026-11-26T22:42Z	act1	PR 153 Act 1 U5 (Day Zero welcome, sample-hunters box, Carrow primer) + U7 (docs); unit 7442/0; browser 58/58; CI 45905053981 8/8
 2026-11-26T23:28Z	classes	PR 154 wave 2 PR 2 (Arise engine) + PR 5 (Grimreaper); unit 7468/0; browser 87/87; CI 45909691065 8/8
 2026-11-27T00:15Z	act1	PR 155 Act 1 U6: Wave 1 tune (chief normal, 1 goblin), 4p sample 75%/79% deaths -> 100%/4%; full browser 652/0; CI 45914320259 8/8
+2026-11-27T00:30Z	classes	PR 156 wave 2 PR 1 (Shadows rework) + PR 6 (Packlord) + PR 4 (Arise UI, The Empty Throne); unit 7537/0; CI 45915757910 8/8

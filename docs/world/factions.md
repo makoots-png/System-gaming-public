@@ -1,14 +1,14 @@
 # Factions
 
 Each entry has the same parts: what the faction wants, what it competes over, the disagreement inside it, its
-notable figures with a hook for each, how it recruits, and how a party meets it. The entries describe Carrow. Every
+notable figures with a hook for each, how it recruits, and how a party meets it. The entries describe San Francisco. Every
 large city has factions like them.
 
 ## 1. What factions compete over
 
 | Prize | Why it is scarce | Who competes for it |
 |---|---|---|
-| Seats in gates | Carrow has 3,000 world gates a month with four seats each, and 12,000 hunters. A seat pays gold and drops | Guilds, each guild's own hunters, the Bureau |
+| Seats in gates | San Francisco has 400 world gates a month with four seats each, and 1,600 hunters. A seat pays gold and drops | Guilds, each guild's own hunters, the Bureau |
 | Gate rights | The Bureau auctions half of all gates. A guild's margin comes from the harvest | Guilds, Helix, illegal crews |
 | Hunters | One person in five hundred awakens, and each is capped at their rank. A guild can hire strength and cannot train it past the cap | Guilds, the Hunter Corps, foreign states, the Stair |
 | Healers | One hunter in eight | Every faction that sends a party into a gate |
@@ -21,8 +21,8 @@ large city has factions like them.
 
 ### Ironwake
 
-Ironwake is the oldest guild in Carrow. A party that defended the river bridges in the Break Years founded it in
-Year 2. It has five hundred hunters and a hall on Ledger Row. An agreement older than the auction law gives it
+Ironwake is the oldest guild in San Francisco. A party that defended the river bridges in the Break Years founded it in
+Year 2. It has sixty-seven hunters and a hall on Ledger Row. An agreement older than the auction law gives it
 first refusal on a fifth of the city's auctioned gates.
 
 - **Wants:** to remain the largest guild. This year it wants to keep its B and A gates. In the long term it wants an S-rank of its own. It has never had one.
@@ -43,7 +43,7 @@ first refusal on a fifth of the city's auctioned gates.
 
 ### The Lantern Company
 
-The Lantern Company is a cooperative. Its thousand hunters, almost all E to C, own it in equal shares and vote
+The Lantern Company is a cooperative. Its 133 hunters, almost all E to C, own it in equal shares and vote
 on which gate rights to bid for. It clears the E and D gates that other guilds do not want, in large numbers. Its
 members voted to put a healer in every party.
 
@@ -66,7 +66,7 @@ members voted to put a healer in every party.
 
 ### Aurelian
 
-A holding company owns Aurelian. The guild has a glass tower, a media department and sixty hunters whom the public
+A holding company owns Aurelian. The guild has a glass tower, a media department and eight hunters whom the public
 knows by name.
 
 - **Wants:** places in the Hundred. This year it wants three of its hunters on the list. In the long term it wants to sign any re-awakened hunter before a rival does.
@@ -86,10 +86,10 @@ knows by name.
 
 ### The Ninth Hour
 
-The Ninth Hour is forty hunters led by the city's only S-rank. It has no reserve team, no academy and no press
+The Ninth Hour is five hunters led by the city's only S-rank. It has no reserve team, no academy and no press
 office. It takes the gates that could destroy the city, and the city pays it to do so.
 
-- **Wants:** Carrow to survive. This year it wants a second S-rank, from anywhere, before Amara Nkemelu leaves or
+- **Wants:** San Francisco to survive. This year it wants a second S-rank, from anywhere, before Amara Nkemelu leaves or
   dies. It states no long-term aim.
 - **Competes over:** nothing. The city gives it what it asks for.
 - **Inside:** its members disagree on whether the guild should follow the city or the Abstention when the two
@@ -99,12 +99,12 @@ office. It takes the gates that could destroy the city, and the city pays it to 
   - **Henrik Vale.** Her deputy, A-rank Healer, fifty. *Hook:* he has heard the rumour of hunters who grow and believes it. He is looking for one to train as her
     successor, and the Bureau has told him to stop.
 - **Recruits:** by invitation only.
-- **A party meets it:** at a break, where its forty hunters take command and tell the party where to stand, or
+- **A party meets it:** at a break, where its five hunters take command and tell the party where to stand, or
   when Vale visits one of the party at home.
 
 ### The Gravewardens
 
-The Gravewardens are a guild and a public register. The law requires every licensed Necromancer in Carrow to
+The Gravewardens are a guild and a public register. The law requires every licensed Necromancer in San Francisco to
 belong. Their hall is beside the old cemetery in Saltmarket.
 
 - **Wants:** extraction to stay legal. This year it wants every shadow in the city on the register. In the long
@@ -124,7 +124,7 @@ belong. Their hall is beside the old cemetery in Saltmarket.
 
 ### Redline
 
-Redline is a mercenary company. It has a hundred and twenty hunters on day rates, a dispatcher and a bar. It
+Redline is a mercenary company. It has sixteen hunters on day rates, a dispatcher and a bar. It
 specialises in red gates, work that guild contracts forbid, and "third-life escorts": matching veterans who have
 spent their free and debt revives with parties that carry a pre-bought crystal, in exchange for first claim on any
 named drop (proposed, needs the owner).
@@ -138,7 +138,7 @@ named drop (proposed, needs the owner).
   - **Kofi Stein.** Dispatcher, B-rank Ranger, with one hand. *Hook:* for a fee he guarantees a hunter a seat in a
     gate of their rank within a month. He does not say where the seats come from, or why three of his third-life
     clients died without their pooled crystal last quarter.
-  - **Dr Lale Demir.** A-rank Healer with no guild contract. *Hook:* she is the only healer in Carrow who works for
+  - **Dr Lale Demir.** A-rank Healer with no guild contract. *Hook:* she is the only healer in San Francisco who works for
     unsigned parties. Every guild has tried to hire her, and one guild now plans to force her.
 - **Recruits:** hunters whom guilds dismissed, deserters from the Corps, third-life veterans without a guild vault,
   and hunters whom no guild will seat.
@@ -147,11 +147,11 @@ named drop (proposed, needs the owner).
 
 ## 3. The state
 
-### The Gate Bureau, Carrow office
+### The Gate Bureau, San Francisco office
 
 The Bureau reads gates and hunters, keeps the Register, runs Doorwatch, auctions gate rights, licenses parties,
-collects the levy, and clears public gates with its own crews. It has two thousand staff, of whom forty are
-assessors who can read a gate. Its hall on Ledger Row is called the Halfway House. Every new hunter in Carrow is
+collects the levy, and clears public gates with its own crews. It has about 270 staff, of whom five are
+assessors who can read a gate. Its hall on Ledger Row is called the Halfway House. Every new hunter in San Francisco is
 read there.
 
 - **Wants:** no breaks. This month it wants every posted gate cleared. It also wants to know at once of any hunter whose rank changes.
@@ -159,7 +159,7 @@ read there.
 - **Inside:** the field service wants gates cleared by any party that will do it. The watch desk keeps a file on hunters suspected of growing and wants them held for study.
 - **Figures:**
   - **Halima Voss.** Director, unawakened, 58. *Hook:* she has two forecasts of the Tide. The public one shows
-    Carrow coping. The one in her safe shows that by Year 31 Carrow cannot clear its gates with the hunters it has. She has the
+    San Francisco coping. The one in her safe shows that by Year 31 San Francisco cannot clear its gates with the hunters it has. She has the
     watch desk's file on her desk and wants to know whether a hunter can be made stronger.
   - **Renzo Okabe.** Chief assessor, D-rank, the best reader in the country. *Hook:* in Year 15 he read a B gate as
     C, and eleven hunters died. He says the gate changed rank after he read it. Assessors hold that a gate cannot
@@ -172,7 +172,7 @@ read there.
 
 ### The Hunter Corps
 
-The Corps has three hundred ranked soldiers in Carrow's garrison and the right to call up every other hunter. It
+The Corps has forty ranked soldiers in San Francisco's garrison and the right to call up every other hunter. It
 commands the unawakened infantry of the cordon.
 
 - **Wants:** enough hunters at the next break. In the long term it wants its own A-ranks. It cannot match guild
@@ -187,16 +187,16 @@ commands the unawakened infantry of the cordon.
 
 ### The Accord and the Abstention
 
-The Accord is international law. Its secretariat is in Carrow's old customs house, and its inspectors may enter
+The Accord is international law. Its secretariat is in San Francisco's old customs house, and its inspectors may enter
 any Bureau. The Abstention is an unwritten agreement among the S-ranks, and each of them keeps it because the
-others would kill one who broke it. *Hook:* both assume that rank is fixed. An Accord inspector has asked the Carrow office for its file on hunters
+others would kill one who broke it. *Hook:* both assume that rank is fixed. An Accord inspector has asked the San Francisco office for its file on hunters
 who grow, and so has Tomas Reyes-Lindahl.
 
 ## 4. Corporations
 
 ### Helix Manaworks
 
-Helix has powered Carrow since Year 4. It buys nine tenths of the city's crystal, runs the reactors and owns the
+Helix has powered San Francisco since Year 4. It buys nine tenths of the city's crystal, runs the reactors and owns the
 grid.
 
 - **Wants:** more crystal each year, and larger cores, because its reactors need larger cores as they age. This
@@ -261,11 +261,11 @@ the cap of anyone whose account is clean.
 - **Competes over:** young hunters, against the guilds, and frightened people, against the Open Hand.
 - **Inside:** members disagree on whether killing in a gate counts against a hunter's account.
 - **Figures:**
-  - **Mother Ansel Whitlow.** C-rank, 66, leader of the Carrow congregation. She has been at level 34 for nineteen
+  - **Mother Ansel Whitlow.** C-rank, 66, leader of the San Francisco congregation. She has been at level 34 for nineteen
     years and has done the daily quest every day. *Hook:* a member told her in confession that his window reads
     "Cap: none". She believes him and has not decided whom to tell.
   - **Brother Tully.** The church's treasurer. *Hook:* the church lends for crystals at two percent a month, one
-    point below the guilds. Nine hundred hunters owe it money.
+    point below the guilds. 120 hunters owe it money.
 - **Recruits:** at dawn in Founders' Park, where capped hunters do the daily quest together, and among hunters who
   have just been raised.
 - **A party meets it:** when the Ledger hears that a member of the party has passed their cap. It treats that
@@ -274,7 +274,7 @@ the cap of anyone whose account is clean.
 ### The Open Hand
 
 The Open Hand believes that the monsters are fleeing something and that clearing a gate kills refugees. It has few
-members. Its actions have led to about two hundred deaths in Carrow.
+members. Its actions have led to about two hundred deaths in San Francisco.
 
 - **Wants:** to let one gate break with nobody there to fight, to show that the monsters would not attack. This
   year it wants to hide a gate for a week.
@@ -298,7 +298,7 @@ launders gold through runners, and lends for crystals at five percent a month.
 - **Competes over:** gates, by bribing guild staff for seats, and debtors, against the Ledger.
 - **Inside:** the older members deal in stolen gear and want no attention. The seat brokers earn far more, and their trade brings Bureau investigators.
 - **Figures:**
-  - **Rosalind Quill**, called Auntie. Unawakened, seventy, a pawnbroker in Tidewall. *Hook:* three hundred hunters
+  - **Rosalind Quill**, called Auntie. Unawakened, seventy, a pawnbroker in Tidewall. *Hook:* forty hunters
     owe her for crystals. She has never demanded payment from any of them and intends to demand it from all of
     them on one day that she has chosen.
   - **Marek Osei**, called Landing. Seat broker, D-rank on the Register. *Hook, for the GM only:* he passed a trial gate and has no cap. He was read as D eight years ago and now
@@ -335,7 +335,7 @@ The League campaigns for the rights of unawakened people. It was founded outside
 - **Inside:** most members want change by law. A smaller group has noticed that people awaken more often near a
   break and is discussing how to use that.
 - **Figures:**
-  - **Councillor Teodora Baskin.** The League's leader in Carrow. *Hook:* her seventeen-year-old son awakened last
+  - **Councillor Teodora Baskin.** The League's leader in San Francisco. *Hook:* her seventeen-year-old son awakened last
     week and is in her attic. His window says B-rank. The 72 hours have passed, the late fine is 15,000 gold, and
     registering a B-rank son would break her coalition overnight.
   - **Dr Imre Solis.** A clinician who studies ageing. *Hook:* he has found a way to make a crystal begin to work
@@ -346,13 +346,13 @@ The League campaigns for the rights of unawakened people. It was founded outside
 
 ### Reclaimers' Local 7
 
-Local 7 is the union of the crews that cut crystal and carcasses out of gates. It has about 8,700 members in Carrow.
+Local 7 is the union of the crews that cut crystal and carcasses out of gates. It has about 1,160 members in San Francisco.
 They enter gates with no powers, for a quarter of the harvest, and die at four times the rate of miners.
 
 - **Wants:** to keep the quarter share, to have a hunter on guard at every worksite, and to stop holders from
   delaying clears.
 - **Competes over:** the share, against every rights holder, and the gate-holding law, against Helix.
-- **Figure:** **Nasrin Gallo.** President. *Hook:* she can stop every harvest in Carrow with one message, and the
+- **Figure:** **Nasrin Gallo.** President. *Hook:* she can stop every harvest in San Francisco with one message, and the
   city stores four days of crystal. She has always known about the thirty reclaimers who died in Year 7.
 - **A party meets it:** inside a gate, an hour after the boss dies, when a crew of twelve arrives with saws.
 

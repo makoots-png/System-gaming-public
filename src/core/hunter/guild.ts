@@ -18,7 +18,7 @@ import type { Save } from '../save.ts';
 import { debtPaidLine, debtPaidLog, debtPreviewLine } from './revive-standing.ts';
 import type { DebtPaid, DebtXpCut } from './revive-standing.ts';
 
-/** The five Carrow guild archetypes, in display order. */
+/** The five San Francisco guild archetypes, in display order. */
 export const GUILD_ARCHETYPES = ['ironwake', 'lantern', 'aurelian', 'ninth-hour', 'redline'] as const;
 export type GuildArchetype = (typeof GUILD_ARCHETYPES)[number];
 

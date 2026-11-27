@@ -279,7 +279,7 @@ test('a new GM sees Campaign ready, taps Create room and lands on the room\'s in
   await expect(win).toContainText(LOADED.starter.split('\n')[0]!);
   await expect(win).toContainText(STARTER_STORY_NAME);
   await expect(win).toContainText(STARTER_UNSPENT_HUNTER);
-  await expect(win).toContainText('Read aloud: Carrow primer');
+  await expect(win).toContainText('Read aloud: San Francisco primer');
   await expect(win).toContainText('Start a story');
   await expect(win).toContainText(ROOM_IS);
   expect(await nextOf(gm)).toEqual([
@@ -482,7 +482,7 @@ test('GM setup includes 4 sample hunters by default and lets a live table unchec
   expect(state.stories).toContain(STARTER_STORY_NAME);
 });
 
-test('Read aloud: Carrow primer is collapsible inside Campaign ready and the ? Quick Start guide', async ({ device }) => {
+test('Read aloud: San Francisco primer is collapsible inside Campaign ready and the ? Quick Start guide', async ({ device }) => {
   const gm = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
   await openApp(gm);
   for (const b of ['[data-yes]', '[data-gm]', '[data-starter]']) await gm.locator(`${OB} ${b}`).tap();
@@ -491,7 +491,7 @@ test('Read aloud: Carrow primer is collapsible inside Campaign ready and the ? Q
     const ready = await windowTitled(gm, 'Campaign ready');
     const drawer = ready.locator('[data-primer]');
     const summary = drawer.locator('summary');
-    await expect(summary).toHaveText('Read aloud: Carrow primer');
+    await expect(summary).toHaveText('Read aloud: San Francisco primer');
     await expect(drawer).not.toHaveAttribute('open', '');
     const box = await summary.boundingBox();
     expect(box && box.height >= 44).toBe(true);
@@ -507,7 +507,7 @@ test('Read aloud: Carrow primer is collapsible inside Campaign ready and the ? Q
     const guide = await windowTitled(gm, 'How it works');
     const drawer = guide.locator('[data-primer]');
     const summary = drawer.locator('summary');
-    await expect(summary).toHaveText('Read aloud: Carrow primer');
+    await expect(summary).toHaveText('Read aloud: San Francisco primer');
     await expect(drawer).not.toHaveAttribute('open', '');
     await summary.tap();
     await expect(drawer).toHaveAttribute('open', '');

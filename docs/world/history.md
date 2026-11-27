@@ -1,7 +1,7 @@
 # History: from Day Zero to Year 20
 
-The world is Earth. Two places are invented, the city of Carrow and the lost city of Port Sarn, so that no table
-has to destroy a real city. A GM who wants the gates over their own town can rename both.
+The world is Earth. The setting is San Francisco twenty years from now. One city is invented, the lost city of Port
+Sarn, so that no table has to destroy a real city on day 2. A GM who wants the gates over their own town can move the setting.
 
 ## 1. The calendar
 
@@ -12,7 +12,7 @@ this file says otherwise.
 Two dates matter most:
 
 - **Day Zero, Year 0.** The gates open.
-- **Year 3.** States sign the Carrow Accord, which sets the law on gates and hunters.
+- **Year 3.** States sign the San Francisco Accord, which sets the law on gates and hunters.
 
 Every human has had a System window since Day Zero. A hunter's level is capped at the top of the rank they awaken
 with, and every law, contract and guild in this file assumes that. `power.md`, section 5, covers the exception.
@@ -46,8 +46,8 @@ a month it was clear that only they could kill a monster above D rank.
 ## 3. The Break Years, Year 0 to Year 3
 
 The first wave on Day Zero was only the start. Over the next three years the rate climbed steeply into hundreds of
-thousands of new gates worldwide every month (reaching roughly a thousand a month in a port of Carrow's size by Year
-5, and 1,500 a month by Year 20 with the 3% Tide). For three years states could not clear them fast enough.
+thousands of new gates worldwide every month (reaching roughly 260 a month in a port of San Francisco's size by Year
+5, and 400 a month by Year 20 with the 3% Tide). For three years states could not clear them fast enough.
 
 - **Deaths.** About one person in twenty died. A third died in breaks. The rest died of hunger and untreated
   illness after breaks closed ports, farms and hospitals.
@@ -67,7 +67,7 @@ Power stations and the internet kept working through most of the Break Years, an
 
 ## 4. Year 3 to Year 8: the rules are written
 
-**The Carrow Accord, Year 3.** Ninety states signed it in Carrow, the largest port on its coast that was still
+**The San Francisco Accord, Year 3.** Ninety states signed it in San Francisco, the largest port on its coast that was still
 open. It has five rules, and almost every country still follows them:
 
 1. The state reads every gate within a day of finding it and gives it a rank from E to S, by the amount of mana in
@@ -84,7 +84,7 @@ clerk earns 460 gold a month and decides which party gets which gate.
 wanted the first claim on gates, a share of the crystal cut out of them, and payments to the families of members
 who died. Guilds still do those three things.
 
-**Crystal power, Year 4.** The crystal in a gate's walls burns clean and very hot. Helix Manaworks powered Carrow
+**Crystal power, Year 4.** The crystal in a gate's walls burns clean and very hot. Helix Manaworks powered San Francisco
 from one crystal reactor in Year 4. By Year 8 every surviving city ran on crystal. From then on a cleared gate was
 worth money to whoever cut the crystal out before the gate closed.
 
@@ -114,16 +114,16 @@ founded the Once-Born League.
 
 ## 6. The world in Year 20
 
-The examples are from Carrow, a port city of six million on a river mouth.
+The examples are from San Francisco, a port city of 800,000 on a bay.
 
 **A city.** Every map shows three zones. In a Green zone a ranked party reaches any address within ten minutes. The
-Crown and Ledger Row are Green. In an Amber zone the party arrives within forty minutes. Most of Carrow is Amber.
+Crown and Ledger Row are Green. In an Amber zone the party arrives within forty minutes. Most of San Francisco is Amber.
 In a Red zone the Bureau promises no time. Scarside is Red. It lies along the Scar, two kilometres of ruins left by
 a B break in Year 1.
 
 Every fourth lamp post has a siren. A steady tone means a gate has been found, and a rising tone means a break.
 Every tram stop has a board that lists the district's open gates, with each gate's rank and the days left before it
-breaks. Carrow has twelve thousand hunters. About half have a regular seat in world gates. The rest get one gate
+breaks. San Francisco has 1,600 hunters. About half have a regular seat in world gates. The rest get one gate
 in four months and live on other jobs, crafting professions, or running for the Shop.
 
 **A border.** Goods cross by convoy or by sea. A hunter needs an exit permit from their own Bureau to leave the
@@ -146,7 +146,7 @@ and almost none have awakened. A person can awaken at any age, most often betwee
 **A hospital.** A trauma ward stocks Health Potions, and few patients now die of blood loss. Cancer wards are full,
 because an Elixir of Life cures only some cancers and a Resident can take one a week. Hunters use a separate hospital,
 where potions work at full strength and where guild clerks handle debt revives and pre-bought Resurrection Crystals.
-In Carrow the two hospitals share a car park, and the Once-Born League holds a vigil there most nights.
+In San Francisco the two hospitals share a car park, and the Once-Born League holds a vigil there most nights.
 
 **An army.** A state has two forces. The cordon is unawakened infantry. It surrounds a gate or a break, moves
 civilians out, and kills E and D monsters with rifles. The Hunter Corps is a few hundred ranked soldiers. It also
@@ -192,15 +192,15 @@ young.
 |---|---|
 | 0 | Day Zero. The Long Week. Port Sarn is destroyed on day 2. The first people awaken. |
 | 0 to 3 | The Break Years. One person in twenty dies. Most rural people move to cities. |
-| 1 | Hunters learn to use gold and the Shop. A B break in Carrow leaves the Scar. |
-| 2 | The first guild charters. Ironwake is founded in Carrow. |
-| 3 | The Carrow Accord. |
-| 4 | Helix powers Carrow from crystal. |
+| 1 | Hunters learn to use gold and the Shop. A B break in San Francisco leaves the Scar. |
+| 2 | The first guild charters. Ironwake is founded in San Francisco. |
+| 3 | The San Francisco Accord. |
+| 4 | Helix powers San Francisco from crystal. |
 | 5 | The Tide is first measured. |
 | 8 | Every country prices goods in gold. |
 | 9 | The first public raising. The Once-Born League is founded. |
 | 11 | The Strait War lasts nine days. S-ranks agree the Abstention. |
 | 14 | The Hollowing. Cities begin to pay S-ranks to live in them. |
-| 17 | The Ledger Act makes gold the legal unit of account in Carrow's country. |
+| 17 | The Ledger Act makes gold the legal unit of account in San Francisco's country. |
 | 19 | Sabine Okoro, read as D in Year 8, is read again as S. |
 | 20 | The present. |
