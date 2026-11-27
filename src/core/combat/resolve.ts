@@ -182,7 +182,7 @@ function whereItEnds(
   if (target.kind === 'hunter') {
     const left = moveLeft(target), can = tiles(Math.min(rollCan, left));
     const opts = dodgeOptions(target.place, can, cover, grid, others);
-    if (picks) {
+    if (picks && !target.npc) {
       if (Object.hasOwn(picks, target.id)) {
         const want = picks[target.id]!, chosen = opts.tiles.find(o => samePlace(o.place, want)) ?? opts.auto;
         return { avoid: chosen.avoid, to: chosen.steps > 0 ? chosen.place : null, steps: chosen.steps };

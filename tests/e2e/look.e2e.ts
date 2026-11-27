@@ -1029,3 +1029,56 @@ test('on a 390 px phone a player\'s Stash tab and the GM\'s stash list fit the w
   expect(await rows(sec, 'gm-stash'), 'the GM\'s lines').toEqual([fits, fits]);
   expect(await gm.evaluate(() => document.documentElement.scrollWidth), 'no sideways scroll on the GM\'s phone').toBe(PHONE.width);
 });
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`at ${viewport.width} px the NPC maker keeps its skill slider, power readout, densest rows, and 44 px controls inside the width with no sideways scroll`, async ({ device }) => {
+    const page = (await device('gm', { viewport })).page;
+    await setupGoblinDenGM(page);
+    await page.evaluate(() => hunterApp.store.update((d: any) => {
+      d.library.statuses.ember = { label: 'Ember', desc: 'Stacks of heat.', ops: [], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    }, 'test-setup'));
+    await go(page, 'workshop');
+    await page.locator('#view-workshop [data-ws="npc"] [data-new]').tap();
+    const d = page.locator('.npcm-overlay [role=dialog]');
+    await expect(d.getByRole('heading', { name: 'New NPC' })).toBeVisible();
+    await expect(d.locator('#npcm-notes')).toBeVisible();
+    await d.locator('[data-chips="preset"] [data-chip="elite"]').tap();
+    await expect(d.locator('[data-power-warn]')).toBeVisible();
+    const abSel = d.locator('[data-add="ability"]');
+    await abSel.scrollIntoViewIfNeeded();
+    await abSel.selectOption({ index: 1 });
+    await expect(d.locator('[data-abilities] [data-edit-ability="0"]')).toBeVisible();
+    const stSel = d.locator('[data-add="status"]');
+    await stSel.scrollIntoViewIfNeeded();
+    await stSel.selectOption('ember');
+    await expect(d.locator('[data-statuses] [data-rounds="0"]')).toBeVisible();
+    await expect(d.locator('[data-statuses] [data-stacks="0"]')).toBeVisible();
+    await d.locator('[data-group="tweaks"] summary').tap();
+    await expect(d.locator('#npcm-hp')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').length)).toBe(0);
+    const audit = await d.evaluate(win => {
+      const wStyle = getComputedStyle(win);
+      const wRect = win.getBoundingClientRect();
+      const minLeft = wRect.left + parseFloat(wStyle.paddingLeft) - 1;
+      const maxRight = wRect.right - parseFloat(wStyle.paddingRight) + 1;
+      const labelOf = (el: Element) => (el.getAttribute('aria-label') || el.textContent || el.id || el.tagName).trim().slice(0, 30);
+      const controls = [...win.querySelectorAll('button, input:not([type=checkbox]), select')].filter(
+        el => (el as HTMLElement).offsetParent !== null,
+      );
+      const short = controls
+        .filter(el => el.getBoundingClientRect().height < 44)
+        .map(labelOf);
+      const outside = [...win.querySelectorAll('button, input:not([type=checkbox]), select, textarea')]
+        .filter(el => (el as HTMLElement).offsetParent !== null)
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.left < minLeft || r.right > maxRight || r.left < 0 || r.right > innerWidth;
+        })
+        .map(labelOf);
+      const scroll = win.querySelector('.mk-scroll') as HTMLElement | null;
+      const scrollOverflow = !!(scroll && scroll.scrollWidth > scroll.clientWidth + 1);
+      return { short, outside, scrollOverflow, page: document.documentElement.scrollWidth - innerWidth };
+    });
+    expect(audit).toEqual({ short: [], outside: [], scrollOverflow: false, page: 0 });
+  });
+}

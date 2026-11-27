@@ -28,6 +28,7 @@ import type { IconItem } from './registry/icon-defaults.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
+import type { Npc } from './registry/npcs.ts';
 import type { Gate, GateId, GateType } from './gates/gate.ts';
 import type { DifficultyLevel, DifficultyScale } from './gates/difficulty.ts';
 import type { WorldWhy } from './gates/world.ts';
@@ -142,7 +143,7 @@ export type CombatApi = {
   add(list: JoinRow[]): number;
   isActive(): boolean;
   /** Starts a fight from a gate or the bestiary: asks the GM who fights (and which wave on a wave gate), adds them with `cs`, and starts it. */
-  startFlow(cs: JoinRow[], o?: { gateId?: string; title?: string; body?: string; waves?: readonly { readonly id: string; readonly label: string; readonly rows: () => JoinRow[] }[]; wave?: string }): Promise<boolean>;
+  startFlow(cs: JoinRow[], o?: { gateId?: string; title?: string; body?: string; waves?: readonly { readonly id: string; readonly label: string; readonly rows: (joining?: boolean) => JoinRow[] }[]; wave?: string }): Promise<boolean>;
   /** One party reward window for rewards already given in one step (pay.ts): each hunter's lines and level-ups, listed together. */
   showParty(granted: readonly { hid: string; g: Granted }[], o?: { title?: string; body?: string; lines?: string[] }): Promise<void>;
   /** False when another GM phone runs a fight and the GM declines to replace it. */
@@ -402,6 +403,20 @@ export type MapsApi = {
   /** Opens the map maker for `m` (null: a new map); answers the map as saved, or null on Cancel. */
   make(m: BattleMap | null): Promise<BattleMap | null>;
   /** Deletes a saved map; answers whether it was deleted. */
+  remove(id: string): boolean;
+};
+
+/** The GM's saved NPC templates (`save.library.npcs`, src/views/npc-maker.js). */
+export type NpcsApi = {
+  list(): readonly Npc[];
+  get(id: string): Npc | null;
+  /**
+   * Opens the NPC maker for `npc` (null: a new NPC). Answers the saved NPC, or null on Cancel or Delete.
+   * Copy NPC saves unsaved edits into a new copy (leaving the original untouched) and answers that copy with its new
+   * id, so callers must not assume the returned id matches `npc.id`.
+   */
+  make(npc: Npc | null): Promise<Npc | null>;
+  /** Deletes a saved NPC from `save.library.npcs`; answers whether it was deleted. */
   remove(id: string): boolean;
 };
 
@@ -909,6 +924,7 @@ export type AppApi = {
   maker: MakerApi;
   map: MapApi;
   maps: MapsApi;
+  npcs: NpcsApi;
   odds: OddsApi;
   onboard: OnboardApi;
   quests: QuestsApi;

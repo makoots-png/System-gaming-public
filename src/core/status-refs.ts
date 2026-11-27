@@ -18,6 +18,7 @@ import type { Formula } from './formula.ts';
 import type { FeatDef } from './hunter/feats.ts';
 import type { ItemDefData, ItemGrant } from './registry/item-book.ts';
 import type { Loot, MonsterTemplate, StartStatus } from './registry/monsters.ts';
+import type { NpcTemplate } from './registry/npcs.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import type { RewardBundle, RewardStatus, RewardTitle, Rewards } from './rewards.ts';
 import type { Chapter, ChapterQuest, StoryTemplate } from './story/story.ts';
@@ -217,3 +218,8 @@ const quest = fields<ChapterQuest>({ kind: none, title: none, desc: none, object
 const chapter = fields<Chapter>({ name: none, words: none, rewards, quest, note: none, required: none });
 /** A story without its id: each chapter's reward and its quest's rewards. */
 export const story: Walk<StoryTemplate> = fields<StoryTemplate>({ name: none, when: none, for: none, chapters: list(chapter) });
+/** An NPC without its id: its custom abilities and its starting statuses. */
+export const npc: Walk<NpcTemplate> = fields<NpcTemplate>({
+  name: none, rank: none, archetype: none, tier: none, tweak: none, defaultSide: none, skill: none,
+  abilities: list(ability), statuses: list(startStatus), icon: none, notes: none,
+});

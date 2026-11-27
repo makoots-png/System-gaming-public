@@ -1,5 +1,5 @@
-// difficulty-control.js: stateless HTML builders, live readout wiring, and edit-form event reader for gate and boss
-// difficulty sliders. Keeps zero module-level state.
+// difficulty-control.js: stateless HTML builders, live readout wiring, and edit-form event reader for gate/boss
+// difficulty sliders and the GM-only "How well this NPC plays" skill slider. Keeps zero module-level state.
 import {
   DIFFICULTY_DEFAULT,
   DIFFICULTY_MAX,
@@ -7,6 +7,7 @@ import {
   DIFFICULTY_WORDS,
   parseDifficultyLevel,
 } from '../core/gates/difficulty.ts';
+import { NPC_SKILL_INFO, clampNpcSkill, npcSkillReadout } from '../core/registry/npcs.ts';
 
 /** Normalizes a rule or form number to a valid `DifficultyLevel`. */
 const safeLevel = (v, R) =>
@@ -187,4 +188,52 @@ export function readEditDifficultyEvents(form, current, R) {
     }
   }
   return events;
+}
+
+/**
+ * Renders the GM-only "How well this NPC plays" 1 to 5 skill slider (Sloppy to Optimal, default 3 Steady)
+ * with its end labels and live readout.
+ * @param {{ id: string; name?: string; skill: number; label?: string; R: import('../core/rules.ts').Rules }} o
+ */
+export function npcSkillSliderHtml({ id, name = 'skill', skill, label = 'How well this NPC plays', R }) {
+  const step = clampNpcSkill(skill, clampNpcSkill(R.fight.npc.defaultSkill, 3));
+  const info = NPC_SKILL_INFO[step];
+  const readout = npcSkillReadout(step, R);
+  const outId = `${id}-out`;
+  return `<div class="diff-ctl npc-skill-ctl" data-npc-skill-ctl>
+    <div class="diff-head"><label class="lbl" for="${escHtml(id)}">${escHtml(label)}</label><span class="npc-skill-step" data-npc-skill-name>${escHtml(info.name)} (${step} of 5)</span></div>
+    <input type="range" id="${escHtml(id)}" name="${escHtml(name)}" min="1" max="5" step="1" value="${step}" aria-describedby="${escHtml(outId)}" aria-valuetext="${escHtml(readout)}" data-npc-skill-range>
+    <div class="npc-skill-ends" aria-hidden="true"><span>${escHtml(NPC_SKILL_INFO[1].name)}</span><span>${escHtml(NPC_SKILL_INFO[5].name)}</span></div>
+    <output class="diff-read" id="${escHtml(outId)}" for="${escHtml(id)}" data-npc-skill-out>${escHtml(readout)}</output>
+  </div>`;
+}
+
+/**
+ * Attaches delegated live input/change listeners on `root` so any "How well this NPC plays" slider updates its step
+ * badge, `aria-valuetext`, and readout immediately.
+ * @param {HTMLElement} root
+ * @param {() => import('../core/rules.ts').Rules} rulesOf
+ * @param {(step: import('../core/registry/npcs.ts').NpcSkill, input: HTMLInputElement) => void} [onStep]
+ */
+export function wireNpcSkillLive(root, rulesOf, onStep) {
+  const update = input => {
+    const R = rulesOf();
+    const fallback = clampNpcSkill(R.fight.npc.defaultSkill, 3);
+    const step = clampNpcSkill(Number(input.value), fallback);
+    const info = NPC_SKILL_INFO[step];
+    const readout = npcSkillReadout(step, R);
+    input.setAttribute('aria-valuetext', readout);
+    const ctl = input.closest('[data-npc-skill-ctl]');
+    const nameEl = ctl && ctl.querySelector('[data-npc-skill-name]');
+    const outEl = ctl && ctl.querySelector('[data-npc-skill-out]');
+    if (nameEl) nameEl.textContent = `${info.name} (${step} of 5)`;
+    if (outEl) outEl.textContent = readout;
+    if (onStep) onStep(step, input);
+  };
+  for (const ev of ['input', 'change']) {
+    root.addEventListener(ev, e => {
+      const t = e.target;
+      if (t instanceof HTMLInputElement && t.dataset.npcSkillRange !== undefined) update(t);
+    });
+  }
 }

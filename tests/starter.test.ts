@@ -131,10 +131,12 @@ describe('the starter campaign, one atomic step', () => {
         { monsterId: seedId<'m'>('goblin-chief'), count: 1, wave: 1 },
       ],
       bossId: null,
+      npcs: [],
     });
     expect(waveRoster(g, 2)).toEqual({
       monsters: [{ monsterId: seedId<'m'>('usher'), count: 2, wave: 2 }],
       bossId: seedId<'m'>('head-usher'),
+      npcs: [],
     });
     expect(parseGate(JSON.parse(JSON.stringify(g)))).toEqual(g);
 

@@ -27,7 +27,7 @@ import { refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 
 /** The library's lists of named entries, and the cap of each. Its items are a book by id (`saveItemDef`). */
-export const LIBRARY_LISTS = { skills: LIMITS.librarySkills, maps: LIMITS.libraryMaps, stories: LIMITS.libraryStories } as const;
+export const LIBRARY_LISTS = { skills: LIMITS.librarySkills, maps: LIMITS.libraryMaps, stories: LIMITS.libraryStories, npcs: LIMITS.libraryNpcs } as const;
 export type LibraryList = keyof typeof LIBRARY_LISTS;
 type Entry<L extends LibraryList> = Library[L][number];
 
@@ -41,6 +41,7 @@ const KEPT = {
   skill: { one: 'skill', many: 'skills', cap: LIMITS.librarySkills },
   map: { one: 'map', many: 'maps', cap: LIMITS.libraryMaps },
   story: { one: 'story', many: 'stories', cap: LIMITS.libraryStories },
+  npc: { one: 'NPC', many: 'NPCs', cap: LIMITS.libraryNpcs },
   status: { one: 'status', many: 'statuses', cap: LIMITS.libraryStatuses },
   feat: { one: 'feat', many: 'feats', cap: LIMITS.libraryFeats },
   bundle: { one: 'bundle', many: 'bundles', cap: LIMITS.libraryRewards },
@@ -51,7 +52,7 @@ const KEPT = {
  */
 export const savedWords = (kind: keyof typeof KEPT, name: string): Readonly<Record<'full' | 'taken' | 'blank', string>> => ({
   full: `Your library can store at most ${KEPT[kind].cap} ${KEPT[kind].many}. Delete one in the Workshop first.`,
-  taken: `You already have ${kind === 'item' ? 'an' : 'a'} ${KEPT[kind].one} named "${name}" in your library. Rename this one, or edit the existing one in the Workshop.`,
+  taken: `You already have ${kind === 'item' || kind === 'npc' ? 'an' : 'a'} ${KEPT[kind].one} named "${name}" in your library. Rename this one, or edit the existing one in the Workshop.`,
   blank: `Name the ${KEPT[kind].one}.`,
 });
 
@@ -209,7 +210,8 @@ export function duplicateEntry<L extends LibraryList>(lib: Library, list: L, id:
   const arr = lib[list] as readonly Entry<L>[], src = arr.find(x => x.id === id);
   if (!src) return refuse('missing');
   if (arr.length >= LIBRARY_LISTS[list]) return refuse('full');
-  return withList(lib, list, [...arr, { ...src, id: copy.newId, name: copy.name } as Entry<L>]);
+  const cloned = JSON.parse(JSON.stringify(src)) as Entry<L>;
+  return withList(lib, list, [...arr, { ...cloned, id: copy.newId, name: copy.name } as Entry<L>]);
 }
 
 /** The status `key` saved as `def`: one with that key is replaced, else it is added, refused at `LIMITS.libraryStatuses`. */

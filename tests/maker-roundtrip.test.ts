@@ -12,6 +12,7 @@ import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 import { parseStory } from '../src/core/story/story.ts';
 import { storyProblem } from '../src/core/draft.ts';
 import { editQuest } from '../src/core/hunter/quests.ts';
+import { parseGate } from '../src/core/gates/gate.ts';
 import { editGate } from '../src/core/gates/world.ts';
 import { gatePreset } from '../src/core/gates/preset.ts';
 import { giveTitle, writeTitle } from '../src/core/hunter/record.ts';
@@ -26,8 +27,9 @@ import type { UnitMakerId } from './fixtures/maker-registry.ts';
 import { BUILT_IN_ITEM_IDS, parseItem } from '../src/core/registry/items.ts';
 import { builtInDefData, itemDefDataOf } from '../src/core/registry/item-book.ts';
 import { saveItemDef } from '../src/core/library.ts';
-import { customId } from './fixtures/items.ts';
+import { customId, stampSeq } from './fixtures/items.ts';
 import { parseSkill } from '../src/core/registry/skills.ts';
+import { mergePack, packOf, parsePack } from '../src/core/pack.ts';
 import {
   WORST_BUNDLE,
   WORST_FEAT_AFTER,
@@ -38,6 +40,7 @@ import {
   WORST_MAP,
   WORST_MONSTER_BOSS,
   WORST_MONSTER_MYTHIC,
+  WORST_NPC,
   WORST_OVERRIDES,
   WORST_QUEST_GM,
   WORST_QUEST_SELF,
@@ -151,13 +154,14 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     const base = saveWithHunter();
     const h = base.hunters[0]!;
     const gate = worstGate(h.id);
+    expect(gate.npcs).toHaveLength(2);
     const save = {
       ...base,
       monsters: [WORST_MONSTER_MYTHIC, WORST_MONSTER_BOSS],
-      library: { ...base.library, maps: [WORST_MAP] },
-      gates: [gate],
+      library: { ...base.library, maps: [WORST_MAP], npcs: [WORST_NPC] },
+      gates: [{ ...gate, npcs: [] }],
     };
-    const next = editGate(save, gate.id, {
+    const edit = {
       name: gate.name,
       rank: gate.rank,
       type: gate.type,
@@ -169,10 +173,19 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
       status: gate.status,
       solo: gate.solo,
       difficultyEvents: [],
-    }, STAMP);
-    expect(isRefused(next)).toBe(false);
-    if (!isRefused(next)) {
-      expect(next.gates[0]).toEqual(gate);
+    };
+    // Prove editGate actually writes edit.npcs (starting from npcs: []), preserves on omit, clears on [], and parseGate round-trips it.
+    const written = editGate(save, gate.id, { ...edit, npcs: [...gate.npcs] }, STAMP);
+    expect(isRefused(written)).toBe(false);
+    if (!isRefused(written)) {
+      expect(written.gates[0]).toEqual(gate);
+      expect(parseGate(JSON.parse(JSON.stringify(written.gates[0])))).toEqual(gate);
+      const kept = editGate(written, gate.id, edit, STAMP);
+      expect(isRefused(kept)).toBe(false);
+      if (!isRefused(kept)) expect(kept.gates[0]!.npcs).toEqual(gate.npcs);
+      const cleared = editGate(written, gate.id, { ...edit, npcs: [] }, STAMP);
+      expect(isRefused(cleared)).toBe(false);
+      if (!isRefused(cleared)) expect(cleared.gates[0]!.npcs).toEqual([]);
     }
   },
 
@@ -299,6 +312,36 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     expect(back).toEqual(tpl);
     const op = back?.type === 'active' ? back.ability?.ops[0] : null;
     expect(op?.op === 'applyStatus' ? op.def.ops : null).toEqual([{ op: 'share', on: 'healed', pct: -25 }]);
+  },
+
+  npc() {
+    const base = newSave(dev('d-npc-src'));
+    const src = { ...base, library: { ...base.library, npcs: [WORST_NPC] } };
+    const doc = packOf(src, STAMP.at, 'npcs', WORST_NPC.id);
+    const read = parsePack(JSON.parse(JSON.stringify(doc)));
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const merged = mergePack(newSave(dev('d-npc-dst')), read.pack, 'add', stampSeq('rt'));
+    expect(merged.save.library.npcs).toHaveLength(1);
+    const got = merged.save.library.npcs[0]!;
+    expect(got.name).toBe('Captain Sera Vance');
+    expect(got.rank).toBe('B');
+    expect(got.archetype).toBe('skirmisher');
+    expect(got.tier).toBe('elite');
+    expect(got.tweak).toEqual({ hp: 1.15, dealt: 0.95, stats: { agi: 6, ins: 4 }, traits: ['fast', 'warded'] });
+    expect(got.defaultSide).toBe('foe');
+    expect(got.skill).toBe(4);
+    expect(got.abilities.map(a => [String(a.id), a.name, a.kind])).toEqual([
+      ['ab-npc-1', 'Silver Bolt', 'shot'],
+      ['ab-npc-2', 'Field Mend', 'support'],
+    ]);
+    expect(got.statuses).toEqual([
+      { key: 'hasted', rounds: 2 },
+      { key: 'burning', rounds: null, stacks: 3 },
+    ]);
+    expect(got.icon).toBe('bow');
+    expect(got.notes).toBe('Stays behind the front line and prioritizes healing injured rookies.');
+    expect(got).toEqual({ ...WORST_NPC, id: got.id });
   },
 };
 

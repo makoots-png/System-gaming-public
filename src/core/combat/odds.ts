@@ -10,7 +10,7 @@ import { tallyOf } from './row-tally.ts';
 import type { Rules } from '../rules.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { Fight, Running, Setup } from './fight-types.ts';
-import { sheetTotals } from './fight-turn.ts';
+import { holdsSide, sheetTotals } from './fight-turn.ts';
 import type { SheetTotals } from './fight-turn.ts';
 import { CAP_ROUNDS, playBegin, playOver, playStep } from './play.ts';
 import type { Limits, Play, UsedUp } from './play.ts';
@@ -50,9 +50,9 @@ export const ODDS_RUNS = 100;
 export const ODDS_FRAME_MS = 6;
 const LIMITS: Limits = { capRounds: CAP_ROUNDS, endAtRounds: null };
 
-/** A fight the engine can weigh: in setup or running, with a row up on each side. */
+/** A fight the engine can weigh: in setup or running, with a row up on each side that holds it (`holdsSide`). */
 export const weighable = (f: Fight | null): f is Setup | Running =>
-  f !== null && f.phase !== 'ended' && f.rows.some(r => r.side === 'party' && isUp(r)) && f.rows.some(r => r.side === 'foe' && isUp(r));
+  f !== null && f.phase !== 'ended' && f.rows.some(r => r.side === 'party' && holdsSide(r, f.rows)) && f.rows.some(r => r.side === 'foe' && holdsSide(r, f.rows));
 /** Whether the GM's fudge is on in a fight the engine weighs (any side's or row's weight, or a forced roll): the line's clause. */
 export const fudgeOn = (f: Setup | Running): boolean => fudgeShown(f);
 /** What the odds were worked out from, as one string: the fight without its log. Another string means another fight. */

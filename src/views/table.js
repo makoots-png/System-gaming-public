@@ -175,7 +175,7 @@ export function register(app) {
       <span class="slot" data-part="conds"></span></li>`;
   function rowDesc(e, r) {
     const mine = isMine(r), cur = r.id === e.currentId, band = r.band, word = lifeWord(r);
-    const exact = r.kind !== 'monster'; // players see a hunter's or shadow's HP, and only a monster's band; a defeated one says so instead
+    const exact = r.hp != null; // players see exact HP when carried (party hunters, shadows, summons), and only the band for foes; a dead or defeated one says so instead
     const shown = exact ? `${r.hp}/${r.hpMax}` : word ? '' : BAND_LABEL[band];
     const conds = r.statuses.slice(0, 8).map(c => `${c.label}${c.stacks ? ` ${c.stacks}` : ''}`);
     const summon = r.kind === 'summon' ? ` (${esc(ownerName(e, r))}'s${r.left !== null ? `, ${r.left} round${r.left === 1 ? '' : 's'}` : ''})` : '';
@@ -290,7 +290,7 @@ export function register(app) {
   function actsHtml(e, h) {
     const t = table(e, h), mine = canAct(e), off = mine ? '' : ' disabled title="Not your turn"';
     if (!t.me) return '';
-    const step = dir => (mine && t.foe && t.me.kind !== 'monster' ? (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid) : null);
+    const step = dir => (mine && t.foe && t.me.stride != null ? (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid) : null);
     const armed = armedOf(e), answers = answersOf(e, t.list);
     const abil = t.list.map(a => {
       if (a.react) {
@@ -489,7 +489,7 @@ export function register(app) {
     const r = cardId && !e.ended ? e.rows.find(x => x.id === cardId) : null;
     ui.sheet('tokenCard', !!r && NARROW.matches, shutCard);
     if (!r) { if (!box.hidden) { box.hidden = true; box.innerHTML = ''; box.dataset.sig = ''; } return; }
-    const word = lifeWord(r), hp = r.kind === 'monster' ? (word ? '' : BAND_LABEL[r.band]) : `HP ${r.hp} / ${r.hpMax}`;
+    const word = lifeWord(r), hp = r.hp != null ? `HP ${r.hp} / ${r.hpMax}` : (word ? '' : BAND_LABEL[r.band]);
     const line = [hp && esc(hp), word && `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>`, r.id === e.currentId && 'Their turn'].filter(Boolean).join(' · ');
     const html = `<h3>${r.icon ? icon(r.icon) : ''}${esc(r.name)}${isMine(r) ? '<span class="tb-you">YOU</span>' : ''}<button type="button" class="quiet" data-tbsheetx>Close</button></h3>
       <div>${line}</div>${extrasHtml(e, r)}
@@ -523,7 +523,7 @@ export function register(app) {
   }
   /** A step toward (`dir` 1) or away from (-1) the nearest foe, sent as `step` at the doc's `now`. */
   function walk(e, h, dir) {
-    const t = table(e, h); if (!t.me || !t.foe || !canAct(e)) return;
+    const t = table(e, h); if (!t.me || !t.foe || !canAct(e) || t.me.stride == null) return;
     const s = (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid); if (!s) return;
     const S = sync();
     void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: s.place.x, y: s.place.y }, at: e.now, dash: false })))

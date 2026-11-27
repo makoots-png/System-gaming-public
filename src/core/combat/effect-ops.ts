@@ -6,6 +6,7 @@
 import type { RowTally } from './row-tally.ts';
 import type { Rank } from '../rules.ts';
 import type { IconKey } from '../registry/icons.ts';
+import type { NpcSkill } from '../registry/npcs.ts';
 import { STAT_KEYS, STAT_LABELS } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
 import { amountWords, average, evaluate, printFormula } from '../formula.ts';
@@ -496,7 +497,8 @@ type BodyCommon = Clock & {
  * - `threat`: a monster's table, and a summon's on the foes' side, as a monster's (rows.ts `summonRow`); null for the rest.
  * - `stagger`: an elite's or a boss's bar; null for a monster without one and for every other kind.
  * - `intent`: a monster's announced next use (fight.ts `setIntent` refuses any other kind); null when none.
- * - `xp`: what the party earns when a monster goes down; 0 for every other kind.
+ * - `xp`: what the party earns when a foe (monster or foe NPC) goes down; 0 for every other row.
+ * - `npc`: GM-only play skill on an NPC hunter row (`holder: null`); absent on every other row and never sent to player phones.
  * - `owner` and `until`: a summon's caller, whose phone commands it, and when it leaves (table 2.4).
  * - `extraction`: a fallen monster's shadow extraction (extraction.ts); absent before the first attempt.
  * - `mythic`: a mythic monster's standing in its script (mythic-types.ts, design B.3), written only by mythic.ts; null on
@@ -504,17 +506,19 @@ type BodyCommon = Clock & {
  */
 type HunterOwn = {
   readonly kind: 'hunter'; readonly life: Life; readonly holder: HunterRef | null;
-  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
+  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: number; readonly mythic: null;
   /** Movement tiles spent since this hunter's last turn started (walk, dash, dodge). Absent when 0. */
   readonly moved?: number;
   /** Extra panel shadow extraction attempts carried by this hunter's active awakened class (`RULES.shadow.classAttempts`). Absent when 0. */
   readonly extractBonus?: number;
+  /** GM-only play skill of an NPC row (requires `holder: null`). Absent on player and local hunter rows; never sent to player phones. */
+  readonly npc?: { readonly skill: NpcSkill };
   readonly owner?: never; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
 };
 type MonsterOwn = {
   readonly kind: 'monster'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable; readonly stagger: Stagger | null; readonly intent: Intent | null; readonly xp: number;
-  readonly mythic: MythicStanding | null; readonly moved?: never; readonly extractBonus?: never; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
+  readonly mythic: MythicStanding | null; readonly moved?: never; readonly extractBonus?: never; readonly npc?: never; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
   /** Set once Arise succeeds on this dead monster row, so each corpse rises at most once. */
   readonly rose?: true;
   /** GM's hidden signed roll adjustment for the next extraction or Arise roll on this corpse (any whole number). Absent when 0. */
@@ -527,12 +531,12 @@ type MonsterOwn = {
 type ShadowOwn = {
   readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
   readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly extractBonus?: never; readonly owner: CombatantId; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
+  readonly moved?: never; readonly extractBonus?: never; readonly npc?: never; readonly owner: CombatantId; readonly until?: never; readonly extraction?: never; readonly rose?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
 };
 type SummonOwn = {
   readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
-  readonly moved?: never; readonly extractBonus?: never; readonly owner: CombatantId; readonly until: Tick | null; readonly extraction?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
+  readonly moved?: never; readonly extractBonus?: never; readonly npc?: never; readonly owner: CombatantId; readonly until: Tick | null; readonly extraction?: never; readonly adjust?: never; readonly force?: never; readonly bled?: never;
   /** Present on a risen corpse (`until: null`): the dead monster row it rose from. Absent on timed summons. */
   readonly rose?: CombatantId;
 };

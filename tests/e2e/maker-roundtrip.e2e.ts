@@ -23,6 +23,7 @@ import {
   WORST_MAP,
   WORST_MONSTER_BOSS,
   WORST_MONSTER_MYTHIC,
+  WORST_NPC,
   WORST_OVERRIDES,
   WORST_QUEST_GM,
   WORST_QUEST_SELF,
@@ -42,7 +43,7 @@ import {
 
 /** Explicit list of registry ids exercised in this browser suite; checked against E2E_MAKER_IDS below. */
 const COVERED_E2E_IDS: readonly MakerId[] = [
-  'status', 'item', 'skill', 'skill-swap', 'monster', 'rewards', 'bundle', 'map', 'feat', 'story',
+  'status', 'item', 'skill', 'skill-swap', 'monster', 'npc', 'rewards', 'bundle', 'map', 'feat', 'story',
   'quest', 'gate', 'preset', 'title', 'guild', 'identity', 'rules-overrides', 'roll-tables',
   'typed-weapon', 'true-ability', 'grievous-cut',
 ];
@@ -78,6 +79,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     d.library.statuses['rt-kits'] = f.statusKits;
     d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
+    d.library.npcs.push(f.npc);
     d.library.rewards.push(f.bundle);
     d.library.maps.push(f.map);
     d.library.feats['rt-feat-after'] = f.featAfter;
@@ -94,6 +96,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     skillGrievous: WORST_SKILL_GRIEVOUS,
     monsterMythic: WORST_MONSTER_MYTHIC,
     monsterBoss: WORST_MONSTER_BOSS,
+    npc: WORST_NPC,
     bundle: WORST_BUNDLE,
     map: WORST_MAP,
     featAfter: WORST_FEAT_AFTER,
@@ -126,6 +129,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     { label: 'grievous-cut (active skill applying Grievous Wounds at 25%)', ws: 'skill', id: WORST_SKILL_GRIEVOUS.id, overlay: '.skm-overlay', expected: WORST_SKILL_GRIEVOUS, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_GRIEVOUS.id) },
     { label: 'monster (mythic script)', ws: 'monster', id: WORST_MONSTER_MYTHIC.id, overlay: '.enm-overlay', expected: WORST_MONSTER_MYTHIC, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_MYTHIC.id) },
     { label: 'monster (extractable boss)', ws: 'monster', id: WORST_MONSTER_BOSS.id, overlay: '.enm-overlay', expected: WORST_MONSTER_BOSS, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_BOSS.id) },
+    { label: 'npc (elite foe with abilities, statuses, tweaks, icon, notes)', ws: 'npc', id: WORST_NPC.id, overlay: '.npcm-overlay', expected: WORST_NPC, read: () => page.evaluate(id => hunterApp.store.get().library.npcs.find((x: any) => x.id === id), WORST_NPC.id) },
     { label: 'bundle + reward editor (9e57d384)', ws: 'bundle', id: WORST_BUNDLE.id, overlay: '.rwm-overlay', expected: WORST_BUNDLE, read: () => page.evaluate(id => hunterApp.store.get().library.rewards.find((x: any) => x.id === id), WORST_BUNDLE.id) },
     { label: 'map (optional MapZone fields)', ws: 'map', id: WORST_MAP.id, overlay: '.mpm-overlay', expected: WORST_MAP, read: () => page.evaluate(id => hunterApp.store.get().library.maps.find((x: any) => x.id === id), WORST_MAP.id) },
     { label: 'feat (show.at === feat, 7e222b1e)', ws: 'feat', id: 'rt-feat-after', overlay: '.fm-overlay', expected: WORST_FEAT_AFTER, read: () => page.evaluate(() => hunterApp.store.get().library.feats['rt-feat-after']) },
@@ -168,6 +172,7 @@ test('Non-Workshop GM editors: quest, gate, clear preset, title, guild, rules ov
     h.guild = f.guild;
     d.monsters.push(f.m1, f.m2);
     d.library.maps.push(f.map);
+    d.library.npcs.push(f.npc);
     d.gates.push(f.gate);
     d.rulesOverrides = {
       ...f.overrides,
@@ -183,6 +188,7 @@ test('Non-Workshop GM editors: quest, gate, clear preset, title, guild, rules ov
     m1: WORST_MONSTER_MYTHIC,
     m2: WORST_MONSTER_BOSS,
     map: WORST_MAP,
+    npc: WORST_NPC,
     gate,
     overrides: WORST_OVERRIDES,
     tables: WORST_ROLL_TABLES,

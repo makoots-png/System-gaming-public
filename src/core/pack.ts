@@ -13,7 +13,7 @@ import { isRefused } from './save-step.ts';
 import { parseFeatKey } from './ids.ts';
 import { freeStatusKey, isStatusKey } from './combat/effect-ops.ts';
 import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
-import { battleMap, bundle, feat, item, monster, namedIn, rekeyed, skill, statusDef, story } from './status-refs.ts';
+import { battleMap, bundle, feat, item, monster, namedIn, npc, rekeyed, skill, statusDef, story } from './status-refs.ts';
 import type { Walk } from './status-refs.ts';
 import { parseStatusDef } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
@@ -25,6 +25,8 @@ import type { ItemDefId } from './ids.ts';
 import * as ITEM_REFS from './item-refs.ts';
 import { parseMonster } from './registry/monsters.ts';
 import type { MonsterTemplate } from './registry/monsters.ts';
+import { NPC_BOUNDS, parseNpc } from './registry/npcs.ts';
+import type { Npc, NpcTemplate } from './registry/npcs.ts';
 import { parseSkill } from './registry/skills.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import { BUILT_IN_STATUSES } from './registry/statuses.ts';
@@ -39,12 +41,12 @@ import { STORY_BOUNDS, parseStory } from './story/story.ts';
 import type { Story, StoryTemplate } from './story/story.ts';
 
 /** In the Workshop's order. */
-export const PACK_KINDS = ['statuses', 'items', 'skills', 'monsters', 'rewards', 'maps', 'feats', 'stories'] as const;
+export const PACK_KINDS = ['statuses', 'items', 'skills', 'monsters', 'npcs', 'rewards', 'maps', 'feats', 'stories'] as const;
 export type PackKind = (typeof PACK_KINDS)[number];
 /** Each kind's words where a pack is shared or read (io.js): one, more than one, and its heading. The typecheck asks for a new kind's. */
 export const PACK_WORDS: { readonly [K in PackKind]: readonly [one: string, many: string, heading: string] } = {
   statuses: ['status', 'statuses', 'Statuses'], items: ['item', 'items', 'Items'], skills: ['skill', 'skills', 'Skills'],
-  monsters: ['monster', 'monsters', 'Monsters'], rewards: ['bundle', 'bundles', 'Bundles'], maps: ['map', 'maps', 'Maps'],
+  monsters: ['monster', 'monsters', 'Monsters'], npcs: ['NPC', 'NPCs', 'NPCs'], rewards: ['bundle', 'bundles', 'Bundles'], maps: ['map', 'maps', 'Maps'],
   feats: ['feat', 'feats', 'Feats'], stories: ['story', 'stories', 'Stories'],
 };
 export type BundleTemplate = Omit<RewardBundle, 'id'>;
@@ -53,6 +55,7 @@ export type MapTemplate = Omit<BattleMap, 'id'>;
 export type Pack = {
   /** Item defs by id: a built-in's edit (`b:*`), or a custom item (`c:*`) under the catalog it was made in, rekeyed at merge. */
   statuses: Record<string, StatusDef>; items: Record<ItemDefId, ItemDefData>; skills: SkillTemplate[]; rewards: BundleTemplate[]; monsters: MonsterTemplate[];
+  npcs: NpcTemplate[];
   maps: MapTemplate[];
   /** The GM's feats by key (hunter/feats.ts); a key travels, so a hunter keeps its progress on a feat two tables share. */
   feats: Record<string, FeatDef>;
@@ -63,7 +66,7 @@ export type PackDoc = {
   schema: typeof SCHEMA; kind: 'library'; savedAt: string;
   library: {
     statuses?: Record<string, StatusDef>; items?: Record<ItemDefId, ItemDefData>; skills?: SkillTemplate[]; rewards?: BundleTemplate[]; maps?: MapTemplate[]; feats?: Record<string, FeatDef>;
-    stories?: StoryTemplate[];
+    stories?: StoryTemplate[]; npcs?: NpcTemplate[];
   };
   monsters?: MonsterTemplate[];
 };
@@ -73,14 +76,14 @@ export type PackDoc = {
  */
 export const PACK_CAP: Readonly<Record<PackKind, number>> = {
   statuses: LIMITS.libraryStatuses, items: LIMITS.libraryItems, skills: LIMITS.librarySkills, rewards: LIMITS.libraryRewards, monsters: 200,
-  maps: LIMITS.libraryMaps, feats: LIMITS.libraryFeats,
+  npcs: LIMITS.libraryNpcs, maps: LIMITS.libraryMaps, feats: LIMITS.libraryFeats,
   stories: LIMITS.libraryStories,
 };
 
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-const newPack = (): Pack => ({ statuses: {}, items: {}, skills: [], rewards: [], monsters: [], maps: [], feats: {}, stories: [] });
+const newPack = (): Pack => ({ statuses: {}, items: {}, skills: [], rewards: [], monsters: [], npcs: [], maps: [], feats: {}, stories: [] });
 const each = <T>(f: (k: PackKind) => T): Record<PackKind, T> => Object.fromEntries(PACK_KINDS.map(k => [k, f(k)])) as Record<PackKind, T>;
 
 /** How many of a pack's entries are in it. */
@@ -91,7 +94,7 @@ export const packCounts = (p: Pack): Record<PackKind, number> => each(k => (k ==
 type PackEntry<K extends PackKind> = Pack[K] extends readonly (infer E)[] ? E : Pack[K] extends Record<string, infer V> ? V : never;
 /** Where each kind's entry names statuses: its walk (status-refs.ts), read to list them and to rename them. */
 const STATUS_REFS: { readonly [K in PackKind]: Walk<PackEntry<K>> } = {
-  statuses: statusDef, items: item, skills: skill, rewards: bundle, monsters: monster, maps: battleMap, feats: feat, stories: story,
+  statuses: statusDef, items: item, skills: skill, rewards: bundle, monsters: monster, npcs: npc, maps: battleMap, feats: feat, stories: story,
 };
 
 // ── making a pack ──
@@ -107,7 +110,7 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   const pick = <T extends { id: string }>(k: PackKind, list: readonly T[]): T[] => (!wants(k) ? [] : id === null ? [...list] : list.filter(x => x.id === id));
   const itemIds = new Set<ItemDefId>(!wants('items') ? [] : id === null ? Object.keys(L.items) as ItemDefId[] : Object.hasOwn(L.items, id) ? [id as ItemDefId] : []);
   const skills = pick('skills', L.skills), rewards = pick('rewards', L.rewards), monsters = pick('monsters', save.monsters);
-  const maps = pick('maps', L.maps), stories = pick('stories', L.stories);
+  const npcs = pick('npcs', L.npcs), maps = pick('maps', L.maps), stories = pick('stories', L.stories);
   const statusKeys = new Set<string>(!wants('statuses') ? [] : id === null ? Object.keys(L.statuses) : Object.hasOwn(L.statuses, id) ? [id] : []);
   const featKeys = !wants('feats') ? [] : id === null ? Object.keys(L.feats) : Object.hasOwn(L.feats, id) ? [id] : [];
   const named = new Set<StatusKey>(), R = STATUS_REFS;
@@ -119,7 +122,7 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   for (const g of givenIds) if (isCustomItemDefId(g) && Object.hasOwn(L.items, g)) itemIds.add(g);
   const items = [...itemIds].map(k => L.items[k]!);
   items.forEach(i => namedIn(R.items, i, named)); skills.forEach(k => namedIn(R.skills, k, named));
-  rewards.forEach(b => namedIn(R.rewards, b, named)); monsters.forEach(m => namedIn(R.monsters, m, named)); maps.forEach(m => namedIn(R.maps, m, named));
+  rewards.forEach(b => namedIn(R.rewards, b, named)); monsters.forEach(m => namedIn(R.monsters, m, named)); npcs.forEach(n => namedIn(R.npcs, n, named)); maps.forEach(m => namedIn(R.maps, m, named));
   stories.forEach(s => namedIn(R.stories, s, named));
   for (const k of statusKeys) namedIn(R.statuses, L.statuses[k]!, named);
   // a status named by a status that joins: follow until nothing new joins
@@ -139,6 +142,7 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   if (maps.length) library.maps = maps.map(noId);
   if (featKeys.length) library.feats = Object.fromEntries(featKeys.map(k => [k, copy(L.feats[k]!)]));
   if (stories.length) library.stories = stories.map(noId);
+  if (npcs.length) library.npcs = npcs.map(noId);
   const doc: PackDoc = { schema: SCHEMA, kind: 'library', savedAt, library };
   if (monsters.length) doc.monsters = monsters.map(noId);
   return doc;
@@ -192,6 +196,7 @@ export function parsePack(v: unknown): PackRead {
   pack.skills = readList(lib.skills, PACK_CAP.skills, parseSkill, counts.skills);
   pack.rewards = readList(lib.rewards, PACK_CAP.rewards, parseBundle, counts.rewards);
   pack.monsters = readList(v.monsters, PACK_CAP.monsters, parseMonster, counts.monsters);
+  pack.npcs = readList(lib.npcs, PACK_CAP.npcs, parseNpc, counts.npcs);
   pack.maps = readList(lib.maps, PACK_CAP.maps, x => { const m = parseBattleMap(x, RULES); return m && noId(m); }, counts.maps);
   for (const [key, raw] of Object.entries(isObj(lib.feats) ? lib.feats : {})) {
     const c = counts.feats;
@@ -347,6 +352,7 @@ export function mergePack<S extends MergeTarget>(target: S, pack: Pack, mode: Me
     maps: mergeNamed<BattleMap>(L.maps, p.maps.map(m => rekeyed(R.maps, m, map)), mode, PACK_CAP.maps, 40, () => mapId(id('mp')()), report.maps),
     feats: mergeFeats(L, p.feats, map, mode, report.feats),
     stories: mergeNamed<Story>(L.stories, p.stories.map(s => rekeyed(R.stories, s, map)), mode, PACK_CAP.stories, STORY_BOUNDS.name, id('st'), report.stories),
+    npcs: mergeNamed<Npc>(L.npcs, p.npcs.map(n => rekeyed(R.npcs, n, map)), mode, PACK_CAP.npcs, NPC_BOUNDS.name, id('npc_'), report.npcs),
   };
   const monsters = mergeNamed<Monster>(copy(target.monsters), p.monsters.map(m => rekeyed(R.monsters, m, map)), mode, PACK_CAP.monsters, 60, id('m'), report.monsters);
   const out = { ...target, library, monsters, seq };

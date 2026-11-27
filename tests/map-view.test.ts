@@ -56,11 +56,13 @@ function draw(rows: readonly string[], o: { stride?: number; dash?: number } = {
   });
   return { grid, bodies };
 }
-function body(name: string, side: Side, x: number, y: number, o: { stride?: number; dash?: number; mine?: boolean; down?: boolean; kind?: CombatantKind } = {}): MapBody {
+function body(name: string, side: Side, x: number, y: number, o: { stride?: number; dash?: number; mine?: boolean; down?: boolean; kind?: CombatantKind; pack?: boolean } = {}): MapBody {
+  const kind = o.kind ?? (side === 'party' ? 'hunter' : 'monster');
   return {
-    id: id(name), side, kind: o.kind ?? (side === 'party' ? 'hunter' : 'monster'), place: place(x, y), down: o.down ?? false, name,
+    id: id(name), side, kind, place: place(x, y), down: o.down ?? false, name,
     ring: { share: 1, band: null }, statuses: false, mine: o.mine ?? false, stride: tiles(o.stride ?? 0), dash: tiles(o.dash ?? 0), bars: null,
     extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, unseen: false, word: null, icon: null,
+    pack: o.pack ?? kind === 'monster',
   };
 }
 const scene = (d: Drawn, sel: Selection = { kind: 'none' }, actor: string | null = '@'): MapScene =>
@@ -274,9 +276,9 @@ describe('tokens', () => {
     expect(['Brakk Ironhide', 'Cave Rat B', 'Goblin', 'Mira'].map(labelOf)).toEqual(['BI', 'CB', 'GO', 'MI']);
   });
 
-  test('the name under a token is a hunter\'s first name and a monster\'s last word with its pack letter', () => {
-    expect([shortOf('Brakk Ironhide', 'hunter'), shortOf('Mira', 'hunter'), shortOf('Cave Rat B', 'monster'), shortOf('Ice Warden', 'monster'), shortOf('Goblin', 'monster')])
-      .toEqual(['Brakk', 'Mira', 'Rat B', 'Warden', 'Goblin']);
+  test('the name under a token is a player hunter\'s first name and a monster or NPC pack body\'s last word with its pack letter', () => {
+    expect([shortOf('Brakk Ironhide', false), shortOf('Mira', false), shortOf('Cave Rat B', true), shortOf('Ice Warden', true), shortOf('Goblin', true), shortOf('Rival Vance A', true), shortOf('Rival Vance B', true)])
+      .toEqual(['Brakk', 'Mira', 'Rat B', 'Warden', 'Goblin', 'Vance A', 'Vance B']);
   });
 
   /** Each token's name as `side text`, or `none`, by its id. */

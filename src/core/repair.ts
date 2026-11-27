@@ -23,7 +23,7 @@ import type { Hunter } from './hunter/hunter.ts';
 export type ParseEnv = { now: Date; newDeviceId: () => DeviceId; newDeviceToken: () => string; classTrees?: ClassTreeMap };
 
 /** Bounds for junk or hostile saves only. GM rules (loadoutCap) never prune saved data. */
-export const LIMITS = { loadouts: 24, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, boons: 50 } as const;
+export const LIMITS = { loadouts: 24, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, libraryNpcs: 100, boons: 50 } as const;
 
 export type Rec = Record<string, unknown>;
 export const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);

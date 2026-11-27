@@ -65,7 +65,7 @@ export function register(app) {
   }
   async function shareOpen() {
     const c = libraryCounts(), total = PACK_KINDS.reduce((n, k) => n + c[k], 0);
-    if (!total) return void ui.toast('System', 'Nothing to share yet. Create custom content (a status, item, skill, monster, bundle, map, feat, or story) in the Workshop first.', { kind: 'warning' });
+    if (!total) return void ui.toast('System', 'Nothing to share yet. Create custom content (a status, item, skill, monster, NPC, bundle, map, feat, or story) in the Workshop first.', { kind: 'warning' });
     /** @type {import('./ui.js').SystemAction[]} */
     const kinds = [{ label: 'Cancel', value: null, cancel: true }, { label: `Everything (${total})`, value: 'all', primary: true },
       ...PACK_KINDS.filter(k => c[k]).map(k => ({ label: `${PACK_WORDS[k][2]} (${c[k]})`, value: k }))];
@@ -233,7 +233,7 @@ export function register(app) {
       </section>
       <section class="win" data-io-share><span class="cb"></span><h2>Custom content</h2>
         <div class="data-actions"><button type="button" class="primary" data-share>Share custom content</button></div>
-        <p class="io-help">Send your statuses, items, skills, monsters, bundles, maps, feats, and stories to another device or campaign as a code or file. It never includes hunters or room keys.</p>
+        <p class="io-help">Send your statuses, items, skills, monsters, NPCs, bundles, maps, feats, and stories to another device or campaign as a code or file. It never includes hunters or room keys.</p>
         ${ui.field('Paste a code', '<textarea data-paste rows="3" spellcheck="false" autocomplete="off" placeholder="HS1.…"></textarea>')}
         <div class="data-actions"><button type="button" data-read-code>Read code</button></div>
         <p class="io-help">Use Import above for a shared file. Both show a preview before changing anything.</p>

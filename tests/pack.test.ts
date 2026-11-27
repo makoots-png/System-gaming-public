@@ -14,6 +14,8 @@ import type { CatalogId, ItemDefId } from '../src/core/ids.ts';
 import { DAGGER_DEF_ID, GM_CATALOG_ID, OTHER_CATALOG_ID, customId, grantRef, stampSeq } from './fixtures/items.ts';
 import { parseMonster } from '../src/core/registry/monsters.ts';
 import type { Monster } from '../src/core/registry/monsters.ts';
+import { parseNpc } from '../src/core/registry/npcs.ts';
+import type { Npc } from '../src/core/registry/npcs.ts';
 import type { Skill } from '../src/core/registry/skills.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
@@ -25,7 +27,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { RULES } from '../src/core/rules.ts';
 import { parseBattleMap } from '../src/core/registry/maps.ts';
 import type { BattleMap } from '../src/core/registry/maps.ts';
-import { dev, gmKey, mid, rbid, room, skid } from './fixtures/ids.ts';
+import { dev, gmKey, mid, npcid, rbid, room, skid } from './fixtures/ids.ts';
 import { parseStory } from '../src/core/story/story.ts';
 import type { Story } from '../src/core/story/story.ts';
 import type { StoryId } from '../src/core/ids.ts';
@@ -43,6 +45,7 @@ const SHARD: ItemDefData = { ...parseItemDef({ name: 'Frost Shard', type: 'consu
 const LANCE_ABILITY = abilityOf('shot', { id: abilityId('frost-lance'), name: 'Frost Lance', ops: [frostbite()] }, RULES);
 const LANCE: Skill = { id: skid('s6'), name: 'Frost Lance', type: 'active', level: 1, label: null, desc: '', ability: LANCE_ABILITY };
 const WARDEN: Monster = { ...parseMonster({ name: 'Ice Warden', rank: 'C' })!, id: mid('m7'), statuses: [{ key: 'frostbite', rounds: 3 }], abilities: [LANCE_ABILITY] };
+const SCOUT_NPC: Npc = { ...parseNpc({ name: 'Frost Scout', rank: 'C', defaultSide: 'party', skill: 4 })!, id: npcid('npc_7'), statuses: [{ key: 'frostbite', rounds: 2 }], abilities: [LANCE_ABILITY] };
 /** A walled hall with a patch of ice that puts the GM's Frostbite on, a start for each side, and the party's fog. */
 const HALL: BattleMap = parseBattleMap({
   id: 'mp9', name: 'Frost Hall', w: 6, h: 4, tiles: '#######....##.~o.#######', fog: true, starts: { party: [{ x: 1, y: 1 }], foe: [{ x: 4, y: 2 }] },
@@ -70,6 +73,7 @@ function gmSave(): Save {
   s.library.maps = [copy(HALL)];
   s.library.feats = { 'frost-ward': copy(FROST_WARD) };
   s.library.stories = [copy(WAGER)];
+  s.library.npcs = [copy(SCOUT_NPC)];
   return s;
 }
 const read = (v: unknown): Extract<PackRead, { ok: true }> => {
@@ -94,13 +98,14 @@ describe('a pack made and read back', () => {
   test('one of each kind arrives on an empty phone as it was made, under new ids', () => {
     const from = gmSave();
     const r = read(packOf(from, AT));
-    expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, maps: 1, feats: 1, stories: 1 });
+    expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, npcs: 1, maps: 1, feats: 1, stories: 1 });
     const { save } = mergePack(target(phone()), r.pack, 'add', stampSeq('n'));
     expect(save.library.statuses).toEqual(from.library.statuses);
     expect(defs(save)).toEqual(defs(from));
     expect(noIds(save.library.skills)).toEqual(noIds(from.library.skills));
     expect(noIds(save.library.rewards)).toEqual(noIds(from.library.rewards));
     expect(noIds(save.monsters)).toEqual(noIds(from.monsters));
+    expect(noIds(save.library.npcs)).toEqual(noIds(from.library.npcs));
     expect(noIds(save.library.maps)).toEqual(noIds(from.library.maps));
     expect(save.library.feats).toEqual(from.library.feats);
     expect(noIds(save.library.stories)).toEqual(noIds(from.library.stories));
@@ -163,8 +168,8 @@ describe('a pack from outside data', () => {
   });
 
   test('parts of the wrong type hold nothing', () => {
-    const r = read({ schema: SCHEMA, kind: 'library', library: { statuses: [], items: 'x', skills: {}, rewards: 5 }, monsters: { a: 1 } });
-    expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, maps: 0, feats: 0, stories: 0 });
+    const r = read({ schema: SCHEMA, kind: 'library', library: { statuses: [], items: 'x', skills: {}, rewards: 5, npcs: 'none' }, monsters: { a: 1 } });
+    expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, npcs: 0, maps: 0, feats: 0, stories: 0 });
   });
 
   test('entries the parsers refuse are counted unreadable, and a wrong field takes its default', () => {
@@ -182,12 +187,13 @@ describe('a pack from outside data', () => {
         maps: [{ w: 5 }, { name: 'Pit', w: 99, tiles: 'xyz', sight: -3 }],
         feats: { 'Bad Key!': FROST_WARD, nameless: { ...FROST_WARD, name: '' }, ok: FROST_WARD },
         stories: [{ name: 'No chapters', chapters: [] }, { name: '', chapters: WAGER.chapters }, { name: 'Odd', for: 'everyone', chapters: [{ words: { title: 'Hi' } }] }],
+        npcs: [{ name: '' }, { name: 'Scout', tier: 'mythic', skill: 99 }],
       },
       monsters: [7, { name: 'Rat', tweak: { hp: 'lots' } }],
     });
     expect(r.counts).toEqual({
       statuses: { kept: 1, unreadable: 5, over: 0 }, items: { kept: 1, unreadable: 2, over: 0 }, skills: { kept: 1, unreadable: 1, over: 0 },
-      rewards: { kept: 1, unreadable: 1, over: 0 }, monsters: { kept: 1, unreadable: 1, over: 0 }, maps: { kept: 1, unreadable: 1, over: 0 },
+      rewards: { kept: 1, unreadable: 1, over: 0 }, monsters: { kept: 1, unreadable: 1, over: 0 }, npcs: { kept: 1, unreadable: 1, over: 0 }, maps: { kept: 1, unreadable: 1, over: 0 },
       feats: { kept: 1, unreadable: 2, over: 0 }, stories: { kept: 1, unreadable: 2, over: 0 },
     });
     expect(r.pack.stories[0]).toMatchObject({ name: 'Odd', for: 'table', chapters: [{ words: { title: 'HI', line: '' }, quest: null }] });
@@ -458,6 +464,9 @@ describe('a status named anywhere in a shared thing travels with it', () => {
     } },
     { where: 'a monster ability\'s condition', kind: 'monsters', name: 'Ghoul', put: s => {
       s.monsters = [{ ...parseMonster({ name: 'Ghoul', rank: 'C' })!, id: mid('m1'), abilities: [{ ...LANCE_ABILITY, ops: [], gates: [{ kind: 'holds', key: rot, on: 'target', atLeast: 2 }] }] }];
+    } },
+    { where: 'an NPC\'s ability and starting status', kind: 'npcs', name: 'Rot Guard', put: s => {
+      s.library.npcs = [{ ...parseNpc({ name: 'Rot Guard', rank: 'C' })!, id: npcid('npc_1'), statuses: [{ key: 'rot', rounds: 2 }], abilities: [{ ...LANCE_ABILITY, ops: [apply] }] }];
     } },
     { where: 'a trigger of a map\'s zone', kind: 'maps', name: 'Bog', put: s => { s.library.maps = [hall({ triggers: [{ on: 'turnStart', to: 'self', limit: each, ops: [apply] }] })]; } },
     { where: 'the end of a map\'s zone', kind: 'maps', name: 'Bog', put: s => { s.library.maps = [hall({ end: [apply] })]; } },

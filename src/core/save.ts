@@ -11,7 +11,7 @@ import type { StatusDef } from './combat/effect-ops.ts';
 import { parseFight, parseStatusDef } from './combat/fight-parse.ts';
 import type { Fight } from './combat/fight-types.ts';
 import { monsterId, newGate, parseGate } from './gates/gate.ts';
-import type { Gate, GateMonster, GateStatus, GateType } from './gates/gate.ts';
+import type { Gate, GateMonster, GateNpc, GateStatus, GateType } from './gates/gate.ts';
 import { parseApplied, parseHeld } from './applied.ts';
 import { parseOutbox } from './sync/outbox.ts';
 import { parseSeen } from './sync/seen.ts';
@@ -27,6 +27,8 @@ import { HEARD_MAX, bagDefs, parseItemBook, parseItemGrant } from './registry/it
 import type { HeldItem, ItemDefData, ItemGrant, ItemResolveRules } from './registry/item-book.ts';
 import { catalogIdOf } from './catalog-id.ts';
 import { parseMonster } from './registry/monsters.ts';
+import { parseNpc } from './registry/npcs.ts';
+import type { Npc, NpcSkill, NpcTier } from './registry/npcs.ts';
 import { isIconKey } from './registry/icons.ts';
 import type { IconKey } from './registry/icons.ts';
 import { SKILL_SEEDS, SKILL_TYPES, skillOf } from './registry/skills.ts';
@@ -74,7 +76,7 @@ import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
 import type { JobChain } from './hunter/job-chain.ts';
 import type { Life, Vitals } from './hunter/vitals.ts';
-import { fightId, parseCatalogId, parseCatalogKey, parseCombatantId, parseDeviceId, parseGateId, parseGmKey, parseItemDefId, parseRoomCode, parseSaveId, saveId } from './ids.ts';
+import { fightId, parseCatalogId, parseCatalogKey, parseCombatantId, parseDeviceId, parseGateId, parseGmKey, parseItemDefId, parseNpcId, parseRoomCode, parseSaveId, saveId } from './ids.ts';
 import type { CatalogId, CatalogKey, ItemDefId, CombatantId, DeviceId, EventId, FightId, GateId, GmKey, HunterId, IdOf, LogId, MonsterId, QuestId, RollEntryId } from './ids.ts';
 import type { RoomCode } from './ids.ts';
 import { RULES as BASE_RULES, rulesOf } from './rules.ts';
@@ -95,7 +97,7 @@ import type {
 export { rulesOf };
 export type { Rules };
 /** A gate, its statuses and its default: src/core/gates/gate.ts. Only its transition table changes a gate's status or XP paid. */
-export type { Gate, GateMonster, GateStatus, GateType };
+export type { Gate, GateMonster, GateNpc, GateStatus, GateType };
 
 // ── enums ──
 export const MODES = ['player', 'gm'] as const;
@@ -105,8 +107,8 @@ export type { SkillType };
 /** The item enums and the one item parser: src/core/registry/items.ts. */
 export { ITEM_TYPES, RARITIES, SLOTS, SLOT_LABELS, WEAR_LIMIT };
 export type { ItemTemplate, ItemType, Rarity, Slot };
-/** A skill, an item and a monster live in the registry that owns each (src/core/registry/). */
-export type { Item, Loot, Monster, Skill, StartStatus };
+/** A skill, an item, a monster and an NPC live in the registry that owns each (src/core/registry/). */
+export type { Item, Loot, Monster, Npc, NpcSkill, NpcTier, Skill, StartStatus };
 export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story', 'trade', 'word', 'answer'] as const;
 
 export type Mode = (typeof MODES)[number];
@@ -232,7 +234,7 @@ export type Library = {
   items: Record<ItemDefId, ItemDefData>;
   /** The catalog this campaign's custom items belong to (`catalogIdOf` its key in `settings.sync.catalogKeys`); null until the first custom item. */
   catalogId: CatalogId | null;
-  statuses: Record<string, StatusDef>; skills: Skill[]; rewards: RewardBundle[]; maps: BattleMap[]; feats: Record<string, FeatDef>; stories: Story[] };
+  statuses: Record<string, StatusDef>; skills: Skill[]; rewards: RewardBundle[]; maps: BattleMap[]; feats: Record<string, FeatDef>; stories: Story[]; npcs: Npc[] };
 export type Save = {
   schema: number; savedAt: string; seq: number; settings: Settings; rulesOverrides: Record<string, unknown>; world: World;
   hunters: Hunter[]; gates: Gate[]; monsters: Monster[]; library: Library;
@@ -302,7 +304,7 @@ export const newRollEntry = (): RollEntry => ({
 /** An empty save, the example a stored one is filled from: no hunters. Read through the repair, every save holds one. */
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
-  monsters: [], library: { items: {}, catalogId: null, statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, heardItems: {}, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
+  monsters: [], library: { items: {}, catalogId: null, statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [], npcs: [] }, shop: null, heardItems: {}, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
   tableWeight: NO_TABLE_WEIGHT, stash: NO_STASH, classHolders: newClassHolders(deviceId), classOffer: null,
 });
 
@@ -363,6 +365,14 @@ const maps = (run: RepairRun, value: unknown): BattleMap[] =>
 /** The GM's stories, each read by `parseStory`; one without a name or a chapter is dropped, one without an id takes the default's. */
 const stories = (run: RepairRun, value: unknown): Story[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStory(raw); return t ? [refill<Story>(run, raw, t, 'st0', 'st')] : []; });
+/** The GM's NPCs, each read by `parseNpc` under shipped rules; one without a name is dropped, and any id `parseNpcId` refuses is blanked so `claimId` renumbers it. */
+const npcs = (run: RepairRun, value: unknown): Npc[] =>
+  (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => {
+    const t = parseNpc(raw);
+    if (!t) return [];
+    if (parseNpcId(raw.id) === null) raw.id = '';
+    return [refill<Npc>(run, raw, t, 'npc_0', 'npc_')];
+  });
 /** The stories on the table, each read by `parseStoryRun` (one naming no story or no state is dropped), then `keptRuns`. */
 const storyRuns = (run: RepairRun, value: unknown): StoryRun[] =>
   keptRuns((Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStoryRun(raw); return t ? [refill<StoryRun>(run, raw, t, 'sr0', 'sr')] : []; }));
@@ -493,6 +503,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.library.maps = maps(run, save.library.maps.slice(0, LIMITS.libraryMaps));
   save.library.feats = parseFeats(save.library.feats, LIMITS.libraryFeats);
   save.library.stories = stories(run, save.library.stories.slice(0, LIMITS.libraryStories));
+  save.library.npcs = npcs(run, save.library.npcs.slice(0, LIMITS.libraryNpcs));
   save.storyRuns = storyRuns(run, save.storyRuns);
   save.gates = gates(run, save.gates);
   save.shop = Array.isArray(save.shop) ? shopIds(save.shop) : null;

@@ -5,7 +5,7 @@
 // through these, with `store.apply`. Pure: the caller passes the time (`Stamp`), the rolled gate and the monsters made
 // for it, the XP and loot already worked out. A step that changes nothing is refused (`missing`, `unchanged`).
 import { can, shownOf, transition } from './gate.ts';
-import type { Gate, GateEvent, GateMonster, GateStatus, GateType, MonsterId } from './gate.ts';
+import type { Gate, GateEvent, GateMonster, GateNpc, GateStatus, GateType, MonsterId } from './gate.ts';
 import { withDifficulty } from './difficulty.ts';
 import type { DifficultyEvent } from './difficulty.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -165,7 +165,7 @@ export function deleteGate<S extends WorldParts>(save: S, id: string): Next<S> {
 
 /** What the GM's edit form gives: each field as read from the form, the status the GM picked. */
 export type GateEdit = {
-  name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null; notes: string;
+  name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null; npcs?: GateNpc[]; notes: string;
   mapId: string | null; status: GateStatus; solo: boolean;
   difficultyEvents?: readonly DifficultyEvent[];
 };
@@ -180,7 +180,7 @@ export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEd
   const old = save.gates[at]!;
   const fields: Gate = {
     ...old, name: edit.name.trim().slice(0, 60) || old.name, rank: edit.rank, type: edit.type, breakDay: Math.max(1, Math.trunc(edit.breakDay) || old.breakDay),
-    monsters: edit.monsters, bossId: edit.bossId, notes: edit.notes.trim().slice(0, 500),
+    monsters: edit.monsters, bossId: edit.bossId, npcs: edit.npcs ?? old.npcs, notes: edit.notes.trim().slice(0, 500),
     mapId: save.library.maps.find(m => m.id === edit.mapId)?.id ?? null, solo: edit.solo,
   };
   const diffEvents: DifficultyEvent[] = [

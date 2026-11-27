@@ -1,12 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown, fightAward, gateXp, hasGateWaves, parseGate, shownOf, transition, waveRoster, xpDue } from '../src/core/gates/gate.ts';
+import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, activeGateWave, can, countdown, fightAward, gateXp, hasGateWaves, hasWaveFoes, npcDeleteConfirmBody, parseGate, shownOf, transition, waveRoster, xpDue } from '../src/core/gates/gate.ts';
 import { DEFAULT_DIFFICULTY, withDifficulty } from '../src/core/gates/difficulty.ts';
-import type { Gate, GateEvent, GateEventType, GateStatus, MonsterId } from '../src/core/gates/gate.ts';
+import type { Gate, GateEvent, GateEventType, GateStatus, MonsterId, NpcId } from '../src/core/gates/gate.ts';
+import { worldDoc } from '../src/core/gates/world.ts';
+import { soloDoc, soloFight, soloReady } from '../src/core/gates/solo.ts';
+import { DOC_MAX } from '../src/core/protocol.ts';
+import { newNpc, npcTierPreset, npcXp } from '../src/core/registry/npcs.ts';
+import { RULES } from '../src/core/rules.ts';
+import { newHunter, newSave } from '../src/core/save.ts';
+import { isRefused } from '../src/core/save-step.ts';
+import { seedId } from '../src/core/ids.ts';
 import { WALK_EVENTS, den, fields, mid } from './models/gate-events.ts';
+import { dev } from './fixtures/ids.ts';
+
+const nid = (s: string): NpcId => s as NpcId;
 
 /** The bestiary for these tests: a goblin is worth 25 XP, the hobgoblin boss 75. Anything else is unknown and worth 0. */
 const XP: Record<string, number> = { 'm-goblin': 25, 'm-hob': 75 };
-const xpOf = (id: MonsterId): number => XP[id] ?? 0;
+const xpOf = (id: MonsterId | NpcId): number => XP[id] ?? 0;
 
 /** The den of tests/models/gate-events.ts: 3 x 25 + 75 = 150 XP. It breaks on day 5. */
 const DEN_XP = 150;
@@ -277,7 +288,7 @@ describe('multi-wave gate rosters and active wave selection', () => {
     const g = den('detected');
     expect(hasGateWaves(g)).toBe(false);
     expect(activeGateWave(g)).toBe('all');
-    expect(waveRoster(g, 'all')).toEqual({ monsters: g.monsters, bossId: g.bossId });
+    expect(waveRoster(g, 'all')).toEqual({ monsters: g.monsters, bossId: g.bossId, npcs: [] });
   });
 
   test('wave-tagged gates separate Wave 1 (no boss) from Wave 2 (with boss) and switch active wave once Wave 1 settles', () => {
@@ -286,15 +297,246 @@ describe('multi-wave gate rosters and active wave selection', () => {
     expect(waveRoster(g, 1)).toEqual({
       monsters: [{ monsterId: mid('m-goblin'), count: 3, wave: 1 }, { monsterId: mid('m-chief'), count: 1, wave: 1 }],
       bossId: null,
+      npcs: [],
     });
     expect(waveRoster(g, 2)).toEqual({
       monsters: [{ monsterId: mid('m-usher'), count: 2, wave: 2 }],
       bossId: mid('m-head-usher'),
+      npcs: [],
     });
     expect(activeGateWave(g)).toBe(1);
     expect(activeGateWave({ ...g, fought: ['h1'] })).toBe(2);
     expect(activeGateWave({ ...g, xpPaid: 50 })).toBe(2);
     expect(activeGateWave({ ...g, bossFell: true })).toBe(2);
+  });
+});
+
+describe('gate NPC placements (parse, waves, XP, secrecy, solo exclusion)', () => {
+  test('parseGate round-trips npcs, clamps counts, drops invalid ids and bad waves, and migrates old saves to []', () => {
+    const { npcs: _old, ...withoutNpcs } = copy(den('detected'));
+    expect(parseGate(withoutNpcs)!.npcs).toEqual([]);
+
+    const withNpcs: Gate = {
+      ...den('raiding'),
+      npcs: [
+        { npcId: nid('npc_1'), count: 1, side: 'party' },
+        { npcId: nid('npc_2'), count: 2, side: 'foe', wave: 1 },
+        { npcId: nid('npc_3'), count: 4, side: 'foe', wave: 2 },
+      ],
+    };
+    const parsed = parseGate(copy(withNpcs))!;
+    expect(parsed).toEqual(withNpcs);
+    expect('wave' in parsed.npcs[0]!).toBe(false);
+    expect(transition(withNpcs, { type: 'clear', day: 4 }).npcs).toEqual(withNpcs.npcs);
+    expect(transition(withNpcs, { type: 'gmSet', status: 'detected', day: 4 }).npcs).toEqual(withNpcs.npcs);
+
+    const hostile = parseGate({
+      ...copy(den('detected')),
+      npcs: [
+        { npcId: 'npc_10', count: 0, side: 'bad', wave: 3 },
+        { npcId: 'npc_11', count: 99, side: 'foe', wave: 2 },
+        { npcId: 'm1', count: 1, side: 'foe' },
+        { npcId: '', count: 1, side: 'party' },
+        null,
+        ...Array.from({ length: 60 }, (_, i) => ({ npcId: `npc_${100 + i}`, count: 1, side: 'party' })),
+      ],
+    })!;
+    expect(hostile.npcs).toHaveLength(50);
+    expect(hostile.npcs.slice(0, 2)).toEqual([
+      { npcId: nid('npc_10'), count: 1, side: 'party' },
+      { npcId: nid('npc_11'), count: 4, side: 'foe', wave: 2 },
+    ]);
+  });
+
+  test('waveRoster places Wave 1 NPCs in wave 1, Wave 2 NPCs in wave 2, and untagged All-waves NPCs in both waves', () => {
+    const allyAll = { npcId: nid('npc_1'), count: 1, side: 'party' as const };
+    const foeW1 = { npcId: nid('npc_2'), count: 2, side: 'foe' as const, wave: 1 as const };
+    const foeW2 = { npcId: nid('npc_3'), count: 1, side: 'foe' as const, wave: 2 as const };
+    const g: Gate = {
+      ...den('detected'),
+      monsters: [{ monsterId: mid('m-goblin'), count: 2, wave: 1 }],
+      bossId: mid('m-hob'),
+      npcs: [allyAll, foeW1, foeW2],
+    };
+    expect(hasGateWaves(g)).toBe(true);
+    expect(waveRoster(g, 1).npcs).toEqual([allyAll, foeW1]);
+    expect(waveRoster(g, 2).npcs).toEqual([allyAll, foeW2]);
+    expect(waveRoster(g, 'all').npcs).toEqual([allyAll, foeW1, foeW2]);
+
+    // An NPC wave tag alone (with no wave-tagged monsters) still splits a gate into two waves when both hold foes.
+    const npcWaved: Gate = {
+      ...den('detected'),
+      monsters: [],
+      bossId: null,
+      npcs: [foeW1, foeW2],
+    };
+    expect(hasGateWaves(npcWaved)).toBe(true);
+    expect(waveRoster(npcWaved, 1).npcs).toEqual([foeW1]);
+    expect(waveRoster(npcWaved, 2).npcs).toEqual([foeW2]);
+
+    // A wave holding only ally NPCs has no foes and does not turn a gate into two waves.
+    const allyOnlyWave1: Gate = {
+      ...den('detected'),
+      monsters: [{ monsterId: mid('m-goblin'), count: 2, wave: 2 }],
+      bossId: mid('m-hob'),
+      npcs: [allyAll],
+    };
+    expect(hasWaveFoes(waveRoster(allyOnlyWave1, 1))).toBe(false);
+    expect(hasWaveFoes(waveRoster(allyOnlyWave1, 2))).toBe(true);
+    expect(hasGateWaves(allyOnlyWave1)).toBe(false);
+    expect(activeGateWave(allyOnlyWave1)).toBe('all');
+
+    const allyOnlyGate: Gate = {
+      ...den('detected'),
+      monsters: [],
+      bossId: null,
+      npcs: [
+        { npcId: nid('npc_1'), count: 1, side: 'party', wave: 1 },
+        { npcId: nid('npc_2'), count: 1, side: 'party', wave: 2 },
+      ],
+    };
+    expect(hasWaveFoes(waveRoster(allyOnlyGate, 'all'))).toBe(false);
+    expect(hasGateWaves(allyOnlyGate)).toBe(false);
+  });
+
+  test('gateXp counts an untagged All-waves foe NPC once per wave on a two-wave gate so running both waves matches gateXp', () => {
+    const foeAll = { ...newNpc({ name: 'Stalker', rank: 'E', ...npcTierPreset('elite'), defaultSide: 'foe' }), id: nid('npc_5') };
+    const allyAll = { ...newNpc({ name: 'Mira', rank: 'E', defaultSide: 'party' }), id: nid('npc_6') };
+    const npcTable = new Map([foeAll, allyAll].map(n => [n.id, n]));
+    const mixedXp = (id: MonsterId | NpcId): number => (id in XP ? XP[id]! : (npcTable.get(id as NpcId) ? npcXp(npcTable.get(id as NpcId)!, RULES) : 0));
+    const stalkerXp = npcXp(foeAll, RULES);
+
+    const g: Gate = {
+      ...den('raiding'),
+      monsters: [
+        { monsterId: mid('m-goblin'), count: 2, wave: 1 },
+        { monsterId: mid('m-goblin'), count: 1, wave: 2 },
+      ],
+      bossId: mid('m-hob'),
+      npcs: [
+        { npcId: allyAll.id, count: 1, side: 'party' },
+        { npcId: foeAll.id, count: 1, side: 'foe' },
+      ],
+    };
+    expect(hasGateWaves(g)).toBe(true);
+    const wave1Xp = 2 * 25 + stalkerXp;
+    const wave2Xp = 1 * 25 + 75 + stalkerXp;
+    expect(gateXp(g, mixedXp)).toBe(wave1Xp + wave2Xp);
+
+    // Run Wave 1, then Wave 2: total xpPaid matches gateXp exactly and xpDue reaches 0.
+    const afterW1 = transition(g, { type: 'paid', xp: fightAward(g, wave1Xp, mixedXp) });
+    expect(xpDue(afterW1, mixedXp), 'Clear after Wave 1 owes exactly Wave 2 XP').toBe(wave2Xp);
+    const afterW2 = transition(afterW1, { type: 'paid', xp: fightAward(afterW1, wave2Xp, mixedXp) });
+    expect(afterW2.xpPaid).toBe(gateXp(g, mixedXp));
+    expect(xpDue(afterW2, mixedXp)).toBe(0);
+    expect(fightAward(afterW2, wave2Xp, mixedXp)).toBe(0);
+
+    // On a single-fight gate (no waves), the same untagged foe NPC is counted once.
+    const single: Gate = { ...den('raiding'), npcs: [{ npcId: foeAll.id, count: 1, side: 'foe' }] };
+    expect(hasGateWaves(single)).toBe(false);
+    expect(gateXp(single, mixedXp)).toBe(DEN_XP + stalkerXp);
+  });
+
+  test('npcDeleteConfirmBody names every gate whose roster holds the NPC', () => {
+    const id = nid('npc_7');
+    const g1 = { name: 'Goblin Den', npcs: [{ npcId: id, count: 1, side: 'party' as const }, { npcId: id, count: 2, side: 'foe' as const, wave: 2 as const }] };
+    const g2 = { name: 'Frost Hollow', npcs: [{ npcId: id, count: 1, side: 'foe' as const }] };
+    const g3 = { name: '', npcs: [{ npcId: id, count: 1, side: 'party' as const }] };
+    const other = { name: 'Empty Gate', npcs: [{ npcId: nid('npc_8'), count: 1, side: 'party' as const }] };
+
+    expect(npcDeleteConfirmBody(id, [other])).toBe('Remove this NPC from your library. You can still finish any fight that already uses it.');
+    expect(npcDeleteConfirmBody(id, [g1, other])).toContain('This NPC is in this gate: Goblin Den.');
+    expect(npcDeleteConfirmBody(id, [g1, g2, other])).toContain('This NPC is in these gates: Goblin Den and Frost Hollow.');
+    expect(npcDeleteConfirmBody(id, [g1, g2, g3])).toContain('This NPC is in these gates: Goblin Den, Frost Hollow, and Unnamed gate.');
+  });
+
+  test('gateXp counts foe NPC tier XP (normal 1x, elite 1.5x, boss 3x) and ignores ally NPCs', () => {
+    const ally = { ...newNpc({ name: 'Mira', rank: 'C', defaultSide: 'party' }), id: nid('npc_1') };
+    const foeNormal = { ...newNpc({ name: 'Scout', rank: 'C', ...npcTierPreset('standard'), defaultSide: 'foe' }), id: nid('npc_2') };
+    const foeElite = { ...newNpc({ name: 'Captain', rank: 'C', ...npcTierPreset('elite'), defaultSide: 'foe' }), id: nid('npc_3') };
+    const foeBoss = { ...newNpc({ name: 'Warlord', rank: 'C', ...npcTierPreset('boss'), defaultSide: 'foe' }), id: nid('npc_4') };
+    const npcTable = new Map([ally, foeNormal, foeElite, foeBoss].map(n => [n.id, n]));
+    const mixedXp = (id: MonsterId | NpcId): number => {
+      if (id in XP) return XP[id]!;
+      const n = npcTable.get(id as NpcId);
+      return n ? npcXp(n, RULES) : 0;
+    };
+
+    const g: Gate = {
+      ...den('detected'),
+      npcs: [
+        { npcId: ally.id, count: 2, side: 'party' },
+        { npcId: foeNormal.id, count: 2, side: 'foe' },
+        { npcId: foeElite.id, count: 1, side: 'foe' },
+        { npcId: foeBoss.id, count: 1, side: 'foe' },
+        { npcId: nid('npc_999'), count: 3, side: 'foe' },
+      ],
+    };
+    const expectedFoeNpcXp = npcXp(foeNormal, RULES) * 2 + npcXp(foeElite, RULES) + npcXp(foeBoss, RULES);
+    expect(npcXp(foeElite, RULES)).toBe(Math.round(npcXp(foeNormal, RULES) * RULES.fight.kinds.elite.xp));
+    expect(npcXp(foeBoss, RULES)).toBe(Math.round(npcXp(foeNormal, RULES) * RULES.fight.kinds.boss.xp));
+    expect(gateXp(g, mixedXp)).toBe(DEN_XP + expectedFoeNpcXp);
+    expect(xpDue(g, mixedXp)).toBe(DEN_XP + expectedFoeNpcXp);
+    expect(fightAward({ ...g, xpPaid: DEN_XP }, 100, mixedXp)).toBe(100);
+    expect(fightAward({ ...g, xpPaid: DEN_XP + expectedFoeNpcXp }, 100, mixedXp)).toBe(0);
+  });
+
+  test('shownOf and worldDoc strip GateFields.npcs completely', () => {
+    const g: Gate = {
+      ...den('detected'),
+      npcs: [{ npcId: nid('npc_42'), count: 2, side: 'foe', wave: 1 }],
+    };
+    const shown = shownOf(g, 60);
+    expect('npcs' in shown).toBe(false);
+    const doc = worldDoc({ gates: [g] }, 3, new Set(), 1);
+    expect(JSON.stringify(doc)).not.toContain('npc_42');
+    expect(JSON.stringify(doc)).not.toContain('npcs');
+  });
+
+  test('fork 5 default: soloReady, soloFight, and soloDoc exclude gate NPCs', () => {
+    const h = { ...newHunter(RULES), id: 'h1' as never, name: 'Jin' };
+    const withMonstersAndNpcs: Gate = {
+      ...den('detected'),
+      solo: true,
+      monsters: [{ monsterId: seedId<'m'>('goblin'), count: 2 }],
+      bossId: null,
+      npcs: [
+        { npcId: nid('npc_1'), count: 1, side: 'party' },
+        { npcId: nid('npc_2'), count: 2, side: 'foe' },
+      ],
+    };
+    const npcOnlyGate: Gate = {
+      ...den('detected'),
+      id: 'g-npc-only' as never,
+      solo: true,
+      monsters: [],
+      bossId: null,
+      npcs: [{ npcId: nid('npc_2'), count: 2, side: 'foe' }],
+    };
+    const save = { ...newSave(dev('d')), hunters: [h], gates: [withMonstersAndNpcs, npcOnlyGate] };
+    const ctx = { R: RULES, route: 'local' as const, held: false, nowMs: Date.now() };
+
+    const ready = soloReady(save, h.id, { kind: 'world', id: withMonstersAndNpcs.id }, ctx);
+    expect(isRefused(ready)).toBe(false);
+    if (!isRefused(ready)) {
+      expect(ready.target.monsters).toHaveLength(1);
+      expect(ready.target.monsters[0]!.count).toBe(2);
+      const fight = soloFight(ready.h, ready.target, RULES)!;
+      expect(fight.fight.rows.filter(r => r.kind === 'hunter' && r.npc)).toHaveLength(0);
+      expect(fight.fight.rows.filter(r => r.kind === 'monster')).toHaveLength(2);
+    }
+
+    // A gate with only NPCs has no solo monsters and refuses as empty.
+    expect(soloReady(save, h.id, { kind: 'world', id: npcOnlyGate.id }, ctx)).toEqual({ ok: false, why: 'empty' });
+
+    // soloDoc carries the solo gates (monster lines only, empty for the NPC-only gate) and zero NPC entries.
+    const published = soloDoc(save, RULES, DOC_MAX);
+    expect(published.doc.gates).toHaveLength(2);
+    expect(published.doc.gates[0]!.id).toBe(withMonstersAndNpcs.id);
+    expect(published.doc.gates[0]!.lines).toHaveLength(1);
+    expect(published.doc.gates[1]!.id).toBe(npcOnlyGate.id);
+    expect(published.doc.gates[1]!.lines).toEqual([]);
+    expect(JSON.stringify(published.doc)).not.toContain('npc_');
   });
 });
 

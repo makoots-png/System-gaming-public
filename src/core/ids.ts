@@ -175,6 +175,8 @@ export type MapId = Id<'MapId'>;
 export type StoryId = Id<'StoryId'>;
 /** A story on the table: one run of a library story, on the GM's save (notes-1-stories.md 1.4; its machine is unit 3's). */
 export type StoryRunId = Id<'StoryRunId'>;
+/** An NPC template in the GM's library (`save.library.npcs`). */
+export type NpcId = Id<'NpcId'>;
 /**
  * A row of a fight: `c` and the save's seq for a hunter's or a monster's, its summoner's id and the time for a summon's
  * (fight.ts), so not a save id's form.
@@ -188,13 +190,15 @@ export const fightId = (s: string): FightId => s as FightId;
 /** The id each prefix makes (save.ts's repair and the store's `id`). A prefix not listed makes a plain string. */
 export type SaveIds = {
   h: HunterId; q: QuestId; t: TitleId; sh: ShadowId; i: ItemId; l: LogId; r: RollEntryId; s: SkillId; lo: LoadoutId; bn: BoonId;
-  rb: BundleId; jc: ChainId; m: MonsterId; g: GateId; mp: MapId; pg: PersonalGateId; st: StoryId; sr: StoryRunId;
+  rb: BundleId; jc: ChainId; m: MonsterId; g: GateId; mp: MapId; pg: PersonalGateId; st: StoryId; sr: StoryRunId; npc_: NpcId;
 };
 export type IdOf<P extends string> = P extends keyof SaveIds ? SaveIds[P] : string;
-/** A save id's form: a prefix and a number (`h12`), or `seed:<word>` for a built-in's copy. */
-export const SAVE_ID_RE = /^[a-z]+\d+$|^seed:[a-z0-9-]+$/;
+/** A save id's form: a prefix (optional trailing `_`, as in `npc_1`) and a number (`h12`), or `seed:<word>` for a built-in's copy. */
+export const SAVE_ID_RE = /^[a-z]+_?\d+$|^seed:[a-z0-9-]+$/;
 /** A stored id of kind `K`, or null when it is not in a save id's form: the reader of an id kept in a field that names an entity. */
 export const parseSaveId = <K extends keyof SaveIds>(v: unknown): SaveIds[K] | null => (typeof v === 'string' && SAVE_ID_RE.test(v) ? (v as SaveIds[K]) : null);
+/** A stored NPC template id (`npc_<n>`), or null when it is not one. */
+export const parseNpcId = (v: unknown): NpcId | null => { const id = parseSaveId<'npc_'>(v); return id && id.startsWith('npc_') ? id : null; };
 /** The id of kind `K` of a built-in's copy (`seed:<slug>`): the one maker of a seed id. */
 export const seedId = <K extends keyof SaveIds>(slug: string): SaveIds[K] => `seed:${slug}` as SaveIds[K];
 /** The id `prefix` and the number `n` make: the one maker of a new save id. */

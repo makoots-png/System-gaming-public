@@ -1,10 +1,10 @@
 // ids.ts: the save's and the room's ids, and day keys, for tests, each read by its parser in src/core/ids.ts, so a test cannot hold an
 // id the app would refuse.
-import { parseCombatantId, parseDeviceId, parseGateId, parseGmKey, parseRoomCode, parseSaveId } from '../../src/core/ids.ts';
+import { parseCombatantId, parseDeviceId, parseGateId, parseGmKey, parseNpcId, parseRoomCode, parseSaveId } from '../../src/core/ids.ts';
 import { parseDayKey } from '../../src/core/day.ts';
 import { monsterId } from '../../src/core/gates/gate.ts';
 import type { DayKey } from '../../src/core/day.ts';
-import type { BundleId, ChainId, CombatantId, DeviceId, GateId, GmKey, HunterId, ItemId, LoadoutId, LogId, MonsterId, QuestId, RollEntryId, RoomCode, ShadowId, SkillId, StoryId, StoryRunId, TitleId } from '../../src/core/ids.ts';
+import type { BundleId, ChainId, CombatantId, DeviceId, GateId, GmKey, HunterId, ItemId, LoadoutId, LogId, MonsterId, NpcId, QuestId, RollEntryId, RoomCode, ShadowId, SkillId, StoryId, StoryRunId, TitleId } from '../../src/core/ids.ts';
 
 const must = <T>(v: T | null, s: string): T => { if (v === null) throw new Error(`not an id: ${s}`); return v; };
 export const dev = (s: string): DeviceId => must(parseDeviceId(s), s);
@@ -25,6 +25,7 @@ export const rbid = (s: string): BundleId => must(parseSaveId<'rb'>(s), s);
 export const jcid = (s: string): ChainId => must(parseSaveId<'jc'>(s), s);
 export const stid = (s: string): StoryId => must(parseSaveId<'st'>(s), s);
 export const srid = (s: string): StoryRunId => must(parseSaveId<'sr'>(s), s);
+export const npcid = (s: string): NpcId => must(parseNpcId(s), s);
 /** A monster as a gate, a codex entry or a fight's link names it (gate.ts's reader). */
 export const mid = (s: string): MonsterId => must(monsterId(s), s);
 /** A gate as a fight's link names it (ids.ts's reader). */

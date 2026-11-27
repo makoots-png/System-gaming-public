@@ -4,6 +4,8 @@ import { LOOT_EVENTS, LOOT_STATES, clearGoldEach, clearShares, dropDealt, dropLi
 import { gatePreset } from '../src/core/gates/preset.ts';
 import { waitingIn } from '../src/core/hunter/pending.ts';
 import { builtInItemId, fightId, presetLineId } from '../src/core/ids.ts';
+import type { NpcId } from '../src/core/ids.ts';
+import { newNpc, npcTierPreset, npcXp } from '../src/core/registry/npcs.ts';
 import { parseItem } from '../src/core/registry/items.ts';
 import { adhocGrant, itemDefDataOf, refGrant, resolveGrant } from '../src/core/registry/item-book.ts';
 import type { ItemGrant } from '../src/core/registry/item-book.ts';
@@ -18,7 +20,7 @@ import { reduce } from '../src/core/combat/fight.ts';
 import type { Ended, NewRow } from '../src/core/combat/fight-types.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
-import { hunterRow, remoteRow } from '../src/core/combat/rows.ts';
+import { hunterRow, npcRows, remoteRow } from '../src/core/combat/rows.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Dropped, FightLoot, Hunter, Save } from '../src/core/save.ts';
 import { newEvent, parseSheetKey } from '../src/core/protocol.ts';
@@ -201,6 +203,55 @@ describe('the end of a fight', () => {
     const outNoBoss = ok(settleEncounter(noBossSave, planNoBoss, 'skip', { room: null, events: [] }, DAY, NONE));
     expect(outNoBoss.save.gates[0]!.bossFell).toBe(true);
     expect(outNoBoss.offerClasses).toBe(gid('g-den'));
+  });
+
+  test('a gate fight holding a foe NPC still awards its XP through planEncounter once monsters XP is paid, never pays ally NPCs, and never trips bossFell', () => {
+    const foeNpc = { ...newNpc({ name: 'Rival Captain', rank: 'E', ...npcTierPreset('boss'), defaultSide: 'foe' }), id: 'npc_51' as NpcId };
+    const allyNpc = { ...newNpc({ name: 'Mira Scout', rank: 'E', defaultSide: 'party' }), id: 'npc_52' as NpcId };
+    const foeNpcXp = npcXp(foeNpc, RULES);
+    const base = inDen(150, 'f-npc');
+    const h = base.hunters[0]!;
+    const ctx = { rules: RULES };
+    const rows = [
+      hunterRow(h, combatantId('c1'), RULES),
+      remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, combatantId('c2'), RULES),
+      ...npcRows(foeNpc, [combatantId('c3')], RULES, { side: 'foe' }),
+      ...npcRows(allyNpc, [combatantId('c4')], RULES, { side: 'party' }),
+    ];
+    const added = reduce(null, { type: 'add', fightId: fightId('f-npc'), rows, openings: [] }, ctx).fight;
+    const run = reduce(added, { type: 'start', openings: rows.map(r => ({ id: r.id, d20: 10, tie: 0 })) }, ctx).fight;
+    const ended0 = reduce(run, { type: 'end' }, ctx).fight as Ended;
+    const fight: Ended = { ...ended0, summary: { ...ended0.summary, xp: foeNpcXp, down: [combatantId('c3')] } };
+    const gate = {
+      ...base.gates[0]!,
+      classOffer: true,
+      npcs: [
+        { npcId: foeNpc.id, count: 1, side: 'foe' as const },
+        { npcId: allyNpc.id, count: 1, side: 'party' as const },
+      ],
+    };
+    const save: Save = {
+      ...base,
+      fight,
+      fightRefs: { gate: gid('g-den'), monsters: {} },
+      gates: [gate],
+      library: { ...base.library, npcs: [foeNpc, allyNpc] },
+    };
+    const mixedXp = (id: string): number => (id === foeNpc.id ? foeNpcXp : xpOf(id));
+
+    // Without NPC XP in xpOf, xpPaid (150) would already cover monsters and award 0.
+    expect(planEncounter(fight, 'g-den', save, PARTY, xpOf).award).toBe(0);
+
+    // With NPC XP in xpOf (matching combat.js), the foe NPC fight pays its full share to the 2 hunters only.
+    const plan = planEncounter(fight, 'g-den', save, PARTY, mixedXp);
+    expect([plan.xp, plan.award, plan.covered, plan.shared, plan.each]).toEqual([foeNpcXp, foeNpcXp, false, true, shareEach(foeNpcXp, 2, PARTY)]);
+    expect(plan.payees).toHaveLength(2);
+    expect(plan.dead).toEqual([{ id: combatantId('c3'), name: 'Rival Captain', xp: foeNpcXp, monsterId: null }]);
+
+    const settled = ok(settleEncounter(save, plan, 'award', { room: ROOM, events: [award(plan.each)] }, DAY, NONE));
+    expect(settled.save.gates[0]!.xpPaid).toBe(150 + foeNpcXp);
+    expect(settled.save.gates[0]!.bossFell, 'a Boss-tier foe NPC never trips bossFell for the gate boss').toBe(false);
+    expect(settled.offerClasses).toBeNull();
   });
 });
 

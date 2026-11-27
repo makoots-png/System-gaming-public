@@ -15,7 +15,7 @@ import type { Tick } from './timeline.ts';
 import { costOf } from './charge.ts';
 import { inRange, whoIsIn } from './resolve.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
-import type { Body, Op, OpRules } from './effect-ops.ts';
+import type { Body, Op } from './effect-ops.ts';
 import { band, docDodgeOptions, gridOfDoc, tilesOfRuns, UNSEEN } from './fight-doc.ts';
 import type { Band, FightDoc, FightDocRow } from './fight-doc.ts';
 import { partyView } from './fight-turn.ts';
@@ -68,6 +68,8 @@ export type MapBody = Spot & {
   readonly word: string | null;
   /** Its picture (row-icon.ts `rowIcon`; on a player's phone the doc's, which is the GM's answer), or null: its initials show. */
   readonly icon: IconKey | null;
+  /** Whether this body may belong to a lettered group (monsters and NPCs): shortens by last word with its letter and shows a pack letter on its disc. */
+  readonly pack: boolean;
 };
 /**
  * What a token draws of design 4: its shield as a share of its max HP (1 when the viewer sees only a band), its stagger
@@ -147,14 +149,16 @@ const otherSide = (s: Side): Side => (s === 'party' ? 'foe' : 'party');
  * `perceivedBy`). A party row's HP ring is exact, a foe's shows its band (as players see it). `hunterOf` finds the sheet
  * behind a hunter's row, for its emblem (row-icon.ts); absent, a hunter's token shows its initials.
  */
-export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b: Body) => boolean, as: ViewAs, hunterOf?: HunterOf): MapBody[] {
+export function fightBodies(f: Fight, R: Rules, mine: (b: Body) => boolean, as: ViewAs, hunterOf?: HunterOf): MapBody[] {
   const at = (aim: Place | CombatantId): Place | null => typeof aim === 'string' ? f.rows.find(r => r.id === aim)?.place ?? null : aim;
   const viewer = viewerOf(f, as), range = rangeOf(f);
   const shown = viewer ? f.rows.filter(b => perceives(eyesOf(viewer), figureOf(b), f.grid, range)) : f.rows;
   const unseen = (b: Body): boolean => !viewer && f.rows.some(o => o.side !== b.side && isUp(o)) && !perceivedBy(otherSide(b.side), b, f);
   const moved = f.phase === 'running' && f.dodge ? f.dodge.to : null;
+  const ask = f.phase === 'running' && f.dodge ? dodgeAsk(f, R) : null;
+  const askPlaces = ask ? new Map(ask.bodies.map(b => [b.id, b.place] as const)) : null;
   return shown.map(b => {
-    const sp = spotOf(b), atPlace = moved && Object.hasOwn(moved, b.id) ? moved[b.id]! : sp.place;
+    const sp = spotOf(b), atPlace = askPlaces?.get(b.id) ?? (moved && Object.hasOwn(moved, b.id) ? moved[b.id]! : sp.place);
     const k = cardOf(f, b, R), i = k.intent, to = i ? at(i.target) : k.threat?.suggest ? at(k.threat.suggest) : null;
     const a = i && b.abilities.find(x => x.id === (i.channel ? i.channel.ability : b.intent?.ability));
     const area = i && to && a && a.shape.kind === 'radius' ? (({ hit, ring }) => [...hit, ...ring])(tilesOf(a.shape, atPlace, to, f.grid)) : null;
@@ -171,6 +175,7 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
       aim: omenLine(mythicSeenOf(b), atPlace, at, f.grid) ?? (to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null),
       summon: b.kind === 'summon' ? { owner: b.owner, left: k.summon } : null,
       unseen: unseen(b), word: lifeWord(b), icon: rowIcon(b, hunterOf ? hunterOf(b) : null),
+      pack: b.kind === 'monster' || (b.kind === 'hunter' && b.origin.kind === 'monster'),
     };
   });
 }
@@ -199,7 +204,7 @@ export function docDodge(e: Extract<FightDoc, { ended: false }>): MapDodge | nul
   const opts = docDodgeOptions(e.grid, e.rows, d.who, tiles(d.reach), { hit, ring });
   if (!opts) return null;
   const row = e.rows.find(r => r.id === d.who);
-  const max = tiles(row && 'move' in row ? row.move : d.left);
+  const max = tiles(row && 'move' in row && row.move !== undefined ? row.move : d.left);
   const visibleBlast = d.hit.length > 0 || d.ring.length > 0;
   return {
     n: d.n, who: d.who, ability: d.ability, mode: visibleBlast ? opts.auto.avoid : d.mode,
@@ -223,18 +228,21 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
   return rows.map(r => {
     const from = place(r.place.x, r.place.y);
     const extras: Extras = {
-      shield: r.shield === null ? null : r.kind === 'monster' ? 1 : Math.min(1, r.shield / Math.max(1, r.hpMax)),
+      shield: r.shield === null ? null : r.kind === 'monster' || r.hp === undefined ? 1 : Math.min(1, r.shield / Math.max(1, r.hpMax)),
       stagger: r.kind === 'monster' && r.stagger ? { share: r.stagger.max > 0 ? Math.min(1, r.stagger.fill / r.stagger.max) : 0, staggered: r.stagger.staggered !== null } : null,
       channel: r.channel && { charge: r.channel.charge, max: r.channel.max, state: r.channel.state }, taunted: r.taunt !== null,
       reacted: spent.includes(r.id),
     };
-    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, unseen: false, icon: r.icon };
+    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, unseen: false, icon: r.icon, pack: r.kind === 'monster' || (r.kind === 'hunter' && r.key === null) };
     if (r.kind === 'monster') {
       const i = r.intent, to = i ? at(i.target) : r.suggest ? at(r.suggest) : null, v = i?.reveal ?? null;
       const shape: Shape | null = v && v.radius !== null ? { kind: 'radius', radius: tiles(v.radius), ring: v.outer === null ? null : { outer: tiles(v.outer), share: percent(50) } } : null;
       const area = shape && to ? (({ hit, ring }) => [...hit, ...ring])(tilesOf(shape, from, to, grid)) : null;
       const aim: MapAimLine | null = omenLine(mythicSeenOfDoc(r, {}), from, at, grid) ?? (to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: v !== null, words: i && v ? { name: i.name, what: v.lines[0] ?? null } : null } : null);
       return { ...base, ring: { share: BAND_SHARE[r.band], band: r.band }, stride: tiles(0), dash: tiles(0), bars: null, aim };
+    }
+    if (r.hp === undefined) {
+      return { ...base, ring: { share: BAND_SHARE[r.band], band: r.band }, stride: tiles(0), dash: tiles(0), bars: null, aim: null };
     }
     return { ...base, ring: ringOf(true, r.hp, r.hpMax), stride: tiles(r.stride), dash: tiles(r.move), bars: { hp: [r.hp, r.hpMax], mana: null, fatigue: null }, aim: null };
   });
@@ -500,7 +508,7 @@ const stripOf = (p: Place, side: Plate['side'], span: Plate['span']): Strip => {
  * the side depends only on where the bodies stand; then the whole name, three tiles wide, is written on the bodies in
  * `whole` (the one aimed at), in that order, where its wider strip is free too.
  */
-export function platesOf(bodies: readonly Pick<MapBody, 'id' | 'place' | 'name' | 'kind'>[], grid: Grid, whole: readonly CombatantId[]): Map<CombatantId, Plate | null> {
+export function platesOf(bodies: readonly Pick<MapBody, 'id' | 'place' | 'name' | 'pack'>[], grid: Grid, whole: readonly CombatantId[]): Map<CombatantId, Plate | null> {
   const strips = new Map<CombatantId, Strip>();
   const free = (s: Strip, self: CombatantId): boolean => s.row >= 0 && s.row < grid.h && s.x0 >= 0 && s.x1 < grid.w
     && !bodies.some(b => b.place.y === s.row && b.place.x >= s.x0 && b.place.x <= s.x1)
@@ -509,7 +517,7 @@ export function platesOf(bodies: readonly Pick<MapBody, 'id' | 'place' | 'name' 
   for (const b of bodies) {
     const side = (['below', 'above'] as const).find(sd => free(stripOf(b.place, sd, 1), b.id)) ?? null;
     if (side) strips.set(b.id, stripOf(b.place, side, 1));
-    plates.set(b.id, side && { side, text: shortOf(b.name, b.kind), span: 1 });
+    plates.set(b.id, side && { side, text: shortOf(b.name, b.pack), span: 1 });
   }
   for (const who of whole) {
     const b = bodies.find(x => x.id === who), at = plates.get(who);
@@ -521,13 +529,14 @@ export function platesOf(bodies: readonly Pick<MapBody, 'id' | 'place' | 'name' 
 }
 
 /**
- * The name under a token: a hunter's or shadow's first name; a monster's last word, with its pack letter ("Cave Rat B" is
- * "Rat B", "Ice Warden" is "Warden"). The map shows it whole on the body aimed at where there is room (`platesOf`), this elsewhere.
+ * The name under a token: a player hunter's or shadow's first name; a pack body's (monster or NPC) last word, with its
+ * pack letter ("Cave Rat B" is "Rat B", "Rival Vance A" is "Vance A", "Ice Warden" is "Warden"). The map shows it whole
+ * on the body aimed at where there is room (`platesOf`), this elsewhere.
  */
-export function shortOf(name: string, kind: MapBody['kind']): string {
+export function shortOf(name: string, pack: boolean): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length < 2) return words[0] ?? '?';
-  if (kind !== 'monster') return words[0]!;
+  if (!pack) return words[0]!;
   const last = words[words.length - 1]!;
   return last.length === 1 ? `${words[words.length - 2]!} ${last}` : last;
 }
@@ -639,7 +648,7 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   const aimedAt = focus.kind === 'aim' && focus.aim ? focus.aim.target : null;
   const plates = platesOf(shown, grid, aimedAt ? [aimedAt] : []);
   const tokens: MapToken[] = shown.map(b => ({
-    id: b.id, place: b.place, side: b.side, kind: b.kind, name: b.name, label: labelOf(b.name), icon: b.icon, letter: b.icon && b.kind === 'monster' ? packLetter(b.name) : null,
+    id: b.id, place: b.place, side: b.side, kind: b.kind, name: b.name, label: labelOf(b.name), icon: b.icon, letter: b.icon && b.pack ? packLetter(b.name) : null,
     plate: plates.get(b.id) ?? null, ring: b.ring, bars: b.bars,
     current: b.id === input.currentId, down: b.down, word: b.word, statuses: b.statuses, mine: b.mine, extras: b.extras,
     hidden: b.unseen,

@@ -152,7 +152,7 @@ const removeRunning: Step<'running', 'remove'> = (f, cmd, ctx) => {
 /** Every row's first turn from its opening roll; then the first turn starts. Both sides need someone up who holds the side. */
 const start: Step<'setup', 'start'> = (f, cmd, ctx) => {
   const R = ctx.rules;
-  if (!f.rows.some(r => r.side === 'party' && holdsSide(r)) || !f.rows.some(r => r.side === 'foe' && holdsSide(r))) return refused(f, 'needBothSides');
+  if (!f.rows.some(r => r.side === 'party' && holdsSide(r, f.rows)) || !f.rows.some(r => r.side === 'foe' && holdsSide(r, f.rows))) return refused(f, 'needBothSides');
   const rows: Body[] = [];
   for (const r of f.rows) {
     const o = cmd.openings.find(x => x.id === r.id);
@@ -171,7 +171,7 @@ const start: Step<'setup', 'start'> = (f, cmd, ctx) => {
 
 const end = (f: Setup | Running, ctx: Ctx): Result => {
   const fx: Fx = [];
-  const up = (['party', 'foe'] as const).filter(side => f.rows.some(r => r.side === side && holdsSide(r)));
+  const up = (['party', 'foe'] as const).filter(side => f.rows.some(r => r.side === side && holdsSide(r, f.rows)));
   return done(ended(f, up.length === 1 ? up[0]! : null, fx, ctx.rules), fx);
 };
 

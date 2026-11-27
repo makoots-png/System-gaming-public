@@ -240,3 +240,12 @@ test('a GM with a feat of their own and a story shares everything: the list name
     expect(lib).toEqual({ feats: ['frost-ward'], stories: [['The wager', 'THE HOUSE OFFERS A BET', -1]] });
   });
 });
+
+test('Data screen custom content help and empty share toast both name NPCs', async ({ device }) => {
+  const gm = await freshGM(device, 'gm-empty-share');
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.monsters = []; d.gates = []; }, 'test-setup'));
+  await go(gm, 'data');
+  await expect(gm.locator('#view-data [data-io-share]')).toContainText('Send your statuses, items, skills, monsters, NPCs, bundles, maps, feats, and stories');
+  await gm.locator('#view-data [data-share]').tap();
+  await expect(gm.locator('#toasts')).toContainText('Nothing to share yet. Create custom content (a status, item, skill, monster, NPC, bundle, map, feat, or story) in the Workshop first.');
+});

@@ -25,14 +25,15 @@ import { classPowers, classStatusDef } from '../registry/class-powers.ts';
 import { scalerText, scalersOf } from '../registry/scalers.ts';
 import type { Scaler } from '../registry/scalers.ts';
 import type { Powers } from '../registry/powers.ts';
-import { monsterScript, monsterXp, tweakOfMonster } from '../registry/monsters.ts';
+import { monsterScript, monsterXp, tweakOfMonster, xpOf } from '../registry/monsters.ts';
+import type { NpcSkill, NpcTemplate } from '../registry/npcs.ts';
 import { mythicScriptOf } from '../registry/mythics.ts';
 import type { MythicScriptId } from '../registry/mythics.ts';
 import type { Weapon } from '../registry/abilities.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
 import { openGrid, place } from './space.ts';
-import type { Place } from './space.ts';
+import type { Place, Side } from './space.ts';
 import { tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { combatantId, hunterId } from './ability-types.ts';
@@ -347,6 +348,59 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
       id, name: m.name.slice(0, NAME_MAX - suffix.length) + suffix, side: 'foe', kind: 'monster', origin, tier, place: null,
       life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger, channel: null, threat: {}, statuses, readyAt: {}, abilities,
       intent: null, holder: null, xp: monsterXp(m, R), mythic: mythicStart(script, now),
+    };
+  });
+}
+
+// ── NPCs ──
+
+/** The fields of a saved NPC template a fight row reads. */
+export type RowNpc = Pick<NpcTemplate, 'name' | 'rank' | 'archetype' | 'tier' | 'tweak' | 'defaultSide' | 'skill' | 'abilities' | 'statuses' | 'icon'>;
+
+/** Per-fight overrides when adding copies of an NPC template to a fight. */
+export type NpcRowOptions = {
+  /** Which side the NPC fights for (`'party'` or `'foe'`); defaults to `npc.defaultSide`. */
+  readonly side?: Side;
+  /** GM-only play skill override (`1..5`); defaults to `npc.skill`. */
+  readonly skill?: NpcSkill;
+  /** Optional body tweak override (e.g. gate difficulty scaling for foe NPCs); defaults to `npc.tweak`. */
+  readonly tweak?: Tweak;
+};
+
+/**
+ * One hunter row (`kind: 'hunter'`, `holder: null`, `npc: { skill }`) of NPC `n` for each id: named `n.name` alone, or
+ * with a letter each in a group ("Vex A", "Vex B"). Uses a monster-shaped `Origin` so it gets `ARCHETYPE_ATTACKS`,
+ * `origin.icon`, and `tweak.dealt` scaling. Ally NPCs carry `xp: 0`; foe NPCs carry their tier's XP (`xpOf`: normal 1x,
+ * elite 1.5x, boss 3x).
+ */
+export function npcRows(
+  n: RowNpc,
+  ids: readonly CombatantId[],
+  R: RowRules & Pick<Rules, 'rankTable'>,
+  opts: NpcRowOptions = {},
+): NewRow[] {
+  const now = JOINS;
+  const side = opts.side ?? n.defaultSide;
+  const skill = opts.skill ?? n.skill;
+  const tweak = opts.tweak ?? tweakOfMonster(n.tweak);
+  const origin: Origin = {
+    kind: 'monster', name: cut(n.name), rank: n.rank, archetype: n.archetype, monsterKind: n.tier, tweak,
+    ...(n.icon ? { icon: n.icon } : {}),
+  };
+  const tier = rankIdx(n.rank);
+  const abilities = distinct([ARCHETYPE_ATTACKS[n.archetype](R), ...n.abilities], R);
+  const xp = side === 'foe' ? xpOf(R, n.rank, n.tier, tweak.traits) : 0;
+  return ids.map((id, i) => {
+    const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
+    const statuses = n.statuses.flatMap(s => {
+      const def = Object.hasOwn(R.conditions, s.key) ? R.conditions[s.key] : undefined;
+      return def ? [starting(s.key, def, { id, tier }, s.rounds, now, R, s.stacks)] : [];
+    }).slice(0, MAX_STATUSES);
+    const { sheet } = modified(origin, statuses, R);
+    return {
+      id, name: n.name.slice(0, NAME_MAX - suffix.length) + suffix, side, kind: 'hunter', origin, tier, place: null,
+      life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+      statuses, readyAt: {}, abilities, intent: null, holder: null, xp, mythic: null, npc: { skill },
     };
   });
 }

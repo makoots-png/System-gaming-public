@@ -95,7 +95,7 @@ function paid(f: Running | Ended, R: Rules, random: Random): { fight: Running | 
   return { fight: at, effects };
 }
 const downOf = (f: Fight, was: readonly CombatantId[]): readonly CombatantId[] => {
-  const more = f.rows.filter(r => r.kind === 'hunter' && rowHp(r) === 0 && !was.includes(r.id)).map(r => r.id);
+  const more = f.rows.filter(r => r.kind === 'hunter' && r.side === 'party' && rowHp(r) === 0 && !was.includes(r.id)).map(r => r.id);
   return more.length ? [...was, ...more] : was;
 };
 

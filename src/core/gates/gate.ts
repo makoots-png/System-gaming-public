@@ -4,16 +4,18 @@
 import { RANKS } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { Rank } from '../rules.ts';
-import { parseGateId } from '../ids.ts';
-import type { GateId, MapId, MonsterId } from '../ids.ts';
+import { parseGateId, parseNpcId } from '../ids.ts';
+import type { GateId, MapId, MonsterId, NpcId } from '../ids.ts';
+import type { Side } from '../combat/space.ts';
 import { mapId } from '../registry/maps.ts';
+import { NPC_BOUNDS, NPC_SIDES } from '../registry/npcs.ts';
 import { NO_PRESET, parseClearPreset } from './preset.ts';
 import type { ClearPreset } from './preset.ts';
 import { DEFAULT_DIFFICULTY, parseGateDifficulty } from './difficulty.ts';
 import type { GateDifficulty } from './difficulty.ts';
 
 // ── ids ──
-export type { GateId, MonsterId };
+export type { GateId, MonsterId, NpcId };
 
 // ── the gate ──
 export const GATE_TYPES = ['normal', 'red', 'double', 'break'] as const;
@@ -29,9 +31,13 @@ export type GateWave = 1 | 2;
 export type GateWavePick = GateWave | 'all';
 /** One line of a gate's roster: `count` of one bestiary monster, optionally tagged with its `wave`. */
 export type GateMonster = { monsterId: MonsterId; count: number; wave?: GateWave };
+/** One NPC placement in a gate's roster: `count` copies of `npcId` fighting for `side`, optionally in `wave` (absent = all waves). */
+export type GateNpc = { npcId: NpcId; count: number; side: Side; wave?: GateWave };
 /** What every gate has. `xpPaid` is all the XP this gate has paid out: fights in it that awarded XP, and its Clear. */
 export type GateFields = {
   id: GateId; name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null;
+  /** NPCs placed in this gate's raid (GM-only, never exposed to players in `shownOf`, excluded from solo runs). */
+  npcs: GateNpc[];
   notes: string; createdDay: number; xpPaid: number;
   /** The battle map its fights are fought on (an id in the GM's `library.maps`), or null for the open arena. */
   mapId: MapId | null;
@@ -58,7 +64,7 @@ export type Gate =
 
 /** A detected gate on day 1 with nothing in it. The save repair fills a stored gate from it. */
 export const newGate = (): Gate => ({
-  id: 'g0' as GateId, name: '', rank: 'E', type: 'normal', status: 'detected', breakDay: 1, monsters: [], bossId: null, notes: '',
+  id: 'g0' as GateId, name: '', rank: 'E', type: 'normal', status: 'detected', breakDay: 1, monsters: [], bossId: null, npcs: [], notes: '',
   createdDay: 1, xpPaid: 0, mapId: null, fought: [], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY, classOffer: false, bossFell: false,
 });
 
@@ -85,7 +91,7 @@ type Row = { readonly [T in GateEventType]: Step<T> | null };
 /** Every field but the status and the cleared day. */
 const fieldsOf = (gate: Gate): GateFields => ({
   id: gate.id, name: gate.name, rank: gate.rank, type: gate.type, breakDay: gate.breakDay, monsters: gate.monsters, bossId: gate.bossId,
-  notes: gate.notes, createdDay: gate.createdDay, xpPaid: gate.xpPaid, mapId: gate.mapId, fought: gate.fought, solo: gate.solo, preset: gate.preset,
+  npcs: gate.npcs, notes: gate.notes, createdDay: gate.createdDay, xpPaid: gate.xpPaid, mapId: gate.mapId, fought: gate.fought, solo: gate.solo, preset: gate.preset,
   difficulty: gate.difficulty, classOffer: gate.classOffer, bossFell: gate.bossFell,
 });
 /** Leaving cleared drops the cleared day. Entering it stamps the day. */
@@ -125,13 +131,18 @@ export function transition(gate: Gate, event: GateEvent): Gate {
 export const can = (gate: { status: GateStatus }, type: GateEventType): boolean => TABLE[gate.status][type] !== null;
 
 // ── XP. One payer rule: nothing here reads a gate's status. ──
-/** A monster's XP from the bestiary, 0 for one it does not have. */
-export type XpOf = (id: MonsterId) => number;
+/** A monster's or foe NPC's XP from the bestiary or NPC library, 0 for one it does not have. */
+export type XpOf = (id: MonsterId | NpcId) => number;
 
-/** The roster's XP: each monster times its count, plus the boss. What one hunter gets for the whole gate with the split off. */
-export function gateXp(gate: Pick<GateFields, 'monsters' | 'bossId'>, xpOf: XpOf): number {
+/** The roster's XP: each monster times its count, each foe NPC times its count (twice for an untagged All-waves foe NPC on a two-wave gate), plus the boss. Ally NPCs add 0 XP. */
+export function gateXp(gate: Pick<GateFields, 'monsters' | 'bossId'> & Partial<Pick<GateFields, 'npcs'>>, xpOf: XpOf): number {
   const roster = gate.monsters.reduce((sum, m) => sum + xpOf(m.monsterId) * m.count, 0);
-  return roster + (gate.bossId ? xpOf(gate.bossId) : 0);
+  const waved = hasGateWaves(gate);
+  const foeNpcs = (gate.npcs ?? []).reduce(
+    (sum, n) => sum + (n.side === 'foe' ? xpOf(n.npcId) * n.count * (waved && n.wave === undefined ? 2 : 1) : 0),
+    0,
+  );
+  return roster + foeNpcs + (gate.bossId ? xpOf(gate.bossId) : 0);
 }
 /** What the gate still owes: its XP less what it has paid, never below 0. Its Clear pays this. */
 export const xpDue = (gate: Gate, xpOf: XpOf): number => Math.max(0, gateXp(gate, xpOf) - gate.xpPaid);
@@ -175,10 +186,20 @@ export function parseGate(value: unknown): Gate | null {
       monsters.push(wave ? { monsterId: mid, count, wave } : { monsterId: mid, count });
     }
   }
+  const npcs: GateNpc[] = [];
+  for (const raw of Array.isArray(value.npcs) ? value.npcs : []) {
+    if (npcs.length >= MAX_LINES) break;
+    const nid = isObj(raw) ? parseNpcId(raw.npcId) : null;
+    if (!nid) continue;
+    const side = oneOf(raw.side, NPC_SIDES, 'party');
+    const count = Math.min(NPC_BOUNDS.copies, int(raw.count, 1, 1));
+    const wave: GateWave | undefined = raw.wave === 1 || raw.wave === 2 ? raw.wave : undefined;
+    npcs.push(wave ? { npcId: nid, count, side, wave } : { npcId: nid, count, side });
+  }
   const createdDay = int(value.createdDay, 1, d.createdDay);
   const fields: GateFields = {
     id: gid, name: text(value.name, 60), rank: oneOf(value.rank, RANKS, 'E'), type: oneOf(value.type, GATE_TYPES, 'normal'),
-    breakDay: int(value.breakDay, 0, d.breakDay), monsters, bossId: monsterId(value.bossId), notes: text(value.notes, 500), createdDay,
+    breakDay: int(value.breakDay, 0, d.breakDay), monsters, bossId: monsterId(value.bossId), npcs, notes: text(value.notes, 500), createdDay,
     xpPaid: int(value.xpPaid, 0, 0),
     mapId: typeof value.mapId === 'string' && value.mapId.length > 0 && value.mapId.length <= 40 ? mapId(value.mapId) : null,
     fought: Array.isArray(value.fought) ? value.fought.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 80).slice(0, MAX_FOUGHT) : [],
@@ -194,28 +215,55 @@ export function parseGate(value: unknown): Gate | null {
 
 // ── wave splitting for multi-wave gates ──
 /**
- * The roster slice for `pick`: Wave 1 holds regular monsters not tagged Wave 2 (without the boss), Wave 2 holds
- * monsters tagged Wave 2 plus the boss, and `'all'` holds every monster plus the boss.
+ * The roster slice for `pick`: Wave 1 holds regular monsters not tagged Wave 2 (without the boss) and NPCs tagged
+ * Wave 1 or All waves (`wave` omitted); Wave 2 holds monsters tagged Wave 2, the boss, and NPCs tagged Wave 2 or
+ * All waves; `'all'` holds every monster, the boss, and every NPC.
  */
 export function waveRoster(
-  gate: Pick<GateFields, 'monsters' | 'bossId'>,
+  gate: Pick<GateFields, 'monsters' | 'bossId'> & Partial<Pick<GateFields, 'npcs'>>,
   pick: GateWavePick,
-): { readonly monsters: readonly GateMonster[]; readonly bossId: MonsterId | null } {
-  if (pick === 'all') return { monsters: gate.monsters, bossId: gate.bossId };
-  if (pick === 1) return { monsters: gate.monsters.filter(m => m.wave !== 2), bossId: null };
-  return { monsters: gate.monsters.filter(m => m.wave === 2), bossId: gate.bossId };
+): { readonly monsters: readonly GateMonster[]; readonly bossId: MonsterId | null; readonly npcs: readonly GateNpc[] } {
+  const npcs = gate.npcs ?? [];
+  if (pick === 'all') return { monsters: gate.monsters, bossId: gate.bossId, npcs };
+  if (pick === 1) return { monsters: gate.monsters.filter(m => m.wave !== 2), bossId: null, npcs: npcs.filter(n => n.wave !== 2) };
+  return { monsters: gate.monsters.filter(m => m.wave === 2), bossId: gate.bossId, npcs: npcs.filter(n => n.wave !== 1) };
 }
-/** Whether `gate` separates its roster into two non-empty waves (at least one monster tagged `wave: 1` or `2`). */
-export function hasGateWaves(gate: Pick<GateFields, 'monsters' | 'bossId'>): boolean {
-  if (!gate.monsters.some(m => m.wave === 1 || m.wave === 2)) return false;
-  const w1 = waveRoster(gate, 1), w2 = waveRoster(gate, 2);
-  return (w1.monsters.length > 0 || w1.bossId !== null) && (w2.monsters.length > 0 || w2.bossId !== null);
+/** Whether a wave roster slice holds at least one foe (a monster, a boss, or a `side === 'foe'` NPC). */
+export function hasWaveFoes(slice: { readonly monsters: readonly GateMonster[]; readonly bossId: MonsterId | null; readonly npcs?: readonly GateNpc[] }): boolean {
+  return slice.monsters.length > 0 || slice.bossId !== null || (slice.npcs ?? []).some(n => n.side === 'foe');
+}
+/** Whether `gate` separates its roster into two waves that each hold at least one foe (at least one monster or NPC tagged `wave: 1` or `2`). */
+export function hasGateWaves(gate: Pick<GateFields, 'monsters' | 'bossId'> & Partial<Pick<GateFields, 'npcs'>>): boolean {
+  const npcs = gate.npcs ?? [];
+  if (!gate.monsters.some(m => m.wave === 1 || m.wave === 2) && !npcs.some(n => n.wave === 1 || n.wave === 2)) return false;
+  return hasWaveFoes(waveRoster(gate, 1)) && hasWaveFoes(waveRoster(gate, 2));
+}
+/**
+ * Confirmation body when the GM deletes an NPC template: names any gates in `gates` whose roster holds `npcId`, so
+ * the GM knows those lines become Unknown NPC and are dropped from fights and Gate XP.
+ */
+export function npcDeleteConfirmBody(
+  npcId: NpcId,
+  gates: readonly Pick<GateFields, 'name' | 'npcs'>[],
+): string {
+  const base = 'Remove this NPC from your library. You can still finish any fight that already uses it.';
+  const used = gates
+    .filter(g => g.npcs.some(x => x.npcId === npcId))
+    .map(g => g.name || 'Unnamed gate');
+  if (!used.length) return base;
+  const list = used.length === 1
+    ? used[0]!
+    : used.length === 2
+      ? `${used[0]} and ${used[1]}`
+      : `${used.slice(0, -1).join(', ')}, and ${used[used.length - 1]}`;
+  const noun = used.length === 1 ? 'this gate' : 'these gates';
+  return `${base} This NPC is in ${noun}: ${list}. If you delete it, it will be dropped from fights and Gate XP there.`;
 }
 /**
  * The wave `Start fight` preselects for `gate`: Wave 1 before any fight has settled on it, Wave 2 once Wave 1 is down
  * (`fought.length > 0`, `xpPaid > 0`, or `bossFell`), or `'all'` when the gate has no waves.
  */
-export function activeGateWave(gate: Pick<GateFields, 'monsters' | 'bossId' | 'fought' | 'xpPaid' | 'bossFell'>): GateWavePick {
+export function activeGateWave(gate: Pick<GateFields, 'monsters' | 'bossId' | 'fought' | 'xpPaid' | 'bossFell'> & Partial<Pick<GateFields, 'npcs'>>): GateWavePick {
   if (!hasGateWaves(gate)) return 'all';
   return gate.bossFell || gate.fought.length > 0 || gate.xpPaid > 0 ? 2 : 1;
 }

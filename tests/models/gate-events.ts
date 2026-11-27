@@ -1,7 +1,7 @@
 // The Goblin Den and the events of a gate's short lives. Shared by tests/gate.test.ts and the state charts
 // (scripts/charts/gate.ts), so both walk the same events.
 import { GATE_STATUSES } from '../../src/core/gates/gate.ts';
-import type { Gate, GateEvent, GateId, GateStatus, MonsterId } from '../../src/core/gates/gate.ts';
+import type { Gate, GateEvent, GateId, GateNpc, GateStatus, MonsterId } from '../../src/core/gates/gate.ts';
 import { NO_PRESET } from '../../src/core/gates/preset.ts';
 import { DEFAULT_DIFFICULTY } from '../../src/core/gates/difficulty.ts';
 
@@ -11,7 +11,7 @@ export const mid = (s: string): MonsterId => s as MonsterId;
 /** Three goblins and a hobgoblin boss: 3 x 25 + 75 = 150 XP. It breaks on day 5. */
 export const fields = () => ({
   id: gid('g-den'), name: 'Goblin Den', rank: 'E' as const, type: 'normal' as const, breakDay: 5,
-  monsters: [{ monsterId: mid('m-goblin'), count: 3 }], bossId: mid('m-hob'), notes: '', createdDay: 1, xpPaid: 0, mapId: null, fought: [] as string[], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY, classOffer: false, bossFell: false,
+  monsters: [{ monsterId: mid('m-goblin'), count: 3 }], bossId: mid('m-hob'), npcs: [] as GateNpc[], notes: '', createdDay: 1, xpPaid: 0, mapId: null, fought: [] as string[], solo: false, preset: NO_PRESET, difficulty: DEFAULT_DIFFICULTY, classOffer: false, bossFell: false,
 });
 /** The den in `status`. A cleared den was cleared on day 2. */
 export function den(status: GateStatus, xpPaid = 0): Gate {

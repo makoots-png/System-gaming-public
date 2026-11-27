@@ -22,7 +22,7 @@ import { classExtractOf } from '../core/registry/class-powers.ts';
 import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/rise.ts';
 import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
-import { autoMonsterTurn } from '../core/combat/policy.ts';
+import { autoTurnOf, isAutoRow } from '../core/combat/policy.ts';
 import { WAIT_WORDS, aims, answersBy, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { omenMove, omenNeeds } from '../core/combat/fight-turn.ts';
 import { runningState } from '../core/combat/fight.ts';
@@ -32,7 +32,7 @@ import { MYTHIC_SWITCH_WORDS } from '../core/rules-text.ts';
 import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
 import { EVERYTHING, eyesChoices, fightBodies, fightDodge, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
-import { hunterRow, monsterRows, remoteRow, remoteShadowRow, shadowRow } from '../core/combat/rows.ts';
+import { hunterRow, monsterRows, npcRows, remoteRow, remoteShadowRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
 import { REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
 import { combatantId } from '../core/combat/ability-types.ts';
@@ -50,6 +50,7 @@ import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootMoreLine, lootOff
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
+import { NPC_BOUNDS, NPC_SIDES, npcXp } from '../core/registry/npcs.ts';
 import { itemAbilityId, itemOfAbility } from '../core/registry/abilities.ts';
 import { newRewards } from '../core/rewards.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -454,7 +455,7 @@ export function register(app) {
   }
 
   /**
-   * Runs monster `by`'s current turn via `autoMonsterTurn` (`policy.ts`), rolling only the dice it requests through
+   * Runs monster or NPC `by`'s current turn via `autoTurnOf` (`policy.ts`), rolling only the dice it requests through
    * `drawnFor` so fudge applies identically to hand rolls and dodge prompts pause as usual.
    * @param {import('../core/combat/ability-types.ts').CombatantId} by
    * @param {import('../core/combat/timeline.ts').Tick | undefined} at
@@ -468,7 +469,7 @@ export function register(app) {
       if (!ok) return;
     }
     const g = fight();
-    const plan = autoMonsterTurn(g, by, rules(), at);
+    const plan = autoTurnOf(g, by, rules(), at);
     if (plan.kind === 'refused') { toast(REFUSAL_WORDS[plan.reason], 'warning'); return; }
     if (!running(g)) return;
     const cmd = plan.kind === 'ready' ? plan.command : plan.command(drawnFor(g, plan.by, plan.needs));
@@ -574,8 +575,11 @@ export function register(app) {
   // ── the end of a fight ──
   /** When a step happens: now, today's day key at the save's reset hour, and the rules (hunter.js `dayNow`). */
   const dayNow = () => ({ ...stepTime(store.get(), new Date()), R: rules() });
-  /** A bestiary monster's XP, for a gate's roster. */
-  const xpOf = id => { const m = A().bestiary.get(id); return m ? monsterXp(m, rules()) : 0; };
+  /** A bestiary monster's or foe NPC's XP, for a gate's roster. */
+  const xpOf = id => {
+    const m = A().bestiary.get(id); if (m) return monsterXp(m, rules());
+    const n = A().npcs.get(id); return n ? npcXp(n, rules()) : 0;
+  };
   /**
    * The summary: who went down, the XP and what the gate already paid, the rounds, the loot. Award XP or End without XP
    * end the fight (a fight that ended itself is over already), then settle it in one step (src/core/gates/pay.ts
@@ -697,17 +701,21 @@ export function register(app) {
       },
     });
   }
-  // cs: rows to add (a gate's monsters). Resolves true once the fight is set up.
+  // cs: rows to add (a gate's monsters and NPCs). Resolves true once the fight is set up.
   async function startFlow(cs, o = {}) {
     if (!canRun()) return false;
     if (otherGMLive() && !(await confirmReplace())) return false;
     const pick = await partyDialog({ title: o.title || 'Start fight', body: o.body, waves: o.waves, wave: o.wave });
     if (!pick) return false;
-    const have = haveKeys(fight()).ids;
+    const curFight = fight();
+    const joining = Boolean(curFight && curFight.phase !== 'ended' && o.gateId && refs().gate === o.gateId);
+    const have = haveKeys(curFight).ids;
     const hs = store.get().hunters.filter(h => pick.hids.includes(h.id) && !have.has(h.id)).map(hunterJoin);
     const pickedWave = o.waves && pick.wave ? o.waves.find(w => w.id === pick.wave) : null;
-    const foes = pickedWave ? pickedWave.rows() : (cs || []);
-    const joins = [...foes, ...hs];
+    const waveRows = pickedWave ? pickedWave.rows(joining) : (cs || []);
+    const foeRows = waveRows.filter(j => j.row.side === 'foe');
+    const allyRows = waveRows.filter(j => j.row.side !== 'foe');
+    const joins = [...foeRows, ...hs, ...allyRows];
     if (joins.length && !add(joins, o.gateId || null)) return false;
     if (pick.roll) start();
     app.go('combat');
@@ -946,7 +954,7 @@ export function register(app) {
       const f = fight();
       if (!running(f)) return '';
       const c = rowOf(f, f.currentId);
-      const auto = c && c.kind === 'monster' && isUp(c) ? 1 : 0;
+      const auto = c && isAutoRow(c) && isUp(c) ? 1 : 0;
       return `${f.dodge ? `d:${f.dodge.n}` : ''}|a:${auto}`;
     },
     input: () => {
@@ -1062,11 +1070,12 @@ export function register(app) {
     // the row holds the life of every body, a player's hunter's too: its word is the row's (row-life.ts `lifeWord`)
     const word = lifeWord(r);
     const tag = word ? `<span class="cmb-tag lw" data-life-at="${r.life.at}">${esc(word)}</span>` : '';
+    const kindTag = r.kind === 'hunter' && r.npc ? (r.side === 'party' ? 'Ally NPC' : 'Foe NPC') : isRisen(r) ? 'risen' : r.kind;
     const base = {
       ...Object.fromEntries(Object.entries(k).filter(([, v]) => v === null || typeof v !== 'object')),
       key: r.id, cls: `cmb-card${now ? ' turn' : ''}`,
       head: `${pic ? icon(pic) : ''}${esc(r.name)} ${ui.rankBadge(rankOf(r))}
-        ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(isRisen(r) ? 'risen' : r.kind)}</span>${remote ? '<span class="cmb-tag now">player phone</span>' : ''}${tag}`,
+        ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(kindTag)}</span>${remote ? '<span class="cmb-tag now">player phone</span>' : ''}${tag}`,
       staggerF: k.stagger ? share(k.stagger.fill, k.stagger.max) : null, staggerFill: k.stagger ? k.stagger.fill : 0, staggerMax: k.stagger ? k.stagger.max : 0,
       staggered: k.stagger ? k.stagger.staggered : null,
       staggeredText: k.stagger && k.stagger.staggered != null ? `${k.stagger.staggered} round${k.stagger.staggered === 1 ? '' : 's'}` : '',
@@ -1112,7 +1121,7 @@ export function register(app) {
         return isRefused(vesselUpgradePlan(active.entry.vessels, rankOf(r), vKind, spec.cap)) ? [] : [{ row: x, h, label: spec.label }];
       }) : [];
     const waitDodge = running(f) && !!f.dodge;
-    const turnAct = now && !k.down && r.kind === 'monster' && running(f)
+    const turnAct = now && !k.down && isAutoRow(r) && running(f)
       ? `<div class="cmb-auto"><button type="button" class="primary" data-fk="auto" data-auto="${esc(r.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button></div>`
       : '';
     return {
@@ -1232,6 +1241,11 @@ export function register(app) {
           <label class="field grow"><span class="lbl">Monster</span><select data-msel></select></label>
           <label class="field sm"><span class="lbl">Count</span><input type="number" min="1" max="${MONSTER_BOUNDS.copies}" value="1" inputmode="numeric" data-mcount></label>
           <button type="button" data-addm>Add monsters</button></div></fieldset>
+        <fieldset><legend>NPCs</legend><div class="add-row flush">
+          <label class="field grow"><span class="lbl">NPC</span><select data-nsel></select></label>
+          <label class="field md"><span class="lbl">Fights for</span><select data-nside><option value="party">Hunters (ally)</option><option value="foe">Foes</option></select></label>
+          <label class="field sm"><span class="lbl">Count</span><input type="number" min="1" max="${NPC_BOUNDS.copies}" value="1" inputmode="numeric" data-ncount></label>
+          <button type="button" data-addn>Add NPC to fight</button></div></fieldset>
         <fieldset><legend>Summoned shadows</legend><div class="add-row flush">
           <label class="field grow"><span class="lbl">Shadow</span><select data-ssel></select></label>
           <button type="button" data-adds>Add shadow</button></div></fieldset>
@@ -1264,6 +1278,7 @@ export function register(app) {
     el.addEventListener('change', ev => {
       const t = ev.target; if (!canRun()) return;
       if (t.matches('[data-target]')) { const r = focusRow(fight()); if (r) picks.set(r.id, t.value); render(); }
+      if (t.matches('[data-nsel]')) { const npc = A().npcs.get(t.value), nside = $q('[data-nside]'); if (npc && nside) nside.value = npc.defaultSide; }
       if (t.matches('[data-garm-on]')) { const f = fight(), r = focusRow(f), target = rowOf(f, t.value); if (r && r.armed && target) armRow(r, r.armed.ability, target.id); }
       if (t.matches('[data-adjust-input]')) {
         const id = t.dataset.adjustInput, target = id ? rowOf(fight(), id) : null;
@@ -1309,7 +1324,7 @@ export function register(app) {
         if (no && no.type === 'refused') toast(no.reason === 'cutOff' ? 'Cannot shrink the map past a combatant or targeted tile.' : no.reason === 'offGrid' ? `Map sides must be between ${MAP_BOUNDS.size[0]} and ${MAP_BOUNDS.size[1]} tiles.` : 'Nothing to change.');
         return;
       }
-      if (b.matches('[data-addh],[data-addparty],[data-addm],[data-adds]') && otherGMLive() && !(await confirmReplace())) return;
+      if (b.matches('[data-addh],[data-addparty],[data-addm],[data-addn],[data-adds]') && otherGMLive() && !(await confirmReplace())) return;
       if (b.dataset.fudgeSide !== undefined || b.dataset.fudgeRow !== undefined) {
         const to = Number(b.dataset.to), id = b.dataset.fudgeRow, side = oneOf(b.dataset.fudgeSide, /** @type {const} */ (['party', 'foe']), null);
         const target = id ? rowOf(f, id) : null;
@@ -1381,6 +1396,15 @@ export function register(app) {
         const n = copiesOf(val('[data-mcount]')), cs = A().bestiary.toCombatant(val('[data-msel]'), n), first = cs[0]; if (!first) return;
         const o = first.row.origin;
         if (add(cs)) toast(`${n} × ${o.kind === 'monster' ? o.name : first.row.name} added.`); return;
+      }
+      if (b.hasAttribute('data-addn')) {
+        const npc = A().npcs.get(val('[data-nsel]')); if (!npc) return;
+        const side = oneOf(val('[data-nside]'), NPC_SIDES, npc.defaultSide);
+        const n = clamp(int(val('[data-ncount]'), 1), 1, NPC_BOUNDS.copies);
+        const ids = Array.from({ length: n }, newId);
+        const joins = npcRows(npc, ids, rules(), { side }).map(row => ({ row, monsterId: null }));
+        if (add(joins)) toast(`${n > 1 ? `${n} × ` : ''}${npc.name} added.`);
+        return;
       }
       if (b.hasAttribute('data-adds')) {
         const raw = val('[data-ssel]'), [kind, ownerKey, sid] = raw.split('|');
@@ -1588,7 +1612,7 @@ export function register(app) {
     const seg = n && f.phase !== 'ended' ? `<div class="seg cmb-view" role="group" aria-label="Fight view">${FIGHT_VIEWS.map(v => `<button type="button" data-fk="fv-${v}" data-fview="${v}" aria-pressed="${fightView() === v}">${v === 'map' ? 'Map' : 'List'}</button>`).join('')}</div>` : '';
     if (mapMode) {
       const c = act ? rowOf(f, f.currentId) : null;
-      const autoBtn = c && c.kind === 'monster' && isUp(c)
+      const autoBtn = c && isAutoRow(c) && isUp(c)
         ? `<button type="button" data-fk="bar-auto" data-auto="${esc(c.id)}" data-auto-at="${f.now}"${waitDodge ? ' disabled' : ''}>Auto turn</button>`
         : '';
       return {
@@ -1685,9 +1709,17 @@ export function register(app) {
     const mapMode = gm && !!f && running(f) && fightView() === 'map', tools = toolsShown(f, mapMode);
     // the builder's lists, while it shows (in Map view it is in the Fight tools sheet, which draws them when it opens)
     if (gm && (!mapMode || tools)) {
-      const hsel = $q('[data-hsel]'), msel = $q('[data-msel]'), ssel = $q('[data-ssel]');
+      const hsel = $q('[data-hsel]'), msel = $q('[data-msel]'), nsel = $q('[data-nsel]'), ssel = $q('[data-ssel]');
       if (hsel) fillSelect(hsel, pickables(s.hunters, remoteList()).map(p => [p.id, p.ref.kind === 'remote' ? `${p.name} (player phone)` : p.name]), 'No hunters');
       if (msel) fillSelect(msel, A().bestiary.list().map(m => [m.id, `${m.name} (${m.rank}${m.kind === 'normal' ? '' : ` ${m.kind}`})`]), 'No monsters');
+      if (nsel) {
+        const prev = nsel.value;
+        fillSelect(nsel, A().npcs.list().map(x => [x.id, `${x.name} (${x.rank}${x.tier === 'normal' ? '' : ` ${x.tier}`}, ${x.defaultSide === 'party' ? 'ally' : 'foe'})`]), 'No saved NPCs');
+        if (nsel.value && nsel.value !== prev) {
+          const picked = A().npcs.get(nsel.value), nside = $q('[data-nside]');
+          if (picked && nside) nside.value = picked.defaultSide;
+        }
+      }
       if (ssel) {
         const localOpts = s.hunters.flatMap(h => h.shadows.filter(x => x.summoned).map(x => [`local|${h.id}|${x.id}`, `${x.name} (${h.name})`]));
         const remoteOpts = remoteList().flatMap(rm => (rm.data.shadows || []).filter(x => x.summoned).map(x => [`remote|${rm.key}|${x.id}`, `${x.name} (${rm.data.name}, player phone)`]));

@@ -22,6 +22,7 @@ export const ROUNDTRIP_REGISTRY = [
   { id: 'skill', viewFile: 'src/views/skills.js', packKind: 'skills', opensMaker: true, coverage: 'e2e', description: 'Skill maker (library.skills)' },
   { id: 'skill-swap', viewFile: 'src/views/kit-parts.js', opensMaker: false, coverage: 'e2e', description: 'Skill maker shadow-swap movement (kit-parts.js MOVE_LABEL)' },
   { id: 'monster', viewFile: 'src/views/bestiary.js', packKind: 'monsters', opensMaker: true, coverage: 'e2e', description: 'Monster maker (monsters)' },
+  { id: 'npc', viewFile: 'src/views/npc-maker.js', packKind: 'npcs', opensMaker: true, coverage: 'both', description: 'NPC maker (library.npcs)' },
   { id: 'rewards', viewFile: 'src/views/reward-editor.js', opensMaker: false, coverage: 'both', description: 'Embedded reward editor (reward-rows.ts projection)' },
   { id: 'bundle', viewFile: 'src/views/reward-editor.js', packKind: 'rewards', opensMaker: true, coverage: 'both', description: 'Reward bundle maker (library.rewards)' },
   { id: 'map', viewFile: 'src/views/map-maker.js', packKind: 'maps', opensMaker: true, coverage: 'both', description: 'Battle map maker (library.maps, maps.ts projection)' },

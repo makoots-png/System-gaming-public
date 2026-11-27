@@ -13,6 +13,8 @@ import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { RECIPE_ITEMS, itemOf, parseItem } from '../../src/core/registry/items.ts';
 import { parseBattleMap } from '../../src/core/registry/maps.ts';
 import { parseMonster } from '../../src/core/registry/monsters.ts';
+import { parseNpc } from '../../src/core/registry/npcs.ts';
+import type { Npc } from '../../src/core/registry/npcs.ts';
 import { parseSkill } from '../../src/core/registry/skills.ts';
 import { parseFeat } from '../../src/core/hunter/feats.ts';
 import { parseGuild } from '../../src/core/hunter/guild.ts';
@@ -625,6 +627,10 @@ export function worstGate(hunterId: string): Gate {
       { monsterId: WORST_MONSTER_BOSS.id, count: 2 },
     ],
     bossId: WORST_MONSTER_BOSS.id,
+    npcs: [
+      { npcId: WORST_NPC.id, count: 2, side: 'foe', wave: 1 },
+      { npcId: WORST_NPC.id, count: 1, side: 'party' },
+    ],
     difficulty: { gate: { at: 'set', level: 4 }, boss: { at: 'own', level: 5 } },
     mapId: WORST_MAP.id,
     notes: 'Second chamber unlocks after the first boss falls.',
@@ -648,6 +654,26 @@ export const WORST_GUILD: GuildMembership = must(parseGuild({
 export const WORST_IDENTITY = { emblem: 'wolf', color: '#c79bff' } as const;
 
 // ── 15. Rules overrides and Roll tables ──
+export const WORST_NPC: Npc = {
+  ...must(parseNpc({
+    name: 'Captain Sera Vance',
+    rank: 'B',
+    archetype: 'skirmisher',
+    tier: 'elite',
+    tweak: { hp: 1.15, dealt: 0.95, stats: { agi: 6, ins: 4 }, traits: ['fast', 'warded'] },
+    defaultSide: 'foe',
+    skill: 4,
+    abilities: [
+      abilityOf('shot', { id: abilityId('ab-npc-1'), name: 'Silver Bolt' }, RULES),
+      abilityOf('support', { id: abilityId('ab-npc-2'), name: 'Field Mend' }, RULES),
+    ],
+    statuses: [{ key: 'hasted', rounds: 2 }, { key: 'burning', rounds: null, stacks: 3 }],
+    icon: 'bow',
+    notes: 'Stays behind the front line and prioritizes healing injured rookies.',
+  }), 'WORST_NPC'),
+  id: saveId('npc_', 915),
+};
+
 export const WORST_OVERRIDES = parseOverrides({
   pointsPerLevel: 5,
   fight: { round: 1200, sight: 14, damageTypes: { 'arc-bolt': 'true', 'attack-unarmed': 'arcane' } },

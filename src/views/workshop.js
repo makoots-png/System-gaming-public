@@ -6,6 +6,8 @@
 // (app.api.share, io.js). The Bestiary keeps the full monster list.
 import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { monsterSheetOf } from '../core/registry/monsters.ts';
+import { NPC_BOUNDS, NPC_SKILL_INFO, copyNpc, npcPresetOf, npcWorth } from '../core/registry/npcs.ts';
+import { npcDeleteConfirmBody } from '../core/gates/gate.ts';
 import { LIMITS } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { ITEM_DEL_WORDS, copyName, duplicateEntry, namedLike, removeEntry, removeItemDef, removeStatus, removeStory, saveEntry, saveItemDef, saveStatus, savedWords } from '../core/library.ts';
@@ -33,6 +35,7 @@ const KINDS = [
   ['item', 'Items', 'An item is gear, a potion, or loot that a hunter carries, equips, or uses.', 'New item'],
   ['skill', 'Skills', 'A skill is an ability a hunter or monster uses in a fight. It can deal damage, heal, shield, or apply a status.', 'New skill'],
   ['monster', 'Monsters', 'Create a custom monster with its own rank, archetype, tier, abilities, starting statuses, and loot.', 'New monster'],
+  ['npc', 'NPCs', 'An NPC is a hunter that no player controls. It fights for the hunters or for the foes, and it takes its turns automatically.', 'New NPC'],
   ['bundle', 'Bundles', 'A bundle is a saved reward you can give again, including XP, gold, items, titles, skills, statuses, or custom favors (boons).', 'New bundle'],
   ['map', 'Maps', 'A map with walls, cover, rough ground, pits, lasting fields, starting spots, and fog. You can assign a map to a gate.', 'New map'],
   ['feat', 'Feats', 'A feat tracks something a hunter does, like defeating 100 beasts, and rewards them automatically. Create your own, or edit or turn off a built-in feat.', 'New feat'],
@@ -41,7 +44,7 @@ const KINDS = [
 /** The fold of examples to copy under a section: its heading, by kind. */
 const EXAMPLES_LABEL = { status: 'Example statuses to copy', skill: 'Example skills to copy', bundle: 'Awards for roleplay to copy', story: 'Stories to copy' };
 /** Each section's kind in a pack (src/core/pack.ts). */
-const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', bundle: 'rewards', map: 'maps', feat: 'feats', story: 'stories' };
+const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', npc: 'npcs', bundle: 'rewards', map: 'maps', feat: 'feats', story: 'stories' };
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -74,7 +77,7 @@ export function register(app) {
 `);
 
   // ── each kind's rows: [id, name, tag, meta, actions] ──
-  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', turnOn: 'Start story…', share: 'Share', off: 'Turn off', on: 'Turn on' };
+  const ACTS = { edit: 'Edit', dup: 'Duplicate', copyNpc: 'Copy NPC', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', turnOn: 'Start story…', share: 'Share', off: 'Turn off', on: 'Turn on' };
   function rowsOf(kind, catLeft) {
     const L = lib();
     if (kind === 'status') {
@@ -102,13 +105,24 @@ export function register(app) {
     }
     if (kind === 'bundle') return A().bundles.list().map(b => [b.id, b.name, '', rewardLines(app.rules(), b.rewards).join(' · '), ['award', 'edit', 'dup', 'del', 'share']]);
     if (kind === 'story') return L.stories.map(st => [st.id, st.name, isRunning(store.get().storyRuns, st.id) ? STORY_WORDS.running : '', storyMeta(st), ['turnOn', 'edit', 'dup', 'del', 'share']]);
+    if (kind === 'npc') {
+      const R = app.rules();
+      const SIDE_TAG = { party: 'Ally', foe: 'Foe' };
+      const PRESET_WORD = { support: 'support ally', standard: 'standard', elite: 'elite', boss: 'boss' };
+      return A().npcs.list().map(n => {
+        const w = npcWorth(n, R), s = w.sheet, sk = NPC_SKILL_INFO[n.skill];
+        const tag = `${n.rank}-rank ${SIDE_TAG[n.defaultSide]} · ${PRESET_WORD[npcPresetOf(n, R)]} ${n.archetype}`;
+        const meta = `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed} · Plays ${sk.name.toLowerCase()}${n.abilities.length ? ` · ${n.abilities.map(a => a.name).join(', ')}` : ''}`;
+        return [n.id, n.name, tag, meta, ['edit', 'copyNpc', 'del', 'share']];
+      });
+    }
     return store.get().monsters.map(m => {
       const s = monsterSheetOf(m, app.rules());
       return [m.id, m.name, `${m.rank}-rank ${m.kind} ${m.archetype}`, `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed}${m.abilities.length ? ` · ${m.abilities.map(a => a.name).join(', ')}` : ''}`, ['edit', 'dup', 'del', 'share']];
     });
   }
-  /** What a row shows beside it: Give to…, Award… and Turn on… stay in sight; Duplicate, Share, Delete and Reset are behind "⋯". */
-  const INLINE = ['give', 'award', 'turnOn'], MORE = ['dup', 'share', 'off', 'on', 'reset', 'del'];
+  /** What a row shows beside it: Give to…, Award… and Turn on… stay in sight; Duplicate, Copy NPC, Share, Delete and Reset are behind "⋯". */
+  const INLINE = ['give', 'award', 'turnOn'], MORE = ['dup', 'copyNpc', 'share', 'off', 'on', 'reset', 'del'];
   const rowHtml = ([id, name, tag, meta, acts]) => {
     const inline = acts.filter(a => INLINE.includes(a)), more = MORE.filter(a => acts.includes(a));
     return `<li data-id="${esc(id)}" data-more="${more.join(' ')}"><button type="button" class="ws-row" data-act="edit" aria-label="Edit ${esc(name)}"><span><span class="nm">${esc(name)}</span>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}</span>
@@ -280,6 +294,23 @@ export function register(app) {
       if (a === 'edit') return void await A().maps.make(mp);
       if (a === 'dup') return void dup('maps', mp, 'mp', 40, LIMITS.libraryMaps);
       if (a === 'del' && await ui.confirm({ title: 'Delete map?', body: `${mp.name}. Any gate using this map will use the open arena instead.`, danger: true, confirmLabel: 'Delete map' })) A().maps.remove(mp.id);
+      return;
+    }
+    if (kind === 'npc') {
+      const N = A().npcs;
+      if (a === 'new') return void await N.make(null);
+      const n = id ? N.get(id) : null;
+      if (!n) return;
+      if (a === 'edit') return void await N.make(n);
+      if (a === 'copyNpc') {
+        const name = copyName(n.name, L.npcs.map(x => x.name), NPC_BOUNDS.name);
+        const copied = copyNpc(n, store.id('npc_'), name);
+        if (ui.wrote('Workshop', store.apply('library-npcs-dup', atLibrary(l => saveEntry(l, 'npcs', copied))), savedWords('npc', name))) {
+          ui.toast('Workshop', `${name} added to your NPCs.`);
+        }
+        return;
+      }
+      if (a === 'del' && await ui.confirm({ title: `Delete ${n.name}?`, body: npcDeleteConfirmBody(n.id, store.get().gates), danger: true, confirmLabel: 'Delete NPC' })) N.remove(n.id);
       return;
     }
     const B = A().bestiary, m = id ? B.get(id) : null;

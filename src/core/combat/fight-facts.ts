@@ -25,7 +25,7 @@ export type KillSeen = Omit<FactOf<'kill'>, 'kind' | 'above' | 'where'>;
 export function killsSeen(t: RowTally, rows: readonly Body[]): KillSeen[] {
   return t.kills.flatMap((k): KillSeen[] => {
     const foe = rows.find(b => b.id === k.row);
-    if (!foe || foe.origin.kind !== 'monster') return [];
+    if (!foe || foe.kind !== 'monster' || foe.origin.kind !== 'monster') return [];
     const o = foe.origin;
     return [{ monster: o.name, rank: o.rank, type: o.type ?? '', mkind: o.monsterKind, hpPct: k.hpPct, payback: t.downedBy.includes(k.row) }];
   });
@@ -50,8 +50,10 @@ export function rowFacts(f: Ended, cid: CombatantId, rank: Rank, gate: string): 
   if (!me || me.kind !== 'hunter') return [];
   const t = tallyOf(me), w = f.summary.winner;
   const outcome: FightOutcome = w === null ? 'ended' : w === me.side ? 'won' : 'lost';
-  const side = f.rows.filter(b => b.side === me.side), allies = side.filter(b => b.kind === 'hunter' && b.id !== cid);
-  const foes = f.rows.filter(b => b.side !== me.side && b.kind !== 'summon'), monsters = foes.flatMap(b => (b.origin.kind === 'monster' ? [b.origin] : []));
+  const side = f.rows.filter(b => b.side === me.side), allies = side.filter(b => b.kind === 'hunter' && !b.npc && b.id !== cid);
+  // Foe NPCs are hunters with a monster-shaped origin (npc-final section 2), not dungeon monsters: keep them in foes/kills/names
+  // but filter `monsters` by `b.kind === 'monster'` (matching `killsSeen`) so foeTop/bossTop agree with bosses and kill facts.
+  const foes = f.rows.filter(b => b.side !== me.side && b.kind !== 'summon'), monsters = foes.flatMap(b => (b.kind === 'monster' && b.origin.kind === 'monster' ? [b.origin] : []));
   const above = (rk: Rank): number => rankIdx(rk) - rankIdx(rank), bosses = monsters.filter(o => bossLike(o.monsterKind));
   const kills = killFacts(killsSeen(t, f.rows), rank, 'fight');
   const fight: Fact = {

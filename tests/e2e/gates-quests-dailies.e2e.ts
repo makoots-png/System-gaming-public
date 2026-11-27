@@ -1,7 +1,8 @@
-import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, gateByName, ROOM_CODE, chooseList, type DeviceOptions } from './helpers.ts';
+import { test, expect, openApp, setupGoblinDenGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, gateByName, ROOM_CODE, chooseList, PHONE, SMALL_PHONE, type DeviceOptions } from './helpers.ts';
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { CHAIN_WORDS } from '../../src/core/hunter/job-chain.ts';
+import { newNpc, npcSheet, npcTierPreset, npcXp } from '../../src/core/registry/npcs.ts';
 
 /**
  * Each of `n` hunters' share of what a world gate pays, by the rule (design 4.1): a pot of `gateParty` times the
@@ -1119,5 +1120,159 @@ test('a GM\'s daily the System counts opens QUEST COMPLETE on the second day as 
     await expect(page.locator('#view-quests .qc', { hasText: 'Catch your breath' })).toHaveAttribute('data-st', 'active');
     await rest();
     await answerWindow(page, 'QUEST COMPLETE');
+  });
+});
+
+test('gate NPC raid roster: Add NPC to raid places NPCs into the right waves, scales foes only, counts foe XP, and stays off the room world doc', async ({ device }) => {
+  const gm = (await device('gm', { viewport: SMALL_PHONE })).page;
+  const player = (await device('player', { viewport: PHONE })).page;
+
+  await setupGoblinDenGM(gm);
+  await chooseList(gm);
+  const allyNpc = {
+    ...newNpc({ name: 'Mira Scout', rank: 'E', archetype: 'skirmisher', defaultSide: 'party', skill: 4, notes: 'Secret ally raid note' }),
+    id: 'npc_201',
+  };
+  const foeNpc = {
+    ...newNpc({ name: 'Rival Vance', rank: 'E', archetype: 'brute', ...npcTierPreset('elite'), defaultSide: 'foe', skill: 2, notes: 'Secret foe raid note' }),
+    id: 'npc_202',
+  };
+  await gm.evaluate(([a, f]) => hunterApp.store.update((d: any) => { d.library.npcs = [a, f]; }, 'test-setup'), [allyNpc, foeNpc] as const);
+
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai Raid', code);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+
+  const gate = await gateByName(gm, 'Goblin Den');
+  const baseXp = gate.xp;
+  const foeNpcXp = npcXp(foeNpc, RULES);
+  const allyBaseHp = npcSheet(allyNpc, RULES).hpMax;
+  const foeBaseHp = npcSheet(foeNpc, RULES).hpMax;
+
+  await test.step('GM adds an all-waves ally NPC and a wave-2 foe NPC via Add NPC to raid at 360 px and sets gate difficulty to 9', async () => {
+    await go(gm, 'gates');
+    const card = gateCard(gm, gate.id);
+    await card.locator('[data-act="edit"]').tap();
+    const form = card.locator('form[data-form="edit"]');
+    await expect(form).toBeVisible();
+    await expect(form.locator('[data-gate-npcs] legend')).toHaveText('NPCs in this gate');
+
+    const addBtn = form.locator('[data-act="add-npc"]');
+    await expect(addBtn).toHaveText('Add NPC to raid');
+    expect((await addBtn.boundingBox())!.height, 'Add NPC to raid tap target >= 44 px').toBeGreaterThanOrEqual(44);
+
+    // Put regular monsters in Wave 1.
+    for (const w of await form.locator('[data-mrow]:not([data-nrow]) select[name="wave"]').all()) {
+      await w.selectOption('1');
+    }
+
+    // Add ally NPC (defaults to Mira Scout, Hunters (ally), All waves).
+    await addBtn.tap();
+    const row1 = form.locator('[data-nrow]').nth(0);
+    await expect(row1.locator('select[name="nid"]')).toHaveValue('npc_201');
+    await expect(row1.locator('select[name="nside"]')).toHaveValue('party');
+    await expect(row1.locator('select[name="nwave"]')).toHaveValue('');
+
+    // Add foe NPC (switching to Rival Vance updates Fights for to foe; count 2, Wave 2).
+    await addBtn.tap();
+    const row2 = form.locator('[data-nrow]').nth(1);
+    await row2.locator('select[name="nid"]').selectOption('npc_202');
+    await expect(row2.locator('select[name="nside"]')).toHaveValue('foe');
+    await row2.locator('input[name="ncnt"]').fill('2');
+    await row2.locator('select[name="nwave"]').selectOption('2');
+
+    // Raise gate difficulty to 9 so foe NPCs scale while ally NPCs stay unscaled.
+    await form.locator('input[type="range"][name="difficulty"]').fill('9');
+    await form.locator('input[type="range"][name="difficulty"]').dispatchEvent('input');
+
+    expect(await gm.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), 'no horizontal overflow at 360 px').toBe(true);
+
+    await form.locator('button[type="submit"]').tap();
+    await expect(form).toHaveCount(0);
+
+    // Card shows Wave 1 and Wave 2 with the NPCs and counts foe NPC XP (not ally XP).
+    await expect(card).toContainText('Mira Scout');
+    await expect(card).toContainText('Rival Vance');
+    await expect(card.locator('[data-xp-val]')).toHaveText((baseXp + foeNpcXp * 2).toLocaleString('en-US'));
+  });
+
+  await test.step('the room world doc and player Gates view hold no NPC data', async () => {
+    await go(player, 'gates');
+    await expect(player.locator('#view-gates .gate', { hasText: 'Goblin Den' })).toBeVisible({ timeout: 15_000 });
+    const worldCheck = await player.evaluate(() => {
+      const doc = hunterApp.api.sync.doc('world');
+      const raw = JSON.stringify(doc);
+      return {
+        hasGates: Array.isArray(doc?.gates) && doc.gates.length > 0,
+        hasNpcsKey: raw.includes('"npcs"'),
+        hasNpcId: raw.includes('npc_201') || raw.includes('npc_202'),
+        hasNpcName: raw.includes('Mira Scout') || raw.includes('Rival Vance'),
+        hasNotes: raw.includes('Secret ally raid note') || raw.includes('Secret foe raid note'),
+      };
+    });
+    expect(worldCheck).toEqual({ hasGates: true, hasNpcsKey: false, hasNpcId: false, hasNpcName: false, hasNotes: false });
+    const playerText = await player.locator('#view-gates').innerText();
+    expect(playerText).not.toContain('Mira Scout');
+    expect(playerText).not.toContain('Rival Vance');
+  });
+
+  await test.step('starting Wave 1 brings the all-waves ally NPC (unscaled) and excludes the Wave 2 foe NPC', async () => {
+    await go(gm, 'gates');
+    await gateCard(gm, gate.id).locator('[data-act="encounter"]').tap();
+    const dlg = gm.locator('[aria-modal="true"]');
+    await expect(dlg.locator('[data-wave-pick]')).toBeVisible();
+    await expect(dlg.locator('[data-wave-pick]')).toContainText('Mira Scout (ally)');
+    await expect(dlg.locator('[data-wave-pick]')).toContainText('2 Rival Vance (foe)');
+    await dlg.locator('input[name="wave"][value="1"]').check();
+    await dlg.locator('[data-apply]').tap();
+    await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+
+    const wave1 = await gm.evaluate(() => hunterApp.store.get().fight.rows.map((r: any) => ({
+      name: r.name, side: r.side, kind: r.kind, hasNpc: !!r.npc, hpMax: r.sheet.hpMax,
+    })));
+    const mira1 = wave1.find((r: any) => r.name === 'Mira Scout');
+    expect(mira1).toMatchObject({ side: 'party', kind: 'hunter', hasNpc: true, hpMax: allyBaseHp });
+    expect(wave1.some((r: any) => r.name.startsWith('Rival Vance'))).toBe(false);
+  });
+
+  await test.step('starting Wave 2 into the running Wave 1 fight joins Rival Vance without duplicating All-waves Mira Scout', async () => {
+    await go(gm, 'gates');
+    await gateCard(gm, gate.id).locator('[data-act="encounter"]').tap();
+    const dlg = gm.locator('[aria-modal="true"]');
+    await dlg.locator('input[name="wave"][value="2"]').check();
+    await dlg.locator('[data-apply]').tap();
+    await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+
+    const joined = await gm.evaluate(() => hunterApp.store.get().fight.rows.map((r: any) => r.name));
+    expect(joined.filter((n: string) => n === 'Mira Scout')).toHaveLength(1);
+    expect(joined).toContain('Rival Vance A');
+    expect(joined).toContain('Rival Vance B');
+
+    // Clear the combined fight cleanly before starting Wave 2 standalone.
+    await gm.locator('#view-combat [data-clear]').tap();
+    await answerWindow(gm, 'Clear the fight?', 'Clear fight');
+    await expect.poll(() => gm.evaluate(() => hunterApp.store.get().fight)).toBeNull();
+  });
+
+  await test.step('starting Wave 2 brings the unscaled ally NPC plus 2 difficulty-scaled foe NPCs', async () => {
+    await go(gm, 'gates');
+    await gateCard(gm, gate.id).locator('[data-act="encounter"]').tap();
+    const dlg = gm.locator('[aria-modal="true"]');
+    await dlg.locator('input[name="wave"][value="2"]').check();
+    await dlg.locator('[data-apply]').tap();
+    await expect(gm.locator('#view-combat [data-end]').first()).toBeVisible();
+
+    const wave2 = await gm.evaluate(() => hunterApp.store.get().fight.rows.map((r: any) => ({
+      name: r.name, side: r.side, kind: r.kind, hasNpc: !!r.npc, hpMax: r.sheet.hpMax, xp: r.xp,
+    })));
+    const mira2 = wave2.find((r: any) => r.name === 'Mira Scout');
+    const vanceA = wave2.find((r: any) => r.name === 'Rival Vance A');
+    const vanceB = wave2.find((r: any) => r.name === 'Rival Vance B');
+    expect(mira2).toMatchObject({ side: 'party', kind: 'hunter', hasNpc: true, hpMax: allyBaseHp, xp: 0 });
+    expect(vanceA).toMatchObject({ side: 'foe', kind: 'hunter', hasNpc: true, xp: foeNpcXp });
+    expect(vanceB).toMatchObject({ side: 'foe', kind: 'hunter', hasNpc: true, xp: foeNpcXp });
+    expect(vanceA.hpMax, 'foe NPC scales up at gate difficulty 9').toBeGreaterThan(foeBaseHp);
+    expect(vanceB.hpMax, 'foe NPC scales up at gate difficulty 9').toBeGreaterThan(foeBaseHp);
   });
 });

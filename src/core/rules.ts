@@ -130,6 +130,8 @@ const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty m
 const DIFFICULTY_SPREAD = realIn(0.1, 1, 'upper difficulty slope (levels 6 to 10) for one rank, from 0.1 to 1');
 const DIFFICULTY_ARCHETYPE = realIn(0.1, 2, 'boss difficulty multiplier for one monster archetype, from 0.1 to 2');
 const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty multiplier applied to max HP. The rest applies to damage dealt');
+const NPC_FACTOR = realIn(0.1, 10, 'NPC body multiplier on HP or damage dealt, from 0.1 to 10');
+const NPC_TEMP = realIn(0, 5, 'softmax temperature for NPC attack selection. 0 always picks the strongest attack, up to 5');
 const CLASS_TREE_MULT = realIn(0, 20, 'skill tree price multiplier, from 0 (free) to 20');
 /** A bonus's points on a bonus key (a title's bonus, a passive skill, an item): the bound of every flat bonus a parser reads. */
 export const PERK_POINTS = wholeIn(-999, 999, 'flat stat or sheet bonus, between -999 and 999');
@@ -931,6 +933,24 @@ const SPEC = {
         brute: of(1.00, DIFFICULTY_ARCHETYPE),
         skirmisher: of(0.76, DIFFICULTY_ARCHETYPE),
         caster: of(0.68, DIFFICULTY_ARCHETYPE),
+      },
+    },
+    // NPC builder (t190u): Support ally preset on top of `normal` (~0.65x HP and damage of a same-rank hunter),
+    // custom ability cap, default skill step (3 Steady), and the 5-step skill curve (`skip` chance to skip heals or
+    // omen answers, `temp` softmax temperature over legal damaging actions).
+    npc: {
+      defaultSkill: whole(3, 1, 5, 'default NPC skill step, from 1 (Sloppy) to 5 (Optimal)'),
+      abilities: whole(4, 0, 11, 'maximum custom abilities on one NPC template, from 0 to 11'),
+      allyTweak: {
+        hp: of(1.08, NPC_FACTOR),
+        dealt: of(0.93, NPC_FACTOR),
+      },
+      skill: {
+        1: { skip: of(0.65, SHARE), temp: of(0.85, NPC_TEMP) },
+        2: { skip: of(0.42, SHARE), temp: of(0.45, NPC_TEMP) },
+        3: { skip: of(0.2, SHARE), temp: of(0.22, NPC_TEMP) },
+        4: { skip: of(0, SHARE), temp: of(0.08, NPC_TEMP) },
+        5: { skip: of(0, SHARE), temp: of(0, NPC_TEMP) },
       },
     },
     // Sparse GM overrides of damaging ability types (AbilityId or the six reserved keys; `attack` is refused).

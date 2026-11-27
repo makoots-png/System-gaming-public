@@ -331,11 +331,14 @@ export const sensible: Policy = (f, me, R) => {
   return me.threat ? monsterChoice(f, me, uses, foes, R) : answerChoice(f, me, R) ?? keptOut(f, me, R, partyChoice(f, me, uses, foes, R));
 };
 
-/** Why `autoMonsterTurn` cannot build a monster's automatic turn right now. */
+/** Why `autoTurnOf` cannot build an automatic turn right now. */
 export type AutoTurnRefusal = 'notNow' | 'dodging' | 'notYourTurn' | 'unknown' | 'down' | 'notMonster';
 
+/** Whether `b` is a row eligible for automatic GM turns: monsters and NPCs (`kind === 'hunter'` with `npc`). */
+export const isAutoRow = (b: Body): boolean => b.kind === 'monster' || (b.kind === 'hunter' && b.npc !== undefined);
+
 /**
- * What one automatic monster turn asks of the edge: refused (`kind: 'refused'`), a command ready to send
+ * What one automatic turn asks of the edge: refused (`kind: 'refused'`), a command ready to send
  * (`kind: 'ready'`, `needs: null`), or the dice (`kind: 'roll'`, `needs`) required to complete `command(rolls)`.
  * `note` is the fallback line when the fight emits no `used` or `dodgeAsked` effect (moves, waits, channel begin, or a
  * fizzled omen/release).
@@ -346,10 +349,10 @@ export type AutoTurn =
   | { readonly kind: 'roll'; readonly by: CombatantId; readonly choice: TurnChoice; readonly needs: Needs; readonly command: (rolls: Rolls) => Command; readonly note: string };
 
 /**
- * Builds the legal command for monster `by`'s current turn using `sensible`, paired with the dice it asks the edge to
- * roll (if any). When `at` is provided, rejects stale taps whose turn time has already advanced.
+ * Builds the legal command for monster or NPC `by`'s current turn using `sensible`, paired with the dice it asks the
+ * edge to roll (if any). When `at` is provided, rejects stale taps whose turn time has already advanced.
  */
-export function autoMonsterTurn(f: Fight | null, by: CombatantId, R: Rules, at?: Tick): AutoTurn {
+export function autoTurnOf(f: Fight | null, by: CombatantId, R: Rules, at?: Tick): AutoTurn {
   if (!f || f.phase !== 'running') return { kind: 'refused', reason: 'notNow' };
   const state = runningState(f);
   if (state.at === 'dodging') return { kind: 'refused', reason: 'dodging' };
@@ -359,7 +362,7 @@ export function autoMonsterTurn(f: Fight | null, by: CombatantId, R: Rules, at?:
   const me = f.rows.find(r => r.id === by);
   if (!me) return { kind: 'refused', reason: 'unknown' };
   if (!isUp(me)) return { kind: 'refused', reason: 'down' };
-  if (me.kind !== 'monster') return { kind: 'refused', reason: 'notMonster' };
+  if (!isAutoRow(me)) return { kind: 'refused', reason: 'notMonster' };
   const choice = sensible(f, me, R);
   switch (choice.type) {
     case 'act': {
@@ -414,3 +417,6 @@ export function autoMonsterTurn(f: Fight | null, by: CombatantId, R: Rules, at?:
     }
   }
 }
+
+/** Alias kept for existing callers and tests; see `autoTurnOf`. */
+export const autoMonsterTurn = autoTurnOf;

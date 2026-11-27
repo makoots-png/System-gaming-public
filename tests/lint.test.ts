@@ -795,6 +795,23 @@ test('nothing a player\'s phone receives in a fight names the fight\'s fudge', a
   expect(report(lines.filter(line => names(line.text))), 'what a player\'s phone receives carries outcomes only: read the fudge in src/core/combat/fudge.ts on the GM\'s phone (the draws), never in the doc, a room message or a player\'s view').toEqual([]);
 });
 
+test('nothing a player\'s phone receives in a fight names an NPC\'s play skill or GM-only NPC state', async () => {
+  // An NPC's play skill (`row.npc`, `npcSkill`, `setNpcSkill`), GM notes, `library.npcs`, and the GM's `npcAuto`
+  // switch stay on the GM's phone (npc-final.md section 2): a player's phone gets the fight as the doc (fight-doc.ts,
+  // read back by protocol.ts), the room's messages and their sync (protocol.ts, sync.ts), and draws it with table.js
+  // and uses.js. None of them may read or carry the NPC skill or GM-only NPC state.
+  const RECEIVED = ['src/core/combat/fight-doc.ts', 'src/core/protocol.ts', 'src/edge/sync.ts', 'src/views/table.js', 'src/views/uses.js'];
+  const names = (text: string) => /npc/i.test(text);
+  for (const bad of ['const s = b.npc?.skill;', 'const { npc } = b;', "b['npc']", 'const list = npcs;', 'return { ...row, npc: { skill: 3 } };', 'if (r.npc) out.npcSkill = r.npc.skill;', 'NPC_SKILL_INFO[3]', "type: 'setNpcSkill'", 'store.device("npcAuto")', 'save.library.npcs', 'How well this NPC plays']) {
+    expect(names(bad), `the rule sees ${bad}`).toBe(true);
+  }
+  expect(names('const skills = h.skills;'), 'hunter skills are not NPC play skill').toBe(false);
+  const lines: Line[] = [];
+  for (const file of RECEIVED) (await Bun.file(`${ROOT}/${file}`).text()).split('\n').forEach((text, i) => lines.push({ file, line: i + 1, text }));
+  expect(lines.length, 'every file the rule reads is there').toBeGreaterThan(RECEIVED.length);
+  expect(report(lines.filter(line => !isComment(line.text) && names(line.text))), 'NPC play skill and GM-only NPC state stay on the GM\'s phone: never name or read NPC state in the fight doc, room protocol, sync, or player fight views').toEqual([]);
+});
+
 test('nothing imports a module deleted with the old fight', async () => {
   // Milestone 2 deleted the old fight whole, so nothing was left beside the new one. Each entry says where its job went.
   const DELETED: Record<string, string> = {

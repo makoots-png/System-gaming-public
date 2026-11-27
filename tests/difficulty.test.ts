@@ -12,11 +12,13 @@ import {
   parseDifficultyLevel,
   parseGateDifficulty,
   scaleMonsterForGate,
+  scaleNpcForGate,
   scaleRowMonster,
   targetWinPct,
   withDifficulty,
 } from '../src/core/gates/difficulty.ts';
 import type { BossTrack, DifficultyEvent, DifficultyLevel, GateDifficulty, GateTrack } from '../src/core/gates/difficulty.ts';
+import { newNpc, npcTierPreset } from '../src/core/registry/npcs.ts';
 import { RANKS, RULES, rulesOf } from '../src/core/rules.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { GateId } from '../src/core/ids.ts';
@@ -217,6 +219,50 @@ describe('effective levels and scaling math', () => {
     // identity scale returns same object reference
     const same = scaleRowMonster(editedBoss, { hp: 1, dealt: 1 });
     expect(same).toBe(editedBoss);
+  });
+
+  test('scaleNpcForGate scales foe NPCs on the pack curve across all tiers (1x at default 5) and leaves ally NPCs untouched', () => {
+    const baseNpc = newNpc({
+      name: 'Vanguard',
+      rank: 'C',
+      archetype: 'skirmisher',
+      ...npcTierPreset('elite'),
+      tweak: { hp: 1.2, dealt: 0.9, stats: { agi: 4 }, traits: ['fast'] },
+      defaultSide: 'foe',
+    });
+    const hardGate = { difficulty: { gate: { at: 'set' as const, level: 9 as const }, boss: { at: 'own' as const, level: 10 as const } } };
+    const easyGate = { difficulty: { gate: { at: 'set' as const, level: 1 as const }, boss: { at: 'follows' as const } } };
+
+    // Foe NPC scales multiplicatively with gate level on the pack curve (preserving custom stats and traits).
+    const scaledHard = scaleNpcForGate(baseNpc, 'foe', hardGate, RULES);
+    const factorHard = difficultyFactor('normal', 'C', 9, RULES, 'skirmisher');
+    expect(scaledHard.tweak.hp).toBeCloseTo(1.2 * factorHard.hp, 6);
+    expect(scaledHard.tweak.dealt).toBeCloseTo(0.9 * factorHard.dealt, 6);
+    expect(scaledHard.tweak.stats).toEqual({ agi: 4 });
+    expect(scaledHard.tweak.traits).toEqual(['fast']);
+
+    const scaledEasy = scaleNpcForGate(baseNpc, 'foe', easyGate, RULES);
+    expect(scaledEasy.tweak.hp).toBeLessThan(baseNpc.tweak.hp);
+    expect(scaledEasy.tweak.dealt).toBeLessThan(baseNpc.tweak.dealt);
+
+    // Every foe NPC tier (normal, elite, and boss) stays 1.0x at default difficulty 5 and follows the pack curve.
+    for (const preset of ['standard', 'elite', 'boss'] as const) {
+      const foe = newNpc({ name: `Foe ${preset}`, rank: 'C', archetype: 'brute', ...npcTierPreset(preset), defaultSide: 'foe' });
+      expect(scaleNpcForGate(foe, 'foe', { difficulty: DEFAULT_DIFFICULTY }, RULES)).toBe(foe);
+      const atHard = scaleNpcForGate(foe, 'foe', hardGate, RULES);
+      const packHard = difficultyFactor('normal', 'C', 9, RULES, 'brute');
+      expect(atHard.tweak.hp).toBeCloseTo(foe.tweak.hp * packHard.hp, 6);
+      expect(atHard.tweak.dealt).toBeCloseTo(foe.tweak.dealt * packHard.dealt, 6);
+    }
+
+    // Ally NPCs (side === 'party') are never scaled at any difficulty level or tier.
+    for (const tier of ['normal', 'elite', 'boss'] as const) {
+      const ally = newNpc({ name: 'Ally', rank: 'C', tier, defaultSide: 'party' });
+      for (const level of DIFFICULTY_LEVELS) {
+        const g = { difficulty: { gate: { at: 'set' as const, level }, boss: { at: 'own' as const, level: 10 as const } } };
+        expect(scaleNpcForGate(ally, 'party', g, RULES)).toBe(ally);
+      }
+    }
   });
 });
 

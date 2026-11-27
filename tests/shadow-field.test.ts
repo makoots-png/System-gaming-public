@@ -153,8 +153,8 @@ describe('holdsSide and fight termination with shadows (TLA+ rule 9)', () => {
     const rows = [hunterRow(h, cid('c-mira'), RULES), shadowRow(makeShadow(1), h.id, cid('c-mira'), cid('c-s1'), RULES), rat()];
     const f = run(add(...rows), { type: 'start', openings: openings(...rows) });
     const shadow = f.rows.find(r => r.id === 'c-s1')!;
-    expect(holdsSide(shadow)).toBe(false);
-    expect(holdsSide(f.rows.find(r => r.id === 'c-mira')!)).toBe(true);
+    expect(holdsSide(shadow, f.rows)).toBe(false);
+    expect(holdsSide(f.rows.find(r => r.id === 'c-mira')!, f.rows)).toBe(true);
 
     const killed = reduce(f, { type: 'adjust', id: cid('c-mira'), hp: -9999 }, ctx);
     expect(killed.fight?.phase).toBe('ended');

@@ -155,15 +155,16 @@ type DocRowBase = {
    */
   readonly icon: IconKey | null;
 };
-/** A body's HP, its maximum, its stride and `move`: what players see of a hunter, a shadow and a summon. */
+/** A body's HP, its maximum, its stride and `move`: what players see of a party hunter, a shadow and a summon. */
 type DocBody = { readonly hp: number; readonly hpMax: number; readonly stride: number; readonly move: number };
 /**
- * One combatant on the players' table. Players see a hunter's or shadow's HP, and only a monster's band. A hunter's or
- * shadow's `stride` is the tiles one move may walk as its fight sheet holds it now (a slow or a root included), which a
- * player's phone needs for its Toward and Away and its movement area on the map; `move` is its sheet's `move` in whole
- * tiles, as far as a dash runs (design 4.6), for the map's lighter dash area. `life` is the row's life's state by its
- * kind's table (row-life.ts `LifeAt`): dead for every kind (a foe's reads Defeated); every phone reads its word
- * from row-life.ts `lifeWord` and whether it is up from row-hp.ts `isUp`.
+ * One combatant on the players' table. Players see a party hunter's or shadow's exact HP, and only a foe's band
+ * (monsters and foe hunters omit `hp`, `hpMax`, `stride` and `move` so dead-hunter tile blocking stays synced without
+ * leaking foe HP). A party hunter's or shadow's `stride` is the tiles one move may walk as its fight sheet holds it now
+ * (a slow or a root included), which a player's phone needs for its Toward and Away and its movement area on the map;
+ * `move` is its sheet's `move` in whole tiles, as far as a dash runs (design 4.6), for the map's lighter dash area.
+ * `life` is the row's life's state by its kind's table (row-life.ts `LifeAt`): dead for every kind (a foe's reads
+ * Defeated); every phone reads its word from row-life.ts `lifeWord` and whether it is up from row-hp.ts `isUp`.
  */
 export type FightDocRow = DocRowBase & (
   | {
@@ -178,6 +179,7 @@ export type FightDocRow = DocRowBase & (
     readonly canRise?: true;
   }
   | (DocBody & { readonly kind: 'hunter'; readonly life: { readonly at: LifeState } })
+  | { readonly kind: 'hunter'; readonly life: { readonly at: LifeState }; readonly hp?: undefined; readonly hpMax?: undefined; readonly stride?: undefined; readonly move?: undefined }
   | (DocBody & { readonly kind: 'shadow'; readonly life: { readonly at: FoeLifeState } })
   /**
    * A summon (kits design 1.9) as a shadow is shown, with the row that owns it (that hunter's phone commands it) and the
@@ -308,10 +310,15 @@ export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | n
   const currentId = f.phase === 'running' && ids.has(f.currentId) ? f.currentId : null;
   const carried = shown(seen, currentId, f.rows), scripted = new Set(carried.filter(b => b.mythic).slice(0, DOC_MYTHICS).map(b => b.id));
   const ask = f.phase === 'running' && f.dodge ? dodgeAsk(f, R) : null;
-  // Earlier hunters who already picked in this same use render at their chosen tile for party clarity (all party rows are perceived).
+  // Earlier hunters who already picked and party rows (ally NPCs, shadows, summons) that auto-dodged in pass 1 render at
+  // their pass-1 tile (`ask.bodies`) so the player's phone never offers an occupied tile that the GM would refuse `taken`.
   const moved = f.phase === 'running' && f.dodge ? f.dodge.to : null;
+  const askPlaces = ask ? new Map(ask.bodies.filter(b => b.side === 'party').map(b => [b.id, b.place] as const)) : null;
   const grid = docGrid(f, lit);
-  const rows = carried.map(b => docRow(f, moved && Object.hasOwn(moved, b.id) ? { ...b, place: moved[b.id]! } : b, now, R, o, ids, scripted));
+  const rows = carried.map(b => {
+    const at = askPlaces?.get(b.id) ?? (moved && Object.hasOwn(moved, b.id) ? moved[b.id]! : b.place);
+    return docRow(f, at !== b.place ? { ...b, place: at } : b, now, R, o, ids, scripted);
+  });
   const dodge = f.phase === 'running' && ask ? partyDodge(f, ask, grid, rows, ids, lit) : undefined;
   return {
     ended: false, active: f.phase === 'running', by: o.by, id: f.id, at: o.at, now, currentId,
@@ -487,7 +494,9 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext, shownIds:
     icon: rowIcon(b, o.hunterOf ? o.hunterOf(b) : null),
   };
   const body: DocBody = { hp: rowHp(b), hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
-  if (b.kind === 'hunter') return { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
+  if (b.kind === 'hunter') return b.side === 'foe'
+    ? { ...base, kind: 'hunter', life: { at: b.life.at } }
+    : { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
   const life = { at: b.life.at };
   if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner, left: b.until === null ? null : Math.max(0, roundsOf(b.until - now, R, 'up')) };
   if (b.kind === 'shadow') return { ...base, ...body, kind: 'shadow', life };
@@ -661,6 +670,7 @@ function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string
       ...(i ? { in: { n: i.name, t: typeof i.target === 'string' ? i.target : [i.target.x, i.target.y], ...(v ? { r: { l: v.lines, ...unlessNull('r', v.radius), ...unlessNull('o', v.outer) } } : {}) } } : {}),
     };
   }
+  if (r.kind === 'hunter' && r.hp === undefined) return base;
   const body = { ...base, h: r.hp, hm: r.hpMax, r: r.stride, m: r.move };
   return r.kind === 'summon' ? { ...body, o: r.owner, ...unlessNull('l', r.left) } : body;
 }

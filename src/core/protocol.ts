@@ -1340,9 +1340,20 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
     const standing = opt(own(o, 'my'), docStanding, null);
     return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null), ...(standing ? { standing } : {}), ...(own(o, 'cr') === 1 ? { canRise: true as const } : {}) };
   }
+  if (kind === 'hunter') {
+    const life = wireLife(own(o, 'd'), LIFE_STATES);
+    const hasBody = own(o, 'h') !== undefined || own(o, 'hm') !== undefined || own(o, 'r') !== undefined || own(o, 'm') !== undefined;
+    if (!hasBody) {
+      if (row.side !== 'foe') return refuse();
+      return { ...row, kind, life };
+    }
+    if (row.side === 'foe') return refuse();
+    const hpMax = int(1, MAX_TOTAL)(own(o, 'hm'));
+    const body = { hp: int(0, hpMax)(own(o, 'h')), hpMax, stride: int(0, MAX_TILE + 1)(own(o, 'r')), move: int(0, MAX_TILE + 1)(own(o, 'm')) };
+    return { ...row, kind, ...body, life };
+  }
   const hpMax = int(1, MAX_TOTAL)(own(o, 'hm'));
   const body = { hp: int(0, hpMax)(own(o, 'h')), hpMax, stride: int(0, MAX_TILE + 1)(own(o, 'r')), move: int(0, MAX_TILE + 1)(own(o, 'm')) };
-  if (kind === 'hunter') return { ...row, kind, ...body, life: wireLife(own(o, 'd'), LIFE_STATES) };
   const life = wireLife(own(o, 'd'), FOE_LIFE_STATES);
   return kind === 'summon' ? { ...row, kind, ...body, life, owner: rowId(own(o, 'o')), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null) } : { ...row, kind, ...body, life };
 }

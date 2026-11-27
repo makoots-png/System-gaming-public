@@ -155,20 +155,30 @@ export function triggered<F extends Running>(f: F, events: readonly Raised[], ct
 /** Thresholds that went off (a use's, a reaction's), one `burst` a bearer. */
 export const burstsOf = (bursts: readonly { readonly bearer: CombatantId }[]): Fx => [...new Set(bursts.map(b => b.bearer))].map(id => ({ type: 'burst', id }));
 
-/** Whether a row keeps its side in the fight: up, and neither a summon nor a shadow (hunters and monsters only). */
-export const holdsSide = (b: Body): boolean => isUp(b) && !isSummon(b) && b.kind !== 'shadow';
-/** A side with nobody up ends the fight. Summons and shadows do not count. */
+/**
+ * Whether row `b` keeps its side in the fight: up, neither a summon nor a shadow, and not an ally NPC standing alone
+ * after every player hunter on the party side has fallen (Fork 3 default: the party has lost instead of stalling AI vs
+ * AI; NPC-only fights and foe NPCs still hold their side).
+ */
+export function holdsSide(b: Body, rows: readonly Body[]): boolean {
+  if (!isUp(b) || isSummon(b) || b.kind === 'shadow') return false;
+  if (b.kind === 'hunter' && b.npc && b.side === 'party') {
+    if (rows.some(r => r.side === 'party' && r.kind === 'hunter' && !r.npc)) return false;
+  }
+  return true;
+}
+/** A side with nobody up ends the fight. Summons, shadows, and ally NPCs beside player hunters do not keep a side up. */
 export function overIf(f: Running, fx: Fx, R: Rules): Ended | null {
   const up = standing(f);
   if (up.length === 2) return null;
   return ended(f, up[0] ?? null, fx, R);
 }
 /** The sides with a body up that keeps its side in the fight (`holdsSide`). */
-const standing = (f: Running): Side[] => (['party', 'foe'] as const).filter(side => f.rows.some(r => r.side === side && holdsSide(r)));
+const standing = (f: Running): Side[] => (['party', 'foe'] as const).filter(side => f.rows.some(r => r.side === side && holdsSide(r, f.rows)));
 
 /**
- * Post-fight fatigue recovery (`R.fight.fightRest`): each living hunter drops by `fightRest`, down to 0. Dead hunters
- * and non-hunters do not change. Returns the updated rows and how much fatigue each recovered hunter dropped.
+ * Post-fight fatigue recovery (`R.fight.fightRest`): each living non-NPC hunter drops by `fightRest`, down to 0. Dead
+ * hunters, NPCs, and non-hunters do not change. Returns the updated rows and how much fatigue each recovered hunter dropped.
  */
 export function fightRested(rows: readonly Body[], R: Pick<Rules, 'fight'>): { readonly rows: readonly Body[]; readonly rested: Readonly<Record<CombatantId, number>> } {
   const amount = Math.max(0, R.fight.fightRest);
@@ -176,7 +186,7 @@ export function fightRested(rows: readonly Body[], R: Pick<Rules, 'fight'>): { r
   const rested: Record<CombatantId, number> = {};
   let changed = false;
   const next = rows.map(r => {
-    if (r.kind !== 'hunter' || !isUp(r) || r.fatigue <= 0) return r;
+    if (r.kind !== 'hunter' || r.npc || !isUp(r) || r.fatigue <= 0) return r;
     const after = Math.max(0, r.fatigue - amount), got = r.fatigue - after;
     if (got <= 0) return r;
     rested[r.id] = got;

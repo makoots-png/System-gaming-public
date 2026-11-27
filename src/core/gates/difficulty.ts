@@ -9,7 +9,8 @@ import type { Archetype, MonsterKind } from '../hunter/derive.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
-import type { RowMonster } from '../combat/rows.ts';
+import type { RowMonster, RowNpc } from '../combat/rows.ts';
+import type { Side } from '../combat/space.ts';
 
 export const DIFFICULTY_MIN = 1;
 export const DIFFICULTY_MAX = 10;
@@ -207,6 +208,33 @@ export function scaleMonsterForGate<M extends Pick<RowMonster, 'kind' | 'rank' |
 ): M & { readonly tweak: RowMonster['tweak'] } {
   const level = role === 'boss' ? effectiveBossLevel(gate.difficulty, R) : effectiveGateLevel(gate.difficulty, R);
   return scaleRowMonster(m, difficultyFactor(m.kind, m.rank, level, R, m.archetype ?? 'brute'));
+}
+
+/**
+ * Scales NPC `n` for `gate` on `side`: only foe NPCs (`side === 'foe'`) take gate difficulty scaling, using the gate's
+ * effective level on the `pack` curve (`1.0x` at default level 5 for every tier, including `boss`). Using the `pack`
+ * curve keeps Boss-tier foe NPCs truthful to their Workshop readout and Fight-drawer stats at default difficulty, and
+ * avoids stacking the lone-boss `k = 4.08` multiplier alongside a gate's actual boss. Ally NPCs (`side === 'party'`)
+ * return unchanged so raising gate difficulty never buffs the party's allies.
+ */
+export function scaleNpcForGate<N extends Pick<RowNpc, 'tier' | 'rank' | 'archetype' | 'tweak'>>(
+  n: N,
+  side: Side,
+  gate: { readonly difficulty: GateDifficulty },
+  R: Pick<Rules, 'fight'>,
+): N {
+  if (side !== 'foe') return n;
+  const level = effectiveGateLevel(gate.difficulty, R);
+  const scale = difficultyFactor('normal', n.rank, level, R, n.archetype);
+  if (scale.hp === 1 && scale.dealt === 1) return n;
+  return {
+    ...n,
+    tweak: {
+      ...n.tweak,
+      hp: n.tweak.hp * scale.hp,
+      dealt: n.tweak.dealt * scale.dealt,
+    },
+  };
 }
 
 // ── boundary parser ──

@@ -550,6 +550,14 @@ html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx
 .mk-ic-def{grid-column:span 2;font-size:calc(13px*var(--ts))}
 .mk-ic-cell[aria-pressed=true]{background:var(--cyan);border-color:var(--cyan);color:var(--ground);box-shadow:none}
 
+/* ── Shared slider controls (difficulty-control.js: gate/boss difficulty and GM-only NPC skill) ── */
+.diff-ctl{display:flex;flex-direction:column;gap:4px;min-width:0;width:100%}
+.diff-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.diff-ctl input[type=range]{width:100%;min-height:var(--control-h);margin:0;accent-color:var(--cyan);cursor:pointer}
+.diff-read{font-size:calc(13px*var(--ts));color:var(--cyan-dim);line-height:1.35;overflow-wrap:anywhere}
+.npc-skill-step{font-size:calc(13px*var(--ts));font-weight:600;color:var(--cyan)}
+.npc-skill-ends{display:flex;justify-content:space-between;font-size:calc(12px*var(--ts));color:var(--muted);margin-top:-4px}
+
 /* ── Motion: the block src/views/motion.ts owns. The only @keyframes and timed transitions of the app, timed by the tokens. ── */
 /* a press answers under the thumb in the frame it lands (no transition in), and springs back over --t-fast */
 button,.tab,[role=button],.m-press{transition:transform var(--t-fast) var(--ease-arrive)}

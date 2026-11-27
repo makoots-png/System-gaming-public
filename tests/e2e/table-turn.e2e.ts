@@ -2,6 +2,7 @@
 // use sent as `cast`, a step as `step`, a thrown item as its ability, each taken only on that hunter's turn.
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
+import { shadowSheet } from '../../src/core/combat/rows.ts';
 import { tiles } from '../../src/core/combat/space.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
@@ -656,10 +657,11 @@ test('an S-rank Necromancer summons an S-rank shadow with the new mana cost, GM 
     await form.locator('button[type="submit"]').tap();
     await expect(form).toBeHidden();
     await dismissAll(gm, 4);
+    const beruMax = shadowSheet({ name: 'Beru', rank: 'D', archetype: 'brute', grade: 'Elite' }, RULES).hpMax;
     await expect.poll(() => player.evaluate(() => {
       const sh = hunterApp.store.active().shadows;
       return [sh.find((s: any) => s.name === 'Beru')?.hp, sh.find((s: any) => s.name === 'Tank')?.hp];
-    }), { timeout: 20_000 }).toEqual([82, 5]); // Beru heals to its rank-scaled max HP (RULES.shadow.rankHp)
+    }), { timeout: 20_000 }).toEqual([beruMax, 5]);
     await dismissAll(player, 4);
     await expect(beru.locator('[data-act="summon"]')).toBeEnabled();
   });

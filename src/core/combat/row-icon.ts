@@ -17,12 +17,14 @@ export type HunterOf = (b: Body) => EmblemHolder | null;
 
 /**
  * A row's icon:
- * - a hunter: its emblem (ruling 1); null when it picked none or its sheet is not on this phone, and its initials show;
- * - a monster, a shadow or a summon: its monster's (icon-defaults.ts `monsterIcon`: the GM's pick, else its type's,
- *   else its archetype's; a shadow's and a summon's origin has no type, so its archetype's);
+ * - a monster-shaped body (monster, shadow, summon, or NPC): its monster's (icon-defaults.ts `monsterIcon`: the GM's
+ *   pick, else its type's, else its archetype's);
+ * - a hunter of a hunter build: its emblem (ruling 1); null when it picked none or its sheet is not on this phone, and
+ *   its initials show;
  * - a body of a hunter's build that is not a hunter (only a test stands one): null.
  */
 export function rowIcon(b: Pick<Body, 'kind' | 'origin'>, hunter: EmblemHolder | null): IconKey | null {
+  if (b.origin.kind === 'monster') return monsterIcon(b.origin);
   if (b.kind === 'hunter') return hunter && isIconKey(hunter.emblem) ? hunter.emblem : null;
-  return b.origin.kind === 'monster' ? monsterIcon(b.origin) : null;
+  return null;
 }

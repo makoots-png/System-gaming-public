@@ -49,6 +49,7 @@ import { postNews } from '../core/sync/connection.ts';
 import { running } from '../core/story/run.ts';
 import { WORD_WORDS } from '../core/sync/word.ts';
 import { raisedLine } from '../core/hunter/grant.ts';
+import { NPC_NAME_SEEDS } from '../core/registry/npcs.ts';
 
 /** The Make row at the top of the GM view: a kind the Workshop makes and its button. */
 const MAKE = [['status', 'Status'], ['item', 'Item'], ['skill', 'Skill'], ['monster', 'Monster'], ['bundle', 'Bundle']];
@@ -71,10 +72,7 @@ const SEED = {
     'Retrieve the stolen relic | A thief hunter fled with a relic. Bring it back. | 180',
     'Survive the ambush | An unknown force targets you. Survive until reinforcements arrive. | 100',
   ],
-  npc: [
-    'Han Seo-jun', 'Choi Min-gi', 'Kang Tae-shik', 'Yoo Ji-ho', 'Baek Do-yun', 'Seo Hae-rin', 'Min Byung-chul', 'Ahn Soo-ah',
-    'Tanaka Ryo', 'Kuroda Shin', 'Hoshino Aya', 'Sakamoto Ren', 'Akiyama Haruto', 'Mori Kaito', 'Yamashiro Rei', 'Fujiwara Mio',
-  ],
+  npc: NPC_NAME_SEEDS,
   whisper: [
     'The System is watching.', 'You have not been forgotten.', 'The weak do not get to choose.', 'A new gate opens somewhere near you.',
     'Your level will not save you from a stronger gate.', 'The Player is stronger than yesterday.', 'Rest. The next gate will not wait.',
