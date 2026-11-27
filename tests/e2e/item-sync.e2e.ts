@@ -170,16 +170,18 @@ test('a deleted custom item keeps working for its holder and reads the same on t
     return it ? { name: it.name, dice: it.dice, str: it.bonus.str } : null;
   }, { timeout: 15_000 }).toEqual({ name: 'Phantom Fang+', dice: '2d8', str: 4 });
 
-  // Wait for player's updated sheet to reach the GM before deleting
-  await expect.poll(async () => gm.evaluate(id => {
-    const sheet = hunterApp.api.sync.remoteSheets()[0];
-    if (!sheet) return null;
-    const it = hunterApp.api.inventory.bag(sheet.data).find((i: any) => i.defId === id);
-    return it ? { name: it.name, dice: it.dice, str: it.bonus.str } : null;
-  }, fangId), { timeout: 15_000 }).toEqual({ name: 'Phantom Fang+', dice: '2d8', str: 4 });
+  // Wait for a GM poll that carries the player's re-pushed sheet with the edited def. Before the delete the GM reads its own
+  // library def, so polling the GM's view would pass on any sheet that names the item (Fable's diagnosis, design/npc/itemsync-flake-fable.md).
+  await gm.waitForResponse(async r => {
+    if (r.request().method() !== 'GET' || !/\/api\/rooms\/[^/]+\?after=/.test(r.url()) || !r.ok()) return false;
+    const sheets = (await r.json()).sheets ?? {};
+    return Object.values(sheets).some((s: any) => s.data?.defs?.[fangId]?.name === 'Phantom Fang+');
+  }, { timeout: 30_000 });
 
   const revBeforeDel = await gm.evaluate(() => hunterApp.store.get().settings.sync.catalogSent?.rev ?? 0);
 
+  const heardDelete = player.waitForResponse(async r =>
+    r.request().method() === 'POST' && r.url().includes('/catalog/read') && r.ok() && (await r.json()).rev > revBeforeDel, { timeout: 30_000 });
   // GM deletes Phantom Fang+ from Workshop
   await gm.locator(`#view-workshop [data-ws="item"] li[data-id="${fangId}"] [data-act="more"]`).tap();
   await gm.locator('.sys-overlay.show .sys-actions button', { hasText: 'Delete' }).tap();
@@ -189,8 +191,8 @@ test('a deleted custom item keeps working for its holder and reads the same on t
   await expect.poll(async () => gm.evaluate(() => hunterApp.store.get().settings.sync.catalogSent?.rev ?? 0), { timeout: 15_000 })
     .toBeGreaterThan(revBeforeDel);
 
-  // Wait one poll cycle on player, then verify deleted item still works identically on BOTH player and GM
-  await player.waitForTimeout(1500);
+  // The player hears the delete, then the deleted item still works identically on BOTH player and GM
+  await heardDelete;
   const playerIt = await player.evaluate(id => {
     const h = hunterApp.store.active();
     const it = hunterApp.api.inventory.bag(h).find((i: any) => i.defId === id);
@@ -198,13 +200,12 @@ test('a deleted custom item keeps working for its holder and reads the same on t
   }, fangId);
   expect(playerIt).toEqual({ name: 'Phantom Fang+', dice: '2d8', str: 4, unknown: false });
 
-  const gmIt = await gm.evaluate(id => {
+  await expect.poll(() => gm.evaluate(id => {
     const sheet = hunterApp.api.sync.remoteSheets()[0];
     if (!sheet) return null;
     const it = hunterApp.api.inventory.bag(sheet.data).find((i: any) => i.defId === id);
     return it ? { name: it.name, dice: it.dice, str: it.bonus.str, unknown: !!it.unknown } : null;
-  }, fangId);
-  expect(gmIt).toEqual({ name: 'Phantom Fang+', dice: '2d8', str: 4, unknown: false });
+  }, fangId), { timeout: 15_000 }).toEqual({ name: 'Phantom Fang+', dice: '2d8', str: 4, unknown: false });
 });
 
 test('a mid-fight edit is staged during combat and lands at End fight', async ({ device }) => {

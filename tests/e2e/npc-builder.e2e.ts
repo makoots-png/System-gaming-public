@@ -312,7 +312,8 @@ test('on a 360 px phone the NPC maker stays single-column with no sideways overf
       el => (el as HTMLElement).offsetParent !== null,
     );
     const short = controls
-      .filter(el => el.getBoundingClientRect().height < 44)
+      // layout height, not the box after transforms: a just-tapped chip can still hold :active's scale(.97) (app.css)
+      .filter(el => (el as HTMLElement).offsetHeight < 44)
       .map(labelOf);
     const outside = [...win.querySelectorAll('button, input:not([type=checkbox]), select, textarea')]
       .filter(el => (el as HTMLElement).offsetParent !== null)
