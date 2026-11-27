@@ -26,7 +26,7 @@ import { fightId, parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RiseSpec, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
-import { amountOp, AURA_ON, HIDE_STARTS, REACH_ON, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
+import { amountOp, AURA_ON, DISPEL_KINDS, HIDE_STARTS, REACH_ON, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isFormulaKey, isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import { sheetOpCap } from './standing.ts';
 import type { HeldDieId } from './standing.ts';
@@ -343,7 +343,11 @@ function wave2Op(v: Rec, R: Rules): Op | null {
       return key && from && as !== undefined ? { op: 'move', key, take: v.take === 'all' ? 'all' : clamped(v.take, 1, K.stackCap), from, as } : null;
     }
     case 'hasten': case 'guard': { const share = within(v.share, 0, 1); return share === null ? null : { op: v.op, share }; }
-    case 'dispel': { const which = oneOf(v.which, ['first', 'all'] as const, null); return which && { op: 'dispel', which }; }
+    case 'dispel': {
+      const which = oneOf(v.which, ['first', 'all'] as const, null);
+      const kind = v.kind === undefined ? 'harmful' : oneOf(v.kind, DISPEL_KINDS, null);
+      return which && kind ? (kind === 'helpful' ? { op: 'dispel', which, kind } : { op: 'dispel', which }) : null;
+    }
     // keystones A.7: a share of a bar above 0, held at `staggerOpMax`; an echo's radius a whole number of tiles, held at the widest field
     case 'stagger': { const share = isNum(v.share) && v.share > 0 ? Math.min(v.share, K.staggerOpMax) : null; return share === null ? null : { op: 'stagger', share }; }
     case 'echo': { const radius = whole(v.radius, 1, BIG); return radius === null ? null : { op: 'echo', radius: Math.min(radius, F.fieldRadiusMax) }; }
@@ -624,7 +628,7 @@ function raiseOf(v: unknown): RiseSpec | null {
 /**
  * An ability's wave 2 parts (kits design 8.3 to 8.5), each left out when absent: a blink or a swap (optionally
  * restricted to `only: 'shadow' | 'minion'`); a reaction's moment and its reach (0 to `fieldRadiusMax` tiles); a zone act (shift
- * by 1 to `zoneMove`, grow by 1 to `zoneGrow`, a zone name or null for any). Null when one is there and does not read.
+ * by 1 to `zoneMove`, grow by 1 to `zoneGrow`, erase by 1 to `zonesPerOwner`, a zone name or null for any). Null when one is there and does not read.
  */
 function abilityWave2(v: Rec, R: Rules): Pick<Ability, 'move' | 'react' | 'zoneAct'> | null {
   const K = R.fight.kit;
@@ -636,10 +640,10 @@ function abilityWave2(v: Rec, R: Rules): Pick<Ability, 'move' | 'react' | 'zoneA
     : null;
   const when = isObj(v.react) ? oneOf(v.react.when, REACT_WHEN, null) : null;
   const react = v.react === undefined ? undefined : isObj(v.react) && when ? { when, reach: tiles(clamped(v.react.reach, 0, R.fight.fieldRadiusMax)) } : null;
-  const act = isObj(v.zoneAct) ? oneOf(v.zoneAct.act, ['shift', 'grow'] as const, null) : null;
+  const act = isObj(v.zoneAct) ? oneOf(v.zoneAct.act, ['shift', 'grow', 'erase'] as const, null) : null;
   const zName = isObj(v.zoneAct) ? (v.zoneAct.name === null ? null : text(v.zoneAct.name, ZONE_NAME_MAX)) : null;
   const zoneAct = v.zoneAct === undefined ? undefined : isObj(v.zoneAct) && act && (zName !== null || v.zoneAct.name === null)
-    ? { act, name: zName, by: clamped(v.zoneAct.by, 1, act === 'shift' ? K.zoneMove : K.zoneGrow) } : null;
+    ? { act, name: zName, by: clamped(v.zoneAct.by, 1, act === 'shift' ? K.zoneMove : act === 'grow' ? K.zoneGrow : K.zonesPerOwner) } : null;
   if (move === null || react === null || zoneAct === null) return null;
   return { ...(move ? { move } : {}), ...(react ? { react } : {}), ...(zoneAct ? { zoneAct } : {}) };
 }

@@ -9,17 +9,25 @@ import type { ClassName } from './jobs.ts';
 import { CLASS_ACTIVES_MAX, CLASS_BONUS_KEYS, CLASS_TREES, repairNodes } from './class-trees.ts';
 import type { ClassBonusKey, ClassPerk, ClassTreeMap, ClassWorn, NodeGift } from './class-trees.ts';
 import { HEMOMANCER_SIGNATURE } from './class-hemomancer.ts';
+import { STARFORGER_SIGNATURE } from './class-starforger.ts';
 import { NECROMANCER_SIGNATURE } from './class-necromancer.ts';
 import { BLADEFIEND_SIGNATURE } from './class-bladefiend.ts';
 import { RIFTHUNTER_SIGNATURE } from './class-rifthunter.ts';
+import { NULLWEAVER_SIGNATURE } from './class-nullweaver.ts';
 import { IRONCLAD_SIGNATURE } from './class-ironclad.ts';
 import { PACKLORD_SIGNATURE } from './class-packlord.ts';
 import { SERAPH_SIGNATURE } from './class-seraph.ts';
 import { STORMCALLER_SIGNATURE } from './class-stormcaller.ts';
 import { GRIMREAPER_SIGNATURE } from './class-grimreaper.ts';
+import { CHRONOKEEPER_SIGNATURE } from './class-chronokeeper.ts';
+import { VOIDSTALKER_SIGNATURE } from './class-voidstalker.ts';
 import { BRAMBLEGUARD_SIGNATURE } from './class-brambleguard.ts';
 import { PYROMANCER_SIGNATURE } from './class-pyromancer.ts';
 import { SNIPER_SIGNATURE } from './class-sniper.ts';
+import { BERSERKER_SIGNATURE } from './class-berserker.ts';
+import { CLERIC_SIGNATURE } from './class-cleric.ts';
+import { NIGHTBLADE_SIGNATURE } from './class-nightblade.ts';
+import { BASTION_SIGNATURE } from './class-bastion.ts';
 import { FIGHTER_SIGNATURE } from './class-fighter.ts';
 import { ASSASSIN_SIGNATURE } from './class-assassin.ts';
 import { MAGE_SIGNATURE } from './class-mage.ts';
@@ -80,17 +88,25 @@ export type ClassSignatureMap = Readonly<Partial<Record<ClassName, ClassSignatur
 /** Shipped class signatures. */
 export const CLASS_SIGNATURES: ClassSignatureMap = {
   Hemomancer: HEMOMANCER_SIGNATURE,
+  Starforger: STARFORGER_SIGNATURE,
   Necromancer: NECROMANCER_SIGNATURE,
   Bladefiend: BLADEFIEND_SIGNATURE,
   Rifthunter: RIFTHUNTER_SIGNATURE,
+  Nullweaver: NULLWEAVER_SIGNATURE,
   Seraph: SERAPH_SIGNATURE,
   Ironclad: IRONCLAD_SIGNATURE,
   Packlord: PACKLORD_SIGNATURE,
   Stormcaller: STORMCALLER_SIGNATURE,
   Grimreaper: GRIMREAPER_SIGNATURE,
+  Chronokeeper: CHRONOKEEPER_SIGNATURE,
+  Voidstalker: VOIDSTALKER_SIGNATURE,
   Brambleguard: BRAMBLEGUARD_SIGNATURE,
   Pyromancer: PYROMANCER_SIGNATURE,
   Sniper: SNIPER_SIGNATURE,
+  Berserker: BERSERKER_SIGNATURE,
+  Cleric: CLERIC_SIGNATURE,
+  Nightblade: NIGHTBLADE_SIGNATURE,
+  Bastion: BASTION_SIGNATURE,
   Fighter: FIGHTER_SIGNATURE,
   Assassin: ASSASSIN_SIGNATURE,
   Mage: MAGE_SIGNATURE,

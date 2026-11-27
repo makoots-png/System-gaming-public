@@ -301,7 +301,7 @@ describe('registryView', () => {
     expect(iron.inFight).toBe(false);
     expect(iron.synced).toBe(true);
 
-    const unbuilt = vm.rows.find(r => r.className === 'Voidstalker')!;
+    const unbuilt = vm.rows.find(r => r.className === 'Soulforger')!;
     expect(unbuilt.hasKit).toBe(false);
 
     // Deleted local holder is flagged with "(removed)" while staying held per t135u

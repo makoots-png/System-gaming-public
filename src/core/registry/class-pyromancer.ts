@@ -206,10 +206,10 @@ const BASE_EMBER_MARK: StatusDef = {
 const UP_EMBER_MARK: StatusDef = {
   label: 'Ember Mark II',
   desc: 'Takes arcane fire damage each round and detonates when it ends or is cured.',
-  ops: [{ op: 'damage', type: 'arcane', when: 'turn', amount: tiered('1d4', '1d6', '2d4', '2d6', '2d8', '3d8') }],
+  ops: [{ op: 'damage', type: 'arcane', when: 'turn', amount: tiered('1d4', '1d6', '1d6', '2d4', '2d6', '3d6') }],
   end: {
     cleanse: 'land',
-    ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: f('2d6 + 0.55 * mag') }],
+    ops: [{ op: 'damage', type: 'arcane', when: 'use', amount: f('1d6 + 0.4 * mag') }],
   },
 };
 
@@ -276,16 +276,16 @@ const BASE_LANCE = makeIgnitionLance({
   name: 'Ignition Lance',
   markKey: KEY_EMBER,
   markDef: BASE_EMBER_MARK,
-  formula: '1d8 + 0.65 * mag',
+  formula: '1d8 + 0.58 * mag',
   cooldownRounds: 2,
 });
 
-// D5 Fork B-Left (sustained detonation): 1-round cooldown, higher direct + pop damage, and curing detonates Ember Mark II early.
+// D5 Fork B-Left (sustained detonation): 1-round cooldown, higher blast damage, and curing detonates Ember Mark II early.
 const UP_LANCE_FLASH = makeIgnitionLance({
   name: 'Ignition Lance: Flash Detonation',
   markKey: KEY_EMBER_UP,
   markDef: UP_EMBER_MARK,
-  formula: '2d6 + 0.85 * mag',
+  formula: '1d10 + 0.65 * mag',
   cooldownRounds: 1,
 });
 
@@ -296,7 +296,7 @@ const UP_LANCE_KINDLE = makeIgnitionLance({
   name: 'Ignition Lance: Kindle Burst',
   markKey: KEY_EMBER,
   markDef: BASE_EMBER_MARK,
-  formula: '1d8 + 0.65 * mag',
+  formula: '1d8 + 0.58 * mag',
   cooldownRounds: 2,
   extraOps: [{ op: 'applyStatus', key: KEY_CINDER, def: PYRO_CINDER, duration: rounds(2), stacks: 2 }],
 });

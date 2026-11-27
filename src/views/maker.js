@@ -90,7 +90,7 @@ const KIND_LABEL = {
   sheet: 'Armor, crit, or range', share: 'Damage or healing %', untargetable: 'Cannot be aimed at', invulnerable: 'Cannot drop under 1 HP',
   safeguard: 'Blocks harmful statuses', edge: 'Roll twice (advantage)', boost: 'Bonus die or number', hidden: 'Hidden (stealth)', alert: 'Never surprised',
   shove: 'Push or pull', move: 'Move status stacks', hasten: 'Move turn sooner', extra: 'Extra action', guard: 'Guard (reaction)',
-  negate: 'Negate (reaction)', dispel: 'Cure harmful status', stayHidden: 'Stays hidden', reveal: 'Reveal hidden',
+  negate: 'Negate (reaction)', dispel: 'Remove statuses (dispel)', stayHidden: 'Stays hidden', reveal: 'Reveal hidden',
   stagger: 'Fill the stagger bar', echo: 'Copy status to nearest',
 };
 /** Whom a status's aura reaches (effect-ops.ts `AURA_ON`). */
@@ -190,7 +190,8 @@ const DIE_LABEL = [['die', 'Roll a die'], ['face', 'Fixed number']];
 const DIR_LABEL = [['away', 'Push'], ['toward', 'Pull']];
 const FROM_LABEL = [['user', 'Relative to user'], ['aim', 'Relative to target tile']];
 const MOVE_FROM_LABEL = [['user', 'User to target'], ['target', 'Target to user']];
-const WHICH_LABEL = [['first', 'One harmful status'], ['all', 'All harmful statuses']];
+const DISPEL_KIND_LABEL = [['harmful', 'Harmful statuses'], ['helpful', 'Helpful statuses']];
+const WHICH_LABEL = [['first', 'First one'], ['all', 'All of them']];
 /** A tag's form (fight-parse.ts `TAG_RE`): lower-case words joined by hyphens. */
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DAMAGE_CHOICES = DAMAGE_TYPES.map(t => [t, DAMAGE_SHORT[t]]);
@@ -248,7 +249,7 @@ function rowOf(o) {
     addStacks: o.stacks === undefined ? '' : String(o.stacks), sheetKey: o.op === 'sheet' ? o.key : 'armor', shareOn: o.op === 'share' ? o.on : 'taken', side: o.side || 'attack',
     edgeKeep: o.op === 'edge' ? o.keep : 'better', tag: o.op === 'edge' && o.tag ? o.tag : '', spend: o.op === 'edge' ? !!o.spend : true, dieMode: o.op === 'boost' ? o.die.kind : 'die',
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
-    which: o.which || 'first', start: o.op === 'hidden' ? o.start : null, ends: o.op === 'hidden' ? { ...o.ends } : null, stayOn: o.op === 'stayHidden' ? o.on : null,
+    which: o.which || 'first', dispelKind: o.op === 'dispel' && o.kind === 'helpful' ? 'helpful' : 'harmful', start: o.op === 'hidden' ? o.start : null, ends: o.op === 'hidden' ? { ...o.ends } : null, stayOn: o.op === 'stayHidden' ? o.on : null,
   };
   if (o.op === 'stat') r.stat = o.key;
   if (formulaRow(r)) {
@@ -389,7 +390,7 @@ function checkRow(app, r, item, statusKey = null) {
     const n = wholeIn(r.q, 1, R.fight.fieldRadiusMax);
     return n === null ? fail(`Enter a whole number of tiles from 1 to ${R.fight.fieldRadiusMax}.`) : ok({ op: 'echo', radius: n });
   }
-  if (r.kind === 'dispel') return ok({ op: 'dispel', which: r.which === 'all' ? 'all' : 'first' });
+  if (r.kind === 'dispel') return ok({ op: 'dispel', which: r.which === 'all' ? 'all' : 'first', ...(r.dispelKind === 'helpful' ? { kind: 'helpful' } : {}) });
   if (r.kind === 'stayHidden') return ok({ op: 'stayHidden', on: r.stayOn });
   if (r.kind === 'channel') return ok({ op: 'channel', mode: r.chMode === 'break' ? 'break' : 'protect' });
   if (r.kind === 'aura' || r.kind === 'spread') {
@@ -531,7 +532,7 @@ function effects(app, box, o) {
     } else if (r.kind === 'hasten' || r.kind === 'guard') body = smallNum('q', r.kind === 'hasten' ? 'Move turn sooner (%)' : 'Damage reduced (%)', r.q, { aria: `Percent of effect ${i + 1}`, decimal: true });
     else if (r.kind === 'stagger') body = `${smallNum('q', 'Stagger bar fill (%)', r.q, { aria: `Share of the stagger bar, effect ${i + 1}`, decimal: true })}<p class="mk-avg">Only elite and boss monsters have a stagger bar. One effect can fill at most ${Math.round(K.staggerOpMax * 100)}% of it.</p>`;
     else if (r.kind === 'echo') body = `${smallNum('q', 'Range (tiles)', r.q, { aria: `Reach of effect ${i + 1}` })}${idle(r) ? '<p class="mk-fx-err" role="note">Does nothing here. Echo only works in a trigger for gaining or applying a status.</p>' : ''}<p class="mk-avg">Works only in a trigger when a status is gained or applied. Copies that status with the same duration onto the nearest ally or foe on that side who does not have it. It does not chain.</p>`;
-    else if (r.kind === 'dispel') body = segF('which', `Which harmful statuses, effect ${i + 1}`, WHICH_LABEL, r.which);
+    else if (r.kind === 'dispel') body = `${segF('dispelKind', `Kind of statuses to remove, effect ${i + 1}`, DISPEL_KIND_LABEL, r.dispelKind)}${segF('which', `How many statuses to remove, effect ${i + 1}`, WHICH_LABEL, r.which)}`;
     else if (r.kind === 'stayHidden') body = group('Stays hidden when', segF('stayOn', `What effect ${i + 1} keeps from ending a hide`, STEALTH_END_LABEL, r.stayOn));
     else if (r.kind === 'note') body = `<input type="text" maxlength="200" autocomplete="off" data-f="text" aria-label="Note of effect ${i + 1}" placeholder="What the GM rules on" value="${esc(r.text)}">`;
     else if (r.kind === 'channel') body = seg('data-channel', `Channel of effect ${i + 1}`, CHANNEL_LABEL, r.chMode);
@@ -599,7 +600,7 @@ function effects(app, box, o) {
     if (kind === 'move') return rowOf({ op: 'move', key: 'harmful', take: 1, from: 'user', as: null });
     if (kind === 'hasten') return rowOf({ op: 'hasten', share: 0.5 });
     if (kind === 'guard') return rowOf({ op: 'guard', share: K.parry });
-    if (kind === 'dispel') return rowOf({ op: 'dispel', which: 'first' });
+    if (kind === 'dispel') return rowOf({ op: 'dispel', which: 'first', kind: 'harmful' });
     if (kind === 'stagger') return rowOf({ op: 'stagger', share: K.staggerOpMax / 2 });
     if (kind === 'echo') return rowOf({ op: 'echo', radius: 2 });
     if (kind === 'hidden') return rowOf(parseOp({ op: 'hidden' }, R));
@@ -690,7 +691,7 @@ const EFFECT_VALUES = [...DAMAGE_TYPES, 'heal', 'shield'];
 const DEFENCE_WORD = { armor: 'Armor', resist: 'Resist' };
 /** The kits' formula names (formula.ts, kits design 1.5) a chip inserts; KEY is the status picked beside them. */
 const FORMULA_NAMES = [
-  ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks this use spent'], ['field(KEY)', 'Its stacks on everyone'],
+  ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks or fields this use spent'], ['field(KEY)', 'Its stacks on everyone'],
   ['held(KEY)', 'Rounds you held it'], ['target.missing', 'Target\'s missing HP share'], ['missing', 'Your missing HP share'], ['hits', 'Targets hit'], ['kills', 'Your kills this fight'],
 ];
 /** A lasting change in words on the maker's sample hunter (`SAMPLE_RANK`): `Armor: +10% of max HP (now 12)`. */

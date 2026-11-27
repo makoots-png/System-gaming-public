@@ -13,17 +13,25 @@ import type { Ability, AbilityId } from '../combat/ability-types.ts';
 import { isClassName } from './jobs.ts';
 import type { ClassName, ClassRarity } from './jobs.ts';
 import { HEMOMANCER_TREE } from './class-hemomancer.ts';
+import { STARFORGER_TREE } from './class-starforger.ts';
 import { NECROMANCER_TREE } from './class-necromancer.ts';
 import { BLADEFIEND_TREE } from './class-bladefiend.ts';
 import { RIFTHUNTER_TREE } from './class-rifthunter.ts';
+import { NULLWEAVER_TREE } from './class-nullweaver.ts';
 import { IRONCLAD_TREE } from './class-ironclad.ts';
 import { PACKLORD_TREE } from './class-packlord.ts';
 import { SERAPH_TREE } from './class-seraph.ts';
 import { STORMCALLER_TREE } from './class-stormcaller.ts';
 import { GRIMREAPER_TREE } from './class-grimreaper.ts';
+import { CHRONOKEEPER_TREE } from './class-chronokeeper.ts';
+import { VOIDSTALKER_TREE } from './class-voidstalker.ts';
 import { BRAMBLEGUARD_TREE } from './class-brambleguard.ts';
 import { PYROMANCER_TREE } from './class-pyromancer.ts';
 import { SNIPER_TREE } from './class-sniper.ts';
+import { BERSERKER_TREE } from './class-berserker.ts';
+import { CLERIC_TREE } from './class-cleric.ts';
+import { NIGHTBLADE_TREE } from './class-nightblade.ts';
+import { BASTION_TREE } from './class-bastion.ts';
 import { FIGHTER_TREE } from './class-fighter.ts';
 import { ASSASSIN_TREE } from './class-assassin.ts';
 import { MAGE_TREE } from './class-mage.ts';
@@ -118,17 +126,25 @@ export type ClassTree = {
 export type ClassTreeMap = Readonly<Partial<Record<ClassName, ClassTree>>>;
 export const CLASS_TREES: ClassTreeMap = {
   Hemomancer: HEMOMANCER_TREE,
+  Starforger: STARFORGER_TREE,
   Necromancer: NECROMANCER_TREE,
   Bladefiend: BLADEFIEND_TREE,
   Rifthunter: RIFTHUNTER_TREE,
+  Nullweaver: NULLWEAVER_TREE,
   Seraph: SERAPH_TREE,
   Ironclad: IRONCLAD_TREE,
   Packlord: PACKLORD_TREE,
   Stormcaller: STORMCALLER_TREE,
   Grimreaper: GRIMREAPER_TREE,
+  Chronokeeper: CHRONOKEEPER_TREE,
+  Voidstalker: VOIDSTALKER_TREE,
   Brambleguard: BRAMBLEGUARD_TREE,
   Pyromancer: PYROMANCER_TREE,
   Sniper: SNIPER_TREE,
+  Berserker: BERSERKER_TREE,
+  Cleric: CLERIC_TREE,
+  Nightblade: NIGHTBLADE_TREE,
+  Bastion: BASTION_TREE,
   Fighter: FIGHTER_TREE,
   Assassin: ASSASSIN_TREE,
   Mage: MAGE_TREE,

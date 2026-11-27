@@ -21,12 +21,13 @@ import type { Ability, AbilityId, CombatantId, DamageType, HunterId, Tag } from 
 import type { ForcedFace } from './fight-types.ts';
 import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
+import { isMythicStatusKey } from './mythic-types.ts';
 import type { MythicStanding } from './mythic-types.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
 import { GRIEVOUS_MAX, grievousCapPct, grievousCutAt, isGrievousKey, shareCapPct } from './grievous.ts';
-import { counting, given, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
+import { counting, given, harmful, helpful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
 import { asLevel } from './sight-levels.ts';
 import type { Level } from './sight-levels.ts';
 import { rowLifeAfter } from './row-life.ts';
@@ -253,8 +254,8 @@ export type Op =
   | { readonly op: 'guard'; readonly share: number }
   /** A `before` reaction's: the triggering use does nothing more to the one it protects (8.4). */
   | { readonly op: 'negate' }
-  /** A cure of the first harmful status (the earliest put on), or of every one (8.1's Dispel and Purge). */
-  | { readonly op: 'dispel'; readonly which: 'first' | 'all' }
+  /** A cure of the first harmful (default) or helpful status (the earliest put on), or of every one (8.1's Dispel and Purge, Wave 3 Hook 2). */
+  | { readonly op: 'dispel'; readonly which: 'first' | 'all'; readonly kind?: DispelKind }
   // ── keystones (docs/agent-handoff/features/notes-11-keystones.md A.7) ──
   /**
    * A use op and a land op: fills `share` of the stagger bar of each body it lands on (an elite's or a boss's; a body with
@@ -282,6 +283,9 @@ export type SheetFormulaOp = Extract<Op, { readonly op: 'sheet'; readonly key: S
 /** What a `share` op changes: the damage its bearer deals or takes, the heals it gets, or the shields it gets. */
 export const SHARE_ON = ['dealt', 'taken', 'healed', 'shielded'] as const;
 export type ShareOn = (typeof SHARE_ON)[number];
+/** Which statuses a `dispel` op removes: harmful (the default when omitted) or helpful. */
+export const DISPEL_KINDS = ['harmful', 'helpful'] as const;
+export type DispelKind = (typeof DISPEL_KINDS)[number];
 export type EdgeSide = 'attack' | 'defend';
 /** What may end a hide (the owner's three events): its bearer loses HP, it is revealed, or a use or reaction of its own deals HP damage to the other side. */
 export const STEALTH_ENDS = ['hurt', 'revealed', 'dealt'] as const;
@@ -702,12 +706,18 @@ function oneInstance(
 
 export const removeStatus = (list: readonly Status[], key: StatusKey): Status[] => list.filter(s => s.key !== key);
 /**
- * A dispel (kits design 8.1, Dispel and Purge): the first harmful status of the list, which is the order they were put
- * on, or every harmful one, each whole with all its stacks. A zone's hold is the ground's and stays.
+ * A dispel (kits design 8.1, Dispel and Purge; Wave 3 Hook 2): the first matching status of the list (the earliest put
+ * on), or every matching one, each whole with all its stacks. `harmful` (default) strips harmful statuses; `helpful`
+ * strips helpful statuses that are not worn and, when the bearer plays a mythic script (`mythic`), not mythic script
+ * statuses (`isMythicStatusKey`). A zone's hold is the ground's and stays; neutral statuses are untouched by either kind.
  */
-export function dispelled(list: readonly Status[], which: 'first' | 'all'): Status[] {
-  const bad = list.filter(s => s.zone === undefined && harmful(s.def));
-  const gone = which === 'first' ? bad.slice(0, 1) : bad;
+export function dispelled(list: readonly Status[], which: 'first' | 'all', kind: DispelKind = 'harmful', mythic = false): Status[] {
+  const hits = list.filter(s => s.zone === undefined && (
+    kind === 'helpful'
+      ? !s.worn && !(mythic && isMythicStatusKey(s.key)) && helpful(s.def)
+      : harmful(s.def)
+  ));
+  const gone = which === 'first' ? hits.slice(0, 1) : hits;
   return list.filter(s => !gone.includes(s));
 }
 /**
@@ -1057,7 +1067,9 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     case 'extra': return 'Take another action at once, once a round';
     case 'guard': return `Reduces damage from the triggering strike by ${Math.round(o.share * 100)}%`;
     case 'negate': return 'Cancels the triggering ability';
-    case 'dispel': return o.which === 'first' ? 'Cures the first harmful status' : 'Cures every harmful status';
+    case 'dispel': return o.kind === 'helpful'
+      ? (o.which === 'first' ? 'Removes the first helpful status' : 'Removes every helpful status')
+      : (o.which === 'first' ? 'Cures the first harmful status' : 'Cures every harmful status');
     case 'stagger': return `Fills ${Math.round(o.share * 100)}% of an elite or boss target's stagger bar`;
     case 'echo': return `Copies the gained status to the nearest other combatant on that side within ${o.radius} tile${o.radius === 1 ? '' : 's'} who does not have it, for the same duration. Copied statuses do not copy again`;
     default: return o satisfies never;

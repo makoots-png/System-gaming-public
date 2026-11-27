@@ -269,11 +269,12 @@ export type ZoneState = (typeof ZONE_STATES)[number];
 export type ZoneLife = { readonly at: 'laid' } | { readonly at: 'lapsed' } | { readonly at: 'evicted' } | { readonly at: 'ended'; readonly landed: boolean };
 /**
  * What changes it: its owner's turn start with the upkeep paid or not; a fourth zone of its owner; its owner's zone
- * price or its time (`old`: at least `zoneAge` rounds since it was laid); its owner down.
+ * price or its time (`old`: at least `zoneAge` rounds since it was laid); its owner down; or a foe's erase act.
  */
 export type ZoneEvent =
   | { readonly type: 'paid' } | { readonly type: 'unpaid' } | { readonly type: 'fourth' }
-  | { readonly type: 'price'; readonly old: boolean } | { readonly type: 'time'; readonly old: boolean } | { readonly type: 'ownerDown' };
+  | { readonly type: 'price'; readonly old: boolean } | { readonly type: 'time'; readonly old: boolean } | { readonly type: 'ownerDown' }
+  | { readonly type: 'erased' };
 export type ZoneEventType = ZoneEvent['type'];
 type ZoneStepFn<E extends ZoneEventType> = (z: ZoneLife, e: Extract<ZoneEvent, { type: E }>) => { readonly to: ZoneLife; readonly lands: boolean };
 const stay: ZoneStepFn<'paid'> = z => ({ to: z, lands: false });
@@ -282,10 +283,10 @@ const gone = (to: ZoneLife) => () => ({ to, lands: false });
 const ends = (_z: ZoneLife, e: { readonly old: boolean }): { readonly to: ZoneLife; readonly lands: boolean } => ({ to: { at: 'ended', landed: e.old }, lands: e.old });
 /** Table 2.6 of the kits design. `null`: the event does not apply there, and nothing changes or lands. */
 const ZONE_TABLE: { readonly [S in ZoneState]: { readonly [E in ZoneEventType]: ZoneStepFn<E> | null } } = {
-  laid: { paid: stay, unpaid: gone({ at: 'lapsed' }), fourth: gone({ at: 'evicted' }), price: ends, time: ends, ownerDown: gone({ at: 'ended', landed: false }) },
-  lapsed: { paid: null, unpaid: null, fourth: null, price: null, time: null, ownerDown: null },
-  evicted: { paid: null, unpaid: null, fourth: null, price: null, time: null, ownerDown: null },
-  ended: { paid: null, unpaid: null, fourth: null, price: null, time: null, ownerDown: null },
+  laid: { paid: stay, unpaid: gone({ at: 'lapsed' }), fourth: gone({ at: 'evicted' }), price: ends, time: ends, ownerDown: gone({ at: 'ended', landed: false }), erased: gone({ at: 'ended', landed: false }) },
+  lapsed: { paid: null, unpaid: null, fourth: null, price: null, time: null, ownerDown: null, erased: null },
+  evicted: { paid: null, unpaid: null, fourth: null, price: null, time: null, ownerDown: null, erased: null },
+  ended: { paid: null, unpaid: null, fourth: null, price: null, time: null, ownerDown: null, erased: null },
 };
 /** A zone's life after `event`, and whether its end lands now. Never changes its input. */
 export function zoneStep(z: ZoneLife, event: ZoneEvent): { readonly to: ZoneLife; readonly lands: boolean } {
@@ -295,8 +296,13 @@ export function zoneStep(z: ZoneLife, event: ZoneEvent): { readonly to: ZoneLife
 }
 /** Whether a zone ending at `at` is old enough for its end to land: `zoneAge` rounds since it was laid (one no ability laid always is). */
 export const oldEnough = (z: Zone, at: Tick, R: OpRules): boolean => z.laid === undefined || at - z.laid >= R.fight.kit.zoneAge * R.fight.round;
+/** Whether a zone is a status aura carried by a body (never owned/shifted/erased as a field on the ground). */
+const isStatusAura = (z: Zone): boolean => z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.status !== null;
 /** A zone an owner made and holds (not an aura its statuses give off, which are the statuses'). */
-const heldBy = (z: Zone, owner: CombatantId): boolean => z.owner === owner && !(z.ground.kind === 'around' && z.ground.anchor.kind === 'body' && z.ground.anchor.status !== null);
+const heldBy = (z: Zone, owner: CombatantId): boolean => z.owner === owner && !isStatusAura(z);
+/** Distance from `at` to the nearest tile of `z` (Infinity when `z` covers no tile). */
+const nearestTile = (z: Zone, at: Place, rows: readonly Spot[], grid: Grid, now: Tick, R: { readonly fight: { readonly round: number } }): number =>
+  Math.min(...zoneTiles(z, rows, grid, now, R).map(t => Math.max(Math.abs(t.x - at.x), Math.abs(t.y - at.y))), Infinity);
 
 /**
  * A zone an ability left, put on the ground (kits design 1.8.2): when its owner already holds `zonesPerOwner`, the
@@ -319,7 +325,7 @@ export function placeZone(zones: readonly Zone[], z: Zone, R: OpRules): { zones:
 export function zoneActed(zones: readonly Zone[], owner: CombatantId, act: { readonly act: 'shift' | 'grow'; readonly name: string | null; readonly by: number }, at: Place, rows: readonly Spot[], grid: Grid, now: Tick, R: OpRules): { zones: Zone[]; acted: Zone | null } {
   const mine = zones.filter(z => heldBy(z, owner) && (act.name === null || z.name === act.name));
   if (!mine.length) return { zones: [...zones], acted: null };
-  const near = (z: Zone) => Math.min(...zoneTiles(z, rows, grid, now, R).map(t => Math.max(Math.abs(t.x - at.x), Math.abs(t.y - at.y))), Infinity);
+  const near = (z: Zone) => nearestTile(z, at, rows, grid, now, R);
   const z = [...mine].sort((p, q) => near(p) - near(q))[0]!;
   const g = z.ground;
   let ground: Ground | null = g;
@@ -341,6 +347,34 @@ export function zoneActed(zones: readonly Zone[], owner: CombatantId, act: { rea
   if (ground === g) return { zones: [...zones], acted: null };
   const changed = ground === null ? null : { ...z, ground };
   return { zones: zones.flatMap(x => x === z ? (changed ? [changed] : []) : [x]), acted: changed ?? z };
+}
+
+/**
+ * Erases up to `act.by` (clamped to `kit.zonesPerOwner`) foe-owned non-aura zones nearest `at`, matching `act.name`
+ * when set. Never touches `owner === null` map/GM zones, status auras, allied zones, or zones whose owner has left
+ * `rows`. Each erased zone steps through `zoneStep({ at: 'laid' }, { type: 'erased' })` (`lands: false`, never fires `zone.end`).
+ */
+export function zonesErased(
+  zones: readonly Zone[],
+  userSide: Side,
+  act: { readonly act: 'erase'; readonly name: string | null; readonly by: number },
+  at: Place,
+  rows: readonly (Spot & { readonly side: Side })[],
+  grid: Grid,
+  now: Tick,
+  R: OpRules,
+): { zones: Zone[]; erased: Zone[] } {
+  const foes = zones.filter(z => {
+    if (z.owner === null || isStatusAura(z)) return false;
+    if (act.name !== null && z.name !== act.name) return false;
+    const owner = rows.find(r => r.id === z.owner);
+    return owner !== undefined && owner.side !== userSide;
+  });
+  if (!foes.length) return { zones: [...zones], erased: [] };
+  const near = (z: Zone) => nearestTile(z, at, rows, grid, now, R);
+  const count = Math.max(0, Math.min(act.by, R.fight.kit.zonesPerOwner));
+  const erased = [...foes].sort((p, q) => near(p) - near(q)).slice(0, count).filter(() => zoneStep({ at: 'laid' }, { type: 'erased' }).to.at === 'ended');
+  return { zones: zones.filter(z => !erased.includes(z)), erased };
 }
 
 /**

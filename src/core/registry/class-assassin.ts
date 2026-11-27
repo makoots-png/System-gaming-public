@@ -105,9 +105,9 @@ const BASE_FOOTWORK: ClassWorn = makeFootwork({
 const SHADOW_REPRISAL: ClassWorn = makeFootwork({
   key: KEY_FOOTWORK_UP,
   label: 'Shadow Reprisal',
-  desc: "Once a round when a foe's attack misses you, strike back for physical damage equal to 35% of your finesse power, gain Shadow Edge, and hasten your next turn by 15%.",
+  desc: "Once a round when a foe's attack misses you, strike back for physical damage equal to 35% of your finesse power, gain Shadow Edge, and refund 15% of your turn.",
   counterFormula: '0.35 * finesse',
-  extraSelfOps: [{ op: 'hasten', share: 0.15 }],
+  extraSelfOps: [{ op: 'refund', pct: 15 }],
 });
 
 // ── active ability ──

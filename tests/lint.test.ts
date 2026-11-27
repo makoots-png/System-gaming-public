@@ -3343,3 +3343,293 @@ test('only src/core/hunter/shadows.ts calls addShadow in src/ (callers go throug
   expect(calls.length, 'the rule sees shadowRises calling addShadow').toBeGreaterThan(0);
   expect(report(calls.filter(line => line.file !== owner)), 'add shadows through shadowRises in src/core/hunter/shadows.ts, never addShadow directly').toEqual([]);
 });
+
+test('a per-round op in a status a class puts on a foe holds no stat term', async () => {
+  // payDue (fight-turn.ts) evaluates per-round status and zone ops on the bearer's own sheet, not the caster's.
+  // Pyromancer's header recorded this trap, and Dusk Bleed, Time Warp, and Bladefiend's Severed repeated it:
+  // a per-round op on a foe status or foe-hitting zone must use rank-tiered dice/flat amounts, never stat/sheet terms.
+  const { RULES } = await import('../src/core/rules.ts');
+  const { parseFormula, printFormula } = await import('../src/core/formula.ts');
+  const { perRound } = await import('../src/core/combat/effect-ops.ts');
+  const { isTiers } = await import('../src/core/combat/op-amount.ts');
+  const { CLASS_SIGNATURES } = await import('../src/core/registry/class-powers.ts');
+  const { CLASS_TREES } = await import('../src/core/registry/class-trees.ts');
+
+  type FormulaNode = import('../src/core/formula.ts').Formula;
+  type StatusDefT = import('../src/core/combat/effect-ops.ts').StatusDef;
+  type OpT = import('../src/core/combat/effect-ops.ts').Op;
+  type LandOpT = import('../src/core/combat/effect-ops.ts').LandOp;
+  type AbilityT = import('../src/core/combat/ability-types.ts').Ability;
+
+  const hasStatTerm = (node: FormulaNode): boolean => {
+    switch (node.kind) {
+      case 'stat': case 'sheet': return true;
+      case 'number': case 'dice': case 'charge': case 'stacks': case 'field': case 'missing': case 'held': case 'count': return false;
+      case 'negate': case 'fn': return hasStatTerm(node.arg);
+      case 'binary': case 'min': case 'max': return hasStatTerm(node.left) || hasStatTerm(node.right);
+    }
+  };
+  const badOps = (where: string, ops: readonly OpT[]): string[] => {
+    const out: string[] = [];
+    for (const op of ops) {
+      if (!perRound(op)) continue;
+      const list = isTiers(op.amount) ? op.amount : [op.amount];
+      for (const form of list) {
+        if (hasStatTerm(form)) out.push(`${where}: ${op.op} = ${printFormula(form)}`);
+      }
+    }
+    return out;
+  };
+  const foeKeys = new Set<string>();
+  const scanStatus = (where: string, def: StatusDefT, onFoe: boolean, hits: string[]): void => {
+    const hitsFoes = onFoe || def.ops.some(o => o.op === 'aura' && (o.on === 'foes' || o.on === 'all'));
+    if (hitsFoes) hits.push(...badOps(`${where} (${def.label})`, def.ops));
+    const walkLand = (ctx: string, ops: readonly LandOpT[], targetFoe: boolean) => {
+      for (const op of ops) {
+        if (op.op !== 'applyStatus') continue;
+        if (targetFoe) foeKeys.add(op.key);
+        scanStatus(ctx, op.def, targetFoe, hits);
+      }
+    };
+    for (const tr of def.triggers ?? []) {
+      // On a friendly bearer (onFoe=false), 'other' / 'foes' / 'all' hits foes; on a foe bearer, 'self' / 'allies' / 'all' hits foes.
+      const trFoe = onFoe
+        ? (tr.to === 'self' || (typeof tr.to === 'object' && (tr.to.kind === 'bearer' || tr.to.on === 'allies' || tr.to.on === 'all')))
+        : (tr.to === 'other' || (typeof tr.to === 'object' && tr.to.kind !== 'bearer' && (tr.to.on === 'foes' || tr.to.on === 'all')));
+      walkLand(`${where} -> trigger(${tr.on})`, tr.ops, trFoe);
+    }
+    if ('stack' in def && def.stack?.threshold) {
+      const th = def.stack.threshold;
+      const thFoe = onFoe
+        ? (th.to.kind === 'bearer' || th.to.on === 'allies' || th.to.on === 'all')
+        : (th.to.kind !== 'bearer' && (th.to.on === 'foes' || th.to.on === 'all'));
+      walkLand(`${where} -> threshold`, th.ops, thFoe);
+    }
+    if (def.end) walkLand(`${where} -> end`, def.end.ops, onFoe);
+  };
+  const scanAbility = (where: string, a: AbilityT, hits: string[]): void => {
+    const hitsFoe = a.aim === 'foe' || a.aim === 'place' || a.foesOnly;
+    for (const op of a.ops) {
+      if (op.op !== 'applyStatus') continue;
+      if (hitsFoe) foeKeys.add(op.key);
+      scanStatus(`${where} ${a.name}`, op.def, hitsFoe, hits);
+    }
+    if (a.zone) {
+      const zoneFoe = a.foesOnly || a.aim === 'foe' || a.aim === 'place';
+      if (zoneFoe) hits.push(...badOps(`${where} ${a.name} zone:${a.zone.name}`, a.zone.ops));
+      for (const op of a.zone.ops) {
+        if (op.op === 'applyStatus') {
+          if (zoneFoe) foeKeys.add(op.key);
+          scanStatus(`${where} ${a.name} zone:${a.zone.name}`, op.def, zoneFoe, hits);
+        }
+      }
+      for (const op of a.zone.end ?? []) {
+        if (op.op === 'applyStatus') {
+          if (zoneFoe) foeKeys.add(op.key);
+          scanStatus(`${where} ${a.name} zone.end:${a.zone.name}`, op.def, zoneFoe, hits);
+        }
+      }
+    }
+  };
+
+  // Self-test against the three historical bugs and valid patterns
+  const pf = (s: string) => { const r = parseFormula(s, RULES); if (!r.ok) throw new Error(s); return r.formula; };
+  for (const bad of ['1d4 + 0.12 * finesse', '1d6 + 0.3 * aim', '0.25 * phys']) {
+    const h: string[] = [];
+    scanStatus('synthetic', { label: 'Bad', desc: '', ops: [{ op: 'damage', type: 'physical', when: 'turn', amount: pf(bad) }] }, true, h);
+    expect(h.length, `rule catches foe per-round formula "${bad}"`).toBe(1);
+  }
+  const goodHits: string[] = [];
+  scanStatus('synthetic-tiered', { label: 'Good', desc: '', ops: [{ op: 'damage', type: 'physical', when: 'turn', amount: [pf('1d4'), pf('1d6'), pf('1d8'), pf('2d6'), pf('2d8'), pf('3d6')] }] }, true, goodHits);
+  scanStatus('synthetic-self', { label: 'SelfRegen', desc: '', ops: [{ op: 'heal', when: 'turn', amount: pf('0.05 * hpmax') }] }, false, goodHits);
+  expect(goodHits, 'rule allows rank-tiered foe DoTs and self-buff per-round ops').toEqual([]);
+
+  const hits: string[] = [];
+  for (const [cls, sig] of Object.entries(CLASS_SIGNATURES)) {
+    if (!sig) continue;
+    if (sig.worn) scanStatus(`${cls} worn`, sig.worn.def, false, hits);
+    for (const st of sig.statuses ?? []) scanStatus(`${cls} status:${st.key}`, st.def, false, hits);
+    for (const a of sig.actives ?? []) scanAbility(`${cls} base`, a, hits);
+  }
+  for (const [cls, tree] of Object.entries(CLASS_TREES)) {
+    if (!tree) continue;
+    for (const n of tree.nodes) {
+      for (const g of n.gifts) {
+        if (g.kind === 'replace-worn') scanStatus(`${cls} ${n.id}`, g.worn.def, false, hits);
+        else if (g.kind === 'replace-active') scanAbility(`${cls} ${n.id}`, g.active, hits);
+      }
+    }
+  }
+  // Second pass for upgrade-status gifts targeting any foe status key discovered above
+  for (const [cls, tree] of Object.entries(CLASS_TREES)) {
+    if (!tree) continue;
+    for (const n of tree.nodes) {
+      for (const g of n.gifts) {
+        if (g.kind === 'upgrade-status' && foeKeys.has(g.targetKey)) {
+          scanStatus(`${cls} ${n.id} upgrade:${g.key}`, g.def, true, hits);
+        }
+      }
+    }
+  }
+  expect(hits, 'per-round ops on foe statuses or foe zones evaluate on the victim sheet; use rank-tiered dice/flat amounts instead of stat or sheet terms').toEqual([]);
+});
+
+test('no hasten op lands on its own user or bearer', async () => {
+  // land.ts hasteOn returns the body unchanged when t.id === user.id, so a self-only ability (aim: 'self', shape: 'self',
+  // or self-only reaction), a self-targeting trigger (to: 'self' or bearer), or a self-applied status's end/bearer-threshold
+  // with a hasten op silently does nothing. Use a refund op (or a self-curing statusGained refund trigger on an active) instead.
+  const { RULES } = await import('../src/core/rules.ts');
+  const { CLASS_SIGNATURES } = await import('../src/core/registry/class-powers.ts');
+  const { CLASS_TREES } = await import('../src/core/registry/class-trees.ts');
+  const { KEYSTONES } = await import('../src/core/registry/keystones.ts');
+  const { SKILL_ABILITIES } = await import('../src/core/registry/abilities.ts');
+  const { exampleSkills, exampleStatuses } = await import('../src/core/registry/kit-examples.ts');
+  const { BUILT_IN_STATUSES } = await import('../src/core/registry/statuses.ts');
+  const { BUILT_IN_ITEMS, itemOf } = await import('../src/core/registry/items.ts');
+  const { abilityOf, KIND_TAG } = await import('../src/core/registry/ability-kinds.ts');
+  const { abilityId } = await import('../src/core/combat/ability-types.ts');
+  const { tiles } = await import('../src/core/combat/space.ts');
+
+  type StatusDefT = import('../src/core/combat/effect-ops.ts').StatusDef;
+  type LandOpT = import('../src/core/combat/effect-ops.ts').LandOp;
+  type TriggerT = import('../src/core/combat/triggers.ts').Trigger;
+  type AbilityT = import('../src/core/combat/ability-types.ts').Ability;
+
+  const isSelfTarget = (to: TriggerT['to']): boolean => to === 'self' || (typeof to === 'object' && to.kind === 'bearer');
+  const isSelfAbility = (a: AbilityT): boolean =>
+    a.aim === 'self'
+    || a.shape.kind === 'self'
+    || a.react?.when === 'turn'
+    || ((a.react?.when === 'before' || a.react?.when === 'lethal') && a.react.reach === 0);
+
+  const selfKeys = new Set<string>();
+  const scanLand = (where: string, ops: readonly LandOpT[], targetsSelf: boolean, hits: string[]): void => {
+    for (const op of ops) {
+      if (targetsSelf && op.op === 'hasten') hits.push(`${where}: hasten lands on its own user/bearer`);
+      if (op.op === 'applyStatus') {
+        if (targetsSelf) selfKeys.add(op.key);
+        scanStatus(where, op.def, targetsSelf, hits);
+      }
+    }
+  };
+  const scanTrigger = (where: string, tr: TriggerT, hits: string[]): void => {
+    scanLand(`${where} -> trigger(${tr.on})`, tr.ops, isSelfTarget(tr.to), hits);
+  };
+  const scanStatus = (where: string, def: StatusDefT, onSelf: boolean, hits: string[]): void => {
+    for (const tr of def.triggers ?? []) scanTrigger(`${where} (${def.label})`, tr, hits);
+    if ('stack' in def && def.stack?.threshold) {
+      const th = def.stack.threshold;
+      scanLand(`${where} (${def.label}) -> threshold`, th.ops, onSelf && th.to.kind === 'bearer', hits);
+    }
+    if (def.end) scanLand(`${where} (${def.label}) -> end`, def.end.ops, onSelf, hits);
+  };
+  const scanAbility = (where: string, a: AbilityT, hits: string[]): void => {
+    const selfOnly = isSelfAbility(a);
+    for (const op of a.ops) {
+      if (selfOnly && op.op === 'hasten') hits.push(`${where} ${a.name}: hasten on self-only ability`);
+      if (op.op === 'applyStatus') {
+        if (selfOnly) selfKeys.add(op.key);
+        scanStatus(`${where} ${a.name}`, op.def, selfOnly, hits);
+      }
+    }
+    if (a.zone) {
+      for (const op of a.zone.ops) if (op.op === 'applyStatus') scanStatus(`${where} ${a.name} zone:${a.zone.name}`, op.def, false, hits);
+      for (const op of a.zone.end ?? []) if (op.op === 'applyStatus') scanStatus(`${where} ${a.name} zone.end:${a.zone.name}`, op.def, false, hits);
+      for (const tr of a.zone.triggers ?? []) scanTrigger(`${where} ${a.name} zone:${a.zone.name}`, tr, hits);
+    }
+  };
+
+  // Self-test: catches self-aimed abilities, place+self-shape blinks, self/bearer triggers, and self end/threshold hastens, while allowing ally hastens.
+  const badSelfActive = abilityOf('support', {
+    id: abilityId('lint-bad-self'), name: 'Bad Roar', aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
+    ops: [{ op: 'hasten', share: 0.25 }],
+  }, RULES);
+  const badBlinkActive = abilityOf('support', {
+    id: abilityId('lint-bad-blink'), name: 'Bad Blink', aim: 'place', shape: { kind: 'self' }, range: tiles(6), effect: null,
+    ops: [{ op: 'hasten', share: 0.25 }],
+  }, RULES);
+  const badTriggerStatus: StatusDefT = {
+    label: 'Bad Slip', desc: '', ops: [],
+    triggers: [{ on: 'avoided', tag: null, to: 'self', limit: { kind: 'round' }, ops: [{ op: 'hasten', share: 0.33 }] }],
+  };
+  const badEndStatus: StatusDefT = {
+    label: 'Bad End', desc: '', ops: [],
+    end: { cleanse: 'cancel', ops: [{ op: 'hasten', share: 0.2 }] },
+  };
+  const syntheticBad: string[] = [];
+  scanAbility('synthetic', badSelfActive, syntheticBad);
+  scanAbility('synthetic', badBlinkActive, syntheticBad);
+  scanStatus('synthetic', badTriggerStatus, true, syntheticBad);
+  scanStatus('synthetic', badEndStatus, true, syntheticBad);
+  expect(syntheticBad.length, 'rule catches all four self-hasten shapes').toBe(4);
+
+  const goodAllyActive = abilityOf('support', {
+    id: abilityId('lint-good-ally'), name: 'Good Rally', aim: 'ally', shape: { kind: 'touch', reach: tiles(6) }, range: tiles(6), effect: null,
+    ops: [{ op: 'hasten', share: 0.4 }],
+  }, RULES);
+  const goodAreaStatus: StatusDefT = {
+    label: 'Good Area', desc: '', ops: [],
+    triggers: [{ on: 'used', tag: KIND_TAG.support, to: { kind: 'area', radius: tiles(2), on: 'allies' }, limit: { kind: 'each' }, ops: [{ op: 'hasten', share: 0.15 }] }],
+  };
+  const syntheticGood: string[] = [];
+  scanAbility('synthetic', goodAllyActive, syntheticGood);
+  scanStatus('synthetic', goodAreaStatus, true, syntheticGood);
+  expect(syntheticGood, 'rule allows ally-targeted and ally-area hastens').toEqual([]);
+
+  const hits: string[] = [];
+  for (const [cls, sig] of Object.entries(CLASS_SIGNATURES)) {
+    if (!sig) continue;
+    if (sig.worn) scanStatus(`${cls} worn`, sig.worn.def, true, hits);
+    for (const st of sig.statuses ?? []) scanStatus(`${cls} status:${st.key}`, st.def, false, hits);
+    for (const a of sig.actives ?? []) scanAbility(`${cls} base`, a, hits);
+  }
+  for (const [cls, tree] of Object.entries(CLASS_TREES)) {
+    if (!tree) continue;
+    for (const n of tree.nodes) {
+      for (const g of n.gifts) {
+        if (g.kind === 'replace-worn') scanStatus(`${cls} ${n.id}`, g.worn.def, true, hits);
+        else if (g.kind === 'replace-active') scanAbility(`${cls} ${n.id}`, g.active, hits);
+      }
+    }
+  }
+  for (const [cls, tree] of Object.entries(CLASS_TREES)) {
+    if (!tree) continue;
+    for (const n of tree.nodes) {
+      for (const g of n.gifts) {
+        if (g.kind === 'upgrade-status') scanStatus(`${cls} ${n.id} upgrade:${g.key}`, g.def, selfKeys.has(g.targetKey), hits);
+      }
+    }
+  }
+  for (const [tier, group] of Object.entries(KEYSTONES)) {
+    for (const [k, make] of Object.entries(group)) {
+      const ks = make(RULES);
+      if (ks.worn) scanStatus(`keystone:${tier}:${k} ${ks.name}`, ks.worn, true, hits);
+      if (ks.active) scanAbility(`keystone:${tier}:${k} ${ks.name}`, ks.active, hits);
+      if (ks.awakened?.worn) scanStatus(`keystone:${tier}:${k} ${ks.name} awakened`, ks.awakened.worn, true, hits);
+      if (ks.awakened?.active) scanAbility(`keystone:${tier}:${k} ${ks.name} awakened`, ks.awakened.active, hits);
+    }
+  }
+  for (const [name, make] of Object.entries(SKILL_ABILITIES)) {
+    const a = make(RULES);
+    if (a) scanAbility(`skill:${name}`, a, hits);
+  }
+  for (const [k, def] of Object.entries(BUILT_IN_STATUSES)) scanStatus(`status:${k}`, def, false, hits);
+  for (const [k, def] of Object.entries(exampleStatuses(RULES))) scanStatus(`example-status:${k}`, def, false, hits);
+  for (const sk of exampleSkills(RULES)) {
+    if (sk.type === 'active') {
+      if (sk.ability) scanAbility(`example-skill:${sk.name}`, sk.ability, hits);
+    } else if (sk.worn) scanStatus(`example-skill:${sk.name}`, sk.worn, true, hits);
+  }
+  for (const [defId, seed] of BUILT_IN_ITEMS) {
+    const it = itemOf(RULES, seed);
+    if (it.worn) scanStatus(`item:${defId} ${it.name}`, it.worn, true, hits);
+    if (it.active) scanAbility(`item:${defId} ${it.name}`, it.active, hits);
+    if (it.target !== 'other') {
+      for (const op of it.effects ?? []) {
+        if (op.op === 'hasten') hits.push(`item:${defId} ${it.name}: hasten on self consumable`);
+        if (op.op === 'applyStatus') scanStatus(`item:${defId} ${it.name}`, op.def, true, hits);
+      }
+    }
+  }
+  expect(hits, 'hasteOn ignores t.id === user.id; use refund (or a self-curing statusGained refund trigger on a self-only active) instead of hasten').toEqual([]);
+});

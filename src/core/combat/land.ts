@@ -371,7 +371,7 @@ function echoed(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op: 'echo' }
 
 /** Whether a cure that takes `s` whole sets its end off (table 2.2: its `cleanse` is `land`). */
 export const cureLands = (s: Status): boolean => s.def.end !== undefined && endStep(ARMED, { type: 'cure' }, s.def.end).lands;
-/** What takes statuses off a body: a cure of a key (`stacks` of it, or all) or a dispel of the first harmful one or all. */
+/** What takes statuses off a body: a cure of a key (`stacks` of it, or all) or a dispel of the first harmful or helpful one or all. */
 export type Cleanse = Extract<LandOp, { readonly op: 'cureStatus' | 'dispel' }>;
 /**
  * A cure or a dispel on `t` at `now`, one edge for a use's op (resolve.ts, rule 18) and a land op (`landOne`): the body
@@ -379,7 +379,7 @@ export type Cleanse = Extract<LandOp, { readonly op: 'cureStatus' | 'dispel' }>;
  * sets off (`cureLands`), for the caller to land on the bearer.
  */
 export function cleansed(t: Body, c: Cleanse, now: Tick, R: OpRules): { target: Body; gone: Status[]; lands: Status[] } {
-  const list = c.op === 'dispel' ? dispelled(t.statuses, c.which) : cureStatus(t.statuses, c.key, c.stacks);
+  const list = c.op === 'dispel' ? dispelled(t.statuses, c.which, c.kind, t.mythic !== null) : cureStatus(t.statuses, c.key, c.stacks);
   const gone = t.statuses.filter(s => !list.some(x => x.key === s.key));
   return { target: withStatuses(t, list, now, R), gone, lands: gone.filter(cureLands) };
 }

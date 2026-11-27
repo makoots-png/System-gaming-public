@@ -1,7 +1,7 @@
 // standing.ts: whether a status counts at all (its own life, SMX-rules-2: `statusStep`, `counts`), and what a body's
 // statuses say of it in a use, for the ops of wave 2 (docs/agent-handoff/kits/design.md 8.1 and 8.2): the sheet changes
 // a `sheet` op makes after `derive`, the faces a foe crits it on (`exposed`), the tiles its
-// ranges gain, the shares of rule 11c (damage dealt and taken, heals received), and whether a status is harmful. Pure
+// ranges gain, the shares of rule 11c (damage dealt and taken, heals received), and whether a status is harmful or helpful. Pure
 // reads: nothing here changes a body. resolve.ts, land.ts, fight-turn.ts and effect-ops.ts `modified` call it. A new
 // reading of a wave 2 op is a function here with a case in tests/effect-ops.test.ts ("wave 2's sheet and share ops").
 
@@ -441,6 +441,9 @@ export function boostsOn(user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body,
   return [...of(user, 'attack'), ...of(target, 'defend')];
 }
 
+const firstTier = <T>(v: Tiered<T>): T => atTier(v, 0);
+const firstSign = (v: Tiered<Formula>): number => signOf(firstTier(v));
+
 /**
  * Whether a status is harmful (kits design 8.1): one rule for a safeguard, a dispel and a move of `harmful`. Its ops hurt
  * (damage) or hold back (a root, a hold, a slow, a stat lowered, a `sheet` op that lowers or raises `exposed`, a `share`
@@ -449,10 +452,34 @@ export function boostsOn(user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body,
  * lowers and `0.1 * hpmax` raises, on any bearer.
  */
 export function harmful(def: Pick<StatusDef, 'ops'>): boolean {
-  const first = <T>(v: Tiered<T>): T => atTier(v, 0);
-  const sign = (v: Tiered<Formula>): number => signOf(first(v));
   return def.ops.some(o => o.op === 'damage' || o.op === 'root' || o.op === 'hold' || o.op === 'taunt'
-    || (o.op === 'speed' && first(o.pct) < 0) || (o.op === 'stat' && sign(o.amount) < 0)
-    || (o.op === 'sheet' && (isFormulaSheetOp(o) ? sign(o.amount) < 0 : o.key === 'exposed' ? first(o.amount) > 0 : first(o.amount) < 0))
-    || (o.op === 'share' && (o.on === 'taken' ? first(o.pct) > 0 : first(o.pct) < 0)));
+    || (o.op === 'speed' && firstTier(o.pct) < 0) || (o.op === 'stat' && firstSign(o.amount) < 0)
+    || (o.op === 'sheet' && (isFormulaSheetOp(o) ? firstSign(o.amount) < 0 : o.key === 'exposed' ? firstTier(o.amount) > 0 : firstTier(o.amount) < 0))
+    || (o.op === 'share' && (o.on === 'taken' ? firstTier(o.pct) > 0 : firstTier(o.pct) < 0)));
+}
+
+/**
+ * Whether a status is helpful (Wave 3 Hook 2): not harmful, and at least one op helps its bearer (healing, mana,
+ * fatigue removed, speed or stat raised, a `sheet` op that raises or lowers `exposed`, a `share` that cuts damage
+ * taken or raises damage dealt, healing or shields, a ward, safeguard, advantage, a held die, stealth or staying
+ * hidden, alert, channel protection, lower stagger fill, or an action-time refund). A `shield` op pays once into the
+ * row's single shield pool as it lands (`statusShield`), so removing a shield-only status removes nothing and it stays
+ * neutral; neutral marks and delayed-end statuses with no helping op are also neither harmful nor helpful, so neither
+ * dispel touches them.
+ */
+export function helpful(def: Pick<StatusDef, 'ops'>): boolean {
+  if (harmful(def)) return false;
+  return def.ops.some(o => (o.op === 'heal' && firstSign(o.amount) > 0)
+    || (o.op === 'mana' && firstSign(o.amount) > 0)
+    || (o.op === 'fatigue' && firstSign(o.amount) < 0)
+    || (o.op === 'speed' && firstTier(o.pct) > 0)
+    || (o.op === 'stat' && firstSign(o.amount) > 0)
+    || (o.op === 'sheet' && (isFormulaSheetOp(o) ? firstSign(o.amount) > 0 : o.key === 'exposed' ? firstTier(o.amount) < 0 : firstTier(o.amount) > 0))
+    || (o.op === 'share' && (o.on === 'taken' ? firstTier(o.pct) < 0 : firstTier(o.pct) > 0))
+    || o.op === 'untargetable' || o.op === 'invulnerable' || o.op === 'safeguard'
+    || (o.op === 'edge' && o.keep === 'better')
+    || o.op === 'boost' || o.op === 'hidden' || o.op === 'stayHidden' || o.op === 'alert'
+    || (o.op === 'channel' && o.mode === 'protect')
+    || (o.op === 'staggerRate' && firstTier(o.pct) < 0)
+    || (o.op === 'refund' && firstTier(o.pct) > 0 && o.chance > 0));
 }

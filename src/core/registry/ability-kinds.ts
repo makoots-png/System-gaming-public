@@ -258,7 +258,11 @@ function wave2Lines(a: Pick<Ability, 'range' | 'move' | 'react' | 'zoneAct'> & {
     const what = guard && guard.op === 'guard' ? `, reducing strike damage by ${Math.round(guard.share * 100)}%` : negate ? ', canceling the rest of the effect' : '';
     out.push(`Reaction (${WHEN_TEXT[a.react.when]}${who}${what}). Its action time delays your next turn.`);
   }
-  if (a.zoneAct) out.push(a.zoneAct.act === 'shift' ? `Moves your ${a.zoneAct.name ?? 'field'} up to ${tilesWord(a.zoneAct.by)} toward where you aim.` : `Widens your ${a.zoneAct.name ?? 'field'} by ${tilesWord(a.zoneAct.by)}.`);
+  if (a.zoneAct) out.push(
+    a.zoneAct.act === 'shift' ? `Moves your ${a.zoneAct.name ?? 'field'} up to ${tilesWord(a.zoneAct.by)} toward where you aim.`
+    : a.zoneAct.act === 'grow' ? `Widens your ${a.zoneAct.name ?? 'field'} by ${tilesWord(a.zoneAct.by)}.`
+    : `Erases up to ${a.zoneAct.by} foe ${a.zoneAct.name ?? (a.zoneAct.by === 1 ? 'field' : 'fields')} nearest where you aim.`,
+  );
   return out;
 }
 /** An ability's kit parts in words (kits design 5.1): its prices, its gates, its tags and its summon, then wave 2's. */

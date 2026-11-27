@@ -261,6 +261,39 @@ export const WORST_SKILL_GRIEVOUS: Skill = {
   id: saveId('s', 915),
 };
 
+export const WORST_SKILL_DISPEL_HELPFUL: Skill = {
+  ...must(parseSkill({
+    name: 'Unweave Boon',
+    level: 4,
+    label: 'Purge',
+    desc: 'Removes helpful statuses from a foe and cures harmful statuses.',
+    type: 'active',
+    ability: {
+      ...abilityOf('curse', { id: abilityId('ab-unweave-boon'), name: 'Unweave Boon' }, RULES),
+      ops: [
+        { op: 'dispel', which: 'first', kind: 'helpful' },
+        { op: 'dispel', which: 'all' },
+      ],
+    },
+  }), 'WORST_SKILL_DISPEL_HELPFUL'),
+  id: saveId('s', 916),
+};
+
+export const WORST_SKILL_ZONE_ERASE: Skill = {
+  ...must(parseSkill({
+    name: 'Clear Mire',
+    level: 4,
+    label: 'Field',
+    desc: 'Erases foe fields near the aim tile.',
+    type: 'active',
+    ability: {
+      ...abilityOf('blast', { id: abilityId('ab-clear-mire'), name: 'Clear Mire' }, RULES),
+      zoneAct: { act: 'erase', name: 'Mire', by: 2 },
+    },
+  }), 'WORST_SKILL_ZONE_ERASE'),
+  id: saveId('s', 917),
+};
+
 export const WORST_SKILL_ACTIVE: Skill = {
   ...must(parseSkill({
     name: 'Starfall Domain',

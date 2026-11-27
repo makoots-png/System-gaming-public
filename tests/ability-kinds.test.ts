@@ -313,6 +313,9 @@ describe('the conditional scalers, in place of the execute (kits design 8.0)', (
       zoneAct: { act: 'shift' as const, name: 'Aura', by: 4 }, gates: [{ kind: 'inside' as const, zone: 'Aura' }] };
     expect(parseAbility(JSON.parse(JSON.stringify(a)), RULES)).toEqual(a);
     expect(parseAbility({ ...JSON.parse(JSON.stringify(a)), zoneAct: { act: 'grow', name: null, by: 9 } }, RULES)?.zoneAct).toEqual({ act: 'grow', name: null, by: RULES.fight.kit.zoneGrow });
+    expect(parseAbility({ ...JSON.parse(JSON.stringify(a)), zoneAct: { act: 'erase', name: 'Mire', by: 2 } }, RULES)?.zoneAct).toEqual({ act: 'erase', name: 'Mire', by: 2 });
+    expect(parseAbility({ ...JSON.parse(JSON.stringify(a)), zoneAct: { act: 'erase', name: null, by: 99 } }, RULES)?.zoneAct).toEqual({ act: 'erase', name: null, by: RULES.fight.kit.zonesPerOwner });
+    expect(parseAbility({ ...JSON.parse(JSON.stringify(a)), zoneAct: { act: 'erase', name: null, by: 0 } }, RULES)?.zoneAct).toEqual({ act: 'erase', name: null, by: 1 });
     expect(parseAbility({ ...JSON.parse(JSON.stringify(a)), react: { when: 'sometimes', reach: 1 } }, RULES)).toBeNull();
   });
 
@@ -337,5 +340,8 @@ describe('wave 2\'s parts of an ability in sentences (kits design 8.12)', () => 
     expect(describeAbility({ ...of('strike'), react: { when: 'before', reach: tiles(0) }, ops: [{ op: 'guard', share: 0.3 }] }, RULES))
       .toContain('Reaction (before a foe\'s ability lands on you, reducing strike damage by 30%). Its action time delays your next turn.');
     expect(describeAbility({ ...of('blast'), zoneAct: { act: 'grow', name: 'Aura', by: 2 } }, RULES)).toContain('Widens your Aura by 2 tiles.');
+    expect(describeAbility({ ...of('blast'), zoneAct: { act: 'erase', name: null, by: 1 } }, RULES)).toContain('Erases up to 1 foe field nearest where you aim.');
+    expect(describeAbility({ ...of('blast'), zoneAct: { act: 'erase', name: null, by: 2 } }, RULES)).toContain('Erases up to 2 foe fields nearest where you aim.');
+    expect(describeAbility({ ...of('blast'), zoneAct: { act: 'erase', name: 'Mire', by: 2 } }, RULES)).toContain('Erases up to 2 foe Mire nearest where you aim.');
   });
 });

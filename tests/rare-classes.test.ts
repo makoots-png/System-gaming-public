@@ -11,7 +11,7 @@ import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { LandOp, Op, StatusDef } from '../src/core/combat/effect-ops.ts';
-import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { parseAbility, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { cleansed, landEnd } from '../src/core/combat/land.ts';
 import { reduce } from '../src/core/combat/fight.ts';
 import type { Fight, Running } from '../src/core/combat/fight.ts';
@@ -20,7 +20,7 @@ import { damageShare, rangeWith } from '../src/core/combat/standing.ts';
 import { radiusAt } from '../src/core/combat/zones.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import { place, tiles } from '../src/core/combat/space.ts';
-import { tick } from '../src/core/combat/timeline.ts';
+import { cost, interval, tick } from '../src/core/combat/timeline.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { FORMULA_PARTS, partsOf } from '../src/core/formula.ts';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
@@ -40,6 +40,11 @@ import type { ClassSignature } from '../src/core/registry/class-powers.ts';
 import { BRAMBLEGUARD_SIGNATURE, BRAMBLEGUARD_TREE } from '../src/core/registry/class-brambleguard.ts';
 import { PYROMANCER_SIGNATURE, PYROMANCER_TREE } from '../src/core/registry/class-pyromancer.ts';
 import { SNIPER_SIGNATURE, SNIPER_TREE } from '../src/core/registry/class-sniper.ts';
+import { BERSERKER_SIGNATURE, BERSERKER_TREE } from '../src/core/registry/class-berserker.ts';
+import { CLERIC_SIGNATURE, CLERIC_TREE } from '../src/core/registry/class-cleric.ts';
+import { NIGHTBLADE_SIGNATURE, NIGHTBLADE_TREE } from '../src/core/registry/class-nightblade.ts';
+import { BASTION_SIGNATURE, BASTION_TREE } from '../src/core/registry/class-bastion.ts';
+import { chainStepsOf } from '../src/core/registry/jobs.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { dev } from './fixtures/ids.ts';
@@ -53,7 +58,7 @@ const AT = '2026-11-25T12:00:00.000Z';
 const nid = (s: string): ClassNodeId => parseClassNodeId(s)!;
 
 type RareSpec = {
-  readonly name: 'Brambleguard' | 'Pyromancer' | 'Sniper';
+  readonly name: 'Brambleguard' | 'Pyromancer' | 'Sniper' | 'Berserker' | 'Cleric' | 'Nightblade' | 'Bastion';
   readonly sig: ClassSignature;
   readonly tree: ClassTree;
   readonly file: string;
@@ -122,6 +127,80 @@ const RARE_SPECS: readonly RareSpec[] = [
       'sniper-braced-perch',
     ],
     activeIds: ['sniper-longshot', 'sniper-sightline'],
+  },
+  {
+    name: 'Berserker',
+    sig: BERSERKER_SIGNATURE,
+    tree: BERSERKER_TREE,
+    file: 'src/core/registry/class-berserker.ts',
+    stats: { str: 56, vit: 33 },
+    forks: [['zerk-a5-l', 'zerk-a5-r'], ['zerk-b5-l', 'zerk-b5-r']],
+    scalerForks: ['zerk-a5-r', 'zerk-b5-l'],
+    statusKeys: [
+      'zerk-undying-fury',
+      'zerk-crimson-berserk',
+      'zerk-bloodrage',
+      'zerk-bloodrage-ii',
+      'zerk-rending-wound',
+      'zerk-unstoppable',
+      'zerk-roar-rush',
+      'zerk-frenzy-rush',
+    ],
+    activeIds: ['zerk-reckless-cleave', 'zerk-blood-roar'],
+  },
+  {
+    name: 'Cleric',
+    sig: CLERIC_SIGNATURE,
+    tree: CLERIC_TREE,
+    file: 'src/core/registry/class-cleric.ts',
+    stats: { dis: 56, pre: 33 },
+    forks: [['cleric-a5-l', 'cleric-a5-r'], ['cleric-b5-l', 'cleric-b5-r']],
+    scalerForks: ['cleric-a5-l', 'cleric-b5-r'],
+    statusKeys: [
+      'cleric-devoted-light',
+      'cleric-high-votive',
+      'cleric-consecrated',
+      'cleric-consecrated-ii',
+      'cleric-aegis-prayer',
+      'cleric-humbled',
+      'cleric-humbled-ii',
+      'cleric-searing-censure',
+    ],
+    activeIds: ['cleric-votive-ward', 'cleric-radiant-censure'],
+  },
+  {
+    name: 'Nightblade',
+    sig: NIGHTBLADE_SIGNATURE,
+    tree: NIGHTBLADE_TREE,
+    file: 'src/core/registry/class-nightblade.ts',
+    stats: { agi: 56, ins: 33 },
+    forks: [['night-a5-l', 'night-a5-r'], ['night-b5-l', 'night-b5-r']],
+    scalerForks: ['night-a5-l', 'night-b5-r'],
+    statusKeys: [
+      'night-shadow-craft',
+      'night-master-of-dusk',
+      'night-step',
+      'night-shrouded',
+      'night-ghost-shroud',
+      'night-dusk-bleed',
+    ],
+    activeIds: ['night-umbral-cloak', 'night-dusk-strike'],
+  },
+  {
+    name: 'Bastion',
+    sig: BASTION_SIGNATURE,
+    tree: BASTION_TREE,
+    file: 'src/core/registry/class-bastion.ts',
+    stats: { vit: 56, str: 33 },
+    forks: [['bastion-a5-l', 'bastion-a5-r'], ['bastion-b5-l', 'bastion-b5-r']],
+    scalerForks: ['bastion-a5-l', 'bastion-b5-l'],
+    statusKeys: [
+      'bastion-phalanx-oath',
+      'bastion-unbroken-phalanx',
+      'bastion-phalanx-lock',
+      'bastion-phalanx-ward',
+    ],
+    activeIds: ['bastion-phalanx-guard', 'bastion-vanguard-slam'],
   },
 ];
 
@@ -207,7 +286,7 @@ describe('Wave 1 Rare trees, gold pricing, and budget compliance', () => {
       }
     });
 
-    test(`${spec.name} unspecialized root stays within the ~12-point Rare budget at rank C and its base actives fit worth.ts SA budgets`, () => {
+    test(`${spec.name} unspecialized root stays within the ~12-point Rare budget at rank C and all base and fork actives fit worth.ts SA budgets`, () => {
       const rootSpend = titleSpend(
         { bonus: spec.sig.bonus ?? {}, band: 'C', ...(spec.sig.worn ? { worn: spec.sig.worn.def } : {}) },
         RULES,
@@ -216,9 +295,14 @@ describe('Wave 1 Rare trees, gold pricing, and budget compliance', () => {
       expect(rootSpend.points, `${spec.name} root spend ${rootSpend.points.toFixed(2)}`).toBeGreaterThan(0);
       expect(rootSpend.points, `${spec.name} root spend ${rootSpend.points.toFixed(2)}`).toBeLessThanOrEqual(12.0);
 
-      for (const a of spec.sig.actives ?? []) {
+      const allActives = [
+        ...(spec.sig.actives ?? []),
+        ...spec.tree.nodes.flatMap(n => n.gifts.flatMap(g => (g.kind === 'replace-active' ? [g.active] : []))),
+      ];
+      for (const a of allActives) {
         const w = abilityWorth(a, RULES, { rank: 'C' });
         expect(w.over, `${spec.name} active ${a.name} worth ${w.worth.toFixed(2)} vs budget ${w.budget.toFixed(2)}`).toBe(false);
+        expect(parseAbility(JSON.parse(JSON.stringify(a)), RULES), `${spec.name} parseAbility(${a.name})`).toEqual(a);
       }
     });
 
@@ -317,13 +401,13 @@ describe('Status keys, wire round-trip, anti-drift copy, voice, and name collisi
       }
     }
 
-    // Verify every Rare status key resolves via classStatusDef, shippedStatusDef, and parseStatusDef
+    // Verify every Rare status key resolves via classStatusDef, shippedStatusDef, and parseStatusDef (toEqual round-trip)
     for (const spec of RARE_SPECS) {
       for (const k of spec.statusKeys) {
         const def = classStatusDef(k);
         expect(def, `classStatusDef(${k})`).not.toBeNull();
         expect(shippedStatusDef(statusKey(k))).toEqual(def);
-        expect(parseStatusDef(JSON.parse(JSON.stringify(def)), RULES), `parseStatusDef(${k})`).not.toBeNull();
+        expect(parseStatusDef(JSON.parse(JSON.stringify(def)), RULES, k), `parseStatusDef(${k})`).toEqual(def);
       }
     }
   });
@@ -788,4 +872,277 @@ describe('Rare class combat mechanics', () => {
     expect(kindleAoe / flashAoe, `Kindle/Flash 3T rot = ${(kindleAoe / flashAoe).toFixed(3)}`).toBeLessThan(1.15);
     // Runs 440 6-round fights across 11 variants (~1.4 s idle, ~3.5 s under parallel load); 30 s avoids default-5 s CI flakes.
   }, 30_000);
+
+  test('Wave 3 Rares carry bespoke level-20 rareSteps job change chains', () => {
+    const expected: readonly [RareSpec['name'], string, string][] = [
+      ['Berserker', 'Rare Job Change 2/3: The Blood Pit', 'Rare Job Change 3/3: Crimson Ravager'],
+      ['Cleric', 'Rare Job Change 2/3: The Shattered Sanctuary', 'Rare Job Change 3/3: Ashen Heretic'],
+      ['Nightblade', 'Rare Job Change 2/3: The Moonless Alley', 'Rare Job Change 3/3: Gloom Stalker'],
+      ['Bastion', 'Rare Job Change 2/3: The Iron Bridge', 'Rare Job Change 3/3: Rampart Captain'],
+    ];
+    for (const [name, step2, step3] of expected) {
+      const steps = chainStepsOf(name);
+      expect(steps[0]).toMatchObject({ goal: 'level', level: 20 });
+      expect(steps[1].title).toBe(step2);
+      expect(steps[2].title).toBe(step3);
+    }
+  });
+
+  test('Berserker: Undying Fury stacks Bloodrage on struck without lowering armor, heals on kill; Reckless Cleave & Blood Roar pay HP; Crimson Berserk upgrades Bloodrage to Bloodrage II', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Berserker')!;
+    const cleaveId = wornAbilityId(abilityId('zerk-reckless-cleave'));
+    const roarId = wornAbilityId(abilityId('zerk-blood-roar'));
+
+    // Base: Blood Roar pays 8% HP, grants 2 stacks Bloodrage (+10% dealt, +8% speed, armor intact) + 12% max HP shield + 25% turn refund
+    let f = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    const h0 = f.rows.find(x => x.id === combatantId('h1'))!;
+    const hp0 = rowHp(h0);
+    const armor0 = h0.sheet.armor;
+    const speed0 = h0.sheet.speed;
+    const roarNow = f.now;
+
+    let r = reduce(f, { type: 'act', by: combatantId('h1'), ability: roarId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hAfterRoar = f.rows.find(x => x.id === combatantId('h1'))!;
+    const baseQuick = interval(hAfterRoar.speed, cost(RULES.fight.cost.quick), RULES.fight);
+    expect(rowHp(hAfterRoar)).toBeLessThan(hp0);
+    expect(hAfterRoar.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(hAfterRoar.statuses.find(s => s.key === statusKey('zerk-bloodrage'))?.stacks).toBe(2);
+    expect(hAfterRoar.statuses.some(s => s.key === statusKey('zerk-roar-rush'))).toBe(false);
+    expect(hAfterRoar.sheet.armor).toBe(armor0);
+    expect(hAfterRoar.sheet.speed).toBeGreaterThan(speed0);
+    expect(hAfterRoar.at - roarNow).toBe(baseQuick - Math.round(baseQuick * 25 / 100));
+    expect(hAfterRoar.at - roarNow).toBeLessThan(baseQuick);
+
+    // D5 Fork B-Right Frenzy Rush: Blood Roar refunds 35% of its quick action time and clears carrier status
+    const frenzyNodes = fullNodesFor(spec.tree, ['zerk-a5-l', 'zerk-b5-r']).filter(id => id !== nid('zerk-cap'));
+    const ff = startFight(spec, frenzyNodes, place(3, 3), place(4, 3), 'C');
+    const frenzyNow = ff.now;
+    const fr = reduce(ff, { type: 'act', by: combatantId('h1'), ability: roarId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(fr.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const hAfterFrenzy = (fr.fight as Running).rows.find(x => x.id === combatantId('h1'))!;
+    const frenzyQuick = interval(hAfterFrenzy.speed, cost(RULES.fight.cost.quick), RULES.fight);
+    expect(hAfterFrenzy.statuses.some(s => s.key === statusKey('zerk-frenzy-rush'))).toBe(false);
+    expect(hAfterFrenzy.at - frenzyNow).toBe(frenzyQuick - Math.round(frenzyQuick * 35 / 100));
+    expect(hAfterFrenzy.at - frenzyNow).toBeLessThan(frenzyQuick - Math.round(frenzyQuick * 25 / 100));
+
+    // Monster strikes Berserker: Undying Fury adds a 3rd Bloodrage stack
+    const m1 = f.rows.find(x => x.id === combatantId('m1'))!;
+    r = reduce(f, { type: 'act', by: combatantId('m1'), ability: m1.abilities[0]!.id, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [10] }, react: { [combatantId('h1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(f.rows.find(x => x.id === combatantId('h1'))!.statuses.find(s => s.key === statusKey('zerk-bloodrage'))?.stacks).toBe(3);
+
+    // Reckless Cleave pays 6% HP and kills a 1-HP foe -> Undying Fury heals 7% max HP
+    f = {
+      ...f,
+      rows: f.rows.map(x => (x.id === combatantId('m1') ? { ...x, life: { at: 'up' as const, hp: 1 } } : x)),
+    };
+    const hpBeforeKill = rowHp(f.rows.find(x => x.id === combatantId('h1'))!);
+    const hpCost = Math.round(0.06 * f.rows.find(x => x.id === combatantId('h1'))!.sheet.hpMax);
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: cleaveId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [8] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(rowHp(f.rows.find(x => x.id === combatantId('h1'))!)).toBeGreaterThan(hpBeforeKill - hpCost);
+
+    // Capstone Crimson Berserk + Unstoppable Rage: Blood Roar applies Bloodrage II (cap 5) + Unstoppable safeguard
+    const capNodes = fullNodesFor(spec.tree, ['zerk-a5-l', 'zerk-b5-l']);
+    let cf = startFight(spec, capNodes, place(3, 3), place(4, 3), 'C');
+    r = reduce(cf, { type: 'act', by: combatantId('h1'), ability: roarId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    cf = r.fight as Running;
+    const ch = cf.rows.find(x => x.id === combatantId('h1'))!;
+    expect(ch.statuses.find(s => s.key === statusKey('zerk-bloodrage-ii'))?.stacks).toBe(2);
+    expect(ch.statuses.some(s => s.key === statusKey('zerk-bloodrage'))).toBe(false);
+    expect(ch.statuses.some(s => s.key === statusKey('zerk-unstoppable'))).toBe(true);
+  });
+
+  test('Cleric: Devoted Light restores mana and heals on support use; Votive Ward consecrates; Aegis Prayer shields nearby allies sparing foes; Radiant Censure applies Humbled; High Votive shields party', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Cleric')!;
+    const wardId = wornAbilityId(abilityId('cleric-votive-ward'));
+    const censureId = wornAbilityId(abilityId('cleric-radiant-censure'));
+
+    // Base Votive Ward on self (partially hurt & full mana): shields, applies Consecrated (+8 armor, +8 resist, safeguard), triggers Devoted Light (+4 mana, +2% HP)
+    let f = startFight(spec, [], place(3, 3), place(6, 3), 'C');
+    const h0 = f.rows.find(x => x.id === combatantId('h1'))!;
+    const startHp = Math.floor(h0.sheet.hpMax * 0.6);
+    const startMana = h0.sheet.manaMax;
+    const armor0 = h0.sheet.armor;
+    const resist0 = h0.sheet.resist;
+    f = {
+      ...f,
+      rows: f.rows.map(x => (x.id === combatantId('h1') ? { ...x, life: { at: 'up' as const, hp: startHp }, mana: startMana } : x)),
+    };
+    let r = reduce(f, { type: 'act', by: combatantId('h1'), ability: wardId, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [6] }, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hAfterWard = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hAfterWard.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(hAfterWard.statuses.some(s => s.key === statusKey('cleric-consecrated'))).toBe(true);
+    expect(hAfterWard.sheet.armor).toBe(armor0 + 8);
+    expect(hAfterWard.sheet.resist).toBe(resist0 + 8);
+    expect(rowHp(hAfterWard)).toBeGreaterThan(startHp);
+    // Paid 7 mana, Devoted Light restored 4 mana -> net -3 (startMana - 3)
+    expect(hAfterWard.mana).toBe(startMana - 7 + 4);
+
+    // Radiant Censure deals arcane damage and applies Humbled (-12% dealt, exposed +1)
+    const foeHp0 = rowHp(f.rows.find(x => x.id === combatantId('m1'))!);
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: censureId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [6] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const foeAfterCensure = f.rows.find(x => x.id === combatantId('m1'))!;
+    expect(rowHp(foeAfterCensure)).toBeLessThan(foeHp0);
+    expect(foeAfterCensure.statuses.some(s => s.key === statusKey('cleric-humbled'))).toBe(true);
+    expect(damageShare(foeAfterCensure, hAfterWard, RULES)).toBeCloseTo(0.88, 2);
+
+    // D5 Aegis Prayer + Capstone High Votive: shields Cleric and ally within 2 tiles, spares adjacent foe
+    const aegisNodes = fullNodesFor(spec.tree, ['cleric-a5-l', 'cleric-b5-l']);
+    const clericH = makeRareHunter(spec, aegisNodes, 'C');
+    const allyH = makeRareHunter(RARE_SPECS[0]!, [], 'C');
+    const clericRow = hunterRow(clericH, combatantId('h1'), RULES);
+    const allyRow = hunterRow(allyH, combatantId('h2'), RULES);
+    const foe = monsterRows({ name: 'Target', rank: 'C', archetype: 'brute', kind: 'boss', tweak: { hp: 3 }, abilities: [], statuses: [] }, [combatantId('m1')], RULES)[0]!;
+    let af = reduce(null, { type: 'add', fightId: fightId('f-cleric-aegis'), rows: [{ ...clericRow, place: place(3, 3) }, { ...allyRow, place: place(5, 3) }, { ...foe, place: place(4, 3) }], openings: [] }, { rules: RULES }).fight!;
+    af = reduce(af, { type: 'start', openings: [{ id: combatantId('h1'), d20: 20, tie: 3 }, { id: combatantId('h2'), d20: 10, tie: 2 }, { id: combatantId('m1'), d20: 1, tie: 1 }] }, { rules: RULES }).fight!;
+    r = reduce(af, { type: 'act', by: combatantId('h1'), ability: wardId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    af = r.fight as Running;
+    expect(af.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('cleric-consecrated'))).toBe(true);
+    expect(af.rows.find(x => x.id === combatantId('h2'))!.statuses.some(s => s.key === statusKey('cleric-consecrated'))).toBe(true);
+    expect(af.rows.find(x => x.id === combatantId('h2'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(af.rows.find(x => x.id === combatantId('m1'))!.shield).toBeNull();
+    expect(af.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('cleric-consecrated'))).toBe(false);
+  });
+
+  test('Nightblade: Umbral Cloak hides with Shrouded (breaking on dealt damage), Dusk Strike applies Dusk Bleed, Smoke Veil slows foes, and Master of Dusk re-shrouds on kill', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Nightblade')!;
+    const cloakId = wornAbilityId(abilityId('night-umbral-cloak'));
+    const strikeId = wornAbilityId(abilityId('night-dusk-strike'));
+
+    // Base: Shadow Craft adds 4 flat armorPen; Umbral Cloak grants Shrouded (+10% speed, hidden)
+    let f = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    const h0 = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(h0.sheet.armorPenFlat).toBe(4);
+    const speed0 = h0.sheet.speed;
+
+    let r = reduce(f, { type: 'act', by: combatantId('h1'), ability: cloakId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const hShrouded = f.rows.find(x => x.id === combatantId('h1'))!;
+    expect(hShrouded.statuses.some(s => s.key === statusKey('night-shrouded'))).toBe(true);
+    expect(hShrouded.sheet.speed).toBeGreaterThan(speed0);
+
+    // Dusk Strike lands Dusk Bleed (exposed +1 + physical turn DoT) and breaks Shrouded (`ends.dealt: true`)
+    r = reduce(f, { type: 'act', by: combatantId('h1'), ability: strikeId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    expect(f.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('night-shrouded'))).toBe(false);
+    expect(f.rows.find(x => x.id === combatantId('m1'))!.statuses.some(s => s.key === statusKey('night-dusk-bleed'))).toBe(true);
+
+    // D5 Smoke Veil + Capstone Master of Dusk: Umbral Cloak drops Smoke Veil zone sparing party; kill grants Shrouded
+    const smokeNodes = fullNodesFor(spec.tree, ['night-a5-r', 'night-b5-r']);
+    let sf = startFight(spec, smokeNodes, place(3, 3), place(4, 3), 'C');
+    r = reduce(sf, { type: 'act', by: combatantId('h1'), ability: cloakId, aim: combatantId('h1'), rolls: { dice: {}, react: {} }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    sf = r.fight as Running;
+    const veil = sf.zones.find(z => z.name === 'Smoke Veil');
+    expect(veil).toBeDefined();
+    expect(veil?.spares).toBe('party');
+
+    // Kill a 1-HP foe -> Master of Dusk grants 1r Shrouded after breaking the opening Shrouded
+    sf = {
+      ...sf,
+      rows: sf.rows.map(x => (x.id === combatantId('m1') ? { ...x, life: { at: 'up' as const, hp: 1 } } : x)),
+    };
+    r = reduce(sf, { type: 'act', by: combatantId('h1'), ability: strikeId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [6] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    sf = r.fight as Running;
+    expect(sf.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('night-shrouded'))).toBe(true);
+  });
+
+  test('Bastion: Phalanx Oath shields on struck; Vanguard Slam shoves, staggers, and taunts; Phalanx Guard intercepts ally strikes; Unbroken Phalanx emits armor/mitigation aura', () => {
+    const spec = RARE_SPECS.find(s => s.name === 'Bastion')!;
+    const guardId = wornAbilityId(abilityId('bastion-phalanx-guard'));
+    const slamId = wornAbilityId(abilityId('bastion-vanguard-slam'));
+
+    // Vanguard Slam pushes foe 1 tile away (4,3 -> 5,3), fills stagger bar, and applies Phalanx Lock (taunt)
+    let f = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    f = { ...f, rows: f.rows.map(x => (x.id === combatantId('m1') ? { ...x, at: tick(f.now + 200) } : x)) };
+    const foeHp0 = rowHp(f.rows.find(x => x.id === combatantId('m1'))!);
+    let r = reduce(f, { type: 'act', by: combatantId('h1'), ability: slamId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [5] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight as Running;
+    const foeAfterSlam = f.rows.find(x => x.id === combatantId('m1'))!;
+    expect(rowHp(foeAfterSlam)).toBeLessThan(foeHp0);
+    expect(foeAfterSlam.place).toEqual(place(5, 3));
+    expect(foeAfterSlam.statuses.some(s => s.key === statusKey('bastion-phalanx-lock'))).toBe(true);
+    expect(foeAfterSlam.stagger?.fill ?? 0).toBeGreaterThan(0);
+
+    // Phalanx Oath shields Bastion (3% max HP) once a round when struck
+    let sf = startFight(spec, [], place(3, 3), place(4, 3), 'C');
+    const foeForStrike = sf.rows.find(x => x.id === combatantId('m1'))!;
+    r = reduce(sf, { type: 'act', by: combatantId('m1'), ability: foeForStrike.abilities[0]!.id, aim: combatantId('h1'), rolls: { dice: { [combatantId('h1')]: [6] }, react: { [combatantId('h1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    sf = r.fight as Running;
+    expect(sf.rows.find(x => x.id === combatantId('h1'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+
+    // Arm Phalanx Guard reaction (reach 2) and protect an adjacent ally from a foe strike
+    const bastionH = makeRareHunter(spec, [], 'C');
+    const allyH = makeRareHunter(RARE_SPECS[1]!, [], 'C');
+    const bRow = hunterRow(bastionH, combatantId('h1'), RULES);
+    const aRow = hunterRow(allyH, combatantId('h2'), RULES);
+    const foe = monsterRows({ name: 'Target', rank: 'C', archetype: 'brute', kind: 'boss', tweak: { hp: 3 }, abilities: [], statuses: [] }, [combatantId('m1')], RULES)[0]!;
+    let rf = reduce(null, { type: 'add', fightId: fightId('f-bastion-guard'), rows: [{ ...bRow, place: place(3, 3) }, { ...aRow, place: place(4, 3) }, { ...foe, place: place(5, 3) }], openings: [] }, { rules: RULES }).fight!;
+    rf = reduce(rf, { type: 'start', openings: [{ id: combatantId('h2'), d20: 18, tie: 3 }, { id: combatantId('m1'), d20: 20, tie: 2 }, { id: combatantId('h1'), d20: 5, tie: 1 }] }, { rules: RULES }).fight!;
+    const allyHp0 = rowHp(rf.rows.find(x => x.id === combatantId('h2'))!);
+    const mRow0 = rf.rows.find(x => x.id === combatantId('m1'))!;
+    // Compare unguarded vs guarded strike on h2
+    const unguarded = reduce(rf as Running, { type: 'act', by: combatantId('m1'), ability: mRow0.abilities[0]!.id, aim: combatantId('h2'), rolls: { dice: { [combatantId('h2')]: [6] }, react: { [combatantId('h2')]: 1 } }, force: true }, { rules: RULES }).fight as Running;
+    const unguardedLoss = allyHp0 - rowHp(unguarded.rows.find(x => x.id === combatantId('h2'))!);
+
+    r = reduce(rf, { type: 'arm', by: combatantId('h1'), ability: guardId }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    rf = r.fight as Running;
+    const mRow = rf.rows.find(x => x.id === combatantId('m1'))!;
+    r = reduce(rf, { type: 'act', by: combatantId('m1'), ability: mRow.abilities[0]!.id, aim: combatantId('h2'), rolls: { dice: { [combatantId('h2')]: [6] }, react: { [combatantId('h2')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    rf = r.fight as Running;
+    const guardedLoss = allyHp0 - rowHp(rf.rows.find(x => x.id === combatantId('h2'))!);
+    // Phalanx Guard fired (spent) and guarded/shielded the protected ally (h2 goes next, so h1 has not restored yet)
+    expect(rf.rows.find(x => x.id === combatantId('h1'))!.armed?.spent).toBe(true);
+    expect(rf.log.some(l => l.text.includes('Phalanx Guard'))).toBe(true);
+    expect(guardedLoss).toBeLessThan(unguardedLoss);
+
+    // Against a light strike, Phalanx Guard's shield remains visibly intact on the protected ally (h2) with 0 HP lost
+    const lightFoe = monsterRows({ name: 'Scout', rank: 'C', archetype: 'brute', kind: 'normal', tweak: { dealt: 0.2 }, abilities: [], statuses: [] }, [combatantId('m1')], RULES)[0]!;
+    let lf = reduce(null, { type: 'add', fightId: fightId('f-bastion-guard-shield'), rows: [{ ...bRow, place: place(3, 3) }, { ...aRow, place: place(4, 3) }, { ...lightFoe, place: place(5, 3) }], openings: [] }, { rules: RULES }).fight!;
+    lf = reduce(lf, { type: 'start', openings: [{ id: combatantId('h2'), d20: 18, tie: 3 }, { id: combatantId('m1'), d20: 20, tie: 2 }, { id: combatantId('h1'), d20: 5, tie: 1 }] }, { rules: RULES }).fight!;
+    const lightAllyHp0 = rowHp(lf.rows.find(x => x.id === combatantId('h2'))!);
+    lf = reduce(lf, { type: 'arm', by: combatantId('h1'), ability: guardId }, { rules: RULES }).fight!;
+    const lmRow = lf.rows.find(x => x.id === combatantId('m1'))!;
+    r = reduce(lf as Running, { type: 'act', by: combatantId('m1'), ability: lmRow.abilities[0]!.id, aim: combatantId('h2'), rolls: { dice: { [combatantId('h2')]: [1] }, react: { [combatantId('h2')]: 10 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const lightAfter = r.fight as Running;
+    const protectedAlly = lightAfter.rows.find(x => x.id === combatantId('h2'))!;
+    expect(protectedAlly.shield?.amount ?? 0).toBeGreaterThan(0);
+    expect(rowHp(protectedAlly)).toBe(lightAllyHp0);
+
+    // D5 Hold the Line + Capstone Unbroken Phalanx: Vanguard Slam builds self shield via shieldDrain, and aura buffs nearby ally
+    const capNodes = fullNodesFor(spec.tree, ['bastion-a5-l', 'bastion-b5-r']);
+    const capH = makeRareHunter(spec, capNodes, 'C');
+    const capRow = hunterRow(capH, combatantId('h1'), RULES);
+    let cf = reduce(null, { type: 'add', fightId: fightId('f-bastion-cap'), rows: [{ ...capRow, place: place(3, 3) }, { ...aRow, place: place(5, 3) }, { ...foe, place: place(4, 3) }], openings: [] }, { rules: RULES }).fight!;
+    cf = reduce(cf, { type: 'start', openings: [{ id: combatantId('h1'), d20: 20, tie: 3 }, { id: combatantId('h2'), d20: 10, tie: 2 }, { id: combatantId('m1'), d20: 1, tie: 1 }] }, { rules: RULES }).fight!;
+    // Unbroken Phalanx aura zone exists and buffs ally within 2 tiles (+12 armor, -10% taken)
+    expect(cf.zones.some(z => z.name === 'Unbroken Phalanx')).toBe(true);
+    const allyUnderAura = cf.rows.find(x => x.id === combatantId('h2'))!;
+    expect(allyUnderAura.sheet.armor).toBe(hunterSheet(allyH, RULES).sheet.armor + 12);
+    expect(damageShare(cf.rows.find(x => x.id === combatantId('m1'))!, allyUnderAura, RULES)).toBeCloseTo(0.9, 2);
+    // Hold the Line strike builds a self shield on Bastion
+    r = reduce(cf, { type: 'act', by: combatantId('h1'), ability: slamId, aim: combatantId('m1'), rolls: { dice: { [combatantId('m1')]: [6] }, react: { [combatantId('m1')]: 1 } }, force: true }, { rules: RULES });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    cf = r.fight as Running;
+    expect(cf.rows.find(x => x.id === combatantId('h1'))!.shield?.amount ?? 0).toBeGreaterThan(0);
+  });
 });

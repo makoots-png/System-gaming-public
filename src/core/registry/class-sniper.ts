@@ -227,7 +227,7 @@ const UP_LONGSHOT = makeLongshot({
   name: 'Longshot: Piercing Round',
   rangeTiles: 18,
   pierce: true,
-  formula: '2d6 + finesse * (1 + 0.16 * stacks(sniper-sighted))',
+  formula: '1d10 + finesse * (1 + 0.16 * stacks(sniper-sighted))',
 });
 
 // Quick-pace setup turn: grants 1 stack of Sighted plus Steady Aim (attack advantage on next shot).

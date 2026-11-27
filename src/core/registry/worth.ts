@@ -184,7 +184,7 @@ export const landShare = (a: Pick<Ability, 'delivery'>, R: WorthRules): number =
 export type Unweighed = OpKind | 'count' | 'charge' | 'reaction' | 'summon' | 'zone' | 'blink' | 'zoneAct' | 'end' | 'reform' | 'raise';
 const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
   count: 'fight counts', charge: 'channel charge', reaction: 'its reaction', summon: 'its summon', zone: 'its field',
-  blink: 'its teleport', zoneAct: 'moving or resizing a field', end: 'its delayed end effect',
+  blink: 'its teleport', zoneAct: 'moving, resizing, or erasing a field', end: 'its delayed end effect',
   reform: 'reforming a fallen minion', raise: 'raising a fallen monster',
   damage: 'instant damage', heal: 'instant healing', mana: 'mana', fatigue: 'fatigue', applyStatus: 'a status', cureStatus: 'a cure',
   note: 'a note', speed: 'a speed change', delay: 'turn delay', hold: 'stun', root: 'rooting', taunt: 'a taunt', threat: 'threat',

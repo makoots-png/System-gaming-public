@@ -1,5 +1,5 @@
 // mythic-types.ts: what a mythic's script is, and where a mythic row stands in it (notes-11-keystones.md, design B.3).
-// Types only. A script is one row of `MYTHICS` (src/core/registry/mythics.ts); the machine that moves a row through it
+// Types plus the `isMythicStatusKey` predicate (zero value imports). A script is one row of `MYTHICS` (src/core/registry/mythics.ts); the machine that moves a row through it
 // is combat/mythic.ts. The script is written with its own move and omen keys as plain words, and the
 // compiler checks each omen lands a move the script holds and each beat names an omen it holds (`MythicScript<M, O>`);
 // the registry's `mythicScript` brands the keys once, so a stored script reads `MoveKey` and `OmenKey`.
@@ -68,6 +68,10 @@ export type GatePhase<O extends string = OmenKey> = PhaseCommon<O> & { readonly 
 export type ClockPhase<O extends string = OmenKey> = PhaseCommon<O> & { readonly ends: 'clock'; readonly from?: never };
 export type MythicPhase<O extends string = OmenKey> = GatePhase<O> | ClockPhase<O>;
 
+/** Prefix shared by every status key a mythic script wears or puts on itself. */
+export const MYTHIC_STATUS_PREFIX = 'mythic-';
+/** Whether `key` is a mythic script status key (prefixed with `mythic-`). */
+export const isMythicStatusKey = (key: StatusKey): boolean => key.startsWith(MYTHIC_STATUS_PREFIX);
 /** A status a phase wears or a move puts on its user: its key (each starts `mythic-`) and its def. */
 export type MythicStatus = { readonly key: StatusKey; readonly def: StatusDef };
 /** A phase's turns, in order, read at `beat` modulo its length. */

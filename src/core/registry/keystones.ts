@@ -82,7 +82,7 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
     const line = 'When a foe\'s attack misses you, your next turn comes 33% sooner (once a round).';
     // A.6's quarter weighs 6.5, under the band: a third, 8.6.
     return plain('Slip Away', line, { worn: worn('Slip Away', line, [], [
-      { on: 'avoided', tag: null, to: 'self', limit: ROUND, ops: [{ op: 'hasten', share: 0.33 }] },
+      { on: 'avoided', tag: null, to: 'self', limit: ROUND, ops: [{ op: 'refund', pct: 33 }] },
     ]) });
   },
   vit: R => {

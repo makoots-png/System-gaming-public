@@ -9,7 +9,7 @@ import type { ClassNodeId } from '../ids.ts';
 import { abilityId } from '../combat/ability-types.ts';
 import type { Ability, AbilityId } from '../combat/ability-types.ts';
 import { statusKey } from '../combat/effect-ops.ts';
-import type { Op, StackDef, StatusDef, StatusKey } from '../combat/effect-ops.ts';
+import type { Op, StackDef, StatusDef, StatusKey, Tiers } from '../combat/effect-ops.ts';
 import type { Limit } from '../combat/triggers.ts';
 import { tiles } from '../combat/space.ts';
 import { cost, tick } from '../combat/timeline.ts';
@@ -30,6 +30,8 @@ const f = (text: string): Formula => {
   if (!p.ok) throw new Error(`Invalid Bladefiend formula "${text}"`);
   return p.formula;
 };
+const tiered = (e: string, d: string, c: string, b: string, a: string, s: string): Tiers<Formula> =>
+  [f(e), f(d), f(c), f(b), f(a), f(s)];
 const rounds = (n: number): Tick => tick(Math.round(n * R.fight.round));
 const EACH: Limit = { kind: 'each' };
 const ROUND: Limit = { kind: 'round' };
@@ -77,14 +79,14 @@ const GALE_SLOW: StatusDef = {
 const CUTS_BLEED: StatusDef = {
   label: 'Severed',
   desc: 'Takes physical bleed damage each round for 2 rounds.',
-  ops: [{ op: 'damage', type: 'physical', when: 'turn', amount: f('0.25 * phys') }],
+  ops: [{ op: 'damage', type: 'physical', when: 'turn', amount: tiered('1d4', '1d6', '2d4', '2d6', '3d6', '3d10') }],
 };
 
 const CUTS_BLEED_UP: StatusDef = {
   label: 'Deep Sever',
   desc: 'Takes physical bleed damage each round and 8% more damage for 2 rounds.',
   ops: [
-    { op: 'damage', type: 'physical', when: 'turn', amount: f('0.35 * phys') },
+    { op: 'damage', type: 'physical', when: 'turn', amount: tiered('1d6', '1d8', '2d6', '3d6', '4d6', '5d8') },
     { op: 'share', on: 'taken', pct: 8 },
   ],
 };

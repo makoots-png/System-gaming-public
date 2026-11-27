@@ -11,15 +11,19 @@ import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, tag } from '../src/core/combat/ability-types.ts';
 import {
-  OP_KINDS, addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, opsOffered, removeStatus, settle,
+  OP_KINDS, addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dispelled, dueAmount, freeStatusKey, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, opsOffered, removeStatus, settle,
   sheetStatuses, shielded, shieldGrown, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
 import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { stackStep } from '../src/core/combat/stacks.ts';
-import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, holds, sheetAdds, STATUS_LIVES, statusStep, wardedDamage, withSheetOps } from '../src/core/combat/standing.ts';
+import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, helpful, holds, sheetAdds, STATUS_LIVES, statusStep, wardedDamage, withSheetOps } from '../src/core/combat/standing.ts';
 import type { StatusLife } from '../src/core/combat/standing.ts';
-import { zoneTone } from '../src/core/combat/zones.ts';
+import { isMythicStatusKey } from '../src/core/combat/mythic-types.ts';
+import { zoneId, zoneTone } from '../src/core/combat/zones.ts';
+import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
+import { keystoneOf } from '../src/core/registry/keystones.ts';
+import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import { giverOf, payDue } from '../src/core/combat/fight-turn.ts';
 import { NO_PEN, afterDefence, channelBreaks, held, landOps } from '../src/core/combat/land.ts';
 import { resolve } from '../src/core/combat/resolve.ts';
@@ -954,5 +958,184 @@ describe('the stagger op (keystones design A.7)', () => {
     expect(opsOffered(kinds, 'imposed')).toEqual(['damage', 'echo', 'heal']);
     for (const event of [null, 'hitDealt', 'struck', 'turnStart', 'statusEnded', 'used']) expect(opsOffered(kinds, event)).toEqual(['damage', 'heal']);
     expect(opsOffered(OP_KINDS, null)).toEqual(OP_KINDS.filter(k => k !== 'echo'));
+  });
+});
+
+describe('offensive dispel of helpful statuses (Wave 3 Hook 2)', () => {
+  const num = (value: number): Formula => ({ kind: 'number', value });
+
+  test('isMythicStatusKey matches only mythic- prefixed status keys', () => {
+    expect([
+      isMythicStatusKey(statusKey('mythic-shell')),
+      isMythicStatusKey(statusKey('mythic-crescendo')),
+      isMythicStatusKey(statusKey('hasted')),
+      isMythicStatusKey(statusKey('not-mythic-shell')),
+    ]).toEqual([true, true, false, false]);
+  });
+
+  test('helpful(def) is mutually exclusive with harmful(def) and excludes neutral marks and delayed-end statuses', () => {
+    const yes: Op[] = [
+      { op: 'heal', amount: num(5) },
+      { op: 'mana', amount: num(5) },
+      { op: 'fatigue', amount: num(-10) },
+      { op: 'speed', pct: 20 },
+      { op: 'stat', key: 'str', amount: num(4) },
+      { op: 'sheet', key: 'armor', amount: f('0.1 * hpmax') },
+      { op: 'sheet', key: 'exposed', amount: -1 },
+      { op: 'sheet', key: 'range', amount: 2 },
+      { op: 'sheet', key: 'sight', amount: 1 },
+      { op: 'share', on: 'taken', pct: -15 },
+      { op: 'share', on: 'dealt', pct: 15 },
+      { op: 'share', on: 'healed', pct: 20 },
+      { op: 'share', on: 'shielded', pct: 20 },
+      { op: 'untargetable' },
+      { op: 'invulnerable' },
+      { op: 'safeguard' },
+      { op: 'edge', side: 'attack', keep: 'better', tag: null, spend: true },
+      { op: 'boost', side: 'defend', die: { kind: 'die', sides: 6 } },
+      { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } },
+      { op: 'stayHidden', on: 'dealt' },
+      { op: 'alert' },
+      { op: 'channel', mode: 'protect' },
+      { op: 'staggerRate', pct: -50 },
+      { op: 'refund', pct: 25, chance: 50 },
+    ];
+    for (const op of yes) {
+      expect([op.op, harmful(def(op)), helpful(def(op))]).toEqual([op.op, false, true]);
+    }
+
+    // Neutral statuses (empty ops, shield-only since statusShield already paid on landing, note + delayed end like Void Brand, 0 values, disadvantage edge, fatigue gain, staggerRate gain)
+    const voidBrand: StatusDef = {
+      label: 'Void Brand', desc: '', ops: [{ op: 'note', text: 'Marked by the void.' }],
+      end: { ops: [{ op: 'damage', type: 'arcane', amount: f('2d6') }], cleanse: 'land' },
+    };
+    const neutralDefs: StatusDef[] = [
+      def(),
+      def({ op: 'shield', amount: num(15) }),
+      voidBrand,
+      def({ op: 'speed', pct: 0 }),
+      def({ op: 'fatigue', amount: num(10) }),
+      def({ op: 'edge', side: 'attack', keep: 'worse', tag: null, spend: true }),
+      def({ op: 'channel', mode: 'break' }),
+      def({ op: 'staggerRate', pct: 50 }),
+    ];
+    for (const d of neutralDefs) {
+      expect([harmful(d), helpful(d)]).toEqual([false, false]);
+    }
+
+    // Mixed harmful + helpful status is harmful, never helpful
+    const mixed = def({ op: 'share', on: 'dealt', pct: 20 }, { op: 'sheet', key: 'armor', amount: num(-10) });
+    expect([harmful(mixed), helpful(mixed)]).toEqual([true, false]);
+
+    // Every built-in status classifies cleanly with zero overlap
+    const helpfulBuiltIns = Object.entries(BUILT_IN_STATUSES).filter(([, d]) => helpful(d)).map(([k]) => k).sort();
+    expect(helpfulBuiltIns).toEqual(['hasted', 'invisible', 'regenerating', 'stealth']);
+    for (const [k, d] of Object.entries(BUILT_IN_STATUSES)) {
+      expect([k, harmful(d) && helpful(d)]).toEqual([k, false]);
+    }
+  });
+
+  test('dispelled with kind helpful strips non-worn, non-zone helpful statuses and exempts mythic- keys only when mythic is true', () => {
+    const voidBrandDef: StatusDef = {
+      label: 'Void Brand', desc: '', ops: [{ op: 'note', text: 'Delayed mark' }],
+      end: { ops: [{ op: 'damage', type: 'arcane', amount: f('10') }], cleanse: 'land' },
+    };
+    const list: Status[] = [
+      status('worn-buff', def({ op: 'share', on: 'dealt', pct: 15 }), null, { worn: true }),
+      status('mythic-crescendo', def({ op: 'share', on: 'dealt', pct: 50 }), null),
+      status('zone-haste', def({ op: 'speed', pct: 20 }), null, { zone: zoneId('z1') }),
+      status('void-brand', voidBrandDef, 2000),
+      status('slowed', def({ op: 'speed', pct: -20 }), 2000),
+      status('regenerating', BUILT_IN_STATUSES.regenerating, null), // non-worn monster start status
+      status('hasted', BUILT_IN_STATUSES.hasted, 3000),
+    ];
+
+    // Scripted mythic bearer (mythic = true): mythic-crescendo is exempt
+    expect(dispelled(list, 'first', 'helpful', true).map(s => s.key)).toEqual([
+      'worn-buff', 'mythic-crescendo', 'zone-haste', 'void-brand', 'slowed', 'hasted',
+    ]);
+    expect(dispelled(list, 'all', 'helpful', true).map(s => s.key)).toEqual([
+      'worn-buff', 'mythic-crescendo', 'zone-haste', 'void-brand', 'slowed',
+    ]);
+    // Non-mythic bearer (default mythic = false): a GM-made mythic- prefixed buff is dispellable
+    expect(dispelled(list, 'first', 'helpful').map(s => s.key)).toEqual([
+      'worn-buff', 'zone-haste', 'void-brand', 'slowed', 'regenerating', 'hasted',
+    ]);
+    expect(dispelled(list, 'all', 'helpful').map(s => s.key)).toEqual([
+      'worn-buff', 'zone-haste', 'void-brand', 'slowed',
+    ]);
+    // Harmful dispel leaves helpful and neutral statuses intact
+    expect(dispelled(list, 'all', 'harmful').map(s => s.key)).toEqual([
+      'worn-buff', 'mythic-crescendo', 'zone-haste', 'void-brand', 'regenerating', 'hasted',
+    ]);
+    expect(dispelled(list, 'all').map(s => s.key)).toEqual([
+      'worn-buff', 'mythic-crescendo', 'zone-haste', 'void-brand', 'regenerating', 'hasted',
+    ]);
+  });
+
+  test('parseOp omits kind for harmful dispel so shipped defs still match isShippedDef, preserves kind helpful, and refuses invalid kind', () => {
+    const a = parseOp({ op: 'dispel', which: 'first' }, RULES);
+    const b = parseOp({ op: 'dispel', which: 'all', kind: 'harmful' }, RULES);
+    const c = parseOp({ op: 'dispel', which: 'first', kind: 'helpful' }, RULES);
+    const d = parseOp({ op: 'dispel', which: 'all', kind: 'helpful' }, RULES);
+    expect(a).toEqual({ op: 'dispel', which: 'first' });
+    expect('kind' in a!).toBe(false);
+    expect(b).toEqual({ op: 'dispel', which: 'all' });
+    expect('kind' in b!).toBe(false);
+    expect(c).toEqual({ op: 'dispel', which: 'first', kind: 'helpful' });
+    expect(d).toEqual({ op: 'dispel', which: 'all', kind: 'helpful' });
+    expect(parseOp({ op: 'dispel', which: 'first', kind: 'neutral' }, RULES)).toBeNull();
+    expect(parseOp({ op: 'dispel', which: 'first', kind: 42 }, RULES)).toBeNull();
+
+    // Shipped keystone with dispel round-tripped through parseStatusDef must still omit itself from fightWire defs
+    const ks = keystoneOf({ tier: 'apex', stat: 'dis' }, RULES);
+    expect(ks.worn).toBeDefined();
+    const key = freeStatusKey(ks.worn!.label, () => false);
+    const parsed = parseStatusDef(JSON.parse(JSON.stringify(ks.worn!)), RULES)!;
+    const h1 = body(hunterOf(), { id: combatantId('h1'), statuses: [status(key, parsed, null, { worn: true })] });
+    const f0 = reduce(null, { type: 'add', fightId: fightId('f-shipped'), rows: [h1 as unknown as NewRow], openings: [] }, { rules: RULES }).fight!;
+    const doc = fightDoc(f0, RULES, { by: 'gm' as never, at: 'now', was: null, keyOf: () => null })!;
+    const wire = fightWire(doc);
+    expect(wire.defs).toBeUndefined();
+  });
+
+  test('opLine describes harmful and helpful dispels distinctly', () => {
+    expect(opLines([
+      { op: 'dispel', which: 'first' },
+      { op: 'dispel', which: 'all' },
+      { op: 'dispel', which: 'first', kind: 'harmful' },
+      { op: 'dispel', which: 'first', kind: 'helpful' },
+      { op: 'dispel', which: 'all', kind: 'helpful' },
+    ], 0, RULES)).toEqual([
+      'Cures the first harmful status',
+      'Cures every harmful status',
+      'Cures the first harmful status',
+      'Removes the first helpful status',
+      'Removes every helpful status',
+    ]);
+  });
+
+  test('landOps with kind helpful strips helpful buffs, triggers a helpful end on cleanse land, and never touches neutral Void Brand', () => {
+    const voidBrand: StatusDef = {
+      label: 'Void Brand', desc: '', ops: [{ op: 'note', text: 'Void Brand' }],
+      end: { ops: [{ op: 'damage', type: 'arcane', amount: f('20') }], cleanse: 'land' },
+    };
+    const volatileWard: StatusDef = {
+      label: 'Volatile Ward', desc: '', ops: [{ op: 'speed', pct: 20 }],
+      end: { ops: [{ op: 'damage', type: 'arcane', amount: f('12') }], cleanse: 'land' },
+    };
+    const t = body(hunterOf(), {
+      id: combatantId('foe'), side: 'foe',
+      statuses: [
+        status('void-brand', voidBrand, 3000),
+        status('volatile-ward', volatileWard, 3000),
+        status('hasted', BUILT_IN_STATUSES.hasted, 3000),
+      ],
+    });
+    const src = body(hunterOf(), { id: combatantId('u'), side: 'party' });
+    const rows = new Map([[t.id, t], [src.id, src]]);
+    const r = landOps(rows, [{ op: 'dispel', which: 'first', kind: 'helpful' }], src, [t.id], { id: src.id, tier: 0 }, tick(0), RULES);
+    expect(r.landed[0]!.dealt).toBeGreaterThan(0);
+    expect(rows.get(t.id)!.statuses.map(s => s.key)).toEqual(['void-brand', 'hasted']);
   });
 });

@@ -15,7 +15,7 @@ import type { MonsterKind } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { dist, openGrid, place, tiles } from '../src/core/combat/space.ts';
 import type { Place, Side, Terrain } from '../src/core/combat/space.ts';
-import { MAX_ZONES, zoneId, zoneStep, zoneTiles } from '../src/core/combat/zones.ts';
+import { MAX_ZONES, zoneId, zonesErased, zoneStep, zoneTiles } from '../src/core/combat/zones.ts';
 import { ZONE_WALK } from './models/zone-events.ts';
 import { summonStep } from '../src/core/combat/summons.ts';
 import { SUMMON_WALK } from './models/summon-events.ts';
@@ -1469,6 +1469,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     expect(zoneStep(laid, { type: 'fourth' })).toEqual({ to: { at: 'evicted' }, lands: false });
     for (const type of ['price', 'time'] as const) for (const old of [true, false]) expect(zoneStep(laid, { type, old })).toEqual({ to: { at: 'ended', landed: old }, lands: old });
     expect(zoneStep(laid, { type: 'ownerDown' })).toEqual({ to: { at: 'ended', landed: false }, lands: false });
+    expect(zoneStep(laid, { type: 'erased' })).toEqual({ to: { at: 'ended', landed: false }, lands: false });
     for (const z of [{ at: 'lapsed' }, { at: 'evicted' }, { at: 'ended', landed: true }] as const) for (const e of ZONE_WALK) expect(zoneStep(z, e)).toEqual({ to: z, lands: false });
   });
 
@@ -1534,6 +1535,183 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     expect(fell, 'the zone\'s end downed M in the pass that ended the fight').toBeGreaterThan(-1);
     expect(last.some(e => e.type === 'vitals' && e.hunterId === hunterId('h-A') && e.life.at === 'dead'), 'A\'s death reaches its sheet').toBe(true);
     expect(last.slice(fell).some(e => e.type === 'turnStarted'), 'no turn began after the zone downed both').toBe(false);
+  });
+});
+
+describe('zone-price spent (Wave 3 Hook 1)', () => {
+  const free = { ...HIT.cost, fatigue: 0, mana: 0 };
+  const star = ability('support', 'star', null, {
+    aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, cost: free,
+    zone: { name: 'Star', duration: null, ops: [], endsWithOwner: false, around: tiles(1), grow: null },
+  });
+  const nova = ability('strike', 'nova', '10 + 10 * spent', {
+    ...FAR, delivery: { kind: 'sure' }, cost: free,
+    prices: [{ kind: 'zone', name: 'Star', take: 'all' }],
+  });
+  const plain = ability('strike', 'plain', '10 + 10 * spent', {
+    ...FAR, delivery: { kind: 'sure' }, cost: free,
+  });
+  const lay = (by: string): Command => ({ type: 'act', by: id(by), ability: star.id, aim: id(by), rolls: rolls(), force: true });
+  const tough = () => hunterOrigin({ vit: 50 });
+
+  test('a zone-priced ability refuses at 0 held zones and scales by spent across 0 (unpriced), 1 and 3 taken zones', () => {
+    const startDuel = () => play(
+      add(row('A', 'party', { abilities: [star, nova, plain] }), row('M', 'foe', { origin: tough() })),
+      start(['A', 20], ['M', 10]),
+    );
+    const f0 = startDuel().fight!;
+    const aSheet = body(f0, 'A').sheet, mSheet = body(f0, 'M').sheet;
+    const expected = (n: number) => afterDefence(10 + 10 * n, 'physical', aSheet, mSheet, RULES);
+
+    // 0 held zones: zone-priced ability is refused; unpriced control has 0 taken zones (spent = 0)
+    refuses(f0, hit('A', 'M', nova), 'zone');
+    const r0 = reduce(f0, hit('A', 'M', plain), ctx);
+    expect(mSheet.hpMax - rowHp(body(r0.fight, 'M'))).toBe(expected(0));
+
+    // 1 held zone: takes 1 zone, spent = 1
+    const withOne = play(
+      add(row('A', 'party', { abilities: [star, nova] }), row('M', 'foe', { origin: tough() })),
+      start(['M', 20], ['A', 10]),
+      lay('A'), pass('M'), hit('A', 'M', nova),
+    );
+    expect(running(withOne).zones).toEqual([]);
+    expect(mSheet.hpMax - rowHp(body(withOne.fight, 'M'))).toBe(expected(1));
+
+    // 3 held zones: takes all 3 zones, spent = 3
+    const withThree = play(
+      add(row('A', 'party', { abilities: [star, nova] }), row('M', 'foe', { origin: tough() })),
+      start(['M', 20], ['A', 10]),
+      lay('A'), lay('A'), lay('A'), pass('M'), hit('A', 'M', nova),
+    );
+    expect(running(withThree).zones).toEqual([]);
+    expect(mSheet.hpMax - rowHp(body(withThree.fight, 'M'))).toBe(expected(3));
+    expect(expected(0)).toBeLessThan(expected(1));
+    expect(expected(1)).toBeLessThan(expected(3));
+
+    // Combined self-stack price + zone price sums both into spent
+    const spark: StackDef = { label: 'Spark', desc: '', ops: [], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    const heldSpark = statusOn(spark, { key: statusKey('spark'), source: { id: id('A'), tier: 0 }, until: null, since: tick(0), settledAt: tick(0) }, 2);
+    const combo = ability('strike', 'combo', '10 + 10 * spent', {
+      ...FAR, delivery: { kind: 'sure' }, cost: free,
+      prices: [{ kind: 'stacks', key: statusKey('spark'), from: 'self', take: { kind: 'all' } }, { kind: 'zone', name: 'Star', take: 'all' }],
+    });
+    const withBoth = play(
+      add(row('A', 'party', { abilities: [star, combo], statuses: [heldSpark] }), row('M', 'foe', { origin: tough() })),
+      start(['M', 20], ['A', 10]),
+      lay('A'), lay('A'), pass('M'), hit('A', 'M', combo),
+    );
+    expect(running(withBoth).zones).toEqual([]);
+    expect(mSheet.hpMax - rowHp(body(withBoth.fight, 'M'))).toBe(expected(4));
+  });
+
+  test('a channeled zone-priced ability stores ok.spent + taken.length at begin and scales by it on release', () => {
+    const chanNova: Ability = { ...nova, id: abilityId('chan-nova'), name: 'chan-nova', channel: { growth: 'linear', max: 5 } };
+    const began = play(
+      add(row('A', 'party', { abilities: [star, chanNova] }), row('M', 'foe', { origin: tough() })),
+      start(['M', 20], ['A', 10]),
+      lay('A'), lay('A'), lay('A'), pass('M'),
+      { type: 'act', by: id('A'), ability: chanNova.id, aim: id('M'), rolls: rolls() },
+    );
+    expect(running(began).zones).toEqual([]);
+    expect(body(began.fight, 'A').channel).toEqual({ ability: chanNova.id, aim: id('M'), charge: 0, spent: 3, state: 'holding' });
+    const aSheet = body(began.fight, 'A').sheet, mSheet = body(began.fight, 'M').sheet;
+    const afterM = reduce(began.fight, pass('M'), ctx);
+    const releasedRes = reduce(afterM.fight, { type: 'release', by: id('A'), rolls: rolls() }, ctx);
+    expect(releasedRes.effects.find(e => e.type === 'refused')).toBeUndefined();
+    expect(body(releasedRes.fight, 'A').channel?.state).toBe('fired');
+    expect(mSheet.hpMax - rowHp(body(releasedRes.fight, 'M'))).toBe(afterDefence(10 + 10 * 3, 'physical', aSheet, mSheet, RULES));
+  });
+
+  test('a held-dodge rerun recounts taken zones from the fight without double counting spent', () => {
+    const blastNova = ability('blast', 'blast-nova', '10 + 10 * spent', {
+      range: tiles(20), foesOnly: true, cost: free,
+      delivery: { kind: 'travel', windup: tick(1000), speed: 'instant' },
+      prices: [{ kind: 'zone', name: 'Star', take: 'all' }],
+    });
+    const f0 = running(play(
+      add(
+        row('A', 'party', { place: place(5, 5), origin: tough() }),
+        row('B', 'party', { place: place(6, 5), origin: tough() }),
+        row('M', 'foe', { place: place(1, 5), abilities: [star, blastNova] }),
+      ),
+      start(['M', 20], ['A', 1], ['B', 1]),
+      lay('M'), pass('A'), pass('B'),
+      lay('M'), pass('A'), pass('B'),
+      lay('M'), pass('A'), pass('B'),
+    ));
+    expect(f0.currentId).toBe(id('M'));
+    expect(f0.zones).toHaveLength(3);
+    const mSheet = body(f0, 'M').sheet, aSheet = body(f0, 'A').sheet, bSheet = body(f0, 'B').sheet;
+    const expected3 = afterDefence(10 + 10 * 3, 'arcane', mSheet, aSheet, RULES);
+    const expected6 = afterDefence(10 + 10 * 6, 'arcane', mSheet, aSheet, RULES);
+    expect(expected3).not.toBe(expected6);
+
+    // M casts blastNova: pauses for A's dodge, zones remain untouched on the ground
+    const f1 = running(reduce(f0, {
+      type: 'act', by: id('M'), ability: blastNova.id, aim: place(5, 5),
+      rolls: rolls({ A: 20, B: 20 }, { A: [], B: [] }),
+    }, ctx));
+    expect(runningState(f1).at).toBe('dodging');
+    expect(dodgeAsk(f1, RULES)?.who).toBe(id('A'));
+    expect(f1.zones).toHaveLength(3);
+
+    // A stays put at (5, 5): reruns actWith and pauses for B's dodge, zones still untouched
+    const f2 = running(reduce(f1, { type: 'dodge', id: id('A'), to: place(5, 5) }, ctx));
+    expect(runningState(f2).at).toBe('dodging');
+    expect(dodgeAsk(f2, RULES)?.who).toBe(id('B'));
+    expect(f2.zones).toHaveLength(3);
+
+    // B stays put at (6, 5): reruns actWith a third time, resolves once with spent = 3 (not 6 or 9)
+    const f3 = running(reduce(f2, { type: 'dodge', id: id('B'), to: place(6, 5) }, ctx));
+    expect(f3.dodge).toBeUndefined();
+    expect(f3.zones).toEqual([]);
+    expect(aSheet.hpMax - rowHp(body(f3, 'A'))).toBe(expected3);
+    expect(bSheet.hpMax - rowHp(body(f3, 'B'))).toBe(afterDefence(10 + 10 * 3, 'arcane', mSheet, bSheet, RULES));
+  });
+
+  test('overlapping zone prices on one ability deduplicate taken so spent and zoneEnds each count a zone once', () => {
+    const starEnd = ability('blast', 'star-end', null, {
+      range: tiles(20), delivery: { kind: 'sure' }, effect: null, foesOnly: true, cost: free,
+      zone: {
+        name: 'Star', duration: null, ops: [],
+        end: [{ op: 'damage', type: 'arcane', amount: f('20'), when: 'use' }],
+        endsWithOwner: false, around: tiles(1), grow: null,
+      },
+    });
+    const overlap = ability('strike', 'overlap', '10 + 10 * spent', {
+      ...FAR, delivery: { kind: 'sure' }, cost: free,
+      prices: [
+        { kind: 'zone', name: 'Star', take: 'one' },
+        { kind: 'zone', name: null, take: 'all' },
+      ],
+    });
+    let fState = running(play(
+      add(
+        row('A', 'party', { abilities: [starEnd, overlap], place: place(5, 5) }),
+        row('M', 'foe', { origin: tough(), place: place(5, 6) }),
+      ),
+      start(['A', 20], ['M', 10]),
+      { type: 'act', by: id('A'), ability: starEnd.id, aim: place(5, 6), rolls: rolls() },
+      pass('M'),
+      { type: 'act', by: id('A'), ability: starEnd.id, aim: place(5, 6), rolls: rolls() },
+    ));
+    // Advance until both zones are oldEnough so their zone.end lands on price consumption
+    const lastLaid = Math.max(...fState.zones.map(z => z.laid ?? 0));
+    while (fState.currentId !== id('A') || fState.now - lastLaid < RULES.fight.kit.zoneAge * RULES.fight.round) {
+      fState = running(reduce(fState, pass(fState.currentId), ctx));
+    }
+    expect(fState.zones).toHaveLength(2);
+    const aSheet = body(fState, 'A').sheet, mSheet = body(fState, 'M').sheet;
+    const hit2 = afterDefence(10 + 10 * 2, 'physical', aSheet, mSheet, RULES);
+    const hit3 = afterDefence(10 + 10 * 3, 'physical', aSheet, mSheet, RULES);
+    const endOnce = afterDefence(20, 'arcane', aSheet, mSheet, RULES);
+    expect(hit2).not.toBe(hit3);
+    expect(endOnce).toBeGreaterThan(0);
+
+    const r = reduce(fState, hit('A', 'M', overlap), ctx);
+    expect(running(r).zones).toEqual([]);
+    // 2 unique zones: spent = 2 (hit2) and zone.end fires twice (2 * endOnce), not 3
+    expect(mSheet.hpMax - rowHp(body(r.fight, 'M'))).toBe(hit2 + 2 * endOnce);
   });
 });
 
@@ -2117,6 +2295,104 @@ describe('a zone act: shift and grow (kits design 8.5.4)', () => {
     const r = play(...begin(), at(5, 4)('A', LAY), pass('M'), at(5, 4)('A', GROW));
     const z = running(r).zones[0]!;
     expect(z.ground.kind === 'around' ? z.ground.radius : null).toBe(tiles(Math.min(RULES.fight.fieldRadiusMax, RULES.fight.abilityKinds.blast.ring + 2)));
+  });
+
+  test('erase removes up to by nearest foe non-aura zones without firing zone.end and closes holds', () => {
+    const FOE_LAY = (name: string): Ability => ability('blast', `lay-${name}`, null, {
+      range: tiles(20), delivery: { kind: 'sure' }, effect: null, foesOnly: true, cost: free,
+      zone: {
+        name, duration: null,
+        ops: [{ op: 'speed', pct: -25 }],
+        end: [{ op: 'damage', type: 'arcane', amount: f('50'), when: 'use' }],
+        endsWithOwner: false, around: null, grow: null,
+      },
+    });
+    const LAY_NEAR = FOE_LAY('Near'), LAY_MID = FOE_LAY('Mid'), LAY_FAR = FOE_LAY('Far');
+    const ERASE2: Ability = ability('blast', 'erase-2', null, { range: tiles(20), delivery: { kind: 'sure' }, effect: null, foesOnly: true, cost: free, zoneAct: { act: 'erase', name: null, by: 2 } });
+    const ERASE_MID: Ability = ability('blast', 'erase-mid', null, { range: tiles(20), delivery: { kind: 'sure' }, effect: null, foesOnly: true, cost: free, zoneAct: { act: 'erase', name: 'Mid', by: 2 } });
+    const setup = [
+      add(
+        row('A', 'party', { abilities: [ERASE2, ERASE_MID, LAY], place: place(5, 2) }),
+        row('M', 'foe', { abilities: [LAY_NEAR, LAY_MID, LAY_FAR], place: place(5, 12) }),
+      ),
+      start(['M', 20], ['A', 10]),
+    ] as const;
+    // M lays three zones (Near on A's tile (5,2), Mid at (5,6), Far at (5,12)); advance past zoneAge so they are oldEnough
+    let fState = running(play(...setup));
+    for (const [x, y, ab] of [[5, 2, LAY_NEAR], [5, 6, LAY_MID], [5, 12, LAY_FAR]] as const) {
+      while (fState.currentId !== id('M')) fState = running(reduce(fState, pass('A'), ctx));
+      fState = running(reduce(fState, at(x, y)('M', ab), ctx));
+    }
+    while (fState.currentId !== id('A')) fState = running(reduce(fState, pass('M'), ctx));
+    const hpBefore = rowHp(body(fState, 'A'));
+    expect(fState.zones.map(z => z.name)).toEqual(['Near', 'Mid', 'Far']);
+    expect(body(fState, 'A').statuses.some(s => s.def.label === 'Near')).toBe(true);
+
+    // A erases up to 2 nearest (5, 2): Near and Mid are erased, Far remains; zone.end (50 damage) does NOT fire; A's hold closes
+    const after2 = reduce(fState, at(5, 2)('A', ERASE2), ctx);
+    expect(running(after2).zones.map(z => z.name)).toEqual(['Far']);
+    expect(rowHp(body(after2.fight, 'A'))).toBe(hpBefore);
+    expect(body(after2.fight, 'A').statuses.some(s => s.def.label === 'Near')).toBe(false);
+    expect(running(after2).log.some(l => l.text.endsWith('Near, Mid erased.'))).toBe(true);
+
+    // Name filter erases only matching foe zone even when another foe zone is nearer
+    const afterNamed = reduce(fState, at(5, 2)('A', ERASE_MID), ctx);
+    expect(running(afterNamed).zones.map(z => z.name)).toEqual(['Near', 'Far']);
+    expect(running(afterNamed).log.some(l => l.text.endsWith('Mid erased.'))).toBe(true);
+  });
+
+  test('erase never touches owner-null zones, status auras, allied zones, or zones whose owner left rows', () => {
+    const ERASE3: Ability = ability('blast', 'erase-3', null, { range: tiles(20), effect: null, foesOnly: true, cost: free, zoneAct: { act: 'erase', name: null, by: 3 } });
+    const FOE_FIELD: Ability = ability('blast', 'foe-field', null, {
+      range: tiles(20), effect: null, foesOnly: true, cost: free,
+      zone: { name: 'Orphan', duration: null, ops: [], endsWithOwner: false, around: null, grow: null },
+    });
+    const AURA_DEF = { label: 'Dread Aura', desc: '', ops: [{ op: 'aura' as const, radius: 2, on: 'foes' as const }, { op: 'speed' as const, pct: -10 }] };
+    const gmZone = { id: zoneId('gm-lava'), name: 'Lava', tiles: [place(5, 5)], spares: null, tier: 0, duration: null, ops: [] };
+    const auraStatus = statusOn(AURA_DEF, { key: statusKey('dread-aura'), source: { id: id('N'), tier: 0 }, until: null, since: tick(0), settledAt: tick(0) });
+    const setup = [
+      add(
+        row('A', 'party', { abilities: [LAY, ERASE3], place: place(5, 2) }),
+        row('M', 'foe', { abilities: [FOE_FIELD], place: place(5, 8) }),
+        row('N', 'foe', { place: place(5, 10), statuses: [auraStatus] }),
+      ),
+      start(['A', 20], ['M', 15], ['N', 10]),
+    ] as const;
+    // A lays allied Mire, GM adds owner===null Lava, N carries a status aura owned by N, M lays Orphan and is removed from rows
+    const prepared = play(
+      ...setup,
+      at(5, 3)('A', LAY),
+      { type: 'zoneAdd', zone: gmZone },
+      at(5, 6)('M', FOE_FIELD),
+      { type: 'remove', id: id('M') },
+      pass('N'),
+    );
+    const beforeZones = running(prepared).zones;
+    const beforeIds = beforeZones.map(z => z.id);
+    expect(beforeIds.length).toBe(4);
+    expect(beforeZones.find(z => z.name === 'Dread Aura')?.owner).toBe(id('N'));
+    const after = reduce(running(prepared), at(5, 5)('A', ERASE3), ctx);
+    expect(after.effects.some(e => e.type === 'used' && e.by === id('A') && e.ability === ERASE3.id)).toBe(true);
+    expect(running(after).zones.map(z => z.id)).toEqual(beforeIds);
+    expect(running(after).log.some(l => l.text.includes('erased.'))).toBe(false);
+  });
+
+  test('zonesErased clamps by to kit.zonesPerOwner and sorts by nearest tile of zoneTiles', () => {
+    const g = openGrid(20, 20);
+    const rows = [
+      { id: id('A'), place: place(0, 0), life: { at: 'up' as const, hp: 10 }, kind: 'hunter' as const, side: 'party' as const },
+      { id: id('M'), place: place(10, 10), life: { at: 'up' as const, hp: 10 }, kind: 'monster' as const, side: 'foe' as const },
+      { id: id('M2'), place: place(10, 11), life: { at: 'up' as const, hp: 10 }, kind: 'monster' as const, side: 'foe' as const },
+    ];
+    const mk = (zid: string, owner: CombatantId, x: number) => ({
+      id: zoneId(zid), name: zid, ground: { kind: 'tiles' as const, tiles: [place(x, 0)] },
+      owner, spares: 'foe' as const, tier: 0, until: null, endsWithOwner: false, ops: [],
+    });
+    const list = [mk('z-far', id('M'), 12), mk('z-near', id('M'), 1), mk('z-mid', id('M2'), 5), mk('z-fourth', id('M2'), 8)];
+    // Asking for 99 still clamps to kit.zonesPerOwner (3) and picks the 3 nearest (1, 5, 8)
+    const res = zonesErased(list, 'party', { act: 'erase', name: null, by: 99 }, place(0, 0), rows, g, tick(0), RULES);
+    expect(res.erased.map(z => z.id)).toEqual([zoneId('z-near'), zoneId('z-mid'), zoneId('z-fourth')]);
+    expect(res.zones.map(z => z.id)).toEqual([zoneId('z-far')]);
   });
 });
 

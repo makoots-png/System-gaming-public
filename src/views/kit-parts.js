@@ -270,7 +270,7 @@ const PRICE_LABEL = [['hp', 'HP'], ['stacks', 'Stacks'], ['zone', 'A field']];
 const GATE_LABEL = [['holds', 'Has a status'], ['uses', 'Use limit'], ['inside', 'Inside a field']];
 const MOVE_LABEL = [['none', 'None'], ['blink', 'Teleport'], ['swap', 'Swap places'], ['swap-shadow', 'Swap with a shadow']];
 const REACT_LABEL = [['before', 'Before a hit'], ['lethal', 'Before a killing hit'], ['after', 'After a hit'], ['turn', 'Before a turn']];
-const ACT_LABEL = [['none', 'None'], ['shift', 'Moves field'], ['grow', 'Widens field']];
+const ACT_LABEL = [['none', 'None'], ['shift', 'Moves field'], ['grow', 'Widens field'], ['erase', 'Erases foe field']];
 const ARCH_LABEL = [['brute', 'Brute'], ['skirmisher', 'Skirmisher'], ['caster', 'Caster']];
 /** The most starting statuses a summon has: as many as a fight row holds (fight-parse.ts `summonOf`). */
 const SUMMON_STATUSES = MAX_STATUSES;
@@ -342,7 +342,7 @@ export function abilityBlocks(box, a, M) {
     <details class="mk-group" data-group="moves"><summary data-sum="moves"></summary><div class="mk-group-body">
       <div class="lbl">User movement</div>${seg('move', -1, 'User movement', MOVE_LABEL, st.move)}
       <div class="lbl">Change an active field</div>${seg('act', -1, 'Change an active field', ACT_LABEL, st.act)}
-      <div class="mk-two" data-act-f>${numF('by', -1, st.act === 'grow' ? `Expand by (1 to ${K.zoneGrow} tiles)` : `Max move distance (1 to ${K.zoneMove} tiles)`, st.by)}${textF('actZone', -1, 'Field name', st.actZone, { placeholder: 'any of yours' })}</div></div></details>
+      <div class="mk-two" data-act-f>${numF('by', -1, st.act === 'grow' ? `Expand by (1 to ${K.zoneGrow} tiles)` : st.act === 'erase' ? `Fields to erase (1 to ${K.zonesPerOwner})` : `Max move distance (1 to ${K.zoneMove} tiles)`, st.by)}${textF('actZone', -1, 'Field name', st.actZone, { placeholder: st.act === 'erase' ? 'any foe field' : 'any of yours' })}</div></div></details>
     <details class="mk-group" data-group="react"><summary data-sum="react"></summary><div class="mk-group-body">
       <label class="mk-check"><input type="checkbox" data-f="react"${st.react ? ' checked' : ''}><span>Reaction (arm ahead of time to trigger automatically)</span></label>
       <div data-react-f><div class="lbl">When it triggers</div>${seg('when', -1, 'When it triggers', REACT_LABEL, st.when)}${numF('reach', -1, `Also protects allies within (0 to ${R.fight.fieldRadiusMax} tiles)`, st.reach)}</div></div></details>
@@ -407,8 +407,9 @@ export function abilityBlocks(box, a, M) {
       }
     }
     if (st.act !== 'none') {
-      const by = wholeIn(st.by, 1, st.act === 'grow' ? K.zoneGrow : K.zoneMove), name = st.actZone.replace(/\s+/g, ' ').trim();
-      if (by === null) groupErr(`Tiles must be from 1 to ${st.act === 'grow' ? K.zoneGrow : K.zoneMove}.`); else out.zoneAct = { act: st.act, name: name || null, by };
+      const max = st.act === 'grow' ? K.zoneGrow : st.act === 'erase' ? K.zonesPerOwner : K.zoneMove;
+      const by = wholeIn(st.by, 1, max), name = st.actZone.replace(/\s+/g, ' ').trim();
+      if (by === null) groupErr(`${st.act === 'erase' ? 'Fields' : 'Tiles'} must be from 1 to ${max}.`); else out.zoneAct = { act: st.act, name: name || null, by };
     }
     const err = box.querySelector('[data-kit-err]');
     if (err) err.textContent = (errs.find(e => e.at === 'group') || { text: '' }).text;
@@ -423,7 +424,7 @@ export function abilityBlocks(box, a, M) {
     q('[data-sum="prices"]').textContent = prices.length ? `Extra costs: ${n(prices.length, 'cost')}` : 'Extra costs: none';
     q('[data-sum="gates"]').textContent = gates.length ? `Requirements: ${n(gates.length, 'condition')}` : 'Requirements: none';
     q('[data-sum="tags"]').textContent = f.tags ? `Tags: ${f.tags.join(', ')}` : 'Tags: none';
-    q('[data-sum="moves"]').textContent = `Movement: ${st.move === 'none' ? 'none' : st.move === 'blink' ? 'teleport' : st.move === 'swap-shadow' ? 'swap with a shadow' : 'swap places'}${st.act === 'none' ? '' : `, ${st.act === 'shift' ? 'moves' : 'widens'} a field`}`;
+    q('[data-sum="moves"]').textContent = `Movement: ${st.move === 'none' ? 'none' : st.move === 'blink' ? 'teleport' : st.move === 'swap-shadow' ? 'swap with a shadow' : 'swap places'}${st.act === 'none' ? '' : `, ${st.act === 'shift' ? 'moves a field' : st.act === 'grow' ? 'widens a field' : 'erases a foe field'}`}`;
     q('[data-sum="react"]').textContent = st.react ? `Reaction: ${(REACT_LABEL.find(([w]) => w === st.when) || REACT_LABEL[0])[1].toLowerCase()}` : 'Reaction: no';
     q('[data-sum="summon"]').textContent = f.summon ? `Summons ${f.summon.name} for ${n(f.summon.rounds, 'round')}${f.summon.statuses.length ? `, starting with ${f.summon.statuses.length === 1 ? 'a status' : `${f.summon.statuses.length} statuses`}` : ''}` : 'Summons: no';
   }

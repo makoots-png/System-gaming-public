@@ -623,6 +623,36 @@ describe('Common class combat mechanics', () => {
     const fAvoid = rAvoid.fight as Running;
     expect(rowHp(fAvoid.rows.find(x => x.id === combatantId('m1'))!)).toBeLessThan(mHp0);
     expect(fAvoid.rows.find(x => x.id === combatantId('h1'))!.statuses.some(s => s.key === statusKey('asn-shadow-edge'))).toBe(true);
+
+    // Capstone Shadow Reprisal: avoiding a foe strike also refunds 15% of the remaining wait to Assassin's next turn
+    const fCapDodge = startFight(spec, allNodesOf(spec.tree), place(3, 3), place(4, 3));
+    const capM = fCapDodge.rows.find(x => x.id === combatantId('m1'))!;
+    const capSwing: Ability = {
+      ...capM.abilities[0]!,
+      delivery: { kind: 'travel', windup: tick(500), speed: 'instant' },
+    };
+    const wait = 600;
+    const capReady: Running = {
+      ...fCapDodge,
+      rows: fCapDodge.rows.map(x => (
+        x.id === combatantId('h1') ? { ...x, at: tick(fCapDodge.now + wait) }
+          : { ...x, abilities: [capSwing] }
+      )),
+    };
+    let rCapAvoid = reduce(capReady, {
+      type: 'act',
+      by: combatantId('m1'),
+      ability: capSwing.id,
+      aim: combatantId('h1'),
+      rolls: { dice: { [combatantId('h1')]: [4] }, react: { [combatantId('h1')]: 20 } },
+      force: true,
+    }, { rules: RULES });
+    expect(rCapAvoid.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
+    rCapAvoid = reduce(rCapAvoid.fight, { type: 'dodge', id: combatantId('h1'), to: place(2, 3) }, { rules: RULES });
+    expect(rCapAvoid.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const hCapAvoid = (rCapAvoid.fight as Running).rows.find(x => x.id === combatantId('h1'))!;
+    expect(hCapAvoid.at).toBe(tick(capReady.now + wait - Math.round(wait * 15 / 100)));
+    expect(hCapAvoid.at).toBeLessThan(tick(capReady.now + wait));
   });
 
   test('Mage: Arcane Nova hits radius-2 foes and shreds magic resist; Spellflow adds pen/costCut and refunds turn on spell kill', () => {

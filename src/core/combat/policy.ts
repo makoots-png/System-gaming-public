@@ -64,11 +64,12 @@ const soughtOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !==
 const alliesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side === me.side && isUp(r));
 
 /**
- * The abilities a policy plays on a turn: not a reaction (armed ahead, not used), not a move or a zone act (where to put
- * a body or a field is a choice the GM makes), not one priced in zones, not a hide (refused while seen).
+ * The abilities a policy plays on a turn: not a reaction (armed ahead, not used), not a move or a shift/grow zone act
+ * (where to put a body or move/widen a field is a choice the GM makes; erasing foe fields is played), not one priced in
+ * zones, not a hide (refused while seen).
  */
 const playable = (a: Ability): boolean =>
-  !a.react && !a.move && !a.zoneAct && !(a.prices ?? []).some(p => p.kind === 'zone')
+  !a.react && !a.move && (!a.zoneAct || a.zoneAct.act === 'erase') && !(a.prices ?? []).some(p => p.kind === 'zone')
   && !hides(a);
 
 const aimAt = (a: Ability, me: Body, t: Body): Aim => a.aim === 'place' ? t.place : a.aim === 'self' ? me.id : t.id;

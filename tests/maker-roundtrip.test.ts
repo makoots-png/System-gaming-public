@@ -46,8 +46,10 @@ import {
   WORST_QUEST_SELF,
   WORST_REWARDS,
   WORST_ROLL_TABLES,
+  WORST_SKILL_DISPEL_HELPFUL,
   WORST_SKILL_GRIEVOUS,
   WORST_SKILL_TRUE,
+  WORST_SKILL_ZONE_ERASE,
   WORST_STORY,
   worstGate,
   worstPreset,
@@ -312,6 +314,25 @@ const UNIT_CASES: Record<UnitMakerId, () => void> = {
     expect(back).toEqual(tpl);
     const op = back?.type === 'active' ? back.ability?.ops[0] : null;
     expect(op?.op === 'applyStatus' ? op.def.ops : null).toEqual([{ op: 'share', on: 'healed', pct: -25 }]);
+  },
+
+  'dispel-helpful'() {
+    const { id: _id, ...tpl } = WORST_SKILL_DISPEL_HELPFUL;
+    const back = parseSkill(JSON.parse(JSON.stringify(tpl)));
+    expect(back).toEqual(tpl);
+    const ops = back?.type === 'active' ? back.ability?.ops : null;
+    expect(ops).toEqual([
+      { op: 'dispel', which: 'first', kind: 'helpful' },
+      { op: 'dispel', which: 'all' },
+    ]);
+    expect(ops?.[1] && 'kind' in ops[1]).toBe(false);
+  },
+
+  'zone-erase'() {
+    const { id: _id, ...tpl } = WORST_SKILL_ZONE_ERASE;
+    const back = parseSkill(JSON.parse(JSON.stringify(tpl)));
+    expect(back).toEqual(tpl);
+    expect(back?.type === 'active' ? back.ability?.zoneAct : null).toEqual({ act: 'erase', name: 'Mire', by: 2 });
   },
 
   npc() {

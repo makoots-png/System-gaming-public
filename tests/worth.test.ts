@@ -281,6 +281,9 @@ describe('what the bar cannot estimate it names, never counting it as 0', () => 
   test('the line says what it weighed and what to test in a fight', () => {
     expect(worthLine(abilityWorth(ability('Call Sprite'), RULES))).toBe('Power rating: 0.00 (target 1.00 for this action speed). Not estimated: its summon. Test it in a fight.');
     expect(worthLine({ worth: 0, budget: 0.7, over: false, unweighed: ['guard', 'reaction'] })).toBe('Power rating: 0.00 (target 0.70 for this action speed). Not estimated: a guard and its reaction. Test them in a fight.');
+    const erase = { ...of('blast'), zoneAct: { act: 'erase' as const, name: null, by: 1 } };
+    expect(abilityWorth(erase, RULES).unweighed).toContain('zoneAct');
+    expect(worthLine(abilityWorth(erase, RULES))).toContain('moving, resizing, or erasing a field');
   });
 
   test('a status alone weighs its per-round damage over the reference fight, whole, and names its stat change and its end', () => {

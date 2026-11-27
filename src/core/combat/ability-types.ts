@@ -85,7 +85,7 @@ export type Ability = {
   readonly move?: AbilityMove;
   /** It is a reaction (kits design 8.4): armed ahead, it fires by rule at its moment; absent, it is used on a turn. */
   readonly react?: React;
-  /** What it does to one of its user's zones (kits design 8.5): moves it toward the aim, or widens it; absent, nothing. */
+  /** What it does to a field (kits design 8.5): moves one of its user's toward the aim, widens it, or erases foe fields; absent, nothing. */
   readonly zoneAct?: ZoneAct;
   /**
    * The bag item it is the use of (registry/abilities.ts `itemAbility`): a fight spends one of it at each use. Only a
@@ -108,8 +108,8 @@ export type AbilityMove = { readonly kind: 'blink' } | { readonly kind: 'swap'; 
 export type ReactWhen = 'before' | 'lethal' | 'after' | 'turn';
 export const REACT_WHEN: readonly ReactWhen[] = ['before', 'lethal', 'after', 'turn'];
 export type React = { readonly when: ReactWhen; readonly reach: Tiles };
-/** A zone act (kits design 8.5): `shift` moves the zone named (null: any of the user's) by up to `by` tiles toward the aim, `grow` widens an around zone by `by`. */
-export type ZoneAct = { readonly act: 'shift' | 'grow'; readonly name: string | null; readonly by: number };
+/** A zone act (kits design 8.5): `shift` moves the user's zone named (null: any) by up to `by` tiles toward the aim, `grow` widens an around zone by `by`, and `erase` removes up to `by` foe-owned non-aura zones nearest the aim. */
+export type ZoneAct = { readonly act: 'shift' | 'grow' | 'erase'; readonly name: string | null; readonly by: number };
 
 /** A GM's word on an ability, which a trigger may name: lower-case letters, digits and hyphens, "sword", "ultimate". */
 export type Tag = Id<'Tag'>;

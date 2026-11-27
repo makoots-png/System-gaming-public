@@ -42,7 +42,7 @@ import { NPC_SKILLS } from '../registry/npcs.ts';
 import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractAttemptsMax, extractionStep, UNTRIED } from './extraction.ts';
 import { adjustRollStep, bloodExtractionCheck, clearRollAdjust, extractionCheck, plainRollCheckText, rollCheckText, validExtractRoll, validForcedFace, validRollAdjust } from './roll-adjust.ts';
-import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
+import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zonesErased, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
 import type { Command, CommandType, Ctx, DodgeWait, Effect, Fight, HeldUse, LogLine, NewRow, Opening, Refusal, Result, Running, Setup } from './fight-types.ts';
 
@@ -227,19 +227,19 @@ function actWith(f: Running, cmd: Extract<Command, { type: 'act' }>, picks: Dodg
   // Rule 4's zone price (kits design 1.4.3): the user must hold a zone of each price's name
   const at = placeOf(cmd.aim, rows)!, zonePrices = (a.prices ?? []).flatMap(p => (p.kind === 'zone' ? [p] : []));
   if (zonePrices.some(p => !pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R).length)) return refused(f, 'zone');
-  const taken = zonePrices.flatMap(p => pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R));
+  const taken = [...new Set(zonePrices.flatMap(p => pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R)))];
   // the stealth machine (notes-7-stealth.md section 4): a hide that starts out of sight, while a foe that is up has its
   // user in sight, leaves a seen user seen, refused; a channel's at its begin, since its release is never refused
   if (!hideLands(a, u, f, R)) return refused(f, 'seen');
-  // a channel's begin is a use's rules 2 to 5 (`ready`): it pays what a use pays, once, its zone price too; its release lands what was paid
+  // rules 2 to 5 (`ready`), plus zone-price `spent` (`taken.length`): a channel pays once at begin; a use lands with the sum
+  const ok = ready(a, u, rows, cmd.aim, f.grid, f.now, R, f.fog);
+  if (typeof ok === 'string') return refused(f, ok);
   if (a.channel) {
-    const ok = ready(a, u, rows, cmd.aim, f.grid, f.now, R, f.fog);
-    if (typeof ok === 'string') return refused(f, ok);
-    const c = acted({ ...counted(ok.paid, a, R), channel: channelStep(null, { type: 'begin', ability: a.id, aim: cmd.aim, spent: ok.spent }) }, f.now, a.cost.time, R.fight);
+    const c = acted({ ...counted(ok.paid, a, R), channel: channelStep(null, { type: 'begin', ability: a.id, aim: cmd.aim, spent: ok.spent + taken.length }) }, f.now, a.cost.time, R.fight);
     const begun = logged({ ...withRow(f, c), zones: f.zones.filter(z => !taken.includes(z)) }, line(`${u.name} begins to channel ${a.name}.`, [u.id]), R);
     return after(f, zoneEnds(begun, landingOf(taken, f.now, R), rows, ctx), u.id, null, ctx, []);
   }
-  const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R, f.fog, picks);
+  const resolved = landUse(a, u, { ...ok, spent: ok.spent + taken.length }, rows, cmd.aim, f.grid, cmd.rolls, f.now, R, f.fog, picks);
   if ('ask' in resolved) return askDodge(f, cmd, picks, resolved);
   if (resolved.ok === false) return refused(f, resolved.reason);
   // table 2.3: a use that resolved is one more spent of an ability limited a fight or a gate
@@ -292,10 +292,19 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const useLine = `${use.head}${said.length ? `: ${said.join(', ')}` : ''}.${left ? ` ${left.name} covers the ground.` : ''}${placed.evicted.length ? ` ${placed.evicted.map(z => z.name).join(', ')} ends.` : ''}`;
   const about = [u.id, ...reacted.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])];
   const used0 = risen(summoned(zoneEnds(logged({ ...f, rows: r.bodies, zones: placed.zones }, line(useLine, about, [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landingOf(taken, f.now, R), rows, ctx), a, u.id, ctx), a, u.id, aim, use.rolls, ctx);
-  // a zone act (kits design 8.5.4): a zone moved or widened onto a body pays it no entry, as a forced move pays none (8.5.5)
-  const z = a.zoneAct ? zoneActed(used0.zones, u.id, a.zoneAct, at, used0.rows, used0.grid, used0.now, R) : null;
-  const used = z?.acted ? logged({ ...used0, zones: z.zones }, line(`${z.acted.name} ${a.zoneAct!.act === 'shift' ? 'moves' : 'widens'}.`, [], [z.acted.id]), R) : used0;
-  const pushedIn = new Set<string>(z?.acted ? used.rows.map(b => b.id) : r.shoved);
+  // a zone act (kits design 8.5.4): erase removes foe fields without triggering their end or moving anyone; shift/grow onto a body pays it no entry (8.5.5)
+  let used = used0, zoneMoved = false;
+  if (a.zoneAct?.act === 'erase') {
+    const e = zonesErased(used0.zones, u.side, { act: 'erase', name: a.zoneAct.name, by: a.zoneAct.by }, at, used0.rows, used0.grid, used0.now, R);
+    if (e.erased.length) used = logged({ ...used0, zones: e.zones }, line(`${e.erased.map(x => x.name).join(', ')} erased.`, [], e.erased.map(x => x.id)), R);
+  } else if (a.zoneAct) {
+    const z = zoneActed(used0.zones, u.id, { act: a.zoneAct.act, name: a.zoneAct.name, by: a.zoneAct.by }, at, used0.rows, used0.grid, used0.now, R);
+    if (z.acted) {
+      used = logged({ ...used0, zones: z.zones }, line(`${z.acted.name} ${a.zoneAct.act === 'shift' ? 'moves' : 'widens'}.`, [], [z.acted.id]), R);
+      zoneMoved = true;
+    }
+  }
+  const pushedIn = new Set<string>(zoneMoved ? used.rows.map(b => b.id) : r.shoved);
   const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes }) };
   const fired = triggered(scored, eventsOf(a, u.id, r.outcomes, rows, scored.rows), ctx);
   const fx: Fx = [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf([...r.bursts, ...reacted.bursts])];
@@ -767,6 +776,7 @@ export function dodgeAsk(f: Running, R: Rules): DodgeAsked | null {
   const a = who.abilities.find(x => x.id === use.ability);
   if (!a || a.channel || aimRefusal(base, use.aim)) return null;
   const u = { ...dropChannel(who), intent: null }, rows = base.rows.map(r => r.id === u.id ? u : r);
+  // Harmless without zone-price `spent`: `landUse` asks every dodge (Pass 1) before reading `ok.spent`.
   const r = resolve(a, u, rows, use.aim, base.grid, use.rolls, base.now, R, base.fog, picks);
   return 'ask' in r ? r : null;
 }

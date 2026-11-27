@@ -14,9 +14,12 @@ import { chained, deleteQuest } from '../src/core/hunter/quests.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { freshSave, newHunter, parseSave } from '../src/core/save.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
-import { hunterRow } from '../src/core/combat/rows.ts';
+import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { reduce } from '../src/core/combat/fight.ts';
+import type { Running } from '../src/core/combat/fight.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
+import type { Ability } from '../src/core/combat/ability-types.ts';
+import { place } from '../src/core/combat/space.ts';
 import { fightId } from '../src/core/ids.ts';
 import type { ItemId } from '../src/core/ids.ts';
 import { keystoneAwakenedLine } from '../src/core/rules-text.ts';
@@ -406,5 +409,43 @@ describe('the registry of keystones (design A.6)', () => {
     expect(sheet.shadows).toBe(withoutKs.shadows + 1);
     expect(sheet.manaMax).toBe(withoutKs.manaMax + 5);
     expect(Number(sheet.healPower)).toBe(0);
+  });
+
+  test('Slip Away actually moves the dodger\'s next turn 33% sooner on an avoided attack', () => {
+    const h = { ...newHunter(KEYSTONES_ON), rank: 'D' as const, level: 10, stats: built({ agi: 40, str: 30, vit: 30 }) };
+    const hRow = hunterRow(h, combatantId('h1'), KEYSTONES_ON);
+    expect(hRow.statuses.some(s => s.def.label === 'Slip Away')).toBe(true);
+    const foe = monsterRows({ name: 'Brute', rank: 'D', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], statuses: [] }, [combatantId('m1')], KEYSTONES_ON)[0]!;
+    const heavySwing: Ability = {
+      ...foe.abilities[0]!,
+      delivery: { kind: 'travel', windup: tick(500), speed: 'instant' },
+    };
+    let f = reduce(null, {
+      type: 'add',
+      fightId: fightId('f-slip-away'),
+      rows: [{ ...hRow, place: place(3, 3) }, { ...foe, place: place(4, 3), abilities: [heavySwing] }],
+      openings: [],
+    }, { rules: KEYSTONES_ON }).fight!;
+    f = reduce(f, { type: 'start', openings: [{ id: combatantId('m1'), d20: 20, tie: 2 }, { id: combatantId('h1'), d20: 1, tie: 1 }] }, { rules: KEYSTONES_ON }).fight!;
+    if (f.phase !== 'running') throw new Error('expected running fight');
+    const wait = 600;
+    const ready: Running = {
+      ...f,
+      rows: f.rows.map(x => (x.id === combatantId('h1') ? { ...x, at: tick(f.now + wait) } : x)),
+    };
+    let r = reduce(ready, {
+      type: 'act',
+      by: combatantId('m1'),
+      ability: heavySwing.id,
+      aim: combatantId('h1'),
+      rolls: { dice: { [combatantId('h1')]: [4] }, react: { [combatantId('h1')]: 20 } },
+      force: true,
+    }, { rules: KEYSTONES_ON });
+    expect(r.effects.some(e => e.type === 'dodgeAsked')).toBe(true);
+    r = reduce(r.fight, { type: 'dodge', id: combatantId('h1'), to: place(2, 3) }, { rules: KEYSTONES_ON });
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    const after = (r.fight as Running).rows.find(x => x.id === combatantId('h1'))!;
+    expect(after.at).toBe(tick(ready.now + wait - Math.round(wait * 33 / 100)));
+    expect(after.at).toBeLessThan(tick(ready.now + wait));
   });
 });

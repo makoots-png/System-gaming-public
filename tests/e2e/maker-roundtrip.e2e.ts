@@ -30,11 +30,13 @@ import {
   WORST_REWARDS,
   WORST_ROLL_TABLES,
   WORST_SKILL_ACTIVE,
+  WORST_SKILL_DISPEL_HELPFUL,
   WORST_SKILL_GRIEVOUS,
   WORST_SKILL_PASSIVE,
   WORST_SKILL_REACTION,
   WORST_SKILL_SWAP,
   WORST_SKILL_TRUE,
+  WORST_SKILL_ZONE_ERASE,
   WORST_STATUS_KITS,
   WORST_STATUS_OPS,
   WORST_STORY,
@@ -45,7 +47,7 @@ import {
 const COVERED_E2E_IDS: readonly MakerId[] = [
   'status', 'item', 'skill', 'skill-swap', 'monster', 'npc', 'rewards', 'bundle', 'map', 'feat', 'story',
   'quest', 'gate', 'preset', 'title', 'guild', 'identity', 'rules-overrides', 'roll-tables',
-  'typed-weapon', 'true-ability', 'grievous-cut',
+  'typed-weapon', 'true-ability', 'grievous-cut', 'dispel-helpful', 'zone-erase',
 ];
 
 /** A by-value item fixture as the def the library keys by its id: no `id`, no `qty`. */
@@ -77,7 +79,7 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
   await page.evaluate(f => hunterApp.store.update((d: any) => {
     d.library.statuses['rt-ops'] = f.statusOps;
     d.library.statuses['rt-kits'] = f.statusKits;
-    d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous);
+    d.library.skills.push(f.skillActive, f.skillReaction, f.skillPassive, f.skillSwap, f.skillTrue, f.skillGrievous, f.skillDispelHelpful, f.skillZoneErase);
     d.monsters.push(f.monsterMythic, f.monsterBoss);
     d.library.npcs.push(f.npc);
     d.library.rewards.push(f.bundle);
@@ -94,6 +96,8 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     skillSwap: WORST_SKILL_SWAP,
     skillTrue: WORST_SKILL_TRUE,
     skillGrievous: WORST_SKILL_GRIEVOUS,
+    skillDispelHelpful: WORST_SKILL_DISPEL_HELPFUL,
+    skillZoneErase: WORST_SKILL_ZONE_ERASE,
     monsterMythic: WORST_MONSTER_MYTHIC,
     monsterBoss: WORST_MONSTER_BOSS,
     npc: WORST_NPC,
@@ -127,6 +131,8 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
     { label: 'skill (shadow swap movement, kit-parts)', ws: 'skill', id: WORST_SKILL_SWAP.id, overlay: '.skm-overlay', expected: WORST_SKILL_SWAP, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_SWAP.id) },
     { label: 'true-ability (active skill dealing true damage)', ws: 'skill', id: WORST_SKILL_TRUE.id, overlay: '.skm-overlay', expected: WORST_SKILL_TRUE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_TRUE.id) },
     { label: 'grievous-cut (active skill applying Grievous Wounds at 25%)', ws: 'skill', id: WORST_SKILL_GRIEVOUS.id, overlay: '.skm-overlay', expected: WORST_SKILL_GRIEVOUS, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_GRIEVOUS.id) },
+    { label: 'dispel-helpful (active skill dispelling helpful and harmful statuses)', ws: 'skill', id: WORST_SKILL_DISPEL_HELPFUL.id, overlay: '.skm-overlay', expected: WORST_SKILL_DISPEL_HELPFUL, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_DISPEL_HELPFUL.id) },
+    { label: 'zone-erase (active skill erasing foe fields)', ws: 'skill', id: WORST_SKILL_ZONE_ERASE.id, overlay: '.skm-overlay', expected: WORST_SKILL_ZONE_ERASE, read: () => page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_ZONE_ERASE.id) },
     { label: 'monster (mythic script)', ws: 'monster', id: WORST_MONSTER_MYTHIC.id, overlay: '.enm-overlay', expected: WORST_MONSTER_MYTHIC, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_MYTHIC.id) },
     { label: 'monster (extractable boss)', ws: 'monster', id: WORST_MONSTER_BOSS.id, overlay: '.enm-overlay', expected: WORST_MONSTER_BOSS, read: () => page.evaluate(id => hunterApp.store.get().monsters.find((x: any) => x.id === id), WORST_MONSTER_BOSS.id) },
     { label: 'npc (elite foe with abilities, statuses, tweaks, icon, notes)', ws: 'npc', id: WORST_NPC.id, overlay: '.npcm-overlay', expected: WORST_NPC, read: () => page.evaluate(id => hunterApp.store.get().library.npcs.find((x: any) => x.id === id), WORST_NPC.id) },
@@ -149,6 +155,47 @@ test('Workshop makers: open worst-case saved values across all eight kinds and s
       expect(await c.read(), c.label).toEqual(c.expected);
     });
   }
+
+  await test.step('dispel-helpful UI toggle: switch to Helpful statuses / All of them and verify preview and saved op', async () => {
+    const btn = page.locator(`#view-workshop [data-ws="skill"] [data-id="${WORST_SKILL_DISPEL_HELPFUL.id}"] [data-act="edit"]`);
+    await btn.scrollIntoViewIfNeeded();
+    await btn.tap();
+    const dlg = page.locator('.skm-overlay [role=dialog]');
+    await expect(dlg).toBeVisible();
+    await expect(dlg.locator('.mk-preview')).toContainText('Removes the first helpful status');
+    await expect(dlg.locator('.mk-preview')).toContainText('Cures every harmful status');
+    await dlg.locator('[data-fx] [data-row="0"] [data-set="which"][data-v="all"]').tap();
+    await expect(dlg.locator('.mk-preview')).toContainText('Removes every helpful status');
+    await dlg.locator('[data-fx] [data-row="1"] [data-set="dispelKind"][data-v="helpful"]').tap();
+    await dlg.locator('[data-apply]').tap();
+    await expect(dlg).toHaveCount(0);
+    const updated = await page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_DISPEL_HELPFUL.id);
+    expect(updated.ability.ops).toEqual([
+      { op: 'dispel', which: 'all', kind: 'helpful' },
+      { op: 'dispel', which: 'all', kind: 'helpful' },
+    ]);
+  });
+
+  await test.step('zone-erase UI toggle: edit count and field name and verify preview and saved zoneAct', async () => {
+    const btn = page.locator(`#view-workshop [data-ws="skill"] [data-id="${WORST_SKILL_ZONE_ERASE.id}"] [data-act="edit"]`);
+    await btn.scrollIntoViewIfNeeded();
+    await btn.tap();
+    const dlg = page.locator('.skm-overlay [role=dialog]');
+    await expect(dlg).toBeVisible();
+    await expect(dlg.locator('.mk-preview')).toContainText('Erases up to 2 foe Mire nearest where you aim.');
+    await expect(dlg.locator('[data-worth-line]')).toContainText('moving, resizing, or erasing a field');
+    const moves = dlg.locator('details[data-group="moves"]');
+    await moves.locator('summary').tap();
+    await expect(moves.locator('[data-sum="moves"]')).toContainText('erases a foe field');
+    await expect(moves.locator('[data-set="act"][data-v="erase"]')).toHaveAttribute('aria-pressed', 'true');
+    await moves.locator('input[data-f="by"]').fill('1');
+    await moves.locator('input[data-f="actZone"]').fill('');
+    await expect(dlg.locator('.mk-preview')).toContainText('Erases up to 1 foe field nearest where you aim.');
+    await dlg.locator('[data-apply]').tap();
+    await expect(dlg).toHaveCount(0);
+    const updated = await page.evaluate(id => hunterApp.store.get().library.skills.find((x: any) => x.id === id), WORST_SKILL_ZONE_ERASE.id);
+    expect(updated.ability.zoneAct).toEqual({ act: 'erase', name: null, by: 1 });
+  });
 });
 
 test('Non-Workshop GM editors: quest, gate, clear preset, title, guild, rules overrides, and roll tables round-trip unchanged', async ({ device }) => {

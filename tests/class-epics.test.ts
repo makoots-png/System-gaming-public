@@ -34,6 +34,8 @@ import type { ClassSignature } from '../src/core/registry/class-powers.ts';
 import { SERAPH_SIGNATURE, SERAPH_TREE } from '../src/core/registry/class-seraph.ts';
 import { IRONCLAD_SIGNATURE, IRONCLAD_TREE } from '../src/core/registry/class-ironclad.ts';
 import { STORMCALLER_SIGNATURE, STORMCALLER_TREE } from '../src/core/registry/class-stormcaller.ts';
+import { CHRONOKEEPER_SIGNATURE, CHRONOKEEPER_TREE } from '../src/core/registry/class-chronokeeper.ts';
+import { VOIDSTALKER_SIGNATURE, VOIDSTALKER_TREE } from '../src/core/registry/class-voidstalker.ts';
 import type { ClassName } from '../src/core/registry/jobs.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
@@ -92,6 +94,30 @@ const EPICS: readonly EpicSpec[] = [
     branchARush: ['storm-root', 'storm-a2', 'storm-a3x', 'storm-a3y', 'storm-a4x', 'storm-a4y', 'storm-a5-l', 'storm-a6'],
     activeIds: ['storm-chain-bolt', 'storm-volt-blink', 'storm-pylon'],
     damagingActiveId: 'storm-chain-bolt',
+  },
+  {
+    className: 'Chronokeeper',
+    sig: CHRONOKEEPER_SIGNATURE,
+    tree: CHRONOKEEPER_TREE,
+    stats: { ctl: 106, dis: 58 },
+    canonicalForks: ['chrono-a5-l', 'chrono-b5-l', 'chrono-c5-l'],
+    scalerForkNode: 'chrono-a5-r',
+    capstoneWornKey: 'chrono-hourglass-master',
+    branchARush: ['chrono-root', 'chrono-a2', 'chrono-a3x', 'chrono-a3y', 'chrono-a4x', 'chrono-a4y', 'chrono-a5-l', 'chrono-a6'],
+    activeIds: ['chrono-bolt', 'chrono-accelerate', 'chrono-stasis', 'chrono-time-slip'],
+    damagingActiveId: 'chrono-bolt',
+  },
+  {
+    className: 'Voidstalker',
+    sig: VOIDSTALKER_SIGNATURE,
+    tree: VOIDSTALKER_TREE,
+    stats: { agi: 106, ins: 58 },
+    canonicalForks: ['void-a5-l', 'void-b5-l', 'void-c5-l'],
+    scalerForkNode: 'void-c5-r',
+    capstoneWornKey: 'void-abyssal-phantom',
+    branchARush: ['void-root', 'void-a2', 'void-a3x', 'void-a3y', 'void-a4x', 'void-a4y', 'void-a5-l', 'void-a6'],
+    activeIds: ['void-rend', 'void-phase-blink', 'void-phantom-cut', 'void-abyssal-swap'],
+    damagingActiveId: 'void-rend',
   },
 ];
 
@@ -360,10 +386,12 @@ describe('Wave 1 Epics: Seraph, Ironclad, and Stormcaller trees, pricing, and in
   });
 
   test('Epic base signatures price cleanly through item-budget and worth tables (28-point Epic diagnostic at rank B)', () => {
-    const explainKeys: Record<string, 'healPower' | 'threat' | 'haste'> = {
+    const explainKeys: Record<string, 'healPower' | 'threat' | 'haste' | 'speed'> = {
       Seraph: 'healPower',
       Ironclad: 'threat',
       Stormcaller: 'haste',
+      Chronokeeper: 'haste',
+      Voidstalker: 'speed',
     };
     for (const spec of EPICS) {
       const wornPart = spec.sig.worn ? { worn: spec.sig.worn.def } : {};

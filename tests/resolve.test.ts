@@ -21,6 +21,7 @@ import { heldDieId } from '../src/core/combat/standing.ts';
 import { LEVELS } from '../src/core/combat/sight-levels.ts';
 import type { Level } from '../src/core/combat/sight-levels.ts';
 import { drainWords, landOps } from '../src/core/combat/land.ts';
+import { mythicStart } from '../src/core/combat/mythic.ts';
 import { cooldownOf } from '../src/core/combat/charge.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
@@ -614,6 +615,43 @@ describe('wave 2\'s sheet and share ops in a use (kits design 8.1, rule 11c)', (
     const cleanse = (which: 'first' | 'all') => find(run(ability('support', { effect: null, ops: [{ op: 'dispel', which }] }), u, [u, t], t.id, rolls({ t: [] })).bodies, 't').statuses.map(s => s.key);
     expect(cleanse('first')).toEqual(['haste', 'weak']);
     expect(cleanse('all')).toEqual(['haste']);
+  });
+
+  test('an offensive dispel (kind helpful) strips helpful statuses, keeping worn, neutral, shield-only, and mythic- only on a scripted mythic', () => {
+    const u = body('u', hunterOrigin('cannon'), place(5, 5), 'party');
+    const wornBuff = statusOn({ label: 'Worn', desc: '', ops: [{ op: 'share', on: 'dealt', pct: 10 }] }, { key: statusKey('worn-buff'), source: { id: null, tier: 2 }, until: null, since: NOW, settledAt: NOW, worn: true });
+    const mythicBuff = statusOn({ label: 'Shell', desc: '', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 15 } }] }, { key: statusKey('mythic-shell'), source: { id: null, tier: 5 }, until: null, since: NOW, settledAt: NOW });
+    const neutralMark = statusOn({ label: 'Void Brand', desc: '', ops: [{ op: 'note', text: 'Brand' }], end: { ops: [{ op: 'damage', type: 'arcane', amount: formula('10') }], cleanse: 'land' } }, { key: statusKey('void-brand'), source: { id: u.id, tier: 2 }, until: tick(NOW + 2000), since: NOW, settledAt: NOW });
+    const stoneSkin = statusOn({ label: 'Stone Skin', desc: '', ops: [{ op: 'shield', amount: { kind: 'number', value: 20 } }] }, { key: statusKey('stone-skin'), source: { id: null, tier: 2 }, until: tick(NOW + 2000), since: NOW, settledAt: NOW });
+    const strip = (target: Body, which: 'first' | 'all') => find(
+      run(ability('curse', { effect: null, delivery: { kind: 'sure' }, ops: [{ op: 'dispel', which, kind: 'helpful' }] }), u, [u, target], target.id, rolls({ t: [] })).bodies,
+      't',
+    ).statuses.map(s => s.key);
+
+    // Scripted mythic bearer: mythic-shell is exempt, shield-only Stone Skin stays neutral, haste/bulwark are stripped
+    const scripted = withOps(
+      body('t', monsterOrigin('brute', 'mythic'), place(6, 5), 'foe', { kind: 'monster', mythic: mythicStart('the-fourth-rider', NOW) }),
+      wornBuff,
+      mythicBuff,
+      neutralMark,
+      stoneSkin,
+      marked('slow', { op: 'speed', pct: -20 }),
+      marked('haste', { op: 'speed', pct: 20 }),
+      marked('bulwark', { op: 'share', on: 'taken', pct: -15 }),
+    );
+    expect(strip(scripted, 'first')).toEqual(['worn-buff', 'mythic-shell', 'void-brand', 'stone-skin', 'slow', 'bulwark']);
+    expect(strip(scripted, 'all')).toEqual(['worn-buff', 'mythic-shell', 'void-brand', 'stone-skin', 'slow']);
+
+    // Non-mythic bearer (t.mythic === null): a GM-made buff whose key starts with mythic- is dispelled normally
+    const plain = withOps(
+      body('t', hunterOrigin('tank'), place(6, 5), 'foe'),
+      wornBuff,
+      mythicBuff,
+      stoneSkin,
+      marked('haste', { op: 'speed', pct: 20 }),
+    );
+    expect(strip(plain, 'first')).toEqual(['worn-buff', 'stone-skin', 'haste']);
+    expect(strip(plain, 'all')).toEqual(['worn-buff', 'stone-skin']);
   });
 
   test('a use\'s dispel of a bomb a cure sets off lands its end as a land op\'s dispel does: the same hit on the same body (SMX-rules-2.3b)', () => {

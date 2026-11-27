@@ -454,6 +454,48 @@ describe('policy Wave 2 PR 2 updates (timed summon lane, corpse aim, and kitOf/s
     const choice = sensible(f, body(f, 'H'), ON);
     expect(choice.type === 'act' && choice.ability.id).toBe(finisher.id);
   });
+
+  test('playable lets zoneAct erase through for sensible and autoTurnOf while still skipping shift and grow', () => {
+    const pf = (src: string) => { const r = parseFormula(src, ON); if (!r.ok) throw new Error(r.error); return r.formula; };
+    const plain: Ability = {
+      ...abilityOf('blast', { id: abilityId('plain-blast'), name: 'Plain Blast', range: tiles(8), foesOnly: true }, ON),
+      effect: { type: 'arcane', by: 'hand', formula: pf('10') },
+    };
+    const shiftBlast: Ability = {
+      ...abilityOf('blast', { id: abilityId('shift-blast'), name: 'Shift Blast', range: tiles(8), foesOnly: true }, ON),
+      effect: { type: 'arcane', by: 'hand', formula: pf('50') },
+      zoneAct: { act: 'shift', name: null, by: 2 },
+    };
+    const growBlast: Ability = {
+      ...abilityOf('blast', { id: abilityId('grow-blast'), name: 'Grow Blast', range: tiles(8), foesOnly: true }, ON),
+      effect: { type: 'arcane', by: 'hand', formula: pf('50') },
+      zoneAct: { act: 'grow', name: null, by: 1 },
+    };
+    const eraseBlast: Ability = {
+      ...abilityOf('blast', { id: abilityId('erase-blast'), name: 'Erase Field', range: tiles(8), foesOnly: true }, ON),
+      effect: { type: 'arcane', by: 'hand', formula: pf('40') },
+      zoneAct: { act: 'erase', name: null, by: 1 },
+    };
+    const h: NewRow = { ...party('cannon', 'H', place(5, 2)), abilities: [plain, shiftBlast, growBlast, eraseBlast] };
+    const f = begun('H', h, brute(M, place(5, 6)));
+    const choice = sensible(f, body(f, 'H'), ON);
+    expect(choice.type === 'act' && choice.ability.id).toBe(eraseBlast.id);
+    // Without eraseBlast, shiftBlast and growBlast are still skipped in favor of plain.
+    const hNoErase: NewRow = { ...party('cannon', 'H', place(5, 2)), abilities: [plain, shiftBlast, growBlast] };
+    const f2 = begun('H', hNoErase, brute(M, place(5, 6)));
+    const choice2 = sensible(f2, body(f2, 'H'), ON);
+    expect(choice2.type === 'act' && choice2.ability.id).toBe(plain.id);
+
+    // autoTurnOf follows the same playable filter for automatic turns (monster/NPC).
+    const mErase: NewRow = { ...brute(M, place(5, 6)), abilities: [plain, shiftBlast, growBlast, eraseBlast] };
+    const fAuto1 = begun('M', party('cannon', 'H', place(5, 2)), mErase);
+    const turn1 = autoTurnOf(fAuto1, M, ON, fAuto1.now);
+    expect(turn1.kind === 'roll' && turn1.choice.type === 'act' && turn1.choice.ability.id).toBe(eraseBlast.id);
+    const mNoErase: NewRow = { ...brute(M, place(5, 6)), abilities: [plain, shiftBlast, growBlast] };
+    const fAuto2 = begun('M', party('cannon', 'H', place(5, 2)), mNoErase);
+    const turn2 = autoTurnOf(fAuto2, M, ON, fAuto2.now);
+    expect(turn2.kind === 'roll' && turn2.choice.type === 'act' && turn2.choice.ability.id).toBe(plain.id);
+  });
 });
 
 describe('skilled NPC policy: determinism, fudge isolation, dice-stream isolation, and slider curve (NPC unit 4 Row 5)', () => {
