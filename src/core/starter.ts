@@ -18,7 +18,7 @@ import { equip, putItem } from './hunter/inventory.ts';
 import { refill } from './hunter/vitals.ts';
 import { hunterSheet } from './hunter/sheet.ts';
 import { neutralSeed } from './hunter/identity.ts';
-import { newGate, parseGate } from './gates/gate.ts';
+import { can, newGate, parseGate } from './gates/gate.ts';
 import type { Gate, GateMonster, GateType } from './gates/gate.ts';
 import type { GateDifficulty } from './gates/difficulty.ts';
 import { clearGoldEach } from './gates/pay.ts';
@@ -257,11 +257,11 @@ export type StarterMissing = {
 /** Why the starter campaign cannot be written: everything requested is already loaded, validation failed, or the story library refused it. */
 export type StarterRefusal = Refused<'already' | 'pregen' | 'gate' | 'story' | 'full' | 'taken'>;
 
-/** What parts of the starter campaign `save` does not have yet for `options` (by canonical name, case-insensitive). */
+/** What parts of the starter campaign `save` does not have yet for `options` (by canonical name, case-insensitive). Only a still-to-be-cleared gate (`detected`, `raiding`, or `broken`) counts as present. */
 export function starterMissing(save: Save, options: StarterOptions = {}): StarterMissing {
   const includePregens = options.includePregens !== false;
   const hasStory = namedLike(save.library.stories, STARTER_STORY_NAME, null) !== null;
-  const hasGate = save.gates.some(g => g.name.toLowerCase() === STARTER_GATE.name.toLowerCase());
+  const hasGate = save.gates.some(g => can(g, 'clear') && g.name.toLowerCase() === STARTER_GATE.name.toLowerCase());
   const seed = seedOf(save);
   const replaceSeed = !save.settings.onboarded && !hasStory && !hasGate && seed !== null;
   const keptHunters = replaceSeed ? save.hunters.filter(h => h !== seed) : save.hunters;
@@ -327,12 +327,13 @@ export const STARTER_REFUSAL_WORDS: Readonly<Record<StarterRefusal['why'], strin
 
 /**
  * Loads missing pieces of the starter campaign onto `save` in one atomic step (additive and idempotent by canonical
- * name). On a first-time load (before onboarding, neither starter story nor starter gate present, and the unowned seed
- * still present), replaces the seed with the 4 sample hunters (with `capDisplay: 'E'` and full HP/mana; Tessa Corbin
- * keeps her 12 creation points unspent) or neutralizes the seed when `includePregens` is false. On a reload after
- * setup, keeps all existing hunters (including a seed from Reset campaign), stories, and gates untouched and adds only
- * missing pieces. Refuses with `'already'` (writing nothing and changing no seq or log) when everything requested is
- * already present.
+ * name). On a first-time load (before onboarding, neither starter story nor still-to-be-cleared starter gate present,
+ * and the unowned seed still present), replaces the seed with the 4 sample hunters (with `capDisplay: 'E'` and full
+ * HP/mana; Tessa Corbin keeps her 12 creation points unspent) or neutralizes the seed when `includePregens` is false.
+ * On a reload after setup, keeps all existing hunters (including a seed from Reset campaign), stories, and gates
+ * untouched and adds only missing pieces. Refuses with `'already'` (writing nothing and changing no seq or log) when
+ * everything requested is already present, where a starter gate counts as present only while still to be cleared
+ * (`detected`, `raiding`, or `broken`, not `cleared` or `closed`).
  */
 export function starterCampaign(
   save: Save,

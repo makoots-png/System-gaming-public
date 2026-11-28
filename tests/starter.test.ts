@@ -25,7 +25,7 @@ import { debtPayoffClears, raiseOwes } from '../src/core/hunter/revive-standing.
 import { hpOf } from '../src/core/hunter/vitals.ts';
 import { bagOf, wornOf } from '../src/core/hunter/inventory.ts';
 import { resolveGrant } from '../src/core/registry/item-book.ts';
-import { activeGateWave, hasGateWaves, parseGate, waveRoster } from '../src/core/gates/gate.ts';
+import { activeGateWave, hasGateWaves, parseGate, transition, waveRoster } from '../src/core/gates/gate.ts';
 import { clearGoldEach } from '../src/core/gates/pay.ts';
 import { CHAPTER_MAX, STORY_BOUNDS, chapterSize, parseStory } from '../src/core/story/story.ts';
 import { missingRequired, runStep } from '../src/core/story/run.ts';
@@ -431,6 +431,78 @@ describe('idempotent reload after setup', () => {
     const withoutPregens = ok(starterCampaign(reset, stamp, RULES, { includePregens: false }));
     expect(withoutPregens.hunters).toEqual(reset.hunters);
     expect(withoutPregens.settings.activeHunterId).toBe(seed!.id);
+  });
+
+  test('reloading after Tidewall Cannery Gate is cleared keeps the cleared gate, adds a new detected Tidewall, and then refuses already', () => {
+    const loaded = ok(starterCampaign(install(), stamp, RULES));
+    const cleared = transition(loaded.gates[0]!, { type: 'clear', day: loaded.world.day });
+    expect(cleared.status).toBe('cleared');
+    const withCleared: Save = { ...loaded, gates: [cleared] };
+
+    const missing = starterMissing(withCleared, { includePregens: true });
+    expect(missing.story).toBe(false);
+    expect(missing.gate).toBe(true);
+    expect(missing.pregens).toEqual([]);
+
+    const reloaded = ok(starterCampaign(withCleared, stamp, RULES));
+    expect(reloaded.gates).toHaveLength(2);
+    expect(reloaded.gates.find(g => g.id === cleared.id)).toEqual(cleared);
+    const fresh = reloaded.gates.find(g => g.id !== cleared.id);
+    expect(fresh).toBeDefined();
+    expect(fresh!.name).toBe(STARTER_GATE.name);
+    expect(fresh!.status).toBe('detected');
+    expect(fresh!.id).not.toBe(cleared.id);
+    expect(reloaded.library.stories).toHaveLength(1);
+    expect(reloaded.hunters.map(h => h.name)).toEqual(loaded.hunters.map(h => h.name));
+
+    expect(starterMissing(reloaded, { includePregens: true }).gate).toBe(false);
+    expect(starterCampaign(reloaded, stamp, RULES)).toEqual({ ok: false, why: 'already' });
+    expect(starterCampaign(reloaded, stamp, RULES, { includePregens: false })).toEqual({ ok: false, why: 'already' });
+  });
+
+  test('reloading after Tidewall Cannery Gate is closed keeps the closed gate, adds a new detected Tidewall, and then refuses already', () => {
+    const loaded = ok(starterCampaign(install(), stamp, RULES));
+    const closed = transition(loaded.gates[0]!, { type: 'close' });
+    expect(closed.status).toBe('closed');
+    const withClosed: Save = { ...loaded, gates: [closed] };
+
+    const missing = starterMissing(withClosed, { includePregens: true });
+    expect(missing.story).toBe(false);
+    expect(missing.gate).toBe(true);
+    expect(missing.pregens).toEqual([]);
+
+    const reloaded = ok(starterCampaign(withClosed, stamp, RULES));
+    expect(reloaded.gates).toHaveLength(2);
+    expect(reloaded.gates.find(g => g.id === closed.id)).toEqual(closed);
+    const fresh = reloaded.gates.find(g => g.id !== closed.id);
+    expect(fresh).toBeDefined();
+    expect(fresh!.name).toBe(STARTER_GATE.name);
+    expect(fresh!.status).toBe('detected');
+    expect(fresh!.id).not.toBe(closed.id);
+    expect(reloaded.library.stories).toHaveLength(1);
+    expect(reloaded.hunters.map(h => h.name)).toEqual(loaded.hunters.map(h => h.name));
+
+    expect(starterMissing(reloaded, { includePregens: true }).gate).toBe(false);
+    expect(starterCampaign(reloaded, stamp, RULES)).toEqual({ ok: false, why: 'already' });
+    expect(starterCampaign(reloaded, stamp, RULES, { includePregens: false })).toEqual({ ok: false, why: 'already' });
+  });
+
+  test('a detected, raiding, or broken Tidewall Cannery Gate still counts as present and refuses already', () => {
+    const loaded = ok(starterCampaign(install(), stamp, RULES));
+    const baseGate = loaded.gates[0]!;
+    const cases = [
+      { status: 'detected' as const, gate: baseGate },
+      { status: 'raiding' as const, gate: transition(baseGate, { type: 'enter' }) },
+      { status: 'broken' as const, gate: transition(baseGate, { type: 'dayAdvanced', day: baseGate.breakDay }) },
+    ];
+    for (const { status, gate } of cases) {
+      expect(gate.status).toBe(status);
+      const s: Save = { ...loaded, gates: [gate] };
+      expect(starterMissing(s, { includePregens: true }).gate).toBe(false);
+      expect(starterMissing(s, { includePregens: false }).gate).toBe(false);
+      expect(starterCampaign(s, stamp, RULES)).toEqual({ ok: false, why: 'already' });
+      expect(starterCampaign(s, stamp, RULES, { includePregens: false })).toEqual({ ok: false, why: 'already' });
+    }
   });
 
   test('exports plain wording tables for reload dialog and refusals', () => {

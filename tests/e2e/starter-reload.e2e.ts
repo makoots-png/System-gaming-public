@@ -158,3 +158,91 @@ test('blank GM loads starter campaign from Stories, starts Chapter 1 in a room, 
     expect(after.hunters).toEqual(['Hunter', ...PREGENS.map(p => p.name)]);
   });
 });
+
+test('after clearing Tidewall Cannery Gate, Load starter campaign prompts to add a fresh detected Tidewall, keeps the cleared gate, and refuses a third load', async ({ device }) => {
+  const gm = (await device('gm-cleared-tidewall', { viewport: PHONE })).page;
+
+  await test.step('blank GM loads the starter campaign from Stories', async () => {
+    await onboardBlankGM(gm);
+    await go(gm, 'gm');
+    await openGmSection(gm, 'stories');
+    await gm.locator('#gm-stories [data-st-starter]').tap();
+
+    const dialog = gm.locator('.sys-overlay.show .sys-window', { hasText: STARTER_WORDS.title });
+    await expect(dialog).toBeVisible();
+    await dialog.locator('.sys-actions button.primary', { hasText: STARTER_WORDS.button }).tap();
+    await expect(dialog).toHaveCount(0);
+    const toast = gm.locator('#toasts .toast', { hasText: STARTER_STORY_NAME });
+    await expect(toast).toBeVisible();
+    await toast.locator('.t-x').tap();
+    await expect(toast).toHaveCount(0);
+  });
+
+  const firstGateId = await gm.evaluate(
+    (name: string) => hunterApp.store.get().gates.find((g: any) => g.name === name)?.id as string,
+    STARTER_GATE.name,
+  );
+  expect(firstGateId).toBeTruthy();
+
+  await test.step('GM clears Tidewall Cannery Gate through the Clear gate panel', async () => {
+    await go(gm, 'gates');
+    const card = gm.locator(`#view-gates .gate[data-id="${firstGateId}"]`);
+    await expect(card).toBeVisible();
+    await card.locator('[data-act=clear]').tap();
+    const cform = card.locator('form[data-form=clear]');
+    await expect(cform).toBeVisible();
+    await cform.locator('button[type=submit]').tap();
+    await dismissAll(gm, 6);
+
+    const status = await gm.evaluate(
+      (id: string) => hunterApp.store.get().gates.find((g: any) => g.id === id)?.status as string,
+      firstGateId,
+    );
+    expect(status).toBe('cleared');
+  });
+
+  let secondGateId = '';
+  await test.step('tapping Load starter campaign opens the confirm dialog and adds a new detected Tidewall without removing the cleared one', async () => {
+    await go(gm, 'gm');
+    await openGmSection(gm, 'stories');
+    await gm.locator('#gm-stories [data-st-starter]').tap();
+
+    const dialog = gm.locator('.sys-overlay.show .sys-window', { hasText: STARTER_WORDS.title });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(STARTER_GATE.name);
+    await expect(gm.locator('#toasts .toast', { hasText: STARTER_REFUSAL_WORDS.already })).toHaveCount(0);
+
+    await dialog.locator('.sys-actions button.primary', { hasText: STARTER_WORDS.button }).tap();
+    await expect(dialog).toHaveCount(0);
+
+    const gates = await gm.evaluate(
+      (name: string): { id: string; status: string }[] => hunterApp.store.get().gates
+        .filter((g: any) => g.name === name)
+        .map((g: any) => ({ id: g.id as string, status: g.status as string })),
+      STARTER_GATE.name,
+    );
+    expect(gates).toHaveLength(2);
+    expect(gates.find(g => g.id === firstGateId)?.status).toBe('cleared');
+    const fresh = gates.find(g => g.id !== firstGateId);
+    expect(fresh?.status).toBe('detected');
+    secondGateId = fresh!.id;
+
+    await go(gm, 'gates');
+    await expect(gm.locator(`#gt-list .gate[data-id="${secondGateId}"]`)).toBeVisible();
+  });
+
+  await test.step('tapping Load starter campaign a third time reports already loaded and does not add a third gate', async () => {
+    await go(gm, 'gm');
+    await openGmSection(gm, 'stories');
+    await gm.locator('#gm-stories [data-st-starter]').tap();
+
+    await expect(gm.locator('#toasts .toast', { hasText: STARTER_REFUSAL_WORDS.already })).toBeVisible();
+    await expect(gm.locator('.sys-overlay.show .sys-window', { hasText: STARTER_WORDS.title })).toHaveCount(0);
+
+    const count = await gm.evaluate(
+      (name: string) => hunterApp.store.get().gates.filter((g: any) => g.name === name).length,
+      STARTER_GATE.name,
+    );
+    expect(count).toBe(2);
+  });
+});
