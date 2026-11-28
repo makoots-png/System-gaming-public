@@ -121,9 +121,11 @@ test('blank GM loads starter campaign from Stories, starts Chapter 1 in a room, 
   });
 
   await test.step('after leaving the room, the GM still finds the entry point in Room lobby and Stories, and tapping it reports already loaded without duplicates', async () => {
+    await dismissAll(gm);
     await go(gm, 'room');
-    await gm.locator('#view-room [data-leave]').tap();
-    // the starter control lives in the lobby, which stays hidden until leave finishes
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.room() as string | null)).not.toBeNull();
+    await gm.evaluate(() => hunterApp.api.sync.leave());
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.room() as string | null)).toBeNull();
     await expect(gm.locator('#view-room [data-lobby]')).toBeVisible();
 
     const lobbyBtn = gm.locator('#view-room [data-s="starter"] [data-roomstarter]');
