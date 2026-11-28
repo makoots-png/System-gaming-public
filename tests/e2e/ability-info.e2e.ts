@@ -260,6 +260,7 @@ test('opening a dodge prompt off turn or tapping a reachable tile closes the ope
       f.currentId = boss.id;
     }, 'test-setup');
   }, { kaiId: ids.kai, bossId: ids.boss });
+  await setupDoc(player, HUNTER, { x: 2, y: 2 });
   await expect(token(gm, ids.boss)).toHaveClass(/\bnow\b/);
   await expect.poll(() => placeOf(player, ids.kai)).toEqual([2, 2]);
   await expect(combat(player).locator('.tb-mine')).toBeHidden();
