@@ -37,6 +37,7 @@ import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
 import { day, dev, room } from './fixtures/ids.ts';
 import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 import { MYTHIC_SOLO_SPECS } from './fixtures/mythic-hunters.ts';
+import { MYTHIC_ROSTER } from './fixtures/mythic-roster.ts';
 
 const ROOT = import.meta.dir + '/..';
 const AT = '2026-11-25T12:00:00.000Z';
@@ -327,6 +328,7 @@ describe('Wave 5: Roster Lock (36/36 wired classes, signatures, trees, status ke
     readonly registryFiles: readonly string[];
     readonly wiredMythics: readonly string[];
     readonly soloSpecClasses: readonly string[];
+    readonly rosterClasses: readonly string[];
     readonly offerPoolMythics: readonly string[];
   }): string[] {
     const errors: string[] = [];
@@ -358,6 +360,9 @@ describe('Wave 5: Roster Lock (36/36 wired classes, signatures, trees, status ke
     const mythicsSorted = [...input.wiredMythics].sort();
     if (JSON.stringify([...input.soloSpecClasses].sort()) !== JSON.stringify(mythicsSorted)) {
       errors.push('MYTHIC_SOLO_SPECS classes do not match wired Mythics');
+    }
+    if (JSON.stringify([...input.rosterClasses].sort()) !== JSON.stringify(mythicsSorted)) {
+      errors.push('MYTHIC_ROSTER classes do not match wired Mythics');
     }
     if (JSON.stringify([...input.offerPoolMythics].sort()) !== JSON.stringify(mythicsSorted)) {
       errors.push('MYTHIC_OFFER_POOL does not match wired Mythics');
@@ -449,6 +454,7 @@ describe('Wave 5: Roster Lock (36/36 wired classes, signatures, trees, status ke
       registryFiles,
       wiredMythics: MYTHIC_WIRED,
       soloSpecClasses: MYTHIC_SOLO_SPECS.map(s => s.className),
+      rosterClasses: MYTHIC_ROSTER.map(e => e.spec.className),
       offerPoolMythics: MYTHIC_OFFER_POOL,
     };
     expect(checkRosterLock(liveInput)).toEqual([]);
@@ -471,6 +477,9 @@ describe('Wave 5: Roster Lock (36/36 wired classes, signatures, trees, status ke
     );
     expect(checkRosterLock({ ...liveInput, soloSpecClasses: liveInput.soloSpecClasses.filter(c => c !== 'Dreadnought') })).toContain(
       'MYTHIC_SOLO_SPECS classes do not match wired Mythics',
+    );
+    expect(checkRosterLock({ ...liveInput, rosterClasses: liveInput.rosterClasses.filter(c => c !== 'Usurper') })).toContain(
+      'MYTHIC_ROSTER classes do not match wired Mythics',
     );
     expect(checkRosterLock({ ...liveInput, offerPoolMythics: liveInput.offerPoolMythics.filter(c => c !== 'Godfist') })).toContain(
       'MYTHIC_OFFER_POOL does not match wired Mythics',

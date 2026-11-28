@@ -9,8 +9,10 @@ import { GATE_STATUSES } from '../src/core/gates/gate.ts';
 import { lex } from '../scripts/deps.ts';
 import { PACK_KINDS } from '../src/core/pack.ts';
 import { domainOf, inDomain } from '../src/core/rules.ts';
+import { BUILT_IN_CLASSES } from '../src/core/registry/jobs.ts';
 import { E2E_MAKER_IDS, MAKER_OPEN_EXEMPTIONS, ROUNDTRIP_REGISTRY, UNIT_MAKER_IDS } from './fixtures/maker-registry.ts';
 import type { MakerRegistryEntry } from './fixtures/maker-registry.ts';
+import { mythicClassesOf, mythicSimFileOf } from './fixtures/mythic-roster.ts';
 import { ruleNumbers } from './fixtures/rule-numbers.ts';
 
 const ROOT = import.meta.dir + '/..';
@@ -2613,6 +2615,79 @@ test('every test in tests/fight-sim.test.ts uses simTest with deterministic work
       .filter(({ text: line }) => /\btest\s*\(/.test(line) && !/^\s*\/\//.test(line));
     expect(rawTests, `call simTest(...) instead of test(...) in ${rel} so every test uses the deterministic work guard and wall timeout`).toEqual([]);
   }
+});
+
+test('every Mythic solo-sim file derived from BUILT_IN_CLASSES imports and calls soloRow', async () => {
+  // Keeps every Mythic solo-sim file on the shared soloRow contract (75%..98% bounds, 0 capped, exact win ratchet,
+  // plain-only pressure clause, and tally floors) so no Mythic sim can quietly drop back to inline floor-only checks.
+  const importsSoloRow = (code: string) => /import\s+(?!type\b)[^;]*\bsoloRow\b[^;]*from\s+['"]\.\/models\/mythic-row\.ts['"]/.test(code);
+  const callsSoloRow = (code: string) => /\bsoloRow\s*\(/.test(code);
+  const stripComments = (src: string) => src.split('\n').filter(l => !isComment(l)).join('\n');
+
+  function checkMythicSoloRows(
+    mythics: readonly string[],
+    files: ReadonlyMap<string, string>,
+  ): string[] {
+    const issues: string[] = [];
+    const expected = new Set<string>();
+    for (const cls of mythics) {
+      const rel = mythicSimFileOf(cls);
+      expected.add(rel);
+      const src = files.get(rel);
+      if (src === undefined) {
+        issues.push(`${cls}: missing Mythic solo-sim file ${rel}`);
+        continue;
+      }
+      const code = stripComments(src);
+      if (!importsSoloRow(code)) issues.push(`${rel}: must import soloRow from ./models/mythic-row.ts`);
+      if (!callsSoloRow(code)) issues.push(`${rel}: must call soloRow(...) for its boss rows`);
+    }
+    for (const [rel, src] of files) {
+      if (expected.has(rel)) continue;
+      const code = stripComments(src);
+      if (!importsSoloRow(code)) issues.push(`${rel}: extra *-solo-sim.test.ts must import soloRow from ./models/mythic-row.ts`);
+      if (!callsSoloRow(code)) issues.push(`${rel}: extra *-solo-sim.test.ts must call soloRow(...)`);
+    }
+    return issues;
+  }
+
+  // Fail-capable negative self-tests: missing file, comment-only mention, missing import, missing call, and valid pass
+  const validSrc = "import { soloRow } from './models/mythic-row.ts';\nsoloRow({ className: 'Synthetic', boss: 'plain' });\n";
+  expect(checkMythicSoloRows(['FakeMythic'], new Map())).toEqual([
+    'FakeMythic: missing Mythic solo-sim file tests/fakemythic-solo-sim.test.ts',
+  ]);
+  expect(checkMythicSoloRows(
+    ['FakeMythic'],
+    new Map([['tests/fakemythic-solo-sim.test.ts', "// import { soloRow } from './models/mythic-row.ts';\n// soloRow({});\nexpect(res.winRate).toBeGreaterThanOrEqual(0.75);\n"]]),
+  )).toEqual([
+    'tests/fakemythic-solo-sim.test.ts: must import soloRow from ./models/mythic-row.ts',
+    'tests/fakemythic-solo-sim.test.ts: must call soloRow(...) for its boss rows',
+  ]);
+  expect(checkMythicSoloRows(
+    ['FakeMythic'],
+    new Map([['tests/fakemythic-solo-sim.test.ts', "const soloRow = () => {};\nsoloRow({});\n"]]),
+  )).toEqual([
+    'tests/fakemythic-solo-sim.test.ts: must import soloRow from ./models/mythic-row.ts',
+  ]);
+  expect(checkMythicSoloRows(
+    ['FakeMythic'],
+    new Map([['tests/fakemythic-solo-sim.test.ts', "import { soloRow } from './models/mythic-row.ts';\nexpect(true).toBe(true);\n"]]),
+  )).toEqual([
+    'tests/fakemythic-solo-sim.test.ts: must call soloRow(...) for its boss rows',
+  ]);
+  expect(checkMythicSoloRows(['FakeMythic'], new Map([['tests/fakemythic-solo-sim.test.ts', validSrc]]))).toEqual([]);
+
+  const liveMythics = mythicClassesOf(BUILT_IN_CLASSES);
+  expect(liveMythics.length).toBeGreaterThanOrEqual(10);
+  const soloNames = (await readdir(`${ROOT}/tests`)).filter(n => /-solo-sim\.test\.ts$/.test(n)).sort();
+  const liveFiles = new Map<string, string>();
+  for (const name of soloNames) {
+    liveFiles.set(`tests/${name}`, await Bun.file(`${ROOT}/tests/${name}`).text());
+  }
+  expect(
+    checkMythicSoloRows(liveMythics, liveFiles),
+    'every Mythic *-solo-sim.test.ts file (derived from BUILT_IN_CLASSES) must import and call soloRow from ./models/mythic-row.ts',
+  ).toEqual([]);
 });
 
 /** Pure check backing the maker round-trip registry lint so a self-test can prove it fails on unregistered makers. */

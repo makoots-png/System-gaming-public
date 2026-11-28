@@ -820,3 +820,57 @@ test('Wave 4 Rare classes (Artificer, Duelist, Oracle, Runeknight, Strider): set
     expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(485);
   });
 });
+
+test('Wave 5 Mythic classes (Dawnbringer, Usurper): GM registry shows all 18 unique kits ready, grants each class, and opens each skill tree', async ({ device }) => {
+  const page = (await device('gm-w5-mythics')).page;
+  await onboardGM(page);
+  await dismissAll(page);
+
+  await go(page, 'gm');
+  const clsTog = page.locator('[data-tog="classes"]');
+  if ((await clsTog.getAttribute('aria-expanded')) !== 'true') await clsTog.tap();
+  const regBox = page.locator('#gm-classes');
+
+  const wave5Mythics = [
+    { name: 'Dawnbringer', rootId: 'dawn-root', forks: 6 },
+    { name: 'Usurper', rootId: 'usurp-root', forks: 6 },
+  ] as const;
+
+  await test.step('GM Unique-class registry shows Dawnbringer, Usurper, and all 18 unique classes with shipped kits (zero No kit yet badges)', async () => {
+    for (const cls of wave5Mythics) {
+      const row = regBox.locator(`[data-cg-row="${cls.name}"]`);
+      await expect(row).toBeVisible();
+      await expect(row.locator('[data-cg-nokit]')).toHaveCount(0);
+    }
+    const unwiredUniqueCount = UNIQUE_CLASS_NAMES.filter(cls => !CLASS_SIGNATURES[cls] && !CLASS_TREES[cls]).length;
+    expect(unwiredUniqueCount).toBe(0);
+    await expect(regBox.locator('[data-cg-nokit]')).toHaveCount(0);
+  });
+
+  await test.step('GM grants Dawnbringer and Usurper to the local hunter and opens each skill tree', async () => {
+    for (const cls of wave5Mythics) {
+      await regBox.locator(`[data-cg-grant="${cls.name}"]`).tap();
+      const dlg = modalWin(page, CLASS_UI_WORDS.gmGrantTitle(cls.name));
+      await expect(dlg).toBeVisible();
+      await dlg.locator('.sys-actions button.primary').tap();
+      await expect(dlg).toHaveCount(0);
+    }
+    await expect(page.locator('#gm-hsum-classes')).toHaveText('2 of 18 held');
+
+    await go(page, 'status');
+    const panel = page.locator('#view-status [data-panel="classes"]');
+    for (const cls of wave5Mythics) {
+      const swapBtn = panel.locator(`[data-cls-swap="${cls.name}"]`);
+      if ((await swapBtn.count()) > 0) await swapBtn.tap();
+      await expect(panel.locator('[data-cls-active]')).toContainText(cls.name);
+      await expect(panel.locator('[data-cls-tree-empty]')).toHaveCount(0);
+      const tree = panel.locator(`[data-cls-tree="${cls.name}"]`);
+      await expect(tree).toBeVisible();
+      if ((await tree.getAttribute('open')) === null) await tree.locator('summary').tap();
+      await expect(tree.locator('[data-cls-fork]')).toHaveCount(cls.forks);
+      await expect(tree.locator(`[data-cls-node="${cls.rootId}"]`)).toHaveAttribute('data-cls-status', 'buyable');
+      await tree.locator(`[data-cls-buy="${cls.rootId}"]`).tap();
+      await expect(tree.locator(`[data-cls-node="${cls.rootId}"]`)).toHaveAttribute('data-cls-status', 'owned');
+    }
+  });
+});

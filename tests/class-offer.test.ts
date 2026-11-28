@@ -337,8 +337,11 @@ describe('pickClassFromOffer: races, 4+ Epics, 7th all-taken, stat fit, and copy
 
   test('full derived Mythic + Epic pool stays fair (no duplicates, Mythics before Epics, wire under limit), keeps Epic on Mythic grant, and next player sees allTaken notice', () => {
     let { save: s, offer } = openClassOffer(gmSave(), { at: AT, room: ROOM, R: RULES });
+    expect(MYTHIC_OFFER_POOL).toHaveLength(10);
     expect(MYTHIC_OFFER_POOL).toContain('Dreadnought');
     expect(MYTHIC_OFFER_POOL).toContain('Godfist');
+    expect(MYTHIC_OFFER_POOL).toContain('Dawnbringer');
+    expect(MYTHIC_OFFER_POOL).toContain('Usurper');
     expect(DEFAULT_OFFER_POOL).toHaveLength(MYTHIC_OFFER_POOL.length + EPIC_OFFER_POOL.length);
     const lateKey: SheetKey = sheetKeyOf(parseDeviceId('d-late')!, 'h1' as HunterId);
     for (let i = 0; i < DEFAULT_OFFER_POOL.length; i++) {
