@@ -50,6 +50,8 @@ import { running } from '../core/story/run.ts';
 import { WORD_WORDS } from '../core/sync/word.ts';
 import { raisedLine } from '../core/hunter/grant.ts';
 import { NPC_NAME_SEEDS } from '../core/registry/npcs.ts';
+import { STARTER_WORDS } from '../core/starter.ts';
+import { loadStarterCampaign } from './starter.js';
 
 /** The Make row at the top of the GM view: a kind the Workshop makes and its button. */
 const MAKE = [['status', 'Status'], ['item', 'Item'], ['skill', 'Skill'], ['monster', 'Monster'], ['bundle', 'Bundle']];
@@ -383,7 +385,7 @@ export function register(app) {
     else if (!code) {
       // the last room when this phone holds its key, else the newest key in the ring; a room that is gone took its key with it (link.ts)
       const lr = sy.lastRoom(), rc = lr && lr.gm ? lr.code : sy.gmRooms()[0]?.code || '';
-      html = `<div class="gm-rm-none"><p>${rc ? 'Not in a room.' : 'No room yet.'}</p><div class="gm-rm-acts">${rc ? `<button type="button" class="primary" data-gmrejoin="${esc(rc)}">Reopen ${esc(rc)} as GM</button><button type="button" data-gmcreate>New room</button>` : '<button type="button" class="primary" data-gmcreate>Create room</button>'}</div></div>`;
+      html = `<div class="gm-rm-none"><p>${rc ? 'Not in a room.' : 'No room yet.'}</p><div class="gm-rm-acts">${rc ? `<button type="button" class="primary" data-gmrejoin="${esc(rc)}">Reopen ${esc(rc)} as GM</button><button type="button" data-gmcreate>New room</button>` : '<button type="button" class="primary" data-gmcreate>Create room</button>'}<button type="button" data-gmstarter>${esc(STARTER_WORDS.button)}</button></div></div>`;
     } else {
       const rs = sy.roster();
       const on = rs.filter(r => r.state === 'online').length, away = rs.filter(r => r.state === 'away').length, unk = rs.some(r => r.state === 'unknown');
@@ -1225,6 +1227,7 @@ export function register(app) {
       el.addEventListener('click', e => {
         const t = e.target.closest('button'); if (!t) return;
         if (t.hasAttribute('data-gminvite')) { app.go('room'); return; }
+        if (t.hasAttribute('data-gmstarter')) { void loadStarterCampaign(app); return; }
         if (t.hasAttribute('data-gmprimer')) {
           const next = !app.rules().primer.on;
           if (ui.wrote('GM', store.apply('gm-rules', s => primerRuleSet(s, next)))) say('#gm-board-msg', next ? PRIMER_WORDS.shown : PRIMER_WORDS.hidden);
