@@ -251,6 +251,7 @@ export type StarterMissing = {
   readonly story: boolean;
   readonly gate: boolean;
   readonly pregens: readonly StarterPregen[];
+  readonly replaceSeed: boolean;
 };
 
 /** Why the starter campaign cannot be written: everything requested is already loaded, validation failed, or the story library refused it. */
@@ -262,11 +263,11 @@ export function starterMissing(save: Save, options: StarterOptions = {}): Starte
   const hasStory = namedLike(save.library.stories, STARTER_STORY_NAME, null) !== null;
   const hasGate = save.gates.some(g => g.name.toLowerCase() === STARTER_GATE.name.toLowerCase());
   const seed = seedOf(save);
-  const replaceSeed = !hasStory && !hasGate && seed !== null;
+  const replaceSeed = !save.settings.onboarded && !hasStory && !hasGate && seed !== null;
   const keptHunters = replaceSeed ? save.hunters.filter(h => h !== seed) : save.hunters;
   const existingNames = new Set(keptHunters.map(h => h.name.toLowerCase()));
   const pregens = includePregens ? PREGENS.filter(p => !existingNames.has(p.name.toLowerCase())) : [];
-  return { story: !hasStory, gate: !hasGate, pregens };
+  return { story: !hasStory, gate: !hasGate, pregens, replaceSeed };
 }
 
 const joinWords = (parts: readonly string[]): string =>
@@ -326,11 +327,12 @@ export const STARTER_REFUSAL_WORDS: Readonly<Record<StarterRefusal['why'], strin
 
 /**
  * Loads missing pieces of the starter campaign onto `save` in one atomic step (additive and idempotent by canonical
- * name). On a first-time load (neither starter story nor starter gate present and the unowned seed still present),
- * replaces the seed with the 4 sample hunters (with `capDisplay: 'E'` and full HP/mana; Tessa Corbin keeps her 12
- * creation points unspent) or neutralizes the seed when `includePregens` is false. On a reload after setup, keeps all
- * existing hunters, stories, and gates untouched and adds only missing pieces. Refuses with `'already'` (writing
- * nothing and changing no seq or log) when everything requested is already present.
+ * name). On a first-time load (before onboarding, neither starter story nor starter gate present, and the unowned seed
+ * still present), replaces the seed with the 4 sample hunters (with `capDisplay: 'E'` and full HP/mana; Tessa Corbin
+ * keeps her 12 creation points unspent) or neutralizes the seed when `includePregens` is false. On a reload after
+ * setup, keeps all existing hunters (including a seed from Reset campaign), stories, and gates untouched and adds only
+ * missing pieces. Refuses with `'already'` (writing nothing and changing no seq or log) when everything requested is
+ * already present.
  */
 export function starterCampaign(
   save: Save,
@@ -407,9 +409,9 @@ export function starterCampaign(
   }
 
   const seed = seedOf(save);
-  const replaceSeed = missing.story && missing.gate && seed !== null;
+  const replaceSeed = missing.replaceSeed;
   let hunters: Hunter[];
-  if (replaceSeed) {
+  if (replaceSeed && seed) {
     const existing = save.hunters.filter(h => h !== seed);
     if (includePregens) {
       hunters = [...existing, ...pregens];

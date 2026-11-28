@@ -416,6 +416,23 @@ describe('idempotent reload after setup', () => {
     expect(after.library.stories).toHaveLength(1);
   });
 
+  test('after Reset campaign (onboarded: true with seed hunter), starterCampaign keeps the seed unchanged with or without sample hunters', () => {
+    const reset = freshSave(env(), { onboarded: true });
+    const seed = seedOf(reset);
+    expect(seed).not.toBeNull();
+    expect(starterMissing(reset, { includePregens: true }).replaceSeed).toBe(false);
+    expect(starterMissing(install(), { includePregens: true }).replaceSeed).toBe(true);
+
+    const withPregens = ok(starterCampaign(reset, stamp, RULES));
+    expect(withPregens.hunters[0]).toEqual(seed!);
+    expect(withPregens.hunters.map(h => h.name)).toEqual([seed!.name, ...PREGENS.map(p => p.name)]);
+    expect(withPregens.settings.activeHunterId).toBe(seed!.id);
+
+    const withoutPregens = ok(starterCampaign(reset, stamp, RULES, { includePregens: false }));
+    expect(withoutPregens.hunters).toEqual(reset.hunters);
+    expect(withoutPregens.settings.activeHunterId).toBe(seed!.id);
+  });
+
   test('exports plain wording tables for reload dialog and refusals', () => {
     expect(STARTER_WORDS.button).toBe('Load starter campaign');
     expect(STARTER_WORDS.pregensLabel).toBe('Include 4 sample hunters');

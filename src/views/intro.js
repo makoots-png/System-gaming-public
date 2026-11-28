@@ -377,7 +377,7 @@ export function register(app) {
           <div class="intro-bar intro-player-bar">
             <button type="button" class="intro-btn" data-intro-close aria-label="Close intro">Close</button>
           </div>
-          <div class="intro-stage intro-player-stage" data-intro-stage data-intro-card="${card.index}">
+          <div class="intro-stage intro-player-stage${isArt ? ' is-art' : ''}" data-intro-stage data-intro-card="${card.index}">
             <div class="intro-stage-inner">
               ${cardStageHtml(card)}
               ${isLast && hasHunter ? `<div class="intro-call-act"><button type="button" class="primary intro-answer-btn" data-intro-answer${answered ? ' disabled' : ''}>${answered ? 'Answered' : 'Answer'}</button></div>` : ''}

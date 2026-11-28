@@ -644,3 +644,121 @@ test('offline GM tapping Next sees a warning toast and stays on the room card, t
   await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1', { timeout: 15_000 });
   await expectArtLoaded(player.locator('[data-intro-stage]'), 1);
 });
+
+test('primer art is served with a cache-control header with max-age above 0', async ({ page }) => {
+  const res = await page.request.get('intro/primer/p1-london-gate.webp');
+  expect(res.ok()).toBe(true);
+  const cc = res.headers()['cache-control'] ?? '';
+  const match = /max-age=(\d+)/i.exec(cc);
+  expect(match, `expected Cache-Control with max-age, got "${cc}"`).not.toBeNull();
+  expect(Number(match![1])).toBeGreaterThan(0);
+});
+
+test('full-motion player follow crossfade from card 1 to card 2 keeps zero padding, transparent stand-in border, and frozen drift transform', async ({ device }) => {
+  const gm = (await device('gm-xfade', { viewport: PHONE, blockServiceWorker: true })).page;
+  const player = (await device('player-xfade', { viewport: PHONE, blockServiceWorker: true })).page;
+  await player.emulateMedia({ reducedMotion: 'no-preference' });
+
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai', code);
+  await dismissAll(player);
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.remoteSheets().some((s: any) => s.data.name === 'Kai')), { timeout: 20_000 }).toBe(true);
+
+  await gm.evaluate(() => hunterApp.api.intro.startTable());
+  await expect(gm.locator(OVERLAY)).toBeVisible();
+  await expect(player.locator(OVERLAY)).toBeVisible({ timeout: 15_000 });
+
+  // Move to Card 1 (London) and wait until art is loaded and drifting.
+  await gm.locator('[data-intro-next]').tap();
+  await expect(gm.locator('[data-intro-count]')).toHaveText('1 / 16');
+  await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1', { timeout: 15_000 });
+  await expectArtLoaded(player.locator('[data-intro-stage]'), 1);
+
+  // Advance drift midway so the transform is well away from identity while the animation stays running.
+  await player.evaluate(() => {
+    const img = document.querySelector('[data-intro-card="1"] [data-intro-img]');
+    const anim = img?.getAnimations().find(a => a.playState === 'running');
+    if (anim) anim.currentTime = 8000;
+  });
+
+  // Track the live Card 1 image transform and capture the .m-crossfade ghost the moment it is added.
+  await player.evaluate(() => {
+    const rec: {
+      liveTransform: string;
+      ghost: null | {
+        paddingTop: string;
+        paddingRight: string;
+        paddingBottom: string;
+        paddingLeft: string;
+        standinBorderTopColor: string;
+        standinBorderRightColor: string;
+        standinBorderBottomColor: string;
+        standinBorderLeftColor: string;
+        imgAnimationName: string;
+        imgTransform: string;
+        liveAtSwap: string;
+      };
+    } = { liveTransform: '', ghost: null };
+    (globalThis as any).__xfadeSnap = rec;
+
+    const sampleLive = () => {
+      const img = document.querySelector('[data-intro-card="1"] [data-intro-img]');
+      if (img) rec.liveTransform = getComputedStyle(img).transform;
+      if (!rec.ghost) requestAnimationFrame(sampleLive);
+    };
+    sampleLive();
+
+    const obs = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const ghost = node.classList.contains('m-crossfade') ? node : node.querySelector<HTMLElement>('.m-crossfade');
+          if (!ghost || rec.ghost) continue;
+          const gcs = getComputedStyle(ghost);
+          const standin = ghost.querySelector('.intro-standin');
+          const scs = standin ? getComputedStyle(standin) : null;
+          const img = ghost.querySelector('.intro-art-img');
+          const ics = img ? getComputedStyle(img) : null;
+          rec.ghost = {
+            paddingTop: gcs.paddingTop,
+            paddingRight: gcs.paddingRight,
+            paddingBottom: gcs.paddingBottom,
+            paddingLeft: gcs.paddingLeft,
+            standinBorderTopColor: scs?.borderTopColor ?? '',
+            standinBorderRightColor: scs?.borderRightColor ?? '',
+            standinBorderBottomColor: scs?.borderBottomColor ?? '',
+            standinBorderLeftColor: scs?.borderLeftColor ?? '',
+            imgAnimationName: ics?.animationName ?? '',
+            imgTransform: ics?.transform ?? '',
+            liveAtSwap: rec.liveTransform,
+          };
+          obs.disconnect();
+        }
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  });
+
+  await expect.poll(
+    () => player.evaluate(() => (globalThis as any).__xfadeSnap.liveTransform as string),
+    { timeout: 5_000 },
+  ).not.toMatch(/^(|none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+
+  await gm.waitForTimeout(480);
+  await gm.locator('[data-intro-next]').tap();
+  await expect(gm.locator('[data-intro-count]')).toHaveText('2 / 16');
+  await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '2', { timeout: 15_000 });
+
+  const snap = await player.evaluate(() => (globalThis as any).__xfadeSnap.ghost);
+  expect(snap, 'expected .m-crossfade ghost to be captured during card 1 -> card 2 transition').not.toBeNull();
+  expect([snap.paddingTop, snap.paddingRight, snap.paddingBottom, snap.paddingLeft]).toEqual(['0px', '0px', '0px', '0px']);
+  expect([
+    snap.standinBorderTopColor,
+    snap.standinBorderRightColor,
+    snap.standinBorderBottomColor,
+    snap.standinBorderLeftColor,
+  ]).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
+  expect(snap.imgAnimationName).toBe('none');
+  expect(snap.imgTransform).toBe(snap.liveAtSwap);
+});

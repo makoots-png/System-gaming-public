@@ -15,6 +15,7 @@ const [POTION_DEF_ID, POTION] = [...BUILT_IN_ITEMS.entries()].find(
 )!;
 
 const lowestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0) }));
+const highestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0xffffffff) }));
 const combat = (page: Page) => page.locator('#view-combat');
 const map = (page: Page) => combat(page).locator('[data-mapbox]');
 const token = (page: Page, id: string) => map(page).locator(`[data-tok="${id}"]`);
@@ -188,4 +189,94 @@ test('on a 390x844 phone a player can read ready, disabled, and drawer abilities
   await tapTile(player, 3, 2);
   await map(player).locator('[data-go]').tap();
   await expect.poll(() => gm.evaluate(() => hunterApp.store.get().fight.log.length)).toBeGreaterThan(0);
+});
+
+test('opening a dodge prompt off turn or tapping a reachable tile closes the open info panel so the confirm bar stays tappable', async ({ device }) => {
+  const gm = (await device('gm-overlap', { viewport: PHONE })).page;
+  const player = (await device('player-overlap', { viewport: PHONE })).page;
+  await setupGoblinDenGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, HUNTER, code);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+
+  await go(gm, 'gm');
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
+
+  await go(gm, 'combat');
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
+  await combat(gm).locator('[data-addh]').tap();
+  await combat(gm).locator('[data-msel]').selectOption({ label: 'Cerberus (C boss)' });
+  await combat(gm).locator('[data-addm]').tap();
+  await combat(gm).locator('[data-start]').tap();
+  await expect(map(gm).locator('.mp-tok.now')).toHaveCount(1);
+
+  const ids = await gm.evaluate((name) => {
+    let out = { kai: '', boss: '' };
+    hunterApp.store.update((d: any) => {
+      const f = d.fight;
+      const kai = f.rows.find((r: any) => r.name === name);
+      const boss = f.rows.find((r: any) => r.name.startsWith('Cerberus'));
+      kai.place = { x: 2, y: 2 }; kai.at = f.now; kai.tie = 0;
+      boss.place = { x: 6, y: 2 }; boss.at = f.now + 1; boss.tie = 0;
+      f.currentId = kai.id; f.log = [];
+      out = { kai: kai.id, boss: boss.id };
+    }, 'test-setup');
+    return out;
+  }, HUNTER);
+
+  await setupDoc(player, HUNTER, { x: 2, y: 2 });
+  await combat(gm).locator('[data-fview="map"]').tap();
+  await go(player, 'combat');
+  await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
+  await combat(player).locator('[data-fview="map"]').tap();
+  for (const p of [gm, player]) await expect(token(p, ids.kai)).toBeVisible();
+  for (const p of [gm, player]) await expect.poll(() => placeOf(p, ids.kai)).toEqual([2, 2]);
+  for (const p of [gm, player]) await map(p).locator('[data-frame]').dblclick({ position: { x: 4, y: 4 } });
+
+  const hot = map(player).locator('[data-hot]');
+  const atkInfo = hot.locator('[data-ab-info="attack"]');
+  const panel = map(player).locator('[data-mapdt] .dt');
+  const goBtn = map(player).locator('[data-confirm] [data-go]');
+
+  // Case 1: info open on turn, tap a reachable tile -> info closes and Move is tappable.
+  await atkInfo.tap();
+  await expect(panel).toBeVisible();
+  await tapTile(player, 2, 3);
+  await expect(panel).toHaveCount(0);
+  await expect(goBtn).toHaveText('Move');
+  await goBtn.tap();
+  await expect.poll(() => placeOf(player, ids.kai)).toEqual([2, 3]);
+  await expect.poll(() => placeOf(gm, ids.kai)).toEqual([2, 3]);
+
+  // Case 2: pass to Cerberus (player off turn), open info off turn, GM fires dodgeable Hellfire Breath -> info closes and Dodge here is tappable.
+  await gm.evaluate(({ kaiId, bossId }) => {
+    hunterApp.store.update((d: any) => {
+      const f = d.fight;
+      const kai = f.rows.find((r: any) => r.id === kaiId);
+      const boss = f.rows.find((r: any) => r.id === bossId);
+      kai.place = { x: 2, y: 2 };
+      boss.place = { x: 6, y: 2 }; boss.at = f.now; boss.tie = 0;
+      f.currentId = boss.id;
+    }, 'test-setup');
+  }, { kaiId: ids.kai, bossId: ids.boss });
+  await expect(token(gm, ids.boss)).toHaveClass(/\bnow\b/);
+  await expect.poll(() => placeOf(player, ids.kai)).toEqual([2, 2]);
+  await expect(combat(player).locator('.tb-mine')).toBeHidden();
+
+  await atkInfo.tap();
+  await expect(panel).toBeVisible();
+
+  await highestDice(gm);
+  await map(gm).locator('[data-hot] .mp-hb', { hasText: 'Hellfire Breath' }).tap();
+  const fbox = (await map(gm).locator('[data-frame]').boundingBox())!;
+  await gm.mouse.move(fbox.x + fbox.width / 2, fbox.y + fbox.height / 2);
+  for (let i = 0; i < 4; i++) await gm.mouse.wheel(0, 100);
+  await tapTile(gm, 2, 3);
+  await map(gm).locator('[data-go]').tap();
+
+  await expect(goBtn).toHaveText('Dodge here');
+  await expect(panel).toHaveCount(0);
+  await goBtn.tap();
+  await expect.poll(() => placeOf(gm, ids.kai).then(([x, y]) => x !== 2 || y !== 2)).toBe(true);
 });

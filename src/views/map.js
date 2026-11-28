@@ -770,6 +770,7 @@ export function register(app) {
     }
     function drawConfirm(f) {
       const box = $('[data-confirm]'), words = $('[data-words]'), cancelBtn = /** @type {HTMLButtonElement} */ ($('[data-cancel]')), goBtn = /** @type {HTMLButtonElement} */ ($('[data-go]'));
+      const wasHidden = box.hidden;
       let say = '', label = '', on = false, show = false;
       if (f.kind === 'move' && f.path) { show = true; say = f.path.words; label = f.path.dash ? 'Dash' : 'Move'; on = true; }
       if (f.kind === 'aim') {
@@ -794,6 +795,7 @@ export function register(app) {
       if (words.textContent !== say) words.textContent = say;
       if (goBtn.textContent !== label) goBtn.textContent = label;
       goBtn.disabled = !on;
+      return wasHidden && show;
     }
     const costText = s => [s.hpCost ? `${s.hpCost} HP` : '', s.mana ? `${s.mana} mana` : '', s.fatigue ? `${s.fatigue} fatigue` : ''].filter(Boolean).join(', ') || 'Free';
     const slotText = s => (s.wait > 0 ? `${s.wait} round${s.wait === 1 ? '' : 's'}` : costText(s));
@@ -874,9 +876,13 @@ export function register(app) {
       const tone = f.kind === 'aim' && scene.shades.length ? scene.shades[0].tone : '';
       if (world.dataset.tone !== tone) world.dataset.tone = tone;
       const gt = $('[data-grid]'); gt.setAttribute('aria-pressed', String(store.prefs().mapGrid));
-      drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting); drawSeenAs();
+      drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow();
+      const confirmOpened = drawConfirm(f);
+      drawHotbar(); drawPaint(); drawSending(waiting); drawSeenAs();
       const dt = D().openIn(dtList);
-      if (dt && !thingOf(dt)) D().move(dtList, { kind: 'drop', key: dt }, drawDetail); else drawDetail();
+      if (dt && (enteredDodge || confirmOpened)) D().move(dtList, { kind: 'close' }, drawDetail);
+      else if (dt && !thingOf(dt)) D().move(dtList, { kind: 'drop', key: dt }, drawDetail);
+      else drawDetail();
       // a turn or dodge that comes to a body or picked dodge tile out of sight frames the map again
       const dodger = f.kind === 'dodge' ? scene.tokens.find(t => t.id === f.who) : null;
       const lost = seen.fw > 0 && ((turned && !!scene.actor && !!scene.anchor && !inSight(scene.anchor))

@@ -16,6 +16,7 @@ import { ownedBy, ownerOf, ownerStep, parseTokenHash } from './src/core/sync/own
 import type { Owner, OwnerEvent, TokenHash } from './src/core/sync/owner.ts';
 
 const NO_CACHE = /\.(html|js|css)$/;
+const PRIMER_ART = /^\/intro\/primer\//;
 const BASE_HEADERS = { 'Server-Timing': 'hunter-api', 'X-Content-Type-Options': 'nosniff' };
 
 /** A value made on first use and kept: the build, and this process's database. */
@@ -30,6 +31,7 @@ async function staticFile(path: string): Promise<Response | null> {
   if (!file) return null;
   const headers: Record<string, string> = { ...BASE_HEADERS, 'Content-Type': file.type };
   if (NO_CACHE.test(path)) headers['Cache-Control'] = 'no-cache';
+  else if (PRIMER_ART.test(path)) headers['Cache-Control'] = 'public, max-age=3600';
   return new Response(file.body, { headers });
 }
 

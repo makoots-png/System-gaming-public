@@ -607,8 +607,8 @@ html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.in
 .intro-player.is-art .intro-player-bar{position:absolute;top:0;left:0;right:0;z-index:4;pointer-events:none}
 .intro-player.is-art .intro-player-bar .intro-btn{pointer-events:auto;background:rgba(17,17,17,.74);border-color:rgba(243,238,227,.34);color:#F3EEE3}
 .intro-player-stage{cursor:default}
-.intro-player.is-art .intro-player-stage{padding:0}
-.intro-player.is-art .intro-standin.is-loaded{border-color:transparent;box-shadow:none}
+.intro-player-stage.is-art{padding:0}
+.intro-player-stage.is-art .intro-standin.is-loaded{border-color:transparent;box-shadow:none}
 .intro-stage-inner{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 .intro-call-act{display:flex;justify-content:center}
 .intro-answer-btn{min-height:48px;min-width:160px;font-size:calc(16px*var(--ts))}
@@ -659,7 +659,7 @@ button,.tab,[role=button],.m-press{transition:transform var(--t-fast) var(--ease
 /* world-primer intro art: image fades in over the stand-in and drifts gently with transform only */
 .intro-art{transition:opacity var(--t-slow) var(--ease-arrive)}
 .intro-stage .intro-standin.is-loaded .intro-art-img{animation:m-intro-drift calc(var(--t-breath) * 5) var(--ease-sway) infinite alternate;will-change:transform}
-.m-crossfade .intro-art-img{animation:none}
+.intro-stage.m-crossfade .intro-standin.is-loaded .intro-art-img,.m-crossfade .intro-art-img{animation:none}
 @keyframes m-intro-drift{from{transform:scale(1) translate3d(0,0,0)}to{transform:scale(1.055) translate3d(0,-1.5%,0)}}
 /* ── end of Motion ── */
 

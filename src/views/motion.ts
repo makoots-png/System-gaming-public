@@ -212,19 +212,37 @@ export function fadeOff(el: Element): Move {
 
 /**
  * Crossfades from `outgoing` to the element `change()` returns, over `--t-base`. The outgoing copy lives on the layer
- * with its attributes stripped (keeping `src` on images so the decoded bitmap fades out cleanly) so the page never holds
- * two copies of a card. Under reduced motion `change()` runs at once for a plain cut.
+ * with its attributes stripped (keeping `src` on images so the decoded bitmap fades out cleanly) and any animated
+ * descendants frozen at their live `transform` with `animation: none`, so the page never holds two copies of a card
+ * and a drifting image fades from where it stood. Under reduced motion `change()` runs at once for a plain cut.
  */
 export function crossfade(outgoing: Element | null, change: () => Element | null): Move {
   if (reduced()) { change(); return DONE; }
   const rect = outgoing && outgoing.isConnected ? outgoing.getBoundingClientRect() : null;
   const ghost = rect && rect.width && rect.height ? (outgoing!.cloneNode(true) as HTMLElement) : null;
+  const frozen: Array<{ index: number; transform: string }> = [];
+  if (ghost && outgoing) {
+    [...outgoing.querySelectorAll('*')].forEach((node, index) => {
+      const cs = getComputedStyle(node);
+      const anim = cs.animationName && cs.animationName !== 'none';
+      const waapi = !anim && typeof node.getAnimations === 'function' && node.getAnimations().some(a => a.playState === 'running');
+      if (anim || waapi) frozen.push({ index, transform: cs.transform });
+    });
+  }
   const incoming = change();
   const moves: Move[] = [];
   if (ghost && rect) {
     const L = layer();
     for (const prev of L.querySelectorAll('.m-crossfade')) prev.remove();
-    for (const n of [ghost, ...ghost.querySelectorAll('*')]) {
+    const ghostNodes = ghost.querySelectorAll('*');
+    for (const { index, transform } of frozen) {
+      const gNode = ghostNodes.item(index) as HTMLElement | null;
+      if (gNode && gNode.style) {
+        gNode.style.animation = 'none';
+        gNode.style.transform = transform;
+      }
+    }
+    for (const n of [ghost, ...ghostNodes]) {
       for (const a of [...n.attributes]) {
         if (a.name !== 'class' && a.name !== 'style' && !(n.tagName === 'IMG' && a.name === 'src')) n.removeAttribute(a.name);
       }
