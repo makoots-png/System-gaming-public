@@ -872,3 +872,4 @@ ts	phase	decision	why	evidence	result
 2026-11-28T00:56Z	intro	PR 175: comic intro units 1-3 and a plain first-load screen
 2026-11-28T02:04Z	class-rarity	PR 176: wave 5 B6 landed (36/36 lock and 40-row sweep). Unit 8112/0, browser 697/0, CI 46094944204 8/8. Fable B4/B5 fix reviews MERGE; B6 review queued post-merge.
 2026-11-28T03:15Z	intro	PR 177: intro unit 4 art in, and Fable's post-merge sync fixes
+2026-11-28T04:42Z	ability-info	PR 178: mid-fight ability descriptions and an info button on the player hotbar (Neon built 0f394f6c; lead maker-desc fix 528d0358).

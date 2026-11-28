@@ -787,6 +787,10 @@ export type MapKit = {
   itemOf?: (id: ItemId) => IconItem | null;
   /** What each ability does to the omen standing, by ability id (map-view.ts `HotbarKit`, fight-view.ts `answersBy`). */
   answers?: Readonly<Record<string, string>>;
+  /** Actor's max HP, so slots with an HP price can show the exact HP cost. */
+  hpMax?: number;
+  /** Plain refusal reason for each ability the actor cannot currently afford, by ability id. */
+  cantAfford?: Readonly<Record<string, string>>;
 };
 /**
  * What a phone gives its battle map (src/views/map.js): the scene's input, the order ahead by name, the actor's kit (null

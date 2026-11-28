@@ -1495,7 +1495,11 @@ function docReady(v: unknown): Record<string, Tick> {
 }
 function docRefusal(v: unknown): DocRefusal {
   const o = obj(v);
-  return { id: rowId(own(o, 'id')), at: time0(own(o, 'at')), reason: choiceOf(TABLE_REFUSALS)(own(o, 'reason')), n: int(0, MAX_TOTAL)(own(o, 'n')) };
+  const msg = opt(own(o, 'text'), text(120), undefined);
+  return {
+    id: rowId(own(o, 'id')), at: time0(own(o, 'at')), reason: choiceOf(TABLE_REFUSALS)(own(o, 'reason')), n: int(0, MAX_TOTAL)(own(o, 'n')),
+    ...(msg ? { text: msg } : {}),
+  };
 }
 /** A record keyed by sheet key: at most 50 entries, each value read by `read`. A bad key or value drops the entry. */
 function bySheetKey<T>(v: unknown, read: (v: unknown) => T): Record<SheetKey, T> {

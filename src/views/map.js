@@ -191,6 +191,8 @@ export function register(app) {
 .mp-hb[aria-pressed=true]{background:var(--cyan);border-color:var(--cyan);color:var(--ground);box-shadow:0 0 14px color-mix(in srgb,var(--cyan) 55%,transparent)}
 .mp-hb[aria-pressed=true] small{color:inherit}
 .mp-hb:disabled small{color:var(--gold)}
+.mp-hb.cant-afford{border-color:color-mix(in srgb,var(--red) 60%,var(--line));opacity:.78}
+.mp-hb.cant-afford small{color:var(--red)}
 .mp-hb.react small{color:var(--cyan-dim)}
 .mp-hb.react.armed{border-color:var(--gold);box-shadow:0 0 12px color-mix(in srgb,var(--gold) 45%,transparent)}
 .mp-hb.react.armed small{color:var(--gold)}
@@ -526,6 +528,7 @@ export function register(app) {
       D().move(dtList, { kind: 'close' }, drawDetail);
       const k = src.kit(), a = k && k.list.find(x => x.id === id);
       if (!scene || !a) return;
+      if (scene.actor && k.cantAfford && k.cantAfford[id]) { toast(k.cantAfford[id]); return; }
       if (a.aim === 'corpse') {
         if (!scene.actor) { src.offTurn(); return; }
         act({ kind: 'cancel' }); draw();
@@ -792,14 +795,14 @@ export function register(app) {
       if (goBtn.textContent !== label) goBtn.textContent = label;
       goBtn.disabled = !on;
     }
-    const costText = s => [s.fatigue ? `${s.fatigue} fatigue` : '', s.mana ? `${s.mana} mana` : ''].filter(Boolean).join(', ') || 'Free';
+    const costText = s => [s.hpCost ? `${s.hpCost} HP` : '', s.mana ? `${s.mana} mana` : '', s.fatigue ? `${s.fatigue} fatigue` : ''].filter(Boolean).join(', ') || 'Free';
     const slotText = s => (s.wait > 0 ? `${s.wait} round${s.wait === 1 ? '' : 's'}` : costText(s));
     /** A hotbar button, drawn once per slot and updated in place (patch.ts), so a pick or a use writes only what changed. */
-    const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button>');
+    const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass data-unaffordable:unaffordable aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button>');
     /** An ability or reaction slot: the use button and a sibling info button so players can read any move without firing it. */
-    const slotTemplate = () => ui.h('<div data-attr="class:slotCls"><button type="button" data-attr="class:cls data-ab:ab data-arm:arm aria-pressed:pressed aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button><button type="button" class="mp-info" data-attr="data-ab-info:infoId aria-label:infoLabel" aria-expanded="false"><i aria-hidden="true">i</i></button></div>');
+    const slotTemplate = () => ui.h('<div data-attr="class:slotCls"><button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-unaffordable:unaffordable aria-pressed:pressed aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button><button type="button" class="mp-info" data-attr="data-ab-info:infoId aria-label:infoLabel" aria-expanded="false"><i aria-hidden="true">i</i></button></div>');
     /** A slot's description: an ability's slot names its picture (`href`); Release, More and End turn draw none. */
-    const hbDesc = o => ({ slotCls: 'mp-slot', infoId: null, infoLabel: null, cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ans: '', noAns: true, ...o });
+    const hbDesc = o => ({ slotCls: 'mp-slot', infoId: null, infoLabel: null, cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, unaffordable: null, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ans: '', noAns: true, ...o });
     const REACT_WORD = { arm: 'Arm', armed: 'Armed', spent: 'Spent' };
     /** Whether the hotbar's last slot is cut by the edge: the bar then fades out there, to show it scrolls. */
     const cutSeen = new IntersectionObserver(es => { for (const e of es) $('[data-slots]').classList.toggle('cut', e.intersectionRatio < 0.98); }, { root: $('[data-slots]'), threshold: [0.98] });
@@ -810,14 +813,15 @@ export function register(app) {
     const slotDesc = s => {
       if (s.react) return hbDesc({ slotCls: `mp-slot react ${s.react}`, infoId: s.id, infoLabel: `About ${s.name}`, cls: `mp-hb react ${s.react}`, arm: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] });
       const on = choice.now.kind === 'aim' && choice.now.ability.id === s.id;
-      return hbDesc({ slotCls: `mp-slot${on ? ' pressed' : ''}`, infoId: s.id, infoLabel: `About ${s.name}`, ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(on), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.answers ? `, answers the omen: ${s.answers}` : ''}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s), ...answerDesc(s) });
+      const cant = s.cantAfford && s.wait <= 0 && s.left !== 0;
+      return hbDesc({ slotCls: `mp-slot${on ? ' pressed' : ''}`, infoId: s.id, infoLabel: `About ${s.name}`, cls: `mp-hb${cant ? ' cant-afford' : ''}`, ab: s.id, unaffordable: cant ? 'true' : null, noIcon: false, href: iconHref(s.icon), pressed: String(on), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.answers ? `, answers the omen: ${s.answers}` : ''}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}${cant ? `, ${s.cantAfford}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s), ...answerDesc(s) });
     };
     function drawHotbar() {
       const k = scene && scene.focus.kind === 'dodge' ? null : src.kit(), bar = $('[data-hot]'), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
       bar.hidden = !k;
       if (!k) { keyed(hot, [], hbTemplate); keyed(passBox, [], hbTemplate); dr.hidden = true; return; }
-      const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf, answers: k.answers ?? {} });
-      const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}">${icon(s.icon)}<span>${esc(d.name)}</span><small>${esc(d.small)}</small>${d.ans ? `<small class="ans">${esc(d.ans)}</small>` : ''}</button>`; };
+      const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf, answers: k.answers ?? {}, hpMax: k.hpMax, cantAfford: k.cantAfford });
+      const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''}${d.unaffordable ? ' data-unaffordable="true"' : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}">${icon(s.icon)}<span>${esc(d.name)}</span><small>${esc(d.small)}</small>${d.ans ? `<small class="ans">${esc(d.ans)}</small>` : ''}</button>`; };
       const ch = k.channel, slots = [
         ...(ch ? [['release', hbDesc({ cls: 'mp-hb release', release: true, label: `Release ${ch.name}: charge ${ch.charge} of ${ch.max}, ${ch.factor} times its power`, name: `Release ${ch.name}`, small: `${ch.charge} of ${ch.max} · ×${ch.factor}` })]] : []),
         ...h.bar.map(s => [`ab:${s.id}`, slotDesc(s)]),

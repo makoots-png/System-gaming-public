@@ -442,7 +442,7 @@ describe('the hotbar', () => {
   test('a slot shows its cost after the cost cut (rule 4, rounded up) and the rounds until it is ready', () => {
     const costly = { ...skill('a'), cost: { ...skill('a').cost, fatigue: 10, mana: 5 } };
     const [, s] = hotbar([attack, costly], { a: tick(RULES.fight.round * 1.5) }, tick(0), 0.25, null, RULES).bar;
-    expect([s!.fatigue, s!.mana, s!.wait]).toEqual([8, 4, 1.5]);
+    expect([s!.fatigue, s!.mana, s!.wait]).toEqual([8, 4, 2]);
   });
 
   test('a reaction says Arm, Armed or Spent (kits table 8.9.1), and an ability limited in uses says how many are left', () => {

@@ -23,7 +23,7 @@ import { canRiseFor, canRiseInFight, riseBonus, riseDc } from '../core/combat/ri
 import { isRisen } from '../core/combat/summons.ts';
 import { needs } from '../core/combat/resolve.ts';
 import { NPC_AUTO_MS, autoDue, autoTurnOf, isAutoRow } from '../core/combat/policy.ts';
-import { WAIT_WORDS, aims, answersBy, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, answersBy, bodyCantAfford, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { omenMove, omenNeeds } from '../core/combat/fight-turn.ts';
 import { runningState } from '../core/combat/fight.ts';
 import { mythicScriptOf } from '../core/registry/mythics.ts';
@@ -34,7 +34,7 @@ import { EVERYTHING, eyesChoices, fightBodies, fightDodge, fightGround, pinKeyOf
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
 import { hunterRow, monsterRows, npcRows, remoteRow, remoteShadowRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
-import { REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
+import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
 import { combatantId } from '../core/combat/ability-types.ts';
 import { tick } from '../core/combat/timeline.ts';
 import { MAX_ZONES, zoneId } from '../core/combat/zones.ts';
@@ -199,8 +199,14 @@ export function register(app) {
     return effects;
   }
   const refused = fx => fx.some(x => x.type === 'refused');
-  /** Names the hunter when a shadow guard refuses a command, falling back to REFUSAL_WORDS. */
-  function refusalLine(reason, was, cmds) {
+  /**
+   * Names the hunter or exact cost shortfall when a command is refused, falling back to REFUSAL_WORDS / TABLE_REFUSAL_WORDS.
+   * @param {import('../core/combat/fight-types.ts').Refusal} reason
+   * @param {Fight | null} was
+   * @param {readonly Command[]} cmds
+   * @param {'gm' | 'player'} [voice]
+   */
+  function refusalLine(reason, was, cmds, voice = 'gm') {
     const first = cmds[0];
     if (reason === 'shadowsIn' && first && first.type === 'remove') {
       const who = rowOf(was, first.id);
@@ -213,6 +219,17 @@ export function register(app) {
         const cap = shadowFieldCap(who.sheet.shadows);
         return `${who.name} can field at most ${cap} shadow${cap === 1 ? '' : 's'} in a fight.`;
       }
+    }
+    if (first && first.type === 'act' && was && running(was)) {
+      const who = rowOf(was, first.by), a = who && who.abilities.find(x => x.id === first.ability);
+      if (who && a) {
+        const cant = bodyCantAfford(was, who, a, first.aim, rules(), voice);
+        if (cant) return cant;
+      }
+    }
+    if (voice === 'player') {
+      const tr = oneOf(reason, TABLE_REFUSALS, null);
+      if (tr) return TABLE_REFUSAL_WORDS[tr];
     }
     return REFUSAL_WORDS[reason];
   }
@@ -436,6 +453,8 @@ export function register(app) {
   async function useAbility(row, aid, b) {
     const f = fight(); if (!running(f)) return;
     const a = row.abilities.find(x => x.id === aid); if (!a) return;
+    const cant = bodyCantAfford(f, row, a, null, rules(), 'gm');
+    if (cant) { toast(cant, 'warning'); return; }
     let aim = row.id;
     if (a.aim === 'place' && a.range === 0) aim = row.place;
     else if (a.aim !== 'self') {
@@ -579,12 +598,18 @@ export function register(app) {
    * @type {import('../core/combat/fight-doc.ts').DocBurst | null}
    */
   let lastBurst = null;
-  /** Puts the refusal `reason` of row `id`'s tap in the next fight doc, when it is one a player's tap can meet. */
-  function turnDown(id, reason) {
-    const f = fight(), r = oneOf(reason, TABLE_REFUSALS, null); if (!running(f) || !r) return;
+  /**
+   * Puts the refusal `reason` of row `id`'s tap in the next fight doc; never drops a refusal so the player's TurnHold always releases.
+   * @param {import('../core/combat/ability-types.ts').CombatantId} id
+   * @param {string} reason
+   * @param {string} [text]
+   */
+  function turnDown(id, reason, text) {
+    const f = fight(); if (!running(f)) return;
+    const r = oneOf(reason, TABLE_REFUSALS, 'notNow');
     // no save write: sync.ts republishes the room's docs after it hands out a poll's events (`sync:event`), and the
     // fight doc it puts then carries this refusal
-    tableRefusal = { id, at: f.now, reason: r, n: (tableRefusal ? tableRefusal.n : 0) + 1 };
+    tableRefusal = { id, at: f.now, reason: r, n: (tableRefusal ? tableRefusal.n : 0) + 1, ...(text ? { text: text.slice(0, 120) } : {}) };
   }
   // a player arms its hunter's reaction at any time (kits design 8.4.2): the room's `arm`, from that hunter's phone only
   // (`ownSheet`), is the fight's `arm` for that hunter's row
@@ -610,17 +635,21 @@ export function register(app) {
     if (!running(f)) return;
     const id = onTurn(f, p0);
     if (!id) { const r = f.rows.find(x => remoteKeyOf(x) === p0.by); if (r) turnDown(r.id, 'notYourTurn'); return; }
-    /** @param {readonly Effect[]} fx */
-    const told = fx => { const no = fx.find(x => x.type === 'refused'); if (no && no.type === 'refused') turnDown(id, no.reason); };
-    if (event.type === 'pass') { told(send({ type: 'endTurn', by: id })); return; }
-    if (event.type === 'step') { const s = event.payload; told(send({ type: 'move', by: id, to: place(s.place.x, s.place.y), ...(s.dash ? { dash: true } : {}) })); return; }
+    /** @param {readonly Effect[]} fx @param {Command | null} [cmd] */
+    const told = (fx, cmd = null) => {
+      const no = fx.find(x => x.type === 'refused');
+      if (no && no.type === 'refused') turnDown(id, no.reason, cmd ? refusalLine(no.reason, f, [cmd], 'player') : undefined);
+    };
+    if (event.type === 'pass') { const c = /** @type {const} */ ({ type: 'endTurn', by: id }); told(send(c), c); return; }
+    if (event.type === 'step') { const s = event.payload, c = /** @type {const} */ ({ type: 'move', by: id, to: place(s.place.x, s.place.y), ...(s.dash ? { dash: true } : {}) }); told(send(c), c); return; }
     const p = event.payload;
     const u = rowOf(f, id), a = u && u.abilities.find(x => x.id === p.ability); if (!u || !a) { turnDown(id, 'unknownAbility'); return; }
     // a player's tap on the ability their channel holds is its Release (the hotbar's), at the charge it has
     if (u.channel && u.channel.state === 'holding' && u.channel.ability === a.id) { told(releaseOf(u)); return; }
     const aim = typeof p.aim === 'string' ? p.aim : place(p.aim.x, p.aim.y);
     const rolls = drawnFor(f, id, needs(a, u, f.rows, aim, f.grid, f.now, rules()));
-    told(send({ type: 'act', by: id, ability: a.id, aim, rolls }));
+    const cmd = /** @type {const} */ ({ type: 'act', by: id, ability: a.id, aim, rolls });
+    told(send(cmd), cmd);
   });
 
   // ── hand edits ──
@@ -966,6 +995,7 @@ export function register(app) {
 .cmb-chk{display:flex;align-items:center;gap:8px;min-height:40px;font-size:13px}
 .cmb-chk input{width:20px;height:20px}
 .cmb-ab{min-height:40px;min-width:44px;padding:4px 10px;font-family:var(--font-mono);border-color:var(--cyan);color:var(--cyan)}
+.cmb-ab.cant-afford{opacity:.6;border-style:dashed}
 .cmb-qerr{color:var(--red);font-size:13px;margin:6px 0 0}
 @media (min-width:1100px){
   #view-combat:has(> .view-main .cmb-ck):has(> .panels > [data-panel="table-feed"]):not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
@@ -1116,12 +1146,18 @@ export function register(app) {
     order: () => { const f = fight(); return running(f) ? order(f, 6, rules()).map(t => ({ id: t.row.id, name: t.row.name })) : []; },
     kit: () => {
       const f = fight(), c = cur(); if (!running(f) || f.dodge || !c || isRemote(c)) return null;
-      const ch = channelView(c, rules());
+      const R = rules(), list = shownAbilities(c).map(x => x.a), ch = channelView(c, R);
+      const cantAfford = {};
+      for (const a of list) {
+        if (a.react) continue;
+        const why = bodyCantAfford(f, c, a, null, R, 'gm');
+        if (why) cantAfford[a.id] = why;
+      }
       return {
-        list: shownAbilities(c).map(x => x.a), readyAt: c.readyAt, now: f.now, costCut: c.sheet.costCut, pinKey: pinKeyOf(c), channel: ch && ch.state === 'holding' ? ch : null,
+        list, readyAt: c.readyAt, now: f.now, costCut: c.sheet.costCut, pinKey: pinKeyOf(c), channel: ch && ch.state === 'holding' ? ch : null,
         armed: c.armed ? { ability: c.armed.ability, spent: c.armed.spent } : null, left: usesLeft(c, c.abilities.length),
         itemOf: id => { const h = holderHunter(c); return h ? A().inventory.bag(h).find(i => i.id === id) ?? null : null; },
-        answers: answersOn(f, shownAbilities(c).map(x => x.a)),
+        answers: answersOn(f, list), hpMax: c.sheet.hpMax, cantAfford,
       };
     },
     arm: ability => { const c = cur(); if (c) armRow(c, ability); },
@@ -1240,7 +1276,8 @@ export function register(app) {
         const foes = foesOf(f, r), foe = pickedFoe(r, foes), toward = stepOf(f, r, 1, foe), away = stepOf(f, r, -1, foe);
         actions = `<div class="lbl">Abilities</div><div class="cmb-quick">${shownAbilities(r).map(({ a, label }) => {
           const left = readyIn(r.readyAt, a.id, f.now, R), wait = left > 0 ? `ready in ${left} round${left === 1 ? '' : 's'}` : '';
-          return `<button type="button" class="cmb-ab" data-fk="ab-${esc(a.id)}" data-ab="${esc(a.id)}" aria-label="${wait ? `${esc(a.name)}, ${wait}` : `Use ${esc(a.name)}`}"${wait ? ' disabled' : ''}>${esc(label)}${wait ? `<small data-wait> · ${wait}</small>` : ''}</button>`;
+          const cant = !wait ? bodyCantAfford(f, r, a, null, R, 'gm') : null;
+          return `<button type="button" class="cmb-ab${cant ? ' cant-afford' : ''}" data-fk="ab-${esc(a.id)}" data-ab="${esc(a.id)}"${cant ? ` data-unaffordable="true" title="${esc(cant)}"` : ''} aria-label="${wait ? `${esc(a.name)}, ${wait}` : cant ? `${esc(a.name)}, ${esc(cant)}` : `Use ${esc(a.name)}`}"${wait ? ' disabled' : ''}>${esc(label)}${wait ? `<small data-wait> · ${wait}</small>` : ''}</button>`;
         }).join('')}</div>
           ${foes.length ? `<div class="cmb-line"><label class="field row-full"><span class="lbl">Move</span><select data-fk="target" data-target>${foes.map(x => `<option value="${esc(x.target.id)}"${foe && foe.target.id === x.target.id ? ' selected' : ''}>${esc(x.target.name)} · ${x.dist} tile${x.dist === 1 ? '' : 's'}</option>`).join('')}</select></label>
           <button type="button" data-fk="toward" data-toward${toward ? '' : ' disabled'} aria-label="Step toward ${esc(foe ? foe.target.name : '')}">Step toward</button><button type="button" data-fk="away" data-away${away ? '' : ' disabled'} aria-label="Step away from ${esc(foe ? foe.target.name : '')}">Step away</button></div>` : ''}`;

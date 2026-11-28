@@ -5,14 +5,17 @@
 // player's (the room doc's rows) draw with the same code. A new number a screen draws is a function here with its case in
 // tests/fight-view.test.ts.
 
-import type { Rules } from '../rules.ts';
+import { rankIdx } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import { dist, place, reachable } from './space.ts';
 import { bandOf, mythicScriptOf } from '../registry/mythics.ts';
 import { clockOut, enraged, heldAtGate } from './mythic.ts';
 import type { MythicState } from './mythic.ts';
 import type { AnswerOutcome, Interrupt, MythicMove, MythicScript, MythicScriptId, MythicStanding, Omen, OmenAim, OmenKey } from './mythic-types.ts';
-import type { DocStanding } from './fight-doc.ts';
-import { canAimAt, inRange, swapWith, whoIsIn } from './resolve.ts';
+import { classStatusDef } from '../registry/class-powers.ts';
+import type { DocStanding, FightDoc, FightDocRow } from './fight-doc.ts';
+import { canAimAt, inRange, placeOf, swapWith, whoIsIn } from './resolve.ts';
+import type { Aim } from './resolve.ts';
 import type { Grid, Place, MoveReach, Side, Tiles } from './space.ts';
 import { acted, ahead, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
@@ -24,7 +27,14 @@ import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { LifeState } from '../hunter/vitals.ts';
 import { sheetStatuses, statusKey } from './effect-ops.ts';
-import type { Body, Channel, CombatantKind, OpRules, SheetStatus, StatusDef } from './effect-ops.ts';
+import type { Body, Channel, CombatantKind, OpRules, SheetStatus, StatusDef, StatusKey } from './effect-ops.ts';
+import { countOn } from './op-amount.ts';
+import { alive, live } from './land.ts';
+import { affordCheck } from './charge.ts';
+import type { ChargeStatus } from './charge.ts';
+import { chargeRefusalWords } from './refusal-words.ts';
+import { insideZone } from './triggers.ts';
+import { pricedZones } from './zones.ts';
 import { usesOf } from './uses.ts';
 import type { Fight, ForcedFace, StatusGrant } from './fight-types.ts';
 import { fudgeOf } from './fudge.ts';
@@ -200,13 +210,89 @@ export function tauntOf(row: Body, now: Tick, R: { readonly fight: { readonly ro
 // ── a cooldown ──
 
 /**
- * The rounds until ability `id` is ready again, from the times its row's abilities are ready (`readyAt` of a row, or the
- * room doc's `ready` for the current row) and the fight's `now`: rounded up to one decimal, so a use not yet ready never
- * reads 0; 0 when it is ready.
+ * The whole rounds until ability `id` is ready again, from the times its row's abilities are ready (`readyAt` of a row, or
+ * the room doc's `ready` for the current row) and the fight's `now`. 0 when it is ready. While any time is left, `Math.ceil`
+ * of the remaining ticks over a round, so the timer never shows a fraction or 0 (always a whole integer ≥ 1). Display only:
+ * the fight clock and when the ability actually becomes ready are unchanged.
  */
 export function readyIn(readyAt: Readonly<Record<string, Tick>>, id: string, now: Tick, R: { readonly fight: { readonly round: number } }): number {
   const at = Object.hasOwn(readyAt, id) ? readyAt[id]! : now;
-  return at <= now ? 0 : roundsOf(at - now, R, 'up');
+  return at <= now ? 0 : Math.ceil((at - now) / R.fight.round);
+}
+
+// ── affordability for views (GM card/map and player HUD/map) ──
+const labelLookup = (R: Pick<Rules, 'conditions'>) => (key: StatusKey): string =>
+  (Object.hasOwn(R.conditions, key) ? (R.conditions as Readonly<Record<string, { readonly label: string }>>)[key]?.label : undefined)
+  ?? classStatusDef(key)?.label ?? key.replace(/-/g, ' ');
+const bodyStatuses = (b: Body): ChargeStatus[] =>
+  live(b).map(s => ({ key: s.key, label: s.def.label, stacks: countOn(s) }));
+
+/**
+ * Plain refusal reason if `row` in `f` cannot currently afford `a` (at `aim` when known, or without aim on the hotbar),
+ * or null when affordable. Shared by the GM's map, card, and refusal messages (`combat.js`).
+ */
+export function bodyCantAfford(
+  f: Fight,
+  row: Body,
+  a: Ability,
+  aim: Aim | null,
+  R: Rules,
+  voice: 'player' | 'gm' = 'gm',
+): string | null {
+  const now = timeOf(f);
+  const at = aim === null ? null : placeOf(aim, f.rows);
+  const target = at ? f.rows.find(b => alive(b) && b.place.x === at.x && b.place.y === at.y) ?? null : undefined;
+  const fail = affordCheck(
+    a,
+    {
+      hp: rowHp(row), hpMax: row.sheet.hpMax, mana: row.mana, costCut: row.sheet.costCut, tier: row.tier,
+      readyAt: row.readyAt, ...(row.used ? { used: row.used } : {}), statuses: bodyStatuses(row), inside: z => insideZone(row, z),
+    },
+    now,
+    R,
+    {
+      ...(target !== undefined ? { targetStatuses: target ? bodyStatuses(target) : [] } : {}),
+      hasZone: p => pricedZones(f.zones, row.id, p, at ?? row.place, f.rows, f.grid, now, R).length > 0,
+      statusLabel: labelLookup(R),
+    },
+  );
+  return fail ? chargeRefusalWords(fail, voice) : null;
+}
+
+/**
+ * Plain refusal reason if a player's hunter (`rank`, `sheet`, row `me` in room doc `e`) cannot currently afford `a`,
+ * or null when affordable. Shared by the player's HUD, map, Skills panel, and Bag (`table.js`, `uses.js`).
+ */
+export function docCantAfford(
+  e: Extract<FightDoc, { ended: false }>,
+  me: FightDocRow,
+  rank: Rank,
+  sheet: { readonly mana: number; readonly sheet: { readonly costCut: number } },
+  a: Ability,
+  R: Rules,
+): string | null {
+  if (!('hp' in me) || me.hp === undefined || me.hpMax === undefined) return null;
+  const isTurn = e.currentId === me.id;
+  const fail = affordCheck(
+    a,
+    {
+      hp: me.hp, hpMax: me.hpMax, mana: sheet.mana, costCut: sheet.sheet.costCut, tier: rankIdx(rank),
+      readyAt: isTurn ? e.ready : {}, ...(isTurn && e.left ? { left: e.left } : {}),
+      statuses: me.statuses.map(s => ({ key: s.key, label: s.label, stacks: s.stacks ?? 1 })),
+      inside: z => e.zones.some(x => x.name === z),
+    },
+    e.now,
+    R,
+    {
+      hasZone: p => e.zones.some(z => p.name === null || z.name === p.name),
+      statusLabel: labelLookup(R),
+    },
+  );
+  // The table doc does not carry the fight row's mana, so a short or stale sheet must not refuse a use the
+  // GM's row can still afford (a test or a mid-fight adjust). HP, cooldown, uses, and gates on the doc still
+  // refuse here. A real mana shortfall is refused by the GM and comes back as news, without ending the turn.
+  if (fail && fail.reason === 'mana') return null;
+  return fail ? chargeRefusalWords(fail, 'player') : null;
 }
 
 // ── uses left (kits table 2.3) ──

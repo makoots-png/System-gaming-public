@@ -9,7 +9,7 @@ import { toldStep } from '../core/use-told.ts';
 import { heardStep } from '../core/item-refs.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { notifyHidden } from '../edge/notify.ts';
-import { aims, docSpots } from '../core/combat/fight-view.ts';
+import { aims, docCantAfford, docSpots } from '../core/combat/fight-view.ts';
 import { openGrid } from '../core/combat/space.ts';
 import { hunterAbilities } from '../core/combat/rows.ts';
 import { useRoute } from '../core/protocol.ts';
@@ -101,6 +101,17 @@ export function register(app) {
       return r;
     },
     cast(hid, abilityId, given, via = 'turn') {
+      if (hold.at !== 'free') { ui.news('Waiting for the GM to process your last action.', 'warning'); return Promise.resolve(null); }
+      const h0 = store.hunter(hid), t0 = turnOf(hid);
+      if (!h0 || !t0) return Promise.resolve(null);
+      const a0 = hunterAbilities(h0, app.rules()).find(x => x.id === abilityId);
+      if (!a0) return Promise.resolve(null);
+      // Releasing an already-holding channel was paid at begin, so skip the affordability check for its release tap.
+      const releasing = !!(t0.me.channel && t0.me.channel.state === 'holding' && t0.me.channel.ability === a0.id);
+      if (!releasing) {
+        const cant = docCantAfford(t0.doc, t0.me, h0.rank, app.api.hunter.sheet(h0), a0, app.rules());
+        if (cant) { ui.news(cant, 'warning'); return Promise.resolve(null); }
+      }
       return app.api.uses.command(async () => {
         const h = store.hunter(hid), t = turnOf(hid); if (!h || !t) return null;
         const a = hunterAbilities(h, app.rules()).find(x => x.id === abilityId); if (!a) return null;

@@ -29,7 +29,7 @@ export const NOTHING_TOLD: TableTold = { running: null, ended: null, turn: null,
 export type TableNews =
   | { readonly kind: 'turn'; readonly hid: string }
   | { readonly kind: 'dodge'; readonly hid: string; readonly mode: Dodge; readonly ability: string | null }
-  | { readonly kind: 'refused'; readonly reason: TableRefusal }
+  | { readonly kind: 'refused'; readonly reason: TableRefusal; readonly text?: string }
   | { readonly kind: 'burst'; readonly ids: readonly CombatantId[] }
   | { readonly kind: 'ended' };
 
@@ -53,7 +53,7 @@ export function toldAfter(doc: FightDoc, told: TableTold, mine: { readonly turn:
   const no = doc.refused;
   if (no && mine.refused && !(next.refused && next.refused.fight === doc.id && next.refused.at === no.at && next.refused.n === no.n)) {
     next = { ...next, refused: { fight: doc.id, at: no.at, n: no.n } };
-    news.push({ kind: 'refused', reason: no.reason });
+    news.push({ kind: 'refused', reason: no.reason, ...(no.text ? { text: no.text } : {}) });
   }
   const dg = doc.dodge;
   if (dg && mine.dodge && !(next.dodge && next.dodge.fight === doc.id && next.dodge.n === dg.n)) {

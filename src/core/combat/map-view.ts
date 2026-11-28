@@ -12,7 +12,7 @@ import { dist, percent, place, reachable, seenBy, straightPath, tiles, tilesOf, 
 import type { Dodge, DodgeTile, Grid, Place, MoveReach, Shape, Side, Terrain, Tiles } from './space.ts';
 import { cost, roundsOf, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import { costOf } from './charge.ts';
+import { costOf, hpPriceTotal } from './charge.ts';
 import { inRange, whoIsIn } from './resolve.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 import type { Body, Op } from './effect-ops.ts';
@@ -936,12 +936,16 @@ export const myPinKey = (hid: string): string => `hunter:${hid}`;
  */
 export type HotbarSlot = {
   readonly id: Ability['id']; readonly name: string; readonly fatigue: number; readonly mana: number;
+  /** Total HP spent by HP prices on this ability for the actor's max HP, 0 when none. */
+  readonly hpCost: number;
   /** Its picture (icon-defaults.ts `abilityIcon`): its kind's, or a bag item's use the item's. */
   readonly icon: IconKey;
   readonly wait: number; readonly item: boolean; readonly pinned: boolean;
   readonly left: number | null; readonly react: 'arm' | 'armed' | 'spent' | null;
   /** What it does to the omen standing ("cancels it", "weakens it", fight-view.ts `answersBy`); null when it answers none. */
   readonly answers: string | null;
+  /** Plain refusal reason when the actor cannot currently afford this ability; null when affordable. */
+  readonly cantAfford: string | null;
 };
 /**
  * What the hotbar knows of a body's kits: its armed reaction (`Body.armed`, or what a player's phone armed) and its uses
@@ -952,6 +956,10 @@ export type HotbarKit = {
   readonly itemOf?: (id: ItemId) => IconItem | null;
   /** What each ability does to the omen standing, by ability id (`answersBy`); absent: none answers. */
   readonly answers?: Readonly<Record<string, string>>;
+  /** Actor's max HP for HP-priced abilities, when known. */
+  readonly hpMax?: number;
+  /** Plain refusal reason for each unaffordable ability, by ability id. */
+  readonly cantAfford?: Readonly<Record<string, string>>;
 };
 /** The most abilities pinned beside the attack. */
 export const PINS = 4;
@@ -966,8 +974,11 @@ export function hotbar(abilities: readonly Ability[], readyAt: Readonly<Record<s
   const chosen = (pins === null ? own.slice(0, PINS).map(a => a.id as string) : pins.filter(id => own.some(a => a.id === id)).slice(0, PINS));
   const react = (a: Ability): HotbarSlot['react'] => !a.react ? null : kit.armed && kit.armed.ability === a.id ? (kit.armed.spent ? 'spent' : 'armed') : 'arm';
   const slot = (a: Ability): HotbarSlot => ({
-    id: a.id, name: a.name, icon: abilityIcon(a, kit.itemOf ?? (() => null)), ...costOf(a, costCut), wait: readyIn(readyAt, a.id, now, R), item: itemOfAbility(a) !== null, pinned: chosen.includes(a.id),
+    id: a.id, name: a.name, icon: abilityIcon(a, kit.itemOf ?? (() => null)), ...costOf(a, costCut),
+    hpCost: kit.hpMax ? hpPriceTotal(a, kit.hpMax) : 0,
+    wait: readyIn(readyAt, a.id, now, R), item: itemOfAbility(a) !== null, pinned: chosen.includes(a.id),
     left: kit.left && Object.hasOwn(kit.left, a.id) ? kit.left[a.id]! : null, react: react(a), answers: kit.answers?.[a.id] ?? null,
+    cantAfford: kit.cantAfford?.[a.id] ?? null,
   });
   const attack = abilities.filter(a => a.id === ATTACK_ID);
   return {

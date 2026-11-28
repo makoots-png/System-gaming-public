@@ -332,14 +332,23 @@ describe('readyIn: when an ability on cooldown is ready again', () => {
   // A round is RULES.fight.round ticks (design 1.2); a cooldown of 2 rounds used at 3000 is ready at 3000 + 2 rounds.
   const round = RULES.fight.round, used = tick(3000), readyAt = { slam: tick(used + 2 * round) };
 
-  test('right after the use it waits its whole cooldown, then counts down by the share of a round gone', () => {
+  test('right after the use it waits its whole cooldown, then still shows a whole round while half a round is left', () => {
     expect(readyIn(readyAt, 'slam', used, RULES)).toBe(2);
-    expect(readyIn(readyAt, 'slam', tick(used + round / 2), RULES)).toBe(1.5);
+    expect(readyIn(readyAt, 'slam', tick(used + round / 2), RULES)).toBe(2);
   });
 
-  test('a wait under a tenth of a round still reads a tenth, never 0, until it is ready', () => {
-    expect(readyIn(readyAt, 'slam', tick(used + 2 * round - 1), RULES)).toBe(0.1);
+  test('a wait of one tick still shows 1 whole round, never a fraction or 0, until it is ready', () => {
+    expect(readyIn(readyAt, 'slam', tick(used + 2 * round - 1), RULES)).toBe(1);
     expect(readyIn(readyAt, 'slam', tick(used + 2 * round), RULES)).toBe(0);
+  });
+
+  test('the shown leftover is always an integer, and at least 1 while the cooldown is still running', () => {
+    for (const gone of [0, 1, round - 1, round, round + 1, 2 * round - 1]) {
+      const left = readyIn(readyAt, 'slam', tick(used + gone), RULES);
+      expect(Number.isInteger(left)).toBe(true);
+      if (gone < 2 * round) expect(left).toBeGreaterThanOrEqual(1);
+      else expect(left).toBe(0);
+    }
   });
 
   test('an ability never used, or one with no cooldown, is ready', () => {

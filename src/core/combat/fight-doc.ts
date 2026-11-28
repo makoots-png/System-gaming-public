@@ -201,14 +201,17 @@ export const TABLE_REFUSALS = [
   'tooLow',
   // dodge-tile picker: a dodge sent when none is open, or another command while a dodge waits
   'noDodge', 'dodging',
+  // fallback refusals so a player's tap is never silently dropped and stranded in TurnHold
+  'notNow', 'noChannel',
 ] as const satisfies readonly Refusal[];
 export type TableRefusal = (typeof TABLE_REFUSALS)[number];
 /**
  * The last tap of a player the GM's phone turned down: the row it was for, the fight's time then, the reason, and a count
- * the GM's phone raises for each, so two refusals at one time are two pieces of news. A doc carries it only while the
+ * the GM's phone raises for each, so two refusals at one time are two pieces of news. `text` carries the exact plain
+ * refusal message (needed vs held counts) when available. A doc carries it only while the
  * fight's time is still `at`: a refusal changes nothing, so it is news only until the fight moves on.
  */
-export type DocRefusal = { readonly id: CombatantId; readonly at: Tick; readonly reason: TableRefusal; readonly n: number };
+export type DocRefusal = { readonly id: CombatantId; readonly at: Tick; readonly reason: TableRefusal; readonly n: number; readonly text?: string };
 /**
  * A zone as the table sees it: its id and name, the tiles of it the party sees now as runs (`runsOf`), its tone for the
  * colour, its rounds left (null until removed), and the row it moves with (an aura's body, when the doc carries that

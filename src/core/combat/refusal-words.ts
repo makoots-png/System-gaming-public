@@ -5,6 +5,7 @@
 // neither, and the GM read a bare key ("noUses") for every reason the table lacked (implicit audit 3, C5).
 import type { Refusal } from './fight-types.ts';
 import type { TableRefusal } from './fight-doc.ts';
+import type { ChargeFailure } from './charge.ts';
 
 /** What the GM reads when the fight refused a command (combat.js). */
 export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
@@ -44,4 +45,23 @@ export const TABLE_REFUSAL_WORDS: { readonly [R in TableRefusal]: string } = {
   zone: 'You have no field to end.', extra: 'Only one extra action a round.', seen: 'A foe sees you. You cannot hide.',
   tooLow: 'Your rank is too high for that consumable. Use one of your rank or higher.',
   noDodge: 'That dodge is already over.', dodging: 'Finish the dodge first.',
+  notNow: 'Not right now.', noChannel: 'Nothing is being channeled.',
 };
+
+/** Plain refusal reason with exact needed and held counts for a failed affordability check (charge.ts `affordCheck`). */
+export function chargeRefusalWords(f: ChargeFailure, voice: 'player' | 'gm' = 'player'): string {
+  const has = voice === 'gm' ? 'has' : 'you have';
+  switch (f.reason) {
+    case 'tooLow': return voice === 'gm' ? REFUSAL_WORDS.tooLow : TABLE_REFUSAL_WORDS.tooLow;
+    case 'cooldown': return `Not ready yet. Ready in ${f.left} round${f.left === 1 ? '' : 's'}.`;
+    case 'noUses': return 'No uses left.';
+    case 'mana': return `Not enough mana. Needs ${f.need}, ${has} ${f.have}.`;
+    case 'hp': return `Not enough HP. Needs ${f.need} (costs ${f.cost}), ${has} ${f.have}.`;
+    case 'stacks': return `Not enough ${f.label}. Needs ${f.need}, ${has} ${f.have}.`;
+    case 'zone': return f.name ? `No ${f.name} field to spend.` : 'No field to spend.';
+    case 'gated':
+      if (f.gate === 'inside') return `Must be inside ${voice === 'gm' ? 'their' : 'your'} ${f.zone}.`;
+      return `Needs ${f.need} ${f.label}${f.on === 'target' ? ' on target' : ''}. ${f.on === 'target' ? 'Target has' : voice === 'gm' ? 'Has' : 'You have'} ${f.have}.`;
+    default: return f satisfies never;
+  }
+}

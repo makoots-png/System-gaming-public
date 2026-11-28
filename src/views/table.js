@@ -8,7 +8,7 @@
 import { WAYS_BACK } from '../core/hunter/vitals.ts';
 import { lifeWord } from '../core/combat/row-life.ts';
 import { isUp } from '../core/combat/row-hp.ts';
-import { WAIT_WORDS, aims, answersBy, docSpots, mythicSeenOfDoc, mythicStrip, omenBanner, omenOnYou, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, answersBy, docCantAfford, docSpots, mythicSeenOfDoc, mythicStrip, omenBanner, omenOnYou, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
 import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
 import { docBodies, docDodge, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
@@ -83,6 +83,8 @@ export function register(app) {
     .tb-kl li{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:6px 10px}
     .tb-kn{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.tb-kn small{display:block;color:var(--cyan-dim);font-size:13px}
     .tb-kl button{min-width:64px;min-height:40px}
+    .tb-kl button.cant-afford{border-color:color-mix(in srgb,var(--red) 60%,var(--line));opacity:.78}
+    .tb-kn small.tb-cant{color:var(--red)}
     .tb-acts{display:flex;flex-direction:column;gap:6px;margin:8px 0}
     .tb-kact{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}.tb-khint{font-size:13px;color:var(--muted)}
     @media (hover:none){.tb-khint{display:none}}
@@ -291,15 +293,17 @@ export function register(app) {
     const t = table(e, h), mine = canAct(e), off = mine ? '' : ' disabled title="Not your turn"';
     if (!t.me) return '';
     const step = dir => (mine && t.foe && t.me.stride != null ? (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid) : null);
-    const armed = armedOf(e), answers = answersOf(e, t.list);
+    const armed = armedOf(e), answers = answersOf(e, t.list), R = app.rules(), sh = app.api.hunter.sheet(h);
     const abil = t.list.map(a => {
       if (a.react) {
         const st = armed && armed.ability === a.id ? (armed.spent ? 'Spent' : 'Armed') : 'Arm';
         return `<li><span class="tb-kn">${esc(a.name)}<small>Reaction</small></span><button type="button" data-arm="${esc(a.id)}" aria-pressed="${st !== 'Arm'}">${st}</button></li>`;
       }
-      const left = mine ? readyIn(e.ready, a.id, e.now, app.rules()) : 0, ans = answers[a.id];
+      const left = mine ? readyIn(e.ready, a.id, e.now, R) : 0, ans = answers[a.id];
       const wait = left > 0 ? ` disabled title="Ready in ${left} round${left === 1 ? '' : 's'}"` : '';
-      return `<li><span class="tb-kn">${esc(a.name)}${left > 0 ? `<small data-wait>Ready in ${left} round${left === 1 ? '' : 's'}</small>` : ''}${ans ? `<small class="myth-tag">Answers the omen: ${esc(ans)}</small>` : ''}</span><button type="button" data-cast="${esc(a.id)}"${off || wait}${mine && !wait ? ` title="Use ${esc(a.name)}"` : ''}>Use</button></li>`;
+      const cant = mine && left === 0 ? docCantAfford(e, t.me, h.rank, sh, a, R) : null;
+      const cantAttr = cant ? ` class="cant-afford" data-unaffordable="true" title="${esc(cant)}"` : '';
+      return `<li><span class="tb-kn">${esc(a.name)}${left > 0 ? `<small data-wait>Ready in ${left} round${left === 1 ? '' : 's'}</small>` : cant ? `<small class="tb-cant">${esc(cant)}</small>` : ''}${ans ? `<small class="myth-tag">Answers the omen: ${esc(ans)}</small>` : ''}</span><button type="button" data-cast="${esc(a.id)}"${off || wait}${cantAttr}${mine && !wait && !cant ? ` title="Use ${esc(a.name)}"` : ''}>Use</button></li>`;
     }).join('');
     const mv = t.foe ? `<div class="tb-kact"><button type="button" data-step="1"${step(1) ? '' : ' disabled'}>Move toward ${esc(t.foe.name)}</button><button type="button" data-step="-1"${step(-1) ? '' : ' disabled'}>Move away from ${esc(t.foe.name)}</button></div>` : '';
     const pass = mine && !t.me.down ? '<div class="tb-kact"><button type="button" data-pass>End turn</button></div>' : '';
@@ -441,11 +445,18 @@ export function register(app) {
     },
     kit: () => {
       const e = encounter(), h = meHunter(e), me = e && !e.ended ? meRow(e) : null; if (!e || e.ended !== false || !h || !me) return null;
-      const ch = me.channel;
+      const R = app.rules(), list = hunterAbilities(h, R), sh = app.api.hunter.sheet(h), ch = me.channel;
+      const cantAfford = {};
+      if (myTurn(e)) for (const a of list) {
+        if (a.react) continue;
+        const why = docCantAfford(e, me, h.rank, sh, a, R);
+        if (why) cantAfford[a.id] = why;
+      }
       return {
-        list: hunterAbilities(h, app.rules()), readyAt: myTurn(e) ? e.ready : {}, now: e.now, costCut: app.api.hunter.sheet(h).sheet.costCut, pinKey: myPinKey(h.id), channel: ch && ch.state === 'holding' ? ch : null,
-        armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {}, answers: answersOf(e, hunterAbilities(h, app.rules())),
+        list, readyAt: myTurn(e) ? e.ready : {}, now: e.now, costCut: sh.sheet.costCut, pinKey: myPinKey(h.id), channel: ch && ch.state === 'holding' ? ch : null,
+        armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {}, answers: answersOf(e, list),
         itemOf: id => app.api.inventory.bag(h).find(i => i.id === id) ?? null,
+        hpMax: 'hpMax' in me ? me.hpMax : undefined, cantAfford,
       };
     },
     arm: ability => { const e = encounter(), h = meHunter(e); if (h) armTo(e, h, ability); },
@@ -633,14 +644,14 @@ export function register(app) {
       for (const n of r.news) {
         // a threshold that went off in the GM's last command: each phone shows it once, by its count
         if (n.kind === 'burst') pendingBursts = [...n.ids];
-        else if (n.kind === 'refused') ui.news(TABLE_REFUSAL_WORDS[n.reason], 'warning');
+        else if (n.kind === 'refused') ui.news(n.text ?? TABLE_REFUSAL_WORDS[n.reason], 'warning');
         else if (n.kind === 'dodge') ui.news(n.ability ? `Dodge ${n.ability}. Pick a tile on the map.` : 'Dodge. Pick a tile on the map.', 'good');
         // A4: a toast, not a window: the HUD and the Status banner already say "Your turn" large, and a window would cover them.
         else if (n.kind === 'turn') { ui.news(`Your turn. Round ${roundIn(e)}.`, 'good'); app.emit('combat:turn', { hunterId: n.hid }); }
         else ui.news('The GM cleared the fight.', 'good');
       }
     }
-    const sig = e ? JSON.stringify(e.ended === true ? [e.id, e.active, e.ended] : [e.id, e.active, e.ended, e.now, e.currentId, e.rows, e.ready, e.grid, e.zones, e.armed, e.spent, e.reacts, e.left, e.burst, e.dodge]) + inRoomPlayer() : '';
+    const sig = e ? JSON.stringify(e.ended === true ? [e.id, e.active, e.ended] : [e.id, e.active, e.ended, e.now, e.currentId, e.rows, e.ready, e.grid, e.zones, e.armed, e.spent, e.reacts, e.left, e.burst, e.dodge, e.refused]) + inRoomPlayer() : '';
     if (sig !== lastDoc) { lastDoc = sig; if (inRoomPlayer() || hud.on) refresh(); }
   }
   let lastDoc = '';
