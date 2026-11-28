@@ -34,8 +34,9 @@ export const CHASE_POLLS = 10;
 /** How often a page in a room polls: no fight, a fight runs, or (a GM's phone) a player's hunter has the turn. */
 export type PollPace = 'table' | 'fight' | 'turn';
 export const PACE_MS: Record<PollPace, number> = { table: POLL_MS, fight: POLL_FAST_MS, turn: POLL_TURN_MS };
-/** The pace of a room whose fight doc is `fight`, for this `device`: a GM's phone waits on a player's move while a hunter of another device has the turn or while a class offer is open. */
-export function paceOf(fight: FightDoc | null, gm: boolean, device: string, offerActive = false): PollPace {
+/** The pace of a room whose fight doc is `fight`, for this `device`: a GM's phone waits on a player's move while a hunter of another device has the turn or while a class offer is open; every phone polls at 1 s while the world-primer intro is open. */
+export function paceOf(fight: FightDoc | null, gm: boolean, device: string, offerActive = false, introActive = false): PollPace {
+  if (introActive) return 'turn';
   if (gm && offerActive) return 'turn';
   if (!fight || fight.ended || !fight.active) return 'table';
   if (gm && fight.dodge) {

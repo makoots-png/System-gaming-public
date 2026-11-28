@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ABOUT, LOADED, PRIMER_WORDS, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER, createdLine, nextSteps, showsPrimer } from '../src/core/first-run.ts';
+import { ABOUT, LOADED, PRIMER_WORDS, ROOM_IS, ROOM_PATH, TIPS, WELCOME_WORDS, WORLD_PRIMER, createdLine, nextSteps, showsPrimer } from '../src/core/first-run.ts';
 import type { FirstRunFacts } from '../src/core/first-run.ts';
 import { STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER, starterStory } from '../src/core/starter.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -107,6 +107,16 @@ describe('the sentences a new person reads', () => {
     expect(ABOUT).toContain('The Hunter System');
     expect(ABOUT).toMatch(/^[A-Z].*\.$/);
     expect(ABOUT).not.toMatch(/[—!;]/);
+  });
+
+  test('WELCOME_WORDS explains the tabletop RPG companion and phone roles in plain words', () => {
+    expect(WELCOME_WORDS.title).toBe('The Hunter System');
+    expect(WELCOME_WORDS.lead).toContain('tabletop RPG');
+    expect(WELCOME_WORDS.gmLine).toContain('phone');
+    expect(WELCOME_WORDS.playerLine).toContain('phone');
+    for (const s of Object.values(WELCOME_WORDS)) {
+      expect(s).not.toMatch(/[—!;]/);
+    }
   });
 
   const oneSentence = { ROOM_IS, 'ROOM_PATH.gm': ROOM_PATH.gm, 'ROOM_PATH.player': ROOM_PATH.player };

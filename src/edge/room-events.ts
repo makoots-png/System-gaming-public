@@ -266,6 +266,8 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   classPickRefused: VIEW_READS,
   // a player's report that it could not take a unique class: the GM's phone lets the class go (class-holders.ts `grantRefused`)
   classGrantRefused: GM_ONLY_READS,
+  // a player tapped Answer on card 16 of the world-primer intro: the GM's phone merges it into `_intro` (intro.js)
+  introAnswer: GM_ONLY_READS,
 };
 
 /**

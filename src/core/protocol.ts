@@ -580,6 +580,8 @@ export type ClassGrantRefusal = (typeof CLASS_GRANT_REFUSALS)[number];
  * one report a grant. Sealed to the GM and the sender.
  */
 export type ClassGrantRefusedPayload = Base & { by: SheetKey; name: string; className: UniqueClassName; grantId: string; why: ClassGrantRefusal };
+/** A player tapped Answer on card 16 of the world-primer intro (sealed to GM and sender). */
+export type IntroAnswerPayload = Base & { by: SheetKey; name: string; run: string };
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
@@ -588,7 +590,7 @@ type Payloads = {
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
   systemRaise: SystemRaisePayload; respec: RespecPayload; rewardAsk: RewardAskPayload; guild: GuildPayload; capSet: CapSetPayload;
   classGrant: ClassGrantPayload; classRevoke: ClassRevokePayload; classSwap: ClassSwapPayload; classNode: ClassNodePayload; classPick: ClassPickPayload;
-  classPickRefused: ClassPickRefusedPayload; classGrantRefused: ClassGrantRefusedPayload;
+  classPickRefused: ClassPickRefusedPayload; classGrantRefused: ClassGrantRefusedPayload; introAnswer: IntroAnswerPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -883,6 +885,12 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       why: choiceOf(CLASS_GRANT_REFUSALS)(own(o, 'why')),
     };
   } },
+  introAnswer: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
+    ...base(o),
+    by: sheetKey(own(o, 'by')),
+    name: opt(own(o, 'name'), text(NAME_MAX), ''),
+    run: filled(60)(own(o, 'run')),
+  }) },
 };
 
 type EventEntry<K extends EventType> = {
@@ -902,7 +910,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
   systemRaise: entry('systemRaise'), respec: entry('respec'), rewardAsk: entry('rewardAsk'), guild: entry('guild'), capSet: entry('capSet'),
   classGrant: entry('classGrant'), classRevoke: entry('classRevoke'), classSwap: entry('classSwap'), classNode: entry('classNode'), classPick: entry('classPick'),
-  classPickRefused: entry('classPickRefused'), classGrantRefused: entry('classGrantRefused'),
+  classPickRefused: entry('classPickRefused'), classGrantRefused: entry('classGrantRefused'), introAnswer: entry('introAnswer'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -1225,9 +1233,22 @@ export type ClassOfferDoc =
       readonly hunters: SheetKey[];
       readonly taken: Partial<Record<UniqueClassName, ClassOfferTaken>>;
     };
+/** One player who tapped Answer on card 16 of the current world-primer intro run. */
+export type IntroAnswered = { readonly key: SheetKey; readonly name: string };
+/** Active world-primer intro state stored in the room's `_intro` doc. */
+export type IntroActive = {
+  readonly card: number;
+  readonly run: string;
+  readonly answered: readonly IntroAnswered[];
+};
+/** The room's world-primer intro doc (`PUT /sheets/_intro`): `intro` is active `{ card, run, answered }` or `null` when off. */
+export type IntroDoc = {
+  readonly intro: IntroActive | null;
+  readonly at: string;
+};
 type Docs = {
   fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc; stash: StashDoc;
-  holders: HoldersDoc; classOffer: ClassOfferDoc;
+  holders: HoldersDoc; classOffer: ClassOfferDoc; intro: IntroDoc;
 };
 export type DocName = keyof Docs;
 export type DocOf<K extends DocName> = Docs[K];
@@ -1754,6 +1775,27 @@ function roomRulesDoc(o: Rec): RoomRules {
   };
 }
 
+/** Highest valid intro card index (`0` is title, `1..16` are story cards; verified against `INTRO_STORY_COUNT`). */
+export const INTRO_CARD_MAX = 16;
+const INTRO_ANSWERED_MAX = 32;
+function introAnsweredEntry(v: unknown): IntroAnswered {
+  const o = obj(v);
+  return { key: sheetKey(own(o, 'key')), name: text(NAME_MAX)(own(o, 'name')) };
+}
+function introDocOf(o: Rec): IntroDoc {
+  const at = text(40)(own(o, 'at')), raw = own(o, 'intro');
+  if (raw === null) return { intro: null, at };
+  const io = obj(raw);
+  const rawCard = own(io, 'card');
+  if (typeof rawCard !== 'number' || !Number.isInteger(rawCard) || rawCard < 0 || rawCard > INTRO_CARD_MAX) return refuse();
+  const card = rawCard;
+  const run = filled(60)(own(io, 'run'));
+  const rawAns = opt(own(io, 'answered'), v => listOf(v, INTRO_ANSWERED_MAX, introAnsweredEntry), []);
+  const seen = new Set<SheetKey>(), answered: IntroAnswered[] = [];
+  for (const a of rawAns) { if (!seen.has(a.key)) { seen.add(a.key); answered.push(a); } }
+  return { intro: { card, run, answered }, at };
+}
+
 /** Every room document by name, with its parser (unknown in, the doc or null out). A name missing here does not compile. */
 export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null } = {
   fight: data => attempt(() => fightDocOf(obj(data))),
@@ -1771,6 +1813,7 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
   }),
   holders: data => attempt(() => holdersDocOf(obj(data))),
   classOffer: data => attempt(() => classOfferDocOf(obj(data))),
+  intro: data => attempt(() => introDocOf(obj(data))),
 };
 /**
  * Each doc as it goes on the wire, which `DOCS` reads back: the fight's shorter shape (fight-doc.ts `fightWire`), the rest as
@@ -1778,8 +1821,14 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
  */
 export const WIRES: { readonly [K in DocName]: (doc: Docs[K]) => object } = {
   fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d, stash: d => d,
-  holders: d => d, classOffer: d => d,
+  holders: d => d, classOffer: d => d, intro: d => d,
 };
+/** The `intro` doc filtered for `v`: GM gets all answers; a player phone gets only its own device's answers; an unproven viewer gets none. */
+export function introFor(doc: IntroDoc, v: RoomViewer): IntroDoc {
+  if (doc.intro === null || v.kind === 'gm') return doc;
+  if (v.kind === 'anyone') return { ...doc, intro: { ...doc.intro, answered: [] } };
+  return { ...doc, intro: { ...doc.intro, answered: doc.intro.answered.filter(a => deviceOf(a.key) === v.device) } };
+}
 /** The `holders` doc filtered for `v`: the GM sees every claim, a proven phone sees only its own hunters' claims, and an unproven viewer gets null so the wire omits `holders`. */
 export function holdersFor(doc: HoldersDoc, v: RoomViewer): HoldersDoc | null {
   if (v.kind === 'gm') return doc;
@@ -1818,6 +1867,10 @@ export function wireDocs(docs: RoomDocs, viewer: RoomViewer): Partial<Record<Doc
       const filtered = classOfferFor(d.data as ClassOfferDoc, viewer);
       if (!filtered) return;
       out[name] = { ...d, data: filtered };
+      return;
+    }
+    if (name === 'intro') {
+      out[name] = { ...d, data: introFor(d.data as IntroDoc, viewer) };
       return;
     }
     out[name] = { ...d, data: WIRES[name](d.data) };

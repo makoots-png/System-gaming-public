@@ -717,7 +717,7 @@ export type SyncApi = {
   /** What this phone knows of the GM's fight: its doc, when the room stored it, and its last message as `save` keeps it (fight-heard.ts), for `fightHold`. */
   table(save: Save): TableSeen;
   /** On a GM's phone in a room, keeps the doc what `build` answers (null: leave it). Register once; sync.ts calls it after each change. */
-  publish(name: Exclude<DocName, 'kicked'>, build: () => unknown): void;
+  publish(name: Exclude<DocName, 'kicked' | 'intro'>, build: () => unknown): void;
   inviteLink(code?: string | null): string;
   /** The room of the invite link this tab was opened with, until it is joined or dropped. */
   invite(): RoomCode | null;
@@ -750,6 +750,8 @@ export type SyncApi = {
   catalogConflict(): boolean;
   /** Resolves a GM catalog conflict in Workshop: keep this phone's items (`mine`) or adopt the server's (`theirs`). */
   resolveCatalog(choice: 'mine' | 'theirs'): void;
+  /** Writes the room's `_intro` doc as GM (one serialized PUT at a time; never republished on poll). */
+  setIntro(doc: import('./protocol.ts').IntroDoc): Promise<boolean>;
 };
 
 /** Sharing the GM's custom content (src/views/io.js): a pack as a code or a file (src/core/pack.ts). */
@@ -905,6 +907,14 @@ export type ClassesApi = {
   openOffer(gateId?: GateId | null): void;
 };
 
+/** The world-primer intro player (src/views/intro.js). */
+export type IntroApi = {
+  /** Opens solo replay of the world-primer cards starting at card 0. */
+  openSolo(): void;
+  /** Starts the GM-paced table intro at card 0 in the live room. */
+  startTable(): Promise<void>;
+};
+
 /** Every `app.api` name and the type of what its module registers. */
 export type AppApi = {
   award: AwardApi;
@@ -922,6 +932,7 @@ export type AppApi = {
   guild: GuildApi;
   hunter: HunterApi;
   identity: IdentityApi;
+  intro: IntroApi;
   inventory: InventoryApi;
   loadouts: LoadoutsApi;
   loot: LootApi;

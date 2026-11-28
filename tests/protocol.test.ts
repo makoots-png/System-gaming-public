@@ -233,7 +233,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'bloodExtract', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'shadowHp', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'bloodExtract', 'capSet', 'cast', 'chain', 'chapter', 'classGrant', 'classGrantRefused', 'classNode', 'classPick', 'classPickRefused', 'classRevoke', 'classSwap', 'coinCall', 'coinLand', 'dodge', 'guild', 'hp', 'introAnswer', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'respec', 'revive', 'rewardAsk', 'roll', 'shadow', 'shadowHp', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -242,8 +242,8 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classGrantRefused', 'classNode', 'classPick', 'classSwap', 'coinCall', 'dodge', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode', 'classPick', 'classGrantRefused'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'classGrantRefused', 'classNode', 'classPick', 'classSwap', 'coinCall', 'dodge', 'introAnswer', 'offer', 'offerEnd', 'pass', 'questUpdate', 'respec', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'dodge', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise', 'respec', 'classSwap', 'classNode', 'classPick', 'classGrantRefused', 'introAnswer'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -1380,7 +1380,7 @@ describe('the fight doc', () => {
 
 describe('the other room docs', () => {
   test('every doc the GM publishes has a parser, and no other name does', () => {
-    expect(Object.keys(DOCS).sort()).toEqual(['classOffer', 'codex', 'feats', 'fight', 'holders', 'kicked', 'rules', 'solo', 'stash', 'world']);
+    expect(Object.keys(DOCS).sort()).toEqual(['classOffer', 'codex', 'feats', 'fight', 'holders', 'intro', 'kicked', 'rules', 'solo', 'stash', 'world']);
     for (const name of ['nope', '__proto__', 'toString']) expect(parseDocName(name)).toBeNull();
   });
 
@@ -2265,5 +2265,34 @@ describe('the class flow\'s answers on the wire (statechart rules 4, 5 and 6)', 
     expect(DOCS.holders({ ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1' } } })).toEqual({ ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1' } } });
     expect(DOCS.holders({ ...base, held: { Hemomancer: { who: KEY, grantId: 'cg1', wait: 1 } } })).toBeNull();
     expect(DOCS.holders({ ...base, held: { Hemomancer: { who: 'gm', grantId: 'cg1', wait: true } } })).toBeNull();
+  });
+});
+
+describe('world-primer intro doc and introAnswer event', () => {
+  test('DOCS.intro validates active and null shapes and rejects out-of-range cards', () => {
+    const at = '2026-11-27T20:00:00.000Z';
+    const active = { intro: { card: 16, run: 'i-gm-1', answered: [{ key: KEY, name: 'Kai' }, { key: OTHER, name: 'Mira' }] }, at };
+    expect(DOCS.intro(active)).toEqual(active);
+    expect(DOCS.intro({ intro: null, at })).toEqual({ intro: null, at });
+    expect(DOCS.intro({ intro: { card: -1, run: 'i-gm-1', answered: [] }, at })).toBeNull();
+    expect(DOCS.intro({ intro: { card: 17, run: 'i-gm-1', answered: [] }, at })).toBeNull();
+    expect(DOCS.intro({ intro: { card: 1.5, run: 'i-gm-1', answered: [] }, at })).toBeNull();
+    expect(DOCS.intro({ intro: { card: 0, run: '', answered: [] }, at })).toBeNull();
+  });
+
+  test('wireDocs filters intro answered list per viewer', () => {
+    const at = '2026-11-27T20:00:00.000Z';
+    const doc = DOCS.intro({ intro: { card: 16, run: 'i-gm-1', answered: [{ key: KEY, name: 'Kai' }, { key: OTHER, name: 'Mira' }] }, at })!;
+    const stored = { intro: { at, from: 'd-gm' as never, data: doc } };
+    expect((wireDocs(stored, { kind: 'gm' }).intro?.data as typeof doc).intro?.answered).toHaveLength(2);
+    expect((wireDocs(stored, { kind: 'phone', device: 'd-player1' as never }).intro?.data as typeof doc).intro?.answered).toEqual([{ key: KEY, name: 'Kai' }]);
+    expect((wireDocs(stored, { kind: 'anyone' }).intro?.data as typeof doc).intro?.answered).toEqual([]);
+  });
+
+  test('introAnswer requires a valid sheet key and non-empty run id', () => {
+    const ok = valid('introAnswer');
+    expect(parseEvent('introAnswer', ok)).not.toBeNull();
+    expect(parseEvent('introAnswer', { ...ok, run: '' })).toBeNull();
+    expect(parseEvent('introAnswer', { ...ok, by: 'not-a-key' })).toBeNull();
   });
 });

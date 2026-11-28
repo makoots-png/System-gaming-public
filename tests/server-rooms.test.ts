@@ -1413,3 +1413,31 @@ describe('wire error compatibility across one deploy', () => {
     expect(full).toEqual({ status: 413, body: { code: 'ROOM_FULL', error: 'room full' } });
   });
 });
+
+describe('world-primer _intro room doc', () => {
+  test('only the GM may write _intro; it persists on GET and filters answered per player device', async () => {
+    const { code, gm } = await newRoom();
+    const at = '2026-11-27T20:00:00.000Z';
+    const doc = { intro: { card: 16, run: 'i-gm-1', answered: [{ key: `${PLAYER}:h1`, name: 'Kai' }, { key: `${OTHER}:h3`, name: 'Mira' }] }, at };
+
+    expect((await call('PUT', `/api/rooms/${code}/sheets/_intro`, { headers: token(PLAYER), body: { from: PLAYER, data: doc } })).status).toBe(403);
+    expect((await call('PUT', `/api/rooms/${code}/sheets/_intro`, { headers: gm, body: { from: 'gm', data: doc } })).status).toBe(200);
+    expect((await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token(PLAYER), body: sheetOf(PLAYER, 'Kai') })).status).toBe(200);
+
+    const asGm = await call('GET', `/api/rooms/${code}?after=0`, { headers: gm });
+    expect(asGm.body.docs.intro.data.intro.card).toBe(16);
+    expect(asGm.body.docs.intro.data.intro.answered).toHaveLength(2);
+
+    const asPlayer = await call('GET', `/api/rooms/${code}?after=0&d=${PLAYER}`, { headers: token(PLAYER) });
+    expect(asPlayer.body.docs.intro.data.intro.card).toBe(16);
+    expect(asPlayer.body.docs.intro.data.intro.answered).toEqual([{ key: `${PLAYER}:h1`, name: 'Kai' }]);
+
+    const unproven = await call('GET', `/api/rooms/${code}?after=0`);
+    expect(unproven.body.docs.intro.data.intro.card).toBe(16);
+    expect(unproven.body.docs.intro.data.intro.answered).toEqual([]);
+
+    expect((await call('PUT', `/api/rooms/${code}/sheets/_intro`, { headers: gm, body: { from: 'gm', data: { intro: null, at } } })).status).toBe(200);
+    const cleared = await call('GET', `/api/rooms/${code}?after=0&d=${PLAYER}`, { headers: token(PLAYER) });
+    expect(cleared.body.docs.intro.data.intro).toBeNull();
+  });
+});

@@ -220,4 +220,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: 'cg3-abc-g', by: KEY, name: 'Mira', className: 'Hemomancer', grantId: 'cg3-abc', why: 'foreign-class' },
     { eid: 'cg3-abc-g', by: KEY, name: 'Mira', className: 'Hemomancer', grantId: 'cg3-abc', why: 'foreign-class' },
   ],
+  introAnswer: [
+    { eid: EID, by: KEY, name: 'Mira', run: 'i-gm1-run1' },
+    { eid: EID, by: KEY, name: 'Mira', run: 'i-gm1-run1' },
+  ],
 };

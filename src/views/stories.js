@@ -18,6 +18,7 @@ import { postNews } from '../core/sync/connection.ts';
 import { cryptoRandom } from '../edge/roll.ts';
 import { isRefused } from '../core/save-step.ts';
 import { uniqueJobRefusalText } from '../core/hunter/grant.ts';
+import { introEnd } from '../core/intro.ts';
 import { storyMaker } from './story-maker.js';
 
 css('stories', `
@@ -86,6 +87,9 @@ export function register(app) {
       return isRefused(m) ? m : { ...m, held: [...m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...m.onRow] };
     });
     if (isRefused(out)) return out;
+    if ((e.type === 'turnOn' || e.type === 'open') && app.seat() === 'gm' && A().sync.doc('intro')?.intro) {
+      void A().sync.setIntro(introEnd(day.at));
+    }
     if (out.posted.length || out.remoteClaimed.length) A().sync.flush();
     for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whoseLine(g.window.body, S().hunters, hid), kind: 'quest' });
     for (const ref of out.remoteJobRefused) ui.toast('Class', uniqueJobRefusalText(ref.refusal, ref.name), { kind: 'warning' });

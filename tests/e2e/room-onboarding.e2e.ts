@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, noonDate, ROOM_CODE } from './helpers.ts';
-import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS, WORLD_PRIMER } from '../../src/core/first-run.ts';
+import { ABOUT, LOADED, ROOM_IS, ROOM_PATH, TIPS, WELCOME_WORDS, WORLD_PRIMER } from '../../src/core/first-run.ts';
 import { PREGENS, STARTER_GATE, STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER } from '../../src/core/starter.ts';
 import { TAKEOVER_WORDS } from '../../src/core/store-life.ts';
 import { freshSave } from '../../src/core/save.ts';
@@ -207,27 +207,26 @@ test('a GM who left a room can open it again from the GM tab and the players are
   });
 });
 
-test('the Welcome window shows first-gate copy and what the site is below the window, without scrolling on a small phone', async ({ device }) => {
+test('the Welcome screen explains the app and fits on a small phone without scrolling', async ({ device }) => {
   const phone = (await device('phone', { viewport: { width: 360, height: 640 } })).page;
   await openApp(phone);
-  const win = await windowTitled(phone, 'Window active');
-  await expect(win).toContainText('Every person has had a System window since the night the first gate opened. Choose whether you are a player or the GM for this table.');
-  await expect(win.locator('[data-yes]')).toHaveText('Set up');
-  await expect(win.locator('[data-skip]')).toHaveText('Skip setup');
+  const win = await windowTitled(phone, WELCOME_WORDS.title);
+  await expect(win).toContainText(WELCOME_WORDS.kicker);
+  await expect(win).toContainText(WELCOME_WORDS.lead);
+  await expect(win).toContainText(WELCOME_WORDS.gmLine);
+  await expect(win).toContainText(WELCOME_WORDS.playerLine);
+  await expect(win.locator('[data-yes]')).toHaveText(WELCOME_WORDS.start);
+  await expect(win.locator('[data-skip]')).toHaveText(WELCOME_WORDS.skip);
   await expect(win.locator('[data-no]')).toHaveCount(0);
-  const about = phone.locator(`${OB} .ob-about`);
-  await expect(about).toHaveText(ABOUT);
-  await expect(win.locator('[role=dialog]')).toHaveAttribute('aria-describedby', (await about.getAttribute('id')) ?? 'none');
-  const dialog = await win.locator('[role=dialog]').boundingBox(), line = await about.boundingBox();
-  expect(dialog && line && line.y >= dialog.y + dialog.height).toBe(true);
-  expect(line && line.y + line.height <= 640).toBe(true);
+  await expect(phone.locator(`${OB} .ob-about`)).toHaveCount(0);
+  const dialog = await win.locator('[role=dialog]').boundingBox();
+  expect(dialog && dialog.y + dialog.height <= 640).toBe(true);
   expect(await phone.locator(OB).evaluate(o => o.scrollHeight <= o.clientHeight)).toBe(true);
-  expect(await about.evaluate(p => parseFloat(getComputedStyle(p).fontSize))).toBeGreaterThanOrEqual(12);
 
-  await test.step('only the Welcome step shows it', async () => {
+  await test.step('tapping Get started moves to the role step', async () => {
     await phone.locator(`${OB} [data-yes]`).tap();
     await windowTitled(phone, 'Who are you?');
-    await expect(phone.locator(`${OB} .ob-about`)).toHaveCount(0);
+    await expect(phone.locator(`${OB}.ob-welcome-bg`)).toHaveCount(0);
   });
 });
 

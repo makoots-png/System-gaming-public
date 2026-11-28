@@ -169,18 +169,18 @@ describe('first-run setup and the quick start', () => {
     expect(STARTS).toEqual([SHUT]);
   });
 
-  test('onboarding UI replaces the dodging No welcome with first-gate copy, adds the sample-hunters toggle, and renders the world primer drawer', async () => {
+  test('onboarding UI opens with a plain welcome screen, adds the sample-hunters toggle, and renders the world primer drawer', async () => {
     const [coreSrc, viewSrc] = await Promise.all([
       Bun.file(`${import.meta.dir}/../src/core/onboarding.ts`).text(),
       Bun.file(`${import.meta.dir}/../src/views/onboard.js`).text(),
     ]);
     expect(coreSrc).not.toContain('fourth No');
     expect(coreSrc).not.toContain('"Accept?"');
+    expect(coreSrc).not.toContain('Window active');
 
-    expect(viewSrc).toContain('Window active');
-    expect(viewSrc).toContain('Every person has had a System window since the night the first gate opened. Choose whether you are a player or the GM for this table.');
-    expect(viewSrc).toContain('>Set up</button>');
-    expect(viewSrc).toContain('>Skip setup</button>');
+    expect(viewSrc).toContain('WELCOME_WORDS');
+    expect(viewSrc).not.toContain('Window active');
+    expect(viewSrc).not.toContain('Every person has had a System window');
     expect(viewSrc).not.toContain('You have been chosen as a Player');
     expect(viewSrc).not.toContain('Declining is not an option');
     expect(viewSrc).not.toContain('data-no');

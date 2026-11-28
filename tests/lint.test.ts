@@ -213,6 +213,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts catLinkGen': 'the link gen in which a room-catalog link PUT is in flight',
     'sync.ts catActive': 'the player phone\'s active synced catalog for the current link gen',
     'sync.ts catStaged': 'the player phone\'s staged synced catalog held back during a fight, promoted in release()',
+    'sync.ts introWrite': 'serialized GM `_intro` doc writer state (seq, inFlight, next, staged, gen) so polls never flash back over a PUT',
     'upgrade.ts update': 'the update machine\'s state (src/core/upgrade.ts)', 'upgrade.ts quiet': 'the timer of the quiet reload',
     'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches and the economy\'s rules), bound by sync.ts (`bindRoom`)',
     'rules.ts made': 'the rules in force and the overrides, statuses, item defs, heard defs, sheets\' defs, synced catalog and room rules they were made from',
@@ -1490,6 +1491,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/coin.js': { count: 1, why: 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design' },
     'src/views/classes.js': { count: 3, why: 'the last DOCS.holders/classOffer snapshot drawn (holdersSig), the live class-offer window while open (offerWin), and ephemeral class-offer modal UI state (offerUi: auto-open id, pending pick, inline notice, GM local pick, last room)' },
     'src/views/custom.js': { count: 1, why: 'the HP last felt, so a buzz follows only a change' },
+    'src/views/intro.js': { count: 2, why: 'the intro player state (src/core/intro.ts) and its open overlay / focus-restore refs' },
     'src/views/inventory.js': { count: 1, why: 'the bag\'s tab on screen' },
     'src/views/loot.js': { count: 1, why: 'the item maker\'s type on screen and whether its slot was set by hand' },
     'src/views/map-maker.js': { count: 1, why: 'the map maker\'s brush' },
@@ -1684,6 +1686,8 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'hunter.js shownHunter': what.drawn, 'hunter.js shownLevel': 'the level drawn last, so a rise is drawn as a level-up',
     'hunter.js editingTitle': what.shown, 'hunter.js lastHid': what.drawn,
     'hunter.js raiseOffered': 'the hunter the System raise window last opened for by itself, so one death opens it once; lost on a reload by design, which offers it again',
+    'intro.js state': 'the world-primer intro player state (src/core/intro.ts), moved only through pure transitions',
+    'intro.js refs': what.handle,
     'inventory.js tab': what.shown,
     'io.js refresh': 'the Data view\'s redraw, set by its mount',
     'motion.ts tokens': 'the motion tokens read once from the page\'s CSS', 'motion.ts osReduce': what.handle,
@@ -2402,6 +2406,7 @@ async function proseLiterals(): Promise<Words[]> {
         if (looksLikeProse(piece)) {
           const cleaned = piece.replace(/\s+/g, ' ').trim();
           if (name === 'core/first-run.ts' && EXEMPT_PRIMER_BODY.has(cleaned)) continue;
+          if (name === 'core/intro-cards.ts' && WORLD_PRIMER.some(p => p.includes(cleaned))) continue;
           const pieceLine = w.line + text.slice(0, m.index).split('\n').length - 1;
           all.push({ ...w, line: pieceLine, text: cleaned });
         }
@@ -2435,11 +2440,15 @@ test('the UI voice lint exempts only the WORLD_PRIMER body, not the primer drawe
   const all = await proseLiterals();
   const firstRunTexts = new Set(all.filter(w => w.file === 'src/core/first-run.ts').map(w => w.text));
   const onboardTexts = new Set(all.filter(w => w.file === 'src/views/onboard.js').map(w => w.text));
+  const introCardTexts = new Set(all.filter(w => w.file === 'src/core/intro-cards.ts').map(w => w.text));
   for (const p of WORLD_PRIMER) expect(firstRunTexts.has(p), 'primer body paragraph is exempt').toBe(false);
   expect(firstRunTexts.has(PRIMER_WORDS.title), 'PRIMER_WORDS.title stays linted').toBe(true);
   expect(firstRunTexts.has(PRIMER_WORDS.hidden), 'PRIMER_WORDS.hidden stays linted').toBe(true);
   expect(firstRunTexts.has(PRIMER_WORDS.shown), 'PRIMER_WORDS.shown stays linted').toBe(true);
   expect(onboardTexts.has('Read aloud: World primer'), 'drawer summary label stays linted').toBe(true);
+  expect(introCardTexts.has('First teams in'), 'intro card labels stay linted').toBe(true);
+  expect(introCardTexts.has('System window titled The call.'), 'intro card alt text stays linted').toBe(true);
+  expect(introCardTexts.has('You just got the call'), 'verbatim WORLD_PRIMER opening phrase is exempt').toBe(false);
 });
 
 test('no em dash in a player- or GM-facing string (voice.md: use a period, comma, colon or parentheses)', async () => {
@@ -3653,6 +3662,23 @@ test('no hasten op lands on its own user or bearer', async () => {
     }
   }
   expect(hits, 'hasteOn ignores t.id === user.id; use refund (or a self-curing statusGained refund trigger on a self-only active) instead of hasten').toEqual([]);
+});
+
+test('only src/core/intro.ts builds IntroDoc values and only src/edge/sync.ts writes the _intro room doc', async () => {
+  // World-primer intro room state (`DOCS.intro`) has one pure builder (src/core/intro.ts) and one writer (sync.ts setIntro).
+  const docOwner = 'src/core/intro.ts';
+  const wireOwner = 'src/edge/sync.ts';
+  const rawDocWrite = /sheets\/_intro\b|putDoc\(\s*['"]intro['"]/;
+  const rawIntroObj = /\{\s*intro\s*:\s*(?:null|\{\s*card\b)/;
+  expect(rawDocWrite.test("await putDoc('intro', data, gen);"), 'the rule sees a _intro putDoc').toBe(true);
+  expect(rawIntroObj.test('return { intro: null, at: now };'), 'the rule sees a raw IntroDoc literal').toBe(true);
+
+  const lines = await sourceLines('src');
+  const wireHits = lines.filter(l => l.file !== wireOwner && !isComment(l.text) && rawDocWrite.test(l.text));
+  expect(report(wireHits), 'write `_intro` only through app.api.sync.setIntro (src/edge/sync.ts)').toEqual([]);
+
+  const docHits = lines.filter(l => l.file !== docOwner && l.file !== 'src/core/protocol.ts' && !isComment(l.text) && rawIntroObj.test(l.text));
+  expect(report(docHits), 'build IntroDoc values only through src/core/intro.ts (introStart, introSetCard, introStep, introEnd, introRecordAnswer)').toEqual([]);
 });
 
 test('no shipped ability with swap or shove applies a status carrying root', async () => {

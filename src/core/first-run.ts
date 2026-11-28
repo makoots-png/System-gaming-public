@@ -10,6 +10,19 @@ import { STARTER_STORY_NAME, STARTER_UNSPENT_HUNTER } from './starter.ts';
 
 export const ABOUT = 'A tabletop RPG companion for The Hunter System. The GM runs gates, fights, and stories while you track your hunter, quests, and dice on your phone.';
 
+/** First-load welcome screen copy (src/views/onboard.js `welcome`): plain explanation before any lore or role choice. */
+export const WELCOME_WORDS = {
+  kicker: 'Tabletop RPG companion',
+  title: 'The Hunter System',
+  lead: 'A companion app for The Hunter System tabletop RPG.',
+  gmLabel: 'GM',
+  gmLine: 'Run gates, fights, and stories from your phone.',
+  playerLabel: 'Players',
+  playerLine: 'Track your hunter, quests, and dice on your phone.',
+  start: 'Get started',
+  skip: 'Skip for now',
+} as const;
+
 export const ROOM_IS = 'A room connects the GM\'s phone to the players\' phones so the GM can see hunters, send quests and rewards, and run shared fights and gates.';
 
 export const ROOM_PATH: Readonly<Record<Role, string>> = {

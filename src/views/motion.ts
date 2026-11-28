@@ -97,6 +97,15 @@ const FROM = { below: 'translateY(10px) scale(.98)', toast: 'translateY(14px)', 
 export const enter = (el: Element, from: keyof typeof FROM = 'below'): Move =>
   play(el, [{ opacity: 0, transform: FROM[from] }, { opacity: 1, transform: 'none' }], 'base', 'arrive');
 
+/** Reveals `els` one after another (`opacity` + small rise, spaced by `--t-slow`). Instant under reduced motion. */
+export function staggerReveal(els: readonly Element[]): Move {
+  if (reduced() || !els.length) return DONE;
+  const step = Math.max(ms('slow'), 120);
+  return Promise.all(
+    els.map((el, i) => play(el, [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], 'base', 'arrive', { delay: i * step, fill: 'backwards', from: null })),
+  ).then(() => undefined);
+}
+
 /** Something goes: faster than it came (`--t-fast`, `--ease-leave`). It stays invisible after; the caller removes it. */
 const OUT: Frame[] = [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(.98)' }];
 export const leave = (el: Element): Move => play(el, OUT, 'fast', 'leave', { fill: 'forwards' });

@@ -9,7 +9,7 @@ import { ownSeed } from '../core/starter.ts';
 import { onboarded } from '../core/settings.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { chooseMode } from '../core/role.ts';
-import { ABOUT, LOADED, ROOM_IS, TIPS, WORLD_PRIMER, createdLine, nextSteps, showsPrimer } from '../core/first-run.ts';
+import { ABOUT, LOADED, ROOM_IS, TIPS, WELCOME_WORDS, WORLD_PRIMER, createdLine, nextSteps, showsPrimer } from '../core/first-run.ts';
 import { available } from '../core/hunter/progress.ts';
 import { enter } from './motion.ts';
 import { closeWindow, openWindow, trapTab } from './ui.js';
@@ -31,12 +31,17 @@ export function register(app) {
     .ob-check input{width:20px;height:20px;min-height:20px;margin:0;flex:none;accent-color:var(--cyan)}
     .ob-steps{text-align:left;margin:0 0 12px}
     .ob-steps p{color:var(--ice);font-size:14px;line-height:1.45;margin:0 0 6px}
-    .ob-primer{text-align:left;margin:12px 0;border:1px solid var(--line);background:rgba(10,26,46,.45)}
+    .ob-primer-wrap{margin:12px 0;display:flex;flex-direction:column;gap:8px}
+    .ob-primer{text-align:left;margin:0;border:1px solid var(--line);background:rgba(10,26,46,.45)}
+    .ob-primer-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start}
+    .ob-primer-actions button{min-height:44px}
     .ob-primer summary{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;box-sizing:border-box;cursor:pointer;font-size:14px;font-weight:600;color:var(--gold);list-style:none}
     .ob-primer summary::-webkit-details-marker{display:none}
     .ob-primer summary::before{content:'▸';flex:none;color:var(--cyan)}
     .ob-primer[open] summary::before{content:'▾'}
     .ob-primer-body{padding:4px 12px 12px;border-top:1px solid var(--line)}
+    .ob-primer-gm{margin:10px 0 4px}
+    .ob-primer-gm button{min-height:44px;width:100%}
     .ob-primer-body p{color:var(--ice);font-size:14px;line-height:1.5;margin:10px 0 0}
     .ob-form{text-align:left;display:grid;gap:12px}
     .ob-form .field{display:block}.ob-form input,.ob-form select{width:100%;min-height:44px;box-sizing:border-box;font-size:16px}
@@ -45,13 +50,22 @@ export function register(app) {
     .ob-err{color:var(--red);min-height:1.2em;font-size:13px}
     .ob-chip{display:flex;gap:14px;justify-content:center;margin:0 0 10px;font-family:var(--font-mono);font-size:32px;letter-spacing:.2em;color:var(--gold);line-height:1.1}
     .ob-chk{min-height:1.2em;margin:0 0 10px;font-size:13px;color:var(--cyan-dim)}.ob-form .ob-chk{margin:0}
-    .ob-overlay.ob-with-about,.ob-gone.ob-with-about{flex-direction:column}.ob-with-about .ob-win{margin:auto auto 0}
-    .ob-about{margin:14px auto auto;max-width:min(520px,100%);text-align:center;color:var(--ice);font-size:14px;line-height:1.45}
+    .ob-overlay.ob-welcome-bg,.ob-gone.ob-welcome-bg{background:radial-gradient(640px 420px at 50% 0%, rgba(var(--acc-rgb),.14), transparent 70%), var(--ground)}
+    .ob-win.ob-welcome{text-align:left;padding:28px 22px 20px;border:1px solid var(--line);box-shadow:0 18px 48px rgba(0,0,0,.55)}
+    .ob-win.ob-welcome .ob-kicker{font-family:var(--font-mono);font-size:calc(12px*var(--ts));letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);margin:0 0 8px}
+    .ob-win.ob-welcome h2{font-size:clamp(24px,6.8vw,30px);letter-spacing:.02em;text-transform:none;text-shadow:none;line-height:1.15;margin:0 0 10px;color:var(--ice)}
+    .ob-win.ob-welcome .ob-lead{color:var(--ice);font-size:calc(16px*var(--ts));line-height:1.45;margin:0 0 18px}
+    .ob-roles{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:10px}
+    .ob-roles li{padding:12px 14px;border:1px solid var(--line);background:rgba(10,26,46,.52)}
+    .ob-roles strong{display:block;font-size:calc(13px*var(--ts));letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:2px}
+    .ob-roles span{display:block;color:var(--ice);font-size:calc(14px*var(--ts));line-height:1.4}
+    .ob-welcome-act{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:0}
+    .ob-welcome-act .primary{width:100%;min-height:48px;font-size:calc(16px*var(--ts))}
     .ob-next{list-style:none;padding-left:0}.ob-next li{display:flex;gap:8px}.ob-next .ob-mark{flex:none;width:1.2em;color:var(--cyan-dim)}.ob-next [data-done] .ob-mark{color:var(--green)}
     .ob-help{display:block;margin-top:4px;font-size:13px;color:var(--cyan-dim)}
     .ob-skip{background:none;border:0;color:var(--cyan-dim);text-decoration:underline;min-height:44px;margin-top:6px;font-size:13px}
     @media (max-height:500px){.ob-chip{font-size:24px;margin-bottom:4px}}
-    @media (min-width:721px) and (max-width:1099px) and (max-height:500px){.ob-overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal))}.ob-win{padding:14px 20px 12px}.ob-win h2{font-size:20px;margin-bottom:8px}.ob-win p{margin-bottom:8px}.ob-act{margin-top:8px}}`);
+    @media (min-width:721px) and (max-width:1099px) and (max-height:500px){.ob-overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal))}.ob-win{padding:14px 20px 12px}.ob-win.ob-welcome{padding:16px 20px 12px}.ob-win h2{font-size:20px;margin-bottom:8px}.ob-win p{margin-bottom:8px}.ob-roles{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:12px}.ob-act{margin-top:8px}}`);
 
   /** The first-run window: one overlay on the window stack (ui.js), its content swapped per step. */
   let root = null, me = null;
@@ -66,14 +80,35 @@ export function register(app) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ESC[at.at](); return; }
     if (e.key === 'Tab') trapTab(e, root);
   }
-  // one overlay, content swapped per step; focus goes to [data-focus] or the first button. `about`: a plain line drawn
-  // below the window on the backdrop, which the window names as its description.
-  function step(html, about = '') {
+  // one overlay, content swapped per step; focus goes to [data-focus] or the first button. `plain`: uses the calm
+  // front-door card style without System-window corner brackets or dimmed app chrome showing through.
+  function step(html, { plain = false } = {}) {
     const fresh = !root;
-    if (fresh) me = openWindow('onboard', () => { root = h('<div class="ob-overlay" role="presentation"></div>'); document.body.appendChild(root); return { root, win: null }; }, key);
+    if (fresh) me = openWindow('onboard', () => {
+      root = h('<div class="ob-overlay" role="presentation"></div>');
+      root.addEventListener('click', e => {
+        const t = e.target instanceof Element ? e.target : null;
+        if (!t) return;
+        if (t.closest('[data-intro-solo]')) {
+          if (at.at === 'quickstart') gotIt();
+          else if (at.at === 'campaignReady') later();
+          app.api.intro.openSolo();
+          return;
+        }
+        if (t.closest('[data-intro-table]')) {
+          if (at.at === 'quickstart') gotIt();
+          else if (at.at === 'campaignReady') later();
+          void app.api.intro.startTable();
+        }
+      });
+      document.body.appendChild(root);
+      return { root, win: null };
+    }, key);
     const id = 'ob' + Math.random().toString(36).slice(2, 7);
-    root.innerHTML = `<div class="ob-win" role="dialog" aria-modal="true" aria-labelledby="${id}"${about ? ` aria-describedby="${id}a"` : ''}><span class="cb"></span>${html.replace('{id}', id)}</div>${about ? `<p class="ob-about" id="${id}a">${esc(about)}</p>` : ''}`;
-    root.classList.toggle('ob-with-about', !!about);
+    const winClass = plain ? 'ob-win ob-welcome' : 'ob-win';
+    const corners = plain ? '' : '<span class="cb"></span>';
+    root.innerHTML = `<div class="${winClass}" role="dialog" aria-modal="true" aria-labelledby="${id}">${corners}${html.replace('{id}', id)}</div>`;
+    root.classList.toggle('ob-welcome-bg', plain);
     me.win = root.firstElementChild;
     // each step's window rises as every window does; the backdrop fades in once
     void enter(root.firstElementChild);
@@ -172,22 +207,42 @@ export function register(app) {
   app.on('change', freshen);
 
   /** Collapsible 4-minute world primer read aloud before Session 1 (src/core/first-run.ts `WORLD_PRIMER`). */
-  const primerHtml = () => `<details class="ob-primer" data-primer><summary>Read aloud: World primer</summary><div class="ob-primer-body">${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details>`;
+  const primerHtml = () => {
+    const gmTable = app.seat() === 'gm'
+      ? '<div class="ob-primer-gm"><button type="button" class="primary" data-intro-table>Show pictures to the table</button></div>'
+      : '';
+    return `<div class="ob-primer-wrap"><details class="ob-primer" data-primer><summary>Read aloud: World primer</summary><div class="ob-primer-body">${gmTable}${WORLD_PRIMER.map(p => `<p>${esc(p)}</p>`).join('')}</div></details><div class="ob-primer-actions"><button type="button" data-intro-solo>Play intro cards</button></div></div>`;
+  };
   /** Shows or hides the primer drawer inside an open ? Quick Start window based on seat and room rules. */
   function syncPrimer() {
     const slot = root && root.querySelector('[data-primer-slot]');
     if (!slot) return;
-    const show = showsPrimer(app.seat(), app.api.sync.doc('rules'));
+    const seat = app.seat();
+    const show = showsPrimer(seat, app.api.sync.doc('rules'));
     slot.hidden = !show;
     const has = !!slot.querySelector('[data-primer]');
-    if (show && !has) slot.innerHTML = primerHtml();
-    else if (!show && has) slot.innerHTML = '';
+    if (show && (!has || slot.dataset.seat !== seat)) {
+      slot.dataset.seat = seat;
+      slot.innerHTML = primerHtml();
+    } else if (!show && has) {
+      delete slot.dataset.seat;
+      slot.innerHTML = '';
+    }
   }
 
   function welcome() {
-    const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Window active</h2>
-      <p>Every person has had a System window since the night the first gate opened. Choose whether you are a player or the GM for this table.</p>
-      <div class="ob-act"><button type="button" class="primary" data-focus data-yes>Set up</button><button type="button" data-skip>Skip setup</button></div>`, ABOUT);
+    const W = WELCOME_WORDS;
+    const w = step(`<div class="ob-kicker">${esc(W.kicker)}</div>
+      <h2 id="{id}">${esc(W.title)}</h2>
+      <p class="ob-lead">${esc(W.lead)}</p>
+      <ul class="ob-roles">
+        <li><strong>${esc(W.gmLabel)}</strong><span>${esc(W.gmLine)}</span></li>
+        <li><strong>${esc(W.playerLabel)}</strong><span>${esc(W.playerLine)}</span></li>
+      </ul>
+      <div class="ob-welcome-act">
+        <button type="button" class="primary" data-focus data-yes>${esc(W.start)}</button>
+        <button type="button" class="ob-skip" data-skip>${esc(W.skip)}</button>
+      </div>`, { plain: true });
     w.querySelector('[data-yes]').addEventListener('click', () => go({ type: 'accept' }));
     w.querySelector('[data-skip]').addEventListener('click', skip);
   }
