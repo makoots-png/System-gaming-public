@@ -57,10 +57,10 @@ export type IntroSlice = {
   readonly after: string;
 };
 
-/** Relative static path under public/ where Unit 4 places the 9 WebP art cards. */
+/** Relative static path under public/ where the 9 WebP art cards live (2,156,104 bytes total, ~2.06 MiB; each under 250 KiB). */
 export const INTRO_IMAGE_DIR = 'intro/primer/';
-/** False in Units 1 to 3 so art cards render their type-only stand-ins with no 404 requests; Unit 4 flips this to true. */
-export const INTRO_ART_READY = false;
+/** True once the 9 WebP art cards are in public/intro/primer/; art cards render images over their type-only stand-in fallback. */
+export const INTRO_ART_READY = true;
 
 /** The 17 intro cards in table order: card 0 (title) followed by 16 story cards covering WORLD_PRIMER paragraphs 1 to 10. */
 export const INTRO_CARDS: readonly IntroCard[] = [
@@ -263,6 +263,13 @@ export const introCardCounter = (index: number): string =>
 /** Relative static path for an art card's image, or null for non-art cards. */
 export const introImagePath = (card: IntroCard): string | null =>
   (card.image === null ? null : `${INTRO_IMAGE_DIR}${card.image}`);
+
+/** Relative static path for the card immediately after `index` when it is an art card and art is ready, for preloading. */
+export function introNextImagePath(index: number): string | null {
+  if (!INTRO_ART_READY) return null;
+  const next = INTRO_CARDS[index + 1];
+  return next ? introImagePath(next) : null;
+}
 
 /**
  * Cuts `primer` paragraphs at each story card's `opening` phrase, returning a map from card index to its slice.

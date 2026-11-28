@@ -18,7 +18,7 @@ The fight:
 
 The room:
 
-- the room link (`sync/link.ts`), a Create or Join tap from the tap to its answer (`sync/attempt.ts`), a message in the outbox (`sync/outbox.ts`), a room doc the GM publishes (`sync/publish.ts`)
+- the room link (`sync/link.ts`), a Create or Join tap from the tap to its answer (`sync/attempt.ts`), a message in the outbox (`sync/outbox.ts`), a room doc the GM publishes (`sync/publish.ts`), and the GM's serialized `_intro` doc writer (`sync/intro-write.ts`)
 - a player's bind, the hunter it sends and its join of the room (`sync/bind.ts` `boundTo`, `playAs`), and the REMOVED FROM ROOM notice (`removedStep`, bind.ts)
 - the Room view's code check and a GM's seat action (`sync/lobby.ts` `checkStep`, `seatStep`, through `lobbyStep`)
 - the room server's database (`room-server.ts`)

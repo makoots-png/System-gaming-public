@@ -63,6 +63,13 @@ async function bundle(entry: string, format: 'esm' | 'iife', define: Record<stri
   return out;
 }
 
+/** URL path prefixes served by the app that stay out of the service worker install precache (loaded on demand). */
+export const SHELL_EXCLUDED_PREFIXES = ['/intro/primer/'] as const;
+
+/** Whether a built URL path belongs in the service worker's install-time `__SHELL__` precache. */
+export const isShellPath = (path: string): boolean =>
+  !path.endsWith('.map') && path !== '/sw.js' && !SHELL_EXCLUDED_PREFIXES.some(prefix => path.startsWith(prefix));
+
 export async function buildApp(): Promise<Built> {
   const sources = await listFiles('src'), statics = await listFiles('public');
   const build = await hashInputs(['scripts/build.ts', ...sources, ...statics]);
@@ -74,8 +81,8 @@ export async function buildApp(): Promise<Built> {
   // The odds engine's worker thread (src/edge/odds-run.ts starts it), cached with the shell so the odds play offline.
   for (const [path, body] of await bundle('src/odds-worker.ts', 'iife', {})) add(path, body);
 
-  // The worker precaches everything a page load needs. Source maps are for debugging only.
-  const shell = ['./', ...[...files.keys()].filter(path => !path.endsWith('.map')).map(path => path.slice(1))];
+  // The worker precaches everything a page load needs. Source maps are for debugging only; intro art loads on demand.
+  const shell = ['./', ...[...files.keys()].filter(isShellPath).map(path => path.slice(1))];
   const worker = await bundle('src/sw.js', 'iife', { __BUILD__: JSON.stringify(build), __SHELL__: JSON.stringify(shell) });
   for (const [path, body] of worker) add(path, body);
 

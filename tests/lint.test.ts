@@ -215,7 +215,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts catLinkGen': 'the link gen in which a room-catalog link PUT is in flight',
     'sync.ts catActive': 'the player phone\'s active synced catalog for the current link gen',
     'sync.ts catStaged': 'the player phone\'s staged synced catalog held back during a fight, promoted in release()',
-    'sync.ts introWrite': 'serialized GM `_intro` doc writer state (seq, inFlight, next, staged, gen) so polls never flash back over a PUT',
+    'sync.ts introWrite': 'the GM\'s serialized `_intro` doc writer machine (src/core/sync/intro-write.ts): idle, sending, sendingQueued, retrying',
     'upgrade.ts update': 'the update machine\'s state (src/core/upgrade.ts)', 'upgrade.ts quiet': 'the timer of the quiet reload',
     'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches and the economy\'s rules), bound by sync.ts (`bindRoom`)',
     'rules.ts made': 'the rules in force and the overrides, statuses, item defs, heard defs, sheets\' defs, synced catalog and room rules they were made from',

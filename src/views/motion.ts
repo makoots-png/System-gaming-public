@@ -210,6 +210,35 @@ export function fadeOff(el: Element): Move {
   return play(c, [{ transform: at, opacity: 1 }, { transform: `${at} scale(.92)`, opacity: 0 }], 'fast', 'leave', { fill: 'forwards' }).then(() => c.remove());
 }
 
+/**
+ * Crossfades from `outgoing` to the element `change()` returns, over `--t-base`. The outgoing copy lives on the layer
+ * with its attributes stripped (keeping `src` on images so the decoded bitmap fades out cleanly) so the page never holds
+ * two copies of a card. Under reduced motion `change()` runs at once for a plain cut.
+ */
+export function crossfade(outgoing: Element | null, change: () => Element | null): Move {
+  if (reduced()) { change(); return DONE; }
+  const rect = outgoing && outgoing.isConnected ? outgoing.getBoundingClientRect() : null;
+  const ghost = rect && rect.width && rect.height ? (outgoing!.cloneNode(true) as HTMLElement) : null;
+  const incoming = change();
+  const moves: Move[] = [];
+  if (ghost && rect) {
+    const L = layer();
+    for (const prev of L.querySelectorAll('.m-crossfade')) prev.remove();
+    for (const n of [ghost, ...ghost.querySelectorAll('*')]) {
+      for (const a of [...n.attributes]) {
+        if (a.name !== 'class' && a.name !== 'style' && !(n.tagName === 'IMG' && a.name === 'src')) n.removeAttribute(a.name);
+      }
+    }
+    ghost.classList.add('m-crossfade');
+    ghost.style.width = `${rect.width}px`; ghost.style.height = `${rect.height}px`; ghost.style.margin = '0'; ghost.style.boxSizing = 'border-box';
+    L.appendChild(ghost);
+    const at = `translate(${rect.left}px,${rect.top}px)`;
+    moves.push(play(ghost, [{ transform: at, opacity: 1 }, { transform: at, opacity: 0 }], 'base', 'leave', { fill: 'forwards', from: null }).then(() => ghost.remove()));
+  }
+  if (incoming) moves.push(play(incoming, [{ opacity: 0 }, { opacity: 1 }], 'base', 'arrive', { from: null }));
+  return moves.length ? Promise.all(moves).then(() => undefined) : DONE;
+}
+
 /** A mark of light travels from one box's edge to another's (the bottom bar's lit tab), so the eye follows where it went. */
 export function travel(from: DOMRect, to: DOMRect, edge: 'top' | 'left' = 'top'): Move {
   if (reduced() || (from.left === to.left && from.top === to.top)) return DONE;

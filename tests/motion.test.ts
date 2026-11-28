@@ -1,7 +1,7 @@
 // The motion system's rules that hold without a browser: a count lands on its value, the particle pool has a cap, the
 // tokens are the times the design names, and under reduced motion every move ends at once in its final state.
 import { afterEach, expect, test } from 'bun:test';
-import { BURSTS, POOL_CAP, burst, countAt, countTo, enter, fillTo, makePool, parseTime, percent, spreadOf, tumbleFaces } from '../src/views/motion.ts';
+import { BURSTS, POOL_CAP, burst, countAt, countTo, crossfade, enter, fillTo, makePool, parseTime, percent, spreadOf, tumbleFaces } from '../src/views/motion.ts';
 
 const css = await Bun.file(import.meta.dir + '/../public/app.css').text();
 const token = (name: string) => parseTime(new RegExp(`${name}:([^;]+);`).exec(css)?.[1] ?? '');
@@ -98,6 +98,9 @@ for (const choice of ['reduce', 'os'] as const) {
     await fillTo(bar as unknown as Element, 0.25);
     expect(fill.styleOf.get('--f')).toBe('0.25');
     await enter(fakeEl() as unknown as Element);
+    let swapped = 0;
+    await crossfade(fakeEl() as unknown as Element, () => { swapped++; return fakeEl() as unknown as Element; });
+    expect(swapped).toBe(1);
     await burst('crit', { x: 10, y: 10 });
     expect(made).toEqual([]);
     expect(animated).toEqual([]);

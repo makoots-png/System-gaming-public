@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises';
 import { describe, expect, test } from 'bun:test';
 import { WORLD_PRIMER } from '../src/core/first-run.ts';
 import { INTRO_CARD_MAX } from '../src/core/protocol.ts';
@@ -14,6 +15,7 @@ import {
   introCardCounter,
   introHunterWindow,
   introImagePath,
+  introNextImagePath,
   introShopRows,
   introSliceOf,
   slicePrimer,
@@ -40,7 +42,7 @@ describe('intro card list and WORLD_PRIMER slicing', () => {
     expect(INTRO_CARDS[0]?.kind).toBe('title');
     expect(INTRO_CARDS[0]?.paragraph).toBeNull();
     expect(INTRO_CARDS[0]?.opening).toBeNull();
-    expect(INTRO_ART_READY).toBe(false);
+    expect(INTRO_ART_READY).toBe(true);
 
     const artCards = INTRO_CARDS.filter(c => c.kind === 'art');
     expect(artCards.map(c => c.image)).toEqual(LOCKED_ART_FILES);
@@ -134,5 +136,52 @@ describe('intro card list and WORLD_PRIMER slicing', () => {
       cap: capDisplayLevel('E', RULES),
     });
     expect(hunter.cap).toBe(9);
+  });
+
+  test('all nine art WebPs exist in public/intro/primer/, match the card list, and stay under 250 KiB each', async () => {
+    const dir = `${import.meta.dir}/../public/${INTRO_IMAGE_DIR}`;
+    const files = (await readdir(dir)).filter(f => !f.startsWith('.')).sort();
+    expect(files).toEqual([...LOCKED_ART_FILES].sort());
+
+    const artCards = INTRO_CARDS.filter(c => c.kind === 'art');
+    expect(artCards.map(c => c.image)).toEqual(LOCKED_ART_FILES);
+
+    let totalBytes = 0;
+    for (const card of artCards) {
+      const path = `${import.meta.dir}/../public/${introImagePath(card)}`;
+      const file = Bun.file(path);
+      expect(await file.exists(), `missing art file ${path}`).toBe(true);
+      const size = file.size;
+      expect(size, `${card.image} must be non-empty`).toBeGreaterThan(0);
+      expect(size, `${card.image} must stay under 250 KiB`).toBeLessThan(250 * 1024);
+      totalBytes += size;
+    }
+    expect(totalBytes).toBeGreaterThan(1_000_000);
+    expect(totalBytes).toBeLessThan(250 * 1024 * LOCKED_ART_FILES.length);
+  });
+
+  test('introNextImagePath returns the next card image only when the next card is an art card', () => {
+    expect(introNextImagePath(0)).toBe('intro/primer/p1-london-gate.webp');
+    expect(introNextImagePath(1)).toBe('intro/primer/p1-teams.webp');
+    expect(introNextImagePath(4)).toBeNull(); // Card 5 is cities (type)
+    expect(introNextImagePath(5)).toBe('intro/primer/p3-flash.webp');
+    expect(introNextImagePath(8)).toBeNull(); // Card 9 is ranks (window)
+    expect(introNextImagePath(12)).toBe('intro/primer/p8-city.webp');
+    expect(introNextImagePath(14)).toBe('intro/primer/p9-cordon.webp');
+    expect(introNextImagePath(15)).toBeNull(); // Card 16 is call (window)
+    expect(introNextImagePath(16)).toBeNull(); // Past last card
+  });
+
+  test('type-only fallback markup and reduced-motion no-drift CSS rules stay intact', async () => {
+    const introJs = await Bun.file(`${import.meta.dir}/../src/views/intro.js`).text();
+    const css = await Bun.file(`${import.meta.dir}/../public/app.css`).text();
+    expect(introJs).toContain('class="intro-standin');
+    expect(introJs).toContain('data-art-state="fallback"');
+    expect(introJs).toContain("addEventListener('error'");
+    expect(css).toContain('.intro-art{position:absolute;inset:0;overflow:hidden;background:#111111;opacity:0;');
+    expect(css).toContain('.intro-standin.is-loaded .intro-art{opacity:1}');
+    expect(css).toContain('@keyframes m-intro-drift{from{transform:');
+    expect(css).toContain('@media (prefers-reduced-motion:reduce)');
+    expect(css).toContain('animation:none!important;transition:none!important');
   });
 });

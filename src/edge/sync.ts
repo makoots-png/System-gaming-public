@@ -29,7 +29,7 @@
 //   catLinkGen      link gen in which a room-catalog link PUT is in flight (null when idle)
 //   catActive       the player phone's active synced catalog for the current link gen (`bindCatalog`)
 //   catStaged       the player phone's staged synced catalog held back while a fight holds a hunter, promoted in `release()`
-//   introWrite      serialized GM `_intro` doc writer state (seq, inFlight, next, staged, gen) so polls never flash back over a PUT
+//   introWrite      the GM's serialized `_intro` doc writer machine (src/core/sync/intro-write.ts)
 // and these containers, each named where it is made: `queue` (events raised while effects run), `inflight` (open
 // requests by gen: the link's, each doc's put and each outbox send), `timers` (one per name), `peeked` (the Room view's
 // 30 s code check cache), `publishers`, `publishing` (each room doc's publish machine on the GM's phone,
@@ -91,6 +91,8 @@ import { PUSH_OFF, reduce as pushReduce } from '../core/sync/push.ts';
 import type { Push, PushEffect, PushEvent, RefusedWhy } from '../core/sync/push.ts';
 import { PUBLISH_IDLE, publishStep, publishWait } from '../core/sync/publish.ts';
 import type { Publish, PublishEvent, PutAnswer } from '../core/sync/publish.ts';
+import { INTRO_WRITE_IDLE, introPollStamp, introWriteStep, keepLocalIntro } from '../core/sync/intro-write.ts';
+import type { IntroPollStamp, IntroWrite, IntroWriteEvent } from '../core/sync/intro-write.ts';
 import { connection } from '../core/sync/connection.ts';
 import type { Connection } from '../core/sync/connection.ts';
 import { parseInvite } from '../core/sync/invite.ts';
@@ -183,7 +185,7 @@ const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {}, presence: {}, pr
 /** A catalog read fetched during a player poll before docs and events are applied. */
 type CatFetched = { readonly read: CatalogRead; readonly asked: readonly ItemDefId[] };
 /** A reply and the room data that came with it, for the `apply` effect. */
-type Data = { kind: 'poll'; r: RoomState; after: number; catFetched: CatFetched | null; introSeq: number } | { kind: 'head'; now: string } | null;
+type Data = { kind: 'poll'; r: RoomState; after: number; catFetched: CatFetched | null; introStamp: IntroPollStamp } | { kind: 'head'; now: string } | null;
 /** Active or staged player catalog tied to the link gen it was fetched in. */
 type HeldCatalog = { readonly gen: Gen; readonly read: CatalogRead; readonly asked: ReadonlySet<ItemDefId> };
 
@@ -300,9 +302,7 @@ export function register(app: SyncHost): void {
   let catLinkGen: Gen | null = null;
   let catActive: HeldCatalog | null = null;
   let catStaged: HeldCatalog | null = null;
-  let introWrite: { seq: number; inFlight: boolean; next: IntroDoc | null; staged: IntroDoc | null; gen: Gen | null } = {
-    seq: 0, inFlight: false, next: null, staged: null, gen: null,
-  };
+  let introWrite: IntroWrite<(ok: boolean) => void> = INTRO_WRITE_IDLE;
   /**
    * The invite survives a reload of the tab (iOS drops background tabs) in this tab's memory (`store.device('invite',
    * 'tab')`), never in the save or a backup; a write storage refuses is the store's banner, as any device memory's.
@@ -332,7 +332,7 @@ export function register(app: SyncHost): void {
    * One timer per name. A poll timer due while the page is hidden waits for the page to show (`visible`), except on a GM's
    * phone that may notify, which polls every 30 s while hidden (`hiddenWait` in src/core/sync/link.ts).
    */
-  const timers = new Map<'poll' | 'push' | 'catalog', ReturnType<typeof setTimeout>>();
+  const timers = new Map<'poll' | 'push' | 'catalog' | 'intro', ReturnType<typeof setTimeout>>();
 
   function linkDo(e: LinkEvent, data: Data = null): void { queue.push({ to: 'link', e, data }); drain(); }
   function pushDo(e: PushEvent): void { queue.push({ to: 'push', e }); drain(); }
@@ -413,6 +413,7 @@ export function register(app: SyncHost): void {
    */
   function stretchLeft(): void {
     for (const name of publishing.keys()) publishDo(name, { type: 'left' });
+    introWriteDo({ type: 'left' });
     unheard();
   }
   function setTimer(name: 'poll' | 'push', ms: number): void {
@@ -426,7 +427,7 @@ export function register(app: SyncHost): void {
       // else: the page is hidden. `visible` polls when it shows.
     }, wait));
   }
-  function clearTimer(name: 'poll' | 'push' | 'catalog'): void {
+  function clearTimer(name: 'poll' | 'push' | 'catalog' | 'intro'): void {
     const t = timers.get(name);
     if (t !== undefined) { clearTimeout(t); timers.delete(name); }
   }
@@ -481,7 +482,7 @@ export function register(app: SyncHost): void {
           }
         }
         case 'poll': {
-          const after = call.cursor, introSeq = introWrite.seq;
+          const after = call.cursor, introStamp = introPollStamp(introWrite);
           const a = await fetchApi('GET', `/rooms/${call.code}?after=${after}&d=${encodeURIComponent(deviceId())}`, { signal, timeoutMs, key: call.key, prove: true });
           if (a.status !== 200) return one(failedOf(a, gen));
           const r = parseRoomState(a.data); if (!r) return one(failedServer);
@@ -503,14 +504,15 @@ export function register(app: SyncHost): void {
           }
           const fight = r.docs.fight?.data ?? null;
           const offerActive = r.docs.classOffer?.data.active === true;
-          const introActive = r.docs.intro?.data.intro != null;
+          const keptIntro = keepLocalIntro(introWrite, introStamp) && shown.gen === gen ? shown.docs.intro?.data : undefined;
+          const introActive = (keptIntro ?? r.docs.intro?.data)?.intro != null;
           const events: LinkEvent[] = [{
             type: 'polled', gen, cursor: Math.max(r.next, after), more: r.more,
             pace: paceOf(fight, call.key !== null, deviceId(), offerActive, introActive), fightAt: fight ? fight.at : null, offerAt: offerStamp(r.docs),
           }];
           if (call.key && !r.gm) events.push({ type: 'keyLost', gen });
           if (!call.key && removedSinceJoin(r, call.code)) events.push({ type: 'removed', gen });
-          return { events, data: { kind: 'poll', r, after, catFetched, introSeq } };
+          return { events, data: { kind: 'poll', r, after, catFetched, introStamp } };
         }
       }
     } catch (e) { return one({ type: 'failed', gen, kind: failKind(e) }); }
@@ -565,7 +567,7 @@ export function register(app: SyncHost): void {
   function apply(data: Data, cursor: SaveFields | null, before: Link): void {
     if (!data) return;
     if (data.kind === 'head') { skewFrom(data.now); if (link.at === 'live' && link.key === null) bindJoin(link.code); return; }
-    const { r, after, catFetched, introSeq } = data;
+    const { r, after, catFetched, introStamp } = data;
     skewFrom(r.now);
     const player = link.at === 'live' && link.key === null, dev = deviceId();
     // Order: catalog, docs, hold (Fable fight safety). Check fight hold against the state BEFORE installing incoming docs
@@ -587,9 +589,8 @@ export function register(app: SyncHost): void {
       }
     }
     const presenceOk = !!(r.gm && r.presence);
-    const keepIntro = introSeq !== introWrite.seq || introWrite.inFlight;
+    const keepIntro = keepLocalIntro(introWrite, introStamp);
     const docs = keepIntro && shown.gen === link.gen && shown.docs.intro ? { ...r.docs, intro: shown.docs.intro } : r.docs;
-    if (!keepIntro && introWrite.staged) introWrite = { ...introWrite, staged: null };
     shown = { gen: link.gen, sheets: r.sheets, docs, presence: presenceOk ? r.presence ?? {} : {}, presenceOk, catalog: r.catalog ?? null };
     // a message the room took before this phone's join came while the phone was out of the room: it is told in one window
     const joined = link.at === 'live' && link.key === null ? joinedAt(sy(), link.code) : null;
@@ -942,10 +943,8 @@ export function register(app: SyncHost): void {
   const gmRoom = (): { code: RoomCode; key: GmKey } | null => (link.at === 'live' && link.key !== null ? { code: link.code, key: link.key } : null);
   /** The data of the last poll of this stretch of the link: never another room's, nor this room's from before a leave. */
   const view = (): Shown => (link.at === 'live' && shown.gen === link.gen ? shown : NOTHING_SHOWN);
-  const doc = <K extends DocName>(name: K): DocOf<K> | null => {
-    if (name === 'intro' && link.at === 'live' && introWrite.gen === link.gen && introWrite.staged) return introWrite.staged as DocOf<K>;
-    return (view().docs[name]?.data as DocOf<K> | undefined) ?? null;
-  };
+  const doc = <K extends DocName>(name: K): DocOf<K> | null =>
+    (view().docs[name]?.data as DocOf<K> | undefined) ?? null;
   const docAt = (name: DocName): string | null => view().docs[name]?.at ?? null;
   // a player's phone plays by the room's build switches while in it (src/edge/rules.ts); the GM's phone by its own
   bindRoom(() => (playerRoom() ? doc('rules') : null));
@@ -1130,34 +1129,47 @@ export function register(app: SyncHost): void {
     }
     return put;
   }
-  /**
-   * Writes the room's `_intro` doc as GM (one serialized PUT at a time, coalescing rapid writes to the latest absolute
-   * value). Never republished on poll, so a second GM tab follows the room and last write wins.
-   */
-  async function setIntro(data: IntroDoc): Promise<boolean> {
-    const gm = gmRoom(), gen = link.gen, parsed = DOCS.intro(data);
-    if (!gm || !parsed) return false;
-    introWrite = { ...introWrite, seq: introWrite.seq + 1, next: parsed, staged: parsed, gen };
-    app.emit('sync:docs', { docs: { ...view().docs, intro: { at: parsed.at, from: deviceId(), data: parsed } } });
-    if (introWrite.inFlight) return true;
-    introWrite = { ...introWrite, inFlight: true };
-    let ok = true;
-    try {
-      while (introWrite.next !== null && introWrite.gen === link.gen) {
-        const want = introWrite.next, g = introWrite.gen;
-        introWrite = { ...introWrite, next: null };
-        const put = await putDoc('intro', want, g);
-        ok = put === 'stored';
-        if (ok && link.gen === g) {
-          linkDo({ type: 'paced', pace: paceOf(doc('fight'), true, deviceId(), doc('classOffer')?.active === true, want.intro !== null) });
+  /** Steps the GM's `_intro` write machine (src/core/sync/intro-write.ts) and carries out its effects. */
+  function introWriteDo(e: IntroWriteEvent<(ok: boolean) => void>): void {
+    const r = introWriteStep(introWrite, e);
+    introWrite = r.state;
+    for (const fx of r.effects) {
+      switch (fx.type) {
+        case 'clearTimer': clearTimer('intro'); break;
+        case 'setTimer':
+          clearTimer('intro');
+          timers.set('intro', setTimeout(() => { timers.delete('intro'); introWriteDo({ type: 'due', gen: fx.gen }); }, fx.ms));
+          break;
+        case 'put': {
+          const { gen, doc: want } = fx;
+          putDoc('intro', want, gen).then(
+            put => introWriteDo({ type: 'answered', gen, put }),
+            err => { reported('sync:intro', err); introWriteDo({ type: 'answered', gen, put: 'failed' }); },
+          );
+          break;
         }
+        case 'stored':
+          if (link.gen === fx.gen) {
+            linkDo({ type: 'paced', pace: paceOf(doc('fight'), true, deviceId(), doc('classOffer')?.active === true, fx.doc.intro !== null) });
+          }
+          break;
+        case 'answer':
+          for (const resolve of fx.waiters) resolve(fx.ok);
+          break;
       }
-    } finally {
-      const clearStaged = !ok && introWrite.next === null;
-      introWrite = { ...introWrite, inFlight: false, ...(clearStaged ? { staged: null } : {}) };
-      if (clearStaged) app.emit('sync:docs', { docs: view().docs });
     }
-    return ok;
+  }
+  /**
+   * Writes the room's `_intro` doc as GM through the serialized write machine (src/core/sync/intro-write.ts): at most
+   * one PUT out at a time, coalescing rapid writes, retrying failed PUTs, and resolving each call with the outcome of
+   * the write that carried its value. Never republished on poll, so a second GM tab follows the room and last write wins.
+   */
+  function setIntro(data: IntroDoc): Promise<boolean> {
+    const gm = gmRoom(), gen = link.gen, parsed = DOCS.intro(data);
+    if (!gm || !parsed) return Promise.resolve(false);
+    return new Promise<boolean>(resolve => {
+      introWriteDo({ type: 'write', gen, doc: parsed, reply: resolve });
+    });
   }
   /** The GM removes a player's hunter. The player's phone is told on its next poll; its hunter stays on that phone. */
   async function kickSheet(key: string): Promise<Call> {

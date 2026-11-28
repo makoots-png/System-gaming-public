@@ -3,18 +3,19 @@
 // with an install that rejects (the worker is dropped and the old one stays) is the browser's rule, not tested here;
 // tests/e2e/upgrade.e2e.ts sees it in Chromium.
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { buildApp } from '../scripts/build.ts';
+import { buildApp, isShellPath } from '../scripts/build.ts';
+import { INTRO_CARDS, introImagePath } from '../src/core/intro-cards.ts';
 import { NO_UPDATE, countOf, updateStep } from '../src/core/upgrade.ts';
 import type { Update } from '../src/core/upgrade.ts';
 
-type Built = { code: string; build: string; shell: string[] };
+type Built = { code: string; build: string; shell: string[]; files: Awaited<ReturnType<typeof buildApp>>['files'] };
 let built: Built;
 
 beforeAll(async () => {
   const { build, files } = await buildApp();
   const code = new TextDecoder().decode(files.get('/sw.js')!.body);
-  const shell = ['./', ...[...files.keys()].filter(p => !p.endsWith('.map') && p !== '/sw.js').map(p => p.slice(1))];
-  built = { code, build, shell };
+  const shell = ['./', ...[...files.keys()].filter(isShellPath).map(p => p.slice(1))];
+  built = { code, build, shell, files };
 });
 
 type Installed = { outcome: 'resolved' | 'rejected'; posted: unknown[]; caches: Map<string, Set<string>>; skipped: number };
@@ -71,5 +72,23 @@ describe('the service worker\'s install', () => {
     expect(last).toEqual({ type: 'caching', done: n - 1, failed: 1, of: n });
     expect(r.posted.length).toBe(n + 1);
     expect(tabAfter(r.posted)).toEqual({ at: 'reloading', build: built.build });
+  });
+
+  test('the precache shell excludes intro/primer/ art while the build still serves all 9 WebPs', async () => {
+    const r = await install(new Set());
+    expect(r.outcome).toBe('resolved');
+    const cached = [...r.caches.get(`hunter-system-${built.build}`)!];
+    expect(cached.filter(p => p.includes('intro/primer/'))).toEqual([]);
+    expect(built.code).not.toContain('intro/primer/');
+
+    const artPaths = INTRO_CARDS.map(introImagePath).filter((p): p is string => p !== null);
+    expect(artPaths).toHaveLength(9);
+    for (const rel of artPaths) {
+      const served = built.files.get(`/${rel}`);
+      expect(served, `buildApp must still serve /${rel}`).toBeDefined();
+      expect(served!.type).toBe('image/webp');
+      expect(served!.body.byteLength).toBeGreaterThan(0);
+      expect(served!.body.byteLength).toBeLessThan(250 * 1024);
+    }
   });
 });

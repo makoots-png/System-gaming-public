@@ -1,7 +1,8 @@
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow } from './helpers.ts';
+import { test, expect, PHONE, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow } from './helpers.ts';
 import { WORLD_PRIMER } from '../../src/core/first-run.ts';
-import { INTRO_CARDS, INTRO_CITIES, INTRO_FOOD_ITEMS, introCardCounter } from '../../src/core/intro-cards.ts';
+import { INTRO_CARDS, INTRO_CITIES, INTRO_FOOD_ITEMS, introCardCounter, introImagePath } from '../../src/core/intro-cards.ts';
+import { INTRO_WRITE_WORDS } from '../../src/core/sync/intro-write.ts';
 import { newRewards } from '../../src/core/rewards.ts';
 
 const OVERLAY = '.intro-overlay.show';
@@ -15,6 +16,21 @@ async function assertNoPrimerParagraphOnPlayer(page: Page): Promise<void> {
     expect(text.includes(para), `player page must never contain primer paragraph: ${para.slice(0, 32)}`).toBe(false);
     expect(text.includes(para.slice(0, 28)), `player page must never contain primer opening: ${para.slice(0, 28)}`).toBe(false);
   }
+}
+
+/** Asserts an art card's image inside `root` has the expected `src` and `alt` and finishes loading. */
+async function expectArtLoaded(root: ReturnType<Page['locator']>, cardIndex: number): Promise<void> {
+  const card = INTRO_CARDS[cardIndex]!;
+  const rel = introImagePath(card)!;
+  const img = root.locator('[data-intro-img]');
+  await expect(img).toHaveCount(1);
+  await expect(img).toHaveAttribute('src', rel);
+  await expect(img).toHaveAttribute('alt', card.alt);
+  await expect.poll(
+    () => img.evaluate(el => el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0),
+    { timeout: 15_000 },
+  ).toBe(true);
+  await expect(root.locator('.intro-standin')).toHaveAttribute('data-art-state', 'loaded');
 }
 
 test('solo replay steps through all 17 cards from Quick start, shows window details and captions, and respects reduced motion', async ({ device }) => {
@@ -37,12 +53,22 @@ test('solo replay steps through all 17 cards from Quick start, shows window deta
   await expect(ov.locator('.sys-window .sys-title')).toHaveText('The Hunter System');
   await expect(ov.locator('img')).toHaveCount(0);
 
-  // Advance through all 17 cards, checking Back once and verifying key Window/Type cards & captions.
+  // Advance through all 17 cards, checking Back once and verifying art images, window/type cards, captions, and reduced motion.
   for (let i = 0; i < INTRO_CARDS.length; i++) {
     const card = INTRO_CARDS[i]!;
     await expect(ov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', String(i));
     await expect(ov.locator('[data-intro-count]')).toHaveText(introCardCounter(i));
     await expect(ov.locator('[role="img"]')).toHaveAttribute('aria-label', card.alt);
+
+    if (card.kind === 'art') {
+      await expectArtLoaded(ov.locator('[data-intro-stage]'), i);
+      // Reduced motion: no drift animation and no crossfade ghost layer
+      const anim = await ov.locator('[data-intro-img]').evaluate(el => getComputedStyle(el).animationName);
+      expect(anim).toBe('none');
+      await expect(solo.locator('.m-crossfade')).toHaveCount(0);
+    } else {
+      await expect(ov.locator('img')).toHaveCount(0);
+    }
 
     if (i === 1) {
       await expect(ov.locator('[data-intro-stage]')).toContainText('London');
@@ -52,6 +78,7 @@ test('solo replay steps through all 17 cards from Quick start, shows window deta
       await expect(ov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '0');
       await ov.locator('[data-intro-stage]').tap();
       await expect(ov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1');
+      await expectArtLoaded(ov.locator('[data-intro-stage]'), 1);
     } else if (i === 5) {
       await expect(ov.locator('[data-intro-cities] li')).toHaveText([...INTRO_CITIES]);
       // Under reduced motion all 5 rows are immediately visible at opacity 1
@@ -168,8 +195,11 @@ test('GM-paced room intro syncs across players, late join, reload, close/rejoin,
     await nextBtn.click(); // immediate second click inside 450 ms guard
     await expect(gm.locator('[data-intro-count]')).toHaveText('1 / 16');
     await expect(gm.locator('.intro-hl')).toContainText('About twenty years ago');
+    await expectArtLoaded(gm.locator('[data-intro-thumb]'), 1);
     await expect(p1.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1', { timeout: 15_000 });
     await expect(p2.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1', { timeout: 15_000 });
+    await expectArtLoaded(p1.locator('[data-intro-stage]'), 1);
+    await expectArtLoaded(p2.locator('[data-intro-stage]'), 1);
     await assertNoPrimerParagraphOnPlayer(p1);
     await assertNoPrimerParagraphOnPlayer(p2);
 
@@ -360,4 +390,257 @@ test('GM-paced room intro syncs across players, late join, reload, close/rejoin,
     // _intro doc is cleared to null on the server
     await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.doc('intro')?.intro ?? null), { timeout: 15_000 }).toBeNull();
   });
+});
+
+test('art cards preload the next image, fade in over the stand-in, drift under full motion, cut plainly under reduced motion, and stay on stand-in when broken', async ({ device }) => {
+  // 1) Preload, delayed fade-in, crossfade, and normal-motion drift (opt back into full motion; config defaults to reduced)
+  const normal = (await device('art-motion', { viewport: PHONE, blockServiceWorker: true })).page;
+  await normal.emulateMedia({ reducedMotion: 'no-preference' });
+  const requested: string[] = [];
+  normal.on('request', req => {
+    const u = req.url();
+    if (u.includes('/intro/primer/')) requested.push(u);
+  });
+
+  // Hold Card 2's image briefly so we observe the stand-in first and the fade-in after it arrives.
+  let releaseCard2!: () => void;
+  const card2Held = new Promise<void>(resolve => { releaseCard2 = resolve; });
+  await normal.route('**/intro/primer/p1-teams.webp', async route => {
+    await card2Held;
+    await route.continue();
+  });
+
+  await onboardPlayer(normal, 'Motion Reader');
+  await normal.evaluate(() => hunterApp.api.intro.openSolo());
+  const ov = normal.locator(OVERLAY);
+  await expect(ov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '0');
+
+  // Card 0 preloads Card 1 (p1-london-gate.webp) before Next is tapped
+  await expect.poll(() => requested.some(u => u.endsWith('/intro/primer/p1-london-gate.webp')), { timeout: 10_000 }).toBe(true);
+
+  // Advance to Card 1: image loads and runs slow transform drift; Card 2 starts preloading
+  await ov.locator('[data-intro-stage]').tap();
+  await expect(ov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1');
+  await expectArtLoaded(ov.locator('[data-intro-stage]'), 1);
+  await expect.poll(() => requested.some(u => u.endsWith('/intro/primer/p1-teams.webp')), { timeout: 10_000 }).toBe(true);
+
+  const motionProps = await ov.locator('[data-intro-stage]').evaluate(stage => {
+    const art = stage.querySelector('[data-intro-art]') as HTMLElement;
+    const img = stage.querySelector('[data-intro-img]') as HTMLElement;
+    return {
+      transitionProperty: getComputedStyle(art).transitionProperty,
+      transitionDuration: getComputedStyle(art).transitionDuration,
+      animationName: getComputedStyle(img).animationName,
+    };
+  });
+  expect(motionProps.transitionProperty).toBe('opacity');
+  expect(parseFloat(motionProps.transitionDuration)).toBeGreaterThan(0);
+  expect(motionProps.animationName).toBe('m-intro-drift');
+
+  // Advance to Card 2 while its image is still held: card opens immediately on type-only stand-in
+  await ov.locator('[data-intro-stage]').tap();
+  await expect(ov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '2');
+  await expect(ov.locator('.intro-standin')).toHaveAttribute('data-art-state', 'fallback');
+  await expect(ov.locator('.intro-standin-label')).toHaveText('First teams in');
+  expect(await ov.locator('[data-intro-art]').evaluate(el => getComputedStyle(el).opacity)).toBe('0');
+
+  // Release Card 2's image: fades in over the stand-in to opacity 1
+  releaseCard2();
+  await expectArtLoaded(ov.locator('[data-intro-stage]'), 2);
+  await expect.poll(() => ov.locator('[data-intro-art]').evaluate(el => getComputedStyle(el).opacity), { timeout: 10_000 }).toBe('1');
+
+  // 2) Broken/missing image stays permanently on the type-only stand-in
+  const broken = (await device('art-broken', {
+    viewport: PHONE,
+    blockServiceWorker: true,
+    allowConsole: [/404|Failed to load resource/],
+  })).page;
+  await broken.route('**/intro/primer/p1-london-gate.webp', route => route.fulfill({ status: 404, body: 'missing' }));
+  await onboardPlayer(broken, 'Fallback Reader');
+  await broken.evaluate(() => hunterApp.api.intro.openSolo());
+  const bov = broken.locator(OVERLAY);
+  await bov.locator('[data-intro-stage]').tap();
+  await expect(bov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1');
+  await expect(bov.locator('.intro-standin')).toHaveAttribute('data-art-state', 'error', { timeout: 10_000 });
+  await expect(bov.locator('.intro-standin-label')).toHaveText('London');
+  await expect(bov.locator('.intro-standin-label')).toBeVisible();
+  expect(await bov.locator('[data-intro-art]').evaluate(el => getComputedStyle(el).opacity)).toBe('0');
+
+  // 3) Reduced motion uses plain cuts and zero drift
+  const reduced = (await device('art-reduced', { viewport: PHONE, blockServiceWorker: true })).page;
+  await reduced.emulateMedia({ reducedMotion: 'reduce' });
+  await onboardPlayer(reduced, 'Still Reader');
+  await reduced.evaluate(() => hunterApp.api.intro.openSolo());
+  const rov = reduced.locator(OVERLAY);
+  await rov.locator('[data-intro-stage]').tap();
+  await expect(rov.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1');
+  await expectArtLoaded(rov.locator('[data-intro-stage]'), 1);
+  const stillProps = await rov.locator('[data-intro-stage]').evaluate(stage => {
+    const art = stage.querySelector('[data-intro-art]') as HTMLElement;
+    const img = stage.querySelector('[data-intro-img]') as HTMLElement;
+    return {
+      transitionDuration: getComputedStyle(art).transitionDuration,
+      animationName: getComputedStyle(img).animationName,
+      stageAnims: stage.getAnimations().length,
+    };
+  });
+  expect(stillProps.transitionDuration).toBe('0s');
+  expect(stillProps.animationName).toBe('none');
+  expect(stillProps.stageAnims).toBe(0);
+  await expect(reduced.locator('.m-crossfade')).toHaveCount(0);
+});
+
+test('390x844 phone view renders full-screen art on player and photo thumbnail above paragraph on GM, capturing screenshots', async ({ device }) => {
+  const gm = (await device('u4-gm', { viewport: PHONE, blockServiceWorker: true })).page;
+  const player = (await device('u4-player', { viewport: PHONE, blockServiceWorker: true })).page;
+
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai', code);
+  await dismissAll(player);
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.remoteSheets().some((s: any) => s.data.name === 'Kai')), { timeout: 20_000 }).toBe(true);
+
+  await gm.evaluate(() => hunterApp.api.intro.startTable());
+  await expect(gm.locator(OVERLAY)).toBeVisible();
+  await expect(player.locator(OVERLAY)).toBeVisible({ timeout: 15_000 });
+
+  // Advance from Title (Card 0) to Card 1 (London, p1-london-gate.webp)
+  await gm.locator('[data-intro-next]').tap();
+  await expect(gm.locator('[data-intro-count]')).toHaveText('1 / 16');
+  await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1', { timeout: 15_000 });
+
+  await expectArtLoaded(player.locator('[data-intro-stage]'), 1);
+  await expectArtLoaded(gm.locator('[data-intro-thumb]'), 1);
+  await expect.poll(() => player.locator('[data-intro-art]').evaluate(el => getComputedStyle(el).opacity), { timeout: 10_000 }).toBe('1');
+  await expect.poll(() => gm.locator('[data-intro-thumb] [data-intro-art]').evaluate(el => getComputedStyle(el).opacity), { timeout: 10_000 }).toBe('1');
+  await assertNoPrimerParagraphOnPlayer(player);
+
+  // Confirm GM thumbnail sits above the read-aloud paragraph
+  const gmBoxes = await gm.evaluate(() => {
+    const thumb = document.querySelector('[data-intro-thumb]')?.getBoundingClientRect();
+    const read = document.querySelector('[data-intro-read]')?.getBoundingClientRect();
+    return thumb && read ? { thumbBottom: thumb.bottom, readTop: read.top } : null;
+  });
+  expect(gmBoxes).not.toBeNull();
+  expect(gmBoxes!.thumbBottom).toBeLessThanOrEqual(gmBoxes!.readTop + 1);
+
+  await player.screenshot({ path: process.env.U4_PLAYER_SHOT || '.lead-scratch/u4-player.png', fullPage: false });
+  await gm.screenshot({ path: process.env.U4_GM_SHOT || '.lead-scratch/u4-gm.png', fullPage: false });
+});
+
+test('overlapping GM poll started while PUT _intro is in flight and delivered after PUT 200 never flashes the previous card', async ({ device }) => {
+  const gm = (await device('gm-stale-poll', { viewport: PHONE, blockServiceWorker: true })).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+
+  await gm.evaluate(() => hunterApp.api.intro.startTable());
+  await expect(gm.locator(OVERLAY)).toBeVisible();
+  await expect(gm.locator('[data-intro-count]')).toHaveText('Title');
+
+  let trapActive = false;
+  let putInFlight = false;
+  let staleGetCaptured = false;
+  let staleGetDelivered = false;
+  let releaseStaleGet!: () => void;
+  const staleGetCanDeliver = new Promise<void>(resolve => { releaseStaleGet = resolve; });
+
+  await gm.route(`**/api/rooms/${code}/sheets/_intro`, async route => {
+    if (!trapActive || route.request().method() !== 'PUT') {
+      await route.continue();
+      return;
+    }
+    trapActive = false;
+    putInFlight = true;
+    // Hold the PUT for 1.5 s so a 1 s poll GET fires while the PUT is still out.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const res = await route.fetch();
+    await route.fulfill({ response: res });
+    putInFlight = false;
+  });
+
+  await gm.route(`**/api/rooms/${code}?*`, async route => {
+    if (!putInFlight || staleGetCaptured || route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    staleGetCaptured = true;
+    // Fetch the room BEFORE the held PUT lands (so this response carries Card 0 / Title).
+    const staleRes = await route.fetch();
+    const body = await staleRes.json();
+    expect(body.docs?.intro?.data?.intro?.card).toBe(0);
+    // Deliver this stale response ONLY AFTER the PUT returns 200 and GM shows 1 / 16.
+    await staleGetCanDeliver;
+    await route.fulfill({ response: staleRes });
+    staleGetDelivered = true;
+  });
+
+  // Track every counter value shown after reaching 1 / 16 so even a 1-frame flash back to Title fails.
+  await gm.evaluate(() => {
+    const seen: string[] = [];
+    (globalThis as any).__afterCard1Counts = seen;
+    let reached = false;
+    const record = () => {
+      const text = document.querySelector('[data-intro-count]')?.textContent?.trim() ?? '';
+      if (text === '1 / 16') reached = true;
+      if (reached && text) seen.push(text);
+    };
+    const obs = new MutationObserver(record);
+    obs.observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+
+  trapActive = true;
+  await gm.locator('[data-intro-next]').tap();
+
+  // Wait for the overlapping GET to be captured while PUT is held, and for the PUT to land.
+  await expect.poll(() => staleGetCaptured, { timeout: 10_000 }).toBe(true);
+  await expect(gm.locator('[data-intro-count]')).toHaveText('1 / 16', { timeout: 10_000 });
+
+  // Now deliver the stale GET (carrying Card 0) AFTER the PUT returned 200.
+  releaseStaleGet();
+  await expect.poll(() => staleGetDelivered, { timeout: 10_000 }).toBe(true);
+  await gm.waitForTimeout(300);
+
+  await expect(gm.locator('[data-intro-count]')).toHaveText('1 / 16');
+  const seenAfter = await gm.evaluate(() => (globalThis as any).__afterCard1Counts as string[]);
+  expect(seenAfter.length).toBeGreaterThan(0);
+  expect(seenAfter.every(t => t === '1 / 16')).toBe(true);
+});
+
+test('offline GM tapping Next sees a warning toast and stays on the room card, then advances players once back online', async ({ device }) => {
+  const gmDev = await device('gm-offline', {
+    viewport: PHONE,
+    blockServiceWorker: true,
+    allowConsole: [/ERR_INTERNET_DISCONNECTED|Failed to load resource/],
+  });
+  const pDev = await device('player-follow-retry', { viewport: PHONE, blockServiceWorker: true });
+  const gm = gmDev.page, player = pDev.page;
+
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai', code);
+  await dismissAll(player);
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.remoteSheets().some((s: any) => s.data.name === 'Kai')), { timeout: 20_000 }).toBe(true);
+
+  await gm.evaluate(() => hunterApp.api.intro.startTable());
+  await expect(gm.locator(OVERLAY)).toBeVisible();
+  await expect(gm.locator('[data-intro-count]')).toHaveText('Title');
+  await expect(player.locator(OVERLAY)).toBeVisible({ timeout: 15_000 });
+  await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '0');
+
+  // Go offline on GM, tap Next -> retries exhaust, warning toast shows, counter stays on Title.
+  await gmDev.ctx.setOffline(true);
+  await gm.locator('[data-intro-next]').tap();
+
+  const toast = gm.locator('.toast.toast-warning');
+  await expect(toast).toBeVisible({ timeout: 15_000 });
+  await expect(toast).toContainText(INTRO_WRITE_WORDS.failedToast);
+  await expect(gm.locator('[data-intro-count]')).toHaveText('Title');
+  await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '0');
+
+  // Go back online, tap Next -> GM advances and player follows to Card 1.
+  await gmDev.ctx.setOffline(false);
+  await gm.locator('[data-intro-next]').tap();
+  await expect(gm.locator('[data-intro-count]')).toHaveText('1 / 16', { timeout: 15_000 });
+  await expect(player.locator('[data-intro-stage]')).toHaveAttribute('data-intro-card', '1', { timeout: 15_000 });
+  await expectArtLoaded(player.locator('[data-intro-stage]'), 1);
 });

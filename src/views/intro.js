@@ -1,5 +1,5 @@
-// intro.js: full-screen world-primer intro player (Units 1 to 3: solo replay, System window/type cards, GM pacing,
-// player follow view, rejoin bar, Card 16 Answer, story-card-wins, wake lock, double-tap guard).
+// intro.js: full-screen world-primer intro player (solo replay, System window/type cards, comic art with stand-in
+// fallback and preloading, GM pacing and photo thumbnail, player follow view, rejoin bar, Card 16 Answer, wake lock).
 import {
   INTRO_ART_READY,
   INTRO_CARDS,
@@ -9,6 +9,7 @@ import {
   introCardCounter,
   introHunterWindow,
   introImagePath,
+  introNextImagePath,
   introShopRows,
   introSliceOf,
 } from '../core/intro-cards.ts';
@@ -20,7 +21,8 @@ import {
   introEnd,
   introMarkGmTap,
   introMarkLocalAnswer,
-  introRecordAnswer,
+  introMergeHeardAnswers,
+  introNoteHeardAnswer,
   introRejoin,
   introStart,
   introStep,
@@ -30,8 +32,9 @@ import {
   soloOpen,
   soloStep,
 } from '../core/intro.ts';
+import { INTRO_WRITE_WORDS } from '../core/sync/intro-write.ts';
 import { icon, sprite } from './icons.ts';
-import { staggerReveal } from './motion.ts';
+import { crossfade, staggerReveal } from './motion.ts';
 import { closeWindow, openWindow, trapTab } from './ui.js';
 
 /** @param {import('./app.ts').App} app */
@@ -126,16 +129,64 @@ export function register(app) {
     }
   }
 
-  /** Renders the stage body for any card: type-only stand-in for art cards (Units 1 to 3), System window or city list for window/type cards. */
+  /** Renders the stage body for any card: type-only stand-in with overlaid WebP art for art cards, System window or city list for window/type cards. */
   function cardStageHtml(card, thumb = false) {
     if (card.kind !== 'art') return windowCardHtml(card, thumb);
     const imgPath = introImagePath(card);
     const imgAttr = imgPath ? ` data-intro-image="${esc(imgPath)}"` : '';
     const artReady = INTRO_ART_READY && imgPath ? ' data-art-ready="true"' : '';
-    const roleAttr = thumb ? ' aria-hidden="true"' : ` role="img" aria-label="${esc(card.alt)}"`;
-    return `<div class="intro-standin intro-acc-${card.accent}"${roleAttr}${imgAttr}${artReady}>
-      <div class="intro-standin-label">${esc(card.label)}</div>
+    const roleAttr = thumb ? '' : ` role="img" aria-label="${esc(card.alt)}"`;
+    const artHtml = INTRO_ART_READY && imgPath
+      ? `<div class="intro-art" data-intro-art>
+          <img class="intro-art-img" src="${esc(imgPath)}" alt="${esc(card.alt)}" decoding="async" data-intro-img>
+          ${thumb ? '' : `<div class="intro-art-label" aria-hidden="true">${esc(card.label)}</div>`}
+        </div>`
+      : '';
+    return `<div class="intro-standin intro-acc-${card.accent}"${roleAttr}${imgAttr}${artReady} data-art-state="fallback">
+      <div class="intro-standin-label"${thumb ? ' aria-hidden="true"' : ''}>${esc(card.label)}</div>
+      ${artHtml}
     </div>`;
+  }
+
+  /** Wires an art card's image so it fades in over the stand-in on load, or stays on the stand-in on error. */
+  function wireArt(container) {
+    const img = container.querySelector('[data-intro-img]');
+    if (!(img instanceof HTMLImageElement)) return;
+    const box = img.closest('.intro-standin');
+    if (!box) return;
+    const markLoaded = () => {
+      if (!img.isConnected) return;
+      if (img.naturalWidth > 0) {
+        box.classList.add('is-loaded');
+        box.setAttribute('data-art-state', 'loaded');
+      } else {
+        box.classList.remove('is-loaded');
+        box.setAttribute('data-art-state', 'error');
+      }
+    };
+    const markError = () => {
+      if (!img.isConnected) return;
+      box.classList.remove('is-loaded');
+      box.setAttribute('data-art-state', 'error');
+    };
+    if (img.complete) {
+      if (img.naturalWidth > 0) markLoaded();
+      else markError();
+      return;
+    }
+    img.addEventListener('load', markLoaded, { once: true });
+    img.addEventListener('error', markError, { once: true });
+  }
+
+  /** Preloads the next card's art image so the following Next tap can fade it in without waiting. */
+  function preloadNext(cardIndex) {
+    if (!refs) return;
+    const nextSrc = introNextImagePath(cardIndex);
+    if (!nextSrc || refs.preloaded.has(nextSrc)) return;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = nextSrc;
+    refs.preloaded.set(nextSrc, img);
   }
 
   /** Screen Wake Lock: request while open and re-request when returning to foreground. */
@@ -189,7 +240,7 @@ export function register(app) {
       document.body.appendChild(overlay);
       return { root: overlay, win: overlay };
     }, handleKey);
-    refs = { overlay, win, returnFocus, wakeLock: null };
+    refs = { overlay, win, returnFocus, wakeLock: null, preloaded: new Map() };
     acquireWakeLock();
     overlay.addEventListener('click', e => {
       const t = e.target instanceof Element ? e.target : null;
@@ -290,72 +341,90 @@ export function register(app) {
       }
       return;
     }
+    const prevKind = state.renderedKey.split(':')[0];
+    const shouldCrossfade = prevKind === v.kind && (v.kind === 'player' || v.kind === 'solo');
+    const outgoingStage = shouldCrossfade ? refs.overlay.querySelector('[data-intro-stage]') : null;
     state = { ...state, renderedKey: key };
     const counter = introCardCounter(card.index);
     const isFirst = card.index === 0;
     const isLast = card.index === INTRO_STORY_COUNT;
+    const isArt = card.kind === 'art';
 
-    if (v.kind === 'solo') {
-      const slice = introSliceOf(card.index);
-      refs.overlay.innerHTML = `<div class="intro-shell intro-solo">
-        <div class="intro-bar">
-          <span class="intro-count" data-intro-count>${esc(counter)}</span>
-          <div class="intro-bar-act">
-            <button type="button" class="intro-btn" data-intro-back aria-label="Previous card"${isFirst ? ' disabled' : ''}>Back</button>
-            ${isLast ? '<button type="button" class="intro-btn primary" data-intro-done>Done</button>' : ''}
+    const draw = () => {
+      if (!refs) return null;
+      if (v.kind === 'solo') {
+        const slice = introSliceOf(card.index);
+        refs.overlay.innerHTML = `<div class="intro-shell intro-solo${isArt ? ' is-art' : ''}">
+          <div class="intro-bar">
+            <span class="intro-count" data-intro-count>${esc(counter)}</span>
+            <div class="intro-bar-act">
+              <button type="button" class="intro-btn" data-intro-back aria-label="Previous card"${isFirst ? ' disabled' : ''}>Back</button>
+              ${isLast ? '<button type="button" class="intro-btn primary" data-intro-done>Done</button>' : ''}
+              <button type="button" class="intro-btn" data-intro-close aria-label="Close intro">Close</button>
+            </div>
+          </div>
+          <div class="intro-stage" data-intro-stage data-intro-card="${card.index}">
+            ${cardStageHtml(card)}
+          </div>
+          ${slice ? `<div class="intro-caption" data-intro-caption><p>${esc(slice.current)}</p></div>` : ''}
+        </div>`;
+        wireArt(refs.overlay);
+        animateCard(refs.overlay, card);
+      } else if (v.kind === 'player') {
+        const hasHunter = !!roomHunter();
+        const answered = isLast && v.run ? playerHasAnswered(v.run, doc) : false;
+        refs.overlay.innerHTML = `<div class="intro-shell intro-player${isArt ? ' is-art' : ''}">
+          <div class="intro-bar intro-player-bar">
             <button type="button" class="intro-btn" data-intro-close aria-label="Close intro">Close</button>
           </div>
-        </div>
-        <div class="intro-stage" data-intro-stage data-intro-card="${card.index}">
-          ${cardStageHtml(card)}
-        </div>
-        ${slice ? `<div class="intro-caption" data-intro-caption><p>${esc(slice.current)}</p></div>` : ''}
-      </div>`;
-      animateCard(refs.overlay, card);
-    } else if (v.kind === 'player') {
-      const hasHunter = !!roomHunter();
-      const answered = isLast && v.run ? playerHasAnswered(v.run, doc) : false;
-      refs.overlay.innerHTML = `<div class="intro-shell intro-player">
-        <div class="intro-bar intro-player-bar">
-          <button type="button" class="intro-btn" data-intro-close aria-label="Close intro">Close</button>
-        </div>
-        <div class="intro-stage intro-player-stage" data-intro-stage data-intro-card="${card.index}">
-          <div class="intro-stage-inner">
-            ${cardStageHtml(card)}
-            ${isLast && hasHunter ? `<div class="intro-call-act"><button type="button" class="primary intro-answer-btn" data-intro-answer${answered ? ' disabled' : ''}>${answered ? 'Answered' : 'Answer'}</button></div>` : ''}
+          <div class="intro-stage intro-player-stage" data-intro-stage data-intro-card="${card.index}">
+            <div class="intro-stage-inner">
+              ${cardStageHtml(card)}
+              ${isLast && hasHunter ? `<div class="intro-call-act"><button type="button" class="primary intro-answer-btn" data-intro-answer${answered ? ' disabled' : ''}>${answered ? 'Answered' : 'Answer'}</button></div>` : ''}
+            </div>
           </div>
-        </div>
-      </div>`;
-      animateCard(refs.overlay, card);
+        </div>`;
+        wireArt(refs.overlay);
+        animateCard(refs.overlay, card);
+      } else {
+        const slice = introSliceOf(card.index);
+        const readHtml = slice
+          ? `<p>${esc(slice.before)}<mark class="intro-hl">${esc(slice.raw)}</mark>${esc(slice.after)}</p>`
+          : '<p class="intro-gm-note">Title card is up. Tap Next when everyone is ready.</p>';
+        refs.overlay.innerHTML = `<div class="intro-shell intro-gm">
+          <div class="intro-bar">
+            <span class="intro-count" data-intro-count>${esc(counter)}</span>
+            <div class="intro-bar-act">
+              <button type="button" class="intro-btn" data-intro-end>End intro</button>
+            </div>
+          </div>
+          <div class="intro-gm-preview" aria-label="Player preview">
+            <div class="intro-thumb" data-intro-thumb data-intro-card="${card.index}">
+              <div class="intro-thumb-scale${isArt ? ' is-art' : ''}">${cardStageHtml(card, true)}</div>
+            </div>
+            <div class="intro-gm-meta">
+              <div class="intro-gm-label">${esc(card.label)}</div>
+              ${isLast ? `<div class="intro-gm-answered" role="status" data-intro-answered>${esc(answeredLine(doc))}</div>` : ''}
+            </div>
+          </div>
+          <div class="intro-gm-read" data-intro-read>${readHtml}</div>
+          <div class="intro-gm-controls">
+            <button type="button" class="intro-btn intro-gm-back" data-intro-back aria-label="Previous card"${isFirst ? ' disabled' : ''}>Back</button>
+            ${isLast
+              ? '<button type="button" class="primary intro-btn intro-gm-next" data-intro-end-primary>End intro</button>'
+              : '<button type="button" class="primary intro-btn intro-gm-next" data-intro-next aria-label="Next card">Next</button>'}
+          </div>
+        </div>`;
+        wireArt(refs.overlay);
+      }
+      preloadNext(card.index);
+      return refs.overlay.querySelector('[data-intro-stage]');
+    };
+
+    if (shouldCrossfade) {
+      void crossfade(outgoingStage, draw);
     } else {
-      const slice = introSliceOf(card.index);
-      const readHtml = slice
-        ? `<p>${esc(slice.before)}<mark class="intro-hl">${esc(slice.raw)}</mark>${esc(slice.after)}</p>`
-        : '<p class="intro-gm-note">Title card is up. Tap Next when everyone is ready.</p>';
-      refs.overlay.innerHTML = `<div class="intro-shell intro-gm">
-        <div class="intro-bar">
-          <span class="intro-count" data-intro-count>${esc(counter)}</span>
-          <div class="intro-bar-act">
-            <button type="button" class="intro-btn" data-intro-end>End intro</button>
-          </div>
-        </div>
-        <div class="intro-gm-preview" aria-label="Player preview">
-          <div class="intro-thumb" data-intro-thumb data-intro-card="${card.index}">
-            <div class="intro-thumb-scale">${cardStageHtml(card, true)}</div>
-          </div>
-          <div class="intro-gm-meta">
-            <div class="intro-gm-label">${esc(card.label)}</div>
-            ${isLast ? `<div class="intro-gm-answered" role="status" data-intro-answered>${esc(answeredLine(doc))}</div>` : ''}
-          </div>
-        </div>
-        <div class="intro-gm-read" data-intro-read>${readHtml}</div>
-        <div class="intro-gm-controls">
-          <button type="button" class="intro-btn intro-gm-back" data-intro-back aria-label="Previous card"${isFirst ? ' disabled' : ''}>Back</button>
-          ${isLast
-            ? '<button type="button" class="primary intro-btn intro-gm-next" data-intro-end-primary>End intro</button>'
-            : '<button type="button" class="primary intro-btn intro-gm-next" data-intro-next aria-label="Next card">Next</button>'}
-        </div>
-      </div>`;
+      draw();
     }
 
     if (!refs.overlay.contains(document.activeElement)) {
@@ -384,12 +453,17 @@ export function register(app) {
     paint();
   }
 
+  function warnSyncFailed() {
+    ui.toast('Intro', INTRO_WRITE_WORDS.failedToast, { kind: 'warning' });
+  }
+
   async function startTable() {
     if (app.seat() !== 'gm') return;
     const st = app.api.sync.stamp();
     const run = `i-${st.device}-${st.now.toString(36)}-${Math.floor(st.rand * 1e6).toString(36)}`;
     state = soloClose(state);
-    await app.api.sync.setIntro(introStart(run, new Date().toISOString()));
+    const ok = await app.api.sync.setIntro(introStart(run, new Date().toISOString()));
+    if (!ok) warnSyncFailed();
     paint();
   }
 
@@ -402,13 +476,15 @@ export function register(app) {
     }
     const next = introStep(app.api.sync.doc('intro'), delta, new Date().toISOString());
     if (!next) return;
-    await app.api.sync.setIntro(next);
+    const ok = await app.api.sync.setIntro(next);
+    if (!ok) warnSyncFailed();
     paint();
   }
 
   async function endTable() {
     if (app.seat() !== 'gm') return;
-    await app.api.sync.setIntro(introEnd(new Date().toISOString()));
+    const ok = await app.api.sync.setIntro(introEnd(new Date().toISOString()));
+    if (!ok) warnSyncFailed();
     paint();
   }
 
@@ -447,8 +523,11 @@ export function register(app) {
   app.on('sync:event', ({ event }) => {
     if (event.type === 'introAnswer' && app.seat() === 'gm') {
       const p = event.payload;
-      const next = introRecordAnswer(app.api.sync.doc('intro'), { key: p.by, name: p.name }, p.run, new Date().toISOString());
-      if (next) void app.api.sync.setIntro(next);
+      state = introNoteHeardAnswer(state, { key: p.by, name: p.name }, p.run);
+      const next = introMergeHeardAnswers(app.api.sync.doc('intro'), state, new Date().toISOString());
+      if (next) {
+        void app.api.sync.setIntro(next).then(ok => { if (!ok) warnSyncFailed(); });
+      }
     } else if (event.type === 'chapter' && app.seat() === 'player') {
       const cur = app.api.sync.doc('intro');
       if (cur?.intro) {

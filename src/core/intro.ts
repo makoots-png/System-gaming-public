@@ -17,6 +17,8 @@ export type IntroUiState = {
   readonly dismissedRun: string | null;
   readonly supersededRun: string | null;
   readonly localAnsweredRun: string | null;
+  readonly heardRun: string | null;
+  readonly heardAnswers: readonly IntroAnswered[];
   readonly lastGmTapAt: number;
   readonly renderedKey: string;
 };
@@ -27,6 +29,8 @@ export const INITIAL_INTRO_UI: IntroUiState = {
   dismissedRun: null,
   supersededRun: null,
   localAnsweredRun: null,
+  heardRun: null,
+  heardAnswers: [],
   lastGmTapAt: 0,
   renderedKey: '',
 };
@@ -155,6 +159,25 @@ export const introMarkGmTap = (s: IntroUiState, nowMs: number): IntroUiState => 
   ...s,
   lastGmTapAt: nowMs,
 });
+
+/** Records a player's Card 16 answer heard by the GM for `run` so simultaneous answers in one poll never erase each other. */
+export function introNoteHeardAnswer(s: IntroUiState, who: IntroAnswered, run: string): IntroUiState {
+  const base = s.heardRun === run ? s.heardAnswers : [];
+  if (base.some(a => a.key === who.key)) return s.heardRun === run ? s : { ...s, heardRun: run, heardAnswers: base };
+  return { ...s, heardRun: run, heardAnswers: [...base, who] };
+}
+
+/** Merges all heard answers for `doc`'s active run into `doc` on Card 16; returns null if none are new. */
+export function introMergeHeardAnswers(doc: IntroDoc | null, s: IntroUiState, now: string): IntroDoc | null {
+  if (!doc?.intro || s.heardRun !== doc.intro.run || !s.heardAnswers.length) return null;
+  let cur: IntroDoc = doc;
+  let changed = false;
+  for (const who of s.heardAnswers) {
+    const next = introRecordAnswer(cur, who, s.heardRun, now);
+    if (next) { cur = next; changed = true; }
+  }
+  return changed ? cur : null;
+}
 
 export type IntroView = {
   readonly kind: IntroViewKind;

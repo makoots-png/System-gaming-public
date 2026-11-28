@@ -19,6 +19,7 @@ import { cryptoRandom } from '../edge/roll.ts';
 import { isRefused } from '../core/save-step.ts';
 import { uniqueJobRefusalText } from '../core/hunter/grant.ts';
 import { introEnd } from '../core/intro.ts';
+import { INTRO_WRITE_WORDS } from '../core/sync/intro-write.ts';
 import { storyMaker } from './story-maker.js';
 
 css('stories', `
@@ -88,7 +89,9 @@ export function register(app) {
     });
     if (isRefused(out)) return out;
     if ((e.type === 'turnOn' || e.type === 'open') && app.seat() === 'gm' && A().sync.doc('intro')?.intro) {
-      void A().sync.setIntro(introEnd(day.at));
+      void A().sync.setIntro(introEnd(day.at)).then(ok => {
+        if (!ok) ui.toast('Intro', INTRO_WRITE_WORDS.failedToast, { kind: 'warning' });
+      });
     }
     if (out.posted.length || out.remoteClaimed.length) A().sync.flush();
     for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whoseLine(g.window.body, S().hunters, hid), kind: 'quest' });

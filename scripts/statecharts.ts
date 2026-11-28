@@ -14,6 +14,7 @@ import { upgrade } from './charts/upgrade.ts';
 import { db } from './charts/db.ts';
 import { outbox } from './charts/outbox.ts';
 import { publish } from './charts/publish.ts';
+import { introWriteChart } from './charts/intro-write.ts';
 import { attempt } from './charts/attempt.ts';
 import { odds } from './charts/odds.ts';
 import { soloClock, soloWait } from './charts/solo.ts';
@@ -98,7 +99,7 @@ export function machine<S, E>(m: Machine<S, E>): Machine<unknown, unknown> { ret
 export const MACHINES: readonly Machine<unknown, unknown>[] = [
   inbox, fight, channel, mythic, stacks, statusLifeChart, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, turnHold,
   gate, clearPreset, gateDifficultyChart, link, bind, removedNotice, lobbyCheck, lobbySeat, life, collapse, rests, reviveStanding, reviveDebt, foeLife, penalty, jobChain, progress, rank, gear, coin, coinPrompt, dcPick, iconPick,
-  onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, attempt, store, odds,
+  onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, introWriteChart, attempt, store, odds,
   soloClock, soloWait, runPhaseChart, soloPlanChart, feat, told, offerRoom, offerGiver, offerTaker, offerWatch, wordMine, wordGm, pending, story, draft, detailOpen,
   mapMountChart, mapSlotChart, buildDrawerChart, windowsChart, panel,
 ];

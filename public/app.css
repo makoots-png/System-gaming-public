@@ -383,7 +383,7 @@ select{cursor:pointer}
    or the dice sheet is open the box moves to the top of the screen, so it never covers their buttons. */
 .toast-box{position:fixed;bottom:calc(84px + var(--sab));right:calc(14px + var(--sar));display:flex;flex-direction:column;gap:8px;z-index:var(--z-toast);max-width:min(340px,86vw);pointer-events:none}
 /* a fight on the map or a floating coin card: news goes to the top, off the map's dock (Use, Cancel), hotbar and coin buttons */
-html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx-sheet:not([hidden])) .toast-box,html:has(body>.coin-card:not([hidden])) .toast-box,html:has(.view:not([hidden]) [data-mapbox]:not([hidden]) .mp) .toast-box{bottom:auto;top:calc(8px + var(--sat))}
+html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.intro-overlay.show) .toast-box,html:has(.dx-sheet:not([hidden])) .toast-box,html:has(body>.coin-card:not([hidden])) .toast-box,html:has(.view:not([hidden]) [data-mapbox]:not([hidden]) .mp) .toast-box{bottom:auto;top:calc(8px + var(--sat))}
 .toast{
   pointer-events:auto;display:flex;align-items:center;gap:10px;flex-wrap:nowrap;
   background:var(--panel-solid);border:1px solid var(--line-bright);color:var(--ice);
@@ -566,12 +566,16 @@ html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx
 .intro-bar-act{display:flex;align-items:center;gap:8px}
 .intro-btn{min-height:44px;padding:0 14px}
 .intro-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:18px 16px;position:relative;cursor:pointer;user-select:none}
-.intro-standin{width:100%;height:100%;max-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;border:1px solid rgba(243,238,227,.18);background:#151515;position:relative}
+.intro-standin{width:100%;height:100%;max-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;border:1px solid rgba(243,238,227,.18);background:#151515;position:relative;overflow:hidden}
 .intro-standin.intro-acc-red{border-color:#E8452C;box-shadow:inset 0 0 44px rgba(232,69,44,.22)}
 .intro-standin.intro-acc-blue{border-color:#4D8CFF;box-shadow:inset 0 0 44px rgba(77,140,255,.22)}
 .intro-standin.intro-acc-none{border-color:rgba(243,238,227,.3);box-shadow:inset 0 0 44px rgba(243,238,227,.08)}
 .intro-standin-kicker{font-family:var(--font-mono);font-size:calc(12px*var(--ts));letter-spacing:.26em;text-transform:uppercase;color:var(--cyan)}
 .intro-standin-label{font-size:clamp(28px,8vw,48px);font-weight:700;letter-spacing:.08em;text-transform:uppercase;line-height:1.15;color:#F3EEE3}
+.intro-art{position:absolute;inset:0;overflow:hidden;background:#111111;opacity:0;pointer-events:none;z-index:2}
+.intro-standin.is-loaded .intro-art{opacity:1}
+.intro-art-img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+.intro-art-label{position:absolute;left:0;right:0;bottom:0;padding:42px 20px calc(20px + var(--sab));text-align:left;font-size:clamp(22px,6.2vw,34px);font-weight:700;letter-spacing:.08em;text-transform:uppercase;line-height:1.15;color:#F3EEE3;text-shadow:0 2px 10px rgba(0,0,0,.85);background:linear-gradient(to top,rgba(17,17,17,.88) 0%,rgba(17,17,17,.45) 58%,transparent 100%)}
 .intro-caption{flex:none;max-height:34dvh;overflow-y:auto;overscroll-behavior:contain;padding:12px 16px 16px;border-top:1px solid rgba(243,238,227,.16);background:rgba(17,17,17,.96)}
 .intro-caption p{margin:0;color:#F3EEE3;font-size:calc(15px*var(--ts));line-height:1.55}
 .intro-win{width:min(440px,100%);margin:0 auto;text-align:center}
@@ -598,8 +602,13 @@ html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx
 .intro-kv dd{margin:4px 0 0;font-size:calc(18px*var(--ts));font-weight:700;color:var(--ice)}
 .intro-food-wrap{width:min(440px,100%);display:flex;flex-direction:column;align-items:center;gap:10px}
 .intro-food-sent{font-family:var(--font-mono);font-size:calc(13px*var(--ts));letter-spacing:.14em;text-transform:uppercase;color:var(--gold);padding:4px 12px;border:1px solid rgba(255,201,77,.45);background:rgba(255,201,77,.1)}
+.intro-player{position:relative}
 .intro-player-bar{justify-content:flex-end;border-bottom:none}
+.intro-player.is-art .intro-player-bar{position:absolute;top:0;left:0;right:0;z-index:4;pointer-events:none}
+.intro-player.is-art .intro-player-bar .intro-btn{pointer-events:auto;background:rgba(17,17,17,.74);border-color:rgba(243,238,227,.34);color:#F3EEE3}
 .intro-player-stage{cursor:default}
+.intro-player.is-art .intro-player-stage{padding:0}
+.intro-player.is-art .intro-standin.is-loaded{border-color:transparent;box-shadow:none}
 .intro-stage-inner{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 .intro-call-act{display:flex;justify-content:center}
 .intro-answer-btn{min-height:48px;min-width:160px;font-size:calc(16px*var(--ts))}
@@ -608,6 +617,8 @@ html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx
 .intro-gm-preview{display:flex;align-items:center;gap:14px;padding:12px 14px;flex:none;border-bottom:1px solid rgba(243,238,227,.14);background:#151515}
 .intro-thumb{width:76px;height:135px;flex:none;overflow:hidden;position:relative;border:1px solid rgba(243,238,227,.24);background:#111111;pointer-events:none}
 .intro-thumb-scale{width:380px;height:675px;transform:scale(.2);transform-origin:0 0;display:flex;align-items:center;justify-content:center;padding:16px}
+.intro-thumb-scale.is-art{padding:0}
+.intro-thumb-scale.is-art .intro-standin.is-loaded{border-color:transparent;box-shadow:none}
 .intro-gm-meta{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:8px}
 .intro-gm-label{font-size:calc(18px*var(--ts));font-weight:700;letter-spacing:.04em;color:#F3EEE3}
 .intro-gm-answered{font-size:calc(14px*var(--ts));color:var(--cyan);line-height:1.4;overflow-wrap:anywhere}
@@ -645,6 +656,11 @@ button,.tab,[role=button],.m-press{transition:transform var(--t-fast) var(--ease
 .m-wait{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:currentColor;color:var(--cyan)}
 .m-wait,.m-waiting{animation:m-wait calc(var(--t-slow) * 4) var(--ease-leave) infinite alternate}
 @keyframes m-wait{to{opacity:.3}}
+/* world-primer intro art: image fades in over the stand-in and drifts gently with transform only */
+.intro-art{transition:opacity var(--t-slow) var(--ease-arrive)}
+.intro-stage .intro-standin.is-loaded .intro-art-img{animation:m-intro-drift calc(var(--t-breath) * 5) var(--ease-sway) infinite alternate;will-change:transform}
+.m-crossfade .intro-art-img{animation:none}
+@keyframes m-intro-drift{from{transform:scale(1) translate3d(0,0,0)}to{transform:scale(1.055) translate3d(0,-1.5%,0)}}
 /* ── end of Motion ── */
 
 @media (prefers-reduced-motion:reduce){

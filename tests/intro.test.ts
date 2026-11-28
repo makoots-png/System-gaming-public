@@ -8,6 +8,8 @@ import {
   introEnd,
   introMarkGmTap,
   introMarkLocalAnswer,
+  introMergeHeardAnswers,
+  introNoteHeardAnswer,
   introRecordAnswer,
   introRejoin,
   introSetCard,
@@ -195,5 +197,22 @@ describe('introViewFor client mode decisions', () => {
     expect(paceOf(null, true, 'd-gm', false, false)).toBe('table');
     expect(paceOf(null, false, 'd-p1', false, true)).toBe('turn');
     expect(paceOf(null, true, 'd-gm', false, true)).toBe('turn');
+  });
+
+  test('introNoteHeardAnswer + introMergeHeardAnswers preserves simultaneous Card 16 answers in one poll', () => {
+    const c16 = introSetCard(introStart('run-1', NOW), 16, NOW)!;
+    let ui = introNoteHeardAnswer(INITIAL_INTRO_UI, { key: KAI, name: 'Kai' }, 'run-1');
+    const first = introMergeHeardAnswers(c16, ui, LATER)!;
+    expect(first.intro?.answered).toEqual([{ key: KAI, name: 'Kai' }]);
+
+    // Second answer arrives before first PUT confirms: merging against c16 keeps BOTH Kai and Mira.
+    ui = introNoteHeardAnswer(ui, { key: MIRA, name: 'Mira' }, 'run-1');
+    const both = introMergeHeardAnswers(c16, ui, LATER)!;
+    expect(both.intro?.answered).toEqual([
+      { key: KAI, name: 'Kai' },
+      { key: MIRA, name: 'Mira' },
+    ]);
+    // Once both are on the doc, nothing new to merge.
+    expect(introMergeHeardAnswers(both, ui, LATER)).toBeNull();
   });
 });
