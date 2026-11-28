@@ -8,7 +8,7 @@ import { test, expect, PHONE, setupGoblinDenGM, onboardPlayer, createRoom, dismi
 const HUNTER = 'Ira Steel';
 const MONSTER = 'Cave Rat';
 const ABILITY = 'Iron Cleave';
-const SCREENSHOT_PATH = '/workspace/sg-refused-use/.lead-scratch/cooldown.png';
+const SCREENSHOT_PATH = process.env.COOLDOWN_SHOT || '.lead-scratch/cooldown.png';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const map = (page: Page) => combat(page).locator('[data-mapbox]');

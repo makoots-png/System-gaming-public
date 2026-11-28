@@ -7,7 +7,7 @@ import { test, expect, PHONE, setupGoblinDenGM, onboardPlayer, createRoom, dismi
 
 const HUNTER = 'Vlad Blood';
 const MONSTER = 'Cave Rat';
-const SCREENSHOT_PATH = '/workspace/sg-tools/design/move-turn/refused-use.png';
+const SCREENSHOT_PATH = process.env.REFUSED_USE_SHOT || '.lead-scratch/refused-use.png';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const map = (page: Page) => combat(page).locator('[data-mapbox]');
