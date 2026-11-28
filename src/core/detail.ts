@@ -15,6 +15,7 @@ import { isStacking } from './combat/op-amount.ts';
 import type { Op, StatusDef } from './combat/effect-ops.ts';
 import type { ZoneTone } from './combat/zones.ts';
 import { abilityLines } from './combat/fight-view.ts';
+import { roundsOf } from './combat/timeline.ts';
 import { parseFormula, printFormula } from './formula.ts';
 import { describeAbility, formulaOf, KINDS } from './registry/ability-kinds.ts';
 import type { KindRules } from './registry/ability-kinds.ts';
@@ -27,6 +28,18 @@ import type { SheetNumber } from './hunter/derive.ts';
 import { explain, hunterSheet, SOURCE_LABELS } from './hunter/sheet.ts';
 import type { SheetHunter } from './hunter/sheet.ts';
 
+/** Live fight state for an ability when opened from a combat hotbar or card. */
+export type LiveAbilityState = {
+  /** Rounds until ready again (`readyIn`, 0 when ready). */
+  readonly wait?: number;
+  /** Uses remaining (`usesLeft` / `FightDoc.left`), or null/undefined when unlimited. */
+  readonly left?: number | null;
+  /** Reaction state on the live row (`arm`, `armed`, `spent`), or null/undefined for non-reactions. */
+  readonly react?: 'arm' | 'armed' | 'spent' | null;
+  /** Cost after the user's cost cut (`costOf`). */
+  readonly cost?: { readonly fatigue: number; readonly mana: number };
+};
+
 /**
  * What a detail can be opened on. A status as a body holds it (its def at its source's tier, its count, its rounds left);
  * a status a phone knows only by name (a teammate's in the room doc) has no def. A zone's ops are known on the GM's phone
@@ -34,7 +47,7 @@ import type { SheetHunter } from './hunter/sheet.ts';
  */
 export type Thing =
   | { readonly kind: 'status'; readonly key?: string | null; readonly label: string; readonly def: StatusDef | null; readonly tier: number | null; readonly stacks?: number; readonly left?: number | null }
-  | { readonly kind: 'ability'; readonly ability: Ability }
+  | { readonly kind: 'ability'; readonly ability: Ability; readonly live?: LiveAbilityState }
   /** An item, and the hunter who holds it when it is in a bag: its amounts then say what they come to on that hunter. */
   | { readonly kind: 'item'; readonly item: ItemEffects & { readonly name: string; readonly desc?: string; readonly type?: string; readonly dice?: string; readonly attack?: Attack; readonly finesse?: true; readonly twoHanded?: true; readonly effects?: readonly Op[]; readonly worn?: StatusDef }; readonly hunter?: SheetHunter }
   | { readonly kind: 'zone'; readonly name: string; readonly tone: ZoneTone; readonly left: number | null; readonly ops: readonly Op[] | null; readonly tier: number }
@@ -90,9 +103,27 @@ export function detailOf(t: Thing, R: Rules): Detail {
       return { title: d?.label ?? t.label, about: d?.desc ?? '', lines: [...now, ...(d ? describeStatus(d, t.tier, R, t.key ?? null) : [])] };
     }
     case 'ability': {
-      const a = t.ability, cost = [a.cost.fatigue ? `${a.cost.fatigue} fatigue` : '', a.cost.mana ? `${a.cost.mana} mana` : ''].filter(Boolean);
+      const a = t.ability, c = t.live?.cost ?? a.cost;
+      const cost = [c.fatigue ? `${c.fatigue} fatigue` : '', c.mana ? `${c.mana} mana` : ''].filter(Boolean);
       const what = abilityLines(a, R).slice(0, a.effect ? 1 : 0);
-      return { title: a.name, about: '', lines: [...what, ...(cost.length ? [`Costs ${cost.join(' and ')}.`] : []), ...describeAbility(a, R), ...opLines(a.ops, null, R)] };
+      const now: string[] = [];
+      if (t.live?.wait && t.live.wait > 0) now.push(`Ready in ${rounds(t.live.wait)}.`);
+      if (t.live?.left !== undefined && t.live.left !== null) now.push(`${t.live.left} use${t.live.left === 1 ? '' : 's'} left.`);
+      if (t.live?.react === 'armed') now.push('Armed.');
+      else if (t.live?.react === 'spent') now.push('Reaction spent this turn.');
+      const cd = a.cost.cooldown > 0 ? roundsOf(a.cost.cooldown, R, 'near') : 0;
+      return {
+        title: a.name,
+        about: (a.desc ?? '').trim(),
+        lines: [
+          ...now,
+          ...what,
+          ...(cost.length ? [`Costs ${cost.join(' and ')}.`] : []),
+          ...(cd > 0 ? [`Cooldown: ${rounds(cd)}.`] : []),
+          ...describeAbility(a, R),
+          ...opLines(a.ops, null, R),
+        ],
+      };
     }
     case 'item': {
       const i = t.item;

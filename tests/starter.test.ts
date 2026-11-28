@@ -2,16 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   PREGENS,
   STARTER_GATE,
-  STARTER_REFUSAL_WORDS,
   STARTER_STORY_NAME,
   STARTER_UNSPENT_HUNTER,
-  STARTER_WORDS,
   ownSeed,
   seedOf,
   starterCampaign,
-  starterConfirmBody,
-  starterLoadedMessage,
-  starterMissing,
   starterStory,
 } from '../src/core/starter.ts';
 import { LIMITS, createHunter, freshSave, repairSave } from '../src/core/save.ts';
@@ -310,7 +305,7 @@ describe('includePregens: false and refusals', () => {
     expect(s.settings.activeHunterId).toBe(hunter.id);
   });
 
-  test('a refusal writes nothing when the story library is full or the starter campaign is already loaded', () => {
+  test('a refusal writes nothing when the story library is full or already holds The Empty Seat', () => {
     const base = install();
     const template = starterStory(RULES);
     const fullStories = Array.from({ length: LIMITS.libraryStories }, (_, i) => ({
@@ -325,101 +320,7 @@ describe('includePregens: false and refusals', () => {
 
     const alreadyLoaded = ok(starterCampaign(base, stamp, RULES));
     const snapLoaded = JSON.stringify(alreadyLoaded);
-    expect(starterCampaign(alreadyLoaded, stamp, RULES)).toEqual({ ok: false, why: 'already' });
-    expect(starterCampaign(alreadyLoaded, stamp, RULES, { includePregens: false })).toEqual({ ok: false, why: 'already' });
+    expect(starterCampaign(alreadyLoaded, stamp, RULES)).toEqual({ ok: false, why: 'taken' });
     expect(JSON.stringify(alreadyLoaded)).toBe(snapLoaded);
-    expect(alreadyLoaded.seq).toBe(JSON.parse(snapLoaded).seq);
-    expect(alreadyLoaded.log).toHaveLength(JSON.parse(snapLoaded).log.length);
-  });
-});
-
-describe('idempotent reload after setup', () => {
-  const blankGmSave = (): Save => {
-    const owned = ownSeed(install(), 'Hunter');
-    return { ...owned, settings: { ...owned.settings, mode: 'gm', onboarded: true } };
-  };
-
-  test('a blank GM save gains The Empty Seat and Tidewall Cannery Gate without wiping existing hunters', () => {
-    const blank = blankGmSave();
-    const withoutPregens = ok(starterCampaign(blank, stamp, RULES, { includePregens: false }));
-    expect(withoutPregens.hunters.map(h => h.name)).toEqual(['Hunter']);
-    expect(withoutPregens.library.stories.map(st => st.name)).toEqual([STARTER_STORY_NAME]);
-    expect(withoutPregens.gates.map(g => g.name)).toEqual([STARTER_GATE.name]);
-    expect(withoutPregens.storyRuns).toHaveLength(0);
-
-    const withPregens = ok(starterCampaign(blank, stamp, RULES, { includePregens: true }));
-    expect(withPregens.hunters.map(h => h.name)).toEqual(['Hunter', ...PREGENS.map(p => p.name)]);
-    expect(withPregens.settings.activeHunterId).toBe(blank.settings.activeHunterId);
-    expect(withPregens.library.stories.map(st => st.name)).toEqual([STARTER_STORY_NAME]);
-    expect(withPregens.gates.map(g => g.name)).toEqual([STARTER_GATE.name]);
-  });
-
-  test('reloading with includePregens: false after loading without sample hunters refuses with already, while includePregens: true adds only the missing sample hunters', () => {
-    const base = ok(starterCampaign(blankGmSave(), stamp, RULES, { includePregens: false }));
-    const snap = JSON.stringify(base);
-    expect(starterCampaign(base, stamp, RULES, { includePregens: false })).toEqual({ ok: false, why: 'already' });
-    expect(JSON.stringify(base)).toBe(snap);
-
-    const addedPregens = ok(starterCampaign(base, stamp, RULES, { includePregens: true }));
-    expect(addedPregens.library.stories).toHaveLength(1);
-    expect(addedPregens.gates).toHaveLength(1);
-    expect(addedPregens.hunters.map(h => h.name)).toEqual(['Hunter', ...PREGENS.map(p => p.name)]);
-    expect(starterCampaign(addedPregens, stamp, RULES, { includePregens: true })).toEqual({ ok: false, why: 'already' });
-  });
-
-  test('preserves edits to The Empty Seat, keeps custom hunters, and adds only missing pieces in one atomic step', () => {
-    const loaded = ok(starterCampaign(install(), stamp, RULES));
-    const { save: withCustom } = createHunter(loaded, 'Kira Sol', RULES, NOW);
-    const editedStory = {
-      ...withCustom.library.stories[0]!,
-      when: 'Custom GM note on The Empty Seat.',
-    };
-    const partial: Save = {
-      ...withCustom,
-      library: { ...withCustom.library, stories: [editedStory] },
-      gates: [],
-      hunters: withCustom.hunters.filter(h => h.name !== STARTER_UNSPENT_HUNTER),
-    };
-
-    const missing = starterMissing(partial, { includePregens: true });
-    expect(missing.story).toBe(false);
-    expect(missing.gate).toBe(true);
-    expect(missing.pregens.map(p => p.name)).toEqual([STARTER_UNSPENT_HUNTER]);
-    expect(starterConfirmBody(missing)).toContain(STARTER_GATE.name);
-    expect(starterLoadedMessage(missing)).toContain(STARTER_GATE.name);
-    expect(starterLoadedMessage(missing)).toContain('1 sample hunter');
-
-    const repaired = ok(starterCampaign(partial, stamp, RULES, { includePregens: true }));
-    expect(repaired.library.stories).toHaveLength(1);
-    expect(repaired.library.stories[0]!.when).toBe('Custom GM note on The Empty Seat.');
-    expect(repaired.gates.map(g => g.name)).toEqual([STARTER_GATE.name]);
-    expect(repaired.hunters.map(h => h.name)).toEqual([
-      'Dolan Kestrel',
-      'Nadia Cho',
-      'Bram Halstead',
-      'Kira Sol',
-      STARTER_UNSPENT_HUNTER,
-    ]);
-    expect(starterCampaign(repaired, stamp, RULES, { includePregens: true })).toEqual({ ok: false, why: 'already' });
-  });
-
-  test('does not delete or neutralize an existing hunter when the starter story already exists', () => {
-    const base = install();
-    const template = starterStory(RULES);
-    const withStoryOnly: Save = {
-      ...base,
-      library: { ...base.library, stories: [{ ...template, id: saveId('st', 99) }] },
-    };
-    const after = ok(starterCampaign(withStoryOnly, stamp, RULES, { includePregens: false }));
-    expect(after.hunters.map(h => h.id)).toEqual(base.hunters.map(h => h.id));
-    expect(after.gates.map(g => g.name)).toEqual([STARTER_GATE.name]);
-    expect(after.library.stories).toHaveLength(1);
-  });
-
-  test('exports plain wording tables for reload dialog and refusals', () => {
-    expect(STARTER_WORDS.button).toBe('Load starter campaign');
-    expect(STARTER_WORDS.pregensLabel).toBe('Include 4 sample hunters');
-    expect(STARTER_REFUSAL_WORDS.already).toContain(STARTER_STORY_NAME);
-    expect(STARTER_REFUSAL_WORDS.full).toContain('Workshop');
   });
 });

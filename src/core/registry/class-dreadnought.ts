@@ -288,6 +288,11 @@ function makeBroadside(o: {
   const base = abilityOf('strike', {
     id: ID_BROADSIDE,
     name: o.name,
+    desc: o.cleaveRadius
+      ? `Cleave foes within ${o.cleaveRadius} tiles for defense- and Wrath-scaled physical damage and fill 20% stagger.`
+      : o.extraOps?.length
+        ? 'Strike a melee foe for defense- and Wrath-scaled physical damage, fill 20% stagger, and apply Breached Hull for 2 rounds.'
+        : 'Strike a melee foe for defense- and Wrath-scaled physical damage and fill 20% stagger.',
     aim: 'foe',
     range: tiles(1),
     shape: o.cleaveRadius
@@ -322,6 +327,9 @@ function makeBulkhead(o: {
   const base = abilityOf('support', {
     id: ID_BULKHEAD,
     name: o.name,
+    desc: o.rush
+      ? `Quickly shield yourself and gain ${o.wardDef.label} and Bulkhead Rush for 1 round.`
+      : `Quickly shield yourself and gain ${o.wardDef.label} for 1 round.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -355,6 +363,9 @@ function makeShockwave(o: {
   const base = abilityOf('blast', {
     id: ID_SHOCKWAVE,
     name: o.name,
+    desc: o.shove
+      ? `Blast foes in a ${o.radius}-tile area within 2 tiles for defense-scaled damage, fill ${Math.round(o.staggerShare * 100)}% stagger, shove them 1 tile back, and apply ${o.statusDef.label} for ${o.statusRounds} ${o.statusRounds === 1 ? 'round' : 'rounds'}.`
+      : `Blast foes in a ${o.radius}-tile area within 2 tiles for defense-scaled damage, fill ${Math.round(o.staggerShare * 100)}% stagger, and apply ${o.statusDef.label} for ${o.statusRounds} ${o.statusRounds === 1 ? 'round' : 'rounds'}.`,
     aim: 'place',
     range: tiles(2),
     shape: { kind: 'radius', radius: tiles(o.radius), ring: null },
@@ -379,6 +390,7 @@ function makeAllOut(o: {
   const base = abilityOf('support', {
     id: ID_ALL_OUT,
     name: o.name,
+    desc: `Require at least 5 Wrath and spend all Wrath to shield yourself, drop Sealed Hull, and enter ${o.driveDef.label} for 3 rounds.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

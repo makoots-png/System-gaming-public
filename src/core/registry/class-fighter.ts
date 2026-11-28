@@ -124,6 +124,7 @@ const UNBROKEN_GRIT: ClassWorn = makeGrit({
 
 function makeIronCleave(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly cooldownRounds: number;
   readonly extraOps?: readonly UseOp[];
@@ -131,6 +132,7 @@ function makeIronCleave(o: {
   const base = abilityOf('strike', {
     id: ID_CLEAVE,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -150,12 +152,14 @@ function makeIronCleave(o: {
 
 const BASE_CLEAVE = makeIronCleave({
   name: 'Iron Cleave',
+  desc: 'Physical strike that applies Sundered Guard for 2 rounds, reducing target armor by 8.',
   formula: '1d10 + 1.0 * phys',
   cooldownRounds: 2,
 });
 
 const UP_CLEAVE = makeIronCleave({
   name: 'Iron Cleave: Heavy Cleave',
+  desc: 'Physical strike that applies Sundered Guard for 2 rounds (armor -8) and fills 15% of an elite or boss stagger bar.',
   formula: '2d6 + 1.15 * phys',
   cooldownRounds: 2,
   extraOps: [{ op: 'stagger', share: 0.15 }],

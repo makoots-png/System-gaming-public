@@ -184,6 +184,7 @@ const HIGH_VOTIVE: ClassWorn = makeDevotedLight({
 
 function makeVotiveWard(o: {
   readonly name: string;
+  readonly desc: string;
   readonly shieldFormula: string;
   readonly wardKey: StatusKey;
   readonly wardDef: StatusDef;
@@ -192,6 +193,7 @@ function makeVotiveWard(o: {
   const base = abilityOf('support', {
     id: ID_WARD,
     name: o.name,
+    desc: o.desc,
     aim: 'ally',
     range: tiles(6),
     shape: { kind: 'touch', reach: tiles(6) },
@@ -215,6 +217,7 @@ function makeAegisPrayer(): Ability {
   const base = abilityOf('support', {
     id: ID_WARD,
     name: 'Votive Ward: Aegis Prayer',
+    desc: 'Shield yourself and allies within 2 tiles and grant Consecrated for 1 round.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -231,6 +234,7 @@ function makeAegisPrayer(): Ability {
 
 function makeRadiantCensure(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly debuffKey: StatusKey;
   readonly debuffDef: StatusDef;
@@ -239,6 +243,7 @@ function makeRadiantCensure(o: {
   const base = abilityOf('curse', {
     id: ID_CENSURE,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(7),
     shape: { kind: 'touch', reach: tiles(7) },
@@ -258,6 +263,7 @@ function makeRadiantCensure(o: {
 
 const BASE_WARD = makeVotiveWard({
   name: 'Votive Ward',
+  desc: 'Shield an ally within 6 tiles and grant Consecrated for 1 round.',
   shieldFormula: '1d8 + 1.0 * sup',
   wardKey: KEY_CONSECRATED,
   wardDef: CONSECRATED,
@@ -267,6 +273,7 @@ const UP_WARD_AEGIS = makeAegisPrayer();
 
 const UP_WARD_SANCTUARY = makeVotiveWard({
   name: 'Votive Ward: Sanctuary Vow',
+  desc: 'Shield an ally within 6 tiles, grant Consecrated Vow for 1 round, and cleanse one harmful status.',
   shieldFormula: '1d10 + 1.15 * sup',
   wardKey: KEY_CONSECRATED_UP,
   wardDef: CONSECRATED_UP,
@@ -275,6 +282,7 @@ const UP_WARD_SANCTUARY = makeVotiveWard({
 
 const BASE_CENSURE = makeRadiantCensure({
   name: 'Radiant Censure',
+  desc: 'Deal arcane damage to a foe within 7 tiles and apply Humbled for 2 rounds.',
   formula: '1d8 + 0.7 * sup + 0.3 * mag',
   debuffKey: KEY_HUMBLED,
   debuffDef: HUMBLED,
@@ -282,6 +290,7 @@ const BASE_CENSURE = makeRadiantCensure({
 
 const UP_CENSURE_BLIND = makeRadiantCensure({
   name: 'Radiant Censure: Blinding Light',
+  desc: 'Deal arcane damage to a foe within 7 tiles, apply Blinded Censure for 2 rounds, and fill 25% of their stagger bar.',
   formula: '1d10 + 0.8 * sup + 0.35 * mag',
   debuffKey: KEY_HUMBLED_UP,
   debuffDef: HUMBLED_UP,
@@ -290,6 +299,7 @@ const UP_CENSURE_BLIND = makeRadiantCensure({
 
 const UP_CENSURE_SEAR = makeRadiantCensure({
   name: 'Radiant Censure: Searing Hymn',
+  desc: 'Deal arcane damage to a foe within 7 tiles and apply Searing Censure for 2 rounds.',
   formula: '1d8 + 0.75 * sup + 0.35 * mag',
   debuffKey: KEY_SEARING,
   debuffDef: SEARING_CENSURE,

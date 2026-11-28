@@ -17,13 +17,17 @@ export function register(app) {
 
   ui.css('detail', `
 .dt{flex:1 1 100%;width:100%;margin:2px 0 4px;padding:8px 12px;border:1px solid var(--line-bright);background:rgba(17,42,70,.55);font-size:13px;line-height:1.4;color:var(--ice);text-align:left;overflow-wrap:anywhere}
+.dt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px}
 .dt b{display:block;color:var(--cyan);font-weight:600}
-.dt p{margin:0;color:var(--muted)}
+.dt-head b{margin:0}
+.dt-close{min-height:28px;padding:2px 8px;font-size:12px;flex:0 0 auto}
+.dt p{margin:0 0 4px;color:var(--ice)}
 .dt ul{margin:2px 0 0;padding-left:18px;color:var(--ice)}
 .dt li{margin:2px 0}
 [data-dt-key][aria-expanded=true]{border-color:var(--cyan)}
 .chip .c-n{display:inline-block;min-width:1ch;font-family:var(--font-mono);color:var(--gold)}
 .chip.full .c-n{color:var(--ground);background:var(--gold);padding:0 4px}
+@media (pointer:coarse),(max-width:720px){.dt-close{min-height:44px;min-width:44px;padding:0 12px}}
 `);
 
   /** The open detail of each list, by list name (src/core/detail-open.ts); a list not here is closed. */
@@ -52,7 +56,8 @@ export function register(app) {
     const d = detailOf(t, app.rules());
     const lines = d.lines.length ? `<ul>${d.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
     const about = d.about || (lines ? '' : 'No more detail.');
-    return `<div class="dt" id="${idOf(list, key)}" data-dt-panel="${esc(list)}" role="region" aria-label="${esc(d.title)}">${titled ? `<b>${esc(d.title)}</b>` : ''}${about ? `<p>${esc(about)}</p>` : ''}${lines}</div>`;
+    const head = titled ? `<div class="dt-head"><b>${esc(d.title)}</b><button type="button" class="quiet dt-close" data-dt-close="${esc(list)}" aria-label="${esc(`Close ${d.title}`)}">Close</button></div>` : '';
+    return `<div class="dt" id="${idOf(list, key)}" data-dt-panel="${esc(list)}" role="region" aria-label="${esc(d.title)}">${head}${about ? `<p>${esc(about)}</p>` : ''}${lines}</div>`;
   }
 
   /**
@@ -73,6 +78,11 @@ export function register(app) {
   /** Taps on the controls inside `root` open and close their details; `redraw` draws the view with the open one. */
   function wire(root, redraw) {
     root.addEventListener('click', ev => {
+      const cl = ev.target instanceof Element ? ev.target.closest('[data-dt-close]') : null;
+      if (cl && root.contains(cl) && cl instanceof HTMLElement) {
+        move(cl.dataset.dtClose || '', { kind: 'close' }, redraw);
+        return;
+      }
       const b = ev.target instanceof Element ? ev.target.closest('[data-dt-key]') : null;
       if (!b || !root.contains(b) || !(b instanceof HTMLElement)) return;
       move(b.dataset.dt || '', { kind: 'toggle', key: b.dataset.dtKey || '' }, redraw);

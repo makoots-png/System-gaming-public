@@ -114,6 +114,7 @@ const SHADOW_REPRISAL: ClassWorn = makeFootwork({
 
 function makeViperFang(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly cooldownRounds: number;
   readonly venomKey: StatusKey;
@@ -122,6 +123,7 @@ function makeViperFang(o: {
   const base = abilityOf('strike', {
     id: ID_FANG,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -138,6 +140,7 @@ function makeViperFang(o: {
 
 const BASE_FANG = makeViperFang({
   name: 'Viper Fang',
+  desc: 'Quick finesse strike that applies Viper Venom for 2 rounds, exposing 1 more crit face.',
   formula: '1d6 + 0.65 * finesse',
   cooldownRounds: 2,
   venomKey: KEY_VENOM,
@@ -146,6 +149,7 @@ const BASE_FANG = makeViperFang({
 
 const UP_FANG = makeViperFang({
   name: 'Viper Fang: Fatal Fang',
+  desc: 'Quick finesse strike that applies Viper Venom II for 2 rounds, exposing 1 more crit face and dealing physical venom damage each round.',
   formula: '1d8 + 0.85 * finesse',
   cooldownRounds: 1,
   venomKey: KEY_VENOM_UP,

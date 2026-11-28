@@ -157,6 +157,7 @@ const LIVING_FURNACE: ClassWorn = makeCinderWake({
 
 function makeMagmaFloor(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly durationRounds: number;
   readonly zoneTick: Tiers<Formula>;
@@ -171,6 +172,7 @@ function makeMagmaFloor(o: {
   const base = abilityOf('blast', {
     id: ID_MAGMA,
     name: o.name,
+    desc: o.desc,
     aim: 'place',
     range: tiles(9),
     shape: { kind: 'radius', radius: tiles(2), ring: null },
@@ -215,6 +217,7 @@ const UP_EMBER_MARK: StatusDef = {
 
 function makeIgnitionLance(o: {
   readonly name: string;
+  readonly desc: string;
   readonly markKey: StatusKey;
   readonly markDef: StatusDef;
   readonly formula: string;
@@ -224,6 +227,7 @@ function makeIgnitionLance(o: {
   const base = abilityOf('curse', {
     id: ID_LANCE,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(8),
     delivery: { kind: 'direct' },
@@ -243,6 +247,7 @@ function makeIgnitionLance(o: {
 // Heavy-pace blast (below 1.50 SA budget at rank C to pay for the 3-round tiered lava carpet zone).
 const BASE_MAGMA = makeMagmaFloor({
   name: 'Magma Floor',
+  desc: 'Blast a 2-tile area within 9 tiles for arcane damage and leave a burning zone for 3 rounds.',
   formula: '2d8 + 0.9 * mag',
   durationRounds: 3,
   zoneTick: tiered('1d6', '1d8', '2d6', '3d6', '3d8', '4d10'),
@@ -253,6 +258,7 @@ const BASE_MAGMA = makeMagmaFloor({
 // D5 Fork A-Left (area denial): magma zone expands from radius 2 to radius 3 over 3 rounds, burns harder, and slows foes 15%.
 const UP_MAGMA_BASIN = makeMagmaFloor({
   name: 'Magma Floor: Molten Basin',
+  desc: 'Blast a 2-tile area within 9 tiles for arcane damage and leave a burning zone for 3 rounds that grows up to 3 tiles and slows foes by 15%.',
   formula: '2d10 + mag',
   durationRounds: 3,
   zoneTick: tiered('1d8', '2d6', '2d8', '3d8', '4d8', '5d10'),
@@ -263,6 +269,7 @@ const UP_MAGMA_BASIN = makeMagmaFloor({
 // D5 Fork A-Right (zone-end detonation): 2-round magma pit whose `zone.end` detonates foes left inside off Pyromancer's `mag`.
 const UP_MAGMA_PIT = makeMagmaFloor({
   name: 'Magma Floor: Cinder Pit',
+  desc: 'Blast a 2-tile area within 9 tiles for arcane damage and leave a 2-round burning zone that detonates when it ends.',
   formula: '2d8 + 0.95 * mag',
   durationRounds: 2,
   zoneTick: tiered('1d6', '1d8', '2d6', '3d6', '3d8', '4d10'),
@@ -274,6 +281,7 @@ const UP_MAGMA_PIT = makeMagmaFloor({
 // Standard-pace curse priced inside C-rank standard SA budget across upfront hit + 2-round burn + mag-scaling detonation.
 const BASE_LANCE = makeIgnitionLance({
   name: 'Ignition Lance',
+  desc: 'Deal arcane damage to a foe within 8 tiles and apply Ember Mark for 2 rounds.',
   markKey: KEY_EMBER,
   markDef: BASE_EMBER_MARK,
   formula: '1d8 + 0.58 * mag',
@@ -283,6 +291,7 @@ const BASE_LANCE = makeIgnitionLance({
 // D5 Fork B-Left (sustained detonation): 1-round cooldown, higher blast damage, and curing detonates Ember Mark II early.
 const UP_LANCE_FLASH = makeIgnitionLance({
   name: 'Ignition Lance: Flash Detonation',
+  desc: 'Deal arcane damage to a foe within 8 tiles and apply Ember Mark II for 2 rounds.',
   markKey: KEY_EMBER_UP,
   markDef: UP_EMBER_MARK,
   formula: '1d10 + 0.65 * mag',
@@ -294,6 +303,7 @@ const UP_LANCE_FLASH = makeIgnitionLance({
 // stays ahead on sustained single-target; post-capstone (`upgrade-status` -> Cinder II) it leads clustered AoE burst.
 const UP_LANCE_KINDLE = makeIgnitionLance({
   name: 'Ignition Lance: Kindle Burst',
+  desc: 'Deal arcane damage to a foe within 8 tiles, apply Ember Mark for 2 rounds, and add 2 stacks of Cinder.',
   markKey: KEY_EMBER,
   markDef: BASE_EMBER_MARK,
   formula: '1d8 + 0.58 * mag',

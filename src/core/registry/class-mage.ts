@@ -104,6 +104,7 @@ const MASTER_SPELLFLOW: ClassWorn = makeSpellflow({
 
 function makeArcaneNova(o: {
   readonly name: string;
+  readonly desc: string;
   readonly radiusTiles: number;
   readonly formula: string;
   readonly wardKey: StatusKey;
@@ -113,6 +114,7 @@ function makeArcaneNova(o: {
   const base = abilityOf('blast', {
     id: ID_NOVA,
     name: o.name,
+    desc: o.desc,
     aim: 'place',
     range: tiles(0),
     shape: { kind: 'radius', radius: tiles(o.radiusTiles), ring: null },
@@ -132,6 +134,7 @@ function makeArcaneNova(o: {
 
 const BASE_NOVA = makeArcaneNova({
   name: 'Arcane Nova',
+  desc: 'Blast foes within 2 tiles around you with arcane damage and apply Shattered Ward for 2 rounds (resist -10).',
   radiusTiles: 2,
   formula: '1d10 + 0.85 * mag',
   wardKey: KEY_SHATTER,
@@ -140,6 +143,7 @@ const BASE_NOVA = makeArcaneNova({
 
 const UP_NOVA = makeArcaneNova({
   name: 'Arcane Nova: Starburst',
+  desc: 'Blast foes within 3 tiles around you with arcane damage, apply Shattered Ward II for 2 rounds (resist -18), and push them 1 tile away.',
   radiusTiles: 3,
   formula: '2d6 + 1.0 * mag',
   wardKey: KEY_SHATTER_UP,

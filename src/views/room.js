@@ -8,8 +8,6 @@ import { PRIMER_WORDS, ROOM_IS, ROOM_PATH } from '../core/first-run.ts';
 import { primerRuleSet } from '../core/rules.ts';
 import { LOBBY_START, checkAnswer, checkAsking, lobbyStep, seatBusy } from '../core/sync/lobby.ts';
 import { rosterSignature, rosterStatus } from '../core/sync/connection.ts';
-import { STARTER_WORDS } from '../core/starter.ts';
-import { loadStarterCampaign } from './starter.js';
 /** Whether `v` is a room code (src/core/ids.ts `parseRoomCode`). */
 const isCode = v => parseRoomCode(v) !== null;
 const STYLE = `
@@ -118,10 +116,6 @@ export function register(app) {
     <section class="win" data-s="create"><span class="cb"></span><h2>Create a room</h2>
       <p class="rm-sub" data-path="gm">${esc(ROOM_PATH.gm)}</p><p class="rm-sub" data-gmonly>Only the GM creates a room. Creating one sets this device as the GM.</p>
       <button type="button" class="primary rm-wide" data-create>Create room</button><div class="sys-err" role="alert" data-cerr></div>
-    </section>
-    <section class="win" data-s="starter" hidden><span class="cb"></span><h2>${esc(STARTER_WORDS.lobbyTitle)}</h2>
-      <p class="rm-sub">${esc(STARTER_WORDS.lobbyHint)}</p>
-      <button type="button" class="rm-wide" data-roomstarter>${esc(STARTER_WORDS.button)}</button>
     </section>
     <section class="win" data-s="rooms" hidden><span class="cb"></span><h2>Your rooms</h2><div data-roomshost="l"></div></section>
     <details class="win" data-s="key"><summary>Rejoin as GM with a key</summary>
@@ -268,7 +262,6 @@ export function register(app) {
       q.cerr.textContent = ''; if (busy()) return; lobbyDo({ type: 'joinTapped' });
       try { await Y().create(); } catch (e) { q.cerr.textContent = said(e, ''); }
     });
-    q.roomstarter.addEventListener('click', () => { void loadStarterCampaign(app); });
     q.rcode.addEventListener('input', e => { if (!e.isComposing) upper(e.target, e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); });
     q.rejoingm.addEventListener('click', async () => {
       if (busy()) return; q.kerr.textContent = ''; const code = q.rcode.value.trim().toUpperCase(), key = q.rkey.value.trim();
@@ -382,10 +375,9 @@ export function register(app) {
   }
 
   function lobby(c, gm, toward) {
-    const A = Y(), nodes = { last: q.lobby.querySelector('[data-s=last]'), join: q.lobby.querySelector('[data-s=join]'), create: q.lobby.querySelector('[data-s=create]'), starter: q.lobby.querySelector('[data-s=starter]'), rooms: q.lobby.querySelector('[data-s=rooms]'), key: q.lobby.querySelector('[data-s=key]') };
-    const order = gm ? ['last', 'create', 'starter', 'rooms', 'join', 'key'] : ['last', 'join', 'create', 'key'], sig = order.join();
+    const A = Y(), nodes = { last: q.lobby.querySelector('[data-s=last]'), join: q.lobby.querySelector('[data-s=join]'), create: q.lobby.querySelector('[data-s=create]'), rooms: q.lobby.querySelector('[data-s=rooms]'), key: q.lobby.querySelector('[data-s=key]') };
+    const order = gm ? ['last', 'create', 'rooms', 'join', 'key'] : ['last', 'join', 'create', 'key'], sig = order.join();
     if (q.lobby.dataset.o !== sig) { q.lobby.dataset.o = sig; q.lobby.append(...order.map(k => nodes[k])); }
-    nodes.starter.hidden = !gm;
     // last room
     const l = A.lastRoom(); nodes.last.hidden = !l; q.lastok.hidden = !l || l.gone; q.lastgone.hidden = !l || !l.gone;
     if (l) { set(q.lastcode, l.code); set(q.rejoinlast, `Rejoin ${l.code}${l.gm ? ' as GM' : ''}`); set(q.gonetext, `Room ${l.code} no longer exists.`); }

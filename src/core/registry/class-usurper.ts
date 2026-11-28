@@ -212,6 +212,7 @@ function makeCoup(o: {
   const base = abilityOf('strike', {
     id: ID_COUP,
     name: o.name,
+    desc: `Blink up to ${o.rangeTiles} tiles, blasting foes in a 1-tile radius for arcane damage and applying ${o.statusDef.label} for 2 rounds.`,
     aim: 'place',
     range: tiles(o.rangeTiles),
     shape: { kind: 'radius', radius: tiles(1), ring: null },
@@ -237,6 +238,7 @@ function makeHijack(o: {
   const base = abilityOf('curse', {
     id: ID_HIJACK,
     name: o.name,
+    desc: 'Deal arcane damage to a foe within 7 tiles, fill 10% stagger, and steal a move from them with amplified power.',
     aim: 'foe',
     range: tiles(7),
     shape: { kind: 'touch', reach: tiles(7) },
@@ -270,6 +272,11 @@ function makeSiphonMandate(o: {
   const base = abilityOf('curse', {
     id: ID_SIPHON,
     name: o.name,
+    desc: o.breakChannel
+      ? `Quick arcane strike within 7 tiles that strips one helpful status, breaks channeling, fills ${Math.round(o.staggerShare * 100)}% stagger, and applies Broken Crown for 2 rounds.`
+      : o.dispelWhich === 'all'
+        ? `Quick arcane strike within 7 tiles that strips all helpful statuses, fills ${Math.round(o.staggerShare * 100)}% stagger, and applies Broken Crown for 2 rounds.`
+        : `Quick arcane strike within 7 tiles that strips one helpful status, fills ${Math.round(o.staggerShare * 100)}% stagger, and applies Broken Crown for 2 rounds.`,
     aim: 'foe',
     range: tiles(7),
     shape: { kind: 'touch', reach: tiles(7) },
@@ -301,6 +308,9 @@ function makeStolenVigor(o: {
   const base = abilityOf('support', {
     id: ID_VIGOR,
     name: o.name,
+    desc: o.invulnerable
+      ? 'Quickly heal and shield yourself, cleanse one harmful status, and gain Usurper Ward and False Throne for 1 round.'
+      : 'Quickly heal and shield yourself, cleanse one harmful status, and gain Usurper Ward for 1 round.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

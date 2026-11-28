@@ -111,6 +111,7 @@ const UNBROKEN_PHALANX: ClassWorn = makePhalanxOath({
 
 function makePhalanxGuard(o: {
   readonly name: string;
+  readonly desc: string;
   readonly reachTiles: number;
   readonly guardShare: number;
   readonly shieldFormula: string;
@@ -119,6 +120,7 @@ function makePhalanxGuard(o: {
   const base = abilityOf('support', {
     id: ID_GUARD,
     name: o.name,
+    desc: o.desc,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -148,6 +150,7 @@ function makeVanguardSlam(o: {
   const base = abilityOf('strike', {
     id: ID_SLAM,
     name: o.name,
+    desc: `Strike a melee foe, shove them ${o.shoveTiles} ${o.shoveTiles === 1 ? 'tile' : 'tiles'} back, fill ${Math.round(o.staggerShare * 100)}% of their stagger bar, and taunt them for ${o.tauntRounds} ${o.tauntRounds === 1 ? 'round' : 'rounds'}.`,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -168,6 +171,7 @@ function makeVanguardSlam(o: {
 
 const BASE_GUARD = makePhalanxGuard({
   name: 'Phalanx Guard',
+  desc: 'Reaction. Shield yourself and absorb 35% of an incoming hit on you or an ally within 2 tiles.',
   reachTiles: 2,
   guardShare: 0.35,
   shieldFormula: '0.1 * hpmax',
@@ -175,6 +179,7 @@ const BASE_GUARD = makePhalanxGuard({
 
 const UP_GUARD_WALL = makePhalanxGuard({
   name: 'Phalanx Guard: Iron Wall',
+  desc: 'Reaction. Shield yourself and absorb 50% of an incoming hit on you or an ally within 3 tiles.',
   reachTiles: 3,
   guardShare: 0.5,
   shieldFormula: '0.14 * hpmax',
@@ -182,6 +187,7 @@ const UP_GUARD_WALL = makePhalanxGuard({
 
 const UP_GUARD_WARDED = makePhalanxGuard({
   name: 'Phalanx Guard: Warded Phalanx',
+  desc: 'Reaction. Shield yourself, absorb 35% of an incoming hit within 2 tiles, and gain Phalanx Ward for 1 round.',
   reachTiles: 2,
   guardShare: 0.35,
   shieldFormula: '0.12 * hpmax',

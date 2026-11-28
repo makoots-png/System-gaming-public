@@ -166,6 +166,7 @@ function makeTransfusion(o: { readonly name: string; readonly formula: string; r
   const base = abilityOf('curse', {
     id: ID_TRANSFUSION,
     name: o.name,
+    desc: 'Siphon a foe within 5 tiles for arcane damage that scales with lifesteal and Crimson Frenzy stacks.',
     range: tiles(5),
     effect: { type: 'arcane', by: 'hand', formula: f(o.formula) },
   }, R);
@@ -213,6 +214,7 @@ function makeSanguinePool(o: {
   const base = abilityOf('support', {
     id: ID_POOL,
     name: o.name,
+    desc: `Spend ${Math.round(o.hpShare * 100)}% of your max HP to sink into a 2-tile blood pool for 1 round, becoming untargetable, gaining ${o.speedPct}% speed, and slowing and damaging nearby foes.`,
     aim: 'self',
     shape: { kind: 'self' },
     range: tiles(0),
@@ -249,6 +251,9 @@ function makeTidesOfBlood(o: {
   const base = abilityOf('blast', {
     id: ID_TIDES,
     name: o.name,
+    desc: o.channel
+      ? `Spend ${Math.round(o.hpShare * 100)}% of your max HP for a channeled blast (up to ${o.channel.max} charges) within 3 tiles that deals arcane damage and slows foes for 1 round.`
+      : `Spend ${Math.round(o.hpShare * 100)}% of your max HP for an instant 3-tile blast that deals arcane damage and slows foes for 1 round.`,
     aim: 'place',
     range: tiles(0),
     shape: { kind: 'radius', radius: tiles(3), ring: null },
@@ -287,6 +292,7 @@ function makeHemoplague(o: {
   const base = abilityOf('curse', {
     id: ID_PLAGUE,
     name: o.name,
+    desc: `Spend ${Math.round(o.hpShare * 100)}% of your max HP to infect foes in a 3-tile area within 6 tiles for 2 rounds, increasing damage they take by ${o.takenPct}% before detonating and healing you.`,
     aim: 'place',
     range: tiles(6),
     shape: { kind: 'radius', radius: tiles(3), ring: null },

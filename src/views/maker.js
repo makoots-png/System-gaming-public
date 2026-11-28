@@ -1005,7 +1005,9 @@ function buildAbility(app, box, o) {
     value(id, name) {
       if (ff.blocked() || (on('zone') && zfx.blocked()) || zendErr() || ztrigErr() || kitA.blocked()) return null;
       const z = zoneOf();
-      return { id, name, kind, ...read(), aim: a.aim, foesOnly: a.foesOnly, effect: ff.effect(), ops: [], ...(z ? { zone: z } : {}), ...kitA.fields() };
+      // a description the ability already has is kept (the form has no field for it), so a Workshop Save of an unchanged copy does not drop it
+      const desc = typeof a.desc === 'string' ? a.desc.trim() : '';
+      return { id, name, kind, ...read(), aim: a.aim, foesOnly: a.foesOnly, effect: ff.effect(), ops: [], ...(z ? { zone: z } : {}), ...kitA.fields(), ...(desc ? { desc } : {}) };
     },
     blocked: () => ff.blocked() || (on('zone') && zfx.blocked()) || !!zendErr() || !!ztrigErr() || kitA.blocked(),
     typed: () => ff.typed(),

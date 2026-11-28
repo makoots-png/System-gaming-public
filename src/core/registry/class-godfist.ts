@@ -223,6 +223,7 @@ function makeKnuckleRush(o: {
     ? abilityOf('strike', {
       id: ID_KNUCKLE,
       name: o.name,
+      desc: 'Quick strike hitting foes within 2 tiles for physical damage and filling 5% stagger.',
       aim: 'place',
       range: tiles(0),
       shape: { kind: 'radius', radius: tiles(2), ring: null },
@@ -234,6 +235,9 @@ function makeKnuckleRush(o: {
     : abilityOf('strike', {
       id: ID_KNUCKLE,
       name: o.name,
+      desc: o.expose
+        ? 'Quick melee punch for physical damage that fills 5% stagger and applies Flurry Exposed for 1 round.'
+        : 'Quick melee punch for physical damage that fills 5% stagger.',
       aim: 'foe',
       range: tiles(1),
       shape: { kind: 'touch', reach: tiles(1) },
@@ -264,6 +268,9 @@ function makeHeavenlySuplex(o: {
   const base = abilityOf('strike', {
     id: ID_SUPLEX,
     name: o.name,
+    desc: o.pinHold
+      ? `Swap places with a melee foe, slam them for target-HP-scaled damage, shove them ${o.shoveTiles} tiles back, fill ${Math.round(o.staggerShare * 100)}% stagger, apply Crushed Stance for 2 rounds, and hold them for 1 round.`
+      : `Swap places with a melee foe, slam them for target-HP-scaled damage, shove them ${o.shoveTiles} tiles back, fill ${Math.round(o.staggerShare * 100)}% stagger, and apply Crushed Stance for 2 rounds.`,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -294,6 +301,9 @@ function makeQiGuard(o: {
   const base = abilityOf('support', {
     id: ID_QI_GUARD,
     name: o.name,
+    desc: o.counterStance
+      ? `Reaction. Shield yourself, absorb ${Math.round(o.guardShare * 100)}% of an incoming hit, and gain Chi Brace and Counter Palm for 1 round.`
+      : `Reaction. Shield yourself, absorb ${Math.round(o.guardShare * 100)}% of an incoming hit, and gain Chi Brace for 1 round.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -323,6 +333,9 @@ function makeWorldsplitter(o: {
   const base = abilityOf('strike', {
     id: ID_WORLDSPLITTER,
     name: o.name,
+    desc: o.expose
+      ? 'Heavy melee blow that scales with Grit stacks, fills 15% stagger, shoves 2 tiles back, and applies Shattered Guard for 2 rounds.'
+      : 'Heavy melee blow that scales with Grit stacks, fills 15% stagger, and shoves the target 2 tiles back.',
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },

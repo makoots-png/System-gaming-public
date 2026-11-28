@@ -219,6 +219,9 @@ function makeReap(o: {
   const base = abilityOf('strike', {
     id: ID_REAP,
     name: o.name,
+    desc: o.markStacks > 1
+      ? `Strike a melee foe for physical damage and apply ${o.markStacks} stacks of Reaper's Mark for 3 rounds.`
+      : `Strike a melee foe for physical damage and apply Reaper's Mark for 3 rounds.`,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -251,6 +254,9 @@ function makeScytheSweep(o: {
   const base = abilityOf('blast', {
     id: ID_SWEEP,
     name: o.name,
+    desc: o.extraOps?.length
+      ? `Sweep foes within ${o.radiusTiles} tiles for physical damage, apply Reaper's Mark for 3 rounds, and fill 20% stagger.`
+      : `Sweep foes within ${o.radiusTiles} tiles for physical damage and apply Reaper's Mark for 3 rounds.`,
     aim: 'place',
     range: tiles(0),
     shape: { kind: 'radius', radius: tiles(o.radiusTiles), ring: null },
@@ -270,6 +276,7 @@ function makeScytheSweep(o: {
 
 function makeShadowstep(o: {
   readonly name: string;
+  readonly desc: string;
   readonly rangeTiles: number;
   readonly cooldownRounds: number;
   readonly strideKey: StatusKey;
@@ -279,6 +286,7 @@ function makeShadowstep(o: {
   const base = abilityOf('support', {
     id: ID_STEP,
     name: o.name,
+    desc: o.desc,
     aim: 'place',
     shape: { kind: 'self' },
     range: tiles(o.rangeTiles),
@@ -306,6 +314,7 @@ function makeGuillotine(o: {
   const base = abilityOf('strike', {
     id: ID_GUILLOTINE,
     name: o.name,
+    desc: "Melee finisher that requires and consumes all Reaper's Mark stacks on the target to deal true damage that scales with missing HP.",
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -351,6 +360,7 @@ const UP_SWEEP = makeScytheSweep({
 
 const BASE_STEP = makeShadowstep({
   name: 'Shadowstep',
+  desc: 'Blink up to 5 tiles and gain Phantom Stride for 1 round.',
   rangeTiles: 5,
   cooldownRounds: 3,
   strideKey: KEY_PHANTOM,
@@ -359,6 +369,7 @@ const BASE_STEP = makeShadowstep({
 
 const UP_STEP_SHROUD = makeShadowstep({
   name: 'Shadowstep: Death Shroud',
+  desc: 'Blink up to 6 tiles and gain Phantom Stride II and Death Shroud for 1 round.',
   rangeTiles: 6,
   cooldownRounds: 2,
   strideKey: KEY_PHANTOM_SHROUD,
@@ -367,6 +378,7 @@ const UP_STEP_SHROUD = makeShadowstep({
 
 const UP_STEP_VEIL = makeShadowstep({
   name: 'Shadowstep: Phantom Veil',
+  desc: 'Blink up to 6 tiles and gain Phantom Stride II and Phantom Veil for 1 round.',
   rangeTiles: 6,
   cooldownRounds: 2,
   strideKey: KEY_PHANTOM_VEIL,

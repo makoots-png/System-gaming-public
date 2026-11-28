@@ -120,6 +120,7 @@ function makeMendingPulse(o: {
   const base = abilityOf('support', {
     id: ID_PULSE,
     name: o.name,
+    desc: `Heal yourself and allies within ${o.radius} tiles and remove ${o.dispel === 'all' ? 'all harmful statuses' : 'the oldest harmful status'} from each.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

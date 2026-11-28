@@ -145,6 +145,7 @@ const MASTER_OF_DUSK: ClassWorn = makeShadowCraft({
 
 function makeUmbralCloak(o: {
   readonly name: string;
+  readonly desc: string;
   readonly shroudKey: StatusKey;
   readonly shroudDef: StatusDef;
   readonly cooldownRounds: number;
@@ -153,6 +154,7 @@ function makeUmbralCloak(o: {
   const base = abilityOf('support', {
     id: ID_CLOAK,
     name: o.name,
+    desc: o.desc,
     aim: 'self',
     shape: { kind: 'self' },
     range: tiles(0),
@@ -179,6 +181,7 @@ function makeUmbralCloak(o: {
 
 function makeDuskStrike(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly pace?: 'standard' | 'heavy';
   readonly extraOps?: readonly UseOp[];
@@ -186,6 +189,7 @@ function makeDuskStrike(o: {
   const base = abilityOf('strike', {
     id: ID_STRIKE,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -205,6 +209,7 @@ function makeDuskStrike(o: {
 
 const BASE_CLOAK = makeUmbralCloak({
   name: 'Umbral Cloak',
+  desc: 'Hide in shadow with Shrouded for 2 rounds.',
   shroudKey: KEY_SHROUDED,
   shroudDef: SHROUDED,
   cooldownRounds: 3,
@@ -212,6 +217,7 @@ const BASE_CLOAK = makeUmbralCloak({
 
 const UP_CLOAK_GHOST = makeUmbralCloak({
   name: 'Umbral Cloak: Ghost Cloak',
+  desc: 'Hide in shadow with Ghost Shroud for 2 rounds.',
   shroudKey: KEY_GHOST_SHROUD,
   shroudDef: GHOST_SHROUD,
   cooldownRounds: 2,
@@ -219,6 +225,7 @@ const UP_CLOAK_GHOST = makeUmbralCloak({
 
 const UP_CLOAK_SMOKE = makeUmbralCloak({
   name: 'Umbral Cloak: Smoke Veil',
+  desc: 'Hide in shadow with Shrouded for 2 rounds and surround yourself with a 2-tile Smoke Veil that slows foes by 25% for 1 round.',
   shroudKey: KEY_SHROUDED,
   shroudDef: SHROUDED,
   cooldownRounds: 3,
@@ -227,11 +234,13 @@ const UP_CLOAK_SMOKE = makeUmbralCloak({
 
 const BASE_STRIKE = makeDuskStrike({
   name: 'Dusk Strike',
+  desc: 'Strike a melee foe for physical damage and inflict Dusk Bleed for 2 rounds.',
   formula: '1d6 + 0.65 * finesse',
 });
 
 const UP_STRIKE_THROAT = makeDuskStrike({
   name: 'Dusk Strike: Throat Cut',
+  desc: 'Heavy melee strike that inflicts Dusk Bleed for 2 rounds and fills 25% of the target\'s stagger bar.',
   formula: '1d8 + 0.75 * finesse',
   pace: 'heavy',
   extraOps: [{ op: 'stagger', share: 0.25 }],

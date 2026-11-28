@@ -170,6 +170,7 @@ function makeRiftBolt(o: { readonly name: string; readonly formula: string }): A
   const base = abilityOf('shot', {
     id: ID_BOLT,
     name: o.name,
+    desc: 'Fire an instant shot up to 8 tiles for physical damage scaling with Instinct and Accuracy.',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
     delivery: INSTANT_SHOT,
@@ -200,6 +201,7 @@ function makeRiftStep(o: {
   const base = abilityOf('support', {
     id: ID_STEP,
     name: o.name,
+    desc: `Blink up to 5 tiles and gain Phase Edge (${o.speedPct}% speed, ${o.dealtPct}% damage dealt, and attack advantage) for 1 round.`,
     aim: 'place',
     shape: { kind: 'self' },
     range: tiles(5),
@@ -239,6 +241,7 @@ function makeRiftTether(o: {
   const base = abilityOf('shot', {
     id: ID_TETHER,
     name: o.name,
+    desc: `Fire a shot up to 8 tiles that roots the target for 1 round, exposes ${o.exposed} crit ${o.exposed === 1 ? 'face' : 'faces'}, and increases damage taken by ${o.takenPct}%.`,
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
     delivery: INSTANT_SHOT,
@@ -260,6 +263,7 @@ function makeFourthVerdict(o: {
   const base = abilityOf('shot', {
     id: ID_VERDICT,
     name: o.name,
+    desc: `Fire a heavy shot up to 10 tiles that fills ${Math.round(o.staggerShare * 100)}% stagger and applies Rift Rupture for 2 rounds.`,
     range: tiles(10),
     shape: { kind: 'touch', reach: tiles(10) },
     delivery: INSTANT_SHOT,

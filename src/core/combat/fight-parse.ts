@@ -41,7 +41,7 @@ import type {
 import type { FoeLife } from './row-life.ts';
 import { ALONE_EVENTS, BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
-import { FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
+import { ABILITY_DESC_MAX, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES, STATUS_DESC_MAX } from './fight-types.ts';
 import type { DodgeWait, DueTurn, Fight, Fog, ForcedFace, Fudge, HeldUse, LogLine, Summary } from './fight-types.ts';
 import { clampGrievousOps, isGrievousKey } from './grievous.ts';
 import type { Extraction } from './extraction.ts';
@@ -591,7 +591,8 @@ function gapRead(v: unknown): Gap | null {
 }
 function abilityOf(v: unknown, R: Rules): Ability | null {
   if (!isObj(v) || !isObj(v.cost)) return null;
-  const id = idText(v.id), name = text(v.name, NAME_MAX), kind = oneOf(v.kind, KINDS, null), aim = oneOf(v.aim, AIMS, null);
+  const id = idText(v.id), name = text(v.name, NAME_MAX), desc = v.desc === undefined ? undefined : text(v.desc, ABILITY_DESC_MAX);
+  const kind = oneOf(v.kind, KINDS, null), aim = oneOf(v.aim, AIMS, null);
   const fatigue = num(v.cost.fatigue, 0, 1000), mana = num(v.cost.mana, 0, 1000), time = num(v.cost.time, 1, 1000), cooldown = tickOf(v.cost.cooldown);
   const range = tileCount(v.range), shape = shapeOf(v.shape), delivery = deliveryOf(v.delivery), foesOnly = bool(v.foesOnly);
   const ops = all(v.ops, 12, x => useOpOf(x, R));
@@ -617,13 +618,14 @@ function abilityOf(v: unknown, R: Rules): Ability | null {
   const usurp = v.usurp === undefined ? undefined : usurpOf(v.usurp, R);
   const w2 = abilityWave2(v, R), item = v.item === undefined ? undefined : parseSaveId<'i'>(v.item);
   const maxTier = v.maxTier === undefined ? undefined : whole(v.maxTier, 0, RANKS.length - 1);
-  if (!id || name === null || !kind || !aim || fatigue === null || mana === null || time === null || cooldown === null || range === null
+  if (!id || name === null || desc === null || !kind || !aim || fatigue === null || mana === null || time === null || cooldown === null || range === null
     || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || raise === null || usurp === null || !w2 || item === null || maxTier === null) return null;
   if (w2.react && !ops.every(reactionMayHold)) return null;
   if (w2.react && usurp) return null;
   if (w2.move && channel) return null;
+  const trimmedDesc = desc?.trim();
   return {
-    id: abilityId(id), name, kind, cost: { fatigue, mana, time: cost(time), cooldown }, aim, range, shape, delivery, foesOnly, effect, ops,
+    id: abilityId(id), name, ...(trimmedDesc ? { desc: trimmedDesc } : {}), kind, cost: { fatigue, mana, time: cost(time), cooldown }, aim, range, shape, delivery, foesOnly, effect, ops,
     channel, ...(zone ? { zone } : {}), ...(tags ? { tags } : {}), ...(prices ? { prices } : {}), ...(gates ? { gates } : {}),
     ...(summon ? { summon } : {}), ...(raise ? { raise } : {}), ...(usurp ? { usurp } : {}), ...w2, ...(item ? { item } : {}), ...(maxTier === undefined ? {} : { maxTier }),
   };

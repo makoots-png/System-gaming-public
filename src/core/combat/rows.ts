@@ -59,7 +59,7 @@ export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities' | 'shadow
 export type StatusDefs = Readonly<Partial<Record<string, StatusDef>>>;
 
 /** A skill as a row reads it: an active one may have a fight ability (Arise has none in M2), a passive one a bonus. */
-export type RowSkill = { readonly type: 'active'; readonly ability: Ability | null } | { readonly type: 'passive'; readonly bonus: Bonus; readonly worn?: StatusDef };
+export type RowSkill = { readonly type: 'active'; readonly ability: Ability | null; readonly desc?: string } | { readonly type: 'passive'; readonly bonus: Bonus; readonly worn?: StatusDef };
 /**
  * An item as a row reads it, resolved from its bag line (inventory.ts `bagOf`): a worn weapon is one with `attack` and
  * `dice`; a consumable in the bag that goes to another (`target: 'other'`) is an ability the hunter takes into the
@@ -190,7 +190,7 @@ export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
     // a bag item is spent by its id, so one whose id does not read as an item's (a player's sheet keeps ids as sent) is no use in a fight
     const id = parseSaveId<'i'>(i.id);
     const a = id !== null && i.type === 'consumable' && (i.qty ?? 0) > 0
-      ? itemAbility({ id, name: i.name, rar: i.rar ?? 'common', target: i.target === 'other' ? 'other' : 'self', effects: i.effects ?? [], ...(i.rankCap ? { rankCap: true as const } : {}) }, R)
+      ? itemAbility({ id, name: i.name, ...(i.desc ? { desc: i.desc } : {}), rar: i.rar ?? 'common', target: i.target === 'other' ? 'other' : 'self', effects: i.effects ?? [], ...(i.rankCap ? { rankCap: true as const } : {}) }, R)
       : null;
     return a ? [a] : [];
   });
@@ -205,7 +205,12 @@ export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
     return { ...own, id: wornAbilityId(a.id) };
   });
   const scalers = cp?.scalers ?? [];
-  const core = [weaponAttack(weapon, R), ...classActives, ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held];
+  const skillActives: Ability[] = h.skills.flatMap(s => {
+    if (s.type !== 'active' || !s.ability) return [];
+    const desc = s.desc?.trim();
+    return [!s.ability.desc?.trim() && desc ? { ...s.ability, desc } : s.ability];
+  });
+  const core = [weaponAttack(weapon, R), ...classActives, ...skillActives, ...held];
   const scaled = scalers.length ? core.map(a => withClassScalers(a, scalers, R)) : core;
   return distinct([...scaled, ...thrown], R);
 }

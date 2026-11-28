@@ -172,6 +172,9 @@ function makeLongshot(o: {
   const base = abilityOf('shot', {
     id: ID_LONGSHOT,
     name: o.name,
+    desc: o.pierce
+      ? `Fire a piercing line shot up to ${o.rangeTiles} tiles that scales with Sighted stacks and applies Pinned Shot for 1 round.`
+      : `Fire a long-range shot up to ${o.rangeTiles} tiles that scales with Sighted stacks and applies Pinned Shot for 1 round.`,
     aim: 'foe',
     range: tiles(o.rangeTiles),
     shape: { kind: 'line', width: tiles(0), pierce: o.pierce },
@@ -188,6 +191,7 @@ function makeLongshot(o: {
 
 function makeSightline(o: {
   readonly name: string;
+  readonly desc: string;
   readonly aimKey: StatusKey;
   readonly aimDef: StatusDef;
   readonly cooldownRounds: number;
@@ -196,6 +200,7 @@ function makeSightline(o: {
   const base = abilityOf('support', {
     id: ID_SIGHTLINE,
     name: o.name,
+    desc: o.desc,
     aim: 'self',
     shape: { kind: 'self' },
     range: tiles(0),
@@ -233,6 +238,7 @@ const UP_LONGSHOT = makeLongshot({
 // Quick-pace setup turn: grants 1 stack of Sighted plus Steady Aim (attack advantage on next shot).
 const BASE_SIGHTLINE = makeSightline({
   name: 'Sightline',
+  desc: 'Gain 1 stack of Sighted and Steady Aim for 2 rounds.',
   aimKey: KEY_AIM,
   aimDef: STEADY_AIM,
   cooldownRounds: 3,
@@ -241,6 +247,7 @@ const BASE_SIGHTLINE = makeSightline({
 // D5 Fork B-Left (armor-buster): 2-round cooldown, 1 stack of Sighted plus Eagle Eye (advantage + 15% armor pen).
 const UP_SIGHTLINE_EAGLE = makeSightline({
   name: 'Sightline: Eagle Perch',
+  desc: 'Gain 1 stack of Sighted and Eagle Eye for 2 rounds.',
   aimKey: KEY_AIM_UP,
   aimDef: EAGLE_EYE,
   cooldownRounds: 2,
@@ -249,6 +256,7 @@ const UP_SIGHTLINE_EAGLE = makeSightline({
 // D5 Fork B-Right (hold-the-perch defense): 2-round cooldown, 1 stack of Sighted, Steady Aim, and Braced Perch (-15% damage taken + defense advantage).
 const UP_SIGHTLINE_BRACE = makeSightline({
   name: 'Sightline: Overwatch Brace',
+  desc: 'Gain 1 stack of Sighted, Steady Aim for 2 rounds, and Braced Perch for 1 round.',
   aimKey: KEY_AIM,
   aimDef: STEADY_AIM,
   cooldownRounds: 2,

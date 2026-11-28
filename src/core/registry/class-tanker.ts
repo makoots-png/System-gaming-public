@@ -102,6 +102,7 @@ function makeAegisBash(o: {
   const base = abilityOf('strike', {
     id: ID_BASH,
     name: o.name,
+    desc: `Armor-scaled physical strike that taunts the target for 2 rounds and fills ${Math.round(o.staggerShare * 100)}% of an elite or boss stagger bar.`,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },

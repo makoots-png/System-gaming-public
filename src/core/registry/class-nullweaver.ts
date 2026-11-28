@@ -230,6 +230,9 @@ function makeUnravel(o: {
   const base = abilityOf('curse', {
     id: ID_UNRAVEL,
     name: o.name,
+    desc: o.stacks && o.stacks > 1
+      ? `Deal arcane damage to a foe within 8 tiles and apply ${o.stacks} stacks of Unraveled for 3 rounds.`
+      : 'Deal arcane damage to a foe within 8 tiles and apply Unraveled for 3 rounds.',
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -255,6 +258,9 @@ function makeSeverMagic(o: {
   const base = abilityOf('curse', {
     id: ID_SEVER,
     name: o.name,
+    desc: o.dispelWhich === 'all'
+      ? `Quick arcane strike within 8 tiles that strips all helpful statuses, breaks channeling, fills 25% stagger, and applies ${o.controlDef.label} for 1 round.`
+      : `Quick arcane strike within 8 tiles that strips one helpful status, breaks channeling, fills 25% stagger, and applies ${o.controlDef.label} for 1 round.`,
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -289,6 +295,9 @@ function makeEraseField(o: {
   const base = abilityOf('blast', {
     id: ID_ERASE,
     name: o.name,
+    desc: o.staggerShare
+      ? `Blast a 3-tile area within 8 tiles for arcane damage, erase up to ${o.eraseCount} zones, apply 2 stacks of Unraveled and Arcane Drag, and fill ${Math.round(o.staggerShare * 100)}% stagger.`
+      : `Blast a 3-tile area within 8 tiles for arcane damage, erase ${o.eraseCount} zone, and apply 2 stacks of Unraveled and Arcane Drag.`,
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(3), ring: null },
@@ -321,6 +330,9 @@ function makeNullAegis(o: {
   const base = abilityOf('support', {
     id: ID_AEGIS,
     name: o.name,
+    desc: o.counterWard
+      ? `Reaction. Negate an incoming hit on yourself, shield yourself, restore ${o.manaRestore} mana, and gain Unraveling Ward for 1 round.`
+      : `Reaction. Negate an incoming hit within ${o.reachTiles} tiles, shield yourself, and restore ${o.manaRestore} mana.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

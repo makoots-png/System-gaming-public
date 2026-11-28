@@ -58,6 +58,8 @@ export type AbilityEffect =
 export type Ability = {
   readonly id: AbilityId;
   readonly name: string;
+  /** Short plain-English description of what this ability does in combat; absent when unauthored. */
+  readonly desc?: string;
   readonly kind: AbilityKind;
   readonly cost: AbilityCost;
   readonly aim: 'foe' | 'ally' | 'self' | 'place' | 'corpse';

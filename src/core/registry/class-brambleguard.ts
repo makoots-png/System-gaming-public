@@ -166,6 +166,7 @@ function makeVineLash(o: {
   const base = abilityOf('strike', {
     id: ID_LASH,
     name: o.name,
+    desc: `Lash a foe within ${o.reach} tiles for physical damage, taunt them for 1 round, and pull them ${o.pull} ${o.pull === 1 ? 'tile' : 'tiles'} closer.`,
     range: reach,
     shape: { kind: 'touch', reach },
     effect: { type: 'physical', by: 'hand', formula: f(o.formula) },
@@ -182,6 +183,7 @@ function makeVineLash(o: {
 
 function makeBrambleShell(o: {
   readonly name: string;
+  readonly desc: string;
   readonly shieldFormula: string;
   readonly barkKey: StatusKey;
   readonly barkDef: StatusDef;
@@ -191,6 +193,7 @@ function makeBrambleShell(o: {
   const base = abilityOf('support', {
     id: ID_SHELL,
     name: o.name,
+    desc: o.desc,
     aim: 'self',
     shape: { kind: 'self' },
     range: tiles(0),
@@ -239,6 +242,7 @@ const UP_LASH = makeVineLash({
 // Standard-pace self shield (22% max HP, ~0.85 SA at rank C, matching Shield Wall's 25% band) + 20 armor for 2 rounds.
 const BASE_SHELL = makeBrambleShell({
   name: 'Bramble Shell',
+  desc: 'Shield yourself and gain Thornbark for 2 rounds.',
   shieldFormula: '0.22 * hpmax',
   barkKey: KEY_BARK,
   barkDef: THORN_BARK,
@@ -248,6 +252,7 @@ const BASE_SHELL = makeBrambleShell({
 // D5 Fork B-Left (selfish juggernaut): 30% max HP shield + 30 armor and 15 magic resist for 2 rounds.
 const UP_SHELL_OVERGROWN = makeBrambleShell({
   name: 'Bramble Shell: Overgrown',
+  desc: 'Shield yourself and gain Overgrown Bark for 2 rounds.',
   shieldFormula: '0.3 * hpmax',
   barkKey: KEY_BARK_UP,
   barkDef: THORN_BARK_UP,
@@ -257,6 +262,7 @@ const UP_SHELL_OVERGROWN = makeBrambleShell({
 // D5 Fork B-Right (area-denial bramble aura): 16% max HP shield + 14 armor + 2-tile moving aura slowing foes 20% and dealing tiered thorn damage.
 const UP_SHELL_PATCH = makeBrambleShell({
   name: 'Bramble Shell: Briar Patch',
+  desc: 'Shield yourself, gain Briar Bark, and surround yourself with a 2-tile Briar Patch aura for 2 rounds.',
   shieldFormula: '0.16 * hpmax',
   barkKey: KEY_BARK_PATCH,
   barkDef: PATCH_BARK,

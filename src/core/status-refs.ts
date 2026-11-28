@@ -158,7 +158,7 @@ function gate(g: AbilityGate, f: KeyFn): AbilityGate {
 const zoneSpec = fields<ZoneSpec>({ name: none, duration: none, ops, endsWithOwner: none, around: none, grow: none, upkeep: none, end: ops, triggers: list(trigger) });
 const summon = fields<Summon>({ name: none, archetype: none, rounds: none, statuses: list(fields<Summon['statuses'][number]>({ key, rounds: none })) });
 const ability = fields<Ability>({
-  id: none, name: none, kind: none, cost: none, aim: none, range: none, shape: none, delivery: none, foesOnly: none, effect, ops, channel: none,
+  id: none, name: none, desc: none, kind: none, cost: none, aim: none, range: none, shape: none, delivery: none, foesOnly: none, effect, ops, channel: none,
   zone: zoneSpec, tags: none, prices: list(price), gates: list(gate), summon, raise: none, move: none, react: none, zoneAct: none, usurp: none, item: none, maxTier: none,
 });
 

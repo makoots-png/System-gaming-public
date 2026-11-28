@@ -129,6 +129,7 @@ function makeShockMine(o: {
   const base = abilityOf('blast', {
     id: ID_MINE,
     name: o.name,
+    desc: `Plant a ${o.radiusTiles}-tile ${o.zoneName} for 3 rounds that hits foes for arcane damage, applies Jolted, slows by 15%, and blasts them when it ends.`,
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(o.radiusTiles), ring: null },
@@ -160,6 +161,7 @@ function makeArcTurret(o: {
   const base = abilityOf('support', {
     id: ID_TURRET,
     name: o.name,
+    desc: `Gain a shield and deploy an Arc Turret construct that fights alongside you for ${o.summonRounds} rounds.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

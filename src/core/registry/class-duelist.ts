@@ -142,6 +142,7 @@ const GRAND_FENCER: ClassWorn = makeMeasuredStep({
 
 function makeLungeThrust(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly pace?: 'quick' | 'standard';
   readonly extraOps?: readonly UseOp[];
@@ -149,6 +150,7 @@ function makeLungeThrust(o: {
   const base = abilityOf('strike', {
     id: ID_LUNGE,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(2),
     shape: { kind: 'touch', reach: tiles(2) },
@@ -168,6 +170,7 @@ function makeLungeThrust(o: {
 
 function makeCounterguard(o: {
   readonly name: string;
+  readonly desc: string;
   readonly guardShare: number;
   readonly shieldFormula: string;
   readonly cooldownRounds: number;
@@ -176,6 +179,7 @@ function makeCounterguard(o: {
   const base = abilityOf('support', {
     id: ID_GUARD,
     name: o.name,
+    desc: o.desc,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -197,12 +201,14 @@ function makeCounterguard(o: {
 
 const BASE_LUNGE = makeLungeThrust({
   name: 'Lunge Thrust',
+  desc: 'Lunge at a foe within 2 tiles for physical damage and leave them Off-Balance for 2 rounds.',
   formula: '1d8 + 0.8 * finesse',
 });
 
 // Uses quick pace for faster turn recovery alongside the 1-tile shove without adding a self-rider on a foe-aimed strike.
 const UP_LUNGE_FEINT = makeLungeThrust({
   name: 'Lunge Thrust: Feint Lunge',
+  desc: 'Quick lunge at a foe within 2 tiles for physical damage, shoving them 1 tile back and leaving them Off-Balance for 2 rounds.',
   formula: '1d8 + 0.65 * finesse',
   pace: 'quick',
   extraOps: [{ op: 'shove', dir: 'away', from: 'user', tiles: 1 }],
@@ -210,11 +216,13 @@ const UP_LUNGE_FEINT = makeLungeThrust({
 
 const UP_LUNGE_HEART = makeLungeThrust({
   name: 'Lunge Thrust: Heartseeker Thrust',
+  desc: 'Drive a heavy lunge at a foe within 2 tiles for physical damage and leave them Off-Balance for 2 rounds.',
   formula: '1d10 + 0.85 * finesse',
 });
 
 const BASE_GUARD = makeCounterguard({
   name: 'Counterguard',
+  desc: 'Reaction. Shield yourself, absorb 30% of an incoming hit, and gain Poised for 1 round.',
   guardShare: 0.3,
   shieldFormula: '0.1 * hpmax',
   cooldownRounds: 2,
@@ -222,6 +230,7 @@ const BASE_GUARD = makeCounterguard({
 
 const UP_GUARD_REPRISAL = makeCounterguard({
   name: 'Counterguard: Reprisal Guard',
+  desc: 'Reaction. Shield yourself, absorb 30% of an incoming hit, and gain Poised and Reprisal Stance for 1 round.',
   guardShare: 0.3,
   shieldFormula: '0.1 * hpmax',
   cooldownRounds: 2,
@@ -230,6 +239,7 @@ const UP_GUARD_REPRISAL = makeCounterguard({
 
 const UP_GUARD_TEMPO = makeCounterguard({
   name: 'Counterguard: Fencing Tempo',
+  desc: 'Reaction. Shield yourself, absorb 35% of an incoming hit, and gain Poised for 1 round.',
   guardShare: 0.35,
   shieldFormula: '0.12 * hpmax',
   cooldownRounds: 1,

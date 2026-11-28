@@ -214,6 +214,9 @@ function makeSunlance(o: {
   const base = abilityOf('curse', {
     id: ID_SUNLANCE,
     name: o.name,
+    desc: o.hold
+      ? `Strike a foe within 4 tiles for arcane damage, fill ${Math.round(o.staggerShare * 100)}% stagger, apply Sunblind for 2 rounds, and hold them with Solar Verdict for 1 round.`
+      : `Strike a foe within 4 tiles for arcane damage, fill ${Math.round(o.staggerShare * 100)}% stagger, and apply Sunblind for 2 rounds.`,
     aim: 'foe',
     range: tiles(4),
     shape: { kind: 'touch', reach: tiles(4) },
@@ -235,6 +238,7 @@ function makeBenediction(o: {
   const base = abilityOf('support', {
     id: ID_BENEDICTION,
     name: o.name,
+    desc: 'Quickly heal an ally within 6 tiles and cleanse one harmful status.',
     aim: 'ally',
     range: tiles(6),
     shape: { kind: 'touch', reach: tiles(6) },
@@ -272,6 +276,7 @@ function makeRadiantHymn(): Ability {
   const base = abilityOf('support', {
     id: ID_BENEDICTION,
     name: 'Benediction: Radiant Hymn',
+    desc: 'Quickly heal yourself and allies within 2 tiles and cleanse one harmful status on each.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -298,6 +303,9 @@ function makeDaybreakWard(o: {
   const base = abilityOf('support', {
     id: ID_WARD,
     name: o.name,
+    desc: o.allyHasten
+      ? `Quickly shield an ally within 6 tiles, grant Dawn Safeguard for 1 round, and hasten them by ${Math.round(o.allyHasten * 100)}%.`
+      : 'Quickly shield an ally within 6 tiles and grant Dawn Safeguard for 1 round.',
     aim: 'ally',
     range: tiles(6),
     shape: { kind: 'touch', reach: tiles(6) },
@@ -334,6 +342,7 @@ function makeSunlitAegis(): Ability {
   const base = abilityOf('support', {
     id: ID_WARD,
     name: 'Daybreak Ward: Sunlit Aegis',
+    desc: 'Quickly shield yourself and allies within 2 tiles and grant Dawn Safeguard for 1 round.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -360,6 +369,11 @@ function makeLastLight(o: {
   const base = abilityOf('support', {
     id: ID_LAST_LIGHT,
     name: o.name,
+    desc: o.extraOps?.length
+      ? (o.name.includes('Eternal')
+        ? 'Lethal reaction. Heal and shield yourself and survive lethal damage for 1 round.'
+        : 'Lethal reaction. Heal yourself, restore 15 mana, and survive lethal damage for 1 round.')
+      : 'Lethal reaction. Heal yourself and survive lethal damage for 1 round.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

@@ -123,6 +123,7 @@ function makePinningShot(o: {
   const base = abilityOf('shot', {
     id: ID_PINNING,
     name: o.name,
+    desc: `Fire a ranged shot up to ${o.rangeTiles} tiles that delays the target's next turn and applies Tangled for 2 rounds (-10% speed, roots at 2 stacks).`,
     aim: 'foe',
     range: tiles(o.rangeTiles),
     shape: { kind: 'line', width: tiles(0), pierce: false },

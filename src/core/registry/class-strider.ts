@@ -138,6 +138,7 @@ const APEX_TRAILRUNNER: ClassWorn = makeTrailworn({
 
 function makeSkirmishShot(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly pace?: 'quick' | 'standard';
   readonly extraOps?: readonly UseOp[];
@@ -145,6 +146,7 @@ function makeSkirmishShot(o: {
   const base = abilityOf('shot', {
     id: ID_SHOT,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(10),
     shape: { kind: 'line', width: tiles(0), pierce: false },
@@ -164,6 +166,7 @@ function makeSkirmishShot(o: {
 
 function makeBoundingLeap(o: {
   readonly name: string;
+  readonly desc: string;
   readonly rangeTiles: number;
   readonly shieldFormula: string;
   readonly healFormula?: string;
@@ -173,6 +176,7 @@ function makeBoundingLeap(o: {
   const base = abilityOf('support', {
     id: ID_LEAP,
     name: o.name,
+    desc: o.desc,
     aim: 'place',
     shape: { kind: 'self' },
     range: tiles(o.rangeTiles),
@@ -197,17 +201,20 @@ function makeBoundingLeap(o: {
 
 const BASE_SHOT = makeSkirmishShot({
   name: 'Skirmish Shot',
+  desc: 'Quick shot up to 10 tiles that shoves the target 1 tile back.',
   formula: '1d6 + 0.6 * finesse',
 });
 
 const UP_SHOT_BOLTING = makeSkirmishShot({
   name: 'Skirmish Shot: Bolting Shot',
+  desc: 'Quick high-impact shot up to 10 tiles that shoves the target 1 tile back.',
   formula: '1d8 + 0.65 * finesse',
 });
 
 // Standard pace gives room for 20% stagger and 2 rounds of Hamstrung slow inside worth.ts C-rank budgets.
 const UP_SHOT_HAMSTRING = makeSkirmishShot({
   name: 'Skirmish Shot: Hamstring Volley',
+  desc: 'Ranged shot up to 10 tiles that shoves the target 1 tile back, fills 20% of their stagger bar, and applies Hamstrung for 2 rounds.',
   formula: '1d6 + 0.6 * finesse',
   pace: 'standard',
   extraOps: [
@@ -218,18 +225,21 @@ const UP_SHOT_HAMSTRING = makeSkirmishShot({
 
 const BASE_LEAP = makeBoundingLeap({
   name: 'Bounding Leap',
+  desc: 'Blink up to 5 tiles, shield yourself, and gain Windstride and Windward for 2 rounds.',
   rangeTiles: 5,
   shieldFormula: '0.12 * hpmax',
 });
 
 const UP_LEAP_GALE = makeBoundingLeap({
   name: 'Bounding Leap: Gale Leap',
+  desc: 'Blink up to 6 tiles, gain a stronger shield, and gain Windstride and Windward for 2 rounds.',
   rangeTiles: 6,
   shieldFormula: '0.16 * hpmax',
 });
 
 const UP_LEAP_RECOVERY = makeBoundingLeap({
   name: 'Bounding Leap: Wild Recovery',
+  desc: 'Blink up to 5 tiles, heal and shield yourself, cleanse one harmful status, and gain Windstride and Windward for 2 rounds.',
   rangeTiles: 5,
   shieldFormula: '0.12 * hpmax',
   healFormula: '0.1 * hpmax',

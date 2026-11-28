@@ -196,6 +196,9 @@ function makeChronoBolt(o: {
   const base = abilityOf('curse', {
     id: ID_BOLT,
     name: o.name,
+    desc: o.pace === 'quick'
+      ? `Quick arcane bolt up to 8 tiles that delays the target's turn and applies ${o.dragDef.label} for 2 rounds.`
+      : `Arcane bolt up to 8 tiles that delays the target's turn and applies ${o.dragDef.label} for 2 rounds.`,
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -215,11 +218,13 @@ function makeChronoBolt(o: {
 
 function makeAccelerate(o: {
   readonly name: string;
+  readonly desc: string;
   readonly ops: readonly UseOp[];
 }): Ability {
   const base = abilityOf('support', {
     id: ID_ACCEL,
     name: o.name,
+    desc: o.desc,
     aim: 'ally',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -236,6 +241,7 @@ function makeAccelerate(o: {
 
 function makeStasisField(o: {
   readonly name: string;
+  readonly desc: string;
   readonly cooldownRounds: number;
   readonly delayRounds: number;
   readonly zoneRounds: number;
@@ -244,6 +250,7 @@ function makeStasisField(o: {
   const base = abilityOf('blast', {
     id: ID_STASIS,
     name: o.name,
+    desc: o.desc,
     aim: 'place',
     range: tiles(7),
     shape: { kind: 'radius', radius: tiles(2), ring: null },
@@ -277,6 +284,7 @@ function makeTimeSlip(): Ability {
   const base = abilityOf('support', {
     id: ID_SLIP,
     name: 'Time Slip',
+    desc: 'Turn reaction. Shield yourself and gain Temporal Edge for 1 round.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -325,6 +333,7 @@ const UP_BOLT_ENTROPY = makeChronoBolt({
 
 const BASE_ACCEL = makeAccelerate({
   name: 'Accelerate',
+  desc: 'Hasten an ally within 8 tiles by 40% and grant Quicksilver for 2 rounds.',
   ops: [
     { op: 'hasten', share: 0.4 },
     { op: 'applyStatus', key: KEY_QUICKSILVER, def: QUICKSILVER, duration: rounds(2) },
@@ -333,6 +342,7 @@ const BASE_ACCEL = makeAccelerate({
 
 const UP_ACCEL_TWIN = makeAccelerate({
   name: 'Accelerate: Twin Tempo',
+  desc: 'Hasten an ally within 8 tiles by 40%, grant Quicksilver for 2 rounds, and pulse Twin Tempo to allies within 2 tiles.',
   ops: [
     { op: 'hasten', share: 0.4 },
     { op: 'applyStatus', key: KEY_QUICKSILVER, def: QUICKSILVER, duration: rounds(2) },
@@ -342,6 +352,7 @@ const UP_ACCEL_TWIN = makeAccelerate({
 
 const UP_ACCEL_OVERCLOCK = makeAccelerate({
   name: 'Accelerate: Overclock',
+  desc: 'Hasten an ally within 8 tiles by 50% and grant Overclock for 2 rounds.',
   ops: [
     { op: 'hasten', share: 0.5 },
     { op: 'applyStatus', key: KEY_OVERCLOCK, def: OVERCLOCK, duration: rounds(2) },
@@ -350,6 +361,7 @@ const UP_ACCEL_OVERCLOCK = makeAccelerate({
 
 const BASE_STASIS = makeStasisField({
   name: 'Stasis Field',
+  desc: 'Blast a 2-tile area within 7 tiles for arcane damage, delay turns, fill 30% stagger, and leave a 2-round Time Warp zone.',
   cooldownRounds: 3,
   delayRounds: 0.3,
   zoneRounds: 2,
@@ -357,6 +369,7 @@ const BASE_STASIS = makeStasisField({
 
 const UP_STASIS_FROZEN = makeStasisField({
   name: 'Stasis Field: Frozen Second',
+  desc: 'Blast a 2-tile area within 7 tiles for arcane damage, delay turns, fill 30% stagger, hold foes for 1 round, and leave a 2-round Time Warp zone.',
   cooldownRounds: 4,
   delayRounds: 0.3,
   zoneRounds: 2,
@@ -365,6 +378,7 @@ const UP_STASIS_FROZEN = makeStasisField({
 
 const UP_STASIS_TIDAL = makeStasisField({
   name: 'Stasis Field: Tidal Clock',
+  desc: 'Blast a 2-tile area within 7 tiles for arcane damage, delay turns, fill 30% stagger, and leave a 3-round Time Warp zone.',
   cooldownRounds: 3,
   delayRounds: 0.4,
   zoneRounds: 3,

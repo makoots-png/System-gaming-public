@@ -178,6 +178,7 @@ function makeStarforge(o: {
   const base = abilityOf('blast', {
     id: ID_STARFORGE,
     name: o.name,
+    desc: `Blast a ${o.radius}-tile area within 8 tiles for arcane damage and leave a 4-round Star zone that slows by 15%, burns foes each turn, and detonates when it ends.`,
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(o.radius), ring: null },
@@ -223,6 +224,11 @@ function makeGravitySnare(o: {
   const base = abilityOf('curse', {
     id: ID_SNARE,
     name: o.name,
+    desc: o.shoveTiles
+      ? `Quick arcane strike within 8 tiles that fills ${Math.round(o.staggerShare * 100)}% stagger, pulls the target ${o.shoveTiles} tiles closer, and applies Starlit for 2 rounds.`
+      : o.zoneAct
+        ? `Quick arcane strike within 8 tiles that fills ${Math.round(o.staggerShare * 100)}% stagger, roots for 1 round, applies Starlit for 2 rounds, and shifts Star zones up to 4 tiles.`
+        : `Quick arcane strike within 8 tiles that fills ${Math.round(o.staggerShare * 100)}% stagger, roots for 1 round, and applies Starlit for 2 rounds.`,
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -252,6 +258,9 @@ function makeAstralAegis(o: {
   const base = abilityOf('support', {
     id: ID_AEGIS,
     name: o.name,
+    desc: o.manaRestore
+      ? `Quickly shield yourself, restore ${o.manaRestore} mana, and gain ${o.wardDef.label} for 1 round.`
+      : `Quickly shield yourself and gain ${o.wardDef.label} for 1 round.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -275,6 +284,7 @@ function makeSupernova(o: {
   const base = abilityOf('blast', {
     id: ID_SUPERNOVA,
     name: o.name,
+    desc: 'Consume all Star zones to blast a 3-tile area within 8 tiles for bonus arcane damage, filling 35% stagger and shoving foes 2 tiles away.',
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(3), ring: null },

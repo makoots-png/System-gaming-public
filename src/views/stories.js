@@ -19,9 +19,7 @@ import { cryptoRandom } from '../edge/roll.ts';
 import { isRefused } from '../core/save-step.ts';
 import { uniqueJobRefusalText } from '../core/hunter/grant.ts';
 import { introEnd } from '../core/intro.ts';
-import { STARTER_WORDS } from '../core/starter.ts';
 import { INTRO_WRITE_WORDS } from '../core/sync/intro-write.ts';
-import { loadStarterCampaign } from './starter.js';
 import { storyMaker } from './story-maker.js';
 
 css('stories', `
@@ -278,9 +276,8 @@ export function register(app) {
   }
   function bodyHtml() {
     const s = S(), live = running(s.storyRuns), ended = s.storyRuns.filter(r => r.state.at === 'ended').reverse();
-    const starterBtn = `<button type="button"${!s.library.stories.length && !s.storyRuns.length ? ' class="primary"' : ''} data-st-starter>${esc(STARTER_WORDS.button)}</button>`;
-    if (!s.library.stories.length && !s.storyRuns.length) return `<p class="st-empty">${esc(W.noStories)}</p><div class="st-top">${starterBtn}<button type="button" data-st-new>${esc(W.newStory)}</button></div>`;
-    return `<div class="st-top">${s.library.stories.length ? `<button type="button"${live.length ? '' : ' class="primary"'} data-st-turnon>${esc(W.turnOnButton)}</button>` : `<button type="button" class="primary" data-st-new>${esc(W.newStory)}</button>`}${starterBtn}</div>
+    if (!s.library.stories.length && !s.storyRuns.length) return `<p class="st-empty">${esc(W.noStories)}</p><div class="st-top"><button type="button" class="primary" data-st-new>${esc(W.newStory)}</button></div>`;
+    return `${s.library.stories.length ? `<div class="st-top"><button type="button"${live.length ? '' : ' class="primary"'} data-st-turnon>${esc(W.turnOnButton)}</button></div>` : ''}
       ${live.length ? live.map(cardHtml).join('') : `<p class="st-empty">${esc(W.noneRunning)}</p>`}
       ${ended.length ? `<details class="st-ended"><summary>${esc(W.ended(ended.length))}</summary><ul>${ended.map(r => `<li>${esc(W.endedLine(r.name, forWho(r), r.state.chapter, r.state.at === 'ended' ? r.state.session : 0))}</li>`).join('')}</ul></details>` : ''}`;
   }
@@ -289,7 +286,6 @@ export function register(app) {
     box.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b || !box.contains(b)) return;
       const runId = b.closest('[data-run]') ? b.closest('[data-run]').dataset.run : null;
-      if (b.hasAttribute('data-st-starter')) return void loadStarterCampaign(app);
       if (b.hasAttribute('data-st-new')) return void storyMaker(app, null);
       if (b.hasAttribute('data-st-turnon')) return turnOnWindow(null);
       if (!runId) return;

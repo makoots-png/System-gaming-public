@@ -365,6 +365,7 @@ export type Result = { readonly fight: Fight | null; readonly effects: readonly 
 export const MAX_ROWS = 60;
 export const NAME_MAX = 60;
 export const STATUS_DESC_MAX = 500;
+export const ABILITY_DESC_MAX = 500;
 export const LOG_CAP = 100;
 export const LOG_LINE_MAX = 300;
 export const MAX_STATUSES = 30;

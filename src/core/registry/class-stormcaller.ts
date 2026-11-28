@@ -155,6 +155,9 @@ function makeChainBolt(o: {
   const base = abilityOf('curse', {
     id: ID_BOLT,
     name: o.name,
+    desc: o.staggerShare > 0
+      ? `Quick arcane bolt up to 8 tiles that applies ${o.condDef.label} for 2 rounds and fills ${Math.round(o.staggerShare * 100)}% stagger.`
+      : `Quick arcane bolt up to 8 tiles that applies ${o.condDef.label} for 2 rounds.`,
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -185,6 +188,7 @@ function makeStormPylon(o: {
   const base = abilityOf('blast', {
     id: ID_PYLON,
     name: o.name,
+    desc: `Blast a ${o.radiusTiles}-tile area within 8 tiles for arcane damage, apply Static Charge, and leave a 3-round Storm Field that slows foes and amplifies damage before detonating.`,
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(o.radiusTiles), ring: null },
@@ -224,6 +228,7 @@ function makeVoltBlink(o: {
   const base = abilityOf('blast', {
     id: ID_BLINK,
     name: o.name,
+    desc: `Blink up to ${o.rangeTiles} tiles, blasting foes in a 2-tile radius for arcane damage and applying ${o.chargeStacks} ${o.chargeStacks === 1 ? 'stack' : 'stacks'} of Static Charge for 3 rounds.`,
     aim: 'place',
     range: tiles(o.rangeTiles),
     shape: { kind: 'radius', radius: tiles(2), ring: null },
@@ -250,6 +255,7 @@ function makeTempest(o: {
   const base = abilityOf('blast', {
     id: ID_TEMPEST,
     name: o.name,
+    desc: `Channeled blast (up to 2 charges) in a 3-tile area within 8 tiles that deals arcane damage, applies 2 stacks of Static Charge for 3 rounds, and fills ${Math.round(o.staggerShare * 100)}% stagger.`,
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(3), ring: null },

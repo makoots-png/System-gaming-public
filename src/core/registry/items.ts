@@ -203,7 +203,7 @@ const SPELLBLADE_READY: StatusDef = {
 };
 /** Bulwark: a shield of 10 + 10% of max HP on its user, ready again 8 rounds later (once a fight of six rounds); it takes a standard action. */
 const BULWARK: Ability = abilityOf('support', {
-  id: abilityId('bulwark'), name: 'Bulwark', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
+  id: abilityId('bulwark'), name: 'Bulwark', desc: 'Gain a shield equal to 10 + 10% of your max HP.', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
   effect: { type: 'shield', by: 'hand', formula: formula('10 + 0.1 * hpmax') },
   cost: { fatigue: 0, mana: 0, time: abilityOf('support', { id: abilityId('x'), name: 'x' }, RULES).cost.time, cooldown: rounds(8) },
 }, RULES);

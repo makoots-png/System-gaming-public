@@ -184,6 +184,7 @@ const CRIMSON_BERSERK: ClassWorn = makeFury({
 
 function makeRecklessCleave(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly hpShare: number;
   readonly pace?: 'standard' | 'heavy';
@@ -192,6 +193,7 @@ function makeRecklessCleave(o: {
   const base = abilityOf('strike', {
     id: ID_CLEAVE,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -209,6 +211,7 @@ function makeRecklessCleave(o: {
 
 function makeBloodRoar(o: {
   readonly name: string;
+  readonly desc: string;
   readonly shieldFormula: string;
   readonly cooldownRounds: number;
   readonly rushKey: StatusKey;
@@ -218,6 +221,7 @@ function makeBloodRoar(o: {
   const base = abilityOf('support', {
     id: ID_ROAR,
     name: o.name,
+    desc: o.desc,
     aim: 'self',
     shape: { kind: 'self' },
     range: tiles(0),
@@ -239,12 +243,14 @@ function makeBloodRoar(o: {
 
 const BASE_CLEAVE = makeRecklessCleave({
   name: 'Reckless Cleave',
+  desc: 'Spend 6% of your max HP to deal heavy melee physical damage.',
   formula: '1d10 + 1.0 * phys',
   hpShare: 0.06,
 });
 
 const UP_CLEAVE_REND = makeRecklessCleave({
   name: 'Reckless Cleave: Rending Cleave',
+  desc: 'Spend 6% of your max HP for a heavy melee strike that inflicts Rending Wound for 2 rounds.',
   formula: '2d8 + 1.15 * phys',
   hpShare: 0.06,
   pace: 'heavy',
@@ -253,6 +259,7 @@ const UP_CLEAVE_REND = makeRecklessCleave({
 
 const UP_CLEAVE_EXEC = makeRecklessCleave({
   name: 'Reckless Cleave: Execution Swing',
+  desc: 'Spend 10% of your max HP for a melee strike that fills 20% of the target\'s stagger bar.',
   formula: '1d10 + 1.0 * phys',
   hpShare: 0.1,
   extraOps: [{ op: 'stagger', share: 0.2 }],
@@ -260,6 +267,7 @@ const UP_CLEAVE_EXEC = makeRecklessCleave({
 
 const BASE_ROAR = makeBloodRoar({
   name: 'Blood Roar',
+  desc: 'Spend 8% of your max HP to gain a shield, 2 stacks of Bloodrage for 3 rounds, and Blood Rush.',
   shieldFormula: '0.12 * hpmax',
   cooldownRounds: 3,
   rushKey: KEY_ROAR_RUSH,
@@ -268,6 +276,7 @@ const BASE_ROAR = makeBloodRoar({
 
 const UP_ROAR_UNSTOPPABLE = makeBloodRoar({
   name: 'Blood Roar: Unstoppable Rage',
+  desc: 'Spend 8% of your max HP to gain a shield, 2 stacks of Bloodrage for 3 rounds, Blood Rush, and Unstoppable for 1 round.',
   shieldFormula: '0.16 * hpmax',
   cooldownRounds: 3,
   rushKey: KEY_ROAR_RUSH,
@@ -277,6 +286,7 @@ const UP_ROAR_UNSTOPPABLE = makeBloodRoar({
 
 const UP_ROAR_FRENZY = makeBloodRoar({
   name: 'Blood Roar: Frenzy Rush',
+  desc: 'Spend 8% of your max HP to gain a shield, 2 stacks of Bloodrage for 3 rounds, and Frenzy Surge.',
   shieldFormula: '0.12 * hpmax',
   cooldownRounds: 2,
   rushKey: KEY_FRENZY_RUSH,

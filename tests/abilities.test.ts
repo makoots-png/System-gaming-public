@@ -62,8 +62,8 @@ describe('every built-in ability', () => {
     const wrong: string[] = [];
     for (const { label, ability: a } of ENTRIES) {
       const of = abilityOf(a.kind, { id: a.id, name: a.name }, R), k = kindDefaults(a.kind, R);
-      // a field it leaves (`zone`) and user movement (`move`) are the optional fields a built-in ability may carry
-      const keys = Object.keys(a).filter(k => k !== 'zone' && k !== 'move').sort();
+      // a description (`desc`), a field it leaves (`zone`) and user movement (`move`) are the optional fields a built-in ability may carry
+      const keys = Object.keys(a).filter(k => k !== 'desc' && k !== 'zone' && k !== 'move').sort();
       if (JSON.stringify(keys) !== JSON.stringify(Object.keys(of).sort()) || Object.values(a).some(v => v === undefined)) wrong.push(`${label}: fields`);
       if (a.cost.fatigue !== k.fatigue || a.cost.mana !== k.mana) wrong.push(`${label}: cost`);
       if (!Object.values(R.fight.cost).includes(a.cost.time)) wrong.push(`${label}: time ${a.cost.time}`);

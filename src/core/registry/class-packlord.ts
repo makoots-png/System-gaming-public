@@ -256,6 +256,11 @@ function makeCallPack(o: {
   const base = abilityOf('support', {
     id: ID_CALL,
     name: o.name,
+    desc: o.pace === 'quick'
+      ? 'Quickly summon a Spirit Hound brute with Pack Fang to fight for 5 rounds.'
+      : o.fangKey === KEY_PACK_FANG_UP
+        ? 'Summon a Spirit Hound brute with Bloodfang to fight for 5 rounds.'
+        : 'Summon a Spirit Hound brute with Pack Fang to fight for 5 rounds.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -286,6 +291,7 @@ function makeMarkPrey(o: {
   const base = abilityOf('curse', {
     id: ID_MARK,
     name: o.name,
+    desc: `Strike a foe within 8 tiles for physical damage and apply ${o.markDef.label} for 3 rounds.`,
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -309,6 +315,7 @@ function makeAlphaHowl(o: {
   const base = abilityOf('support', {
     id: ID_HOWL,
     name: o.name,
+    desc: `Gain ${o.howlDef.label} for 2 rounds, boosting damage and speed for you and nearby allies.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -338,6 +345,9 @@ function makePackRally(o: {
   const base = abilityOf('support', {
     id: ID_RALLY,
     name: o.name,
+    desc: o.dispelFirst
+      ? `Heal an ally within ${o.rangeTiles} tiles, hasten them by ${Math.round(o.hastenShare * 100)}%, and cleanse one harmful status.`
+      : `Heal an ally within ${o.rangeTiles} tiles and hasten them by ${Math.round(o.hastenShare * 100)}%.`,
     aim: 'ally',
     range: tiles(o.rangeTiles),
     shape: { kind: 'touch', reach: tiles(o.rangeTiles) },

@@ -172,9 +172,19 @@ export function register(app) {
 .mp-passbox{display:contents}
 .mp-slots.cut{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
 .mp-hot,.mp-drawer{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.mp-dt{position:absolute;left:0;right:0;bottom:0;z-index:5;max-height:min(320px,52dvh);overflow-y:auto}
 .mp-dt:empty{display:none}
-.mp-dt .dt{margin:0;cursor:pointer}
+.mp-dt .dt{margin:0;cursor:pointer;background:color-mix(in srgb,var(--ground) 94%,var(--panel-solid,#0a1a2e));box-shadow:0 -8px 22px rgba(0,0,0,.6)}
 .mp-hb{flex:1 0 72px;width:72px;min-height:calc(var(--control-h) + 10px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 6px;line-height:1.15;scroll-snap-align:start}
+.mp-slot{flex:1 0 104px;min-width:104px;min-height:calc(var(--control-h) + 10px);display:flex;align-items:stretch;scroll-snap-align:start}
+.mp-slot .mp-hb{flex:1 1 auto;width:auto;min-width:60px;min-height:0;padding:3px 2px 3px 6px;scroll-snap-align:none;border-right:none}
+.mp-info{flex:0 0 32px;width:32px;min-width:32px;min-height:var(--control-h);padding:4px 4px 0 0;display:flex;align-items:flex-start;justify-content:flex-end;border-left:none;color:var(--cyan-dim)}
+.mp-info i{width:19px;height:19px;border-radius:50%;border:1px solid color-mix(in srgb,var(--cyan) 55%,transparent);display:grid;place-items:center;font:700 11px/1 var(--font-mono);font-style:normal;color:var(--cyan);background:color-mix(in srgb,var(--ground) 70%,transparent)}
+.mp-info[aria-expanded=true]{border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 14%,transparent)}
+.mp-info[aria-expanded=true] i{background:var(--cyan);border-color:var(--cyan);color:var(--ground)}
+.mp-slot.pressed .mp-info{border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 12%,transparent)}
+.mp-slot.armed .mp-info{border-color:var(--gold)}
+.mp-slot.spent .mp-info{opacity:.85}
 .mp-hb span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .mp-hb .ic{--ic:var(--icon-slot)}
 .mp-hb small{font-size:12px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -191,6 +201,8 @@ export function register(app) {
 .mp-drawer li{display:flex;gap:6px;align-items:center}
 .mp-drawer ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .mp-drawer .mp-hb{flex:1 1 auto;width:auto;max-width:none;flex-direction:row;justify-content:space-between;min-height:var(--control-h)}
+.mp-drawer .mp-dinfo{flex:0 0 auto;min-width:var(--control-h);min-height:var(--control-h);padding:0;align-items:center;justify-content:center;border-left:1px solid var(--line)}
+@media (pointer:coarse),(max-width:720px){.mp-slot{flex:1 0 110px;min-width:110px}.mp-info{flex:0 0 44px;width:44px;min-width:44px;min-height:44px;padding:5px 5px 0 0}.mp-drawer .mp-dinfo{width:44px;min-width:44px;min-height:44px;padding:0}}
 @media (min-width:900px){.mp-frame{height:min(70vh,640px)}}
 `);
 
@@ -214,8 +226,8 @@ export function register(app) {
       </div>
       <div class="mp-paint seg" data-paint role="group" aria-label="Terrain and field brush" hidden></div>
       <div class="mp-dock"><div class="mp-now" data-now></div>
-      <div class="mp-confirm" data-confirm hidden><p data-words role="status"></p><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-go></button></div></div>
-      <div class="mp-dt" data-mapdt></div>
+      <div class="mp-confirm" data-confirm hidden><p data-words role="status"></p><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-go></button></div>
+      <div class="mp-dt" data-mapdt></div></div>
       <div class="mp-hot" data-hot role="toolbar" aria-label="Abilities"><div class="mp-slots" data-slots></div><div class="mp-passbox" data-passbox></div></div>
       <div class="mp-drawer" data-drawer hidden></div>
     </div>`;
@@ -417,6 +429,7 @@ export function register(app) {
       const d = b.dataset;
       if (b.hasAttribute('data-grid')) return 'grid';
       if (b.hasAttribute('data-painttog')) return 'paint';
+      if (d.abInfo) return `info:${d.abInfo}`;
       if (d.arm) return `arm:${d.arm}`;
       if (d.ab) return `ab:${d.ab}`;
       if (d.pin) return `pin:${d.pin}`;
@@ -502,6 +515,7 @@ export function register(app) {
         case 'release': if (scene && scene.actor) { src.release(); redrawSoon(); } else src.offTurn(); return;
         case 'pass': if (scene) act({ kind: 'pass', scene }); redrawSoon(); return;
         case 'pin': pin(arg); return;
+        case 'info': D().move(dtList, { kind: 'toggle', key: `ab:${arg}` }, drawDetail); return;
         case 'ab': pick(arg); return;
         case 'dt': D().move(dtList, { kind: 'close' }, drawDetail); return;
         default: return;
@@ -528,11 +542,21 @@ export function register(app) {
       draw();
     }
 
-    // ── more info: a zone tapped, or an ability held on the hotbar, opens its detail under the map (app.api.detail) ──
+    // ── more info: a zone tapped, an ability info button tapped, or a slot held opens its detail under the map (app.api.detail) ──
     /** @returns {import('../core/detail.ts').Thing | null} */
     function thingOf(key) {
       const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
-      if (kind === 'ab') { const k = src.kit(), a = k && k.list.find(x => x.id === id); return a ? { kind: 'ability', ability: a } : null; }
+      if (kind === 'ab') {
+        const k = src.kit(), a = k && k.list.find(x => x.id === id);
+        if (!a) return null;
+        const h = hotbar([a], k.readyAt, k.now, k.costCut, null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf });
+        const slot = h.bar[0] ?? h.more[0] ?? null;
+        return {
+          kind: 'ability',
+          ability: a,
+          live: slot ? { wait: slot.wait, left: slot.left, react: slot.react, cost: { fatigue: slot.fatigue, mana: slot.mana } } : undefined,
+        };
+      }
       const z = scene && scene.zones.find(x => x.id === id);
       return z ? { kind: 'zone', name: z.name, tone: z.tone, left: z.left, ops: z.ops ?? null, tier: z.tier ?? 0 } : null;
     }
@@ -540,6 +564,11 @@ export function register(app) {
     function drawDetail() {
       const key = D().openIn(dtList), box = $('[data-mapdt]'), html = key ? D().panel(dtList, key, () => thingOf(key), true) : '';
       if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
+      const openAb = key && key.startsWith('ab:') ? key.slice(3) : null;
+      for (const b of el.querySelectorAll('[data-ab-info]')) {
+        const on = b instanceof HTMLElement && b.dataset.abInfo === openAb;
+        if (b.getAttribute('aria-expanded') !== String(on)) b.setAttribute('aria-expanded', String(on));
+      }
     }
 
     // ── drawing ──
@@ -767,8 +796,10 @@ export function register(app) {
     const slotText = s => (s.wait > 0 ? `${s.wait} round${s.wait === 1 ? '' : 's'}` : costText(s));
     /** A hotbar button, drawn once per slot and updated in place (patch.ts), so a pick or a use writes only what changed. */
     const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button>');
+    /** An ability or reaction slot: the use button and a sibling info button so players can read any move without firing it. */
+    const slotTemplate = () => ui.h('<div data-attr="class:slotCls"><button type="button" data-attr="class:cls data-ab:ab data-arm:arm aria-pressed:pressed aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button><button type="button" class="mp-info" data-attr="data-ab-info:infoId aria-label:infoLabel" aria-expanded="false"><i aria-hidden="true">i</i></button></div>');
     /** A slot's description: an ability's slot names its picture (`href`); Release, More and End turn draw none. */
-    const hbDesc = o => ({ cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ans: '', noAns: true, ...o });
+    const hbDesc = o => ({ slotCls: 'mp-slot', infoId: null, infoLabel: null, cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ans: '', noAns: true, ...o });
     const REACT_WORD = { arm: 'Arm', armed: 'Armed', spent: 'Spent' };
     /** Whether the hotbar's last slot is cut by the edge: the bar then fades out there, to show it scrolls. */
     const cutSeen = new IntersectionObserver(es => { for (const e of es) $('[data-slots]').classList.toggle('cut', e.intersectionRatio < 0.98); }, { root: $('[data-slots]'), threshold: [0.98] });
@@ -776,9 +807,11 @@ export function register(app) {
     const answerDesc = s => (s.answers ? { ans: `${s.answers[0].toUpperCase()}${s.answers.slice(1).replace(/ it$/, ' the omen')}`, noAns: false } : {});
     const leftText = s => (s.left === null ? '' : `${s.left} left`);
     /** A hotbar slot: a reaction arms (Arm, Armed, Spent); an ability with uses shows them and is off at 0. */
-    const slotDesc = s => s.react
-      ? hbDesc({ cls: `mp-hb react ${s.react}`, arm: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] })
-      : hbDesc({ ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(choice.now.kind === 'aim' && choice.now.ability.id === s.id), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.answers ? `, answers the omen: ${s.answers}` : ''}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s), ...answerDesc(s) });
+    const slotDesc = s => {
+      if (s.react) return hbDesc({ slotCls: `mp-slot react ${s.react}`, infoId: s.id, infoLabel: `About ${s.name}`, cls: `mp-hb react ${s.react}`, arm: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] });
+      const on = choice.now.kind === 'aim' && choice.now.ability.id === s.id;
+      return hbDesc({ slotCls: `mp-slot${on ? ' pressed' : ''}`, infoId: s.id, infoLabel: `About ${s.name}`, ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(on), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.answers ? `, answers the omen: ${s.answers}` : ''}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s), ...answerDesc(s) });
+    };
     function drawHotbar() {
       const k = scene && scene.focus.kind === 'dodge' ? null : src.kit(), bar = $('[data-hot]'), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
       bar.hidden = !k;
@@ -790,7 +823,7 @@ export function register(app) {
         ...h.bar.map(s => [`ab:${s.id}`, slotDesc(s)]),
         ...(h.more.length || h.bar.length > 1 ? [['more', hbDesc({ more: true, expanded: String(choice.drawer), name: 'More', small: String(h.more.length) })]] : []),
       ];
-      const els = keyed(hot, slots.map(([key]) => key), hbTemplate);
+      const els = keyed(hot, slots.map(([key]) => key), key => (key.startsWith('ab:') ? slotTemplate() : hbTemplate()));
       slots.forEach(([, d], i) => bind(els[i], d));
       // End turn, the turn's one constant, sits at the bar's end outside the scroll, so it is always whole
       const pass = src.pass && scene && scene.actor ? [hbDesc({ cls: 'mp-hb pass', pass: true, name: 'End turn', small: 'Pass' })] : [];
@@ -798,7 +831,7 @@ export function register(app) {
       const sig = slots.map(([key]) => key).join();
       if (hot.dataset.sig !== sig) { hot.dataset.sig = sig; cutSeen.disconnect(); if (hot.lastElementChild) cutSeen.observe(hot.lastElementChild); }
       const pinned = h.bar.filter(s => s.pinned), full = h.full;
-      const row = s => `<li>${btn(s)}${s.item ? '' : `<button type="button" class="quiet" data-pin="${esc(s.id)}" aria-pressed="${s.pinned}"${!s.pinned && full ? ' disabled' : ''}>${s.pinned ? 'Unpin' : 'Pin'}</button>`}</li>`;
+      const row = s => `<li>${btn(s)}<button type="button" class="mp-info mp-dinfo" data-ab-info="${esc(s.id)}" aria-label="${esc(`About ${s.name}`)}" aria-expanded="false"><i aria-hidden="true">i</i></button>${s.item ? '' : `<button type="button" class="quiet" data-pin="${esc(s.id)}" aria-pressed="${s.pinned}"${!s.pinned && full ? ' disabled' : ''}>${s.pinned ? 'Unpin' : 'Pin'}</button>`}</li>`;
       const dhtml = choice.drawer ? `<ul aria-label="More abilities and items">${[...pinned, ...h.more].map(row).join('')}</ul>` : '';
       if (dr.dataset.sig !== dhtml) { dr.dataset.sig = dhtml; dr.innerHTML = dhtml; }
       dr.hidden = !choice.drawer;

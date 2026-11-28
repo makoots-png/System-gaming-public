@@ -164,6 +164,7 @@ function makeKeenSlash(o: {
   const base = abilityOf('strike', {
     id: ID_SLASH,
     name: o.name,
+    desc: `Quick strike within 2 tiles for physical damage that applies ${o.exposedDef.label} for 1 round.`,
     range: tiles(2),
     shape: { kind: 'touch', reach: tiles(2) },
     effect: { type: 'physical', by: 'hand', formula: f(o.formula) },
@@ -194,6 +195,7 @@ function makeDeflectingEdge(o: {
   const base = abilityOf('strike', {
     id: ID_PARRY,
     name: o.name,
+    desc: `Reaction. Negate an incoming hit on yourself and gain Parry Edge (${o.edgeDealtPct}% damage dealt, ${o.edgeSpeedPct}% speed, and attack advantage) for 1 round.`,
     aim: 'self',
     shape: { kind: 'self' },
     range: tiles(0),
@@ -223,6 +225,7 @@ function makeRendingGale(o: {
   const base = abilityOf('strike', {
     id: ID_GALE,
     name: o.name,
+    desc: `Slash a foe within 3 tiles for physical damage, fill ${Math.round(o.staggerShare * 100)}% stagger, and apply Gale Slow for 1 round.`,
     range: tiles(3),
     shape: { kind: 'touch', reach: tiles(3) },
     effect: { type: 'physical', by: 'hand', formula: f(o.formula) },
@@ -247,6 +250,7 @@ function makeHundredCuts(o: {
   const base = abilityOf('strike', {
     id: ID_CUTS,
     name: o.name,
+    desc: `Strike a foe within 4 tiles for physical damage and inflict ${o.bleedDef.label} for 2 rounds.`,
     range: tiles(4),
     shape: { kind: 'touch', reach: tiles(4) },
     effect: { type: 'physical', by: 'hand', formula: f(o.formula) },

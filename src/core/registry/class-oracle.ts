@@ -192,12 +192,14 @@ const SEER_OF_FATE: ClassWorn = makeSecondSight({
 
 function makeForetell(o: {
   readonly name: string;
+  readonly desc: string;
   readonly shieldFormula: string;
   readonly extraOps?: readonly UseOp[];
 }): Ability {
   const base = abilityOf('support', {
     id: ID_FORETELL,
     name: o.name,
+    desc: o.desc,
     aim: 'ally',
     range: tiles(7),
     shape: { kind: 'touch', reach: tiles(7) },
@@ -220,6 +222,7 @@ function makeTwinAugury(): Ability {
   const base = abilityOf('support', {
     id: ID_FORETELL,
     name: 'Foretell: Twin Augury',
+    desc: 'Shield yourself and allies within 2 tiles and grant Foretold Favor and Foreseen Strike for 2 rounds.',
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -236,6 +239,7 @@ function makeTwinAugury(): Ability {
 
 function makeFatedBolt(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly doomKey: StatusKey;
   readonly doomDef: StatusDef;
@@ -243,6 +247,7 @@ function makeFatedBolt(o: {
   const base = abilityOf('curse', {
     id: ID_BOLT,
     name: o.name,
+    desc: o.desc,
     aim: 'foe',
     range: tiles(8),
     shape: { kind: 'touch', reach: tiles(8) },
@@ -262,11 +267,13 @@ function makeFatedBolt(o: {
 
 const BASE_FORETELL = makeForetell({
   name: 'Foretell',
+  desc: 'Shield an ally within 7 tiles and grant Foretold Favor and Foreseen Strike for 2 rounds.',
   shieldFormula: '1d6 + 0.85 * sup',
 });
 
 const UP_FORETELL_WARD = makeForetell({
   name: 'Foretell: Prophetic Ward',
+  desc: 'Shield an ally within 7 tiles, grant Foretold Favor and Foreseen Strike for 2 rounds, and cleanse one harmful status.',
   shieldFormula: '1d8 + 0.95 * sup',
   extraOps: [{ op: 'dispel', which: 'first' }],
 });
@@ -275,6 +282,7 @@ const UP_FORETELL_TWIN = makeTwinAugury();
 
 const BASE_BOLT = makeFatedBolt({
   name: 'Fated Bolt',
+  desc: 'Deal arcane damage to a foe within 8 tiles and apply Fated Doom and Clouded Fate for 2 rounds.',
   formula: '1d6 + 0.6 * sup',
   doomKey: KEY_DOOM,
   doomDef: FATED_DOOM,
@@ -282,6 +290,7 @@ const BASE_BOLT = makeFatedBolt({
 
 const UP_BOLT_INEVITABLE = makeFatedBolt({
   name: 'Fated Bolt: Inevitable Doom',
+  desc: 'Deal arcane damage to a foe within 8 tiles and apply Inevitable Doom and Clouded Fate for 2 rounds.',
   formula: '1d6 + 0.65 * sup',
   doomKey: KEY_DOOM_UP,
   doomDef: INEVITABLE_DOOM,
@@ -289,6 +298,7 @@ const UP_BOLT_INEVITABLE = makeFatedBolt({
 
 const UP_BOLT_SHATTERED = makeFatedBolt({
   name: 'Fated Bolt: Shattered Fate',
+  desc: 'Deal arcane damage to a foe within 8 tiles and apply Shattered Doom and Clouded Fate for 2 rounds.',
   formula: '1d6 + 0.6 * sup',
   doomKey: KEY_DOOM_SHATTER,
   doomDef: SHATTERED_DOOM,

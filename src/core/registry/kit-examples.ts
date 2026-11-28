@@ -70,37 +70,40 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
     ({ op: 'applyStatus', key: statusKey(key), def: S[key]!, duration: n === null ? null : rounds(n, R), ...(stacks ? { stacks } : {}) });
   const active = (name: string, desc: string, ability: Ability): SkillTemplate => ({ name, level: 1, label: null, desc, type: 'active', ability });
   const execute = suggestedScaler('strike', 'execute', R);
-  const vanish = make('support', 'Vanish', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('vanished', 2)] }, R);
+  const vanish = make('support', 'Vanish', { desc: 'Gain Vanished for 2 rounds to hide even in plain sight.', aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('vanished', 2)] }, R);
+  const parryPct = Math.round(R.fight.kit.parry * 100);
+  const hpSharePct = Math.round(R.fight.kit.hpShare * 100);
+  const sumRounds = R.fight.kit.summonRounds;
   return [
     active('Bloodletting', 'A curse that deals arcane damage and adds a Resonance stack to the target.',
-      make('curse', 'Bloodletting', { effect: { type: 'arcane', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
+      make('curse', 'Bloodletting', { desc: 'Deal arcane damage and apply Resonance for 2 rounds.', effect: { type: 'arcane', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
     active('Fester', 'A curse that deals more damage for each Resonance stack on the target, then adds one more stack.',
-      make('curse', 'Fester', { effect: { type: 'arcane', by: 'hand', formula: formula('0.6 * (2d6 + mag) * (1 + 0.15 * target.stacks(resonance))', R) }, ops: [apply('resonance', 2)] }, R)),
+      make('curse', 'Fester', { desc: 'Deal arcane damage that scales with Resonance stacks on the target, then apply Resonance for 2 rounds.', effect: { type: 'arcane', by: 'hand', formula: formula('0.6 * (2d6 + mag) * (1 + 0.15 * target.stacks(resonance))', R) }, ops: [apply('resonance', 2)] }, R)),
     active('Crimson Pact', 'Costs half your max HP. You get Crimson Pact for 3 rounds.',
-      { ...make('support', 'Crimson Pact', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('crimson-pact', 3)] }, R),
+      { ...make('support', 'Crimson Pact', { desc: `Pay ${hpSharePct}% of your max HP to gain Crimson Pact for 3 rounds.`, aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('crimson-pact', 3)] }, R),
         prices: [{ kind: 'hp', amount: { kind: 'share', share: R.fight.kit.hpShare } }] }),
     active('Hemoplague', 'Usable only while you have Crimson Pact. A curse that puts Hemoplague on the target, which deals its damage 3 rounds later.',
-      { ...make('curse', 'Hemoplague', { effect: null, ops: [apply('hemoplague', 3)] }, R), gates: [{ kind: 'holds', key: statusKey('crimson-pact'), on: 'self', atLeast: 1 }] }),
+      { ...make('curse', 'Hemoplague', { desc: 'Requires Crimson Pact. Apply Hemoplague for 3 rounds. It deals arcane damage when it ends.', effect: null, ops: [apply('hemoplague', 3)] }, R), gates: [{ kind: 'holds', key: statusKey('crimson-pact'), on: 'self', atLeast: 1 }] }),
     active('Executioner\'s Cut', 'Costs 5% of your max HP. The lower the target\'s HP, the more damage it deals.',
-      { ...make('strike', 'Executioner\'s Cut', { ticks: { scalers: [execute] } }, R), prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.05 } }] }),
+      { ...make('strike', 'Executioner\'s Cut', { desc: 'Pay 5% of your max HP to strike a foe. Deals more damage the lower the target\'s HP.', ticks: { scalers: [execute] } }, R), prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.05 } }] }),
     active('Disaster Stroke', 'A curse that adds 1 Signature stack to the target. At 2 stacks, Signature deals its damage.',
-      make('curse', 'Disaster Stroke', { effect: { type: 'arcane', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`, R) }, ops: [apply('signature', 2)] }, R)),
+      make('curse', 'Disaster Stroke', { desc: 'Deal arcane damage and apply Signature for 2 rounds. At 2 stacks, Signature bursts in an area.', effect: { type: 'arcane', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`, R) }, ops: [apply('signature', 2)] }, R)),
     active('Violence', 'A strike that spends all your Pain stacks and deals 6% more damage for each one.',
-      { ...make('strike', 'Violence', { effect: { type: 'physical', by: 'hand', formula: formula(`(1d8 + phys) * (1 + ${K.pain.perStack} * spent)`, R) } }, R),
+      { ...make('strike', 'Violence', { desc: 'Spend all your Pain stacks to strike a foe, dealing bonus physical damage for each stack spent.', effect: { type: 'physical', by: 'hand', formula: formula(`(1d8 + phys) * (1 + ${K.pain.perStack} * spent)`, R) } }, R),
         prices: [{ kind: 'stacks', key: statusKey('pain'), from: 'self', take: { kind: 'all' } }] }),
     { name: 'Pain is Power', level: 1, label: null, desc: 'Each hit you deal adds 1 Pain stack.', type: 'passive', bonus: {},
-      worn: { label: 'Pain is Power', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [apply('pain', null)] }] } },
+      worn: { label: 'Pain is Power', desc: 'Each hit you deal adds a Pain stack.', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [apply('pain', null)] }] } },
     active('Parry', 'Use as a reaction before a strike hits you to reduce its damage. Its action time delays your next turn.',
-      { ...make('strike', 'Parry', { effect: null, ops: [{ op: 'guard', share: R.fight.kit.parry }] }, R), cost: { ...make('shot', 'q', {}, R).cost, fatigue: 0 }, react: { when: 'before', reach: tiles(0) } }),
+      { ...make('strike', 'Parry', { desc: `Arm as a reaction before a strike hits you to cut its damage by ${parryPct}%.`, effect: null, ops: [{ op: 'guard', share: R.fight.kit.parry }] }, R), cost: { ...make('shot', 'q', {}, R).cost, fatigue: 0 }, react: { when: 'before', reach: tiles(0) } }),
     active('Call Sprite', 'Once a fight, summon a Sprite, a skirmisher that fights on your side for a few rounds.',
-      { ...make('support', 'Call Sprite', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null }, R), gates: [{ kind: 'uses', per: 'fight', n: 1 }],
-        summon: { name: 'Sprite', archetype: 'skirmisher', rounds: R.fight.kit.summonRounds, statuses: [] } }),
+      { ...make('support', 'Call Sprite', { desc: `Once per fight, summon a Sprite skirmisher for ${sumRounds} round${sumRounds === 1 ? '' : 's'}.`, aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null }, R), gates: [{ kind: 'uses', per: 'fight', n: 1 }],
+        summon: { name: 'Sprite', archetype: 'skirmisher', rounds: sumRounds, statuses: [] } }),
     active('Vanish', 'You become Vanished for 2 rounds, hiding even in a foe\'s sight. Your stealth level rises with your rank.', { ...vanish, cost: { ...vanish.cost, cooldown: rounds(5, R) } }),
     { name: 'Unseen Blade', level: 1, label: null, desc: 'Dealing damage does not end your hiding, so each hit from hiding is an ambush until you are hurt or revealed.', type: 'passive', bonus: {},
-      worn: { label: 'Unseen Blade', desc: '', ops: [{ op: 'stayHidden', on: 'dealt' }] } },
+      worn: { label: 'Unseen Blade', desc: 'Dealing damage does not end your hiding.', ops: [{ op: 'stayHidden', on: 'dealt' }] } },
     { name: 'Hunter\'s Eye', level: 1, label: null, desc: 'Your sight level is 2. You can see foes hidden at stealth level 1 or lower.', type: 'passive', bonus: {},
-      worn: { label: 'Hunter\'s Eye', desc: '', ops: [{ op: 'sheet', key: 'sight', amount: 2 }] } },
+      worn: { label: 'Hunter\'s Eye', desc: 'Adds 2 to your sight level, letting you see hidden foes at stealth level 1 or lower.', ops: [{ op: 'sheet', key: 'sight', amount: 2 }] } },
     active('Flare', 'A blast that reveals everyone in the area. Any stealth that ends when revealed ends, regardless of your sight level.',
-      make('blast', 'Flare', { effect: null, ops: [{ op: 'reveal' }] }, R)),
+      make('blast', 'Flare', { desc: 'Reveal every hidden combatant in the blast area.', effect: null, ops: [{ op: 'reveal' }] }, R)),
   ];
 }

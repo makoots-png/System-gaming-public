@@ -209,6 +209,9 @@ function makeIronCage(o: {
   const base = abilityOf('blast', {
     id: ID_CAGE,
     name: o.name,
+    desc: o.extraOps?.length
+      ? `Drop a ${o.radiusTiles}-tile Iron Cage within 4 tiles for 2 rounds that pulls foes ${o.shoveTiles} tiles inward, roots and taunts them, fills 25% stagger, and applies Cracked Armor.`
+      : `Drop a ${o.radiusTiles}-tile Iron Cage within 4 tiles for 2 rounds that pulls foes ${o.shoveTiles} tiles inward, roots and taunts them, and cuts their damage dealt.`,
     aim: 'place',
     range: tiles(4),
     shape: { kind: 'radius', radius: tiles(o.radiusTiles), ring: null },
@@ -248,6 +251,7 @@ function makeIntercept(o: {
   const base = abilityOf('support', {
     id: ID_INTERCEPT,
     name: o.name,
+    desc: `Reaction. Shield an ally within ${o.reachTiles} tiles, absorb ${Math.round(o.guardShare * 100)}% of an incoming hit, and grant Iron Safeguard for 1 round.`,
     aim: 'ally',
     range: tiles(o.reachTiles),
     shape: { kind: 'touch', reach: tiles(o.reachTiles) },
@@ -276,6 +280,9 @@ function makeShieldSlam(o: {
   const base = abilityOf('strike', {
     id: ID_SLAM,
     name: o.name,
+    desc: o.withCrack
+      ? `Slam a melee foe for armor- and Siege Charge-scaled damage, fill ${Math.round(o.staggerShare * 100)}% stagger, taunt them, and apply Cracked Armor for 2 rounds.`
+      : `Slam a melee foe for armor- and Siege Charge-scaled damage, fill ${Math.round(o.staggerShare * 100)}% stagger, and taunt them for 2 rounds.`,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -306,6 +313,9 @@ function makeUnbreakable(o: {
   const base = abilityOf('support', {
     id: ID_STANCE,
     name: o.name,
+    desc: o.dispel === 'all'
+      ? `Shield yourself, cleanse all harmful statuses, and enter ${o.stanceDef.label} for 2 rounds.`
+      : `Shield yourself, cleanse one harmful status, and enter ${o.stanceDef.label} for 2 rounds.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },

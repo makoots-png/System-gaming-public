@@ -239,6 +239,7 @@ function makeVoidRend(o: {
   const base = abilityOf('strike', {
     id: ID_REND,
     name: o.name,
+    desc: `Strike a melee foe for physical damage and apply ${o.brandDef.label} for 2 rounds.`,
     aim: 'foe',
     range: tiles(1),
     shape: { kind: 'touch', reach: tiles(1) },
@@ -262,6 +263,9 @@ function makePhaseBlink(o: {
   const base = abilityOf('support', {
     id: ID_BLINK,
     name: o.name,
+    desc: o.extraOps?.length
+      ? `Blink up to 6 tiles, trigger Phase Rush, and gain ${o.shroudDef.label} and Umbral Fade for 1 round.`
+      : `Blink up to 6 tiles, trigger Phase Rush, and gain ${o.shroudDef.label} for 1 round.`,
     aim: 'place',
     range: tiles(6),
     shape: { kind: 'self' },
@@ -291,6 +295,7 @@ function makePhantomCut(o: {
   const base = abilityOf('strike', {
     id: ID_CUT,
     name: o.name,
+    desc: 'Quick strike on a foe within 2 tiles for physical damage that applies Rift Gap for 2 rounds.',
     aim: 'foe',
     range: tiles(2),
     shape: { kind: 'touch', reach: tiles(2) },
@@ -309,6 +314,7 @@ function makeAbyssalSwap(): Ability {
   const base = abilityOf('curse', {
     id: ID_SWAP,
     name: 'Abyssal Swap',
+    desc: 'Swap places with a foe within 6 tiles, dealing arcane damage and applying Void Marked for 2 rounds.',
     aim: 'foe',
     range: tiles(6),
     shape: { kind: 'touch', reach: tiles(6) },

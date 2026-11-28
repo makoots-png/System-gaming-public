@@ -145,6 +145,7 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
     const strike = recommended('strike', defaultTicks('strike'), R).text;
     const a = abilityOf('strike', {
       id: abilityId('keystone-shatter'), name: 'Shatter',
+      desc: 'Strike a foe for 15% extra damage and fill 15% of its stagger bar.',
       effect: { type: 'physical', by: 'hand', formula: formula(`1.15 * (${strike})`, R) },
       ops: [{ op: 'stagger', share: 0.15 }],
     }, R);
@@ -188,7 +189,9 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
     const blast = recommended('blast', defaultTicks('blast'), R).text;
     const zoneType = damageTypeOf('keystone-cataclysm-zone', 'arcane', R);
     const a = abilityOf('blast', {
-      id: abilityId('keystone-cataclysm'), name: 'Cataclysm', shape: { kind: 'radius', radius: tiles(3), ring: null },
+      id: abilityId('keystone-cataclysm'), name: 'Cataclysm',
+      desc: 'Blast a 3-tile area with arcane damage and leave a burning field for 2 rounds.',
+      shape: { kind: 'radius', radius: tiles(3), ring: null },
       effect: { type: 'arcane', by: 'hand', formula: formula(blast, R) },
       zone: { name: 'Cataclysm', duration: rounds(2, R), ops: [{ op: 'damage', type: zoneType, when: 'turn', amount: formula('0.2 * mag', R) }], endsWithOwner: false, around: null, grow: null },
     }, R);
@@ -427,7 +430,9 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     const summonRounds = R.fight.kit.summonRounds;
     const callLine = `Once a fight, you can use Call Shadow to summon a same-rank Shadow Soldier for ${summonRounds} round${summonRounds === 1 ? '' : 's'}.`;
     const callBase = abilityOf('support', {
-      id: abilityId('keystone-call-shadow'), name: 'Call Shadow', aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
+      id: abilityId('keystone-call-shadow'), name: 'Call Shadow',
+      desc: `Summon a same-rank Shadow Soldier for ${summonRounds} round${summonRounds === 1 ? '' : 's'}.`,
+      aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
     }, R);
     const callShadow: Ability = {
       ...callBase,

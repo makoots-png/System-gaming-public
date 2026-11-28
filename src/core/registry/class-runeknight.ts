@@ -147,6 +147,7 @@ const MASTER_RUNEBLADE: ClassWorn = makeRunicEdge({
 
 function makeSigilBolt(o: {
   readonly name: string;
+  readonly desc: string;
   readonly radiusTiles?: number;
   readonly extraOps?: readonly UseOp[];
 }): Ability {
@@ -154,6 +155,7 @@ function makeSigilBolt(o: {
   const base = abilityOf('curse', {
     id: ID_BOLT,
     name: o.name,
+    desc: o.desc,
     aim: isArea ? 'place' : 'foe',
     range: tiles(6),
     shape: isArea ? { kind: 'radius', radius: tiles(o.radiusTiles!), ring: null } : { kind: 'touch', reach: tiles(6) },
@@ -179,6 +181,7 @@ const RUNEMARK_PRICES: readonly Price[] = [
 
 function makeRunebladeSlash(o: {
   readonly name: string;
+  readonly desc: string;
   readonly formula: string;
   readonly staggerShare: number;
   readonly cleaveRadius?: number;
@@ -187,6 +190,7 @@ function makeRunebladeSlash(o: {
   const base = abilityOf('strike', {
     id: ID_SLASH,
     name: o.name,
+    desc: o.desc,
     aim: isCleave ? 'place' : 'foe',
     range: tiles(1),
     shape: isCleave ? { kind: 'radius', radius: tiles(o.cleaveRadius!), ring: null } : { kind: 'touch', reach: tiles(1) },
@@ -204,32 +208,38 @@ function makeRunebladeSlash(o: {
 
 const BASE_BOLT = makeSigilBolt({
   name: 'Sigil Bolt',
+  desc: 'Quick arcane strike on a foe within 6 tiles that applies Runemark for 2 rounds.',
 });
 
 const UP_BOLT_ARCING = makeSigilBolt({
   name: 'Sigil Bolt: Arcing Sigil',
+  desc: 'Quick arcane blast in a 2-tile radius within 6 tiles that applies Runemark for 2 rounds.',
   radiusTiles: 2,
 });
 
 const UP_BOLT_FROST = makeSigilBolt({
   name: 'Sigil Bolt: Frost Sigil',
+  desc: 'Quick arcane strike on a foe within 6 tiles that applies Runemark and Rune Frost for 2 rounds.',
   extraOps: [{ op: 'applyStatus', key: KEY_FROST, def: RUNE_FROST, duration: rounds(2) }],
 });
 
 const BASE_SLASH = makeRunebladeSlash({
   name: 'Runeblade Slash',
+  desc: 'Melee slash that consumes all Runemark stacks on the target for bonus scaling and fills 12% of their stagger bar.',
   formula: '1d8 + 0.65 * phys + 0.3 * mag + 0.25 * mag * spent',
   staggerShare: 0.12,
 });
 
 const UP_SLASH_DETONATE = makeRunebladeSlash({
   name: 'Runeblade Slash: Detonating Edge',
+  desc: 'Melee slash that consumes all Runemark stacks on the target for stronger bonus scaling and fills 15% of their stagger bar.',
   formula: '1d8 + 0.7 * phys + 0.35 * mag + 0.3 * mag * spent',
   staggerShare: 0.15,
 });
 
 const UP_SLASH_CLEAVE = makeRunebladeSlash({
   name: 'Runeblade Slash: Runic Cleave',
+  desc: 'Cleave foes in a 1-tile radius, consuming all Runemark stacks for bonus scaling and filling 12% of their stagger bar.',
   formula: '1d8 + 0.65 * phys + 0.3 * mag + 0.25 * mag * spent',
   staggerShare: 0.12,
   cleaveRadius: 1,

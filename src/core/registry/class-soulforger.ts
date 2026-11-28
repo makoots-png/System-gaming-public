@@ -207,6 +207,7 @@ function makeHammerfall(o: {
   const base = abilityOf('blast', {
     id: ID_HAMMERFALL,
     name: o.name,
+    desc: `Channeled blast (up to 3 charges) in a ${o.radiusTiles}-tile area within 8 tiles that deals arcane damage, fills ${Math.round(o.staggerShare * 100)}% stagger, and applies Soul Fray for 2 rounds.`,
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(o.radiusTiles), ring: null },
@@ -227,12 +228,14 @@ function makeHammerfall(o: {
 
 function makeTemper(o: {
   readonly name: string;
+  readonly desc: string;
   readonly cooldownRounds?: number;
   readonly extraOps?: readonly UseOp[];
 }): Ability {
   const base = abilityOf('support', {
     id: ID_TEMPER,
     name: o.name,
+    desc: o.desc,
     aim: 'ally',
     range: tiles(6),
     shape: { kind: 'touch', reach: tiles(6) },
@@ -255,6 +258,7 @@ function makeSoulAnvil(): Ability {
   const base = abilityOf('blast', {
     id: ID_ANVIL,
     name: 'Soul Anvil',
+    desc: 'Blast a 2-tile area within 8 tiles for arcane damage and leave a 3-round Soul Anvil zone that burns foes each turn.',
     aim: 'place',
     range: tiles(8),
     shape: { kind: 'radius', radius: tiles(2), ring: null },
@@ -289,6 +293,7 @@ function makeSoulboundBlade(o: {
   const base = abilityOf('support', {
     id: ID_BLADE,
     name: o.name,
+    desc: `Spend 3 Soul Embers to shield yourself and summon a ${o.summonName} that fights for 5 rounds.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -337,10 +342,12 @@ const UP_HAMMERFALL_SHATTER = makeHammerfall({
 
 const BASE_TEMPER = makeTemper({
   name: 'Temper',
+  desc: 'Shield an ally within 6 tiles and grant Tempered for 2 rounds.',
 });
 
 const UP_TEMPER_AEGIS = makeTemper({
   name: 'Temper: Aegis Temper',
+  desc: 'Shield an ally within 6 tiles, grant Tempered for 2 rounds and Aegis Ward for 1 round, and pulse Aegis Pulse to allies within 2 tiles.',
   cooldownRounds: 3,
   extraOps: [
     { op: 'applyStatus', key: KEY_SAFEGUARD, def: SAFEGUARD_DEF, duration: rounds(1) },
@@ -350,6 +357,7 @@ const UP_TEMPER_AEGIS = makeTemper({
 
 const UP_TEMPER_QUENCH = makeTemper({
   name: 'Temper: Quench Temper',
+  desc: 'Shield an ally within 6 tiles, grant Tempered for 2 rounds, cleanse one harmful status, and restore 8 mana.',
   extraOps: [
     { op: 'dispel', which: 'first' },
     { op: 'mana', when: 'use', amount: f('8') },

@@ -171,6 +171,9 @@ function makeHalo(o: {
   const base = abilityOf('support', {
     id: ID_HALO,
     name: o.name,
+    desc: o.withBoon
+      ? `Lethal reaction. Heal an ally within ${o.reachTiles} tiles and grant Deathless Halo, Hallowed Ward, and Miracle Vow for 1 round.`
+      : `Lethal reaction. Heal an ally within ${o.reachTiles} tiles and grant Deathless Halo and Hallowed Ward for 1 round.`,
     aim: 'ally',
     range: tiles(o.reachTiles),
     shape: { kind: 'touch', reach: tiles(o.reachTiles) },
@@ -192,6 +195,7 @@ function makeHalo(o: {
 
 function makeMend(o: {
   readonly name: string;
+  readonly desc: string;
   readonly effectType: 'heal' | 'shield';
   readonly formula: string;
   readonly dispel: 'first' | 'all';
@@ -202,6 +206,7 @@ function makeMend(o: {
   const base = abilityOf('support', {
     id: ID_MEND,
     name: o.name,
+    desc: o.desc,
     aim: 'ally',
     range: tiles(6),
     shape: { kind: 'touch', reach: tiles(6) },
@@ -257,6 +262,7 @@ function makeSanctuary(o: {
   const base = abilityOf('support', {
     id: ID_SANCTUARY,
     name: o.name,
+    desc: `Create a 3-tile Sanctuary aura around you for ${o.zoneRounds} rounds that cuts ally damage taken by ${Math.abs(o.zoneTakenPct)}%, shields and hastens nearby allies, and heals them each turn.`,
     aim: 'self',
     range: tiles(0),
     shape: { kind: 'self' },
@@ -290,6 +296,9 @@ function makeJudgment(o: {
   const base = abilityOf('curse', {
     id: ID_JUDGMENT,
     name: o.name,
+    desc: o.staggerShare > 0
+      ? `Deal arcane damage to a foe within 7 tiles, apply ${o.judgedDef.label} for 2 rounds, and fill ${Math.round(o.staggerShare * 100)}% stagger.`
+      : `Deal arcane damage to a foe within 7 tiles and apply ${o.judgedDef.label} for 2 rounds.`,
     aim: 'foe',
     range: tiles(7),
     shape: { kind: 'touch', reach: tiles(7) },
@@ -325,6 +334,7 @@ const UP_HALO = makeHalo({
 
 const BASE_MEND = makeMend({
   name: 'Radiant Mend',
+  desc: 'Heal an ally within 6 tiles, cleanse one harmful status, and grant Seraphic Light for 2 rounds.',
   effectType: 'heal',
   formula: '1d8 + 1.5 * sup',
   dispel: 'first',
@@ -334,6 +344,7 @@ const BASE_MEND = makeMend({
 
 const UP_MEND_HALLOWED = makeMend({
   name: 'Radiant Mend: Hallowed',
+  desc: 'Heal and shield an ally within 6 tiles, cleanse all harmful statuses, and grant Radiant Light for 2 rounds.',
   effectType: 'heal',
   formula: '1d8 + 1.5 * sup',
   dispel: 'all',
@@ -344,6 +355,7 @@ const UP_MEND_HALLOWED = makeMend({
 
 const UP_MEND_AEGIS = makeMend({
   name: 'Radiant Mend: Aegis of Dawn',
+  desc: 'Shield an ally within 6 tiles, cleanse one harmful status, hasten them by 15%, and grant Seraphic Light for 2 rounds.',
   effectType: 'shield',
   formula: '1d8 + 1.65 * sup',
   dispel: 'first',

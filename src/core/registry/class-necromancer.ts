@@ -100,6 +100,7 @@ function makeArise(o: {
   return {
     id: ID_ARISE,
     name: o.name,
+    desc: `Attempt to raise a fallen monster within 6 tiles as a shadow minion (+${o.raise.bonus} Presence check, up to ${o.raise.maxRisen} risen at once).`,
     kind: 'support',
     cost: { fatigue: 6, mana: o.mana, time: cost(R.fight.cost.standard), cooldown: rounds(1) },
     aim: 'corpse',
@@ -149,6 +150,9 @@ function makeDomain(o: {
   const base = abilityOf('support', {
     id: ID_DOMAIN,
     name: o.name,
+    desc: o.movesWithOwner
+      ? `Open a moving 5-tile ${o.auraDef.label} for ${o.durationRounds} rounds that boosts nearby minions and shreds foe armor and resist.`
+      : `Open a 5-tile ${o.auraDef.label} for ${o.durationRounds} rounds that boosts nearby minions and shreds foe armor and resist.`,
     aim: 'self',
     shape: { kind: 'radius', radius: tiles(5), ring: null },
     range: tiles(0),
@@ -185,6 +189,7 @@ function makeAuthority(o: {
   const base = abilityOf('blast', {
     id: ID_AUTHORITY,
     name: o.name,
+    desc: `Crush foes in a 2-tile area within 6 tiles for arcane damage, pulling them 3 tiles toward the center and filling ${Math.round(o.staggerShare * 100)}% stagger.`,
     aim: 'place',
     range: tiles(6),
     shape: { kind: 'radius', radius: tiles(2), ring: null },
@@ -210,6 +215,7 @@ function makeExchange(o: {
   const base = abilityOf('support', {
     id: ID_EXCHANGE,
     name: o.name,
+    desc: `Swap places with a shadow minion within 12 tiles and leave a 2-tile Shadow Wake around you for 1 round that slows foes by ${Math.abs(o.slowPct)}%.`,
     aim: 'ally',
     range: tiles(12),
     shape: { kind: 'touch', reach: tiles(12) },

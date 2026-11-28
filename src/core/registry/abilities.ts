@@ -60,7 +60,7 @@ type Differs = {
   readonly finesse?: boolean;
 };
 /** Fields an ability sets past its kind's, as `abilityOf` takes them. */
-type Fields = Pick<AbilityInput, 'aim' | 'shape' | 'range' | 'delivery' | 'effect' | 'ops' | 'zone' | 'move'>;
+type Fields = Pick<AbilityInput, 'desc' | 'aim' | 'shape' | 'range' | 'delivery' | 'effect' | 'ops' | 'zone' | 'move'>;
 
 /** `f` with each dice term replaced by `dice`. */
 function withDice(f: Formula, dice: Formula): Formula {
@@ -122,9 +122,9 @@ const stampType = (a: Ability, type: DamageType): Ability =>
 
 /** Each monster archetype's default attack (plan 3.2): a brute strikes, a skirmisher shoots, a caster curses. */
 export const ARCHETYPE_ATTACKS: { readonly [A in Archetype]: (R: KindRules) => Ability } = {
-  brute: R => stampType(built('strike', ATTACK_ID, 'Strike', {}, R), damageTypeOf('attack-brute', 'physical', R)),
-  skirmisher: R => stampType(built('shot', ATTACK_ID, 'Shot', {}, R), damageTypeOf('attack-skirmisher', 'physical', R)),
-  caster: R => stampType(built('curse', ATTACK_ID, 'Curse', {}, R), damageTypeOf('attack-caster', 'arcane', R)),
+  brute: R => stampType(built('strike', ATTACK_ID, 'Strike', {}, R, { desc: 'Basic melee attack against one adjacent foe.' }), damageTypeOf('attack-brute', 'physical', R)),
+  skirmisher: R => stampType(built('shot', ATTACK_ID, 'Shot', {}, R, { desc: 'Basic ranged shot fired in a straight line at the first foe hit.' }), damageTypeOf('attack-skirmisher', 'physical', R)),
+  caster: R => stampType(built('curse', ATTACK_ID, 'Curse', {}, R, { desc: 'Basic arcane curse resisted by the target\'s Discipline.' }), damageTypeOf('attack-caster', 'arcane', R)),
 };
 
 /**
@@ -134,9 +134,12 @@ export const ARCHETYPE_ATTACKS: { readonly [A in Archetype]: (R: KindRules) => A
  * stamped with `item.damageType` (or the `attack-unarmed` override when unarmed) so the formula never shifts on retype.
  */
 export function weaponAttack(item: Weapon | null, R: KindRules): Ability {
-  if (item === null) return stampType(built('strike', ATTACK_ID, 'Strike', {}, R), damageTypeOf('attack-unarmed', 'physical', R));
+  if (item === null) return stampType(built('strike', ATTACK_ID, 'Strike', {}, R, { desc: 'Basic unarmed melee attack against one adjacent foe.' }), damageTypeOf('attack-unarmed', 'physical', R));
   const finesse = item.attack === 'shot' || item.finesse === true;
-  const base = built(item.attack, ATTACK_ID, item.name, { dice: item.dice, ...(finesse ? { finesse: true } : {}) }, R);
+  const desc = item.attack === 'shot'
+    ? 'Basic ranged weapon shot fired in a straight line at the first foe hit.'
+    : 'Basic melee weapon attack against one adjacent foe.';
+  const base = built(item.attack, ATTACK_ID, item.name, { dice: item.dice, ...(finesse ? { finesse: true } : {}) }, R, { desc });
   return item.damageType ? stampType(base, item.damageType) : base;
 }
 
@@ -239,7 +242,7 @@ export function monsterAbility(spec: MonsterSpec, R: MonsterRules): Ability {
 // ── a consumable used in a fight, and a held thing's active ──
 
 /** What `itemAbility` reads of an item: a consumable, used on its user or (`target: 'other'`) on another. */
-export type ThrownItem = { readonly id: ItemId; readonly name: string; readonly rar: string; readonly target?: 'self' | 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true };
+export type ThrownItem = { readonly id: ItemId; readonly name: string; readonly desc?: string; readonly rar: string; readonly target?: 'self' | 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true };
 /** The id of the ability of the item with id `itemId`: the room's `cast` names an ability in at most 40 characters. */
 export const itemAbilityId = (itemId: string): AbilityId => abilityId(`item-${itemId}`.slice(0, 40));
 /**
@@ -269,7 +272,8 @@ export function itemAbility(item: ThrownItem, R: KindRules & Pick<Rules, 'rariti
   const ops = effects.filter(isUseOp).flatMap((o): UseOp[] => o.op !== 'mana' && o.op !== 'fatigue' ? [o] : self ? [{ op: o.op, amount: atTier(o.amount, tier) }] : []);
   if (effect === null && ops.length === 0) return null;
   const kind = self || effect?.type === 'heal' ? 'support' : 'curse';
-  const base = abilityOf(kind, { id: itemAbilityId(item.id), name: item.name, effect, ops, delivery: { kind: 'sure' }, ...(self ? { aim: 'self', shape: { kind: 'self' }, range: tiles(0) } : {}) }, R);
+  const desc = item.desc?.trim();
+  const base = abilityOf(kind, { id: itemAbilityId(item.id), name: item.name, ...(desc ? { desc } : {}), effect, ops, delivery: { kind: 'sure' }, ...(self ? { aim: 'self', shape: { kind: 'self' }, range: tiles(0) } : {}) }, R);
   const maxRank = self && item.rankCap ? R.rarities[item.rar as keyof Rules['rarities']]?.rank : undefined;
   const maxTier = maxRank ? RANKS.indexOf(maxRank) : undefined;
   return { ...base, item: item.id, ...(maxTier !== undefined && maxTier >= 0 ? { maxTier } : {}), cost: { fatigue: 0, mana: 0, time: cost(R.fight.consumableTime), cooldown: tick(0) } };

@@ -304,7 +304,7 @@ export function averages(formula: Formula, type: AbilityEffect['type'] | null, m
 
 /** What a caller gives `abilityOf`: an id and a name, the ticks, and any field it sets itself. */
 export type AbilityInput = { readonly id: AbilityId; readonly name: string; readonly ticks?: Partial<Ticks> }
-  & Partial<Pick<Ability, 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'foesOnly' | 'effect' | 'ops' | 'zone' | 'move'>>;
+  & Partial<Pick<Ability, 'desc' | 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'foesOnly' | 'effect' | 'ops' | 'zone' | 'move'>>;
 
 /**
  * An ability of `kind` with every field the input leaves out filled from the kind's defaults, then stamped with any GM
@@ -314,8 +314,9 @@ export type AbilityInput = { readonly id: AbilityId; readonly name: string; read
 export function abilityOf(kind: AbilityKind, input: AbilityInput, R: KindRules): Ability {
   const k = kindDefaults(kind, R), ticks: Ticks = { ...defaultTicks(kind, input.ticks?.type), ...input.ticks };
   const effect: AbilityEffect | null = input.effect !== undefined ? input.effect : { type: ticks.type, by: 'rule', ticks: ruleTicks(ticks) };
+  const desc = input.desc?.trim();
   return typed({
-    id: input.id, name: input.name, kind,
+    id: input.id, name: input.name, ...(desc ? { desc } : {}), kind,
     cost: input.cost ?? { fatigue: k.fatigue, mana: k.mana, time: paceCost(ticks.pace, R.fight), cooldown: k.cooldown },
     aim: input.aim ?? k.aim, range: input.range ?? k.range, shape: input.shape ?? k.shape, delivery: input.delivery ?? k.delivery,
     foesOnly: input.foesOnly ?? k.foesOnly, effect, ops: input.ops ?? [],
