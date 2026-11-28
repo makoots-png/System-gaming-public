@@ -23,7 +23,7 @@ import type { Gate, GateMonster, GateType } from './gates/gate.ts';
 import type { GateDifficulty } from './gates/difficulty.ts';
 import { clearGoldEach } from './gates/pay.ts';
 import { spawnGate } from './gates/world.ts';
-import { saveEntry } from './library.ts';
+import { namedLike, saveEntry } from './library.ts';
 import { newRewards } from './rewards.ts';
 import { parseStory } from './story/story.ts';
 import type { Chapter, Story, StoryTemplate } from './story/story.ts';
@@ -246,16 +246,91 @@ export function starterStory(R: Rules = RULES): StoryTemplate {
 /** Options for loading the starter campaign. `includePregens` defaults to true (4 sample hunters). */
 export type StarterOptions = { readonly includePregens?: boolean };
 
-/** Why the starter campaign cannot be written: a pregen, gate, or story failed validation, or the story library refused it. */
-export type StarterRefusal = Refused<'pregen' | 'gate' | 'story' | 'full' | 'taken'>;
+/** Which parts of the starter campaign `save` is missing for the requested options. */
+export type StarterMissing = {
+  readonly story: boolean;
+  readonly gate: boolean;
+  readonly pregens: readonly StarterPregen[];
+};
+
+/** Why the starter campaign cannot be written: everything requested is already loaded, validation failed, or the story library refused it. */
+export type StarterRefusal = Refused<'already' | 'pregen' | 'gate' | 'story' | 'full' | 'taken'>;
+
+/** What parts of the starter campaign `save` does not have yet for `options` (by canonical name, case-insensitive). */
+export function starterMissing(save: Save, options: StarterOptions = {}): StarterMissing {
+  const includePregens = options.includePregens !== false;
+  const hasStory = namedLike(save.library.stories, STARTER_STORY_NAME, null) !== null;
+  const hasGate = save.gates.some(g => g.name.toLowerCase() === STARTER_GATE.name.toLowerCase());
+  const seed = seedOf(save);
+  const replaceSeed = !hasStory && !hasGate && seed !== null;
+  const keptHunters = replaceSeed ? save.hunters.filter(h => h !== seed) : save.hunters;
+  const existingNames = new Set(keptHunters.map(h => h.name.toLowerCase()));
+  const pregens = includePregens ? PREGENS.filter(p => !existingNames.has(p.name.toLowerCase())) : [];
+  return { story: !hasStory, gate: !hasGate, pregens };
+}
+
+const joinWords = (parts: readonly string[]): string =>
+  parts.length <= 1 ? (parts[0] ?? '') : parts.length === 2 ? `${parts[0]} and ${parts[1]}` : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+
+/** Plain list of what `missing` adds, for the session log and post-load message. */
+export function starterAddedList(missing: StarterMissing): string {
+  const parts: string[] = [];
+  if (missing.story) parts.push(`the story ${STARTER_STORY_NAME}`);
+  if (missing.gate) parts.push(`${STARTER_GATE.name} (${STARTER_GATE.rank})`);
+  if (missing.pregens.length > 0) {
+    parts.push(`${missing.pregens.length} sample ${missing.pregens.length === 1 ? 'hunter' : 'hunters'}`);
+  }
+  return joinWords(parts);
+}
+
+/** Plain copy for the starter campaign reload controls and dialog. */
+export const STARTER_WORDS = {
+  tag: '! Starter campaign',
+  title: 'Load starter campaign',
+  button: 'Load starter campaign',
+  cancel: 'Cancel',
+  pregensLabel: 'Include 4 sample hunters',
+  pregensHelp: 'Uncheck if players will make hunters on their phones.',
+  lobbyTitle: 'Starter campaign',
+  lobbyHint: `Load ${STARTER_STORY_NAME} and ${STARTER_GATE.name} into this campaign.`,
+} as const;
+
+/** Dialog body describing what a starter load will add without overwriting existing data. */
+export function starterConfirmBody(missing: StarterMissing): string {
+  if (missing.story && missing.gate) {
+    return `Add ${STARTER_STORY_NAME} and ${STARTER_GATE.name} (${STARTER_GATE.rank}-rank) to this campaign. Your existing hunters, gates, and stories stay.`;
+  }
+  if (missing.story) {
+    return `Add ${STARTER_STORY_NAME} to this campaign. ${STARTER_GATE.name} and your existing data stay.`;
+  }
+  if (missing.gate) {
+    return `Add ${STARTER_GATE.name} (${STARTER_GATE.rank}-rank) to this campaign. ${STARTER_STORY_NAME} and your existing data stay.`;
+  }
+  return `${STARTER_STORY_NAME} and ${STARTER_GATE.name} are already in this campaign. You can still add the missing sample hunters.`;
+}
+
+/** Toast message after a successful starter load, naming what was added and pointing to Stories. */
+export function starterLoadedMessage(missing: StarterMissing): string {
+  return `Added ${starterAddedList(missing)}. Open GM -> Stories and tap Start a story for ${STARTER_STORY_NAME}.`;
+}
+
+/** Refusal messages for `ui.wrote` when `starterCampaign` refuses a write. */
+export const STARTER_REFUSAL_WORDS: Readonly<Record<StarterRefusal['why'], string>> = {
+  already: `The starter campaign is already loaded. Open GM -> Stories and tap Start a story for ${STARTER_STORY_NAME}.`,
+  full: 'Could not load the starter campaign because your story library is full. Delete a story in the Workshop, then try again.',
+  taken: `Could not load the starter campaign because ${STARTER_STORY_NAME} is already in your story library.`,
+  story: 'Could not load the starter campaign. Check your rules in the GM tab, then try again.',
+  gate: 'Could not load the starter campaign. Check your rules in the GM tab, then try again.',
+  pregen: 'Could not load the starter campaign. Check your rules in the GM tab, then try again.',
+};
 
 /**
- * The starter campaign on `save`: optionally replaces the seed hunter with the 4 sample hunters (with `capDisplay: 'E'`
- * and full HP/mana; Tessa Corbin keeps her 12 creation points unspent) or neutralizes the seed when `includePregens` is
- * false (keeping `activeHunterId` valid), sets this phone to GM mode, spawns the deterministic `Tidewall Cannery Gate`
- * (`breakDay: today + 1`, two waves, `classOffer: true`), stores the 5-chapter `The Empty Seat` Story in
- * `save.library.stories` with no auto-started run and zero non-daily quests at load, and writes the log line.
- * One atomic step: a refusal changes nothing.
+ * Loads missing pieces of the starter campaign onto `save` in one atomic step (additive and idempotent by canonical
+ * name). On a first-time load (neither starter story nor starter gate present and the unowned seed still present),
+ * replaces the seed with the 4 sample hunters (with `capDisplay: 'E'` and full HP/mana; Tessa Corbin keeps her 12
+ * creation points unspent) or neutralizes the seed when `includePregens` is false. On a reload after setup, keeps all
+ * existing hunters, stories, and gates untouched and adds only missing pieces. Refuses with `'already'` (writing
+ * nothing and changing no seq or log) when everything requested is already present.
  */
 export function starterCampaign(
   save: Save,
@@ -264,81 +339,96 @@ export function starterCampaign(
   options: StarterOptions = {},
 ): Save | StarterRefusal {
   const includePregens = options.includePregens !== false;
+  const missing = starterMissing(save, { includePregens });
+  if (!missing.story && !missing.gate && missing.pregens.length === 0) return refuse('already');
+
   let seq = save.seq;
   const next = <P extends string>(prefix: P): IdOf<P> => saveId(prefix, ++seq);
   const now = new Date(stamp.at);
 
-  const parsedStory = parseStory(starterStory(R));
-  if (!parsedStory) return refuse('story');
-  const story: Story = { ...parsedStory, id: next('st') };
-  const nextLibrary = saveEntry(save.library, 'stories', story);
-  if (isRefused(nextLibrary)) return refuse(nextLibrary.why === 'taken' ? 'taken' : 'full');
+  let nextLibrary = save.library;
+  if (missing.story) {
+    const parsedStory = parseStory(starterStory(R));
+    if (!parsedStory) return refuse('story');
+    const story: Story = { ...parsedStory, id: next('st') };
+    const savedLib = saveEntry(save.library, 'stories', story);
+    if (isRefused(savedLib)) return refuse(savedLib.why === 'taken' ? 'taken' : 'full');
+    nextLibrary = savedLib;
+  }
 
-  const today = save.world.day;
-  const gate: Gate | null = parseGate({
-    ...newGate(),
-    id: next('g'),
-    name: STARTER_GATE.name,
-    rank: STARTER_GATE.rank,
-    type: STARTER_GATE.type,
-    status: 'detected',
-    createdDay: today,
-    breakDay: today + 1,
-    monsters: STARTER_GATE.monsters.map(m => ({ ...m })),
-    bossId: STARTER_GATE.bossId,
-    difficulty: STARTER_GATE.difficulty,
-    notes: STARTER_GATE.notes,
-    classOffer: STARTER_GATE.classOffer,
-    bossFell: false,
-  });
-  if (!gate) return refuse('gate');
+  let gate: Gate | null = null;
+  if (missing.gate) {
+    const today = save.world.day;
+    gate = parseGate({
+      ...newGate(),
+      id: next('g'),
+      name: STARTER_GATE.name,
+      rank: STARTER_GATE.rank,
+      type: STARTER_GATE.type,
+      status: 'detected',
+      createdDay: today,
+      breakDay: today + 1,
+      monsters: STARTER_GATE.monsters.map(m => ({ ...m })),
+      bossId: STARTER_GATE.bossId,
+      difficulty: STARTER_GATE.difficulty,
+      notes: STARTER_GATE.notes,
+      classOffer: STARTER_GATE.classOffer,
+      bossFell: false,
+    });
+    if (!gate) return refuse('gate');
+  }
 
   const pregens: Hunter[] = [];
-  if (includePregens) {
-    for (const p of PREGENS) {
-      const created = makeHunter({ seq, settings: save.settings }, p.name, R, now);
-      seq = created.seq;
-      const jobbed = setJob(created.hunter, p.job, { held: false, dead: false });
-      if (isRefused(jobbed)) return refuse('pregen');
-      let h: Hunter = jobbed;
-      if (Object.keys(p.stats).length > 0) {
-        const raised = raiseMany(h, p.stats, R);
-        if (isRefused(raised)) return refuse('pregen');
-        h = confirm(raised);
-      }
-      h = setCapDisplay(h, 'E');
-      for (const k of p.skills) h = learnSkill(h, { ...skillOf(k, R), label: 'Lv.1' }, next('s'));
-      for (const seed of p.items) {
-        const item: ItemGrant = { kind: 'ref', defId: seed.defId, qty: 1 };
-        const itemId = next('i');
-        h = putItem(h, item, itemId, R);
-        if ('slot' in seed) {
-          const worn = equip(h, itemId, itemId, false, R);
-          if (isRefused(worn)) return refuse('pregen');
-          h = worn;
-        }
-      }
-      h = { ...h, ...refill(h, hunterSheet(h, R).sheet) };
-      pregens.push(h);
+  for (const p of missing.pregens) {
+    const created = makeHunter({ seq, settings: save.settings }, p.name, R, now);
+    seq = created.seq;
+    const jobbed = setJob(created.hunter, p.job, { held: false, dead: false });
+    if (isRefused(jobbed)) return refuse('pregen');
+    let h: Hunter = jobbed;
+    if (Object.keys(p.stats).length > 0) {
+      const raised = raiseMany(h, p.stats, R);
+      if (isRefused(raised)) return refuse('pregen');
+      h = confirm(raised);
     }
+    h = setCapDisplay(h, 'E');
+    for (const k of p.skills) h = learnSkill(h, { ...skillOf(k, R), label: 'Lv.1' }, next('s'));
+    for (const seedItem of p.items) {
+      const item: ItemGrant = { kind: 'ref', defId: seedItem.defId, qty: 1 };
+      const itemId = next('i');
+      h = putItem(h, item, itemId, R);
+      if ('slot' in seedItem) {
+        const worn = equip(h, itemId, itemId, false, R);
+        if (isRefused(worn)) return refuse('pregen');
+        h = worn;
+      }
+    }
+    h = { ...h, ...refill(h, hunterSheet(h, R).sheet) };
+    pregens.push(h);
   }
 
   const seed = seedOf(save);
-  const existing = save.hunters.filter(h => h !== seed);
+  const replaceSeed = missing.story && missing.gate && seed !== null;
   let hunters: Hunter[];
-  if (includePregens) {
-    hunters = [...existing, ...pregens];
-  } else if (existing.length > 0) {
-    hunters = existing;
-  } else if (seed) {
-    hunters = [neutralSeed(seed, 'Hunter')];
+  if (replaceSeed) {
+    const existing = save.hunters.filter(h => h !== seed);
+    if (includePregens) {
+      hunters = [...existing, ...pregens];
+    } else if (existing.length > 0) {
+      hunters = existing;
+    } else {
+      hunters = [neutralSeed(seed, 'Hunter')];
+    }
+  } else if (pregens.length > 0) {
+    hunters = [...save.hunters, ...pregens];
+  } else if (save.hunters.length > 0) {
+    hunters = save.hunters;
   } else {
     const created = makeHunter({ seq, settings: save.settings }, 'Hunter', R, now);
     seq = created.seq;
     hunters = [created.hunter];
   }
 
-  const activeHunterId = includePregens
+  const activeHunterId = replaceSeed && includePregens && pregens.length > 0
     ? pregens[0]!.id
     : hunters.some(h => h.id === save.settings.activeHunterId)
       ? save.settings.activeHunterId
@@ -351,15 +441,12 @@ export function starterCampaign(
     library: nextLibrary,
     settings: chooseMode({ ...save.settings, activeHunterId }, 'gm'),
   };
-  s = spawnGate(s, gate, [], stamp);
+  if (gate) s = spawnGate(s, gate, [], stamp);
 
-  const partyLine = includePregens
-    ? `${pregens.length} sample hunters, `
-    : '';
   return told(s, stamp, {
     kind: 'system',
     hunterId: null,
     title: 'Campaign begun',
-    text: `Starter campaign loaded with ${partyLine}${STARTER_GATE.name} (E) and the story ${STARTER_STORY_NAME}.`,
+    text: `Starter campaign loaded with ${starterAddedList(missing)}.`,
   });
 }
